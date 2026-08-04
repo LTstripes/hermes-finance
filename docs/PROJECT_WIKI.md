@@ -176,7 +176,8 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - Создан user-local skill `hermes-finance-orchestration` для маршрутизации Sol/Terra/Luna/DeepSeek, handoff и независимой приёмки.
 - Финансовые контракты из раздела 7 одобрены владельцем.
 - Backend использует Python 3.13: версия закреплена в `backend/.python-version`, чтобы editable install корректно работал с UTF-8 путями Windows.
-- `A01`–`A03` выполнены по явному разрешению владельца; следующий этап `A04` автоматически не начинается.
+- Frontend использует Node.js 22.22+, React 19, React Router 8, TypeScript, Vite и Vitest; `/api` проксируется только в локальный backend.
+- `A01`–`A04` выполнены по явному разрешению владельца; следующий этап `A05` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -189,3 +190,4 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-04 — создан приватный `LTstripes/hermes-finance`, выполнен каркас `A01`, принят ADR `0001`, GitLab CI заменён на GitHub Actions, а финансовые контракты уточнены владельцем.
 - 2026-08-04 — добавлены корневой `AGENTS.md` и user-local skill `hermes-finance-orchestration`; следующий backlog `A03` не начат.
 - 2026-08-04 — выполнен `A03`: создан минимальный FastAPI backend, env-settings, package dev-команда и pytest для `/api/health`; `A04` не начат.
+- 2026-08-04 — выполнен `A04`: создан React/TypeScript/Vite frontend с router, Dashboard, health-индикатором, dev proxy и компонентными тестами; `A05` не начат.
