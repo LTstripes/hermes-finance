@@ -1,0 +1,58 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+private/
+**/PRIVATE_SEED_NOT_FOR_GIT.md
+
+# Local financial data
+data/**
+!data/.gitkeep
+**/exports/
+**/backups/
+finance_data_*.json
+finance_report_*.md
+legacy_month_mapping.json
+private_seed.json
+
+# Databases and backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.backup
+*.bak
+
+# Personal source documents
+*.pdf
+*.xlsx
+*.xls
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+coverage/
+.vite/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
