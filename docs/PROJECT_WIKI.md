@@ -177,7 +177,8 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - Финансовые контракты из раздела 7 одобрены владельцем.
 - Backend использует Python 3.13: версия закреплена в `backend/.python-version`, чтобы editable install корректно работал с UTF-8 путями Windows.
 - Frontend использует Node.js 22.22+, React 19, React Router 8, TypeScript, Vite и Vitest; `/api` проксируется только в локальный backend.
-- `A01`–`A04` выполнены по явному разрешению владельца; следующий этап `A05` автоматически не начинается.
+- Корневые PowerShell 5.1-compatible скрипты `scripts/dev.ps1` и `scripts/test.ps1` запускают общий dev stack и единый набор проверок; для локального `Restricted` policy README использует process-only `-ExecutionPolicy Bypass`.
+- `A01`–`A05` выполнены по явному разрешению владельца; следующий этап `A06` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -191,3 +192,4 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-04 — добавлены корневой `AGENTS.md` и user-local skill `hermes-finance-orchestration`; следующий backlog `A03` не начат.
 - 2026-08-04 — выполнен `A03`: создан минимальный FastAPI backend, env-settings, package dev-команда и pytest для `/api/health`; `A04` не начат.
 - 2026-08-04 — выполнен `A04`: создан React/TypeScript/Vite frontend с router, Dashboard, health-индикатором, dev proxy и компонентными тестами; `A05` не начат.
+- 2026-08-04 — выполнен `A05`: добавлены единые Windows-команды запуска и тестирования с dependency checks, readiness probe и очисткой дочерних процессов; `A06` не начат.

@@ -4,6 +4,34 @@
 
 Проект развивается небольшими последовательными задачами. Сейчас доступны минимальный FastAPI backend и React frontend с проверкой подключения; база данных и финансовая логика ещё не инициализированы.
 
+## Быстрый старт на Windows
+
+Требования: Python 3.13, [uv](https://docs.astral.sh/uv/), Node.js 22.22+ и npm. Один раз установите зависимости из корня репозитория:
+
+```powershell
+Set-Location backend
+uv sync --group dev
+Set-Location ..\frontend
+npm ci
+Set-Location ..
+```
+
+Запустите backend и frontend одной командой:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
+```
+
+После сообщения `Hermes Finance is ready` откройте `http://127.0.0.1:5173`. Нажмите `Ctrl+C`, чтобы остановить оба процесса. Локальный `-ExecutionPolicy Bypass` нужен для запуска доверенного локального скрипта при системной политике `Restricted`; политика Windows при этом не изменяется.
+
+Все backend/frontend тесты и production build запускаются из корня:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
+```
+
+Скрипты заранее проверяют `uv`, `npm`, структуру проекта и frontend-зависимости и выводят конкретную команду исправления. Для короткой проверки запуска с автоматической остановкой доступен `dev.ps1 -ExitAfterReady`.
+
 ## Backend: установка и запуск
 
 Требования: Python 3.13 и [uv](https://docs.astral.sh/uv/). Версия Python закреплена в `backend/.python-version`: Python 3.13 корректно обрабатывает UTF-8 пути editable-пакетов на Windows, включая каталог `Рабочий стол`.
