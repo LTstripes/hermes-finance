@@ -73,13 +73,13 @@ Use only synthetic names and values in examples and tests. Verify ignore behavio
 
 ## Model routing
 
-The primary Sol session owns architecture, financial semantics, privacy-sensitive changes and final acceptance. Delegated work is bounded:
+Read `docs/MODEL_ROUTING.md` before choosing a model, delegating, or beginning a backlog task. It is the authoritative launch gate and records the route for each current phase-B task.
 
-- **Terra:** medium-complexity implementation with a fixed contract and narrow file scope.
-- **Luna:** scaffolding, repetitive CRUD/UI, documentation cleanup, boilerplate tests and mechanical edits.
-- **DeepSeek V4 Flash Free:** read-only review, research, test-case drafts and isolated low-risk work via `custom:open.cherryin.ai` model `deepseek/deepseek-v4-flash(free)`.
-
-Delegated summaries are not proof. The primary agent must inspect the actual files/diff and run relevant checks. Never let multiple agents modify the same schema or working tree concurrently. Use separate worktrees for independent write tasks.
+- Before every task, propose `primary / worker / reviewer` with a level and wait for the owner's model choice.
+- After every accepted task, recommend the route for the next task and mark that task not started.
+- Sol owns architecture, financial semantics, privacy-sensitive changes, migration semantics and final acceptance; a cheaper worker may implement only an approved bounded contract.
+- `delegate_task` has no per-call model selector. Empty `delegation.provider/model` inherits the parent route; never claim a child ran on a named model unless runtime metadata confirms it.
+- Delegated summaries are not proof. The primary agent must inspect the actual files/diff and run relevant checks. Never let multiple agents modify the same schema or working tree concurrently. Use separate worktrees for independent write tasks.
 
 Load the user-local `hermes-finance-orchestration` skill when coordinating delegated work.
 
