@@ -24,7 +24,8 @@ Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely
 - Do not start the next backlog item automatically.
 - Do not implement future features “while here”.
 - If a requirement conflicts with the master specification, stop and ask one concrete question.
-- Do not commit, push, open a PR or change repository settings unless the owner explicitly asks.
+- After an explicitly assigned task passes its required local verification, Hermes may create a normal commit, push the current branch to `origin` and verify CI without separate confirmation.
+- Separate owner permission is still required for force-push, reset, rebase, amending published commits, merge, branch or tag deletion, opening a PR, creating a release, or changing repository settings.
 - Keep each change small enough for complete independent review.
 
 ## Architecture
