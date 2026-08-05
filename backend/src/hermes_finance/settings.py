@@ -1,7 +1,11 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hermes_finance import __version__
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -18,3 +22,4 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     reload: bool = False
+    database_path: Path = REPOSITORY_ROOT / "data" / "finance.db"

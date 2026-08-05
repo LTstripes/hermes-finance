@@ -18,6 +18,8 @@ uv run hermes-finance-api
 
 The default address is `http://127.0.0.1:8000`. Local overrides can be placed in `.env`; use `.env.example` as the safe template.
 
+The default SQLite path is the repository-root `data/finance.db`. Starting the local CLI creates its parent directory, configures a SQLAlchemy 2 engine and session factory, and enables SQLite foreign keys for every connection. Override the path with `HERMES_FINANCE_DATABASE_PATH`; tests must always point it at temporary synthetic data and never open the production path.
+
 ## Test
 
 ```bash
