@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy import URL
 
 from hermes_finance.database import create_database
+from hermes_finance.persistence import Base
 from hermes_finance.settings import Settings
 
 config = context.config
@@ -11,9 +12,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# The first revision is an Alembic service baseline. A later domain-model
-# task will introduce declarative metadata together with the first schema.
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def database_url() -> str:
