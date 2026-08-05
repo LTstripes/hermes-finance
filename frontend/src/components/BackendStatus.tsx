@@ -60,10 +60,7 @@ export function BackendStatus() {
       : statusCopy[state.kind];
 
   return (
-    <section
-      aria-labelledby="backend-status-title"
-      className="panel status-panel"
-    >
+    <section aria-labelledby="backend-status-title" className="panel status-panel">
       <div className="panel__heading">
         <div>
           <p className="panel__label">Состояние системы</p>
@@ -75,10 +72,7 @@ export function BackendStatus() {
       </div>
 
       <div aria-live="polite" className="status-line" role="status">
-        <span
-          aria-hidden="true"
-          className={`status-line__dot status-line__dot--${state.kind}`}
-        />
+        <span aria-hidden="true" className={`status-line__dot status-line__dot--${state.kind}`} />
         <span className="status-line__copy">
           <strong>{copy.title}</strong>
           <span>{copy.detail}</span>

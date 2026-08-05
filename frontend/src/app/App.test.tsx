@@ -9,14 +9,15 @@ describe("App", () => {
   });
 
   it("renders the dashboard in the application layout", () => {
-    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
 
     render(<App />);
 
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Дашборд" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
   });
 
   it("shows backend connected after a successful health check", async () => {
@@ -35,10 +36,7 @@ describe("App", () => {
   });
 
   it("shows backend unavailable when the health check fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
     render(<App />);
 

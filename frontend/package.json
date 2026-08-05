@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format-check": "biome format .",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview --host 127.0.0.1"
@@ -16,6 +19,7 @@
     "react-router": "8.3.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.3",

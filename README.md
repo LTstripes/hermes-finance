@@ -32,6 +32,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 
 Скрипты заранее проверяют `uv`, `npm`, структуру проекта и frontend-зависимости и выводят конкретную команду исправления. Для короткой проверки запуска с автоматической остановкой доступен `dev.ps1 -ExitAfterReady`.
 
+Проверки стиля также запускаются из корня для обеих частей проекта:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\lint.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\format-check.ps1
+```
+
+Backend проверяется Ruff, frontend — Biome. `format-check.ps1` ничего не перезаписывает. Для применения форматирования используйте `uv run ruff format .` в `backend` и `npm run format` во `frontend`.
+
 ## Backend: установка и запуск
 
 Требования: Python 3.13 и [uv](https://docs.astral.sh/uv/). Версия Python закреплена в `backend/.python-version`: Python 3.13 корректно обрабатывает UTF-8 пути editable-пакетов на Windows, включая каталог `Рабочий стол`.
