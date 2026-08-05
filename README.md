@@ -41,6 +41,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\format-check.p
 
 Backend проверяется Ruff, frontend — Biome. `format-check.ps1` ничего не перезаписывает. Для применения форматирования используйте `uv run ruff format .` в `backend` и `npm run format` во `frontend`.
 
+## Continuous Integration
+
+GitHub Actions workflow `.github/workflows/ci.yml` запускается для push в `main` и pull request. Независимые backend/frontend jobs устанавливают только lockfile-зависимости, выполняют lint, format-check, тесты и frontend build. CI не читает локальную базу, `data/`, `private/`, `.env` или GitHub secrets.
+
 ## Backend: установка и запуск
 
 Требования: Python 3.13 и [uv](https://docs.astral.sh/uv/). Версия Python закреплена в `backend/.python-version`: Python 3.13 корректно обрабатывает UTF-8 пути editable-пакетов на Windows, включая каталог `Рабочий стол`.
