@@ -131,9 +131,8 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 |---|---|---|
 | High | Sol 5.6 | бизнес-правила, архитектура, деньги/налоги, миграционная семантика, приватность, финальная проверка |
 | Mid-high | Terra 5.6 | ограниченные backend/frontend-фичи по готовому контракту, CRUD, интеграционные тесты, локальные рефакторы |
-| Mid-high, after calibration | Token Router Kimi K3 Free | read-only review/test matrix; bounded implementation только после доказанной калибровки |
 | Mid | Luna 5.6 | scaffolding, документация, типовой UI, test boilerplate, форматирование, простые fixtures и повторяемые правки |
-| Mid, внешний | DeepSeek/другие free | независимый обзор, исследование вариантов, черновики тест-кейсов; без финальной приёмки |
+| Mid, внешний | DeepSeek V4 Flash Free | независимый read-only обзор, исследование вариантов и test matrix; без финальной приёмки |
 
 ### Техническая реальность Hermes
 
@@ -148,11 +147,11 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 
 - текущий runtime model всегда фиксируется в начале/конце task report и не считается постоянным default;
 - default Hermes model и fallback chain инспектируются живой командой перед изменением, а не копируются в wiki;
-- Token Router настроен как named provider `tokenrouter`; в нём доступен `moonshotai/kimi-k3-free` для первой read-only калибровки;
+- проверенный внешний free route: `custom:open.cherryin.ai` / `deepseek/deepseek-v4-flash(free)` для отдельного bounded read-only review;
 - direct DeepSeek provider и другие существующие routes не означают, что конкретный child их использовал: для `delegate_task` нужна runtime confirmation;
 - изменение любой delegation route или model default выполняется только после отдельного согласования владельца.
 
-Стартовый безопасный вариант: выбор primary делает владелец через launch gate; Sol принимает high-risk решения, Terra реализует closed mid-high contracts, Kimi K3 Free сначала проходит read-only calibration, а DeepSeek остаётся независимым reviewer.
+Стартовый безопасный вариант: выбор primary делает владелец через launch gate; Sol принимает high-risk решения, Terra реализует closed mid-high contracts, а DeepSeek V4 Flash Free выполняет только независимый read-only review.
 
 ## 9. Протокол делегированной задачи
 
