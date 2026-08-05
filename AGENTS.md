@@ -73,13 +73,14 @@ Use only synthetic names and values in examples and tests. Verify ignore behavio
 
 ## Model routing
 
-Read `docs/MODEL_ROUTING.md` before choosing a model, delegating, or beginning a backlog task. It is the authoritative launch gate and records the route for each current phase-B task.
+Read `docs/MODEL_ROUTING.md` before choosing a model, delegating, or beginning a backlog task. It is the authoritative launch gate and records the owner-approved economy route.
 
-- Before every task, propose `primary / worker / reviewer` with a level and wait for the owner's model choice.
-- After every accepted task, recommend the route for the next task and mark that task not started.
-- Sol owns architecture, financial semantics, privacy-sensitive changes, migration semantics and final acceptance; a cheaper worker may implement only an approved bounded contract.
-- `delegate_task` has no per-call model selector. Empty `delegation.provider/model` inherits the parent route; never claim a child ran on a named model unless runtime metadata confirms it.
-- Delegated summaries are not proof. The primary agent must inspect the actual files/diff and run relevant checks. Never let multiple agents modify the same schema or working tree concurrently. Use separate worktrees for independent write tasks.
+- Before every task, propose `primary / worker / reviewer` with the actual reasoning level and wait for the owner's model choice.
+- Default standard implementation to Luna High; use Terra High for complex financial semantics and Sol High only for new/conflicting architecture or explicit checkpoints.
+- DeepSeek V4 Flash Free may perform bounded standard implementation in an isolated worktree/session as well as read-only review; it never receives private data, commits, pushes or grants final acceptance.
+- After `B19`, run one Sol High blocker-level architecture review; do not rewrite accepted code merely because Sol would design it differently.
+- `delegate_task` has no per-call model selector. Never claim a child ran on a named model or level unless runtime metadata confirms it.
+- Worker summaries are not proof. The accepting primary inspects actual files/diff and reruns relevant checks. Never let multiple agents modify the same migration, schema or working tree concurrently.
 
 Load the user-local `hermes-finance-orchestration` skill when coordinating delegated work.
 
@@ -94,6 +95,8 @@ For every task:
 5. verify temporary fixtures and probes were removed;
 6. inspect `git status --short` and account for every changed file;
 7. confirm no private data or unrelated scope entered the change.
+
+Do not call a task “done” or send its completion report immediately after the first green command. Complete all allowed delivery side effects, CI/probes and guard retries, then perform one final read-back of `HEAD`, remote ref, clean status and temporary-file cleanup. Pause for one settling checkpoint after the last tool result; only then send one message explicitly labelled **Canonical completion report**. Progress updates before that point must not say “done”, and no duplicate completion summary follows unless the owner asks.
 
 Do not claim the full suite passed unless the canonical suite actually ran and passed.
 

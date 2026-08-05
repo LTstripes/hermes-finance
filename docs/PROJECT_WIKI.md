@@ -129,29 +129,29 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 
 | Уровень | Рекомендуемый владелец | Примеры |
 |---|---|---|
-| High | Sol 5.6 | бизнес-правила, архитектура, деньги/налоги, миграционная семантика, приватность, финальная проверка |
-| Mid-high | Terra 5.6 | ограниченные backend/frontend-фичи по готовому контракту, CRUD, интеграционные тесты, локальные рефакторы |
-| Mid | Luna 5.6 | scaffolding, документация, типовой UI, test boilerplate, форматирование, простые fixtures и повторяемые правки |
-| Mid, внешний | DeepSeek V4 Flash Free | независимый read-only обзор, исследование вариантов и test matrix; без финальной приёмки |
+| High | Sol 5.6 | новый/конфликтующий архитектурный контракт, destructive migration semantics, privacy/auth и редкие checkpoint reviews |
+| High | Terra 5.6 | сложная финансовая семантика, налоги, потоки и формулы по утверждённой архитектуре |
+| High | Luna 5.6 | основной исполнитель schema/CRUD/API/frontend, графиков, форм, тестов, документации и мелкого рефакторинга |
+| Внешний, free | DeepSeek V4 Flash Free | bounded standard implementation в изоляции или review; без private seed, commit/push и финальной приёмки |
 
 ### Техническая реальность Hermes
 
 - `delegate_task` сейчас не имеет per-call выбора модели; пустая настройка `delegation.model/provider` означает наследование модели родительской сессии.
-- Для одного дешёвого класса детей можно задать общий delegation model, например Luna. Изменение конфигурации выполняется только после отдельного согласования владельца.
-- Для выбора Terra или Luna на конкретную задачу можно запускать отдельный bounded Hermes one-shot с `--model`, `--provider`, ограниченными toolsets и при необходимости `--worktree`.
-- Для длительной параллельной разработки лучше отдельные Hermes profiles + Kanban, а не несколько агентов в одной рабочей директории.
-- Отчёт младшей модели не является доказательством: Sol проверяет diff, scope, тесты и отсутствие приватных данных.
-- Параллелить можно только независимые задачи. Последовательный backlog и изменение общей схемы БД нельзя раздавать одновременно без явных границ.
+- Для гарантированного Luna/Terra/DeepSeek route используется отдельная session/profile или bounded Hermes one-shot с подтверждёнными provider/model/level.
+- Изменение общей delegation route или model default выполняется только после отдельного согласования владельца.
+- Write-worker работает в изолированном worktree/session, не делает commit/push и не получает private seed; несколько агентов не редактируют одну миграцию/schema/subtree параллельно.
+- Отчёт worker/reviewer не является доказательством: принимающий primary проверяет diff, scope, тесты и отсутствие приватных данных.
+- До конца B19 стандартная работа максимально маршрутизируется на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High. После B19 выполняется один blocker-level архитектурный обзор на Sol High без автоматического переписывания кода.
 
 ### Состояние доступности моделей
 
-- текущий runtime model всегда фиксируется в начале/конце task report и не считается постоянным default;
-- default Hermes model и fallback chain инспектируются живой командой перед изменением, а не копируются в wiki;
-- проверенный внешний free route: `custom:open.cherryin.ai` / `deepseek/deepseek-v4-flash(free)` для отдельного bounded read-only review;
-- direct DeepSeek provider и другие существующие routes не означают, что конкретный child их использовал: для `delegate_task` нужна runtime confirmation;
-- изменение любой delegation route или model default выполняется только после отдельного согласования владельца.
+- текущий runtime model и reasoning level фиксируются для каждой задачи и не считаются постоянным default;
+- публичная документация Hermes не является доказательством сравнительной силы внутренних Sol/Terra/Luna tiers; проектная карта маршрутизации — решение владельца об уровне риска и расходовании лимитов;
+- проверенный внешний free route: `custom:open.cherryin.ai` / `deepseek/deepseek-v4-flash(free)`;
+- direct provider или configured route не доказывает, что конкретный child его использовал: нужна runtime confirmation;
+- точная карта B01–B19, escalation rules и settling gate находятся в `docs/MODEL_ROUTING.md`.
 
-Стартовый безопасный вариант: выбор primary делает владелец через launch gate; Sol принимает high-risk решения, Terra реализует closed mid-high contracts, а DeepSeek V4 Flash Free выполняет только независимый read-only review.
+После всех checks/commit/push/CI/guard retries агент делает финальный state read-back и короткий settling checkpoint, а затем отправляет один отчёт с меткой **«Канонический итог»**. До этого progress-сообщения не называют задачу готовой; последующие дубли итогов не отправляются без запроса владельца.
 
 ## 9. Протокол делегированной задачи
 
@@ -183,6 +183,8 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - Python форматируется и проверяется Ruff; TypeScript/React/CSS — Biome. Biome выбран вместо ESLint TypeScript stack, потому что stable `typescript-eslint` не поддерживает закреплённый TypeScript 7 без принудительного обхода peer dependency.
 - Корневые PowerShell-команды `scripts/lint.ps1` и `scripts/format-check.ps1` проверяют обе части проекта и ничего не форматируют автоматически.
 - GitHub Actions CI состоит из независимых backend/frontend jobs на `ubuntu-latest`, использует только lockfile-зависимости и не обращается к локальной базе, private-файлам или secrets context.
+- До B19 стандартные задачи экономно маршрутизируются на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High; Sol High используется для новых/конфликтующих контрактов и одного архитектурного checkpoint после B19.
+- Итог по задаче отправляется один раз после settling gate: все side effects/CI/guard retries завершены, выполнен финальный state read-back, временные probes удалены.
 - `A01`–`A07` и `B01`–`B03` выполнены по явному разрешению владельца и прошли локальную приёмку; `B04` автоматически не начинается.
 
 ### Требует ответа владельца
@@ -203,3 +205,4 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-05 — выполнен `B01`: добавлены конфиг пути SQLite, SQLAlchemy 2 engine/session, обязательный `PRAGMA foreign_keys=ON`, создание каталога при local startup и изолированные тесты на временной БД; `B02` не начат.
 - 2026-08-05 — выполнен `B02`: добавлены Alembic config, пустая service baseline migration, команды upgrade/downgrade и проверка новой временной SQLite до head; `B03` не начат.
 - 2026-08-05 — выполнен `B03`: добавлены точные доменные типы RUB и процентной ставки, преобразования API string ↔ `Decimal` ↔ integer minor units, единое `ROUND_HALF_UP` и тесты запрета binary `float`; `B04` не начат.
+- 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.
