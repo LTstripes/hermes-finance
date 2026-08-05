@@ -20,6 +20,18 @@ The default address is `http://127.0.0.1:8000`. Local overrides can be placed in
 
 The default SQLite path is the repository-root `data/finance.db`. Starting the local CLI creates its parent directory, configures a SQLAlchemy 2 engine and session factory, and enables SQLite foreign keys for every connection. Override the path with `HERMES_FINANCE_DATABASE_PATH`; tests must always point it at temporary synthetic data and never open the production path.
 
+## Migrations
+
+Alembic tracks schema history. B02 provides an empty service baseline; later backlog tasks add domain tables in new migrations.
+
+```bash
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic downgrade base
+```
+
+All commands use `HERMES_FINANCE_DATABASE_PATH` or the default database path. Run destructive downgrade commands only against a backup or synthetic database.
+
 ## Test
 
 ```bash

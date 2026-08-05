@@ -1,0 +1,15 @@
+# Alembic migrations
+
+This directory contains the versioned schema history for Hermes Finance.
+
+- `0001_empty_init` is the B02 service baseline. It creates no domain tables; Alembic records the applied revision in its own `alembic_version` table.
+- Domain schema migrations begin only in their explicitly assigned backlog tasks. Do not add B03 or later tables to this baseline.
+- Runtime database selection comes from `HERMES_FINANCE_DATABASE_PATH` through `hermes_finance.settings.Settings`; no developer-specific SQLite path belongs in `alembic.ini`.
+
+From `backend/`:
+
+```bash
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic downgrade base
+```
