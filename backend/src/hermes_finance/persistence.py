@@ -1,6 +1,16 @@
+from datetime import UTC, date, datetime
 from typing import Final
 
-from sqlalchemy import BigInteger, CheckConstraint, Integer, String, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 APP_SETTINGS_ID: Final = 1
@@ -42,4 +52,42 @@ class AppSettings(Base):
     )
     formula_version: Mapped[str] = mapped_column(
         String(32), nullable=False, default=DEFAULT_FORMULA_VERSION, server_default=text("'v1'")
+    )
+
+
+class ReportingMonth(Base):
+    __tablename__ = "reporting_months"
+    __table_args__ = (
+        UniqueConstraint("year", "month", name="uq_reporting_months_year_month"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="ck_reporting_months_month_range"),
+        CheckConstraint(
+            "status IN ('draft', 'closed')",
+            name="ck_reporting_months_status",
+        ),
+        CheckConstraint(
+            "source IN ('manual', 'excel_migration', 'alfa_pdf')",
+            name="ck_reporting_months_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="draft", server_default=text("'draft'")
+    )
+    source: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="manual", server_default=text("'manual'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )

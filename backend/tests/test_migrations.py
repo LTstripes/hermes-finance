@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0002_app_settings"
+REVISION = "0003_reporting_months"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -54,6 +54,18 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "SELECT base_currency, locale, timezone, passive_income_goal_kopecks, formula_version "
             "FROM app_settings WHERE id = 1"
         ).fetchone() == ("RUB", "ru-RU", "Europe/Moscow", 10_000_000, "v1")
+        assert [row[1] for row in connection.execute("PRAGMA table_info(reporting_months)")] == [
+            "id",
+            "year",
+            "month",
+            "period_start",
+            "period_end",
+            "snapshot_date",
+            "status",
+            "source",
+            "created_at",
+            "updated_at",
+        ]
     finally:
         connection.close()
 

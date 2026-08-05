@@ -185,7 +185,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - GitHub Actions CI состоит из независимых backend/frontend jobs на `ubuntu-latest`, использует только lockfile-зависимости и не обращается к локальной базе, private-файлам или secrets context.
 - До B19 стандартные задачи экономно маршрутизируются на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High; Sol High используется для новых/конфликтующих контрактов и одного архитектурного checkpoint после B19.
 - Итог по задаче отправляется один раз после settling gate: все side effects/CI/guard retries завершены, выполнен финальный state read-back, временные probes удалены.
-- `A01`–`A07` и `B01`–`B04` выполнены по явному разрешению владельца и прошли локальную приёмку; `B05` автоматически не начинается.
+- `A01`–`A07` и `B01`–`B05` выполнены по явному разрешению владельца и прошли локальную приёмку; `B06` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -206,4 +206,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-05 — выполнен `B02`: добавлены Alembic config, пустая service baseline migration, команды upgrade/downgrade и проверка новой временной SQLite до head; `B03` не начат.
 - 2026-08-05 — выполнен `B03`: добавлены точные доменные типы RUB и процентной ставки, преобразования API string ↔ `Decimal` ↔ integer minor units, единое `ROUND_HALF_UP` и тесты запрета binary `float`; `B04` не начат.
 - 2026-08-05 — выполнен `B04`: добавлены singleton `app_settings` с базовыми RUB/ru-RU/Europe/Moscow, целью 100 000 ₽ и версией формул, Alembic migration, `GET/PUT /api/settings`, точный money-object API и валидация; `B05` не начат.
+- 2026-08-05 — выполнен `B05`: добавлены `reporting_months`, период отдельно от snapshot date, уникальность year+month, статусы draft/closed, source enum, Alembic migration и CRUD service с close/reopen guards; `B06` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.
