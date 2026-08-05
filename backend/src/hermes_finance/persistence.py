@@ -91,3 +91,33 @@ class ReportingMonth(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        UniqueConstraint("external_code", name="uq_accounts_external_code"),
+        CheckConstraint(
+            "account_type IN ('brokerage', 'iis', 'deposit', 'savings', 'cash', 'other')",
+            name="ck_accounts_account_type",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'frozen', 'closed', 'hidden')",
+            name="ck_accounts_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    account_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    external_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default=text("'active'")
+    )
+    include_in_capital: Mapped[bool] = mapped_column(
+        nullable=False, default=True, server_default=text("1")
+    )
+    include_in_returns: Mapped[bool] = mapped_column(
+        nullable=False, default=True, server_default=text("1")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
