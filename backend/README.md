@@ -32,6 +32,12 @@ uv run alembic downgrade base
 
 All commands use `HERMES_FINANCE_DATABASE_PATH` or the default database path. Run destructive downgrade commands only against a backup or synthetic database.
 
+## Financial value types
+
+`hermes_finance.domain` exposes `RubleAmount` and `PercentageRate` without depending on FastAPI or SQLAlchemy. API inputs are decimal strings, domain calculations use `Decimal`, and persistence-facing values are integer kopecks or basis points. Binary `float`, non-finite decimals and malformed API strings are rejected.
+
+Conversions to the nearest kopeck or basis point use `ROUND_HALF_UP`, so exact half values round away from zero. API output always uses two decimal places: `RubleAmount.to_api()` returns RUB major units and `PercentageRate.to_api()` returns percentage points.
+
 ## Test
 
 ```bash

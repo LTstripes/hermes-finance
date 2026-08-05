@@ -11,8 +11,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# The first revision is an Alembic service baseline. B03 will introduce
-# declarative metadata together with the first domain schema.
+# The first revision is an Alembic service baseline. A later domain-model
+# task will introduce declarative metadata together with the first schema.
 target_metadata = None
 
 
