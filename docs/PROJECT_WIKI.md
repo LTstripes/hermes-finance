@@ -181,7 +181,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - Python форматируется и проверяется Ruff; TypeScript/React/CSS — Biome. Biome выбран вместо ESLint TypeScript stack, потому что stable `typescript-eslint` не поддерживает закреплённый TypeScript 7 без принудительного обхода peer dependency.
 - Корневые PowerShell-команды `scripts/lint.ps1` и `scripts/format-check.ps1` проверяют обе части проекта и ничего не форматируют автоматически.
 - GitHub Actions CI состоит из независимых backend/frontend jobs на `ubuntu-latest`, использует только lockfile-зависимости и не обращается к локальной базе, private-файлам или secrets context.
-- `A01`–`A06` выполнены по явному разрешению владельца. `A07` реализован локально и ожидает commit/push и успешную удалённую проверку GitHub Actions; `B01` автоматически не начинается.
+- `A01`–`A07` выполнены по явному разрешению владельца и прошли локальную и удалённую приёмку; `B01` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -197,4 +197,4 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-04 — выполнен `A04`: создан React/TypeScript/Vite frontend с router, Dashboard, health-индикатором, dev proxy и компонентными тестами; `A05` не начат.
 - 2026-08-04 — выполнен `A05`: добавлены единые Windows-команды запуска и тестирования с dependency checks, readiness probe и очисткой дочерних процессов; `A06` не начат.
 - 2026-08-05 — выполнен `A06`: добавлены Ruff и Biome, единые команды `lint`/`format-check`, а существующий scaffold приведён к зафиксированному формату; `A07` не начат.
-- 2026-08-05 — `A07` реализован локально: добавлен GitHub Actions CI для backend/frontend tests, lint, format-check и frontend build без зависимости от локальных финансовых данных; удалённая приёмка ожидает commit/push, `B01` не начат.
+- 2026-08-05 — выполнен `A07`: добавлен GitHub Actions CI для backend/frontend tests, lint, format-check и frontend build без зависимости от локальных финансовых данных; оба удалённых job успешно прошли, `B01` не начат.
