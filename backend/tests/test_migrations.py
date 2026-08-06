@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0010_income_entries"
+REVISION = "0012_expected_cash_flows"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -165,6 +165,41 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_recurring",
             "include_in_cash_flow",
             "include_in_passive_income",
+            "notes",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(investment_cash_flows)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            "flow_type",
+            "event_date",
+            "gross_amount_kopecks",
+            "tax_amount_kopecks",
+            "commission_amount_kopecks",
+            "net_amount_kopecks",
+            "currency",
+            "source",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(expected_cash_flows)")] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            "flow_type",
+            "expected_date",
+            "gross_amount_kopecks",
+            "expected_tax_amount_kopecks",
+            "expected_net_amount_kopecks",
+            "currency",
+            "source",
+            "source_as_of_date",
+            "forecast_version",
+            "is_confirmed",
+            "is_approximate",
             "notes",
         ]
     finally:

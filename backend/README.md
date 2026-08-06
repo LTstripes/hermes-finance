@@ -22,7 +22,7 @@ The default SQLite path is the repository-root `data/finance.db`. Starting the l
 
 ## Migrations
 
-Alembic tracks schema history. B02 provides an empty service baseline; B04 adds the `app_settings` singleton; B05 adds `reporting_months`; B06 adds `accounts`; B07 adds IIS profiles, contributions and tax benefits; B08 adds the `instruments` reference table; B09 adds `position_snapshots`; B10 adds `deposit_snapshots`; B11 adds `cash_balances`; B12 adds `income_entries`; later backlog tasks add domain tables in new migrations.
+Alembic tracks schema history. B02 provides an empty service baseline; B04 adds the `app_settings` singleton; B05 adds `reporting_months`; B06 adds `accounts`; B07 adds IIS profiles, contributions and tax benefits; B08 adds the `instruments` reference table; B09 adds `position_snapshots`; B10 adds `deposit_snapshots`; B11 adds `cash_balances`; B12 adds `income_entries`; B13 adds `investment_cash_flows`; B14 adds versioned `expected_cash_flows`; later backlog tasks add domain tables in new migrations.
 
 ```bash
 uv run alembic upgrade head
