@@ -1,0 +1,222 @@
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from hermes_finance.domain import FINANCIAL_ROUNDING, PriceSource, RubleAmount
+from hermes_finance.persistence import (
+    Account,
+    Instrument,
+    PositionSnapshot,
+    ReportingMonth,
+)
+from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.instruments import InstrumentNotFoundError
+from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
+
+
+class PositionSnapshotNotFoundError(LookupError):
+    pass
+
+
+def _require_reporting_month(session: Session, month_id: int) -> None:
+    if session.get(ReportingMonth, month_id) is None:
+        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
+
+
+def _require_account(session: Session, account_id: int) -> None:
+    if session.get(Account, account_id) is None:
+        raise AccountNotFoundError(f"account {account_id} was not found")
+
+
+def _require_instrument(session: Session, instrument_id: int) -> None:
+    if session.get(Instrument, instrument_id) is None:
+        raise InstrumentNotFoundError(f"instrument {instrument_id} was not found")
+
+
+def _normalize_quantity(quantity: int | Decimal | str) -> Decimal:
+    if isinstance(quantity, bool):
+        raise TypeError("quantity must be a number, not a bool")
+    try:
+        value = Decimal(quantity) if isinstance(quantity, str) else Decimal(quantity)
+    except (TypeError, ValueError) as error:
+        raise TypeError("quantity must be an int, Decimal or decimal string") from error
+    if not value.is_finite():
+        raise ValueError("quantity must be finite")
+    if value < 0:
+        raise ValueError("quantity must not be negative")
+    return value
+
+
+def _normalize_per_unit_kopecks(value: RubleAmount | str | int, *, field: str) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        kopecks = value
+    elif isinstance(value, str):
+        kopecks = RubleAmount.from_api(value).kopecks
+    elif isinstance(value, RubleAmount):
+        kopecks = value.kopecks
+    else:
+        raise TypeError(f"{field} must be RubleAmount, decimal string or int kopecks")
+    if kopecks < 0:
+        raise ValueError(f"{field} must not be negative")
+    return kopecks
+
+
+def _coerce_price_source(price_source: PriceSource | str) -> PriceSource:
+    try:
+        return PriceSource(price_source)
+    except ValueError as error:
+        raise ValueError(f"unsupported price source: {price_source!r}") from error
+
+
+def _compute_metrics(
+    quantity: Decimal,
+    average_cost_per_unit_kopecks: int,
+    market_price_per_unit_kopecks: int,
+    accrued_interest_kopecks: int | None,
+) -> tuple[int, int, int]:
+    market_value = (
+        quantity * Decimal(market_price_per_unit_kopecks) + Decimal(accrued_interest_kopecks or 0)
+    ).to_integral_value(rounding=FINANCIAL_ROUNDING)
+    cost_basis = (quantity * Decimal(average_cost_per_unit_kopecks)).to_integral_value(
+        rounding=FINANCIAL_ROUNDING
+    )
+    unrealized_result = market_value - cost_basis
+    return int(market_value), int(cost_basis), int(unrealized_result)
+
+
+def list_position_snapshots(session: Session) -> list[PositionSnapshot]:
+    return list(
+        session.scalars(
+            select(PositionSnapshot).order_by(
+                PositionSnapshot.reporting_month_id,
+                PositionSnapshot.account_id,
+                PositionSnapshot.instrument_id,
+                PositionSnapshot.id,
+            )
+        )
+    )
+
+
+def get_position_snapshot(session: Session, snapshot_id: int) -> PositionSnapshot:
+    snapshot = session.get(PositionSnapshot, snapshot_id)
+    if snapshot is None:
+        raise PositionSnapshotNotFoundError(f"position snapshot {snapshot_id} was not found")
+    return snapshot
+
+
+def create_position_snapshot(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    account_id: int,
+    instrument_id: int,
+    quantity: int | Decimal | str,
+    average_cost_per_unit: RubleAmount | str | int,
+    market_price_per_unit: RubleAmount | str | int,
+    accrued_interest: RubleAmount | str | int | None = None,
+    price_date: date,
+    price_source: PriceSource | str = PriceSource.MANUAL,
+    manual_adjustment: bool = False,
+    notes: str | None = None,
+) -> PositionSnapshot:
+    _require_reporting_month(session, reporting_month_id)
+    _require_account(session, account_id)
+    _require_instrument(session, instrument_id)
+    quantity = _normalize_quantity(quantity)
+    average_cost = _normalize_per_unit_kopecks(average_cost_per_unit, field="average_cost_per_unit")
+    market_price = _normalize_per_unit_kopecks(market_price_per_unit, field="market_price_per_unit")
+    accrued = (
+        _normalize_per_unit_kopecks(accrued_interest, field="accrued_interest")
+        if accrued_interest is not None
+        else None
+    )
+    market_value, cost_basis, unrealized = _compute_metrics(
+        quantity, average_cost, market_price, accrued
+    )
+    snapshot = PositionSnapshot(
+        reporting_month_id=reporting_month_id,
+        account_id=account_id,
+        instrument_id=instrument_id,
+        quantity=quantity,
+        average_cost_per_unit_kopecks=average_cost,
+        market_price_per_unit_kopecks=market_price,
+        accrued_interest_kopecks=accrued,
+        market_value_kopecks=market_value,
+        cost_basis_kopecks=cost_basis,
+        unrealized_result_kopecks=unrealized,
+        price_date=price_date,
+        price_source=_coerce_price_source(price_source).value,
+        manual_adjustment=manual_adjustment,
+        notes=notes,
+    )
+    session.add(snapshot)
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise ValueError(
+            "position snapshot already exists for month, account and instrument"
+        ) from error
+    session.refresh(snapshot)
+    return snapshot
+
+
+def update_position_snapshot(
+    session: Session,
+    snapshot_id: int,
+    *,
+    quantity: int | Decimal | str | None = None,
+    average_cost_per_unit: RubleAmount | str | int | None = None,
+    market_price_per_unit: RubleAmount | str | int | None = None,
+    accrued_interest: RubleAmount | str | int | None = None,
+    price_date: date | None = None,
+    price_source: PriceSource | str | None = None,
+    manual_adjustment: bool | None = None,
+    notes: str | None = None,
+) -> PositionSnapshot:
+    snapshot = get_position_snapshot(session, snapshot_id)
+    if quantity is not None:
+        snapshot.quantity = _normalize_quantity(quantity)
+    if average_cost_per_unit is not None:
+        snapshot.average_cost_per_unit_kopecks = _normalize_per_unit_kopecks(
+            average_cost_per_unit, field="average_cost_per_unit"
+        )
+    if market_price_per_unit is not None:
+        snapshot.market_price_per_unit_kopecks = _normalize_per_unit_kopecks(
+            market_price_per_unit, field="market_price_per_unit"
+        )
+    if accrued_interest is not None:
+        snapshot.accrued_interest_kopecks = _normalize_per_unit_kopecks(
+            accrued_interest, field="accrued_interest"
+        )
+    if price_date is not None:
+        snapshot.price_date = price_date
+    if price_source is not None:
+        snapshot.price_source = _coerce_price_source(price_source).value
+    if manual_adjustment is not None:
+        snapshot.manual_adjustment = manual_adjustment
+    if notes is not None:
+        snapshot.notes = notes
+
+    (
+        snapshot.market_value_kopecks,
+        snapshot.cost_basis_kopecks,
+        snapshot.unrealized_result_kopecks,
+    ) = _compute_metrics(
+        snapshot.quantity,
+        snapshot.average_cost_per_unit_kopecks,
+        snapshot.market_price_per_unit_kopecks,
+        snapshot.accrued_interest_kopecks,
+    )
+    session.commit()
+    session.refresh(snapshot)
+    return snapshot
+
+
+def delete_position_snapshot(session: Session, snapshot_id: int) -> None:
+    snapshot = get_position_snapshot(session, snapshot_id)
+    session.delete(snapshot)
+    session.commit()

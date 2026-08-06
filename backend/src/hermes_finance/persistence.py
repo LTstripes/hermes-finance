@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Final
 
 from sqlalchemy import (
@@ -9,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     text,
@@ -221,5 +223,162 @@ class Instrument(Base):
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=text("1"))
     manual_price_allowed: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default=text("1")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class PositionSnapshot(Base):
+    __tablename__ = "position_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            name="uq_position_snapshots_month_account_instrument",
+        ),
+        CheckConstraint("quantity >= 0", name="ck_position_snapshots_quantity_nonnegative"),
+        CheckConstraint(
+            "average_cost_per_unit_kopecks >= 0",
+            name="ck_position_snapshots_average_cost_nonnegative",
+        ),
+        CheckConstraint(
+            "market_price_per_unit_kopecks >= 0",
+            name="ck_position_snapshots_market_price_nonnegative",
+        ),
+        CheckConstraint(
+            "accrued_interest_kopecks IS NULL OR accrued_interest_kopecks >= 0",
+            name="ck_position_snapshots_accrued_interest_nonnegative",
+        ),
+        CheckConstraint(
+            "market_value_kopecks >= 0",
+            name="ck_position_snapshots_market_value_nonnegative",
+        ),
+        CheckConstraint(
+            "cost_basis_kopecks >= 0", name="ck_position_snapshots_cost_basis_nonnegative"
+        ),
+        CheckConstraint(
+            "price_source IN ('manual', 'moex', 'alfa_pdf')",
+            name="ck_position_snapshots_price_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=False
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    average_cost_per_unit_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    market_price_per_unit_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    accrued_interest_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    market_value_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_basis_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unrealized_result_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_date: Mapped[date] = mapped_column(Date, nullable=False)
+    price_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="manual", server_default=text("'manual'")
+    )
+    manual_adjustment: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class DepositSnapshot(Base):
+    __tablename__ = "deposit_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "deposit_type IN ('deposit', 'savings')",
+            name="ck_deposit_snapshots_deposit_type",
+        ),
+        CheckConstraint("balance_kopecks >= 0", name="ck_deposit_snapshots_balance_nonnegative"),
+        CheckConstraint(
+            "annual_rate_basis_points >= 0",
+            name="ck_deposit_snapshots_annual_rate_nonnegative",
+        ),
+        CheckConstraint(
+            "expected_monthly_interest_kopecks >= 0",
+            name="ck_deposit_snapshots_expected_interest_nonnegative",
+        ),
+        CheckConstraint(
+            "actual_interest_received_kopecks >= 0",
+            name="ck_deposit_snapshots_actual_interest_nonnegative",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    deposit_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    balance_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    annual_rate_basis_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_monthly_interest_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    actual_interest_received_kopecks: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class CashBalance(Base):
+    __tablename__ = "cash_balances"
+    __table_args__ = (
+        CheckConstraint("amount_kopecks >= 0", name="ck_cash_balances_amount_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    include_in_capital: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class IncomeEntry(Base):
+    __tablename__ = "income_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "income_type IN ('salary', 'bonus', 'side_income', 'cashback', 'other')",
+            name="ck_income_entries_income_type",
+        ),
+        CheckConstraint("gross_amount_kopecks >= 0", name="ck_income_entries_gross_nonnegative"),
+        CheckConstraint("tax_amount_kopecks >= 0", name="ck_income_entries_tax_nonnegative"),
+        CheckConstraint("net_amount_kopecks >= 0", name="ck_income_entries_net_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    income_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    gross_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    tax_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    net_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    received_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_recurring: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    include_in_cash_flow: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    include_in_passive_income: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
