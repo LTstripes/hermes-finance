@@ -192,3 +192,34 @@ class TaxBenefit(Base):
     @property
     def counts_as_received(self) -> bool:
         return TaxBenefitStatus(self.status).counts_as_received
+
+
+class Instrument(Base):
+    __tablename__ = "instruments"
+    __table_args__ = (
+        UniqueConstraint("isin", name="uq_instruments_isin"),
+        CheckConstraint(
+            "instrument_type IN ('stock', 'bond', 'fund', 'currency', 'gold', 'other')",
+            name="ck_instruments_instrument_type",
+        ),
+        CheckConstraint(
+            "nominal_value_kopecks IS NULL OR nominal_value_kopecks >= 0",
+            name="ck_instruments_nominal_value_nonnegative",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    ticker: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    moex_secid: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    nominal_value_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=text("1"))
+    manual_price_allowed: Mapped[bool] = mapped_column(
+        nullable=False, default=True, server_default=text("1")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)

@@ -2,6 +2,7 @@
 
 from hermes_finance.domain.accounts import AccountStatus, AccountType
 from hermes_finance.domain.iis import TaxBenefitStatus
+from hermes_finance.domain.instruments import InstrumentType
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
 from hermes_finance.domain.values import (
     FINANCIAL_ROUNDING,
@@ -13,6 +14,7 @@ __all__ = [
     "FINANCIAL_ROUNDING",
     "AccountStatus",
     "AccountType",
+    "InstrumentType",
     "PercentageRate",
     "ReportingMonthSource",
     "ReportingMonthStatus",
