@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0012_expected_cash_flows"
+REVISION = "0017_comments"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -201,6 +201,56 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_confirmed",
             "is_approximate",
             "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(expense_entries)")] == [
+            "id",
+            "reporting_month_id",
+            "category",
+            "amount_kopecks",
+            "expense_type",
+            "is_recurring",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(saving_allocations)")] == [
+            "id",
+            "reporting_month_id",
+            "destination",
+            "amount_kopecks",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(debts)")] == [
+            "id",
+            "reporting_month_id",
+            "debt_type",
+            "name",
+            "current_balance_kopecks",
+            "include_in_liquid_capital",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(property_snapshots)")] == [
+            "id",
+            "reporting_month_id",
+            "name",
+            "estimated_value_kopecks",
+            "mortgage_balance_kopecks",
+            "monthly_payment_kopecks",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(goals)")] == [
+            "id",
+            "name",
+            "goal_type",
+            "target_value_kopecks",
+            "target_date",
+            "is_active",
+            "calculation_mode",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(monthly_comments)")] == [
+            "id",
+            "reporting_month_id",
+            "position",
+            "text",
         ]
     finally:
         connection.close()
