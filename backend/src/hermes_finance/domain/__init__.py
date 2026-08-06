@@ -2,7 +2,10 @@
 
 from hermes_finance.domain.accounts import AccountStatus, AccountType
 from hermes_finance.domain.cash_flows import ExpectedCashFlowType, InvestmentCashFlowType
+from hermes_finance.domain.debts import DebtType
 from hermes_finance.domain.deposits import DepositType
+from hermes_finance.domain.expenses import ExpenseType
+from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
 from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.instruments import InstrumentType
@@ -18,8 +21,11 @@ __all__ = [
     "FINANCIAL_ROUNDING",
     "AccountStatus",
     "AccountType",
+    "DebtType",
     "ExpectedCashFlowType",
     "DepositType",
+    "ExpenseType",
+    "GoalType",
     "InvestmentCashFlowType",
     "IncomeType",
     "InstrumentType",

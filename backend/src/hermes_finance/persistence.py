@@ -481,3 +481,132 @@ class ExpectedCashFlow(Base):
         Boolean, nullable=False, default=False, server_default=text("0")
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class ExpenseEntry(Base):
+    __tablename__ = "expense_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "expense_type IN ('mandatory', 'comfortable', 'other')",
+            name="ck_expense_entries_expense_type",
+        ),
+        CheckConstraint("amount_kopecks >= 0", name="ck_expense_entries_amount_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expense_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    is_recurring: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class SavingAllocation(Base):
+    __tablename__ = "saving_allocations"
+    __table_args__ = (
+        CheckConstraint("amount_kopecks >= 0", name="ck_saving_allocations_amount_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    destination: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class Debt(Base):
+    __tablename__ = "debts"
+    __table_args__ = (
+        CheckConstraint(
+            "debt_type IN ('credit_card', 'other')",
+            name="ck_debts_debt_type",
+        ),
+        CheckConstraint(
+            "current_balance_kopecks >= 0", name="ck_debts_current_balance_nonnegative"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    debt_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    current_balance_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    include_in_liquid_capital: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class PropertySnapshot(Base):
+    __tablename__ = "property_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "estimated_value_kopecks >= 0", name="ck_property_snapshots_value_nonnegative"
+        ),
+        CheckConstraint(
+            "mortgage_balance_kopecks >= 0", name="ck_property_snapshots_mortgage_nonnegative"
+        ),
+        CheckConstraint(
+            "monthly_payment_kopecks >= 0", name="ck_property_snapshots_payment_nonnegative"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    estimated_value_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    mortgage_balance_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    monthly_payment_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class Goal(Base):
+    __tablename__ = "goals"
+    __table_args__ = (
+        CheckConstraint(
+            "goal_type IN ('passive_income', 'capital', 'expense_coverage', "
+            "'mortgage_coverage', 'other')",
+            name="ck_goals_goal_type",
+        ),
+        CheckConstraint("target_value_kopecks >= 0", name="ck_goals_target_value_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    goal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_value_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    calculation_mode: Mapped[str] = mapped_column(String(64), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class MonthlyComment(Base):
+    __tablename__ = "monthly_comments"
+    __table_args__ = (
+        UniqueConstraint(
+            "reporting_month_id", "position", name="uq_monthly_comments_month_position"
+        ),
+        CheckConstraint("position >= 1", name="ck_monthly_comments_position_positive"),
+        CheckConstraint("length(text) > 0", name="ck_monthly_comments_text_nonempty"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(String(2000), nullable=False)
