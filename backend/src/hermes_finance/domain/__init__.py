@@ -1,6 +1,7 @@
 """Framework-independent financial domain primitives."""
 
 from hermes_finance.domain.accounts import AccountStatus, AccountType
+from hermes_finance.domain.cash_flows import ExpectedCashFlowType, InvestmentCashFlowType
 from hermes_finance.domain.deposits import DepositType
 from hermes_finance.domain.iis import TaxBenefitStatus
 from hermes_finance.domain.incomes import IncomeType
@@ -17,7 +18,9 @@ __all__ = [
     "FINANCIAL_ROUNDING",
     "AccountStatus",
     "AccountType",
+    "ExpectedCashFlowType",
     "DepositType",
+    "InvestmentCashFlowType",
     "IncomeType",
     "InstrumentType",
     "PercentageRate",

@@ -382,3 +382,102 @@ class IncomeEntry(Base):
         Boolean, nullable=False, default=False, server_default=text("0")
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class InvestmentCashFlow(Base):
+    __tablename__ = "investment_cash_flows"
+    __table_args__ = (
+        CheckConstraint(
+            "flow_type IN ('interest', 'coupon', 'dividend', 'redemption', 'deposit', "
+            "'withdrawal', 'commission', 'tax', 'realized_profit', 'realized_loss', 'other')",
+            name="ck_investment_cash_flows_flow_type",
+        ),
+        CheckConstraint(
+            "gross_amount_kopecks >= 0", name="ck_investment_cash_flows_gross_nonnegative"
+        ),
+        CheckConstraint("tax_amount_kopecks >= 0", name="ck_investment_cash_flows_tax_nonnegative"),
+        CheckConstraint(
+            "commission_amount_kopecks >= 0",
+            name="ck_investment_cash_flows_commission_nonnegative",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    instrument_id: Mapped[int | None] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=True
+    )
+    flow_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    gross_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    tax_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    commission_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    net_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class ExpectedCashFlow(Base):
+    __tablename__ = "expected_cash_flows"
+    __table_args__ = (
+        UniqueConstraint(
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            "flow_type",
+            "expected_date",
+            "forecast_version",
+            name="uq_expected_cash_flows_snapshot_event",
+        ),
+        CheckConstraint(
+            "flow_type IN ('coupon', 'dividend', 'interest', 'redemption', 'other')",
+            name="ck_expected_cash_flows_flow_type",
+        ),
+        CheckConstraint(
+            "gross_amount_kopecks >= 0", name="ck_expected_cash_flows_gross_nonnegative"
+        ),
+        CheckConstraint(
+            "expected_tax_amount_kopecks IS NULL OR expected_tax_amount_kopecks >= 0",
+            name="ck_expected_cash_flows_tax_nonnegative",
+        ),
+        CheckConstraint(
+            "expected_net_amount_kopecks >= 0", name="ck_expected_cash_flows_net_nonnegative"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=False
+    )
+    flow_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    expected_date: Mapped[date] = mapped_column(Date, nullable=False)
+    gross_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expected_tax_amount_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expected_net_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    forecast_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    is_approximate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
