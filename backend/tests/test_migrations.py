@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0004_accounts"
+REVISION = "0005_iis"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -74,6 +74,32 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "status",
             "include_in_capital",
             "include_in_returns",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(iis_profiles)")] == [
+            "id",
+            "account_id",
+            "iis_type",
+            "opened_at",
+            "eligible_close_at",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(iis_contributions)")] == [
+            "id",
+            "account_id",
+            "tax_year",
+            "amount_kopecks",
+            "is_target_reached",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(tax_benefits)")] == [
+            "id",
+            "account_id",
+            "tax_year",
+            "benefit_type",
+            "status",
+            "amount_kopecks",
+            "received_at",
             "notes",
         ]
     finally:

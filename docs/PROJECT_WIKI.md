@@ -185,7 +185,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - GitHub Actions CI состоит из независимых backend/frontend jobs на `ubuntu-latest`, использует только lockfile-зависимости и не обращается к локальной базе, private-файлам или secrets context.
 - До B19 стандартные задачи экономно маршрутизируются на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High; Sol High используется для новых/конфликтующих контрактов и одного архитектурного checkpoint после B19.
 - Итог по задаче отправляется один раз после settling gate: все side effects/CI/guard retries завершены, выполнен финальный state read-back, временные probes удалены.
-- `A01`–`A07` и `B01`–`B06` выполнены по явному разрешению владельца и прошли локальную приёмку; `B07` автоматически не начинается.
+- `A01`–`A07` и `B01`–`B07` выполнены по явному разрешению владельца и прошли локальную приёмку; `B08` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -208,4 +208,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-05 — выполнен `B04`: добавлены singleton `app_settings` с базовыми RUB/ru-RU/Europe/Moscow, целью 100 000 ₽ и версией формул, Alembic migration, `GET/PUT /api/settings`, точный money-object API и валидация; `B05` не начат.
 - 2026-08-05 — выполнен `B05`: добавлены `reporting_months`, период отдельно от snapshot date, уникальность year+month, статусы draft/closed, source enum, Alembic migration и CRUD service с close/reopen guards; `B06` не начат.
 - 2026-08-05 — выполнен `B06`: добавлены account type/status enums, `accounts` migration/model/service, capital/returns flags, nullable unique external code и unit-тесты frozen account/statuses; `B07` не начат.
+- 2026-08-05 — выполнен `B07`: добавлены IIS profiles, contributions и tax benefits, статусы planned/submitted/received/rejected, точные суммы в копейках, FK/unique/check constraints и тест, исключающий planned benefit из received результата; `B08` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.

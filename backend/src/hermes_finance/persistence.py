@@ -3,15 +3,19 @@ from typing import Final
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
+    ForeignKey,
     Integer,
     String,
     UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from hermes_finance.domain.iis import TaxBenefitStatus
 
 APP_SETTINGS_ID: Final = 1
 DEFAULT_BASE_CURRENCY: Final = "RUB"
@@ -121,3 +125,70 @@ class Account(Base):
         nullable=False, default=True, server_default=text("1")
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class IisProfile(Base):
+    __tablename__ = "iis_profiles"
+    __table_args__ = (UniqueConstraint("account_id", name="uq_iis_profiles_account_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    iis_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    opened_at: Mapped[date] = mapped_column(Date, nullable=False)
+    eligible_close_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class IisContribution(Base):
+    __tablename__ = "iis_contributions"
+    __table_args__ = (
+        UniqueConstraint("account_id", "tax_year", name="uq_iis_contributions_account_year"),
+        CheckConstraint("tax_year BETWEEN 1900 AND 9999", name="ck_iis_contributions_tax_year"),
+        CheckConstraint("amount_kopecks >= 0", name="ck_iis_contributions_amount_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    tax_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    is_target_reached: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class TaxBenefit(Base):
+    __tablename__ = "tax_benefits"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "tax_year",
+            "benefit_type",
+            name="uq_tax_benefits_account_year_type",
+        ),
+        CheckConstraint("tax_year BETWEEN 1900 AND 9999", name="ck_tax_benefits_tax_year"),
+        CheckConstraint("amount_kopecks >= 0", name="ck_tax_benefits_amount_nonnegative"),
+        CheckConstraint(
+            "status IN ('planned', 'submitted', 'received', 'rejected')",
+            name="ck_tax_benefits_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    tax_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    benefit_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    received_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+    @property
+    def counts_as_received(self) -> bool:
+        return TaxBenefitStatus(self.status).counts_as_received
