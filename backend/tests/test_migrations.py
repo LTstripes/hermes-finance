@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0006_instruments"
+REVISION = "0010_income_entries"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -113,6 +113,58 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "nominal_value_kopecks",
             "is_active",
             "manual_price_allowed",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(position_snapshots)")] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            "quantity",
+            "average_cost_per_unit_kopecks",
+            "market_price_per_unit_kopecks",
+            "accrued_interest_kopecks",
+            "market_value_kopecks",
+            "cost_basis_kopecks",
+            "unrealized_result_kopecks",
+            "price_date",
+            "price_source",
+            "manual_adjustment",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(deposit_snapshots)")] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "name",
+            "deposit_type",
+            "balance_kopecks",
+            "annual_rate_basis_points",
+            "expected_monthly_interest_kopecks",
+            "actual_interest_received_kopecks",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(cash_balances)")] == [
+            "id",
+            "reporting_month_id",
+            "name",
+            "amount_kopecks",
+            "currency",
+            "include_in_capital",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(income_entries)")] == [
+            "id",
+            "reporting_month_id",
+            "income_type",
+            "name",
+            "gross_amount_kopecks",
+            "tax_amount_kopecks",
+            "net_amount_kopecks",
+            "received_at",
+            "is_recurring",
+            "include_in_cash_flow",
+            "include_in_passive_income",
             "notes",
         ]
     finally:

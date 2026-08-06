@@ -186,7 +186,12 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - До B19 стандартные задачи экономно маршрутизируются на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High; Sol High используется для новых/конфликтующих контрактов и одного архитектурного checkpoint после B19.
 - Итог по задаче отправляется один раз после settling gate: все side effects/CI/guard retries завершены, выполнен финальный state read-back, временные probes удалены.
 - `A01`–`A07` и `B01`–`B07` выполнены по явному разрешению владельца и прошли локальную приёмку; `B08` автоматически не начинается.
+- `B08`–`B12` выполнены по явному разрешению владельца (primary DeepSeek V4 Flash) и прошли локальную приёмку; `B13` автоматически не начинается.
 - `instruments` — глобальный справочник: `instrument_type` из фиксированного набора, ISIN необязателен, но при заполнении уникален (нормализация в верхний регистр и strip; `NULL` может встречаться многократно), `nominal_value` хранится в копейках через `RubleAmount` и допускается только для неотрицательных значений, `currency` нормализуется в верхний регистр (дефолт `RUB`).
+- `position_snapshots` — уникальность месяц+счёт+инструмент; `quantity` — `Numeric(18,6)` (дробные лоты допустимы); расчётные `market_value`/`cost_basis`/`unrealized_result` всегда пересчитываются сервисом по формуле спецификации §10.11 и не принимаются от вызывающего; `price_source` из `manual/moex/alfa_pdf`; `accrued_interest` необязателен и неотрицателен.
+- `deposit_snapshots` — `expected_monthly_interest` всегда пересчитывается сервисом как `balance × annual_rate / 12` с `ROUND_HALF_UP`; `actual_interest_received` хранится отдельно и прогнозом не заменяется.
+- `cash_balances` — простая сумма по месяцу через `total_cash()`; отсутствие данных трактуется как ноль; флаг `include_in_capital` фильтрует агрегат.
+- `income_entries` — кэшбэк никогда не включается в passive income (инвариант): явный `include_in_passive_income=True` для `cashback` отклоняется; фактический `net_amount` может отличаться от расчётного `gross − tax` и не валидируется на равенство.
 
 ### Требует ответа владельца
 
@@ -211,4 +216,8 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-05 — выполнен `B06`: добавлены account type/status enums, `accounts` migration/model/service, capital/returns flags, nullable unique external code и unit-тесты frozen account/statuses; `B07` не начат.
 - 2026-08-05 — выполнен `B07`: добавлены IIS profiles, contributions и tax benefits, статусы planned/submitted/received/rejected, точные суммы в копейках, FK/unique/check constraints и тест, исключающий planned benefit из received результата; `B08` не начат.
 - 2026-08-06 — выполнен `B08`: добавлен справочник `instruments` (тип из фиксированного набора, ISIN/ticker/MOEX SECID, валюта, номинал в копейках, флаги `is_active` и `manual_price_allowed`, notes), миграция, CRUD-сервис с уникальностью ISIN при заполнении (нормализация в верхний регистр) и unit/migration тесты; API остаётся в фазе D (D04); `B09` не начат.
+- 2026-08-06 — выполнен `B09`: добавлены `position_snapshots` (уникальность месяц+счёт+инструмент, `quantity` как `Numeric(18,6)`, расчётные market value/cost basis/unrealized result по спецификации §10.11 с пересчётом при изменении цены, `price_source`/`manual_adjustment`) с миграцией, сервисом и тестами; `B10` не начата.
+- 2026-08-06 — выполнен `B10`: добавлены `deposit_snapshots` (deposit/savings, баланс и ставка в точных единицах, `expected_monthly_interest = balance × rate / 12` с `ROUND_HALF_UP`, фактический процент хранится отдельно) с миграцией, сервисом и тестами; `B11` не начата.
+- 2026-08-06 — выполнен `B11`: добавлены `cash_balances` (сумма по месяцу через `total_cash()`, отсутствие данных = ноль, флаг `include_in_capital`) с миграцией, сервисом и тестами; `B12` не начата.
+- 2026-08-06 — выполнен `B12`: добавлены `income_entries` (типы salary/bonus/side_income/cashback/other, gross/tax/net в копейках, фактический net не обязан равняться расчётному, кэшбэк исключён из passive income) с миграцией, сервисом и тестами; `B13` не начата.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.
