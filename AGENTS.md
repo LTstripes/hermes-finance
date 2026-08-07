@@ -20,6 +20,7 @@ Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely
 ## Iteration contract
 
 - Work on only the task ID explicitly named by the owner.
+- When the owner writes `начинаем <ID>`, `запускай <ID>` or an equivalent explicit start command, that message assigns the named task and approves its canonical route from `docs/MODEL_ROUTING.md`; do not ask for a second model-selection confirmation unless the owner overrides the route or no canonical route exists.
 - Before changes, provide a plan of 3–7 short steps.
 - Do not start the next backlog item automatically.
 - Do not implement future features “while here”.
@@ -34,6 +35,8 @@ Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely
 - Frontend: React, TypeScript and Vite; use the libraries fixed by the master specification.
 - Financial domain logic must not depend on FastAPI, SQLAlchemy or React.
 - API calls domain services; frontend displays backend results and must not duplicate financial formulas.
+- Phase C calculations use pure framework-independent inputs/results. SQLAlchemy application services load and map persisted rows, call pure calculators, and return domain result DTOs; Pydantic mapping remains at the API boundary. Do not introduce repository/DI abstractions without a concrete need.
+- Composite commands own their transaction. Existing CRUD services may remain as accepted B-layer code, but before transactional month cloning or bulk import, nested mutations must support `flush` without committing so the top-level operation can commit or roll back once.
 - Excel is a one-time migration source and reference, never the live database.
 - MVP is local, single-user and no-auth; backend binds to `127.0.0.1` by default.
 - VPS, PostgreSQL and authentication are later decisions, not premature MVP infrastructure.
@@ -75,11 +78,13 @@ Use only synthetic names and values in examples and tests. Verify ignore behavio
 
 Read `docs/MODEL_ROUTING.md` before choosing a model, delegating, or beginning a backlog task. It is the authoritative launch gate and records the owner-approved economy route.
 
-- Before every task, propose `primary / worker / reviewer` with the actual reasoning level and wait for the owner's model choice.
+- Before every task, resolve `primary / worker / reviewer` with the actual reasoning level. A named start command from the owner approves the canonical route already recorded in `docs/MODEL_ROUTING.md`; ask only when the owner overrides it, the route is missing, or an escalation condition is reached.
 - Default standard implementation to Luna High; use Terra High for complex financial semantics and Sol High only for new/conflicting architecture or explicit checkpoints.
 - DeepSeek V4 Flash Free may perform bounded standard implementation in an isolated worktree/session as well as read-only review; it never receives private data, commits, pushes or grants final acceptance.
 - After `B19`, run one Sol High blocker-level architecture review; do not rewrite accepted code merely because Sol would design it differently.
 - `delegate_task` has no per-call model selector. Never claim a child ran on a named model or level unless runtime metadata confirms it.
+- For an exact per-task route, launch a bounded Hermes session with per-run `--provider`, `--model` and `--reasoning` flags; use `--worktree` for a writing worker. Do not change shared Hermes defaults or `config.yaml` merely to route one task.
+- If exact routing cannot be confirmed because the provider/model is unavailable or authentication fails, stop before implementation and report the launch blocker.
 - Worker summaries are not proof. The accepting primary inspects actual files/diff and reruns relevant checks. Never let multiple agents modify the same migration, schema or working tree concurrently.
 
 Load the user-local `hermes-finance-orchestration` skill when coordinating delegated work.

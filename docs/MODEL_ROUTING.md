@@ -7,9 +7,11 @@
 До начала **каждой** backlog-задачи агент обязан:
 
 1. прочитать этот файл, точную карточку из `HERMES_TASKS.md` и связанные ADR/спецификацию;
-2. предложить владельцу route в форме `primary / worker / reviewer`, указав reasoning level, причину и необходимость делегирования;
-3. дождаться выбора владельца; не начинать задачу и не менять Hermes-конфиг заранее;
-4. после завершения задачи указать рекомендуемый route следующей задачи и явно отметить её как не начатую.
+2. определить route в форме `primary / worker / reviewer`, указав reasoning level, причину и необходимость делегирования;
+3. считать сообщение владельца `начинаем <ID>`, `запускай <ID>` или эквивалентное явное назначение согласием на канонический route из этого файла; отдельное повторное подтверждение модели не требуется, если владелец не задал другой route;
+4. если канонического route нет, владелец его переопределил или сработал escalation gate, предложить route и дождаться выбора;
+5. не менять Hermes-конфиг заранее;
+6. после завершения задачи указать рекомендуемый route следующей задачи и явно отметить её как не начатую.
 
 Маршрут определяется уже зафиксированным контрактом. Luna или DeepSeek могут реализовать финансовую сущность, если единицы, формулы, округление и инварианты однозначно заданы спецификацией и тестами. Если контракт неоднозначен или конфликтует с документами, реализация останавливается и решение поднимается на Terra либо Sol.
 
@@ -58,7 +60,31 @@
 | B19 comments | Luna High | DeepSeek Free как альтернатива | Luna | упорядоченный CRUD без финансовой логики |
 | checkpoint после B19 | Sol High | — | Sol | один blocker-level архитектурный обзор без автоматического rewrite |
 
+Checkpoint выполнен на exact HEAD `8031aa6c3271c7587eeac7f9f6a394b2c8559e03`. Перед C01 обязательны:
+
+| Follow-up | Primary | Worker / альтернатива | Reviewer | Основание |
+|---|---|---|---|---|
+| B19-R1 currency aggregation | Terra High | Luna High bounded worker | Terra High | точные единицы, manual RUB valuation и migration semantics |
+| B19-R2 invariant hardening | Luna High | DeepSeek Free test matrix | Terra High | closed-month immutability, cashback update и goal source of truth |
+
 ## Routes для следующих слоёв
+
+### Фаза C
+
+| Задача | Primary | Worker / альтернатива | Reviewer | Основание |
+|---|---|---|---|---|
+| C01 liquid capital | Terra High | Luna High для ORM assembler/fixtures | Terra High | валюты, account flags, breakdown и долги |
+| C02 actual passive income | Terra High | Luna High для type-matrix tests | Terra High | классификация потоков и tax/commission exactly once |
+| C03 available-period average | Luna High | DeepSeek Free для edge-case tests | Luna High | bounded rolling-window logic после immutability fix |
+| C04 forecast passive income | Terra High | Luna High для assembler/tests | Terra High | forecast versions, approximate tax и dividend component |
+| C05 coverage and goals | Luna High | DeepSeek Free для zero-denominator matrix | Luna High | простые формулы после единого goal source |
+| C06 monthly cash balance | Terra High | Luna High для source breakdown/tests | Terra High | риск двойного учёта income/passive/cashback |
+| C07 salary and tax rules | Terra High | Luna High для schema/CRUD/tests | Terra High | progressive tax, official rules и YTD gross |
+| C08 normalized bonus | Luna High | DeepSeek Free для tests | Luna High | простая аналитическая формула отдельно от cash flow |
+| C09 IIS result | Terra High | Luna High для query adapter/tests | Terra High | налоговая выгода и незафиксированный состав base result |
+| C10 Monthly Summary DTO | Terra High | Luna High для DTO wiring/tests | Terra High | единый cross-cutting contract dashboard/export |
+
+Worker опционален: не запускать отдельную модель, если handoff и приёмка дороже самой bounded работы. Финальную приёмку всегда выполняет primary по фактическому diff и собственным проверкам.
 
 - Почти весь обычный CRUD API: **Luna High**; Terra только если endpoint вводит новую финансовую семантику.
 - React UI, графики, формы, TanStack Query wiring и component tests: **Luna High**.
@@ -71,6 +97,8 @@
 - `delegate_task` не принимает provider/model на один вызов.
 - Пустые `delegation.provider/model` означают наследование route родителя; нельзя приписывать ребёнку модель без runtime confirmation.
 - Для гарантированного Luna/Terra/DeepSeek route использовать отдельную session/profile или bounded Hermes one-shot с явно выбранными provider/model и level.
+- Предпочтительный exact one-shot: `hermes chat --provider <provider> --model <model> --reasoning <level> -q <handoff>`; writing worker запускается с `--worktree`. Runtime provider/model должен быть подтверждён выводом сессии до принятия результата.
+- Standing approval владельца распространяется только на канонический route явно запущенной задачи и не разрешает broad agent loops, параллельные schema edits или изменение общих model defaults.
 - Изменение `config.yaml`, default model или общей delegation route выполняется только после отдельного согласования владельца.
 - Read-only research может идти в общей рабочей копии. Любой write-worker использует изолированный worktree/session и не делает commit/push.
 - Несколько агентов не изменяют параллельно одну миграцию, shared domain model, dependency manifest или один frontend subtree.

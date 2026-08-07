@@ -199,6 +199,12 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - `property_snapshots` — недвижимость не входит в liquid capital; `property_equity = value − mortgage`; `mortgage_coverage()` возвращает `None` вместо деления на ноль при нулевом остатке ипотеки (UI показывает «ипотека закрыта»).
 - `goals` — глобальная справочная таблица (без привязки к месяцу); `get_or_create_main_goal()` создаётся из `app_settings.passive_income_goal_kopecks` с `calculation_mode="monthly_net_passive_income"`; цель не хардкодится в frontend.
 - `monthly_comments` — несколько упорядоченных заметок месяца; `position >= 1`, уникальность (месяц, позиция), перестановка и удаление компактируют позиции двухфазным обновлением (обход UNIQUE-конфликта при сдвиге).
+- Post-B19 Sol checkpoint выполнен на `8031aa6`: canonical suite и exact-HEAD GitHub CI зелёные, но ad-hoc probes воспроизвели четыре blocker-level gap — mixed-currency arithmetic без RUB valuation, изменение дочерних данных закрытого месяца, сохранение passive flag при update типа дохода на cashback и расхождение settings/main goal.
+- До C01 обязательны две remediation-итерации: `B19-R1` фиксирует точный валютный/RUB valuation contract; `B19-R2` централизует closed-month guard, cashback invariant и единственный runtime source основной цели.
+- Для C-слоя принят контур `ORM query/assembler → pure domain calculator → immutable domain result DTO → API mapping`. Новые финансовые формулы не принимают SQLAlchemy `Session` и не зависят от FastAPI/Pydantic/React.
+- `goals` является runtime source of truth основной цели; `app_settings.passive_income_goal_kopecks` после seed используется как default/template, а не независимое конкурирующее значение.
+- Явная команда владельца `начинаем <ID>` или `запускай <ID>` одновременно назначает задачу и одобряет её canonical model route из `MODEL_ROUTING.md`; оркестратор сам запускает exact per-run models без изменения shared config и останавливается при невозможности подтвердить runtime route.
+- Composite write operations должны владеть одной транзакцией. Текущие CRUD commits не переписываются в checkpoint, но до D03 cloning и bulk import nested mutations должны поддерживать `flush` без самостоятельного commit.
 
 ### Требует ответа владельца
 
@@ -234,4 +240,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-07 — выполнен `B17`: добавлены `property_snapshots`, сервисы `property_equity` и `mortgage_coverage` с защитой от деления на ноль при нулевой ипотеке; недвижимость не входит в liquid capital; миграция, CRUD-сервис и unit-тесты; `B18` не начата.
 - 2026-08-07 — выполнен `B18`: добавлены `goals` с типами из спецификации, `get_or_create_main_goal()` создаётся из настроек (100 000 ₽/мес, `monthly_net_passive_income`); миграция, CRUD-сервис и unit-тесты; `B19` не начата.
 - 2026-08-07 — выполнен `B19`: добавлены `monthly_comments` с позиционной упорядоченностью, перестановкой и компактированием позиций (двухфазное обновление против UNIQUE-конфликта); миграция, CRUD/move-сервис и unit-тесты; после B19 по маршрутизации следует Sol High checkpoint, `C01` не начат.
+- 2026-08-07 — выполнен post-B19 Sol High architecture checkpoint: зафиксированы B19-R1/B19-R2 remediation gates, pure calculation boundary, routes C01–C10 и standing approval на автоматический exact-model launch по явной команде владельца; кодовые исправления и C01 не начаты.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.
