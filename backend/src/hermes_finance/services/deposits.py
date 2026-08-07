@@ -4,18 +4,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import FINANCIAL_ROUNDING, DepositType, PercentageRate, RubleAmount
-from hermes_finance.persistence import Account, DepositSnapshot, ReportingMonth
+from hermes_finance.persistence import Account, DepositSnapshot
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 from hermes_finance.services.accounts import AccountNotFoundError
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
 
 class DepositSnapshotNotFoundError(LookupError):
     pass
-
-
-def _require_reporting_month(session: Session, month_id: int) -> None:
-    if session.get(ReportingMonth, month_id) is None:
-        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
 
 
 def _require_account(session: Session, account_id: int) -> None:
@@ -93,7 +91,7 @@ def create_deposit_snapshot(
     actual_interest_received: RubleAmount | str = "0.00",
     notes: str | None = None,
 ) -> DepositSnapshot:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     _require_account(session, account_id)
     balance_kopecks = _normalize_balance(balance)
     annual_rate_basis_points = _normalize_rate(annual_rate)
@@ -128,6 +126,7 @@ def update_deposit_snapshot(
     notes: str | None = None,
 ) -> DepositSnapshot:
     snapshot = get_deposit_snapshot(session, snapshot_id)
+    require_editable_child_month(session, snapshot)
     if name is not None:
         snapshot.name = _normalize_name(name)
     if deposit_type is not None:
@@ -151,5 +150,6 @@ def update_deposit_snapshot(
 
 def delete_deposit_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_deposit_snapshot(session, snapshot_id)
+    require_editable_child_month(session, snapshot)
     session.delete(snapshot)
     session.commit()

@@ -65,7 +65,7 @@ Checkpoint выполнен на exact HEAD `8031aa6c3271c7587eeac7f9f6a394b2c85
 | Follow-up | Primary | Worker / альтернатива | Reviewer | Основание |
 |---|---|---|---|---|
 | B19-R1 currency aggregation | Terra High | Luna High bounded worker | Terra High | точные единицы, manual RUB valuation и migration semantics |
-| B19-R2 invariant hardening | Luna High | DeepSeek Free test matrix | Terra High | closed-month immutability, cashback update и goal source of truth |
+| B19-R2 invariant hardening | DeepSeek V4 Flash | — | GLM 5.2 | closed-month immutability, cashback update и goal source of truth |
 
 ## Routes для следующих слоёв
 
@@ -73,16 +73,16 @@ Checkpoint выполнен на exact HEAD `8031aa6c3271c7587eeac7f9f6a394b2c85
 
 | Задача | Primary | Worker / альтернатива | Reviewer | Основание |
 |---|---|---|---|---|
-| C01 liquid capital | Terra High | Luna High для ORM assembler/fixtures | Terra High | валюты, account flags, breakdown и долги |
-| C02 actual passive income | Terra High | Luna High для type-matrix tests | Terra High | классификация потоков и tax/commission exactly once |
-| C03 available-period average | Luna High | DeepSeek Free для edge-case tests | Luna High | bounded rolling-window logic после immutability fix |
-| C04 forecast passive income | Terra High | Luna High для assembler/tests | Terra High | forecast versions, approximate tax и dividend component |
-| C05 coverage and goals | Luna High | DeepSeek Free для zero-denominator matrix | Luna High | простые формулы после единого goal source |
-| C06 monthly cash balance | Terra High | Luna High для source breakdown/tests | Terra High | риск двойного учёта income/passive/cashback |
-| C07 salary and tax rules | Terra High | Luna High для schema/CRUD/tests | Terra High | progressive tax, official rules и YTD gross |
-| C08 normalized bonus | Luna High | DeepSeek Free для tests | Luna High | простая аналитическая формула отдельно от cash flow |
-| C09 IIS result | Terra High | Luna High для query adapter/tests | Terra High | налоговая выгода и незафиксированный состав base result |
-| C10 Monthly Summary DTO | Terra High | Luna High для DTO wiring/tests | Terra High | единый cross-cutting contract dashboard/export |
+| C01 liquid capital | GLM 5.2 | DeepSeek V4 Flash для ORM assembler/fixtures | GLM 5.2 | account flags, breakdown и долги; RUB-only без валютного gate (B19-R1 deferred) |
+| C02 actual passive income | GLM 5.2 | DeepSeek V4 Flash для type-matrix tests | GLM 5.2 | классификация потоков и tax/commission exactly once |
+| C03 available-period average | DeepSeek V4 Flash | — | DeepSeek V4 Flash | bounded rolling-window логика после immutability fix |
+| C04 forecast passive income | GLM 5.2 | DeepSeek V4 Flash для assembler/tests | GLM 5.2 | forecast versions, approximate tax и dividend component |
+| C05 coverage and goals | DeepSeek V4 Flash | — | DeepSeek V4 Flash | простые формулы после единого goal source |
+| C06 monthly cash balance | GLM 5.2 | DeepSeek V4 Flash для source breakdown/tests | GLM 5.2 | риск двойного учёта income/passive/cashback |
+| C07 salary and tax rules | GLM 5.2 | DeepSeek V4 Flash для schema/CRUD/tests | GLM 5.2 | progressive tax, official rules и YTD gross |
+| C08 normalized bonus | DeepSeek V4 Flash | — | DeepSeek V4 Flash | простая аналитическая формула отдельно от cash flow |
+| C09 IIS result | GLM 5.2 | DeepSeek V4 Flash для query adapter/tests | GLM 5.2 | налоговая выгода и незафиксированный состав base result |
+| C10 Monthly Summary DTO | GLM 5.2 | DeepSeek V4 Flash для DTO wiring/tests | GLM 5.2 | единый cross-cutting contract dashboard/export |
 
 Worker опционален: не запускать отдельную модель, если handoff и приёмка дороже самой bounded работы. Финальную приёмку всегда выполняет primary по фактическому diff и собственным проверкам.
 

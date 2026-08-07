@@ -52,26 +52,39 @@ def get_goal(session: Session, goal_id: int) -> Goal:
     return goal
 
 
-def get_or_create_main_goal(session: Session) -> Goal:
+def _get_or_create_main_goal(session: Session, *, seed_kopecks: int, commit: bool) -> Goal:
+    """Find or create the passive-income main goal without forcing a commit.
+
+    Used both by the public ``get_or_create_main_goal`` (seed from settings,
+    own transaction) and by ``settings.update_settings`` (sync target inside
+    the settings transaction).
+    """
     existing = session.scalar(
         select(Goal).where(Goal.goal_type == GoalType.PASSIVE_INCOME.value).limit(1)
     )
     if existing is not None:
         return existing
-    settings = get_or_create_settings(session)
     goal = Goal(
         name="Пассивный доход в месяц",
         goal_type=GoalType.PASSIVE_INCOME.value,
-        target_value_kopecks=settings.passive_income_goal_kopecks,
+        target_value_kopecks=seed_kopecks,
         target_date=None,
         is_active=True,
         calculation_mode=DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
         notes=None,
     )
     session.add(goal)
-    session.commit()
-    session.refresh(goal)
+    if commit:
+        session.commit()
+        session.refresh(goal)
     return goal
+
+
+def get_or_create_main_goal(session: Session) -> Goal:
+    settings = get_or_create_settings(session)
+    return _get_or_create_main_goal(
+        session, seed_kopecks=settings.passive_income_goal_kopecks, commit=True
+    )
 
 
 def create_goal(

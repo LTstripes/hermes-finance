@@ -2,8 +2,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ExpenseType, RubleAmount
-from hermes_finance.persistence import ExpenseEntry, ReportingMonth, SavingAllocation
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
+from hermes_finance.persistence import ExpenseEntry, SavingAllocation
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 
 
 class ExpenseEntryNotFoundError(LookupError):
@@ -12,11 +15,6 @@ class ExpenseEntryNotFoundError(LookupError):
 
 class SavingAllocationNotFoundError(LookupError):
     pass
-
-
-def _require_reporting_month(session: Session, month_id: int) -> None:
-    if session.get(ReportingMonth, month_id) is None:
-        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
 
 
 def _normalize_text(value: str, *, field: str) -> str:
@@ -86,7 +84,7 @@ def create_expense_entry(
     is_recurring: bool = False,
     notes: str | None = None,
 ) -> ExpenseEntry:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     entry = ExpenseEntry(
         reporting_month_id=reporting_month_id,
         category=_normalize_text(category, field="category"),
@@ -112,6 +110,7 @@ def update_expense_entry(
     notes: str | None = None,
 ) -> ExpenseEntry:
     entry = get_expense_entry(session, entry_id)
+    require_editable_child_month(session, entry)
     if category is not None:
         entry.category = _normalize_text(category, field="category")
     if amount is not None:
@@ -129,6 +128,7 @@ def update_expense_entry(
 
 def delete_expense_entry(session: Session, entry_id: int) -> None:
     entry = get_expense_entry(session, entry_id)
+    require_editable_child_month(session, entry)
     session.delete(entry)
     session.commit()
 
@@ -167,7 +167,7 @@ def create_saving_allocation(
     amount: RubleAmount | str,
     notes: str | None = None,
 ) -> SavingAllocation:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     allocation = SavingAllocation(
         reporting_month_id=reporting_month_id,
         destination=_normalize_text(destination, field="destination"),
@@ -189,6 +189,7 @@ def update_saving_allocation(
     notes: str | None = None,
 ) -> SavingAllocation:
     allocation = get_saving_allocation(session, allocation_id)
+    require_editable_child_month(session, allocation)
     if destination is not None:
         allocation.destination = _normalize_text(destination, field="destination")
     if amount is not None:
@@ -202,5 +203,6 @@ def update_saving_allocation(
 
 def delete_saving_allocation(session: Session, allocation_id: int) -> None:
     allocation = get_saving_allocation(session, allocation_id)
+    require_editable_child_month(session, allocation)
     session.delete(allocation)
     session.commit()

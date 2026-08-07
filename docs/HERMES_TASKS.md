@@ -506,17 +506,18 @@
 - при смене `income_type` на `cashback` passive-income flag всегда становится `false`;
 - `goals` является runtime source of truth основной цели; значение в `app_settings` служит seed/default;
 - существующий settings API при изменении passive-income target согласованно и транзакционно обновляет main goal; независимое конкурирующее runtime-значение в settings запрещено;
-- добавить regression-тесты на все три воспроизведённых обхода.
+- добавить regression-тесты на все три воспроизведённых обхода;
+- не реализовывать B19-R1 мультивалютный контракт: решение владельца от 2026-08-07 — B19-R1 deferred, RUB-only режим остаётся базовым.
 
 **Приёмка:** дочернюю запись закрытого месяца нельзя создать/изменить/удалить; cashback не становится passive income через update; C05 видит единственное актуальное значение цели.
 
-**Route:** Luna High primary / DeepSeek Free optional test-matrix worker / Terra High reviewer.
+**Route:** DeepSeek V4 Flash primary / без worker / GLM 5.2 reviewer.
 
 ---
 
 # Фаза C. Расчётный слой
 
-> **Launch condition:** C01 начинается только после приёмки B19-R1 и B19-R2. Расчёты реализуются как pure domain functions/DTO без зависимости от SQLAlchemy, FastAPI или React; ORM application service отвечает только за выборку и mapping.
+> **Launch condition:** C01 начинается после приёмки B19-R2. B19-R1 (мультивалютный контракт) deferred решением владельца от 2026-08-07: RUB-only режим не требует валютного gate; при появлении non-RUB входных данных контракт возобновляется из `git stash`. Расчёты реализуются как pure domain functions/DTO без зависимости от SQLAlchemy, FastAPI или React; ORM application service отвечает только за выборку и mapping.
 
 ## C01. Рассчитать ликвидный капитал
 

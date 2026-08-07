@@ -3,6 +3,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from hermes_finance.persistence import MonthlyComment, ReportingMonth
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
 
@@ -50,7 +54,7 @@ def create_monthly_comment(
     reporting_month_id: int,
     text: str,
 ) -> MonthlyComment:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     comments = _comments_for_month(session, reporting_month_id)
     next_position = (comments[-1].position + 1) if comments else 1
     comment = MonthlyComment(
@@ -75,6 +79,7 @@ def update_monthly_comment(
     text: str,
 ) -> MonthlyComment:
     comment = get_monthly_comment(session, comment_id)
+    require_editable_child_month(session, comment)
     comment.text = _normalize_text(text, field="text")
     session.commit()
     session.refresh(comment)
@@ -88,6 +93,7 @@ def move_monthly_comment(
     new_position: int,
 ) -> MonthlyComment:
     comment = get_monthly_comment(session, comment_id)
+    require_editable_child_month(session, comment)
     if new_position < 1:
         raise ValueError("position must be at least 1")
     comments = _comments_for_month(session, comment.reporting_month_id)
@@ -114,6 +120,7 @@ def _reposition(session: Session, comments: list[MonthlyComment]) -> None:
 
 def delete_monthly_comment(session: Session, comment_id: int) -> None:
     comment = get_monthly_comment(session, comment_id)
+    require_editable_child_month(session, comment)
     month_id = comment.reporting_month_id
     session.delete(comment)
     session.commit()

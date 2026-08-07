@@ -4,17 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import IncomeType, RubleAmount
-from hermes_finance.persistence import IncomeEntry, ReportingMonth
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
+from hermes_finance.persistence import IncomeEntry
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 
 
 class IncomeEntryNotFoundError(LookupError):
     pass
-
-
-def _require_reporting_month(session: Session, month_id: int) -> None:
-    if session.get(ReportingMonth, month_id) is None:
-        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
 
 
 def _normalize_name(name: str) -> str:
@@ -82,7 +80,7 @@ def create_income_entry(
     include_in_passive_income: bool = False,
     notes: str | None = None,
 ) -> IncomeEntry:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     normalized_type = _coerce_income_type(income_type)
     entry = IncomeEntry(
         reporting_month_id=reporting_month_id,
@@ -119,8 +117,14 @@ def update_income_entry(
     notes: str | None = None,
 ) -> IncomeEntry:
     entry = get_income_entry(session, entry_id)
+    require_editable_child_month(session, entry)
+    final_type = (
+        _coerce_income_type(income_type)
+        if income_type is not None
+        else IncomeType(entry.income_type)
+    )
     if income_type is not None:
-        entry.income_type = _coerce_income_type(income_type).value
+        entry.income_type = final_type.value
     if name is not None:
         entry.name = _normalize_name(name)
     if gross_amount is not None:
@@ -135,9 +139,11 @@ def update_income_entry(
         entry.is_recurring = is_recurring
     if include_in_cash_flow is not None:
         entry.include_in_cash_flow = include_in_cash_flow
-    if include_in_passive_income is not None:
+    if final_type is IncomeType.CASHBACK:
+        entry.include_in_passive_income = False
+    elif include_in_passive_income is not None:
         entry.include_in_passive_income = _passive_income_flag(
-            IncomeType(entry.income_type), include_in_passive_income
+            final_type, include_in_passive_income
         )
     if notes is not None:
         entry.notes = notes
@@ -148,5 +154,6 @@ def update_income_entry(
 
 def delete_income_entry(session: Session, entry_id: int) -> None:
     entry = get_income_entry(session, entry_id)
+    require_editable_child_month(session, entry)
     session.delete(entry)
     session.commit()

@@ -53,6 +53,13 @@ def update_settings(
         if passive_income_goal.kopecks < 0:
             raise ValueError("passive income goal must not be negative")
         settings.passive_income_goal_kopecks = passive_income_goal.kopecks
+        # Local import avoids a module cycle: goals imports settings for the seed.
+        from hermes_finance.services.goals import _get_or_create_main_goal
+
+        main_goal = _get_or_create_main_goal(
+            session, seed_kopecks=passive_income_goal.kopecks, commit=False
+        )
+        main_goal.target_value_kopecks = passive_income_goal.kopecks
     if formula_version is not None:
         settings.formula_version = formula_version
 

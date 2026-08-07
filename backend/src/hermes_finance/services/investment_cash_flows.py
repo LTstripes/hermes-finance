@@ -4,19 +4,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import InvestmentCashFlowType, RubleAmount
-from hermes_finance.persistence import Account, Instrument, InvestmentCashFlow, ReportingMonth
+from hermes_finance.persistence import Account, Instrument, InvestmentCashFlow
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.instruments import InstrumentNotFoundError
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
 
 class InvestmentCashFlowNotFoundError(LookupError):
     pass
-
-
-def _require_reporting_month(session: Session, month_id: int) -> None:
-    if session.get(ReportingMonth, month_id) is None:
-        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
 
 
 def _require_account(session: Session, account_id: int) -> Account:
@@ -151,7 +149,7 @@ def create_investment_cash_flow(
     source: str,
     notes: str | None = None,
 ) -> InvestmentCashFlow:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     account = _require_account(session, account_id)
     _require_instrument(session, instrument_id)
     normalized_type = _coerce_flow_type(flow_type)
@@ -202,6 +200,7 @@ def update_investment_cash_flow(
     notes: str | None = None,
 ) -> InvestmentCashFlow:
     flow = get_investment_cash_flow(session, flow_id)
+    require_editable_child_month(session, flow)
     account = _require_account(session, flow.account_id)
     if flow_type is not None:
         flow.flow_type = _coerce_flow_type(flow_type).value
@@ -242,5 +241,6 @@ def update_investment_cash_flow(
 
 def delete_investment_cash_flow(session: Session, flow_id: int) -> None:
     flow = get_investment_cash_flow(session, flow_id)
+    require_editable_child_month(session, flow)
     session.delete(flow)
     session.commit()

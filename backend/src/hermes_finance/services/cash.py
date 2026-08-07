@@ -2,17 +2,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import RubleAmount
-from hermes_finance.persistence import CashBalance, ReportingMonth
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
+from hermes_finance.persistence import CashBalance
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 
 
 class CashBalanceNotFoundError(LookupError):
     pass
-
-
-def _require_reporting_month(session: Session, month_id: int) -> None:
-    if session.get(ReportingMonth, month_id) is None:
-        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
 
 
 def _normalize_name(name: str) -> str:
@@ -80,7 +78,7 @@ def create_cash_balance(
     include_in_capital: bool = True,
     notes: str | None = None,
 ) -> CashBalance:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     balance = CashBalance(
         reporting_month_id=reporting_month_id,
         name=_normalize_name(name),
@@ -106,6 +104,7 @@ def update_cash_balance(
     notes: str | None = None,
 ) -> CashBalance:
     balance = get_cash_balance(session, balance_id)
+    require_editable_child_month(session, balance)
     if name is not None:
         balance.name = _normalize_name(name)
     if amount is not None:
@@ -123,5 +122,6 @@ def update_cash_balance(
 
 def delete_cash_balance(session: Session, balance_id: int) -> None:
     balance = get_cash_balance(session, balance_id)
+    require_editable_child_month(session, balance)
     session.delete(balance)
     session.commit()

@@ -186,3 +186,120 @@ def test_income_validation_rejects_bad_inputs(tmp_path: Path) -> None:
     finally:
         session.close()
         database.engine.dispose()
+
+
+def _build_passive_income_entry(session: Session, month_id: int):
+    return create_income_entry(
+        session,
+        reporting_month_id=month_id,
+        income_type=IncomeType.SIDE_INCOME,
+        name="Synthetic Passive Rent",
+        gross_amount="10000.00",
+        tax_amount="1300.00",
+        net_amount="8700.00",
+        include_in_passive_income=True,
+    )
+
+
+def test_update_switching_type_to_cashback_forces_passive_income_false(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_environment(session)
+        entry = _build_passive_income_entry(session, month_id)
+        assert entry.include_in_passive_income is True
+
+        updated = update_income_entry(session, entry.id, income_type=IncomeType.CASHBACK)
+
+        assert updated.income_type == IncomeType.CASHBACK.value
+        assert updated.include_in_passive_income is False
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_update_switching_to_cashback_ignores_explicit_passive_true(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_environment(session)
+        entry = _build_passive_income_entry(session, month_id)
+
+        updated = update_income_entry(
+            session, entry.id, income_type=IncomeType.CASHBACK, include_in_passive_income=True
+        )
+
+        assert updated.include_in_passive_income is False
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_update_cashback_entry_keeps_passive_income_false(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_environment(session)
+        entry = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.CASHBACK,
+            name="Synthetic Cashback",
+            gross_amount="500.00",
+            tax_amount="0.00",
+            net_amount="500.00",
+        )
+        assert entry.include_in_passive_income is False
+
+        updated = update_income_entry(
+            session, entry.id, name="Updated Cashback", include_in_passive_income=True
+        )
+
+        assert updated.include_in_passive_income is False
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_update_cashback_entry_without_flag_keeps_passive_income_false(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_environment(session)
+        entry = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.CASHBACK,
+            name="Synthetic Cashback",
+            gross_amount="500.00",
+            tax_amount="0.00",
+            net_amount="500.00",
+        )
+
+        updated = update_income_entry(session, entry.id, name="Updated Cashback")
+
+        assert updated.include_in_passive_income is False
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_update_non_cashback_keeps_explicit_passive_income_flag(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_environment(session)
+        entry = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.SIDE_INCOME,
+            name="Synthetic Rent",
+            gross_amount="10000.00",
+            tax_amount="1300.00",
+            net_amount="8700.00",
+            include_in_passive_income=False,
+        )
+        assert entry.include_in_passive_income is False
+
+        updated = update_income_entry(session, entry.id, include_in_passive_income=True)
+
+        assert updated.income_type == IncomeType.SIDE_INCOME.value
+        assert updated.include_in_passive_income is True
+    finally:
+        session.close()
+        database.engine.dispose()

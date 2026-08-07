@@ -10,20 +10,17 @@ from hermes_finance.persistence import (
     Account,
     Instrument,
     PositionSnapshot,
-    ReportingMonth,
+)
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.instruments import InstrumentNotFoundError
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
 
 class PositionSnapshotNotFoundError(LookupError):
     pass
-
-
-def _require_reporting_month(session: Session, month_id: int) -> None:
-    if session.get(ReportingMonth, month_id) is None:
-        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
 
 
 def _require_account(session: Session, account_id: int) -> None:
@@ -122,7 +119,7 @@ def create_position_snapshot(
     manual_adjustment: bool = False,
     notes: str | None = None,
 ) -> PositionSnapshot:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     _require_account(session, account_id)
     _require_instrument(session, instrument_id)
     quantity = _normalize_quantity(quantity)
@@ -178,6 +175,7 @@ def update_position_snapshot(
     notes: str | None = None,
 ) -> PositionSnapshot:
     snapshot = get_position_snapshot(session, snapshot_id)
+    require_editable_child_month(session, snapshot)
     if quantity is not None:
         snapshot.quantity = _normalize_quantity(quantity)
     if average_cost_per_unit is not None:
@@ -218,5 +216,6 @@ def update_position_snapshot(
 
 def delete_position_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_position_snapshot(session, snapshot_id)
+    require_editable_child_month(session, snapshot)
     session.delete(snapshot)
     session.commit()

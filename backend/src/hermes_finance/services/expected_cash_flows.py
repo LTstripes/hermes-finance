@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.persistence import Account, ExpectedCashFlow, Instrument, ReportingMonth
+from hermes_finance.services._guard import (
+    require_editable_child_month,
+    require_editable_reporting_month,
+)
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.instruments import InstrumentNotFoundError
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
@@ -177,7 +181,7 @@ def create_expected_cash_flow(
     is_confirmed: bool = False,
     notes: str | None = None,
 ) -> ExpectedCashFlow:
-    _require_reporting_month(session, reporting_month_id)
+    require_editable_reporting_month(session, reporting_month_id)
     _require_account(session, account_id)
     _require_instrument(session, instrument_id)
     normalized_version = _normalize_text(forecast_version, field="forecast_version")
@@ -240,6 +244,7 @@ def update_expected_cash_flow(
     notes: str | None = None,
 ) -> ExpectedCashFlow:
     flow = get_expected_cash_flow(session, flow_id)
+    require_editable_child_month(session, flow)
     if flow_type is not None:
         flow.flow_type = _coerce_flow_type(flow_type).value
     if expected_date is not None:
@@ -277,5 +282,6 @@ def update_expected_cash_flow(
 
 def delete_expected_cash_flow(session: Session, flow_id: int) -> None:
     flow = get_expected_cash_flow(session, flow_id)
+    require_editable_child_month(session, flow)
     session.delete(flow)
     session.commit()
