@@ -440,6 +440,111 @@ a {
   font-size: var(--text-sm);
 }
 
+.btn--danger {
+  border-color: rgb(155 64 57 / 35%);
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.btn--danger:hover:not(:disabled) {
+  border-color: var(--red);
+  color: #fff;
+  background: var(--red);
+}
+
+a.btn {
+  text-decoration: none;
+}
+
+/* ——— Dialog ——— */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(17 24 20 / 48%);
+  backdrop-filter: blur(4px);
+}
+
+.dialog {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.dialog__title {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.dialog__body {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.inline-alert {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.inline-alert--error {
+  border: 1px solid rgb(155 64 57 / 25%);
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.detail-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.detail-list > div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.detail-list dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.detail-list dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ——— Panels / cards ——— */
 
 .dashboard-grid {
@@ -782,7 +887,7 @@ th.num {
     background: var(--sidebar-hover);
   }
 
-  .btn:not(.btn--primary):not(:disabled):hover {
+  .btn:not(.btn--primary):not(.btn--danger):not(:disabled):hover {
     border-color: #cfd6cc;
     background: #fafbf8;
   }
