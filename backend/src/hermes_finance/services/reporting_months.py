@@ -44,6 +44,23 @@ def get_reporting_month(session: Session, month_id: int) -> ReportingMonth:
     return reporting_month
 
 
+def get_reporting_month_by_period(
+    session: Session, *, year: int, month: int
+) -> ReportingMonth | None:
+    """Return the reporting month for ``(year, month)`` or ``None``.
+
+    Read-only lookup used by the API layer to map duplicate-period creation
+    attempts to an HTTP 409 conflict without changing the ValueError contract
+    of :func:`create_reporting_month`.
+    """
+    return session.scalar(
+        select(ReportingMonth).where(
+            ReportingMonth.year == year,
+            ReportingMonth.month == month,
+        )
+    )
+
+
 def create_reporting_month(
     session: Session,
     *,
