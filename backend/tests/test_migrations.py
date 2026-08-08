@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0017_comments"
+REVISION = "0018_tax_brackets"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -251,6 +251,13 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "reporting_month_id",
             "position",
             "text",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(tax_brackets)")] == [
+            "id",
+            "year",
+            "threshold_from_kopecks",
+            "threshold_to_kopecks",
+            "rate_bps",
         ]
     finally:
         connection.close()

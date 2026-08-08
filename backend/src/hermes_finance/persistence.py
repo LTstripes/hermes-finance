@@ -610,3 +610,22 @@ class MonthlyComment(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(String(2000), nullable=False)
+
+
+class TaxBracket(Base):
+    __tablename__ = "tax_brackets"
+    __table_args__ = (
+        UniqueConstraint("year", "threshold_from_kopecks", name="uq_tax_brackets_year_from"),
+        CheckConstraint("threshold_from_kopecks >= 0", name="ck_tax_brackets_from_nonnegative"),
+        CheckConstraint(
+            "threshold_to_kopecks IS NULL OR threshold_to_kopecks > threshold_from_kopecks",
+            name="ck_tax_brackets_to_after_from",
+        ),
+        CheckConstraint("rate_bps >= 0", name="ck_tax_brackets_rate_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    threshold_from_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    threshold_to_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rate_bps: Mapped[int] = mapped_column(Integer, nullable=False)
