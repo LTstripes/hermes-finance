@@ -123,6 +123,19 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
     [`GET /api/positions?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/investment-flows?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/expected-flows?month_id=${month.id}&forecast_version=v1`]: () => jsonResponse([]),
+    [`GET /api/expenses?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/savings?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/debts?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/properties?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/comments?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/months/${month.id}/dashboard`]: () =>
+      jsonResponse({
+        mortgage: {
+          mortgage_balance: { amount: "0.00", currency: "RUB" },
+          coverage_pct: null,
+          gap: { amount: "0.00", currency: "RUB" },
+        },
+      }),
   };
 }
 
@@ -616,5 +629,150 @@ describe("App", () => {
     expect(await screen.findByText(/не доход \(погашение\)/)).toBeInTheDocument();
     // passive total stays 870, redemption separate
     expect(screen.getByText(/Passive income \(net\)/i)).toBeInTheDocument();
+  });
+
+  it("adds mandatory expense and saving allocation", async () => {
+    const user = userEvent.setup();
+    const month = sampleMonths[0];
+    const expenses: unknown[] = [];
+    const savings: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month]),
+        ...monthEditorHandlers(month),
+        [`GET /api/expenses?month_id=${month.id}`]: () => jsonResponse(expenses),
+        [`GET /api/savings?month_id=${month.id}`]: () => jsonResponse(savings),
+        "POST /api/expenses": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 11,
+            reporting_month_id: month.id,
+            category: body.category,
+            amount: body.amount,
+            expense_type: body.expense_type,
+            is_recurring: false,
+            notes: body.notes ?? null,
+          };
+          expenses.push(created);
+          return jsonResponse(created, 201);
+        },
+        "POST /api/savings": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 12,
+            reporting_month_id: month.id,
+            destination: body.destination,
+            amount: body.amount,
+            notes: body.notes ?? null,
+          };
+          savings.push(created);
+          return jsonResponse(created, 201);
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
+    );
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Расходы" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Категория расхода"), "Аренда");
+    await user.type(screen.getByLabelText("Сумма расхода"), "50000");
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+    expect(await screen.findByText("Аренда")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Назначение"), "Подушка");
+    await user.type(screen.getByLabelText("Сумма savings"), "10000");
+    await user.click(screen.getByRole("button", { name: "Добавить откладывание" }));
+    expect(await screen.findByText("Подушка")).toBeInTheDocument();
+  });
+
+  it("adds credit card debt, property and month comment", async () => {
+    const user = userEvent.setup();
+    const month = sampleMonths[0];
+    const debts: unknown[] = [];
+    const properties: unknown[] = [];
+    const comments: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month]),
+        ...monthEditorHandlers(month),
+        [`GET /api/debts?month_id=${month.id}`]: () => jsonResponse(debts),
+        [`GET /api/properties?month_id=${month.id}`]: () => jsonResponse(properties),
+        [`GET /api/comments?month_id=${month.id}`]: () => jsonResponse(comments),
+        "POST /api/debts": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 21,
+            reporting_month_id: month.id,
+            debt_type: body.debt_type,
+            name: body.name,
+            current_balance: body.current_balance,
+            include_in_liquid_capital: true,
+            notes: null,
+          };
+          debts.push(created);
+          return jsonResponse(created, 201);
+        },
+        "POST /api/properties": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 22,
+            reporting_month_id: month.id,
+            name: body.name,
+            estimated_value: body.estimated_value,
+            mortgage_balance: body.mortgage_balance,
+            monthly_payment: body.monthly_payment,
+            notes: null,
+          };
+          properties.push(created);
+          return jsonResponse(created, 201);
+        },
+        "POST /api/comments": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 23,
+            reporting_month_id: month.id,
+            position: comments.length + 1,
+            text: body.text,
+          };
+          comments.push(created);
+          return jsonResponse(created, 201);
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
+    );
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Долги" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Текущий баланс долга"), "15000");
+    await user.click(screen.getByRole("button", { name: "Добавить долг" }));
+    expect(await screen.findByText("Кредитка")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Название объекта"), "Квартира");
+    await user.type(screen.getByLabelText("Стоимость"), "10000000");
+    await user.type(screen.getByLabelText("Остаток ипотеки"), "4000000");
+    await user.type(screen.getByLabelText("Ежемесячный платёж"), "45000");
+    await user.click(screen.getByRole("button", { name: "Добавить объект" }));
+    expect(await screen.findByText("Квартира")).toBeInTheDocument();
+    expect(screen.getAllByText(/Mortgage coverage/i).length).toBeGreaterThan(0);
+
+    expect(screen.getByRole("heading", { level: 2, name: "Комментарии" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Новый комментарий"), "Первый месяц");
+    await user.click(screen.getByRole("button", { name: "Добавить комментарий" }));
+    expect(await screen.findByText("Первый месяц")).toBeInTheDocument();
   });
 });

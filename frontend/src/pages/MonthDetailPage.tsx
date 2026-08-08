@@ -17,7 +17,10 @@ import {
   Panel,
 } from "../components/ui";
 import { MonthAssetsSection } from "../components/MonthAssetsSection";
+import { MonthBudgetSection } from "../components/MonthBudgetSection";
+import { MonthCloseoutSection } from "../components/MonthCloseoutSection";
 import { MonthFlowsSection } from "../components/MonthFlowsSection";
+import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
@@ -232,8 +235,8 @@ export function MonthDetailPage() {
         <p className="eyebrow">Редактор</p>
         <h1>{formatMonth(month.year, month.month)}</h1>
         <p className="page-header__description">
-          Общие сведения, доходы, депозиты, cash, позиции и выплаты. Расчёты market value / tax /
-          expected interest — с backend.
+          Общие сведения, доходы, активы, позиции, выплаты, бюджет, долги/RE, ИИС и комментарии.
+          Финансовые формулы — только backend.
         </p>
       </header>
 
@@ -402,6 +405,12 @@ export function MonthDetailPage() {
       />
 
       <MonthFlowsSection defaultDate={month.snapshot_date} monthId={month.id} readOnly={readOnly} />
+
+      <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
+
+      <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
+
+      <MonthCloseoutSection monthId={month.id} readOnly={readOnly} year={month.year} />
 
       <CloneMonthDialog
         onCancel={() => setCloneOpen(false)}

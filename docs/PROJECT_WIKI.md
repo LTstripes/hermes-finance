@@ -221,6 +221,9 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - `E05` выполнен Grok 4.5 primary: deposits table (add/edit/delete, balance/rate/expected_monthly_interest from backend, actual interest), cash balances CRUD API `/api/cash-balances` (+ total), MonthAssetsSection totals; 33 frontend tests + cash API test. `E06` автоматически не начинается.
 - `E06` выполнен Grok 4.5 primary: позиции (account/instrument/qty/avg cost/market price, backend market_value/cost_basis/unrealized_result, price date/source, НКД), add/edit/delete, фильтры по счёту и типу, quick instrument create; 34 frontend tests. `E07` автоматически не начинается.
 - `E07` выполнен Grok 4.5 primary: фактические investment flows (coupon/dividend/interest/redemption + tax/commission/net), expected flows calendar by forecast_version, visual redemption≠income, passive income section totals; 38 frontend tests. `E08` автоматически не начинается.
+- `E08` выполнен Grok 4.5 primary: expenses (mandatory/comfortable/other) + savings allocations separately, totals, notes; 40 frontend tests after E08–E10 bundle.
+- `E09` выполнен Grok 4.5 primary: debts (credit_card), properties (value/mortgage/payment), mortgage coverage preview from dashboard/summary; real estate not liquid capital note.
+- `E10` выполнен Grok 4.5 primary: IIS profile/contributions/benefits (tax info warning), goal progress from summary + /api/goals gap note, comments with reorder; `E11` не начинается.
 
 ### Требует ответа владельца
 
@@ -280,4 +283,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-08 — выполнен `E05` (Grok 4.5 primary): deposits+cash UI and cash API gap fill; 33 frontend tests; `E06` не начат.
 - 2026-08-08 — выполнен `E06` (Grok 4.5 primary): brokerage positions UI in month editor; 34 frontend tests; `E07` не начат.
 - 2026-08-08 — выполнен `E07` (Grok 4.5 primary): payouts/expected flows UI; 38 frontend tests; `E08` не начат.
+- 2026-08-08 — выполнен `E08`–`E10` (Grok 4.5 primary): budget/liabilities/closeout sections; 40 frontend tests; `E11` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.

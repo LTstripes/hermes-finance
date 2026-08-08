@@ -117,6 +117,23 @@ export type MonthSummary = {
   };
   salary_tax: SalaryTaxSummary;
   salary_actual_net: MoneyValue;
+  coverage?: {
+    mandatory_expenses: MoneyValue;
+    coverage_pct: string | null;
+    goal_target?: MoneyValue;
+    goal_progress_pct?: string | null;
+    warnings?: string[];
+  };
+};
+
+export type DashboardMortgage = {
+  mortgage_balance: MoneyValue;
+  coverage_pct: string | null;
+  gap: MoneyValue;
+};
+
+export type DashboardSlice = {
+  mortgage: DashboardMortgage;
 };
 
 export type Account = {
@@ -327,4 +344,78 @@ export type ExpectedFlowCreate = {
   forecast_version: string;
   is_confirmed?: boolean;
   notes?: string | null;
+};
+
+export type ExpenseEntry = {
+  id: number;
+  reporting_month_id: number;
+  category: string;
+  amount: MoneyValue;
+  expense_type: string;
+  is_recurring: boolean;
+  notes: string | null;
+};
+
+export type SavingAllocation = {
+  id: number;
+  reporting_month_id: number;
+  destination: string;
+  amount: MoneyValue;
+  notes: string | null;
+};
+
+export type DebtEntry = {
+  id: number;
+  reporting_month_id: number;
+  debt_type: string;
+  name: string;
+  current_balance: MoneyValue;
+  include_in_liquid_capital: boolean;
+  notes: string | null;
+};
+
+export type PropertySnapshot = {
+  id: number;
+  reporting_month_id: number;
+  name: string;
+  estimated_value: MoneyValue;
+  mortgage_balance: MoneyValue;
+  monthly_payment: MoneyValue;
+  notes: string | null;
+};
+
+export type MonthlyComment = {
+  id: number;
+  reporting_month_id: number;
+  position: number;
+  text: string;
+};
+
+export type IisProfile = {
+  id: number;
+  account_id: number;
+  iis_type: string;
+  opened_at: string;
+  eligible_close_at: string | null;
+  notes: string | null;
+};
+
+export type IisContribution = {
+  id: number;
+  account_id: number;
+  tax_year: number;
+  amount: MoneyValue;
+  is_target_reached: boolean;
+  notes: string | null;
+};
+
+export type TaxBenefit = {
+  id: number;
+  account_id: number;
+  tax_year: number;
+  benefit_type: string;
+  status: string;
+  amount: MoneyValue;
+  received_at: string | null;
+  notes: string | null;
 };
