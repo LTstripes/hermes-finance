@@ -196,3 +196,68 @@ export type CashTotal = {
   total: MoneyValue;
   total_in_capital: MoneyValue;
 };
+
+export type Instrument = {
+  id: number;
+  name: string;
+  instrument_type: string;
+  isin: string | null;
+  ticker: string | null;
+  moex_secid: string | null;
+  currency: string;
+  nominal_value: MoneyValue | null;
+  is_active: boolean;
+  manual_price_allowed: boolean;
+  notes: string | null;
+};
+
+export type InstrumentCreate = {
+  name: string;
+  instrument_type: string;
+  isin?: string | null;
+  ticker?: string | null;
+  currency?: string;
+  is_active?: boolean;
+  manual_price_allowed?: boolean;
+};
+
+export type PositionSnapshot = {
+  id: number;
+  reporting_month_id: number;
+  account_id: number;
+  instrument_id: number;
+  quantity: string;
+  average_cost_per_unit: MoneyValue;
+  market_price_per_unit: MoneyValue;
+  market_value: MoneyValue;
+  cost_basis: MoneyValue;
+  unrealized_result: MoneyValue;
+  accrued_interest: MoneyValue | null;
+  price_source: string;
+  price_date: string;
+  notes: string | null;
+  updated_at: string;
+};
+
+export type PositionCreate = {
+  reporting_month_id: number;
+  account_id: number;
+  instrument_id: number;
+  quantity: string;
+  average_cost_per_unit: MoneyValue;
+  market_price_per_unit: MoneyValue;
+  accrued_interest?: MoneyValue | null;
+  price_source?: string;
+  price_date: string;
+  notes?: string | null;
+};
+
+export type PositionUpdate = {
+  quantity?: string;
+  average_cost_per_unit?: MoneyValue;
+  market_price_per_unit?: MoneyValue;
+  accrued_interest?: MoneyValue | null;
+  price_source?: string;
+  price_date?: string;
+  notes?: string | null;
+};

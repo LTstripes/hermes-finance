@@ -104,6 +104,23 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
         total: { amount: "0.00", currency: "RUB" },
         total_in_capital: { amount: "0.00", currency: "RUB" },
       }),
+    "GET /api/instruments?active=true": () =>
+      jsonResponse([
+        {
+          id: 10,
+          name: "Сбербанк",
+          instrument_type: "stock",
+          isin: null,
+          ticker: "SBER",
+          moex_secid: null,
+          currency: "RUB",
+          nominal_value: null,
+          is_active: true,
+          manual_price_allowed: true,
+          notes: null,
+        },
+      ]),
+    [`GET /api/positions?month_id=${month.id}`]: () => jsonResponse([]),
   };
 }
 
@@ -435,5 +452,87 @@ describe("App", () => {
 
     expect(await screen.findByText("Кошелёк")).toBeInTheDocument();
     expect(screen.getAllByText(/2\s*500[,.]50\s*₽/).length).toBeGreaterThan(0);
+  });
+
+  it("adds a brokerage position with backend-calculated market value", async () => {
+    const user = userEvent.setup();
+    const month = sampleMonths[0];
+    const accounts = [
+      {
+        id: 1,
+        name: "Депозиты",
+        account_type: "deposit",
+        status: "active",
+        external_code: null,
+        include_in_capital: true,
+        include_in_returns: true,
+        notes: null,
+      },
+      {
+        id: 2,
+        name: "Брокер",
+        account_type: "brokerage",
+        status: "active",
+        external_code: null,
+        include_in_capital: true,
+        include_in_returns: true,
+        notes: null,
+      },
+    ];
+    const positions: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month]),
+        ...monthEditorHandlers(month),
+        "GET /api/accounts": () => jsonResponse(accounts),
+        [`GET /api/positions?month_id=${month.id}`]: () => jsonResponse(positions),
+        "POST /api/positions": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 80 + positions.length,
+            reporting_month_id: month.id,
+            account_id: body.account_id,
+            instrument_id: body.instrument_id,
+            quantity: body.quantity,
+            average_cost_per_unit: body.average_cost_per_unit,
+            market_price_per_unit: body.market_price_per_unit,
+            market_value: { amount: "12500.00", currency: "RUB" },
+            cost_basis: { amount: "10000.00", currency: "RUB" },
+            unrealized_result: { amount: "2500.00", currency: "RUB" },
+            accrued_interest: body.accrued_interest ?? null,
+            price_source: body.price_source ?? "manual",
+            price_date: body.price_date,
+            notes: null,
+            updated_at: "2026-07-31T12:00:00",
+          };
+          positions.push(created);
+          return jsonResponse(created, 201);
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
+    );
+
+    expect(await screen.findByText("Позиции")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Счёт позиции"), "2");
+    await user.selectOptions(screen.getByLabelText("Инструмент позиции"), "10");
+    await user.clear(screen.getByLabelText("Quantity"));
+    await user.type(screen.getByLabelText("Quantity"), "10");
+    await user.clear(screen.getByLabelText("Average cost"));
+    await user.type(screen.getByLabelText("Average cost"), "1000");
+    await user.clear(screen.getByLabelText("Market price"));
+    await user.type(screen.getByLabelText("Market price"), "1250");
+    await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
+
+    expect(await screen.findAllByText(/SBER/)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/12\s*500\s*₽/)).not.toHaveLength(0);
+    expect(screen.getAllByText(/2\s*500\s*₽/).length).toBeGreaterThan(0);
   });
 });
