@@ -261,3 +261,70 @@ export type PositionUpdate = {
   price_date?: string;
   notes?: string | null;
 };
+
+export type InvestmentFlow = {
+  id: number;
+  reporting_month_id: number;
+  account_id: number;
+  instrument_id: number | null;
+  flow_type: string;
+  event_date: string;
+  gross_amount: MoneyValue;
+  tax_amount: MoneyValue;
+  commission_amount: MoneyValue;
+  net_amount: MoneyValue;
+  currency: string;
+  source: string;
+  notes: string | null;
+};
+
+export type InvestmentFlowCreate = {
+  reporting_month_id: number;
+  account_id: number;
+  flow_type: string;
+  event_date: string;
+  gross_amount: MoneyValue;
+  tax_amount?: MoneyValue;
+  commission_amount?: MoneyValue;
+  net_amount: MoneyValue;
+  instrument_id?: number | null;
+  currency?: string;
+  source: string;
+  notes?: string | null;
+};
+
+export type ExpectedFlow = {
+  id: number;
+  reporting_month_id: number;
+  account_id: number;
+  instrument_id: number;
+  flow_type: string;
+  expected_date: string;
+  gross_amount: MoneyValue;
+  expected_tax_amount: MoneyValue | null;
+  expected_net_amount: MoneyValue;
+  currency: string;
+  source: string;
+  source_as_of_date: string;
+  forecast_version: string;
+  is_confirmed: boolean;
+  is_approximate: boolean;
+  notes: string | null;
+};
+
+export type ExpectedFlowCreate = {
+  reporting_month_id: number;
+  account_id: number;
+  instrument_id: number;
+  flow_type: string;
+  expected_date: string;
+  gross_amount: MoneyValue;
+  expected_tax_amount?: MoneyValue | null;
+  expected_net_amount?: MoneyValue | null;
+  currency?: string;
+  source: string;
+  source_as_of_date: string;
+  forecast_version: string;
+  is_confirmed?: boolean;
+  notes?: string | null;
+};

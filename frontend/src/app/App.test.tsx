@@ -121,6 +121,8 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
         },
       ]),
     [`GET /api/positions?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/investment-flows?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/expected-flows?month_id=${month.id}&forecast_version=v1`]: () => jsonResponse([]),
   };
 }
 
@@ -435,8 +437,8 @@ describe("App", () => {
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
-    expect(await screen.findByText("Депозиты")).toBeInTheDocument();
-    expect(screen.getByText("Денежные средства")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Депозиты" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Денежные средства" })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Альфа");
     await user.clear(screen.getByLabelText("Баланс вклада"));
@@ -534,5 +536,83 @@ describe("App", () => {
     expect(await screen.findAllByText(/SBER/)).not.toHaveLength(0);
     expect(await screen.findAllByText(/12\s*500\s*₽/)).not.toHaveLength(0);
     expect(screen.getAllByText(/2\s*500\s*₽/).length).toBeGreaterThan(0);
+  });
+
+  it("adds actual coupon and redemption flows with passive total", async () => {
+    const user = userEvent.setup();
+    const month = sampleMonths[0];
+    const accounts = [
+      {
+        id: 2,
+        name: "Брокер",
+        account_type: "brokerage",
+        status: "active",
+        external_code: null,
+        include_in_capital: true,
+        include_in_returns: true,
+        notes: null,
+      },
+    ];
+    const flows: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month]),
+        ...monthEditorHandlers(month),
+        "GET /api/accounts": () => jsonResponse(accounts),
+        [`GET /api/investment-flows?month_id=${month.id}`]: () => jsonResponse(flows),
+        "POST /api/investment-flows": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 90 + flows.length,
+            reporting_month_id: month.id,
+            account_id: body.account_id,
+            instrument_id: body.instrument_id ?? null,
+            flow_type: body.flow_type,
+            event_date: body.event_date,
+            gross_amount: body.gross_amount,
+            tax_amount: body.tax_amount ?? { amount: "0.00", currency: "RUB" },
+            commission_amount: body.commission_amount ?? { amount: "0.00", currency: "RUB" },
+            net_amount: body.net_amount,
+            currency: "RUB",
+            source: body.source,
+            notes: null,
+          };
+          flows.push(created);
+          return jsonResponse(created, 201);
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
+    );
+
+    expect(await screen.findByText("Фактические потоки")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Тип потока"), "coupon");
+    await user.selectOptions(screen.getByLabelText("Счёт выплаты"), "2");
+    await user.clear(screen.getByLabelText("Gross"));
+    await user.type(screen.getByLabelText("Gross"), "1000");
+    await user.clear(screen.getByLabelText("Net"));
+    await user.type(screen.getByLabelText("Net"), "870");
+    await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
+
+    expect(await screen.findByText("passive income")).toBeInTheDocument();
+    expect(screen.getAllByText(/870\s*₽/).length).toBeGreaterThan(0);
+
+    await user.selectOptions(screen.getByLabelText("Тип потока"), "redemption");
+    await user.clear(screen.getByLabelText("Gross"));
+    await user.type(screen.getByLabelText("Gross"), "5000");
+    await user.clear(screen.getByLabelText("Net"));
+    await user.type(screen.getByLabelText("Net"), "5000");
+    await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
+
+    expect(await screen.findByText(/не доход \(погашение\)/)).toBeInTheDocument();
+    // passive total stays 870, redemption separate
+    expect(screen.getByText(/Passive income \(net\)/i)).toBeInTheDocument();
   });
 });

@@ -592,6 +592,18 @@ a.btn {
   line-height: 1.3;
 }
 
+.row--income td:first-child {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.row--muted {
+  opacity: 0.78;
+}
+
+.row--muted td:first-child {
+  box-shadow: inset 3px 0 0 var(--muted);
+}
+
 @media (max-width: 680px) {
   .editor-grid {
     grid-template-columns: 1fr;

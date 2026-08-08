@@ -17,6 +17,7 @@ import {
   Panel,
 } from "../components/ui";
 import { MonthAssetsSection } from "../components/MonthAssetsSection";
+import { MonthFlowsSection } from "../components/MonthFlowsSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
@@ -231,8 +232,8 @@ export function MonthDetailPage() {
         <p className="eyebrow">Редактор</p>
         <h1>{formatMonth(month.year, month.month)}</h1>
         <p className="page-header__description">
-          Общие сведения, доходы, депозиты, cash и брокерские позиции. Расчётный НДФЛ/net, expected
-          interest и market value — с backend, без формул на клиенте.
+          Общие сведения, доходы, депозиты, cash, позиции и выплаты. Расчёты market value / tax /
+          expected interest — с backend.
         </p>
       </header>
 
@@ -399,6 +400,8 @@ export function MonthDetailPage() {
         monthId={month.id}
         readOnly={readOnly}
       />
+
+      <MonthFlowsSection defaultDate={month.snapshot_date} monthId={month.id} readOnly={readOnly} />
 
       <CloneMonthDialog
         onCancel={() => setCloneOpen(false)}

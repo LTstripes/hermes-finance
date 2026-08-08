@@ -1,0 +1,756 @@
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+
+import { listAccounts } from "../api/accounts";
+import { formatApiError } from "../api/client";
+import { createExpectedFlow, deleteExpectedFlow, listExpectedFlows } from "../api/expectedFlows";
+import {
+  createInvestmentFlow,
+  deleteInvestmentFlow,
+  listInvestmentFlows,
+} from "../api/investmentFlows";
+import { listInstruments } from "../api/instruments";
+import type { Account, ExpectedFlow, Instrument, InvestmentFlow } from "../api/types";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Field,
+  Input,
+  LoadingState,
+  Panel,
+  Select,
+  Table,
+  Td,
+  Th,
+} from "./ui";
+import { formatDate, formatMoney } from "../lib/format";
+import {
+  isPassiveExpectedFlowType,
+  isPassiveInvestmentFlowType,
+  isRedemptionFlowType,
+} from "../lib/flowTypes";
+import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
+
+type MonthFlowsSectionProps = {
+  monthId: number;
+  readOnly: boolean;
+  defaultDate: string;
+};
+
+type ActualDraft = {
+  account_id: string;
+  instrument_id: string;
+  flow_type: string;
+  event_date: string;
+  gross: string;
+  tax: string;
+  commission: string;
+  net: string;
+  source: string;
+};
+
+type ExpectedDraft = {
+  account_id: string;
+  instrument_id: string;
+  flow_type: string;
+  expected_date: string;
+  gross: string;
+  tax: string;
+  net: string;
+  source: string;
+  forecast_version: string;
+};
+
+function emptyActual(date: string): ActualDraft {
+  return {
+    account_id: "",
+    instrument_id: "",
+    flow_type: "coupon",
+    event_date: date,
+    gross: "",
+    tax: "0.00",
+    commission: "0.00",
+    net: "",
+    source: "manual",
+  };
+}
+
+function emptyExpected(date: string): ExpectedDraft {
+  return {
+    account_id: "",
+    instrument_id: "",
+    flow_type: "coupon",
+    expected_date: date,
+    gross: "",
+    tax: "",
+    net: "",
+    source: "manual",
+    forecast_version: "v1",
+  };
+}
+
+export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlowsSectionProps) {
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [actual, setActual] = useState<InvestmentFlow[]>([]);
+  const [expected, setExpected] = useState<ExpectedFlow[]>([]);
+  const [forecastVersion, setForecastVersion] = useState("v1");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actualDraft, setActualDraft] = useState<ActualDraft>(() => emptyActual(defaultDate));
+  const [expectedDraft, setExpectedDraft] = useState<ExpectedDraft>(() =>
+    emptyExpected(defaultDate),
+  );
+  const [pendingDeleteActual, setPendingDeleteActual] = useState<InvestmentFlow | null>(null);
+  const [pendingDeleteExpected, setPendingDeleteExpected] = useState<ExpectedFlow | null>(null);
+
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [accs, instrs, flows, exp] = await Promise.all([
+          listAccounts(signal),
+          listInstruments({ active: true }, signal),
+          listInvestmentFlows(monthId, undefined, signal),
+          listExpectedFlows(monthId, forecastVersion, signal),
+        ]);
+        if (signal?.aborted) {
+          return;
+        }
+        setAccounts(accs);
+        setInstruments(instrs);
+        setActual(flows);
+        setExpected(exp);
+
+        const firstAccount = accs.find((a) => a.status === "active");
+        const firstInstrument = instrs[0];
+        setActualDraft((prev) => ({
+          ...prev,
+          account_id: prev.account_id || (firstAccount ? String(firstAccount.id) : ""),
+          instrument_id: prev.instrument_id || (firstInstrument ? String(firstInstrument.id) : ""),
+          event_date: prev.event_date || defaultDate,
+        }));
+        setExpectedDraft((prev) => ({
+          ...prev,
+          account_id: prev.account_id || (firstAccount ? String(firstAccount.id) : ""),
+          instrument_id: prev.instrument_id || (firstInstrument ? String(firstInstrument.id) : ""),
+          expected_date: prev.expected_date || defaultDate,
+          forecast_version: forecastVersion,
+        }));
+      } catch (err) {
+        if (!signal?.aborted) {
+          setError(formatApiError(err));
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [defaultDate, forecastVersion, monthId],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  const accountName = useMemo(() => {
+    const map = new Map(accounts.map((a) => [a.id, a.name]));
+    return (id: number) => map.get(id) ?? `#${id}`;
+  }, [accounts]);
+
+  const instrumentName = useMemo(() => {
+    const map = new Map(
+      instruments.map((i) => [i.id, i.ticker ? `${i.name} (${i.ticker})` : i.name]),
+    );
+    return (id: number | null) => (id == null ? "—" : (map.get(id) ?? `#${id}`));
+  }, [instruments]);
+
+  const sortedActual = useMemo(
+    () => [...actual].sort((a, b) => a.event_date.localeCompare(b.event_date) || a.id - b.id),
+    [actual],
+  );
+  const sortedExpected = useMemo(
+    () =>
+      [...expected].sort((a, b) => a.expected_date.localeCompare(b.expected_date) || a.id - b.id),
+    [expected],
+  );
+
+  const passiveActualTotal = useMemo(
+    () =>
+      sumMoneyAmounts(
+        sortedActual
+          .filter((f) => isPassiveInvestmentFlowType(f.flow_type))
+          .map((f) => moneyAmount(f.net_amount)),
+      ),
+    [sortedActual],
+  );
+  const redemptionActualTotal = useMemo(
+    () =>
+      sumMoneyAmounts(
+        sortedActual
+          .filter((f) => isRedemptionFlowType(f.flow_type))
+          .map((f) => moneyAmount(f.net_amount)),
+      ),
+    [sortedActual],
+  );
+  const expectedPassiveTotal = useMemo(
+    () =>
+      sumMoneyAmounts(
+        sortedExpected
+          .filter((f) => isPassiveExpectedFlowType(f.flow_type))
+          .map((f) => moneyAmount(f.expected_net_amount)),
+      ),
+    [sortedExpected],
+  );
+
+  async function handleCreateActual(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!normalizeMoneyInput(actualDraft.gross) || !normalizeMoneyInput(actualDraft.net)) {
+        throw new Error("Укажи gross и net");
+      }
+      const accountId = Number(actualDraft.account_id);
+      if (!Number.isInteger(accountId) || accountId < 1) {
+        throw new Error("Выбери счёт");
+      }
+      const instrumentId = actualDraft.instrument_id ? Number(actualDraft.instrument_id) : null;
+      await createInvestmentFlow({
+        reporting_month_id: monthId,
+        account_id: accountId,
+        flow_type: actualDraft.flow_type,
+        event_date: actualDraft.event_date,
+        gross_amount: rub(actualDraft.gross),
+        tax_amount: rub(actualDraft.tax.trim() === "" ? "0" : actualDraft.tax),
+        commission_amount: rub(actualDraft.commission.trim() === "" ? "0" : actualDraft.commission),
+        net_amount: rub(actualDraft.net),
+        instrument_id: instrumentId && instrumentId > 0 ? instrumentId : null,
+        source: actualDraft.source.trim() || "manual",
+      });
+      setActualDraft((prev) => ({
+        ...emptyActual(defaultDate),
+        account_id: prev.account_id,
+        instrument_id: prev.instrument_id,
+      }));
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateExpected(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!normalizeMoneyInput(expectedDraft.gross)) {
+        throw new Error("Укажи expected gross");
+      }
+      const accountId = Number(expectedDraft.account_id);
+      const instrumentId = Number(expectedDraft.instrument_id);
+      if (!Number.isInteger(accountId) || accountId < 1) {
+        throw new Error("Выбери счёт");
+      }
+      if (!Number.isInteger(instrumentId) || instrumentId < 1) {
+        throw new Error("Выбери инструмент для expected flow");
+      }
+      const payload = {
+        reporting_month_id: monthId,
+        account_id: accountId,
+        instrument_id: instrumentId,
+        flow_type: expectedDraft.flow_type,
+        expected_date: expectedDraft.expected_date,
+        gross_amount: rub(expectedDraft.gross),
+        source: expectedDraft.source.trim() || "manual",
+        source_as_of_date: defaultDate,
+        forecast_version: expectedDraft.forecast_version.trim() || forecastVersion,
+        ...(expectedDraft.tax.trim() === "" ? {} : { expected_tax_amount: rub(expectedDraft.tax) }),
+        ...(expectedDraft.net.trim() === "" ? {} : { expected_net_amount: rub(expectedDraft.net) }),
+      };
+      await createExpectedFlow(payload);
+      setForecastVersion(payload.forecast_version);
+      setExpectedDraft((prev) => ({
+        ...emptyExpected(defaultDate),
+        account_id: prev.account_id,
+        instrument_id: prev.instrument_id,
+        forecast_version: payload.forecast_version,
+      }));
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDeleteActual() {
+    if (!pendingDeleteActual) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await deleteInvestmentFlow(pendingDeleteActual.id);
+      setPendingDeleteActual(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+      setPendingDeleteActual(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDeleteExpected() {
+    if (!pendingDeleteExpected) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await deleteExpectedFlow(pendingDeleteExpected.id);
+      setPendingDeleteExpected(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+      setPendingDeleteExpected(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return <LoadingState description="Загружаем выплаты…" inline />;
+  }
+  if (error) {
+    return <EmptyState description={error} inline title="Не удалось загрузить выплаты" />;
+  }
+
+  return (
+    <div className="stack-18">
+      {actionError ? (
+        <div className="inline-alert inline-alert--error" role="alert">
+          {actionError}
+        </div>
+      ) : null}
+
+      <Panel
+        action={<Badge tone="draft">passive net {formatMoney(passiveActualTotal)}</Badge>}
+        label="Выплаты"
+        title="Фактические потоки"
+      >
+        {sortedActual.length === 0 ? (
+          <EmptyState
+            description="Фактических coupon/dividend/interest ещё нет."
+            inline
+            title="Пусто"
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Дата</Th>
+                <Th>Тип</Th>
+                <Th>Счёт / инструмент</Th>
+                <Th numeric>Gross</Th>
+                <Th numeric>Tax</Th>
+                <Th numeric>Comm</Th>
+                <Th numeric>Net</Th>
+                <Th>Действия</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedActual.map((row) => {
+                const redemption = isRedemptionFlowType(row.flow_type);
+                const passive = isPassiveInvestmentFlowType(row.flow_type);
+                return (
+                  <tr
+                    className={redemption ? "row--muted" : passive ? "row--income" : undefined}
+                    key={row.id}
+                  >
+                    <Td>{formatDate(row.event_date)}</Td>
+                    <Td>
+                      <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
+                        {row.flow_type}
+                      </span>
+                      {redemption ? <div className="muted tiny">не доход (погашение)</div> : null}
+                      {passive ? <div className="muted tiny">passive income</div> : null}
+                    </Td>
+                    <Td>
+                      <div>{accountName(row.account_id)}</div>
+                      <div className="muted tiny">{instrumentName(row.instrument_id)}</div>
+                    </Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.tax_amount))}</Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.commission_amount))}</Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.net_amount))}</Td>
+                    <Td>
+                      <Button
+                        disabled={busy || readOnly}
+                        onClick={() => setPendingDeleteActual(row)}
+                        size="sm"
+                        type="button"
+                        variant="danger"
+                      >
+                        Удал.
+                      </Button>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+
+        <div className="totals-bar">
+          <span>
+            Passive income (net): <strong>{formatMoney(passiveActualTotal)}</strong>
+          </span>
+          <span>
+            Redemption (не income): <strong>{formatMoney(redemptionActualTotal)}</strong>
+          </span>
+        </div>
+        <p className="muted field-hint">
+          Passive = interest/coupon/dividend/other. Redemption — возврат номинала, не пассивный
+          доход. Deposit interest actual живёт в deposit snapshots, не здесь.
+        </p>
+
+        {!readOnly ? (
+          <form className="form-stack asset-form" onSubmit={handleCreateActual}>
+            <p className="panel__label" style={{ marginBottom: 0 }}>
+              Новая фактическая выплата
+            </p>
+            <div className="editor-grid">
+              <Field htmlFor="act-type" label="Тип потока">
+                <Select
+                  id="act-type"
+                  onChange={(e) => setActualDraft({ ...actualDraft, flow_type: e.target.value })}
+                  value={actualDraft.flow_type}
+                >
+                  <option value="coupon">coupon</option>
+                  <option value="dividend">dividend</option>
+                  <option value="interest">interest</option>
+                  <option value="redemption">redemption</option>
+                  <option value="commission">commission</option>
+                  <option value="tax">tax</option>
+                  <option value="other">other</option>
+                </Select>
+              </Field>
+              <Field htmlFor="act-date" label="Дата события">
+                <Input
+                  id="act-date"
+                  onChange={(e) => setActualDraft({ ...actualDraft, event_date: e.target.value })}
+                  required
+                  type="date"
+                  value={actualDraft.event_date}
+                />
+              </Field>
+              <Field htmlFor="act-account" label="Счёт выплаты">
+                <Select
+                  id="act-account"
+                  onChange={(e) => setActualDraft({ ...actualDraft, account_id: e.target.value })}
+                  required
+                  value={actualDraft.account_id}
+                >
+                  <option value="">—</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field htmlFor="act-instr" label="Инструмент (optional)">
+                <Select
+                  id="act-instr"
+                  onChange={(e) =>
+                    setActualDraft({ ...actualDraft, instrument_id: e.target.value })
+                  }
+                  value={actualDraft.instrument_id}
+                >
+                  <option value="">—</option>
+                  {instruments.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                      {i.ticker ? ` (${i.ticker})` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field htmlFor="act-gross" label="Gross">
+                <Input
+                  className="input--money"
+                  id="act-gross"
+                  onChange={(e) => setActualDraft({ ...actualDraft, gross: e.target.value })}
+                  required
+                  value={actualDraft.gross}
+                />
+              </Field>
+              <Field htmlFor="act-tax" label="Tax">
+                <Input
+                  className="input--money"
+                  id="act-tax"
+                  onChange={(e) => setActualDraft({ ...actualDraft, tax: e.target.value })}
+                  value={actualDraft.tax}
+                />
+              </Field>
+              <Field htmlFor="act-comm" label="Commission">
+                <Input
+                  className="input--money"
+                  id="act-comm"
+                  onChange={(e) => setActualDraft({ ...actualDraft, commission: e.target.value })}
+                  value={actualDraft.commission}
+                />
+              </Field>
+              <Field htmlFor="act-net" label="Net">
+                <Input
+                  className="input--money"
+                  id="act-net"
+                  onChange={(e) => setActualDraft({ ...actualDraft, net: e.target.value })}
+                  required
+                  value={actualDraft.net}
+                />
+              </Field>
+            </div>
+            <Button disabled={busy} type="submit" variant="primary">
+              Добавить выплату
+            </Button>
+          </form>
+        ) : null}
+      </Panel>
+
+      <Panel
+        action={<Badge>expected passive {formatMoney(expectedPassiveTotal)}</Badge>}
+        label="Календарь"
+        title="Ожидаемые потоки"
+      >
+        <div className="editor-grid filter-grid">
+          <Field htmlFor="exp-version" label="Forecast version">
+            <Input
+              id="exp-version"
+              onChange={(e) => setForecastVersion(e.target.value || "v1")}
+              onBlur={() => void load()}
+              value={forecastVersion}
+            />
+          </Field>
+        </div>
+
+        {sortedExpected.length === 0 ? (
+          <EmptyState
+            description={`Нет expected flows для version «${forecastVersion}».`}
+            inline
+            title="Пусто"
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Дата</Th>
+                <Th>Тип</Th>
+                <Th>Инструмент</Th>
+                <Th numeric>Gross</Th>
+                <Th numeric>Exp. tax</Th>
+                <Th numeric>Exp. net</Th>
+                <Th>Статус</Th>
+                <Th>Действия</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedExpected.map((row) => {
+                const redemption = isRedemptionFlowType(row.flow_type);
+                return (
+                  <tr className={redemption ? "row--muted" : "row--income"} key={row.id}>
+                    <Td>{formatDate(row.expected_date)}</Td>
+                    <Td>
+                      <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
+                        {row.flow_type}
+                      </span>
+                      {redemption ? <div className="muted tiny">погашение ≠ income</div> : null}
+                    </Td>
+                    <Td>{instrumentName(row.instrument_id)}</Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
+                    <Td numeric>
+                      {row.expected_tax_amount
+                        ? formatMoney(moneyAmount(row.expected_tax_amount))
+                        : "—"}
+                    </Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.expected_net_amount))}</Td>
+                    <Td>
+                      <div className="muted tiny">
+                        {row.is_confirmed ? "confirmed" : "plan"}
+                        {row.is_approximate ? " · approx" : ""}
+                      </div>
+                      <div className="muted tiny">{row.forecast_version}</div>
+                    </Td>
+                    <Td>
+                      <Button
+                        disabled={busy || readOnly}
+                        onClick={() => setPendingDeleteExpected(row)}
+                        size="sm"
+                        type="button"
+                        variant="danger"
+                      >
+                        Удал.
+                      </Button>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+
+        <div className="totals-bar">
+          <span>
+            Expected passive (net): <strong>{formatMoney(expectedPassiveTotal)}</strong>
+          </span>
+        </div>
+
+        {!readOnly ? (
+          <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
+            <p className="panel__label" style={{ marginBottom: 0 }}>
+              Новый expected flow
+            </p>
+            <div className="editor-grid">
+              <Field htmlFor="exp-type" label="Тип expected">
+                <Select
+                  id="exp-type"
+                  onChange={(e) =>
+                    setExpectedDraft({ ...expectedDraft, flow_type: e.target.value })
+                  }
+                  value={expectedDraft.flow_type}
+                >
+                  <option value="coupon">coupon</option>
+                  <option value="dividend">dividend</option>
+                  <option value="interest">interest</option>
+                  <option value="redemption">redemption</option>
+                  <option value="other">other</option>
+                </Select>
+              </Field>
+              <Field htmlFor="exp-date" label="Expected date">
+                <Input
+                  id="exp-date"
+                  onChange={(e) =>
+                    setExpectedDraft({ ...expectedDraft, expected_date: e.target.value })
+                  }
+                  required
+                  type="date"
+                  value={expectedDraft.expected_date}
+                />
+              </Field>
+              <Field htmlFor="exp-account" label="Счёт expected">
+                <Select
+                  id="exp-account"
+                  onChange={(e) =>
+                    setExpectedDraft({ ...expectedDraft, account_id: e.target.value })
+                  }
+                  required
+                  value={expectedDraft.account_id}
+                >
+                  <option value="">—</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field htmlFor="exp-instr" label="Инструмент expected">
+                <Select
+                  id="exp-instr"
+                  onChange={(e) =>
+                    setExpectedDraft({ ...expectedDraft, instrument_id: e.target.value })
+                  }
+                  required
+                  value={expectedDraft.instrument_id}
+                >
+                  <option value="">—</option>
+                  {instruments.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                      {i.ticker ? ` (${i.ticker})` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field htmlFor="exp-gross" label="Expected gross">
+                <Input
+                  className="input--money"
+                  id="exp-gross"
+                  onChange={(e) => setExpectedDraft({ ...expectedDraft, gross: e.target.value })}
+                  required
+                  value={expectedDraft.gross}
+                />
+              </Field>
+              <Field htmlFor="exp-tax" label="Expected tax (opt)">
+                <Input
+                  className="input--money"
+                  id="exp-tax"
+                  onChange={(e) => setExpectedDraft({ ...expectedDraft, tax: e.target.value })}
+                  value={expectedDraft.tax}
+                />
+              </Field>
+              <Field htmlFor="exp-net" label="Expected net (opt)">
+                <Input
+                  className="input--money"
+                  id="exp-net"
+                  onChange={(e) => setExpectedDraft({ ...expectedDraft, net: e.target.value })}
+                  value={expectedDraft.net}
+                />
+              </Field>
+              <Field htmlFor="exp-ver" label="Version">
+                <Input
+                  id="exp-ver"
+                  onChange={(e) =>
+                    setExpectedDraft({ ...expectedDraft, forecast_version: e.target.value })
+                  }
+                  value={expectedDraft.forecast_version}
+                />
+              </Field>
+            </div>
+            <Button disabled={busy} type="submit" variant="primary">
+              Добавить expected
+            </Button>
+          </form>
+        ) : null}
+      </Panel>
+
+      <ConfirmDialog
+        busy={busy}
+        cancelLabel="Отмена"
+        confirmLabel="Удалить"
+        danger
+        description={
+          pendingDeleteActual
+            ? `Удалить ${pendingDeleteActual.flow_type} от ${pendingDeleteActual.event_date}?`
+            : ""
+        }
+        onCancel={() => setPendingDeleteActual(null)}
+        onConfirm={() => void confirmDeleteActual()}
+        open={pendingDeleteActual !== null}
+        title="Удалить выплату?"
+      />
+      <ConfirmDialog
+        busy={busy}
+        cancelLabel="Отмена"
+        confirmLabel="Удалить"
+        danger
+        description={
+          pendingDeleteExpected
+            ? `Удалить expected ${pendingDeleteExpected.flow_type} на ${pendingDeleteExpected.expected_date}?`
+            : ""
+        }
+        onCancel={() => setPendingDeleteExpected(null)}
+        onConfirm={() => void confirmDeleteExpected()}
+        open={pendingDeleteExpected !== null}
+        title="Удалить expected?"
+      />
+    </div>
+  );
+}
