@@ -216,6 +216,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - `D07` выполнен Grok 4.5 primary: `GET /api/months/{id}/summary` (C10 DTO → JSON/MoneyValue) и `GET /api/months/{id}/dashboard` (KPI-карточки, historical series liquid/passive, asset allocation, result by account + instrument class, expected payments calendar, mortgage coverage, warnings). Формулы не дублируются — wiring C10 + B-queries. Suite 421. **Фаза D закрыта** (D01–D08). `E01` автоматически не начинается.
 - `E01` выполнен Grok 4.5 primary: design system **Balanced Fintech** (hybrid dark forest sidebar + light content), CSS tokens, layout/nav, UI primitives (Button/Panel/Badge/Field/Table/Kpi/Loading-Error-Empty), number/date formatters (`formatMoney`/`formatDate`/`formatMonth`/…), placeholder routes для разделов MASTER_SPEC; sketches A/B/C в `sketches/`; без wiring бизнес-данных и без backend API. Frontend: Biome/Vitest 12/build green. `E02` автоматически не начинается. Отмеченные API gaps: `/api/goals`, tax-brackets UI, cash endpoints — не чинились.
 - `E02` выполнен Grok 4.5 primary: frontend API client (`apiRequest` + D08 `ApiClientError`), months endpoints (list/create/delete/get), `MonthsPage` (список/статус/snapshot/source/открыть/создать/удалить draft+ConfirmDialog), `MonthDetailPage` stub до E04; 21 frontend tests, lint/format/build green. `E03` автоматически не начинается.
+- `E03` выполнен Grok 4.5 primary: UI клонирования месяца (`CloneMonthDialog` + `cloneMonth` API), выбор target period, описание copy/zero, success/error, переход в новый draft; 26 frontend tests. `E04` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -270,4 +271,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-08 — выполнен `D07` (Grok 4.5 primary): summary + dashboard API поверх C10 (KPI, historical series, allocation, instrument-class results, expected payments, mortgage coverage); 3 API-теста, suite 421; **фаза D закрыта**; `E01` не начат.
 - 2026-08-08 — выполнен `E01` (Grok 4.5 primary): frontend design system Balanced Fintech (hybrid), primitives, formatters, full nav shell + placeholders; 12 frontend tests, lint/format/build green; sketches e01-*; `E02` не начат; API gaps goals/tax-brackets/cash только отмечены.
 - 2026-08-08 — выполнен `E02` (Grok 4.5 primary): api client + months list/create/delete/open UI; 21 frontend tests; `E03` не начат.
+- 2026-08-08 — выполнен `E03` (Grok 4.5 primary): clone UI + API helper; 26 frontend tests; `E04` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.

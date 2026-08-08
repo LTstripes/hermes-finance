@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError, apiRequest, formatApiError } from "./client";
-import { createMonth, deleteMonth, listMonths } from "./months";
+import { cloneMonth, createMonth, deleteMonth, listMonths } from "./months";
 
 describe("apiRequest", () => {
   afterEach(() => {
@@ -134,6 +134,32 @@ describe("months API helpers", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/months/9",
       expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("cloneMonth POSTs to /api/months/:id/clone", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: async () =>
+        JSON.stringify({
+          id: 4,
+          year: 2026,
+          month: 8,
+          status: "draft",
+          snapshot_date: "2026-08-31",
+          source: "manual",
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await cloneMonth(2, { year: 2026, month: 8, snapshot_date: "2026-08-31" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/months/2/clone",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ year: 2026, month: 8, snapshot_date: "2026-08-31" }),
+      }),
     );
   });
 });

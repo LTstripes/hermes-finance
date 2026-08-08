@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { formatApiError } from "../api/client";
 import { createMonth, deleteMonth, listMonths } from "../api/months";
@@ -7,6 +7,7 @@ import type { ReportingMonth } from "../api/types";
 import {
   Badge,
   Button,
+  CloneMonthDialog,
   ConfirmDialog,
   EmptyState,
   ErrorState,
@@ -20,6 +21,7 @@ import {
   Th,
 } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
+import { lastDayOfMonth } from "../lib/period";
 
 const MONTH_LABELS = [
   "Январь",
@@ -35,15 +37,6 @@ const MONTH_LABELS = [
   "Ноябрь",
   "Декабрь",
 ] as const;
-
-function lastDayOfMonth(year: number, month: number): string {
-  // day 0 of next month = last day of this month (local calendar)
-  const date = new Date(year, month, 0);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 function defaultCreateDraft(): { year: number; month: number; snapshot_date: string } {
   const now = new Date();
@@ -66,6 +59,7 @@ function sourceLabel(source: string): string {
 }
 
 export function MonthsPage() {
+  const navigate = useNavigate();
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +69,7 @@ export function MonthsPage() {
   const [draft, setDraft] = useState(defaultCreateDraft);
   const [pendingDelete, setPendingDelete] = useState<ReportingMonth | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [cloneSource, setCloneSource] = useState<ReportingMonth | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -84,7 +79,6 @@ export function MonthsPage() {
       if (signal?.aborted) {
         return;
       }
-      // Newest first for the UI (API returns ascending).
       setMonths([...data].sort((a, b) => b.year - a.year || b.month - a.month));
     } catch (err) {
       if (signal?.aborted) {
@@ -113,6 +107,8 @@ export function MonthsPage() {
       })),
     [],
   );
+
+  const latestMonth = months[0] ?? null;
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -159,12 +155,23 @@ export function MonthsPage() {
         <p className="eyebrow">Периоды</p>
         <h1>Месяцы</h1>
         <p className="page-header__description">
-          Отчётные периоды: список, создание manual draft и удаление draft с подтверждением.
-          Редактор месяца — со следующего этапа.
+          Отчётные периоды: список, создание, клонирование в следующий месяц и удаление draft.
         </p>
       </header>
 
       <div className="toolbar">
+        <Button
+          disabled={loading || !latestMonth}
+          onClick={() => {
+            if (latestMonth) {
+              setCloneSource(latestMonth);
+            }
+          }}
+          type="button"
+          variant="primary"
+        >
+          Создать следующий месяц
+        </Button>
         <Button
           disabled={loading}
           onClick={() => {
@@ -221,6 +228,9 @@ export function MonthsPage() {
                         <Link className="btn btn--sm" to={`/months/${row.id}`}>
                           Открыть
                         </Link>
+                        <Button onClick={() => setCloneSource(row)} size="sm" type="button">
+                          Клон
+                        </Button>
                         {row.status === "draft" ? (
                           <Button
                             onClick={() => setPendingDelete(row)}
@@ -327,6 +337,16 @@ export function MonthsPage() {
         }}
         open={pendingDelete !== null}
         title="Удалить draft?"
+      />
+
+      <CloneMonthDialog
+        onCancel={() => setCloneSource(null)}
+        onCloned={(cloned) => {
+          setCloneSource(null);
+          navigate(`/months/${cloned.id}`);
+        }}
+        open={cloneSource !== null}
+        source={cloneSource}
       />
     </section>
   );

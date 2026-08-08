@@ -199,4 +199,57 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Цели" })).toBeInTheDocument();
     expect(screen.getByText("API /api/goals отсутствует")).toBeInTheDocument();
   });
+
+  it("clones a month into the next period and opens the new draft", async () => {
+    const user = userEvent.setup();
+    const months = [...sampleMonths];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse(months),
+        "POST /api/months/2/clone": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            year: number;
+            month: number;
+            snapshot_date: string;
+          };
+          const cloned = {
+            id: 9,
+            year: body.year,
+            month: body.month,
+            status: "draft",
+            snapshot_date: body.snapshot_date,
+            source: "manual",
+          };
+          months.unshift(cloned);
+          return jsonResponse(cloned, 201);
+        },
+        "GET /api/months/9": () => {
+          const found = months.find((m) => m.id === 9);
+          return found
+            ? jsonResponse(found)
+            : jsonResponse({ error: { code: "not_found", message: "missing", details: [] } }, 404);
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Создать следующий месяц" }));
+    expect(screen.getByRole("dialog", { name: /Создать следующий месяц/i })).toBeInTheDocument();
+    expect(screen.getByText(/Будет скопировано/i)).toBeInTheDocument();
+    expect(screen.getByText(/Не копируется/i)).toBeInTheDocument();
+
+    // defaults to August 2026 from July source
+    expect(screen.getByLabelText("Целевой год")).toHaveValue(2026);
+    expect(screen.getByLabelText("Целевой месяц")).toHaveValue("8");
+
+    await user.click(screen.getByRole("button", { name: "Клонировать" }));
+    expect(await screen.findByRole("heading", { level: 1, name: /Август/ })).toBeInTheDocument();
+    expect(screen.getByText("31.08.2026")).toBeInTheDocument();
+  });
 });

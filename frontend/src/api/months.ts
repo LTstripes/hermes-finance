@@ -1,5 +1,10 @@
 import { apiRequest } from "./client";
-import type { HealthResponse, ReportingMonth, ReportingMonthCreate } from "./types";
+import type {
+  HealthResponse,
+  ReportingMonth,
+  ReportingMonthClone,
+  ReportingMonthCreate,
+} from "./types";
 
 export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return apiRequest<HealthResponse>("/api/health", { method: "GET", signal });
@@ -26,4 +31,16 @@ export function createMonth(
 
 export function deleteMonth(monthId: number, signal?: AbortSignal): Promise<void> {
   return apiRequest<void>(`/api/months/${monthId}`, { method: "DELETE", signal });
+}
+
+export function cloneMonth(
+  monthId: number,
+  payload: ReportingMonthClone,
+  signal?: AbortSignal,
+): Promise<ReportingMonth> {
+  return apiRequest<ReportingMonth>(`/api/months/${monthId}/clone`, {
+    method: "POST",
+    body: payload,
+    signal,
+  });
 }

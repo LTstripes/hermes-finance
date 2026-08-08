@@ -1,5 +1,6 @@
 export { Badge } from "./Badge";
 export { Button } from "./Button";
+export { CloneMonthDialog } from "./CloneMonthDialog";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { Field, Input, Select } from "./Field";
 export { KpiCard } from "./KpiCard";

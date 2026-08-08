@@ -1,22 +1,24 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { formatApiError } from "../api/client";
 import { getMonth } from "../api/months";
 import type { ReportingMonth } from "../api/types";
-import { Badge, Button, ErrorState, LoadingState, Panel } from "../components/ui";
+import { Badge, Button, CloneMonthDialog, ErrorState, LoadingState, Panel } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 
 /**
- * Lightweight open target for E02.
- * Full month editor starts at E04 — this page only confirms the period exists.
+ * Open target for a reporting month.
+ * Full editor starts at E04 — clone (E03) is available here.
  */
 export function MonthDetailPage() {
   const params = useParams();
+  const navigate = useNavigate();
   const monthId = Number(params.monthId);
   const [month, setMonth] = useState<ReportingMonth | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cloneOpen, setCloneOpen] = useState(false);
 
   useEffect(() => {
     if (!Number.isInteger(monthId) || monthId < 1) {
@@ -56,7 +58,7 @@ export function MonthDetailPage() {
         <p className="eyebrow">Период</p>
         <h1>{month ? formatMonth(month.year, month.month) : "Месяц"}</h1>
         <p className="page-header__description">
-          Карточка периода. Редактор (зарплата, активы, расходы) появится в E04–E10.
+          Карточка периода. Клонирование в следующий месяц доступно; редактор полей — E04+.
         </p>
       </header>
 
@@ -64,6 +66,14 @@ export function MonthDetailPage() {
         <Link className="btn" to="/months">
           ← К списку
         </Link>
+        <Button
+          disabled={!month}
+          onClick={() => setCloneOpen(true)}
+          type="button"
+          variant="primary"
+        >
+          Создать следующий месяц
+        </Button>
       </div>
 
       {loading ? (
@@ -93,15 +103,25 @@ export function MonthDetailPage() {
             </div>
           </dl>
           <p className="muted" style={{ marginTop: 16, marginBottom: 0 }}>
-            Клонирование — E03. Редактирование полей — E04+.
+            Редактирование полей — E04+.
           </p>
           <div className="toolbar" style={{ marginTop: 18, marginBottom: 0 }}>
-            <Button disabled type="button" variant="primary">
+            <Button disabled type="button">
               Редактор (E04)
             </Button>
           </div>
         </Panel>
       ) : null}
+
+      <CloneMonthDialog
+        onCancel={() => setCloneOpen(false)}
+        onCloned={(cloned) => {
+          setCloneOpen(false);
+          navigate(`/months/${cloned.id}`);
+        }}
+        open={cloneOpen}
+        source={month}
+      />
     </section>
   );
 }

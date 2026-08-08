@@ -35,6 +35,12 @@ export type ReportingMonthCreate = {
   source?: ReportingMonthSource;
 };
 
+export type ReportingMonthClone = {
+  year: number;
+  month: number;
+  snapshot_date: string;
+};
+
 export type HealthResponse = {
   status: "ok";
   version: string;
