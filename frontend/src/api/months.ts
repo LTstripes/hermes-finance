@@ -4,6 +4,7 @@ import type {
   ReportingMonth,
   ReportingMonthClone,
   ReportingMonthCreate,
+  ReportingMonthUpdate,
 } from "./types";
 
 export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
@@ -24,6 +25,18 @@ export function createMonth(
 ): Promise<ReportingMonth> {
   return apiRequest<ReportingMonth>("/api/months", {
     method: "POST",
+    body: payload,
+    signal,
+  });
+}
+
+export function updateMonth(
+  monthId: number,
+  payload: ReportingMonthUpdate,
+  signal?: AbortSignal,
+): Promise<ReportingMonth> {
+  return apiRequest<ReportingMonth>(`/api/months/${monthId}`, {
+    method: "PATCH",
     body: payload,
     signal,
   });

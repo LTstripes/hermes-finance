@@ -517,6 +517,40 @@ a.btn {
   background: var(--green-soft);
 }
 
+.inline-alert--warn {
+  border: 1px solid rgb(154 106 29 / 28%);
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.input--money {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.input--calc {
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.field-hint {
+  margin: 14px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 680px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dialog--wide {
   width: min(640px, 100%);
 }

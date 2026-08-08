@@ -23,6 +23,15 @@ const sampleMonths = [
   },
 ];
 
+const emptySummary = {
+  month: sampleMonths[0],
+  salary_tax: {
+    tax: { amount: "0.00", currency: "RUB" },
+    calculated_net: { amount: "0.00", currency: "RUB" },
+  },
+  salary_actual_net: { amount: "0.00", currency: "RUB" },
+};
+
 function mockFetchRouter(
   handlers: Record<string, (init?: RequestInit) => Promise<Response> | Response>,
 ) {
@@ -58,6 +67,23 @@ function periodCell(label: RegExp): HTMLElement {
     throw new Error("row not found");
   }
   return row;
+}
+
+function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[] = []) {
+  return {
+    [`GET /api/months/${month.id}`]: () => jsonResponse(month),
+    [`GET /api/incomes?month_id=${month.id}`]: () => jsonResponse(incomes),
+    [`GET /api/months/${month.id}/summary`]: () =>
+      jsonResponse({
+        ...emptySummary,
+        month,
+        salary_tax: {
+          tax: { amount: "26000.00", currency: "RUB" },
+          calculated_net: { amount: "174000.00", currency: "RUB" },
+        },
+        salary_actual_net: { amount: "170000.00", currency: "RUB" },
+      }),
+  };
 }
 
 describe("App", () => {
@@ -103,7 +129,7 @@ describe("App", () => {
     expect(await screen.findByText("Backend недоступен")).toBeInTheDocument();
   });
 
-  it("lists months, creates a draft, opens detail, and deletes with confirm", async () => {
+  it("lists months, creates a draft, opens editor, and deletes with confirm", async () => {
     const user = userEvent.setup();
     const months = [...sampleMonths];
 
@@ -129,7 +155,7 @@ describe("App", () => {
           months.unshift(created);
           return jsonResponse(created, 201);
         },
-        "GET /api/months/2": () => jsonResponse(sampleMonths[0]),
+        ...monthEditorHandlers(sampleMonths[0]),
         "DELETE /api/months/2": () => {
           const idx = months.findIndex((m) => m.id === 2);
           if (idx >= 0) {
@@ -149,11 +175,9 @@ describe("App", () => {
     expect(within(screen.getByRole("table")).getByText(/Июль/)).toBeInTheDocument();
     expect(within(screen.getByRole("table")).getByText(/Июнь/)).toBeInTheDocument();
 
-    // closed row has no delete
     const juneRow = periodCell(/Июнь/);
     expect(within(juneRow).queryByRole("button", { name: "Удалить" })).toBeNull();
 
-    // create August
     await user.clear(screen.getByLabelText("Год"));
     await user.type(screen.getByLabelText("Год"), "2026");
     await user.selectOptions(screen.getByLabelText("Месяц"), "8");
@@ -163,17 +187,16 @@ describe("App", () => {
 
     expect(await within(screen.getByRole("table")).findByText(/Август/)).toBeInTheDocument();
 
-    // open draft july
     const julyRow = periodCell(/Июль/);
     await user.click(within(julyRow).getByRole("link", { name: "Открыть" }));
-    expect(await screen.findByText("31.07.2026")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: /Июль/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: /Июль/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Зарплата gross")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Cashback/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: /К списку/i }));
     expect(await screen.findByRole("heading", { level: 1, name: "Месяцы" })).toBeInTheDocument();
     expect(await screen.findByRole("table")).toBeInTheDocument();
 
-    // delete july with confirm
     const julyAgain = periodCell(/Июль/);
     await user.click(within(julyAgain).getByRole("button", { name: "Удалить" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
@@ -200,9 +223,17 @@ describe("App", () => {
     expect(screen.getByText("API /api/goals отсутствует")).toBeInTheDocument();
   });
 
-  it("clones a month into the next period and opens the new draft", async () => {
+  it("clones a month into the next period and opens the new draft editor", async () => {
     const user = userEvent.setup();
     const months = [...sampleMonths];
+    const clonedMonth = {
+      id: 9,
+      year: 2026,
+      month: 8,
+      status: "draft",
+      snapshot_date: "2026-08-31",
+      source: "manual",
+    };
 
     vi.stubGlobal(
       "fetch",
@@ -226,12 +257,7 @@ describe("App", () => {
           months.unshift(cloned);
           return jsonResponse(cloned, 201);
         },
-        "GET /api/months/9": () => {
-          const found = months.find((m) => m.id === 9);
-          return found
-            ? jsonResponse(found)
-            : jsonResponse({ error: { code: "not_found", message: "missing", details: [] } }, 404);
-        },
+        ...monthEditorHandlers(clonedMonth),
       }),
     );
 
@@ -241,15 +267,61 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Создать следующий месяц" }));
     expect(screen.getByRole("dialog", { name: /Создать следующий месяц/i })).toBeInTheDocument();
-    expect(screen.getByText(/Будет скопировано/i)).toBeInTheDocument();
-    expect(screen.getByText(/Не копируется/i)).toBeInTheDocument();
-
-    // defaults to August 2026 from July source
-    expect(screen.getByLabelText("Целевой год")).toHaveValue(2026);
-    expect(screen.getByLabelText("Целевой месяц")).toHaveValue("8");
 
     await user.click(screen.getByRole("button", { name: "Клонировать" }));
     expect(await screen.findByRole("heading", { level: 1, name: /Август/ })).toBeInTheDocument();
-    expect(screen.getByText("31.08.2026")).toBeInTheDocument();
+    expect(screen.getByLabelText("Зарплата gross")).toBeInTheDocument();
+  });
+
+  it("edits salary fields, shows dirty state, and saves incomes", async () => {
+    const user = userEvent.setup();
+    const posts: unknown[] = [];
+    const month = sampleMonths[0];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month]),
+        ...monthEditorHandlers(month),
+        "POST /api/incomes": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          posts.push(body);
+          return jsonResponse(
+            {
+              id: 100 + posts.length,
+              reporting_month_id: month.id,
+              received_at: null,
+              is_recurring: Boolean(body.is_recurring),
+              include_in_cash_flow: true,
+              include_in_passive_income: false,
+              notes: null,
+              ...body,
+            },
+            201,
+          );
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
+    );
+
+    expect(await screen.findByLabelText("Зарплата gross")).toBeInTheDocument();
+    expect(screen.queryByText(/несохранённые изменения/i)).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Зарплата gross"), "200000");
+    await user.type(screen.getByLabelText("Фактический net (employer)"), "170000");
+    await user.type(screen.getByLabelText(/Cashback/i), "500");
+
+    expect(screen.getAllByText(/несохранённые изменения/i).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByText(/Сохранено/i)).toBeInTheDocument();
+    expect(posts.some((p) => (p as { income_type: string }).income_type === "salary")).toBe(true);
+    expect(posts.some((p) => (p as { income_type: string }).income_type === "cashback")).toBe(true);
   });
 });

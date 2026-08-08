@@ -217,6 +217,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - `E01` выполнен Grok 4.5 primary: design system **Balanced Fintech** (hybrid dark forest sidebar + light content), CSS tokens, layout/nav, UI primitives (Button/Panel/Badge/Field/Table/Kpi/Loading-Error-Empty), number/date formatters (`formatMoney`/`formatDate`/`formatMonth`/…), placeholder routes для разделов MASTER_SPEC; sketches A/B/C в `sketches/`; без wiring бизнес-данных и без backend API. Frontend: Biome/Vitest 12/build green. `E02` автоматически не начинается. Отмеченные API gaps: `/api/goals`, tax-brackets UI, cash endpoints — не чинились.
 - `E02` выполнен Grok 4.5 primary: frontend API client (`apiRequest` + D08 `ApiClientError`), months endpoints (list/create/delete/get), `MonthsPage` (список/статус/snapshot/source/открыть/создать/удалить draft+ConfirmDialog), `MonthDetailPage` stub до E04; 21 frontend tests, lint/format/build green. `E03` автоматически не начинается.
 - `E03` выполнен Grok 4.5 primary: UI клонирования месяца (`CloneMonthDialog` + `cloneMonth` API), выбор target period, описание copy/zero, success/error, переход в новый draft; 26 frontend tests. `E04` автоматически не начинается.
+- `E04` выполнен Grok 4.5 primary: редактор месяца — period/snapshot/status, salary gross, calculated tax/net из GET /summary (без FE-формул), actual net, bonus/side/cashback, unsaved-changes banner + beforeunload; incomes upsert API helpers; 31 frontend tests. `E05` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -272,4 +273,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-08 — выполнен `E01` (Grok 4.5 primary): frontend design system Balanced Fintech (hybrid), primitives, formatters, full nav shell + placeholders; 12 frontend tests, lint/format/build green; sketches e01-*; `E02` не начат; API gaps goals/tax-brackets/cash только отмечены.
 - 2026-08-08 — выполнен `E02` (Grok 4.5 primary): api client + months list/create/delete/open UI; 21 frontend tests; `E03` не начат.
 - 2026-08-08 — выполнен `E03` (Grok 4.5 primary): clone UI + API helper; 26 frontend tests; `E04` не начат.
+- 2026-08-08 — выполнен `E04` (Grok 4.5 primary): month editor salary/incomes + dirty guard; 31 frontend tests; `E05` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.
