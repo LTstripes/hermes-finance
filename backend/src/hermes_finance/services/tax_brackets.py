@@ -178,6 +178,7 @@ _DEFAULT_BRACKETS: tuple[tuple[int, int | None, int], ...] = (
     (5_000_000_000, None, 2200),
 )
 
+
 def get_or_create_default_tax_brackets(session: Session, year: int) -> list[TaxBracket]:
     """Return tax brackets for ``year``, seeding the official defaults if empty.
 
