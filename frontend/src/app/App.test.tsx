@@ -438,7 +438,9 @@ describe("App", () => {
     );
 
     expect(await screen.findByRole("heading", { level: 2, name: "Депозиты" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Денежные средства" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Денежные средства" }),
+    ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Альфа");
     await user.clear(screen.getByLabelText("Баланс вклада"));
