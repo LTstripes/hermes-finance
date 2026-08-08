@@ -90,9 +90,7 @@ def list_cash_balances_endpoint(
     month_id: int = Query(...),
     session: Session = Depends(session_for_request),
 ) -> list[CashBalanceResponse]:
-    rows = [
-        row for row in list_cash_balances(session) if row.reporting_month_id == month_id
-    ]
+    rows = [row for row in list_cash_balances(session) if row.reporting_month_id == month_id]
     return [_response(row) for row in rows]
 
 
