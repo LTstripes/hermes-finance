@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -10,6 +11,7 @@ from hermes_finance.services._guard import (
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.concurrency import ConcurrencyError
 
 
 class DepositSnapshotNotFoundError(LookupError):
@@ -124,9 +126,12 @@ def update_deposit_snapshot(
     annual_rate: PercentageRate | str | None = None,
     actual_interest_received: RubleAmount | str | None = None,
     notes: str | None = None,
+    expected_updated_at: datetime | None = None,
 ) -> DepositSnapshot:
     snapshot = get_deposit_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)
+    if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
+        raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
     if name is not None:
         snapshot.name = _normalize_name(name)
     if deposit_type is not None:

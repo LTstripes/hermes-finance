@@ -62,6 +62,10 @@ def get_instrument(session: Session, instrument_id: int) -> Instrument:
     return instrument
 
 
+def get_instrument_by_isin(session: Session, isin: str) -> Instrument | None:
+    return session.scalar(select(Instrument).where(Instrument.isin == isin.strip().upper()))
+
+
 def create_instrument(
     session: Session,
     *,

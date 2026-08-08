@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -16,6 +16,7 @@ from hermes_finance.services._guard import (
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.instruments import InstrumentNotFoundError
 
 
@@ -104,6 +105,28 @@ def get_position_snapshot(session: Session, snapshot_id: int) -> PositionSnapsho
     return snapshot
 
 
+def get_position_snapshot_by_key(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    account_id: int,
+    instrument_id: int,
+) -> PositionSnapshot | None:
+    """Return the snapshot for ``(month, account, instrument)`` or ``None``.
+
+    Read-only lookup used by the API layer to map duplicate-snapshot
+    creation attempts to an HTTP 409 conflict without changing the
+    ValueError contract of :func:`create_position_snapshot`.
+    """
+    return session.scalar(
+        select(PositionSnapshot).where(
+            PositionSnapshot.reporting_month_id == reporting_month_id,
+            PositionSnapshot.account_id == account_id,
+            PositionSnapshot.instrument_id == instrument_id,
+        )
+    )
+
+
 def create_position_snapshot(
     session: Session,
     *,
@@ -173,9 +196,12 @@ def update_position_snapshot(
     price_source: PriceSource | str | None = None,
     manual_adjustment: bool | None = None,
     notes: str | None = None,
+    expected_updated_at: datetime | None = None,
 ) -> PositionSnapshot:
     snapshot = get_position_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)
+    if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
+        raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
     if quantity is not None:
         snapshot.quantity = _normalize_quantity(quantity)
     if average_cost_per_unit is not None:

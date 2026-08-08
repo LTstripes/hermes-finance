@@ -287,6 +287,12 @@ class PositionSnapshot(Base):
         Boolean, nullable=False, default=False, server_default=text("0")
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
 
 class DepositSnapshot(Base):
@@ -327,6 +333,12 @@ class DepositSnapshot(Base):
         BigInteger, nullable=False, default=0, server_default=text("0")
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
 
 class CashBalance(Base):

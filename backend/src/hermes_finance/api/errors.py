@@ -22,10 +22,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from hermes_finance.services.reporting_months import (
-    ClosedReportingMonthError,
-    ReportingMonthNotFoundError,
-)
+from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.reporting_months import ClosedReportingMonthError
 
 logger = logging.getLogger("hermes_finance.api.errors")
 
@@ -113,10 +111,8 @@ def register_error_handlers(application: FastAPI) -> None:
         )
         return _error_response(422, "unprocessable", "Request validation failed", details)
 
-    @application.exception_handler(ReportingMonthNotFoundError)
-    async def _not_found_handler(
-        request: Request, exc: ReportingMonthNotFoundError
-    ) -> JSONResponse:
+    @application.exception_handler(LookupError)
+    async def _not_found_handler(request: Request, exc: LookupError) -> JSONResponse:
         logger.info(
             "%s path=%s status=404 code=not_found",
             exc.__class__.__name__,
@@ -143,6 +139,15 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(409, "conflict", "Database integrity constraint violated")
+
+    @application.exception_handler(ConcurrencyError)
+    async def _concurrency_error_handler(request: Request, exc: ConcurrencyError) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=conflict",
+            exc.__class__.__name__,
+            request.url.path,
+        )
+        return _error_response(409, "conflict", str(exc))
 
     @application.exception_handler(ValueError)
     async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:

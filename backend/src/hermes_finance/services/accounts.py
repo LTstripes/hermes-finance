@@ -49,6 +49,10 @@ def get_account(session: Session, account_id: int) -> Account:
     return account
 
 
+def get_account_by_external_code(session: Session, external_code: str) -> Account | None:
+    return session.scalar(select(Account).where(Account.external_code == external_code.strip()))
+
+
 def create_account(
     session: Session,
     *,
