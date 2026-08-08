@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { Badge, Panel } from "./ui";
+
 type HealthResponse = {
   status: "ok";
   version: string;
@@ -14,10 +16,12 @@ const statusCopy = {
   checking: {
     title: "Проверяем подключение…",
     detail: "Запрашиваем локальный API",
+    chip: "Статус",
   },
   unavailable: {
     title: "Backend недоступен",
     detail: "Запусти API на 127.0.0.1:8000",
+    chip: "Офлайн",
   },
 } as const;
 
@@ -56,21 +60,20 @@ export function BackendStatus() {
 
   const copy =
     state.kind === "connected"
-      ? { title: "Backend подключён", detail: `API v${state.version}` }
+      ? {
+          title: "Backend подключён",
+          detail: `API v${state.version}`,
+          chip: "Онлайн",
+        }
       : statusCopy[state.kind];
 
   return (
-    <section aria-labelledby="backend-status-title" className="panel status-panel">
-      <div className="panel__heading">
-        <div>
-          <p className="panel__label">Состояние системы</p>
-          <h2 id="backend-status-title">Локальный API</h2>
-        </div>
-        <span className={`status-chip status-chip--${state.kind}`}>
-          {state.kind === "connected" ? "Онлайн" : "Статус"}
-        </span>
-      </div>
-
+    <Panel
+      action={<span className={`status-chip status-chip--${state.kind}`}>{copy.chip}</span>}
+      label="Состояние системы"
+      title="Локальный API"
+      titleId="backend-status-title"
+    >
       <div aria-live="polite" className="status-line" role="status">
         <span aria-hidden="true" className={`status-line__dot status-line__dot--${state.kind}`} />
         <span className="status-line__copy">
@@ -78,6 +81,11 @@ export function BackendStatus() {
           <span>{copy.detail}</span>
         </span>
       </div>
-    </section>
+      {state.kind === "connected" ? (
+        <p className="muted" style={{ margin: "14px 0 0", fontSize: "0.8rem" }}>
+          Health-check через Vite proxy → <Badge tone="info">/api/health</Badge>
+        </p>
+      ) : null}
+    </Panel>
   );
 }

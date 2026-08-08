@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E01 · Dense Tool</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --sidebar: #0f1011;
+      --sidebar-elev: #191a1b;
+      --sidebar-hover: #23252a;
+      --sidebar-text: #8a8f98;
+      --sidebar-text-active: #f7f8f8;
+      --accent: #5e6ad2;
+      --accent-soft: #eef0ff;
+      --accent-hover: #7170ff;
+      --bg: #f7f8f8;
+      --surface: #ffffff;
+      --ink: #0f1011;
+      --muted: #62666d;
+      --line: #e6e6e6;
+      --line-strong: #d0d6e0;
+      --green: #108c3d;
+      --green-soft: rgba(16,140,61,.12);
+      --red: #c0392b;
+      --red-soft: rgba(192,57,43,.1);
+      --amber: #9b6829;
+      --amber-soft: rgba(155,104,41,.12);
+      --radius: 6px;
+      --radius-lg: 8px;
+      --shadow: 0 1px 2px rgba(15,16,17,.04), 0 4px 12px rgba(15,16,17,.04);
+      --ease: cubic-bezier(0.23, 1, 0.32, 1);
+      --font: "Inter", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px;
+    }
+    body {
+      font-family: var(--font);
+      font-feature-settings: "cv01", "ss03", "tnum";
+      color: var(--ink);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .sidebar {
+      position: sticky; top: 0; height: 100vh;
+      display: flex; flex-direction: column;
+      background: var(--sidebar); color: var(--sidebar-text);
+      padding: 16px 12px; border-right: 1px solid rgba(255,255,255,.05);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
+    .brand__mark {
+      width: 28px; height: 28px; border-radius: 6px;
+      display: grid; place-items: center;
+      background: var(--accent); color: #fff;
+      font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    }
+    .brand strong { display: block; color: var(--sidebar-text-active); font-size: 13px; font-weight: 510; letter-spacing: -.01em; }
+    .brand small { font-size: 11px; color: #62666d; }
+    .nav { display: grid; gap: 2px; }
+    .nav-section {
+      margin: 14px 8px 6px; font-size: 10px; font-weight: 600;
+      letter-spacing: .08em; text-transform: uppercase; color: #62666d;
+    }
+    .nav a {
+      display: flex; align-items: center; gap: 10px;
+      min-height: 32px; padding: 0 10px; border-radius: 6px;
+      color: var(--sidebar-text); text-decoration: none;
+      font-size: 13px; font-weight: 510;
+      transition: background 140ms var(--ease), color 140ms var(--ease);
+    }
+    .nav a .ico { width: 16px; text-align: center; opacity: .7; font-size: 12px; }
+    .nav a.active, .nav a:hover { color: var(--sidebar-text-active); background: var(--sidebar-elev); }
+    .nav a.active { box-shadow: inset 2px 0 0 var(--accent); }
+    .sidebar__foot {
+      margin-top: auto; padding: 12px 8px 4px;
+      border-top: 1px solid rgba(255,255,255,.06);
+      font-size: 11px; color: #62666d; display: flex; gap: 8px; align-items: center;
+    }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #27a644; box-shadow: 0 0 0 3px rgba(39,166,68,.15); }
+    .main { min-width: 0; display: flex; flex-direction: column; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 48px; padding: 0 20px;
+      border-bottom: 1px solid var(--line); background: rgba(255,255,255,.85);
+      backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 5;
+    }
+    .topbar__left { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+    .crumb { color: var(--ink); font-weight: 510; }
+    .chip {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+      border-radius: 999px; font-size: 11px; font-weight: 510;
+      background: #f0f1f3; color: var(--muted);
+    }
+    .chip--ok { background: var(--green-soft); color: var(--green); }
+    .content { padding: 20px; max-width: 1180px; width: 100%; margin: 0 auto; }
+    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .page-head h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+    .page-head p { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      height: 32px; padding: 0 12px; border-radius: var(--radius);
+      border: 1px solid var(--line-strong); background: var(--surface);
+      color: var(--ink); font-size: 12px; font-weight: 510; cursor: pointer;
+      transition: transform 140ms var(--ease), background 140ms var(--ease), border-color 140ms var(--ease);
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+    .btn:hover { background: #fafafa; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      padding: 12px 14px; box-shadow: var(--shadow);
+    }
+    .kpi__label { font-size: 11px; color: var(--muted); font-weight: 510; margin-bottom: 6px; }
+    .kpi__value { font-family: var(--mono); font-size: 18px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .kpi__delta { margin-top: 4px; font-size: 11px; font-weight: 510; }
+    .kpi__delta.up { color: var(--green); }
+    .kpi__delta.down { color: var(--red); }
+    .grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+    .card__head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid var(--line);
+    }
+    .card__head h2 { font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
+    .card__body { padding: 12px 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      text-align: left; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--muted); padding: 0 0 8px; border-bottom: 1px solid var(--line);
+    }
+    td { padding: 8px 0; border-bottom: 1px solid #f0f1f3; vertical-align: middle; }
+    tr:last-child td { border-bottom: 0; }
+    .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+    th.num { text-align: right; }
+    .badge {
+      display: inline-flex; height: 18px; align-items: center; padding: 0 6px;
+      border-radius: 4px; font-size: 10px; font-weight: 600;
+    }
+    .badge--draft { background: var(--amber-soft); color: var(--amber); }
+    .badge--closed { background: #f0f1f3; color: var(--muted); }
+    .form-row { display: grid; gap: 4px; margin-bottom: 10px; }
+    .form-row label { font-size: 11px; font-weight: 510; color: var(--muted); }
+    .input, .select {
+      height: 32px; padding: 0 10px; border-radius: var(--radius);
+      border: 1px solid var(--line-strong); background: #fff; font: inherit; color: var(--ink);
+      transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+    }
+    .input:focus, .select:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(94,106,210,.15);
+    }
+    .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .state-box {
+      border: 1px dashed var(--line-strong); border-radius: var(--radius-lg);
+      padding: 18px 14px; text-align: center; background: #fafbfb; min-height: 120px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    }
+    .state-box strong { font-size: 12px; }
+    .state-box span { font-size: 11px; color: var(--muted); max-width: 180px; }
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid var(--line-strong);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err-icon { color: var(--red); font-size: 18px; }
+    .empty-icon { color: var(--muted); font-size: 18px; opacity: .6; }
+    .toast {
+      position: fixed; right: 16px; bottom: 16px;
+      background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 8px;
+      font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.2);
+      opacity: 0; transform: translateY(8px) scale(.98);
+      transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0) scale(1); }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { height: auto; position: static; }
+      .kpis, .grid-2, .states { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand__mark">HF</span>
+        <div><strong>Hermes Finance</strong><small>локальный MVP</small></div>
+      </div>
+      <nav class="nav" aria-label="Навигация">
+        <div class="nav-section">Обзор</div>
+        <a class="active" href="#"><span class="ico">▦</span>Дашборд</a>
+        <a href="#months" id="nav-months"><span class="ico">☰</span>Месяцы</a>
+        <div class="nav-section">Данные</div>
+        <a href="#"><span class="ico">⬡</span>Счета и инструменты</a>
+        <a href="#"><span class="ico">◎</span>Цели</a>
+        <div class="nav-section">Система</div>
+        <a href="#"><span class="ico">⇩</span>Экспорт / бэкапы</a>
+        <a href="#"><span class="ico">⚙</span>Настройки</a>
+      </nav>
+      <div class="sidebar__foot"><span class="dot"></span>127.0.0.1 · данные локально</div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar__left"><span>Hermes</span><span>/</span><span class="crumb">Дашборд</span></div>
+        <div class="btn-row">
+          <span class="chip chip--ok">API online</span>
+          <span class="chip">Июль 2026</span>
+        </div>
+      </header>
+      <div class="content">
+        <div class="page-head">
+          <div>
+            <h1>Дашборд</h1>
+            <p>Плотный каркас: KPI, таблица, форма, состояния — без реальных данных.</p>
+          </div>
+          <div class="btn-row">
+            <button class="btn" type="button" id="btn-refresh">Обновить</button>
+            <button class="btn btn--primary" type="button" id="btn-primary">Новый месяц</button>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="kpi__label">Ликвидный капитал</div><div class="kpi__value">4 820 500 ₽</div><div class="kpi__delta up">+2,4% за месяц</div></div>
+          <div class="kpi"><div class="kpi__label">Пассив / мес</div><div class="kpi__value">86 420 ₽</div><div class="kpi__delta up">+1 200 ₽</div></div>
+          <div class="kpi"><div class="kpi__label">Ипотека</div><div class="kpi__value">12 450 000 ₽</div><div class="kpi__delta down">−48 200 ₽</div></div>
+          <div class="kpi"><div class="kpi__label">Покрытие ипотеки</div><div class="kpi__value">0,68×</div><div class="kpi__delta">цель 1,0×</div></div>
+        </div>
+
+        <div class="grid-2">
+          <section class="card">
+            <div class="card__head"><h2>Отчётные месяцы</h2><span class="chip">placeholder</span></div>
+            <div class="card__body">
+              <table>
+                <thead>
+                  <tr><th>Период</th><th>Статус</th><th class="num">Снимок</th><th class="num">Пассив</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Июль 2026</td><td><span class="badge badge--draft">draft</span></td><td class="num">31.07.2026</td><td class="num">86 420 ₽</td></tr>
+                  <tr><td>Июнь 2026</td><td><span class="badge badge--closed">closed</span></td><td class="num">30.06.2026</td><td class="num">85 220 ₽</td></tr>
+                  <tr><td>Май 2026</td><td><span class="badge badge--closed">closed</span></td><td class="num">31.05.2026</td><td class="num">81 900 ₽</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card__head"><h2>Быстрая форма</h2></div>
+            <div class="card__body">
+              <div class="form-row">
+                <label for="period">Период</label>
+                <input class="input" id="period" value="2026-08" />
+              </div>
+              <div class="form-row">
+                <label for="src">Источник</label>
+                <select class="select" id="src"><option>clone</option><option>manual</option></select>
+              </div>
+              <div class="form-row">
+                <label for="note">Комментарий</label>
+                <input class="input" id="note" placeholder="Опционально" />
+              </div>
+              <button class="btn btn--primary" type="button" style="width:100%" id="btn-save">Сохранить черновик</button>
+            </div>
+          </section>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card__head"><h2>Состояния UI</h2></div>
+          <div class="card__body">
+            <div class="states">
+              <div class="state-box"><div class="spinner"></div><strong>Загрузка</strong><span>Тянем dashboard…</span></div>
+              <div class="state-box"><div class="err-icon">!</div><strong>Ошибка</strong><span>Backend недоступен на 127.0.0.1:8000</span></div>
+              <div class="state-box"><div class="empty-icon">∅</div><strong>Пусто</strong><span>Месяцев пока нет — создай первый</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast">Черновик сохранён (fake)</div>
+  <script>
+    const toast = document.getElementById('toast');
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1600);
+    }
+    document.getElementById('btn-primary').onclick = () => showToast('Новый месяц — placeholder');
+    document.getElementById('btn-save').onclick = () => showToast('Черновик сохранён (fake)');
+    document.getElementById('btn-refresh').onclick = () => showToast('Обновлено');
+    document.getElementById('nav-months').onclick = (e) => { e.preventDefault(); showToast('Месяцы — E02'); };
+  </script>
+</body>
+</html>

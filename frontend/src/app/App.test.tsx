@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -18,6 +19,8 @@ describe("App", () => {
 
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeInTheDocument();
+    expect(screen.getByText("Ликвидный капитал")).toBeInTheDocument();
   });
 
   it("shows backend connected after a successful health check", async () => {
@@ -41,5 +44,23 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Backend недоступен")).toBeInTheDocument();
+  });
+
+  it("navigates to placeholder sections from the sidebar", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+
+    render(<App />);
+
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    expect(screen.getByRole("heading", { level: 1, name: "Месяцы" })).toBeInTheDocument();
+    expect(screen.getByText("E02", { selector: ".pending-badge" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: /Цели/i }));
+    expect(screen.getByRole("heading", { level: 1, name: "Цели" })).toBeInTheDocument();
+    expect(screen.getByText("API /api/goals отсутствует")).toBeInTheDocument();
   });
 });

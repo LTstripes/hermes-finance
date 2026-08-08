@@ -1,5 +1,43 @@
 import { NavLink, Outlet } from "react-router";
 
+import { Badge } from "./ui";
+
+type NavItem = {
+  to: string;
+  label: string;
+  icon: string;
+  end?: boolean;
+};
+
+type NavGroup = {
+  section: string;
+  items: NavItem[];
+};
+
+const NAV: NavGroup[] = [
+  {
+    section: "Обзор",
+    items: [
+      { to: "/", label: "Дашборд", icon: "◫", end: true },
+      { to: "/months", label: "Месяцы", icon: "☰" },
+    ],
+  },
+  {
+    section: "Данные",
+    items: [
+      { to: "/accounts", label: "Счета и инструменты", icon: "⬡" },
+      { to: "/goals", label: "Цели", icon: "◎" },
+    ],
+  },
+  {
+    section: "Система",
+    items: [
+      { to: "/export", label: "Экспорт и бэкапы", icon: "⇩" },
+      { to: "/settings", label: "Настройки", icon: "⚙" },
+    ],
+  },
+];
+
 export function AppLayout() {
   return (
     <div className="app-shell">
@@ -15,12 +53,24 @@ export function AppLayout() {
         </div>
 
         <nav aria-label="Основная навигация" className="sidebar__nav">
-          <NavLink className="nav-item" to="/">
-            <span aria-hidden="true" className="nav-item__icon">
-              ◫
-            </span>
-            Дашборд
-          </NavLink>
+          {NAV.map((group) => (
+            <div key={group.section}>
+              <div className="nav-section">{group.section}</div>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+                  end={item.end}
+                  to={item.to}
+                >
+                  <span aria-hidden="true" className="nav-item__icon">
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar__footer">
@@ -32,7 +82,10 @@ export function AppLayout() {
       <div className="workspace">
         <header className="topbar">
           <span>Finance Dashboard</span>
-          <span className="topbar__badge">MVP · локально</span>
+          <div className="topbar__actions">
+            <Badge tone="ok">MVP · 127.0.0.1</Badge>
+            <Badge>локально</Badge>
+          </div>
         </header>
         <main className="content">
           <Outlet />

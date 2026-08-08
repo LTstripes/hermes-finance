@@ -1,0 +1,7 @@
+/* Shared hybrid baseline — each variant overrides density/accent */
+:root {
+  --sidebar-w: 248px;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}

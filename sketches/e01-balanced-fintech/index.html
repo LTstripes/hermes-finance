@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E01 · Balanced Fintech</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      /* Hybrid: dark forest sidebar + light content — evolved HF seed × Stripe precision */
+      --sidebar: #111814;
+      --sidebar-elev: #1c2a21;
+      --sidebar-hover: #223229;
+      --sidebar-text: #9aa69f;
+      --sidebar-text-active: #f7faf7;
+      --sidebar-border: #29372e;
+      --accent: #27734c;
+      --accent-hover: #1f5f3e;
+      --accent-soft: #e5f1e9;
+      --accent-ring: rgba(39,115,76,.18);
+      --bg: #f3f4ef;
+      --surface: #ffffff;
+      --ink: #172019;
+      --muted: #6f786f;
+      --line: #dfe3dc;
+      --line-soft: #e9ece5;
+      --green: #27734c;
+      --green-soft: #e5f1e9;
+      --red: #9b4039;
+      --red-soft: #f7e8e6;
+      --amber: #9a6a1d;
+      --amber-soft: #f7efd9;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --shadow: 0 12px 32px rgba(35,47,39,.05), 0 1px 2px rgba(35,47,39,.04);
+      --shadow-soft: rgba(50,50,93,.08) 0 18px 36px -18px, rgba(0,0,0,.04) 0 8px 16px -8px;
+      --ease: cubic-bezier(0.23, 1, 0.32, 1);
+      --font: "Inter", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
+    .sidebar {
+      position: sticky; top: 0; height: 100vh;
+      display: flex; flex-direction: column;
+      background: var(--sidebar); color: var(--sidebar-text);
+      padding: 28px 18px 22px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 28px; }
+    .brand__mark {
+      width: 38px; height: 38px; border-radius: 11px;
+      display: grid; place-items: center;
+      border: 1px solid #466151; background: #1c2a21; color: #d9eadf;
+      font-size: 12px; font-weight: 800; letter-spacing: .08em;
+    }
+    .brand strong { display: block; color: #eef2ed; font-size: 0.93rem; letter-spacing: -.01em; }
+    .brand small { font-size: 0.72rem; color: #91a098; }
+    .nav { display: grid; gap: 6px; }
+    .nav-section {
+      margin: 18px 10px 6px; font-size: 0.68rem; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase; color: #6d7a71;
+    }
+    .nav a {
+      display: flex; align-items: center; gap: 11px;
+      min-height: 44px; padding: 0 12px; border-radius: 10px;
+      color: var(--sidebar-text); text-decoration: none;
+      font-size: 0.9rem; font-weight: 500;
+      transition: color 140ms var(--ease), background 140ms var(--ease);
+    }
+    .nav a .ico { width: 18px; text-align: center; color: #7f9387; }
+    .nav a.active { color: var(--sidebar-text-active); background: var(--sidebar-elev); }
+    .nav a.active .ico { color: #9dc9ae; }
+    @media (hover: hover) and (pointer: fine) {
+      .nav a:hover { color: #f7faf7; background: #1d2a22; }
+    }
+    .nav a:focus-visible { outline: 2px solid #88b99b; outline-offset: 2px; }
+    .sidebar__foot {
+      margin-top: auto; padding: 16px 8px 0;
+      border-top: 1px solid var(--sidebar-border);
+      font-size: 0.72rem; color: #829087;
+      display: flex; gap: 9px; align-items: center;
+    }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #66a77e;
+      box-shadow: 0 0 0 4px rgb(102 167 126 / 12%);
+    }
+    .main { min-width: 0; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      min-height: 68px; padding: 0 42px;
+      border-bottom: 1px solid var(--line);
+      background: rgb(255 255 255 / 72%);
+      backdrop-filter: blur(10px);
+      color: var(--muted); font-size: 0.78rem;
+      letter-spacing: .04em; text-transform: uppercase;
+      position: sticky; top: 0; z-index: 5;
+    }
+    .chip {
+      display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px;
+      border-radius: 999px; font-size: 0.68rem; font-weight: 700; letter-spacing: .03em;
+      background: #eaede8; color: #526158; text-transform: none;
+    }
+    .chip--ok { background: var(--green-soft); color: var(--green); }
+    .content { width: min(1100px, 100%); margin: 0 auto; padding: 48px 42px 72px; }
+    .page-header { max-width: 640px; margin-bottom: 28px; }
+    .eyebrow {
+      margin: 0 0 10px; color: var(--accent); font-size: 0.72rem; font-weight: 800;
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .page-header h1 {
+      margin: 0; font-size: clamp(1.9rem, 3.5vw, 2.6rem); font-weight: 650;
+      letter-spacing: -.04em; line-height: 1.05;
+    }
+    .page-header p { margin: 14px 0 0; color: var(--muted); font-size: 0.95rem; line-height: 1.65; max-width: 560px; }
+    .toolbar { display: flex; gap: 10px; margin: 22px 0 28px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 40px; padding: 0 16px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--surface);
+      color: var(--ink); font-size: 0.88rem; font-weight: 600; cursor: pointer;
+      transition: transform 150ms var(--ease), background 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn--primary {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+      box-shadow: 0 8px 20px rgba(39,115,76,.18);
+    }
+    .btn--primary:hover { background: var(--accent-hover); }
+    @media (hover: hover) and (pointer: fine) {
+      .btn:not(.btn--primary):hover { background: #fafbf8; border-color: #cfd6cc; }
+    }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+      padding: 18px 18px 16px; box-shadow: var(--shadow);
+    }
+    .kpi__label { font-size: 0.72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .kpi__value {
+      font-family: var(--mono); font-size: 1.35rem; font-weight: 500;
+      letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+    }
+    .kpi__delta { margin-top: 8px; font-size: 0.78rem; font-weight: 600; }
+    .kpi__delta.up { color: var(--green); }
+    .kpi__delta.down { color: var(--red); }
+    .grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .panel {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+      box-shadow: var(--shadow); padding: 22px 24px; min-height: 200px;
+    }
+    .panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .panel__label {
+      margin: 0 0 8px; color: var(--accent); font-size: 0.72rem; font-weight: 800;
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .panel h2 { margin: 0; font-size: 1.05rem; letter-spacing: -.02em; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th {
+      text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); padding: 0 0 10px; border-bottom: 1px solid var(--line);
+    }
+    td { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+    tr:last-child td { border-bottom: 0; }
+    .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; font-size: 0.84rem; }
+    th.num { text-align: right; }
+    .badge {
+      display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px;
+      border-radius: 999px; font-size: 0.68rem; font-weight: 700; letter-spacing: .03em;
+    }
+    .badge--draft { background: var(--amber-soft); color: var(--amber); }
+    .badge--closed { background: #ecefe9; color: #647066; }
+    .form-row { display: grid; gap: 6px; margin-bottom: 14px; }
+    .form-row label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+    .input, .select {
+      min-height: 42px; padding: 0 12px; border-radius: 10px;
+      border: 1px solid var(--line); background: #fff; font: inherit; color: var(--ink);
+      transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+    }
+    .input:focus, .select:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+    .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .state-box {
+      border: 1px solid var(--line); border-radius: 14px; padding: 24px 16px;
+      text-align: center; background: #fafbf8; min-height: 140px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    }
+    .state-box strong { font-size: 0.9rem; }
+    .state-box span { font-size: 0.8rem; color: var(--muted); max-width: 200px; line-height: 1.45; }
+    .spinner {
+      width: 22px; height: 22px; border: 2.5px solid var(--line);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err-icon {
+      width: 28px; height: 28px; border-radius: 50%; background: var(--red-soft); color: var(--red);
+      display: grid; place-items: center; font-weight: 800; font-size: 14px;
+    }
+    .empty-icon {
+      width: 28px; height: 28px; border-radius: 8px; background: #ecefe9; color: var(--muted);
+      display: grid; place-items: center; font-size: 14px;
+    }
+    .toast {
+      position: fixed; right: 24px; bottom: 24px;
+      background: var(--sidebar); color: #eef2ed; padding: 14px 18px; border-radius: 12px;
+      font-size: 0.86rem; box-shadow: var(--shadow-soft);
+      opacity: 0; transform: translateY(10px) scale(.97);
+      transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0) scale(1); }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { height: auto; position: static; padding: 18px 20px; }
+      .nav { display: flex; flex-wrap: wrap; gap: 6px; }
+      .nav-section { display: none; }
+      .sidebar__foot { display: none; }
+      .content { padding: 32px 22px 52px; }
+      .topbar { padding: 0 22px; min-height: 58px; }
+      .kpis, .grid-2, .states { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand__mark">HF</span>
+        <div><strong>Hermes Finance</strong><small>Личный капитал</small></div>
+      </div>
+      <nav class="nav" aria-label="Основная навигация">
+        <div class="nav-section">Обзор</div>
+        <a class="active" href="#"><span class="ico">◫</span>Дашборд</a>
+        <a href="#months" id="nav-months"><span class="ico">☰</span>Месяцы</a>
+        <div class="nav-section">Данные</div>
+        <a href="#"><span class="ico">⬡</span>Счета и инструменты</a>
+        <a href="#"><span class="ico">◎</span>Цели</a>
+        <div class="nav-section">Система</div>
+        <a href="#"><span class="ico">⇩</span>Экспорт и бэкапы</a>
+        <a href="#"><span class="ico">⚙</span>Настройки</a>
+      </nav>
+      <div class="sidebar__foot"><span class="dot"></span>Данные остаются локально</div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <span>Finance Dashboard</span>
+        <div style="display:flex;gap:8px;align-items:center;text-transform:none">
+          <span class="chip chip--ok">API online</span>
+          <span class="chip">MVP · локально</span>
+        </div>
+      </header>
+      <div class="content">
+        <header class="page-header">
+          <p class="eyebrow">Обзор</p>
+          <h1>Дашборд</h1>
+          <p>Сбалансированный hybrid: тёмный sidebar HF + светлый контент Stripe-precision. Fake copy, без бизнес-данных.</p>
+        </header>
+        <div class="toolbar">
+          <button class="btn btn--primary" type="button" id="btn-primary">Создать следующий месяц</button>
+          <button class="btn" type="button" id="btn-refresh">Обновить сводку</button>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="kpi__label">Ликвидный капитал</div><div class="kpi__value">4 820 500 ₽</div><div class="kpi__delta up">+2,4% · месяц</div></div>
+          <div class="kpi"><div class="kpi__label">Пассив / мес</div><div class="kpi__value">86 420 ₽</div><div class="kpi__delta up">+1 200 ₽</div></div>
+          <div class="kpi"><div class="kpi__label">Ипотека</div><div class="kpi__value">12 450 000 ₽</div><div class="kpi__delta down">−48 200 ₽</div></div>
+          <div class="kpi"><div class="kpi__label">Покрытие</div><div class="kpi__value">0,68×</div><div class="kpi__delta">цель 1,0×</div></div>
+        </div>
+
+        <div class="grid-2">
+          <section class="panel">
+            <div class="panel__head">
+              <div>
+                <p class="panel__label">Периоды</p>
+                <h2>Отчётные месяцы</h2>
+              </div>
+              <span class="chip">placeholder</span>
+            </div>
+            <table>
+              <thead>
+                <tr><th>Период</th><th>Статус</th><th class="num">Снимок</th><th class="num">Пассив</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Июль 2026</td><td><span class="badge badge--draft">draft</span></td><td class="num">31.07.2026</td><td class="num">86 420 ₽</td></tr>
+                <tr><td>Июнь 2026</td><td><span class="badge badge--closed">closed</span></td><td class="num">30.06.2026</td><td class="num">85 220 ₽</td></tr>
+                <tr><td>Май 2026</td><td><span class="badge badge--closed">closed</span></td><td class="num">31.05.2026</td><td class="num">81 900 ₽</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="panel">
+            <div class="panel__head">
+              <div>
+                <p class="panel__label">Форма</p>
+                <h2>Новый черновик</h2>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="period">Период</label>
+              <input class="input" id="period" value="Август 2026" />
+            </div>
+            <div class="form-row">
+              <label for="src">Источник</label>
+              <select class="select" id="src"><option>Клонировать предыдущий</option><option>С нуля</option></select>
+            </div>
+            <div class="form-row">
+              <label for="note">Комментарий</label>
+              <input class="input" id="note" placeholder="Необязательно" />
+            </div>
+            <button class="btn btn--primary" type="button" style="width:100%" id="btn-save">Сохранить</button>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel__head">
+            <div>
+              <p class="panel__label">Примитивы</p>
+              <h2>Loading · Error · Empty</h2>
+            </div>
+          </div>
+          <div class="states">
+            <div class="state-box"><div class="spinner"></div><strong>Загрузка</strong><span>Собираем dashboard…</span></div>
+            <div class="state-box"><div class="err-icon">!</div><strong>Ошибка</strong><span>Backend недоступен на 127.0.0.1:8000</span></div>
+            <div class="state-box"><div class="empty-icon">∅</div><strong>Пусто</strong><span>Месяцев пока нет — создай первый период</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast">Готово</div>
+  <script>
+    const toast = document.getElementById('toast');
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1700);
+    }
+    document.getElementById('btn-primary').onclick = () => showToast('Клонирование — E03');
+    document.getElementById('btn-save').onclick = () => showToast('Черновик сохранён (fake)');
+    document.getElementById('btn-refresh').onclick = () => showToast('Сводка обновлена');
+    document.getElementById('nav-months').onclick = (e) => { e.preventDefault(); showToast('Месяцы — E02'); };
+  </script>
+</body>
+</html>
