@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
+from hermes_finance.api.cash import router as cash_router
 from hermes_finance.api.comments import router as comments_router
 from hermes_finance.api.dashboard import router as dashboard_router
 from hermes_finance.api.debts import router as debts_router
@@ -42,6 +43,7 @@ def create_app(database: Database | None = None) -> FastAPI:
     application.include_router(iis_router)
     application.include_router(positions_router)
     application.include_router(deposits_router)
+    application.include_router(cash_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)
     application.include_router(expected_flows_router)

@@ -38,3 +38,27 @@ export function isBlankMoney(value: string): boolean {
   const n = normalizeMoneyInput(value);
   return n == null || n === "0.00" || n === "-0.00";
 }
+
+/** Sum money amount strings via integer kopecks (no binary float). */
+export function sumMoneyAmounts(amounts: Array<string | null | undefined>): string {
+  let totalKopecks = 0;
+  for (const raw of amounts) {
+    if (raw == null || raw === "") {
+      continue;
+    }
+    const n = normalizeMoneyInput(raw);
+    if (n == null) {
+      continue;
+    }
+    const negative = n.startsWith("-");
+    const unsigned = negative ? n.slice(1) : n;
+    const [intPart, frac = "00"] = unsigned.split(".");
+    const kopecks = Number(intPart) * 100 + Number(frac.padEnd(2, "0").slice(0, 2));
+    totalKopecks += negative ? -kopecks : kopecks;
+  }
+  const neg = totalKopecks < 0;
+  const abs = Math.abs(totalKopecks);
+  const major = Math.floor(abs / 100);
+  const cents = String(abs % 100).padStart(2, "0");
+  return `${neg ? "-" : ""}${major}.${cents}`;
+}

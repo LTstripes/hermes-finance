@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isBlankMoney, normalizeMoneyInput, rub } from "./money";
+import { isBlankMoney, normalizeMoneyInput, rub, sumMoneyAmounts } from "./money";
 
 describe("normalizeMoneyInput", () => {
   it("accepts integers and decimals with comma", () => {
@@ -26,5 +26,12 @@ describe("isBlankMoney", () => {
     expect(isBlankMoney("")).toBe(true);
     expect(isBlankMoney("0")).toBe(true);
     expect(isBlankMoney("10")).toBe(false);
+  });
+});
+
+describe("sumMoneyAmounts", () => {
+  it("sums via integer kopecks without float drift", () => {
+    expect(sumMoneyAmounts(["100.50", "0.50", "2"])).toBe("103.00");
+    expect(sumMoneyAmounts(["10.00", "-3.25"])).toBe("6.75");
   });
 });

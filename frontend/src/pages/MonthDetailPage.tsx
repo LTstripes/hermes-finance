@@ -16,6 +16,7 @@ import {
   LoadingState,
   Panel,
 } from "../components/ui";
+import { MonthAssetsSection } from "../components/MonthAssetsSection";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { moneyAmount, normalizeMoneyInput } from "../lib/money";
@@ -229,8 +230,8 @@ export function MonthDetailPage() {
         <p className="eyebrow">Редактор</p>
         <h1>{formatMonth(month.year, month.month)}</h1>
         <p className="page-header__description">
-          Общие сведения и доходы месяца. Расчётный НДФЛ/net — только с backend (summary), без
-          формул на клиенте.
+          Общие сведения, доходы, депозиты и денежные средства. Расчётный НДФЛ/net и expected
+          interest — с backend, без формул на клиенте.
         </p>
       </header>
 
@@ -389,6 +390,8 @@ export function MonthDetailPage() {
           </Button>
         </div>
       </form>
+
+      <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
 
       <CloneMonthDialog
         onCancel={() => setCloneOpen(false)}

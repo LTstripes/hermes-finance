@@ -118,3 +118,81 @@ export type MonthSummary = {
   salary_tax: SalaryTaxSummary;
   salary_actual_net: MoneyValue;
 };
+
+export type Account = {
+  id: number;
+  name: string;
+  account_type: string;
+  status: string;
+  external_code: string | null;
+  include_in_capital: boolean;
+  include_in_returns: boolean;
+  notes: string | null;
+};
+
+export type DepositSnapshot = {
+  id: number;
+  reporting_month_id: number;
+  account_id: number;
+  name: string;
+  deposit_type: "deposit" | "savings" | string;
+  balance: MoneyValue;
+  annual_rate: string;
+  expected_monthly_interest: MoneyValue;
+  actual_interest_received: MoneyValue;
+  notes: string | null;
+  updated_at: string;
+};
+
+export type DepositCreate = {
+  reporting_month_id: number;
+  account_id: number;
+  name: string;
+  deposit_type: string;
+  balance: MoneyValue;
+  annual_rate: string;
+  actual_interest_received?: MoneyValue;
+  notes?: string | null;
+};
+
+export type DepositUpdate = {
+  name?: string;
+  deposit_type?: string;
+  balance?: MoneyValue;
+  annual_rate?: string;
+  actual_interest_received?: MoneyValue;
+  notes?: string | null;
+};
+
+export type CashBalance = {
+  id: number;
+  reporting_month_id: number;
+  name: string;
+  amount: MoneyValue;
+  currency: string;
+  include_in_capital: boolean;
+  notes: string | null;
+};
+
+export type CashBalanceCreate = {
+  reporting_month_id: number;
+  name: string;
+  amount: MoneyValue;
+  currency?: string;
+  include_in_capital?: boolean;
+  notes?: string | null;
+};
+
+export type CashBalanceUpdate = {
+  name?: string;
+  amount?: MoneyValue;
+  currency?: string;
+  include_in_capital?: boolean;
+  notes?: string | null;
+};
+
+export type CashTotal = {
+  reporting_month_id: number;
+  total: MoneyValue;
+  total_in_capital: MoneyValue;
+};

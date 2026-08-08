@@ -218,6 +218,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - `E02` выполнен Grok 4.5 primary: frontend API client (`apiRequest` + D08 `ApiClientError`), months endpoints (list/create/delete/get), `MonthsPage` (список/статус/snapshot/source/открыть/создать/удалить draft+ConfirmDialog), `MonthDetailPage` stub до E04; 21 frontend tests, lint/format/build green. `E03` автоматически не начинается.
 - `E03` выполнен Grok 4.5 primary: UI клонирования месяца (`CloneMonthDialog` + `cloneMonth` API), выбор target period, описание copy/zero, success/error, переход в новый draft; 26 frontend tests. `E04` автоматически не начинается.
 - `E04` выполнен Grok 4.5 primary: редактор месяца — period/snapshot/status, salary gross, calculated tax/net из GET /summary (без FE-формул), actual net, bonus/side/cashback, unsaved-changes banner + beforeunload; incomes upsert API helpers; 31 frontend tests. `E05` автоматически не начинается.
+- `E05` выполнен Grok 4.5 primary: deposits table (add/edit/delete, balance/rate/expected_monthly_interest from backend, actual interest), cash balances CRUD API `/api/cash-balances` (+ total), MonthAssetsSection totals; 33 frontend tests + cash API test. `E06` автоматически не начинается.
 
 ### Требует ответа владельца
 
@@ -274,4 +275,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-08 — выполнен `E02` (Grok 4.5 primary): api client + months list/create/delete/open UI; 21 frontend tests; `E03` не начат.
 - 2026-08-08 — выполнен `E03` (Grok 4.5 primary): clone UI + API helper; 26 frontend tests; `E04` не начат.
 - 2026-08-08 — выполнен `E04` (Grok 4.5 primary): month editor salary/incomes + dirty guard; 31 frontend tests; `E05` не начат.
+- 2026-08-08 — выполнен `E05` (Grok 4.5 primary): deposits+cash UI and cash API gap fill; 33 frontend tests; `E06` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.

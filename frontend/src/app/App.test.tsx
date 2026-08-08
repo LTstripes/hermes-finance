@@ -83,6 +83,27 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
         },
         salary_actual_net: { amount: "170000.00", currency: "RUB" },
       }),
+    "GET /api/accounts": () =>
+      jsonResponse([
+        {
+          id: 1,
+          name: "Депозиты",
+          account_type: "deposit",
+          status: "active",
+          external_code: null,
+          include_in_capital: true,
+          include_in_returns: true,
+          notes: null,
+        },
+      ]),
+    [`GET /api/deposits?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/cash-balances?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/cash-balances/total?month_id=${month.id}`]: () =>
+      jsonResponse({
+        reporting_month_id: month.id,
+        total: { amount: "0.00", currency: "RUB" },
+        total_in_capital: { amount: "0.00", currency: "RUB" },
+      }),
   };
 }
 
@@ -323,5 +344,96 @@ describe("App", () => {
     expect(await screen.findByText(/Сохранено/i)).toBeInTheDocument();
     expect(posts.some((p) => (p as { income_type: string }).income_type === "salary")).toBe(true);
     expect(posts.some((p) => (p as { income_type: string }).income_type === "cashback")).toBe(true);
+  });
+
+  it("adds a deposit and cash row on the month editor", async () => {
+    const user = userEvent.setup();
+    const month = sampleMonths[0];
+    const deposits: unknown[] = [];
+    const cashRows: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month]),
+        ...monthEditorHandlers(month),
+        [`GET /api/deposits?month_id=${month.id}`]: () => jsonResponse(deposits),
+        [`GET /api/cash-balances?month_id=${month.id}`]: () => jsonResponse(cashRows),
+        [`GET /api/cash-balances/total?month_id=${month.id}`]: () => {
+          let totalKopecks = 0;
+          for (const row of cashRows) {
+            const amount = (row as { amount: { amount: string } }).amount.amount;
+            const [whole, frac = "00"] = amount.split(".");
+            totalKopecks += Number(whole) * 100 + Number(frac.padEnd(2, "0").slice(0, 2));
+          }
+          const text = `${Math.floor(totalKopecks / 100)}.${String(totalKopecks % 100).padStart(2, "0")}`;
+          return jsonResponse({
+            reporting_month_id: month.id,
+            total: { amount: text, currency: "RUB" },
+            total_in_capital: { amount: text, currency: "RUB" },
+          });
+        },
+        "POST /api/deposits": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 50 + deposits.length,
+            reporting_month_id: month.id,
+            account_id: body.account_id,
+            name: body.name,
+            deposit_type: body.deposit_type,
+            balance: body.balance,
+            annual_rate: body.annual_rate,
+            expected_monthly_interest: { amount: "1000.00", currency: "RUB" },
+            actual_interest_received: body.actual_interest_received ?? {
+              amount: "0.00",
+              currency: "RUB",
+            },
+            notes: null,
+            updated_at: "2026-07-31T12:00:00",
+          };
+          deposits.push(created);
+          return jsonResponse(created, 201);
+        },
+        "POST /api/cash-balances": async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const created = {
+            id: 70 + cashRows.length,
+            reporting_month_id: month.id,
+            name: body.name,
+            amount: body.amount,
+            currency: "RUB",
+            include_in_capital: body.include_in_capital !== false,
+            notes: null,
+          };
+          cashRows.push(created);
+          return jsonResponse(created, 201);
+        },
+      }),
+    );
+
+    render(<App />);
+    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
+    );
+
+    expect(await screen.findByText("Депозиты")).toBeInTheDocument();
+    expect(screen.getByText("Денежные средства")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Название вклада"), "Вклад Альфа");
+    await user.clear(screen.getByLabelText("Баланс вклада"));
+    await user.type(screen.getByLabelText("Баланс вклада"), "100000");
+    await user.click(screen.getByRole("button", { name: "Добавить вклад" }));
+
+    expect(await screen.findByText("Вклад Альфа")).toBeInTheDocument();
+    expect(screen.getAllByText(/1\s*000\s*₽/).length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText("Название cash"), "Кошелёк");
+    await user.type(screen.getByLabelText("Сумма cash"), "2500.50");
+    await user.click(screen.getByRole("button", { name: "Добавить cash" }));
+
+    expect(await screen.findByText("Кошелёк")).toBeInTheDocument();
+    expect(screen.getAllByText(/2\s*500[,.]50\s*₽/).length).toBeGreaterThan(0);
   });
 });
