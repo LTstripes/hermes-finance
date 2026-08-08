@@ -224,6 +224,7 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - `E08` выполнен Grok 4.5 primary: expenses (mandatory/comfortable/other) + savings allocations separately, totals, notes; 40 frontend tests after E08–E10 bundle.
 - `E09` выполнен Grok 4.5 primary: debts (credit_card), properties (value/mortgage/payment), mortgage coverage preview from dashboard/summary; real estate not liquid capital note.
 - `E10` выполнен Grok 4.5 primary: IIS profile/contributions/benefits (tax info warning), goal progress from summary + /api/goals gap note, comments with reorder; `E11` не начинается.
+- `E11` выполнен Grok 4.5 primary: live dashboard KPIs from `GET /api/months/{id}/dashboard` (liquid capital, month delta, forecast passive, actual average, goal progress, mandatory expenses, expense/mortgage coverage); month selector; no FE finance formulas; 41 frontend tests; `E12` не начинается.
 
 ### Требует ответа владельца
 
@@ -284,4 +285,5 @@ Skill разумно создавать после `A01`/`A02`, когда ст�
 - 2026-08-08 — выполнен `E06` (Grok 4.5 primary): brokerage positions UI in month editor; 34 frontend tests; `E07` не начат.
 - 2026-08-08 — выполнен `E07` (Grok 4.5 primary): payouts/expected flows UI; 38 frontend tests; `E08` не начат.
 - 2026-08-08 — выполнен `E08`–`E10` (Grok 4.5 primary): budget/liabilities/closeout sections; 40 frontend tests; `E11` не начат.
+- 2026-08-08 — выполнен `E11` (Grok 4.5 primary): dashboard KPI cards live from API; 41 frontend tests; `E12` не начат.
 - 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.

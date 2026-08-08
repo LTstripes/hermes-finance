@@ -132,8 +132,33 @@ export type DashboardMortgage = {
   gap: MoneyValue;
 };
 
+export type DashboardKpis = {
+  liquid_capital_net: MoneyValue;
+  liquid_capital_delta: MoneyValue | null;
+  forecast_monthly_passive_income: MoneyValue;
+  passive_income_average: MoneyValue;
+  goal_progress_pct: string | null;
+  mandatory_expenses: MoneyValue;
+  mandatory_expense_coverage_pct: string | null;
+  mortgage_balance: MoneyValue;
+  mortgage_coverage_pct: string | null;
+};
+
+export type DashboardMonthRef = {
+  id: number;
+  year: number;
+  month: number;
+  status: string;
+  snapshot_date: string;
+  source: string;
+};
+
 export type DashboardSlice = {
+  month?: DashboardMonthRef;
+  kpis?: DashboardKpis;
   mortgage: DashboardMortgage;
+  warnings?: string[];
+  calculation_version?: string;
 };
 
 export type Account = {

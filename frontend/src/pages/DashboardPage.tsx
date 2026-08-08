@@ -1,11 +1,14 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
+
 import { BackendStatus } from "../components/BackendStatus";
 import {
   Badge,
   Button,
+  CloneMonthDialog,
   EmptyState,
   ErrorState,
   Field,
-  Input,
   KpiCard,
   LoadingState,
   Panel,
@@ -14,81 +17,243 @@ import {
   Td,
   Th,
 } from "../components/ui";
+import { formatApiError } from "../api/client";
+import { getDashboard } from "../api/dashboard";
+import { listMonths } from "../api/months";
+import type { DashboardKpis, DashboardSlice, ReportingMonth } from "../api/types";
 import {
   formatDate,
   formatMoney,
   formatMoneyDelta,
   formatMonth,
   formatPercent,
-  formatRatio,
 } from "../lib/format";
+import { moneyAmount } from "../lib/money";
 
-/** Visual shell only — synthetic labels, no live finance wiring (E01). */
-const PLACEHOLDER_MONTHS = [
-  {
-    period: formatMonth(2026, 7),
-    status: "draft" as const,
-    snapshot: "2026-07-31",
-    passive: "86420",
-  },
-  {
-    period: formatMonth(2026, 6),
-    status: "closed" as const,
-    snapshot: "2026-06-30",
-    passive: "85220",
-  },
-  {
-    period: formatMonth(2026, 5),
-    status: "closed" as const,
-    snapshot: "2026-05-31",
-    passive: "81900",
-  },
-];
+function deltaToneFromAmount(amount: string | null | undefined): "up" | "down" | "neutral" {
+  if (
+    amount == null ||
+    amount === "" ||
+    amount === "0" ||
+    amount === "0.00" ||
+    amount === "-0.00"
+  ) {
+    return "neutral";
+  }
+  return amount.startsWith("-") ? "down" : "up";
+}
+
+function pctLabel(value: string | null | undefined): string {
+  if (value == null || value === "") {
+    return "—";
+  }
+  return formatPercent(value, { digits: 1 });
+}
 
 export function DashboardPage() {
+  const [months, setMonths] = useState<ReportingMonth[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardSlice | null>(null);
+  const [loadingMonths, setLoadingMonths] = useState(true);
+  const [loadingDash, setLoadingDash] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cloneOpen, setCloneOpen] = useState(false);
+
+  const loadMonths = useCallback(async (signal?: AbortSignal) => {
+    setLoadingMonths(true);
+    setError(null);
+    try {
+      const rows = await listMonths(signal);
+      if (signal?.aborted) return;
+      // newest first for selector convenience
+      const sorted = [...rows].sort((a, b) =>
+        a.year === b.year ? b.month - a.month : b.year - a.year,
+      );
+      setMonths(sorted);
+      setSelectedId((prev) => {
+        if (prev != null && sorted.some((m) => m.id === prev)) {
+          return prev;
+        }
+        return sorted[0]?.id ?? null;
+      });
+    } catch (err) {
+      if (!signal?.aborted) {
+        setError(formatApiError(err));
+        setMonths([]);
+        setSelectedId(null);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoadingMonths(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadMonths(controller.signal);
+    return () => controller.abort();
+  }, [loadMonths]);
+
+  useEffect(() => {
+    if (selectedId == null) {
+      setDashboard(null);
+      return;
+    }
+    const controller = new AbortController();
+    setLoadingDash(true);
+    setError(null);
+    void getDashboard(selectedId, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setDashboard(data);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setError(formatApiError(err));
+          setDashboard(null);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadingDash(false);
+        }
+      });
+    return () => controller.abort();
+  }, [selectedId]);
+
+  const selectedMonth = useMemo(
+    () => months.find((m) => m.id === selectedId) ?? null,
+    [months, selectedId],
+  );
+  const kpis: DashboardKpis | null = dashboard?.kpis ?? null;
+
+  const liquidDelta = moneyAmount(kpis?.liquid_capital_delta);
+  const liquidTone = deltaToneFromAmount(liquidDelta);
+
   return (
     <section className="dashboard stack-18">
       <header className="page-header">
         <p className="eyebrow">Обзор</p>
         <h1>Дашборд</h1>
         <p className="page-header__description">
-          Визуальный каркас Hermes Finance: навигация, KPI, таблица, форма и состояния. Финансовые
-          цифры ниже — placeholder, без подключения доменных данных.
+          KPI приходят готовыми из <code>GET /api/months/{"{id}"}/dashboard</code>. Без клиентских
+          финансовых формул.
         </p>
       </header>
 
       <div className="toolbar">
-        <Button variant="primary" type="button" disabled>
+        <FieldMonthSelect
+          months={months}
+          onChange={setSelectedId}
+          selectedId={selectedId}
+          disabled={loadingMonths || months.length === 0}
+        />
+        <Button
+          disabled={!selectedMonth}
+          onClick={() => setCloneOpen(true)}
+          type="button"
+          variant="primary"
+        >
           Создать следующий месяц
         </Button>
-        <Button type="button" disabled>
-          Обновить сводку
+        <Button
+          disabled={loadingMonths || loadingDash}
+          onClick={() => void loadMonths()}
+          type="button"
+        >
+          Обновить
         </Button>
+        {selectedMonth ? (
+          <Link className="btn" to={`/months/${selectedMonth.id}`}>
+            Открыть редактор
+          </Link>
+        ) : null}
       </div>
 
-      <section className="kpi-grid" aria-label="KPI placeholder">
+      {error ? (
+        <div className="inline-alert inline-alert--error" role="alert">
+          {error}
+        </div>
+      ) : null}
+
+      {loadingMonths ? (
+        <LoadingState description="Загружаем список месяцев…" inline />
+      ) : months.length === 0 ? (
+        <EmptyState
+          description="Месяцев пока нет — создай первый период в разделе «Месяцы»."
+          title="Нет данных"
+        />
+      ) : null}
+
+      <section className="kpi-grid" aria-label="Ключевые показатели">
         <KpiCard
           label="Ликвидный капитал"
-          value={formatMoney("4820500")}
-          delta={`${formatPercent("2.4", { signed: true })} · месяц`}
-          deltaTone="up"
+          value={loadingDash || !kpis ? "…" : formatMoney(moneyAmount(kpis.liquid_capital_net))}
+          delta={
+            loadingDash || !kpis
+              ? "month delta"
+              : kpis.liquid_capital_delta
+                ? `${formatMoneyDelta(liquidDelta)} · месяц`
+                : "нет delta"
+          }
+          deltaTone={liquidTone}
         />
         <KpiCard
-          label="Пассив / мес"
-          value={formatMoney("86420")}
-          delta={formatMoneyDelta("1200")}
-          deltaTone="up"
+          label="Month delta"
+          value={
+            loadingDash || !kpis
+              ? "…"
+              : kpis.liquid_capital_delta
+                ? formatMoneyDelta(liquidDelta)
+                : "—"
+          }
+          delta="liquid capital Δ"
+          deltaTone={liquidTone}
         />
         <KpiCard
-          label="Ипотека"
-          value={formatMoney("12450000")}
-          delta={formatMoneyDelta("-48200")}
-          deltaTone="down"
+          label="Forecast passive"
+          value={
+            loadingDash || !kpis
+              ? "…"
+              : formatMoney(moneyAmount(kpis.forecast_monthly_passive_income))
+          }
+          delta="прогноз / мес"
+          deltaTone="neutral"
         />
         <KpiCard
-          label="Покрытие"
-          value={formatRatio("0.68")}
-          delta="цель 1,00×"
+          label="Actual average"
+          value={loadingDash || !kpis ? "…" : formatMoney(moneyAmount(kpis.passive_income_average))}
+          delta="средний факт passive"
+          deltaTone="neutral"
+        />
+        <KpiCard
+          label="Goal progress"
+          value={loadingDash || !kpis ? "…" : pctLabel(kpis.goal_progress_pct)}
+          delta="цель / coverage"
+          deltaTone="neutral"
+        />
+        <KpiCard
+          label="Mandatory expenses"
+          value={loadingDash || !kpis ? "…" : formatMoney(moneyAmount(kpis.mandatory_expenses))}
+          delta="обязательные"
+          deltaTone="neutral"
+        />
+        <KpiCard
+          label="Expense coverage"
+          value={loadingDash || !kpis ? "…" : pctLabel(kpis.mandatory_expense_coverage_pct)}
+          delta="passive vs mandatory"
+          deltaTone="neutral"
+        />
+        <KpiCard
+          label="Mortgage coverage"
+          value={loadingDash || !kpis ? "…" : pctLabel(kpis.mortgage_coverage_pct)}
+          delta={
+            loadingDash || !kpis
+              ? "ипотека"
+              : `баланс ${formatMoney(moneyAmount(kpis.mortgage_balance))}`
+          }
           deltaTone="neutral"
         />
       </section>
@@ -96,74 +261,129 @@ export function DashboardPage() {
       <div className="dashboard-grid">
         <BackendStatus />
 
-        <Panel empty label="Финансовая сводка" title="Данные ещё не подключены">
-          <p>
-            Живые KPI, allocation и calendar появятся после wiring dashboard API. Сейчас — только
-            design system и layout.
-          </p>
-          <span className="pending-badge">E02+</span>
+        <Panel
+          label="Сводка"
+          title={
+            selectedMonth
+              ? formatMonth(selectedMonth.year, selectedMonth.month)
+              : "Нет выбранного месяца"
+          }
+        >
+          {loadingDash ? (
+            <LoadingState description="Тянем dashboard API…" inline />
+          ) : error && !dashboard ? (
+            <ErrorState description={error} inline title="Ошибка dashboard" />
+          ) : dashboard?.kpis ? (
+            <div className="stack-8">
+              <p className="muted field-hint">
+                Статус:{" "}
+                <Badge tone={selectedMonth?.status === "draft" ? "draft" : "closed"}>
+                  {selectedMonth?.status}
+                </Badge>{" "}
+                · снимок {selectedMonth ? formatDate(selectedMonth.snapshot_date) : "—"}
+                {dashboard.calculation_version ? ` · calc ${dashboard.calculation_version}` : null}
+              </p>
+              {dashboard.warnings && dashboard.warnings.length > 0 ? (
+                <div className="inline-alert inline-alert--warn" role="status">
+                  {dashboard.warnings.join(" · ")}
+                </div>
+              ) : (
+                <p className="muted">Предупреждений нет. Charts — E12+.</p>
+              )}
+            </div>
+          ) : (
+            <EmptyState description="Выбери месяц со сводкой." inline title="Пусто" />
+          )}
         </Panel>
       </div>
 
-      <div className="dashboard-grid">
-        <Panel action={<Badge>placeholder</Badge>} label="Периоды" title="Отчётные месяцы">
+      <Panel action={<Link to="/months">К списку →</Link>} label="Периоды" title="Отчётные месяцы">
+        {months.length === 0 ? (
+          <EmptyState description="Список пуст." inline title="Нет месяцев" />
+        ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Период</Th>
                 <Th>Статус</Th>
                 <Th numeric>Снимок</Th>
-                <Th numeric>Пассив</Th>
+                <Th>Действия</Th>
               </tr>
             </thead>
             <tbody>
-              {PLACEHOLDER_MONTHS.map((row) => (
-                <tr key={row.snapshot}>
-                  <Td>{row.period}</Td>
+              {months.map((row) => (
+                <tr key={row.id}>
+                  <Td>{formatMonth(row.year, row.month)}</Td>
                   <Td>
                     <Badge tone={row.status === "draft" ? "draft" : "closed"}>{row.status}</Badge>
                   </Td>
-                  <Td numeric>{formatDate(row.snapshot)}</Td>
-                  <Td numeric>{formatMoney(row.passive)}</Td>
+                  <Td numeric>{formatDate(row.snapshot_date)}</Td>
+                  <Td>
+                    <div className="row-actions">
+                      <Button
+                        onClick={() => setSelectedId(row.id)}
+                        size="sm"
+                        type="button"
+                        variant={row.id === selectedId ? "primary" : "secondary"}
+                      >
+                        KPI
+                      </Button>
+                      <Link className="btn btn--sm" to={`/months/${row.id}`}>
+                        Открыть
+                      </Link>
+                    </div>
+                  </Td>
                 </tr>
               ))}
             </tbody>
           </Table>
-        </Panel>
-
-        <Panel label="Форма" title="Новый черновик">
-          <form
-            className="form-stack"
-            onSubmit={(event) => {
-              event.preventDefault();
-            }}
-          >
-            <Field htmlFor="period" label="Период">
-              <Input id="period" name="period" defaultValue="Август 2026" readOnly />
-            </Field>
-            <Field htmlFor="source" label="Источник">
-              <Select id="source" name="source" defaultValue="clone" disabled>
-                <option value="clone">Клонировать предыдущий</option>
-                <option value="manual">С нуля</option>
-              </Select>
-            </Field>
-            <Field htmlFor="note" label="Комментарий">
-              <Input id="note" name="note" placeholder="Необязательно" disabled />
-            </Field>
-            <Button variant="primary" block type="submit" disabled>
-              Сохранить
-            </Button>
-          </form>
-        </Panel>
-      </div>
-
-      <Panel label="Примитивы" title="Loading · Error · Empty">
-        <div className="states-grid">
-          <LoadingState description="Собираем dashboard…" />
-          <ErrorState description="Backend недоступен на 127.0.0.1:8000" />
-          <EmptyState description="Месяцев пока нет — создай первый период" />
-        </div>
+        )}
       </Panel>
+
+      {selectedMonth ? (
+        <CloneMonthDialog
+          onCancel={() => setCloneOpen(false)}
+          onCloned={(cloned) => {
+            setCloneOpen(false);
+            setSelectedId(cloned.id);
+            void loadMonths();
+          }}
+          open={cloneOpen}
+          source={selectedMonth}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function FieldMonthSelect({
+  months,
+  selectedId,
+  onChange,
+  disabled,
+}: {
+  months: ReportingMonth[];
+  selectedId: number | null;
+  onChange: (id: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="field--inline">
+      <Field htmlFor="kpi-month" label="Месяц KPI">
+        <Select
+          disabled={disabled}
+          id="kpi-month"
+          onChange={(e) => onChange(Number(e.target.value))}
+          value={selectedId ?? ""}
+        >
+          {months.length === 0 ? <option value="">—</option> : null}
+          {months.map((m) => (
+            <option key={m.id} value={m.id}>
+              {formatMonth(m.year, m.month)} · {m.status}
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </div>
   );
 }

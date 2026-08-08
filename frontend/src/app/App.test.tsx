@@ -130,11 +130,25 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
     [`GET /api/comments?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/months/${month.id}/dashboard`]: () =>
       jsonResponse({
-        mortgage: {
-          mortgage_balance: { amount: "0.00", currency: "RUB" },
-          coverage_pct: null,
-          gap: { amount: "0.00", currency: "RUB" },
+        month,
+        kpis: {
+          liquid_capital_net: { amount: "1000000.00", currency: "RUB" },
+          liquid_capital_delta: { amount: "10000.00", currency: "RUB" },
+          forecast_monthly_passive_income: { amount: "80000.00", currency: "RUB" },
+          passive_income_average: { amount: "75000.00", currency: "RUB" },
+          goal_progress_pct: "42.0",
+          mandatory_expenses: { amount: "120000.00", currency: "RUB" },
+          mandatory_expense_coverage_pct: "62.5",
+          mortgage_balance: { amount: "4000000.00", currency: "RUB" },
+          mortgage_coverage_pct: "25.0",
         },
+        mortgage: {
+          mortgage_balance: { amount: "4000000.00", currency: "RUB" },
+          coverage_pct: "25.0",
+          gap: { amount: "3000000.00", currency: "RUB" },
+        },
+        warnings: [],
+        calculation_version: "test",
       }),
   };
 }
@@ -155,7 +169,53 @@ describe("App", () => {
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeInTheDocument();
+    // KPI labels render immediately (values may be loading placeholders)
     expect(screen.getByText("Ликвидный капитал")).toBeInTheDocument();
+    expect(screen.getByText("Forecast passive")).toBeInTheDocument();
+  });
+
+  it("loads live KPI values from dashboard API for the latest month", async () => {
+    const month = sampleMonths[0];
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
+        "GET /api/months": () => jsonResponse([month, sampleMonths[1]]),
+        [`GET /api/months/${month.id}/dashboard`]: () =>
+          jsonResponse({
+            month,
+            kpis: {
+              liquid_capital_net: { amount: "4820500.00", currency: "RUB" },
+              liquid_capital_delta: { amount: "120000.00", currency: "RUB" },
+              forecast_monthly_passive_income: { amount: "86420.00", currency: "RUB" },
+              passive_income_average: { amount: "85200.00", currency: "RUB" },
+              goal_progress_pct: "68.0",
+              mandatory_expenses: { amount: "150000.00", currency: "RUB" },
+              mandatory_expense_coverage_pct: "56.8",
+              mortgage_balance: { amount: "12450000.00", currency: "RUB" },
+              mortgage_coverage_pct: "38.7",
+            },
+            mortgage: {
+              mortgage_balance: { amount: "12450000.00", currency: "RUB" },
+              coverage_pct: "38.7",
+              gap: { amount: "7629500.00", currency: "RUB" },
+            },
+            warnings: [],
+            calculation_version: "v-test",
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
+    expect(screen.getByText("Month delta")).toBeInTheDocument();
+    expect(screen.getByText("Actual average")).toBeInTheDocument();
+    expect(screen.getByText("Goal progress")).toBeInTheDocument();
+    expect(screen.getByText("Mandatory expenses")).toBeInTheDocument();
+    expect(screen.getByText("Expense coverage")).toBeInTheDocument();
+    expect(screen.getByText("Mortgage coverage")).toBeInTheDocument();
+    expect(screen.getAllByText(/68,0%/).length).toBeGreaterThan(0);
   });
 
   it("shows backend connected after a successful health check", async () => {
