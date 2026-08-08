@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.services.month_clone import clone_reporting_month
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
@@ -113,6 +114,37 @@ def delete_month(
     session: Session = Depends(session_for_request),
 ) -> None:
     delete_reporting_month(session, month_id)
+
+
+class ReportingMonthClone(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    year: int = Field(ge=1, le=9999)
+    month: int = Field(ge=1, le=12)
+    snapshot_date: date
+
+
+@router.post(
+    "/{month_id}/clone", response_model=ReportingMonthResponse, status_code=status.HTTP_201_CREATED
+)
+def clone_month(
+    month_id: int,
+    payload: ReportingMonthClone,
+    session: Session = Depends(session_for_request),
+) -> ReportingMonthResponse:
+    if get_reporting_month_by_period(session, year=payload.year, month=payload.month) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"reporting month {payload.year:04d}-{payload.month:02d} already exists",
+        )
+    cloned = clone_reporting_month(
+        session,
+        month_id,
+        target_year=payload.year,
+        target_month=payload.month,
+        snapshot_date=payload.snapshot_date,
+    )
+    return ReportingMonthResponse.model_validate(cloned)
 
 
 @router.post("/{month_id}/close", response_model=ReportingMonthResponse)
