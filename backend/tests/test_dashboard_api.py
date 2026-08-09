@@ -209,6 +209,82 @@ def test_historical_series_grows_when_draft_closes(client: TestClient) -> None:
     assert [(p["year"], p["month"]) for p in series] == [(2031, 1), (2031, 2)]
 
 
+def test_asset_allocation_splits_by_instrument_type_and_respects_capital_flag(
+    client: TestClient,
+) -> None:
+    month = client.post(
+        "/api/months",
+        json={"year": 2031, "month": 6, "snapshot_date": "2031-06-30"},
+    )
+    month_id = month.json()["id"]
+
+    main = client.post(
+        "/api/accounts", json={"name": "Основной", "account_type": "brokerage"}
+    ).json()
+    skipped = client.post(
+        "/api/accounts",
+        json={"name": "Не в капитале", "account_type": "brokerage", "include_in_capital": False},
+    ).json()
+
+    bond = client.post(
+        "/api/instruments", json={"name": "ОФЗ", "instrument_type": "bond"}
+    ).json()
+    stock = client.post(
+        "/api/instruments", json={"name": "Акция", "instrument_type": "stock"}
+    ).json()
+    gold = client.post(
+        "/api/instruments", json={"name": "Золото", "instrument_type": "gold"}
+    ).json()
+
+    def position(account_id: int, instrument_id: int, qty: int, price: str) -> None:
+        response = client.post(
+            "/api/positions",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": account_id,
+                "instrument_id": instrument_id,
+                "quantity": str(qty),
+                "average_cost_per_unit": _rub("100.00"),
+                "market_price_per_unit": _rub(price),
+                "price_source": "manual",
+                "price_date": "2031-06-30",
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    position(main["id"], bond["id"], 5, "1000.00")  # bonds = 5 000
+    position(main["id"], stock["id"], 3, "1000.00")  # stocks = 3 000
+    position(main["id"], gold["id"], 2, "1000.00")  # gold/other = 2 000
+    # Excluded: account.include_in_capital=False must not reach the split.
+    position(skipped["id"], stock["id"], 999, "1000.00")
+
+    close = client.post(f"/api/months/{month_id}/close")
+    assert close.status_code == 200, close.text
+
+    dash = client.get(f"/api/months/{month_id}/dashboard")
+    assert dash.status_code == 200, dash.text
+    body = dash.json()
+    allocation = {item["asset_class"]: item["amount"] for item in body["asset_allocation"]}
+
+    assert allocation["stocks"] == _rub("3000.00")
+    assert allocation["bonds"] == _rub("5000.00")
+    assert allocation["gold_other"] == _rub("2000.00")
+    assert allocation["cash"] == _rub("0.00")
+    assert allocation["deposits"] == _rub("0.00")
+
+    def kopecks(mv: dict[str, str]) -> int:
+        return int(mv["amount"].replace(".", ""))
+
+    # Consistency: the split must equal the liquid-capital securities breakdown
+    # (no money lost or invented; the skipped account is excluded).
+    split_total = (
+        kopecks(allocation["stocks"])
+        + kopecks(allocation["bonds"])
+        + kopecks(allocation["gold_other"])
+    )
+    assert split_total == kopecks(body["summary"]["liquid_capital"]["breakdown"]["securities"])
+
+
 def test_summary_missing_month_is_404(client: TestClient) -> None:
     response = client.get("/api/months/99999/summary")
     assert response.status_code == 404
