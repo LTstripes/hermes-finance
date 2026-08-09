@@ -206,6 +206,12 @@ def _instrument_class_results(
 
 
 def _cash_income_by_class(session: Session, reporting_month_id: int) -> dict[str, int]:
+    """Cash income per instrument class.
+
+    INNER JOIN on Instrument: flows without an instrument (realized P&L booked
+    on the account only) have no class to attribute to and intentionally stay
+    out of the class table — they still appear in the account-level result.
+    """
     rows = session.execute(
         select(Instrument.instrument_type, func.sum(InvestmentCashFlow.net_amount_kopecks))
         .join(Instrument, InvestmentCashFlow.instrument_id == Instrument.id)

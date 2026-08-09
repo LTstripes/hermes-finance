@@ -303,6 +303,45 @@ def test_asset_allocation_splits_by_instrument_type_and_respects_capital_flag(
     assert split_total == kopecks(body["summary"]["liquid_capital"]["breakdown"]["securities"])
 
 
+def test_realized_pnl_without_instrument_stays_in_account_result(client: TestClient) -> None:
+    month = client.post(
+        "/api/months",
+        json={"year": 2031, "month": 7, "snapshot_date": "2031-07-31"},
+    )
+    month_id = month.json()["id"]
+    account = client.post(
+        "/api/accounts", json={"name": "Брокер", "account_type": "brokerage"}
+    ).json()
+
+    # realized P&L booked on the account only, no instrument_id (NULL)
+    flow = client.post(
+        "/api/investment-flows",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account["id"],
+            "flow_type": "realized_profit",
+            "event_date": "2031-07-10",
+            "gross_amount": _rub("2500.00"),
+            "tax_amount": _rub("0.00"),
+            "commission_amount": _rub("0.00"),
+            "net_amount": _rub("2500.00"),
+            "source": "manual",
+        },
+    )
+    assert flow.status_code == 201, flow.text
+    # instrument omitted → NULL: flow is attributed to the account only
+    assert flow.json()["instrument_id"] is None
+
+    client.post(f"/api/months/{month_id}/close")
+    dash = client.get(f"/api/months/{month_id}/dashboard").json()
+
+    # account-level result carries the cash income...
+    accounts = {item["account_name"]: item for item in dash["result_by_account"]}
+    assert accounts["Брокер"]["cash_income"] == _rub("2500.00")
+    # ...while the class table has nothing to attribute it to (no positions).
+    assert dash["result_by_instrument_class"] == []
+
+
 def test_summary_missing_month_is_404(client: TestClient) -> None:
     response = client.get("/api/months/99999/summary")
     assert response.status_code == 404
