@@ -64,6 +64,11 @@ export type BackupMetadata = {
   source_database: BackupSource;
 };
 
+export type RestoreResponse = {
+  restored_backup: BackupMetadata;
+  pre_restore_backup: BackupMetadata;
+};
+
 export type HealthResponse = {
   status: "ok";
   version: string;

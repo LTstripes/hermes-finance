@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
@@ -15,6 +16,7 @@ from hermes_finance.services.backups import (
     BackupStorageError,
     create_backup,
     list_backups,
+    restore_backup,
 )
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
@@ -35,6 +37,17 @@ class BackupResponse(BaseModel):
     created_at: datetime
     size_bytes: int
     source_database: BackupSourceResponse
+
+
+class RestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: Literal[True]
+
+
+class RestoreResponse(BaseModel):
+    restored_backup: BackupResponse
+    pre_restore_backup: BackupResponse
 
 
 def _response(metadata: BackupMetadata) -> BackupResponse:
@@ -76,3 +89,23 @@ def list_backups_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Backup storage is not available",
         ) from error
+
+
+@router.post("/{backup_id}/restore", response_model=RestoreResponse)
+def restore_backup_endpoint(
+    backup_id: str,
+    payload: RestoreRequest,
+    database: Database = Depends(_database_for_request),
+) -> RestoreResponse:
+    _ = payload
+    try:
+        result = restore_backup(database, backup_id)
+    except BackupStorageError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database restore is not available",
+        ) from error
+    return RestoreResponse(
+        restored_backup=_response(result.restored_backup),
+        pre_restore_backup=_response(result.pre_restore_backup),
+    )

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -301,5 +301,83 @@ describe("ExportPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Backup storage is not available");
     expect(screen.getByRole("button", { name: "Создать backup" })).toBeEnabled();
+  });
+
+  it("requires explicit confirmation and shows restore loading and success states", async () => {
+    const user = userEvent.setup();
+    let resolveRestore!: (response: Response) => void;
+    const restored = {
+      ...backups[0],
+      id: "finance_backup_20320731T123456789000Z",
+      name: backups[0].name,
+    };
+    const preRestore = {
+      ...backups[0],
+      id: "finance_backup_20320801T123456789000Z",
+      name: "finance_backup_20320801T123456789000Z.sqlite3",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRestore = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExportPage />);
+    const restoreButton = await screen.findByRole("button", { name: "Восстановить" });
+    await user.click(restoreButton);
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await user.click(restoreButton);
+    const openDialog = await screen.findByRole("alertdialog");
+    await user.click(within(openDialog).getByRole("button", { name: "Восстановить" }));
+    expect(await screen.findByRole("button", { name: "…" })).toBeDisabled();
+
+    resolveRestore(jsonResponse({ restored_backup: restored, pre_restore_backup: preRestore }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/восстановлена/i);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/backups/${restored.id}/restore`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      }),
+    );
+    expect(screen.getByText(preRestore.name)).toBeInTheDocument();
+  });
+
+  it("shows a restore error without claiming success", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(jsonResponse(backups))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            { error: { code: "unprocessable", message: "Backup is corrupt", details: [] } },
+            422,
+          ),
+        ),
+    );
+
+    render(<ExportPage />);
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Backup is corrupt");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

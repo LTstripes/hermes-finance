@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 from dataclasses import dataclass
@@ -40,6 +41,12 @@ class BackupMetadata:
     created_at: datetime
     size_bytes: int
     source_database: BackupSourceMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreResult:
+    restored_backup: BackupMetadata
+    pre_restore_backup: BackupMetadata
 
 
 def backup_directory(database: Database) -> Path:
@@ -143,6 +150,59 @@ def create_backup(database: Database, *, now: datetime | None = None) -> BackupM
     return _metadata_for_path(database, destination, created_at=created_at)
 
 
+def _backup_path(database: Database, backup_id: str) -> Path:
+    filename = f"{backup_id}{BACKUP_FILENAME_SUFFIX}"
+    if _BACKUP_FILENAME_RE.fullmatch(filename) is None:
+        raise LookupError("Backup not found")
+    directory = _usable_backup_directory(database, create=False)
+    path = directory / filename
+    if path.is_symlink() or not path.is_file():
+        raise LookupError("Backup not found")
+    return path
+
+
+def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[str, str, str | None], ...]:
+    rows = connection.execute(
+        """
+        SELECT type, name, sql
+        FROM sqlite_master
+        WHERE name NOT LIKE 'sqlite_%'
+        ORDER BY type, name
+        """
+    ).fetchall()
+    return tuple((str(row[0]), str(row[1]), row[2]) for row in rows)
+
+
+def _validate_sqlite_backup(path: Path, database: Database) -> None:
+    """Validate a backup without opening it for writes or changing the live DB."""
+    candidate_connection: sqlite3.Connection | None = None
+    live_connection: sqlite3.Connection | None = None
+    try:
+        uri = f"file:{path.resolve().as_posix()}?mode=ro"
+        candidate_connection = sqlite3.connect(uri, uri=True)
+        integrity = candidate_connection.execute("PRAGMA integrity_check").fetchone()
+        if integrity != ("ok",):
+            raise ValueError("Backup is not a valid SQLite database")
+        if candidate_connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise ValueError("Backup is not a valid SQLite database")
+        candidate_schema = _schema_signature(candidate_connection)
+
+        live_connection = sqlite3.connect(database.database_path)
+        live_schema = _schema_signature(live_connection)
+    except ValueError:
+        raise
+    except (OSError, sqlite3.DatabaseError) as error:
+        raise ValueError("Backup is not a valid SQLite database") from error
+    finally:
+        if candidate_connection is not None:
+            candidate_connection.close()
+        if live_connection is not None:
+            live_connection.close()
+
+    if candidate_schema != live_schema:
+        raise ValueError("Backup schema is incompatible with the live database")
+
+
 def _created_at_from_path(path: Path) -> datetime:
     match = _BACKUP_FILENAME_RE.match(path.name)
     if match is not None:
@@ -177,3 +237,37 @@ def list_backups(database: Database) -> list[BackupMetadata]:
             reverse=True,
         )
     ]
+
+
+def restore_backup(database: Database, backup_id: str) -> RestoreResult:
+    """Restore a validated local backup, preserving an automatic pre-restore copy."""
+    candidate = _backup_path(database, backup_id)
+    _validate_sqlite_backup(candidate, database)
+
+    temporary: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{database.database_path.name}.restore.",
+            suffix=".tmp",
+            dir=database.database_path.parent,
+        )
+        os.close(descriptor)
+        temporary = Path(temporary_name)
+        shutil.copyfile(candidate, temporary)
+        _validate_sqlite_backup(temporary, database)
+
+        pre_restore_backup = create_backup(database)
+        database.engine.dispose()
+        os.replace(temporary, database.database_path)
+        temporary = None
+    except (OSError, sqlite3.Error) as error:
+        raise BackupStorageError("Could not restore database backup") from error
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+    restored_created_at = _created_at_from_path(candidate)
+    return RestoreResult(
+        restored_backup=_metadata_for_path(database, candidate, created_at=restored_created_at),
+        pre_restore_backup=pre_restore_backup,
+    )

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatApiError } from "../api/client";
-import { createBackup, listBackups } from "../api/backups";
+import { createBackup, listBackups, restoreBackup } from "../api/backups";
 import { downloadJsonReport, downloadMarkdownReport } from "../api/exports";
 import { listMonths } from "../api/months";
 import type { BackupMetadata, ReportingMonth } from "../api/types";
 import {
   Button,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   Field,
@@ -31,6 +32,10 @@ export function ExportPage() {
   const [backupsLoading, setBackupsLoading] = useState(true);
   const [backupsError, setBackupsError] = useState<string | null>(null);
   const [creatingBackup, setCreatingBackup] = useState(false);
+  const [restoreCandidate, setRestoreCandidate] = useState<BackupMetadata | null>(null);
+  const [restoringBackupId, setRestoringBackupId] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
 
   const loadMonths = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -140,6 +145,26 @@ export function ExportPage() {
     }
   }
 
+  async function handleRestore() {
+    if (restoreCandidate === null) {
+      return;
+    }
+    const candidate = restoreCandidate;
+    setRestoringBackupId(candidate.id);
+    setRestoreError(null);
+    setRestoreSuccess(null);
+    try {
+      const result = await restoreBackup(candidate.id);
+      setBackups((current) => [result.pre_restore_backup, ...current]);
+      setRestoreCandidate(null);
+      setRestoreSuccess(`База восстановлена из ${result.restored_backup.name}.`);
+    } catch (error) {
+      setRestoreError(formatApiError(error));
+    } finally {
+      setRestoringBackupId(null);
+    }
+  }
+
   return (
     <section className="stack-18">
       <header className="page-header">
@@ -213,7 +238,11 @@ export function ExportPage() {
 
       <Panel
         action={
-          <Button disabled={creatingBackup} onClick={() => void handleCreateBackup()} type="button">
+          <Button
+            disabled={creatingBackup || restoringBackupId !== null}
+            onClick={() => void handleCreateBackup()}
+            type="button"
+          >
             {creatingBackup ? "Создаём backup…" : "Создать backup"}
           </Button>
         }
@@ -231,30 +260,75 @@ export function ExportPage() {
             title="Backup пока нет"
           />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Имя</Th>
-                <Th>Создан</Th>
-                <Th numeric>Размер</Th>
-                <Th>Исходная база</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {backups.map((backup) => (
-                <tr key={backup.id}>
-                  <Td>{backup.name}</Td>
-                  <Td>
-                    <time dateTime={backup.created_at}>{formatDate(backup.created_at)}</time>
-                  </Td>
-                  <Td numeric>{backup.size_bytes} Б</Td>
-                  <Td>{backup.source_database.name}</Td>
+          <>
+            {restoreError ? (
+              <div className="inline-alert inline-alert--error" role="alert">
+                {restoreError}
+              </div>
+            ) : null}
+            {restoreSuccess ? (
+              <div className="inline-alert inline-alert--ok" role="status">
+                {restoreSuccess}
+              </div>
+            ) : null}
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Имя</Th>
+                  <Th>Создан</Th>
+                  <Th numeric>Размер</Th>
+                  <Th>Исходная база</Th>
+                  <Th>Действия</Th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {backups.map((backup) => (
+                  <tr key={backup.id}>
+                    <Td>{backup.name}</Td>
+                    <Td>
+                      <time dateTime={backup.created_at}>{formatDate(backup.created_at)}</time>
+                    </Td>
+                    <Td numeric>{backup.size_bytes} Б</Td>
+                    <Td>{backup.source_database.name}</Td>
+                    <Td>
+                      <Button
+                        disabled={creatingBackup || restoringBackupId !== null}
+                        onClick={() => {
+                          setRestoreError(null);
+                          setRestoreSuccess(null);
+                          setRestoreCandidate(backup);
+                        }}
+                        type="button"
+                        variant="danger"
+                      >
+                        Восстановить
+                      </Button>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </>
         )}
       </Panel>
+      <ConfirmDialog
+        busy={restoringBackupId !== null}
+        danger
+        description={
+          restoreCandidate === null
+            ? ""
+            : `Текущая база будет заменена копией ${restoreCandidate.name}. Перед этим приложение автоматически сохранит текущую базу.`
+        }
+        onCancel={() => {
+          if (restoringBackupId === null) {
+            setRestoreCandidate(null);
+          }
+        }}
+        onConfirm={() => void handleRestore()}
+        open={restoreCandidate !== null}
+        title="Восстановить базу?"
+        confirmLabel="Восстановить"
+      />
     </section>
   );
 }
