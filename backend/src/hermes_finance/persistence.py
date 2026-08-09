@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -622,6 +623,25 @@ class MonthlyComment(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(String(2000), nullable=False)
+
+
+class LegacyMigrationRun(Base):
+    __tablename__ = "legacy_migration_runs"
+    __table_args__ = (
+        UniqueConstraint("source_sha256", name="uq_legacy_migration_runs_source_sha256"),
+        CheckConstraint("month_count > 0", name="ck_legacy_migration_runs_month_count_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_file: Mapped[str] = mapped_column(String(255), nullable=False)
+    policy: Mapped[str] = mapped_column(String(32), nullable=False)
+    backup_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    month_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
 
 
 class TaxBracket(Base):
