@@ -106,7 +106,7 @@ function axisMoney(value: number): string {
   return String(Math.round(value));
 }
 
-function CapitalTooltip({ active, payload }: TooltipContentProps) {
+export function CapitalTooltip({ active, payload }: TooltipContentProps) {
   const datum = (payload?.[0]?.payload ?? undefined) as CapitalChartDatum | undefined;
   if (!active || !datum || datum.rubles == null) {
     return null;

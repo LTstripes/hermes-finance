@@ -2,8 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CapitalHistoryPoint } from "../../api/types";
+import { formatMoney } from "../../lib/format";
 import { rub } from "../../lib/money";
-import { buildCapitalChartData, CapitalChart } from "./CapitalChart";
+import { buildCapitalChartData, CapitalChart, CapitalTooltip } from "./CapitalChart";
 
 vi.mock("recharts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("recharts")>();
@@ -81,5 +82,42 @@ describe("CapitalChart", () => {
   it("omits the gap note for a continuous history", () => {
     render(<CapitalChart points={[point(2031, 1, "100000.00"), point(2031, 2, "120000.00")]} />);
     expect(screen.queryByText(/без интерполяции/)).not.toBeInTheDocument();
+  });
+});
+
+describe("CapitalTooltip", () => {
+  function tooltipProps(points: CapitalHistoryPoint[], active = true, index = 0) {
+    return {
+      active,
+      accessibilityLayer: false,
+      activeIndex: undefined,
+      coordinate: undefined,
+      payload: [{ payload: buildCapitalChartData(points)[index] ?? null }],
+    } as unknown as Parameters<typeof CapitalTooltip>[0];
+  }
+
+  it("shows the month and the formatted RUB amount for an active datum", () => {
+    render(<CapitalTooltip {...tooltipProps([point(2031, 1, "1234567.00")])} />);
+    expect(screen.getByText("Январь 2031")).toBeInTheDocument();
+    const amount = screen.getByText(
+      (_, el) => el?.classList.contains("chart-tooltip__amount") ?? false,
+    );
+    expect(amount.textContent).toBe(formatMoney("1234567.00"));
+  });
+
+  it("renders nothing when the tooltip is inactive", () => {
+    const { container } = render(
+      <CapitalTooltip {...tooltipProps([point(2031, 1, "100000.00")], false)} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders nothing for a gap point (missing closed month)", () => {
+    const { container } = render(
+      <CapitalTooltip
+        {...tooltipProps([point(2031, 1, "100000.00"), point(2031, 3, "140000.00")], true, 1)}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });
