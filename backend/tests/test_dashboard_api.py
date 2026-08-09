@@ -169,6 +169,8 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     # one closed month → incomplete 12-month passive-income history
     assert dash["kpis"]["passive_income_average_months"] == 1
     assert dash["kpis"]["passive_income_average_complete"] is False
+    assert dash["summary"]["passive_income_average_months"] == 1
+    assert dash["summary"]["passive_income_average_complete"] is False
     # historical series covers closed months only; the February clone is a draft
     assert len(dash["historical_series"]) == 1
     assert dash["historical_series"][0]["month"] == 1

@@ -64,6 +64,11 @@ describe("PassiveIncomeChart", () => {
     expect(screen.getByText(/Учтено 2 месяца из 12\./)).toBeInTheDocument();
   });
 
+  it("uses the singular month form for a single closed month", () => {
+    render(<PassiveIncomeChart {...baseProps} complete12m={false} countMonths={1} />);
+    expect(screen.getByText(/Учтено 1 месяц из 12\./)).toBeInTheDocument();
+  });
+
   it("omits the incomplete-history note when the window is complete", () => {
     render(<PassiveIncomeChart {...baseProps} complete12m={true} countMonths={12} />);
     expect(screen.queryByText(/Среднее за доступный период/)).not.toBeInTheDocument();
