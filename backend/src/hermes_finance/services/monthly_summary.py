@@ -145,6 +145,8 @@ def monthly_summary(
         passive_income_actual=passive_income_actual,
         passive_income_delta=passive_income_delta,
         passive_income_average=passive_income_avg,
+        passive_income_average_months=avg_result.count_months,
+        passive_income_average_complete=avg_result.is_complete_12m,
         forecast=forecast,
         coverage=coverage,
         cash_balance=cash_bal,

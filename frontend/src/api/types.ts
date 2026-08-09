@@ -137,7 +137,10 @@ export type DashboardKpis = {
   liquid_capital_delta: MoneyValue | null;
   forecast_monthly_passive_income: MoneyValue;
   passive_income_average: MoneyValue;
+  passive_income_average_months: number;
+  passive_income_average_complete: boolean;
   goal_progress_pct: string | null;
+  goal_target: MoneyValue;
   mandatory_expenses: MoneyValue;
   mandatory_expense_coverage_pct: string | null;
   mortgage_balance: MoneyValue;

@@ -46,6 +46,8 @@ EXPECTED_FIELDS = (
     "passive_income_actual",
     "passive_income_delta",
     "passive_income_average",
+    "passive_income_average_months",
+    "passive_income_average_complete",
     "forecast",
     "coverage",
     "cash_balance",
@@ -140,6 +142,8 @@ def make_result(**overrides: object) -> MonthlySummaryResult:
         passive_income_actual=ZERO,
         passive_income_delta=None,
         passive_income_average=ZERO,
+        passive_income_average_months=0,
+        passive_income_average_complete=False,
         forecast=forecast,
         coverage=coverage,
         cash_balance=cash_balance,
@@ -244,7 +248,7 @@ def test_assemble_warnings_no_delta_warning_when_delta_is_present() -> None:
 def test_result_field_names_and_count() -> None:
     actual = tuple(f.name for f in fields(MonthlySummaryResult))
     assert actual == EXPECTED_FIELDS
-    assert len(actual) == 16
+    assert len(actual) == 18
 
 
 def test_calculation_version_constant_and_default() -> None:

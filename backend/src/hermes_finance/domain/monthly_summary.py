@@ -57,6 +57,8 @@ class MonthlySummaryResult:
     passive_income_actual: RubleAmount
     passive_income_delta: RubleAmount | None
     passive_income_average: RubleAmount
+    passive_income_average_months: int
+    passive_income_average_complete: bool
     forecast: ForecastPassiveIncomeResult
     coverage: CoverageGoalsResult
     cash_balance: CashBalanceResult

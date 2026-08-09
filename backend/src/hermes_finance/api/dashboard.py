@@ -190,6 +190,8 @@ class MonthlySummaryOut(BaseModel):
     passive_income_actual: MoneyValue
     passive_income_delta: MoneyValue | None
     passive_income_average: MoneyValue
+    passive_income_average_months: int
+    passive_income_average_complete: bool
     forecast: ForecastOut
     coverage: CoverageOut
     cash_balance: CashBalanceOut
@@ -259,7 +261,10 @@ class KpiOut(BaseModel):
     liquid_capital_delta: MoneyValue | None
     forecast_monthly_passive_income: MoneyValue
     passive_income_average: MoneyValue
+    passive_income_average_months: int
+    passive_income_average_complete: bool
     goal_progress_pct: str | None
+    goal_target: MoneyValue
     mandatory_expenses: MoneyValue
     mandatory_expense_coverage_pct: str | None
     mortgage_balance: MoneyValue
@@ -320,6 +325,8 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
         passive_income_actual=_money(summary.passive_income_actual),
         passive_income_delta=_money_opt(summary.passive_income_delta),
         passive_income_average=_money(summary.passive_income_average),
+        passive_income_average_months=summary.passive_income_average_months,
+        passive_income_average_complete=summary.passive_income_average_complete,
         forecast=ForecastOut(
             annual_total=_money(forecast.annual_total),
             monthly_total=_money(forecast.monthly_total),
@@ -432,7 +439,10 @@ def get_month_dashboard(
             liquid_capital_delta=summary_out.liquid_capital_delta,
             forecast_monthly_passive_income=summary_out.forecast.monthly_total,
             passive_income_average=summary_out.passive_income_average,
+            passive_income_average_months=summary_out.passive_income_average_months,
+            passive_income_average_complete=summary_out.passive_income_average_complete,
             goal_progress_pct=summary_out.coverage.goal_progress_pct,
+            goal_target=summary_out.coverage.goal_target,
             mandatory_expenses=summary_out.coverage.mandatory_expenses,
             mandatory_expense_coverage_pct=summary_out.coverage.coverage_pct,
             mortgage_balance=_money(dashboard.mortgage.mortgage_balance),

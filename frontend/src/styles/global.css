@@ -1144,18 +1144,72 @@ th.num {
   }
 }
 
-/* E12 — capital dynamics chart */
-.capital-chart {
+/* E12/E13 — dashboard charts */
+.capital-chart,
+.passive-chart {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
 }
 
-.capital-chart__note {
+.capital-chart__note,
+.chart-note {
   font-family: var(--font);
   font-size: 13px;
   color: var(--muted);
   margin: 10px 2px 0;
+}
+
+.chart-note--warn {
+  color: var(--amber);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.chart-legend__item strong {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.chart-legend__marker {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.chart-legend__marker--fact {
+  background: #172019;
+}
+
+.chart-legend__marker--average {
+  background: #6f786f;
+}
+
+.chart-legend__marker--forecast {
+  background: #9a6a1d;
+}
+
+.chart-legend__marker--goal {
+  background: #27734c;
 }
 
 .chart-tooltip {

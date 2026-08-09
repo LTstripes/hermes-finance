@@ -3,6 +3,7 @@ import { Link } from "react-router";
 
 import { BackendStatus } from "../components/BackendStatus";
 import { CapitalChart } from "../components/charts/CapitalChart";
+import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
 import {
   Badge,
   Button,
@@ -266,6 +267,25 @@ export function DashboardPage() {
           <ErrorState description={error} inline title="Ошибка dashboard" />
         ) : dashboard ? (
           <CapitalChart points={dashboard.historical_series ?? []} />
+        ) : (
+          <EmptyState description="Нет данных для графика." inline title="Пусто" />
+        )}
+      </Panel>
+
+      <Panel label="Доход" title="Пассивный доход">
+        {loadingDash ? (
+          <LoadingState description="Тянем dashboard API…" inline />
+        ) : error && !dashboard ? (
+          <ErrorState description={error} inline title="Ошибка dashboard" />
+        ) : dashboard?.kpis ? (
+          <PassiveIncomeChart
+            average={moneyAmount(dashboard.kpis.passive_income_average)}
+            complete12m={dashboard.kpis.passive_income_average_complete}
+            countMonths={dashboard.kpis.passive_income_average_months}
+            forecast={moneyAmount(dashboard.kpis.forecast_monthly_passive_income)}
+            goal={moneyAmount(dashboard.kpis.goal_target)}
+            points={dashboard.historical_series ?? []}
+          />
         ) : (
           <EmptyState description="Нет данных для графика." inline title="Пусто" />
         )}
