@@ -179,12 +179,15 @@ _DEFAULT_BRACKETS: tuple[tuple[int, int | None, int], ...] = (
 )
 
 
-def get_or_create_default_tax_brackets(session: Session, year: int) -> list[TaxBracket]:
+def get_or_create_default_tax_brackets(
+    session: Session, year: int, *, commit: bool = True
+) -> list[TaxBracket]:
     """Return tax brackets for ``year``, seeding the official defaults if empty.
 
     The five official progressive ranges (ФЗ-176-ФЗ of 12.07.2024) are seeded
     only when no rows exist for the given year.  Existing user-edited brackets
-    are never overwritten.
+    are never overwritten.  ``commit=False`` is used by read-only report
+    generation so defaults remain transient in the request transaction.
 
     Source: https://www.nalog.gov.ru/rn77/news/tax_doc_news/15562179/
     """
@@ -201,5 +204,8 @@ def get_or_create_default_tax_brackets(session: Session, year: int) -> list[TaxB
                 rate_bps=rate_bps,
             )
         )
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return list_tax_brackets(session, year)

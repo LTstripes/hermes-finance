@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router";
 
 import { AppLayout } from "../components/AppLayout";
 import { DashboardPage } from "../pages/DashboardPage";
+import { ExportPage } from "../pages/ExportPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
@@ -37,17 +38,7 @@ export function App() {
               />
             }
           />
-          <Route
-            path="export"
-            element={
-              <PlaceholderPage
-                description="Экспорт markdown/json и локальные backup/restore."
-                eyebrow="Система"
-                phaseHint="E later"
-                title="Экспорт и бэкапы"
-              />
-            }
-          />
+          <Route path="export" element={<ExportPage />} />
           <Route
             path="settings"
             element={

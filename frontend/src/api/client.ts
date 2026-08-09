@@ -44,6 +44,11 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   signal?: AbortSignal;
 };
 
+export type ApiDownload = {
+  blob: Blob;
+  filename: string;
+};
+
 /**
  * Fetch wrapper for `/api/*` via Vite proxy.
  * Parses D08 error shape into ApiClientError; 204 returns undefined.
@@ -96,6 +101,54 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   }
 
   return payload as T;
+}
+
+function filenameFromContentDisposition(value: string | null): string | null {
+  const match = value?.match(/filename="([^"]+)"/i);
+  return match?.[1] ?? null;
+}
+
+export async function apiDownload(
+  path: string,
+  options: Omit<RequestInit, "body"> = {},
+): Promise<ApiDownload> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers: {
+        Accept: "application/octet-stream",
+        ...options.headers,
+      },
+    });
+  } catch (cause) {
+    throw new ApiClientError(0, {
+      code: "network_error",
+      message: cause instanceof Error ? cause.message : "Network request failed",
+      details: [],
+    });
+  }
+
+  if (!response.ok) {
+    const payload = await parseJsonSafe(response);
+    if (isApiErrorResponse(payload)) {
+      throw new ApiClientError(response.status, {
+        code: payload.error.code,
+        message: payload.error.message,
+        details: Array.isArray(payload.error.details) ? payload.error.details : [],
+      });
+    }
+    throw new ApiClientError(response.status, {
+      code: "http_error",
+      message: `Request failed with status ${response.status}`,
+      details: [],
+    });
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? "export",
+  };
 }
 
 export function formatApiError(error: unknown): string {
