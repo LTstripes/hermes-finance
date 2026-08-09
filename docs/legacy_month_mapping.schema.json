@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-finance.local/schema/legacy_month_mapping.json",
+  "title": "Hermes Finance legacy Excel month mapping",
+  "description": "Explicit mapping from legacy workbook sheets to reporting periods. The real mapping stays local and is never committed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_file", "mappings"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "source_file": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 260
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/mapping"
+      }
+    }
+  },
+  "$defs": {
+    "reporting_month": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["year", "month"],
+      "properties": {
+        "year": {
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 9999
+        },
+        "month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet_name", "reporting_month", "snapshot_date", "import_flag"],
+      "properties": {
+        "sheet_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reporting_month": {
+          "$ref": "#/$defs/reporting_month"
+        },
+        "snapshot_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "import_flag": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
