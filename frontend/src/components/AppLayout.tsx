@@ -41,6 +41,9 @@ const NAV: NavGroup[] = [
 export function AppLayout() {
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main">
+        К содержанию
+      </a>
       <aside className="sidebar">
         <div className="brand">
           <span aria-hidden="true" className="brand__mark">
@@ -87,7 +90,7 @@ export function AppLayout() {
             <Badge>локально</Badge>
           </div>
         </header>
-        <main className="content">
+        <main className="content" id="main">
           <Outlet />
         </main>
       </div>

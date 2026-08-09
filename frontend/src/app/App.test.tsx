@@ -171,6 +171,9 @@ describe("App", () => {
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeInTheDocument();
+    // E18: skip-link to main content
+    expect(screen.getByRole("link", { name: "К содержанию" })).toHaveAttribute("href", "#main");
+    expect(document.getElementById("main")).not.toBeNull();
     // KPI labels render immediately (values may be loading placeholders)
     expect(screen.getByText("Ликвидный капитал")).toBeInTheDocument();
     expect(screen.getByText("Forecast passive")).toBeInTheDocument();

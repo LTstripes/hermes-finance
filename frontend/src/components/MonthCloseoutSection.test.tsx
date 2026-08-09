@@ -119,6 +119,49 @@ describe("MonthCloseoutSection closeout panel", () => {
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeInTheDocument();
   });
 
+  it("exposes accessible labels for symbol-only comment buttons", async () => {
+    const month = {
+      id: monthId,
+      year: 2026,
+      month: 7,
+      status: "draft",
+      snapshot_date: "2026-07-31",
+      source: "manual",
+    };
+    const fetchMock = mockFetchRouter({
+      "GET /api/accounts": () => jsonResponse([]),
+      "GET /api/comments?month_id=7": () =>
+        jsonResponse([
+          { id: 1, position: 1, text: "Первый", reporting_month_id: monthId },
+          { id: 2, position: 2, text: "Второй", reporting_month_id: monthId },
+        ]),
+      "GET /api/months/7/summary": () =>
+        jsonResponse({
+          month,
+          salary_tax: {
+            tax: { amount: "0.00", currency: "RUB" },
+            calculated_net: { amount: "0.00", currency: "RUB" },
+          },
+          salary_actual_net: { amount: "0.00", currency: "RUB" },
+        }),
+      "GET /api/months/7/dashboard": () => jsonResponse(dashboard),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <MonthCloseoutSection
+        monthId={monthId}
+        onStatusChanged={() => {}}
+        readOnly={false}
+        status="draft"
+        year={2026}
+      />,
+    );
+    expect(
+      await screen.findAllByRole("button", { name: "Переместить комментарий выше" }),
+    ).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Переместить комментарий ниже" })).toHaveLength(2);
+  });
+
   it("closes the month after confirmation and notifies the parent", async () => {
     const { fetchMock, onStatusChanged } = setup({ status: "draft" });
     const user = userEvent.setup();

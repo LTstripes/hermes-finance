@@ -546,6 +546,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                   <Td>
                     <div className="row-actions">
                       <Button
+                        aria-label="Переместить комментарий выше"
                         disabled={busy || readOnly || index === 0}
                         onClick={() => {
                           setBusy(true);
@@ -560,6 +561,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                         ↑
                       </Button>
                       <Button
+                        aria-label="Переместить комментарий ниже"
                         disabled={busy || readOnly || index === comments.length - 1}
                         onClick={() => {
                           setBusy(true);
