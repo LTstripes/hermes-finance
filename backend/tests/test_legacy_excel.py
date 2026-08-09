@@ -40,10 +40,18 @@ def _workbook(path: Path) -> None:
     sheet["B34"] = 2.5
     sheet["C34"] = 5000
     sheet["D34"] = 12500
+    sheet["A44"] = "ОБЛИГАЦИИ — СВОДНАЯ"
+    sheet["A45"] = "Название"
+    sheet["B45"] = "ISIN"
+    sheet["C45"] = "Тип счёта"
     sheet["A46"] = "Synthetic bond"
     sheet["B46"] = "SYNTHISIN"
     sheet["C46"] = "Synthetic account"
     sheet["D46"] = 1
+    sheet["A59"] = "Акции — СВОДНАЯ"
+    sheet["A60"] = "Название"
+    sheet["B60"] = "ISIN"
+    sheet["C60"] = "Тип счёта"
     sheet["A61"] = "Synthetic stock without isin"
     sheet["C61"] = "Synthetic account"
     sheet["D61"] = 2
@@ -104,6 +112,34 @@ def test_extracts_known_sections_without_binary_float_values(tmp_path: Path) -> 
         return False
 
     assert not contains_float(extraction.to_dict())
+
+
+def test_ignores_summary_rows_when_the_legacy_sheet_has_no_stock_block(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "synthetic.xlsx"
+    mapping_path = tmp_path / "mapping.json"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Январь_2026"
+    sheet["A44"] = "ОБЛИГАЦИИ — СВОДНАЯ"
+    sheet["A45"] = "Название"
+    sheet["B45"] = "ISIN"
+    sheet["C45"] = "Тип счёта"
+    sheet["A46"] = "Synthetic bond"
+    sheet["B46"] = "SYNTHISIN"
+    sheet["C46"] = "Synthetic account"
+    sheet["D46"] = 1
+    sheet["A54"] = "СВОДКА И ИТОГИ"
+    sheet["A55"] = "Synthetic total"
+    sheet["B55"] = 123
+    sheet["A61"] = "Synthetic summary balance"
+    sheet["B61"] = 456
+    workbook.save(workbook_path)
+    _mapping(mapping_path)
+
+    month = extract_legacy_workbook(workbook_path, mapping_path).months[0]
+
+    assert [row["name"] for row in month.bonds] == ["Synthetic bond"]
+    assert month.stocks == ()
 
 
 def test_cli_writes_private_output_and_prints_aggregate_only(

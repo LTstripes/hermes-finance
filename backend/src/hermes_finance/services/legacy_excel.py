@@ -98,6 +98,42 @@ def _is_formula(cell: Any) -> bool:
     return cell.data_type == "f" or (isinstance(cell.value, str) and cell.value.startswith("="))
 
 
+def _label(value: Any) -> str:
+    """Normalize static Russian legacy labels without interpreting user data."""
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _find_label_row(ws: Any, expected: str) -> int | None:
+    for row in range(1, ws.max_row + 1):
+        if _label(ws[f"A{row}"].value) == expected:
+            return row
+    return None
+
+
+def _is_instrument_header(ws: Any, row: int) -> bool:
+    return (
+        _label(ws[f"A{row}"].value) == "название"
+        and _label(ws[f"B{row}"].value) == "isin"
+        and _label(ws[f"C{row}"].value) == "типсчёта"
+    )
+
+
+def _instrument_rows(ws: Any, section: str, boundaries: tuple[str, ...]) -> range:
+    """Return rows inside one known legacy instrument block, excluding summaries."""
+    section_row = _find_label_row(ws, section)
+    if section_row is None:
+        return range(0)
+    header_row = section_row + 1
+    if not _is_instrument_header(ws, header_row):
+        return range(0)
+    boundary_rows = [
+        row
+        for boundary in boundaries
+        if (row := _find_label_row(ws, boundary)) is not None and row > header_row
+    ]
+    return range(header_row + 1, min(boundary_rows, default=ws.max_row + 1))
+
+
 def _instrument_row(ws: Any, cached: Any, row: int, *, kind: str) -> dict[str, Any] | None:
     name = _text(ws[f"A{row}"].value)
     if not name:
@@ -211,10 +247,24 @@ def _extract_month(
             }
         )
     bonds = tuple(
-        filter(None, (_instrument_row(ws, cached, row, kind="bond") for row in range(46, 59)))
+        filter(
+            None,
+            (
+                _instrument_row(ws, cached, row, kind="bond")
+                for row in _instrument_rows(
+                    ws, "облигациисводная", ("акциисводная", "сводкаиитоги")
+                )
+            ),
+        )
     )
     stocks = tuple(
-        filter(None, (_instrument_row(ws, cached, row, kind="stock") for row in range(61, 82)))
+        filter(
+            None,
+            (
+                _instrument_row(ws, cached, row, kind="stock")
+                for row in _instrument_rows(ws, "акциисводная", ("сводкаиитоги",))
+            ),
+        )
     )
     instruments = [*bonds, *stocks]
     seen_isin: set[str] = set()
