@@ -147,7 +147,8 @@ export async function apiDownload(
 
   return {
     blob: await response.blob(),
-    filename: filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? "export",
+    filename:
+      filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? "export",
   };
 }
 

@@ -43,39 +43,51 @@ def test_markdown_export_downloads_stable_utf8_report_with_safe_filename(
 ) -> None:
     client, _database = app_context
     month_id = _create_month(client)
-    assert client.post(
-        "/api/incomes",
-        json={
-            "reporting_month_id": month_id,
-            "income_type": "salary",
-            "name": "Синтетическая зарплата",
-            "gross_amount": {"amount": "100000.00", "currency": "RUB"},
-            "tax_amount": {"amount": "13000.00", "currency": "RUB"},
-            "net_amount": {"amount": "87000.00", "currency": "RUB"},
-        },
-    ).status_code == 201
-    assert client.post(
-        "/api/expenses",
-        json={
-            "reporting_month_id": month_id,
-            "category": "Синтетическая аренда",
-            "amount": {"amount": "20000.00", "currency": "RUB"},
-            "expense_type": "mandatory",
-        },
-    ).status_code == 201
-    assert client.post(
-        "/api/debts",
-        json={
-            "reporting_month_id": month_id,
-            "debt_type": "credit_card",
-            "name": "Синтетическая карта",
-            "current_balance": {"amount": "5000.00", "currency": "RUB"},
-        },
-    ).status_code == 201
-    assert client.post(
-        "/api/comments",
-        json={"reporting_month_id": month_id, "text": "Синтетический комментарий"},
-    ).status_code == 201
+    assert (
+        client.post(
+            "/api/incomes",
+            json={
+                "reporting_month_id": month_id,
+                "income_type": "salary",
+                "name": "Синтетическая зарплата",
+                "gross_amount": {"amount": "100000.00", "currency": "RUB"},
+                "tax_amount": {"amount": "13000.00", "currency": "RUB"},
+                "net_amount": {"amount": "87000.00", "currency": "RUB"},
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/api/expenses",
+            json={
+                "reporting_month_id": month_id,
+                "category": "Синтетическая аренда",
+                "amount": {"amount": "20000.00", "currency": "RUB"},
+                "expense_type": "mandatory",
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/api/debts",
+            json={
+                "reporting_month_id": month_id,
+                "debt_type": "credit_card",
+                "name": "Синтетическая карта",
+                "current_balance": {"amount": "5000.00", "currency": "RUB"},
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/api/comments",
+            json={"reporting_month_id": month_id, "text": "Синтетический комментарий"},
+        ).status_code
+        == 201
+    )
 
     response = client.post(f"/api/months/{month_id}/export/markdown")
 

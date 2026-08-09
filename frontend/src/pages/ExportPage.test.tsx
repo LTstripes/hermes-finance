@@ -38,7 +38,9 @@ describe("ExportPage", () => {
 
   it("downloads Markdown for the selected reporting month and shows success", async () => {
     const user = userEvent.setup();
-    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
     const createObjectURL = vi.fn(() => "blob:markdown-report");
     const revokeObjectURL = vi.fn();
     const fetchMock = vi
@@ -97,7 +99,8 @@ describe("ExportPage", () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
-      vi.fn()
+      vi
+        .fn()
         .mockResolvedValueOnce(jsonResponse(months))
         .mockResolvedValueOnce(
           jsonResponse(
