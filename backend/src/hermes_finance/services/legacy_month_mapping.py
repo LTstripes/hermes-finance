@@ -79,6 +79,11 @@ def _parse_mapping(path: Path) -> LegacyMonthMapping:
     return document
 
 
+def read_legacy_month_mapping(path: Path) -> LegacyMonthMapping:
+    """Read and validate the explicit mapping document for local import work."""
+    return _parse_mapping(path)
+
+
 def load_legacy_month_mapping(path: Path) -> LegacyMonthMappingResult:
     """Validate a local mapping without reading or modifying the source workbook."""
     document = _parse_mapping(path)
