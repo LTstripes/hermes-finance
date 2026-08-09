@@ -227,6 +227,7 @@ class InstrumentClassResultOut(BaseModel):
     market_value: MoneyValue
     cost_basis: MoneyValue
     unrealized_result: MoneyValue
+    realized_result: MoneyValue
 
 
 class ExpectedPaymentOut(BaseModel):
@@ -271,6 +272,16 @@ class KpiOut(BaseModel):
     mortgage_coverage_pct: str | None
 
 
+class AccountResultOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int
+    account_name: str
+    account_type: str
+    cash_income: MoneyValue
+    unrealized_result: MoneyValue
+
+
 class DashboardOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -279,7 +290,7 @@ class DashboardOut(BaseModel):
     summary: MonthlySummaryOut
     historical_series: list[HistoricalPointOut]
     asset_allocation: list[AssetClassSliceOut]
-    result_by_account: list[AccountAmountOut]
+    result_by_account: list[AccountResultOut]
     result_by_instrument_class: list[InstrumentClassResultOut]
     expected_payments: list[ExpectedPaymentOut]
     mortgage: MortgageOut
@@ -464,7 +475,13 @@ def get_month_dashboard(
             for item in dashboard.asset_allocation
         ],
         result_by_account=[
-            AccountAmountOut(account_id=item.account_id, amount=_money(item.amount))
+            AccountResultOut(
+                account_id=item.account_id,
+                account_name=item.account_name,
+                account_type=item.account_type,
+                cash_income=_money(item.cash_income),
+                unrealized_result=_money(item.unrealized_result),
+            )
             for item in dashboard.result_by_account
         ],
         result_by_instrument_class=[
@@ -473,6 +490,7 @@ def get_month_dashboard(
                 market_value=_money(item.market_value),
                 cost_basis=_money(item.cost_basis),
                 unrealized_result=_money(item.unrealized_result),
+                realized_result=_money(item.realized_result),
             )
             for item in dashboard.result_by_instrument_class
         ],

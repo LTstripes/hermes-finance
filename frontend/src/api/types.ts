@@ -171,12 +171,32 @@ export type AssetAllocationPoint = {
   amount: MoneyValue;
 };
 
+/** Monetary result per account (E15): realized cash income + unrealized result. */
+export type AccountResultPoint = {
+  account_id: number;
+  account_name: string;
+  account_type: string;
+  cash_income: MoneyValue;
+  unrealized_result: MoneyValue;
+};
+
+/** Monetary result per instrument class (E15). */
+export type InstrumentClassResultPoint = {
+  instrument_type: string;
+  market_value: MoneyValue;
+  cost_basis: MoneyValue;
+  unrealized_result: MoneyValue;
+  realized_result: MoneyValue;
+};
+
 export type DashboardSlice = {
   month?: DashboardMonthRef;
   kpis?: DashboardKpis;
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];
   asset_allocation?: AssetAllocationPoint[];
+  result_by_account?: AccountResultPoint[];
+  result_by_instrument_class?: InstrumentClassResultPoint[];
   warnings?: string[];
   calculation_version?: string;
 };

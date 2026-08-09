@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { BackendStatus } from "../components/BackendStatus";
 import { AssetAllocationChart } from "../components/charts/AssetAllocationChart";
 import { CapitalChart } from "../components/charts/CapitalChart";
+import { InvestmentResultChart } from "../components/charts/InvestmentResultChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
 import {
   Badge,
@@ -289,6 +290,21 @@ export function DashboardPage() {
           />
         ) : (
           <EmptyState description="Нет данных для графика." inline title="Пусто" />
+        )}
+      </Panel>
+
+      <Panel label="Результат" title="Результат по классам и счетам">
+        {loadingDash ? (
+          <LoadingState description="Тянем dashboard API…" inline />
+        ) : error && !dashboard ? (
+          <ErrorState description={error} inline title="Ошибка dashboard" />
+        ) : dashboard ? (
+          <InvestmentResultChart
+            accounts={dashboard.result_by_account ?? []}
+            classes={dashboard.result_by_instrument_class ?? []}
+          />
+        ) : (
+          <EmptyState description="Нет данных о результате." inline title="Пусто" />
         )}
       </Panel>
 

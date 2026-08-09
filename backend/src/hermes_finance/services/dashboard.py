@@ -22,6 +22,7 @@ from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
     Account,
     Instrument,
+    InvestmentCashFlow,
     PositionSnapshot,
     ReportingMonth,
 )
@@ -31,6 +32,14 @@ from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, mo
 from hermes_finance.services.passive_income import passive_income_for_month
 from hermes_finance.services.properties import mortgage_coverage, total_mortgage_balance
 from hermes_finance.services.reporting_months import get_reporting_month
+
+CASH_INCOME_FLOW_TYPES = (
+    "coupon",
+    "dividend",
+    "interest",
+    "realized_profit",
+    "realized_loss",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +60,10 @@ class AssetClassSlice:
 @dataclass(frozen=True, slots=True)
 class AccountResultSlice:
     account_id: int
-    amount: RubleAmount
+    account_name: str
+    account_type: str
+    cash_income: RubleAmount
+    unrealized_result: RubleAmount
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +72,7 @@ class InstrumentClassResult:
     market_value: RubleAmount
     cost_basis: RubleAmount
     unrealized_result: RubleAmount
+    realized_result: RubleAmount
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,15 +191,91 @@ def _instrument_class_results(
         bucket[0] += int(market)
         bucket[1] += int(cost)
         bucket[2] += int(unrealized)
+
+    realized_by_type = _cash_income_by_class(session, reporting_month_id)
     return tuple(
         InstrumentClassResult(
             instrument_type=instrument_type,
             market_value=RubleAmount(values[0]),
             cost_basis=RubleAmount(values[1]),
             unrealized_result=RubleAmount(values[2]),
+            realized_result=RubleAmount(realized_by_type.get(instrument_type, 0)),
         )
         for instrument_type, values in sorted(aggregated.items())
     )
+
+
+def _cash_income_by_class(session: Session, reporting_month_id: int) -> dict[str, int]:
+    rows = session.execute(
+        select(Instrument.instrument_type, func.sum(InvestmentCashFlow.net_amount_kopecks))
+        .join(Instrument, InvestmentCashFlow.instrument_id == Instrument.id)
+        .where(InvestmentCashFlow.reporting_month_id == reporting_month_id)
+        .where(InvestmentCashFlow.flow_type.in_(CASH_INCOME_FLOW_TYPES))
+        .group_by(Instrument.instrument_type)
+    ).all()
+    return {instrument_type: int(total or 0) for instrument_type, total in rows}
+
+
+def _account_results(session: Session, reporting_month_id: int) -> tuple[AccountResultSlice, ...]:
+    """Monetary result per account: realized cash income and unrealized result.
+
+    Cash income follows the owner-fixed IIS semantics (WIKI p.12): net amounts
+    of coupons, dividends, interest and realized PnL (realized_loss negative).
+    Redemptions, deposits and withdrawals are never income.
+    """
+    income_rows = session.execute(
+        select(
+            Account.id,
+            Account.name,
+            Account.account_type,
+            func.sum(InvestmentCashFlow.net_amount_kopecks),
+        )
+        .join(InvestmentCashFlow, InvestmentCashFlow.account_id == Account.id)
+        .where(InvestmentCashFlow.reporting_month_id == reporting_month_id)
+        .where(InvestmentCashFlow.flow_type.in_(CASH_INCOME_FLOW_TYPES))
+        .group_by(Account.id, Account.name, Account.account_type)
+    ).all()
+
+    unrealized_rows = session.execute(
+        select(
+            Account.id,
+            Account.name,
+            Account.account_type,
+            func.sum(PositionSnapshot.unrealized_result_kopecks),
+        )
+        .join(PositionSnapshot, PositionSnapshot.account_id == Account.id)
+        .where(PositionSnapshot.reporting_month_id == reporting_month_id)
+        .group_by(Account.id, Account.name, Account.account_type)
+    ).all()
+
+    merged: dict[int, AccountResultSlice] = {}
+    for account_id, name, account_type, total in income_rows:
+        merged[account_id] = AccountResultSlice(
+            account_id=account_id,
+            account_name=name,
+            account_type=account_type,
+            cash_income=RubleAmount(int(total or 0)),
+            unrealized_result=RubleAmount(0),
+        )
+    for account_id, name, account_type, total in unrealized_rows:
+        slice_ = merged.get(account_id)
+        if slice_ is None:
+            merged[account_id] = AccountResultSlice(
+                account_id=account_id,
+                account_name=name,
+                account_type=account_type,
+                cash_income=RubleAmount(0),
+                unrealized_result=RubleAmount(int(total or 0)),
+            )
+        else:
+            merged[account_id] = AccountResultSlice(
+                account_id=account_id,
+                account_name=slice_.account_name,
+                account_type=slice_.account_type,
+                cash_income=slice_.cash_income,
+                unrealized_result=RubleAmount(int(total or 0)),
+            )
+    return tuple(merged[key] for key in sorted(merged, key=lambda k: (merged[k].account_name, k)))
 
 
 def _expected_payments(
@@ -234,10 +323,7 @@ def build_dashboard(
     summary = monthly_summary(session, reporting_month_id, forecast_version=forecast_version)
     liquid = summary.liquid_capital
     allocation = _asset_allocation(session, reporting_month_id, liquid)
-    by_account = tuple(
-        AccountResultSlice(account_id=item.account_id, amount=item.amount)
-        for item in liquid.accounts
-    )
+    by_account = _account_results(session, reporting_month_id)
     mortgage_balance = total_mortgage_balance(session, reporting_month_id)
     coverage_pct, gap = mortgage_coverage(session, reporting_month_id, liquid.liquid_capital_net)
     return DashboardResult(

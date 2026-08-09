@@ -1291,3 +1291,36 @@ th.num {
     grid-template-columns: 1fr;
   }
 }
+
+/* E15 — investment result by accounts and classes */
+.investment-result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.investment-result__chart {
+  min-width: 0;
+}
+
+.investment-result__tables {
+  display: grid;
+  gap: 12px;
+}
+
+.investment-result__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.investment-result__table th,
+.investment-result__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+}
+
+.investment-result__table tbody tr:last-child td {
+  border-bottom: 0;
+}

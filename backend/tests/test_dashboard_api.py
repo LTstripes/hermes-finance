@@ -186,6 +186,26 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert allocation["bonds"] == _rub("11000.00")
     assert allocation["gold_other"] == _rub("0.00")
     assert any(item["instrument_type"] == "bond" for item in dash["result_by_instrument_class"])
+    bond_class = next(
+        item for item in dash["result_by_instrument_class"] if item["instrument_type"] == "bond"
+    )
+    # February is a clone: position state is copied, cash-flow events are not,
+    # so realized result is 0 while unrealized/market/cost persist.
+    assert bond_class["realized_result"] == _rub("0.00")
+    assert bond_class["unrealized_result"] == _rub("1000.00")
+    assert bond_class["market_value"] == _rub("11000.00")
+    assert bond_class["cost_basis"] == _rub("10000.00")
+
+    accounts = {item["account_name"]: item for item in dash["result_by_account"]}
+    broker = accounts["Брокер"]
+    assert broker["account_type"] == "brokerage"
+    assert broker["cash_income"] == _rub("0.00")
+    assert broker["unrealized_result"] == _rub("1000.00")
+
+    # January (source, closed) carries the coupon event: cash income 870.00.
+    m1_dash = client.get(f"/api/months/{_m1_id}/dashboard").json()
+    m1_accounts = {item["account_name"]: item for item in m1_dash["result_by_account"]}
+    assert m1_accounts["Брокер"]["cash_income"] == _rub("870.00")
     assert len(dash["expected_payments"]) == 1
     assert dash["expected_payments"][0]["expected_net_amount"] == _rub("870.00")
     assert dash["mortgage"]["mortgage_balance"] == _rub("4000000.00")
