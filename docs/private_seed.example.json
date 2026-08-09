@@ -1,0 +1,34 @@
+{
+  "$schema": "./private_seed.schema.json",
+  "schema_version": 1,
+  "settings": {
+    "base_currency": "RUB",
+    "locale": "ru-RU",
+    "timezone": "Europe/Moscow",
+    "passive_income_goal": {
+      "amount": "100000.00",
+      "currency": "RUB"
+    },
+    "formula_version": "v1"
+  },
+  "accounts": [
+    {
+      "name": "Synthetic Brokerage",
+      "account_type": "brokerage",
+      "external_code": "SYNTH-BROKER-001",
+      "status": "active",
+      "include_in_capital": true,
+      "include_in_returns": true,
+      "notes": "Synthetic example only"
+    },
+    {
+      "name": "Synthetic Deposit",
+      "account_type": "deposit",
+      "external_code": "SYNTH-DEPOSIT-001",
+      "status": "active",
+      "include_in_capital": true,
+      "include_in_returns": true,
+      "notes": "Synthetic example only"
+    }
+  ]
+}

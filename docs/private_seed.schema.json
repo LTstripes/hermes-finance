@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-finance.local/schema/private_seed.json",
+  "title": "Hermes Finance private seed",
+  "description": "Local-only seed for synthetic or owner-provided settings and accounts. Never commit data/private_seed.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "settings", "accounts"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "settings": {
+      "$ref": "#/$defs/settings"
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/account"
+      }
+    }
+  },
+  "$defs": {
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$"
+        },
+        "currency": {
+          "const": "RUB"
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_currency",
+        "locale",
+        "timezone",
+        "passive_income_goal",
+        "formula_version"
+      ],
+      "properties": {
+        "base_currency": {
+          "const": "RUB"
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "passive_income_goal": {
+          "$ref": "#/$defs/money"
+        },
+        "formula_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "account_type", "external_code"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "account_type": {
+          "enum": ["brokerage", "iis", "deposit", "savings", "cash", "other"]
+        },
+        "external_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "enum": ["active", "frozen", "closed", "hidden"],
+          "default": "active"
+        },
+        "include_in_capital": {
+          "type": "boolean",
+          "default": true
+        },
+        "include_in_returns": {
+          "type": "boolean",
+          "default": true
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

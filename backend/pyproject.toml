@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 hermes-finance-api = "hermes_finance.cli:main"
+hermes-finance-seed = "hermes_finance.private_seed_cli:main"
 
 [dependency-groups]
 dev = [
