@@ -19,6 +19,14 @@ export function getMonth(monthId: number, signal?: AbortSignal): Promise<Reporti
   return apiRequest<ReportingMonth>(`/api/months/${monthId}`, { method: "GET", signal });
 }
 
+export function closeMonth(monthId: number, signal?: AbortSignal): Promise<ReportingMonth> {
+  return apiRequest<ReportingMonth>(`/api/months/${monthId}/close`, { method: "POST", signal });
+}
+
+export function reopenMonth(monthId: number, signal?: AbortSignal): Promise<ReportingMonth> {
+  return apiRequest<ReportingMonth>(`/api/months/${monthId}/reopen`, { method: "POST", signal });
+}
+
 export function createMonth(
   payload: ReportingMonthCreate,
   signal?: AbortSignal,

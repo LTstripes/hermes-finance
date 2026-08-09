@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { createComment, deleteComment, listComments, moveComment } from "../api/comments";
+import { getDashboard } from "../api/dashboard";
 import {
   createIisContribution,
   createTaxBenefit,
@@ -11,9 +12,11 @@ import {
   listTaxBenefits,
   upsertIisProfile,
 } from "../api/iis";
+import { closeMonth, reopenMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
 import type {
   Account,
+  DashboardKpis,
   IisContribution,
   IisProfile,
   MonthlyComment,
@@ -37,9 +40,15 @@ import {
 import { formatMoney } from "../lib/format";
 import { moneyAmount, normalizeMoneyInput, rub } from "../lib/money";
 
-type Props = { monthId: number; readOnly: boolean; year: number };
+type Props = {
+  monthId: number;
+  readOnly: boolean;
+  year: number;
+  status: "draft" | "closed";
+  onStatusChanged: () => void;
+};
 
-export function MonthCloseoutSection({ monthId, readOnly, year }: Props) {
+export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatusChanged }: Props) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [iisAccountId, setIisAccountId] = useState("");
   const [profile, setProfile] = useState<IisProfile | null>(null);
@@ -48,6 +57,9 @@ export function MonthCloseoutSection({ monthId, readOnly, year }: Props) {
   const [comments, setComments] = useState<MonthlyComment[]>([]);
   const [goalTarget, setGoalTarget] = useState<MoneyValue | null>(null);
   const [goalProgress, setGoalProgress] = useState<string | null>(null);
+  const [previewKpis, setPreviewKpis] = useState<DashboardKpis | null>(null);
+  const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
+  const [pendingAction, setPendingAction] = useState<"close" | "reopen" | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -73,16 +85,19 @@ export function MonthCloseoutSection({ monthId, readOnly, year }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const [accs, comms, summary] = await Promise.all([
+        const [accs, comms, summary, dashboard] = await Promise.all([
           listAccounts(signal),
           listComments(monthId, signal),
           getMonthSummary(monthId, signal).catch(() => null),
+          getDashboard(monthId, signal).catch(() => null),
         ]);
         if (signal?.aborted) return;
         setAccounts(accs);
         setComments(comms);
         setGoalTarget(summary?.coverage?.goal_target ?? null);
         setGoalProgress(summary?.coverage?.goal_progress_pct ?? null);
+        setPreviewKpis(dashboard?.kpis ?? null);
+        setPreviewWarnings(dashboard?.warnings ?? []);
         const firstIis = accs.find((a) => a.account_type === "iis" && a.status === "active");
         if (firstIis && !iisAccountId) {
           setIisAccountId(String(firstIis.id));
@@ -232,6 +247,80 @@ export function MonthCloseoutSection({ monthId, readOnly, year }: Props) {
           {actionError}
         </div>
       ) : null}
+
+      <Panel
+        action={
+          status === "closed" ? (
+            <Badge tone="closed">closed</Badge>
+          ) : (
+            <Badge tone="draft">draft</Badge>
+          )
+        }
+        label="Закрытие ввода"
+        title="Закрытие месяца"
+      >
+        {previewKpis ? (
+          <div className="totals-bar">
+            <span>
+              Liquid capital:{" "}
+              <strong>{formatMoney(moneyAmount(previewKpis.liquid_capital_net))}</strong>
+            </span>
+            <span>
+              Passive avg:{" "}
+              <strong>{formatMoney(moneyAmount(previewKpis.passive_income_average))}</strong>
+            </span>
+            <span>
+              Passive forecast:{" "}
+              <strong>
+                {formatMoney(moneyAmount(previewKpis.forecast_monthly_passive_income))}
+              </strong>
+            </span>
+            <span>
+              Goal:{" "}
+              <strong>
+                {previewKpis.goal_progress_pct != null ? `${previewKpis.goal_progress_pct}%` : "—"}
+              </strong>
+            </span>
+          </div>
+        ) : (
+          <p className="muted">KPI недоступны (dashboard не ответил).</p>
+        )}
+
+        {previewWarnings.length > 0 ? (
+          <ul className="closeout-warnings">
+            {previewWarnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">Предупреждений нет.</p>
+        )}
+
+        {status === "closed" ? (
+          <p className="muted">
+            Месяц закрыт — данные зафиксированы. Изменения возможны только после reopen.
+          </p>
+        ) : (
+          <p className="muted">
+            Закрытие фиксирует KPI и snapshots. Открыть заново можно в любой момент.
+          </p>
+        )}
+
+        {status === "closed" ? (
+          <Button disabled={busy} onClick={() => setPendingAction("reopen")} type="button">
+            Открыть заново
+          </Button>
+        ) : (
+          <Button
+            disabled={busy || readOnly}
+            onClick={() => setPendingAction("close")}
+            type="button"
+            variant="primary"
+          >
+            Закрыть месяц
+          </Button>
+        )}
+      </Panel>
 
       <Panel label="Закрытие ввода" title="ИИС">
         <div className="inline-alert inline-alert--warn" role="status">
@@ -516,6 +605,33 @@ export function MonthCloseoutSection({ monthId, readOnly, year }: Props) {
           </form>
         ) : null}
       </Panel>
+
+      <ConfirmDialog
+        busy={busy}
+        cancelLabel="Отмена"
+        confirmLabel={pendingAction === "close" ? "Закрыть" : "Открыть заново"}
+        danger={pendingAction === "close"}
+        description={
+          pendingAction === "close"
+            ? "Закрыть месяц? KPI и snapshots будут зафиксированы; редактирование заблокируется до reopen."
+            : "Открыть месяц заново? Данные снова станут редактируемыми."
+        }
+        onCancel={() => setPendingAction(null)}
+        onConfirm={() => {
+          if (!pendingAction) return;
+          setBusy(true);
+          const request = pendingAction === "close" ? closeMonth(monthId) : reopenMonth(monthId);
+          void request
+            .then(() => {
+              setPendingAction(null);
+              onStatusChanged();
+            })
+            .catch((err) => setActionError(formatApiError(err)))
+            .finally(() => setBusy(false));
+        }}
+        open={pendingAction !== null}
+        title={pendingAction === "close" ? "Закрыть месяц?" : "Открыть месяц заново?"}
+      />
 
       <ConfirmDialog
         busy={busy}

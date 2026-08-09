@@ -1404,3 +1404,11 @@ th.num {
   background: var(--line-soft);
   color: var(--muted);
 }
+
+/* E17 — month closeout warnings */
+.closeout-warnings {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--amber);
+}

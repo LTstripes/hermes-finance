@@ -410,7 +410,13 @@ export function MonthDetailPage() {
 
       <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
 
-      <MonthCloseoutSection monthId={month.id} readOnly={readOnly} year={month.year} />
+      <MonthCloseoutSection
+        monthId={month.id}
+        onStatusChanged={() => void load()}
+        readOnly={readOnly}
+        status={month.status === "closed" ? "closed" : "draft"}
+        year={month.year}
+      />
 
       <CloneMonthDialog
         onCancel={() => setCloneOpen(false)}
