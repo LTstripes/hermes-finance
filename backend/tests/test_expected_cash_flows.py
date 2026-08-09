@@ -2,10 +2,12 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, ExpectedCashFlowType, InstrumentType
+from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.expected_cash_flows import (
@@ -148,6 +150,59 @@ def test_calendar_groups_by_month_and_excludes_redemption_from_passive(
         assert item.expected_net_amount.kopecks == 1_000_000
     finally:
         session.close()
+        database.engine.dispose()
+
+
+def test_calendar_api_returns_money_objects(tmp_path: Path) -> None:
+    """E16 follow-up: the /calendar endpoint maps RubleAmount totals to MoneyValue."""
+    database = create_database(tmp_path / "calendar-api.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with TestClient(create_app(database)) as client:
+            month = client.post(
+                "/api/months",
+                json={"year": 2031, "month": 9, "snapshot_date": "2031-09-30"},
+            ).json()
+            account = client.post(
+                "/api/accounts", json={"name": "Брокер", "account_type": "brokerage"}
+            ).json()
+            instrument = client.post(
+                "/api/instruments",
+                json={"name": "ОФЗ", "instrument_type": "bond"},
+            ).json()
+            created = client.post(
+                "/api/expected-flows",
+                json={
+                    "reporting_month_id": month["id"],
+                    "account_id": account["id"],
+                    "instrument_id": instrument["id"],
+                    "flow_type": "coupon",
+                    "expected_date": "2031-10-15",
+                    "gross_amount": {"amount": "1000.00", "currency": "RUB"},
+                    "expected_tax_amount": {"amount": "130.00", "currency": "RUB"},
+                    "expected_net_amount": {"amount": "870.00", "currency": "RUB"},
+                    "source": "synthetic",
+                    "source_as_of_date": "2031-09-30",
+                    "forecast_version": "v1",
+                },
+            )
+            assert created.status_code == 201, created.text
+
+            response = client.get(
+                "/api/expected-flows/calendar",
+                params={"month_id": month["id"], "forecast_version": "v1"},
+            )
+            assert response.status_code == 200, response.text
+            [july] = [m for m in response.json() if (m["year"], m["month"]) == (2031, 10)]
+            assert july["passive_net"] == {"amount": "870.00", "currency": "RUB"}
+            assert july["coupon"] == {"amount": "870.00", "currency": "RUB"}
+            assert july["redemption"] == {"amount": "0.00", "currency": "RUB"}
+            assert july["items"][0]["expected_net_amount"] == {
+                "amount": "870.00",
+                "currency": "RUB",
+            }
+            assert july["items"][0]["account_name"] == "Брокер"
+    finally:
         database.engine.dispose()
 
 

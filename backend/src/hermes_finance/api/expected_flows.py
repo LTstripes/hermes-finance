@@ -123,6 +123,10 @@ def _money(kopecks: int | None) -> MoneyValue | None:
     return MoneyValue(amount=RubleAmount(kopecks).to_api(), currency="RUB")
 
 
+def _money_amount(amount: RubleAmount) -> MoneyValue:
+    return MoneyValue(amount=amount.to_api(), currency="RUB")
+
+
 def _response(flow: object) -> ExpectedFlowResponse:
     return ExpectedFlowResponse(
         id=flow.id,
@@ -162,13 +166,13 @@ def calendar_flows(
         CalendarMonthOut(
             year=month.year,
             month=month.month,
-            coupon=_money(month.coupon),
-            dividend=_money(month.dividend),
-            interest=_money(month.interest),
-            redemption=_money(month.redemption),
-            other=_money(month.other),
-            passive_net=_money(month.passive_net),
-            total_net=_money(month.total_net),
+            coupon=_money_amount(month.coupon),
+            dividend=_money_amount(month.dividend),
+            interest=_money_amount(month.interest),
+            redemption=_money_amount(month.redemption),
+            other=_money_amount(month.other),
+            passive_net=_money_amount(month.passive_net),
+            total_net=_money_amount(month.total_net),
             items=[
                 CalendarItemOut(
                     id=item.id,
@@ -176,7 +180,7 @@ def calendar_flows(
                     flow_type=item.flow_type,
                     account_name=item.account_name,
                     instrument_name=item.instrument_name,
-                    expected_net_amount=_money(item.expected_net_amount),
+                    expected_net_amount=_money_amount(item.expected_net_amount),
                     is_confirmed=item.is_confirmed,
                     is_approximate=item.is_approximate,
                     source=item.source,
