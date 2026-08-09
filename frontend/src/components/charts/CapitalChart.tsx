@@ -154,7 +154,10 @@ export function CapitalChart({ points }: { points: CapitalHistoryPoint[] }) {
             tickLine={false}
           />
           <YAxis axisLine={false} tickFormatter={axisMoney} tickLine={false} width={72} />
-          <Tooltip content={(props) => <CapitalTooltip {...props} />} cursor={{ stroke: "#b9c4b9" }} />
+          <Tooltip
+            content={(props) => <CapitalTooltip {...props} />}
+            cursor={{ stroke: "#b9c4b9" }}
+          />
           <Line
             activeDot={{ r: 5 }}
             connectNulls={false}
