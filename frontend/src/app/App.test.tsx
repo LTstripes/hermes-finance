@@ -123,6 +123,8 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
     [`GET /api/positions?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/investment-flows?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/expected-flows?month_id=${month.id}&forecast_version=v1`]: () => jsonResponse([]),
+    [`GET /api/expected-flows/calendar?month_id=${month.id}&forecast_version=v1`]: () =>
+      jsonResponse([]),
     [`GET /api/expenses?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/savings?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/debts?month_id=${month.id}`]: () => jsonResponse([]),

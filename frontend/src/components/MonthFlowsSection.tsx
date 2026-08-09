@@ -2,14 +2,25 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
-import { createExpectedFlow, deleteExpectedFlow, listExpectedFlows } from "../api/expectedFlows";
+import {
+  createExpectedFlow,
+  deleteExpectedFlow,
+  listExpectedFlows,
+  listExpectedFlowsCalendar,
+} from "../api/expectedFlows";
 import {
   createInvestmentFlow,
   deleteInvestmentFlow,
   listInvestmentFlows,
 } from "../api/investmentFlows";
 import { listInstruments } from "../api/instruments";
-import type { Account, ExpectedFlow, Instrument, InvestmentFlow } from "../api/types";
+import type {
+  Account,
+  ExpectedCalendarMonth,
+  ExpectedFlow,
+  Instrument,
+  InvestmentFlow,
+} from "../api/types";
 import {
   Badge,
   Button,
@@ -24,6 +35,7 @@ import {
   Td,
   Th,
 } from "./ui";
+import { ExpectedPaymentsCalendar } from "./ExpectedPaymentsCalendar";
 import { formatDate, formatMoney } from "../lib/format";
 import {
   isPassiveExpectedFlowType,
@@ -95,6 +107,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [actual, setActual] = useState<InvestmentFlow[]>([]);
   const [expected, setExpected] = useState<ExpectedFlow[]>([]);
+  const [calendar, setCalendar] = useState<ExpectedCalendarMonth[]>([]);
   const [forecastVersion, setForecastVersion] = useState("v1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,11 +125,12 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
       setLoading(true);
       setError(null);
       try {
-        const [accs, instrs, flows, exp] = await Promise.all([
+        const [accs, instrs, flows, exp, cal] = await Promise.all([
           listAccounts(signal),
           listInstruments({ active: true }, signal),
           listInvestmentFlows(monthId, undefined, signal),
           listExpectedFlows(monthId, forecastVersion, signal),
+          listExpectedFlowsCalendar(monthId, forecastVersion, signal),
         ]);
         if (signal?.aborted) {
           return;
@@ -125,6 +139,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         setInstruments(instrs);
         setActual(flows);
         setExpected(exp);
+        setCalendar(cal);
 
         const firstAccount = accs.find((a) => a.status === "active");
         const firstInstrument = instrs[0];
@@ -719,6 +734,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
             </Button>
           </form>
         ) : null}
+      </Panel>
+
+      <Panel action={<Badge>12 месяцев вперёд</Badge>} label="Прогноз" title="Календарь выплат">
+        <ExpectedPaymentsCalendar months={calendar} />
       </Panel>
 
       <ConfirmDialog

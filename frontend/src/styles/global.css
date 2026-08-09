@@ -1324,3 +1324,83 @@ th.num {
 .investment-result__table tbody tr:last-child td {
   border-bottom: 0;
 }
+
+/* E16 — expected payouts calendar */
+.payments-calendar {
+  display: grid;
+  gap: 8px;
+}
+
+.payments-calendar__month {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.payments-calendar__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.payments-calendar__head::-webkit-details-marker {
+  display: none;
+}
+
+.payments-calendar__month-name {
+  min-width: 110px;
+  font-weight: 600;
+}
+
+.payments-calendar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.payments-calendar__passive {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.payments-calendar__month > .table-wrap {
+  margin: 0 12px 12px;
+}
+
+.flow-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.flow-chip--coupon {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.flow-chip--dividend {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.flow-chip--interest {
+  background: var(--line-soft);
+  color: var(--ink);
+}
+
+.flow-chip--redemption {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.flow-chip--other {
+  background: var(--line-soft);
+  color: var(--muted);
+}

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.services.expected_cash_flows import (
+    calendar_expected_cash_flows,
     create_expected_cash_flow,
     delete_expected_cash_flow,
     get_expected_cash_flow,
@@ -75,6 +76,35 @@ class ExpectedFlowResponse(BaseModel):
     notes: str | None
 
 
+class CalendarItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    expected_date: date
+    flow_type: str
+    account_name: str
+    instrument_name: str | None
+    expected_net_amount: MoneyValue
+    is_confirmed: bool
+    is_approximate: bool
+    source: str
+
+
+class CalendarMonthOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    year: int
+    month: int
+    coupon: MoneyValue
+    dividend: MoneyValue
+    interest: MoneyValue
+    redemption: MoneyValue
+    other: MoneyValue
+    passive_net: MoneyValue
+    total_net: MoneyValue
+    items: list[CalendarItemOut]
+
+
 def _validate_flow_type(value: str) -> str:
     try:
         ExpectedCashFlowType(value)
@@ -112,6 +142,50 @@ def _response(flow: object) -> ExpectedFlowResponse:
         is_approximate=flow.is_approximate,
         notes=flow.notes,
     )
+
+
+@router.get("/calendar", response_model=list[CalendarMonthOut])
+def calendar_flows(
+    month_id: int = Query(...),
+    forecast_version: str = Query(...),
+    from_date: date | None = Query(default=None),
+    session: Session = Depends(session_for_request),
+) -> list[CalendarMonthOut]:
+    """Expected payouts grouped by calendar month over the 12-month horizon (E16)."""
+    months = calendar_expected_cash_flows(
+        session,
+        reporting_month_id=month_id,
+        forecast_version=forecast_version,
+        from_date=from_date,
+    )
+    return [
+        CalendarMonthOut(
+            year=month.year,
+            month=month.month,
+            coupon=_money(month.coupon),
+            dividend=_money(month.dividend),
+            interest=_money(month.interest),
+            redemption=_money(month.redemption),
+            other=_money(month.other),
+            passive_net=_money(month.passive_net),
+            total_net=_money(month.total_net),
+            items=[
+                CalendarItemOut(
+                    id=item.id,
+                    expected_date=item.expected_date,
+                    flow_type=item.flow_type,
+                    account_name=item.account_name,
+                    instrument_name=item.instrument_name,
+                    expected_net_amount=_money(item.expected_net_amount),
+                    is_confirmed=item.is_confirmed,
+                    is_approximate=item.is_approximate,
+                    source=item.source,
+                )
+                for item in month.items
+            ],
+        )
+        for month in months
+    ]
 
 
 @router.get("", response_model=list[ExpectedFlowResponse])

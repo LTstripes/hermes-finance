@@ -10,6 +10,7 @@ from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.expected_cash_flows import (
     ExpectedCashFlowNotFoundError,
+    calendar_expected_cash_flows,
     create_expected_cash_flow,
     delete_expected_cash_flow,
     get_expected_cash_flow,
@@ -79,6 +80,72 @@ def test_known_tax_derives_exact_net_and_unknown_tax_is_approximate(tmp_path: Pa
         assert unknown.expected_tax_amount_kopecks is None
         assert unknown.expected_net_amount_kopecks == 50_000
         assert unknown.is_approximate is True
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_calendar_groups_by_month_and_excludes_redemption_from_passive(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        create_flow(  # June 2030: coupon 870 net
+            session,
+            month_id,
+            account_id,
+            instrument_id,
+            expected_date=date(2030, 6, 1),
+        )
+        create_flow(  # June 2030: dividend 500 net
+            session,
+            month_id,
+            account_id,
+            instrument_id,
+            flow_type=ExpectedCashFlowType.DIVIDEND,
+            expected_date=date(2030, 6, 15),
+            gross_amount="500.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="500.00",
+        )
+        create_flow(  # July 2030: redemption 10 000 — displayed, not passive
+            session,
+            month_id,
+            account_id,
+            instrument_id,
+            flow_type=ExpectedCashFlowType.REDEMPTION,
+            expected_date=date(2030, 7, 1),
+            gross_amount="10000.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="10000.00",
+        )
+
+        calendar = calendar_expected_cash_flows(
+            session, reporting_month_id=month_id, forecast_version="v1"
+        )
+        assert [(m.year, m.month) for m in calendar] == [(2030, 6), (2030, 7)]
+
+        june, july = calendar
+        assert june.coupon.kopecks == 87_000
+        assert june.dividend.kopecks == 50_000
+        assert june.interest.kopecks == 0
+        assert june.redemption.kopecks == 0
+        assert june.passive_net.kopecks == 137_000
+        assert june.total_net.kopecks == 137_000
+        assert len(june.items) == 2
+
+        assert july.coupon.kopecks == 0
+        assert july.redemption.kopecks == 1_000_000
+        assert july.passive_net.kopecks == 0
+        assert july.total_net.kopecks == 1_000_000
+        assert len(july.items) == 1
+
+        item = july.items[0]
+        assert item.flow_type == "redemption"
+        assert item.account_name == "Synthetic Brokerage"
+        assert item.instrument_name == "Synthetic Bond"
+        assert item.expected_net_amount.kopecks == 1_000_000
     finally:
         session.close()
         database.engine.dispose()

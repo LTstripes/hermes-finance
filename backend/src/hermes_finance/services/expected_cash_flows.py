@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy import select
@@ -161,6 +162,123 @@ def get_expected_cash_flow(session: Session, flow_id: int) -> ExpectedCashFlow:
     if flow is None:
         raise ExpectedCashFlowNotFoundError(f"expected cash flow {flow_id} was not found")
     return flow
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarItem:
+    """One expected flow inside a calendar month (E16)."""
+
+    id: int
+    expected_date: date
+    flow_type: str
+    account_name: str
+    instrument_name: str | None
+    expected_net_amount: RubleAmount
+    is_confirmed: bool
+    is_approximate: bool
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarMonth:
+    """Aggregated expected payouts for one calendar month (E16)."""
+
+    year: int
+    month: int
+    coupon: RubleAmount
+    dividend: RubleAmount
+    interest: RubleAmount
+    redemption: RubleAmount
+    other: RubleAmount
+    passive_net: RubleAmount
+    total_net: RubleAmount
+    items: tuple[CalendarItem, ...]
+
+
+def calendar_expected_cash_flows(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    forecast_version: str,
+    from_date: date | None = None,
+) -> tuple[CalendarMonth, ...]:
+    """Group expected payouts by calendar month over the 12-month horizon.
+
+    Per-month totals are split by flow type. ``passive_net`` sums only the
+    income types (coupon/dividend/interest/other — anything but redemption);
+    redemption is displayed with its own marker and never counts as passive
+    income (MASTER_SPEC §10.10 / WIKI p.12).
+    """
+    month = _require_reporting_month(session, reporting_month_id)
+    start = from_date or month.snapshot_date
+    end_exclusive = _one_year_after(start)
+    version = _normalize_text(forecast_version, field="forecast_version")
+
+    rows = session.execute(
+        select(ExpectedCashFlow, Account.name, Instrument.name)
+        .join(Account, ExpectedCashFlow.account_id == Account.id)
+        .outerjoin(Instrument, ExpectedCashFlow.instrument_id == Instrument.id)
+        .where(
+            ExpectedCashFlow.reporting_month_id == reporting_month_id,
+            ExpectedCashFlow.forecast_version == version,
+            ExpectedCashFlow.expected_date >= start,
+            ExpectedCashFlow.expected_date < end_exclusive,
+        )
+        .order_by(ExpectedCashFlow.expected_date, ExpectedCashFlow.id)
+    ).all()
+
+    buckets: dict[tuple[int, int], dict[str, object]] = {}
+    for flow, account_name, instrument_name in rows:
+        key = (flow.expected_date.year, flow.expected_date.month)
+        bucket = buckets.setdefault(
+            key,
+            {
+                "coupon": 0,
+                "dividend": 0,
+                "interest": 0,
+                "redemption": 0,
+                "other": 0,
+                "items": [],
+            },
+        )
+        flow_type = ExpectedCashFlowType(flow.flow_type).value
+        bucket[flow_type] = int(bucket[flow_type]) + flow.expected_net_amount_kopecks  # type: ignore[operator]
+        bucket["items"].append(  # type: ignore[union-attr]
+            CalendarItem(
+                id=flow.id,
+                expected_date=flow.expected_date,
+                flow_type=flow.flow_type,
+                account_name=account_name,
+                instrument_name=instrument_name,
+                expected_net_amount=RubleAmount(flow.expected_net_amount_kopecks),
+                is_confirmed=flow.is_confirmed,
+                is_approximate=flow.is_approximate,
+                source=flow.source,
+            )
+        )
+
+    def build(key: tuple[int, int], bucket: dict[str, object]) -> CalendarMonth:
+        coupon = int(bucket["coupon"])
+        dividend = int(bucket["dividend"])
+        interest = int(bucket["interest"])
+        redemption = int(bucket["redemption"])
+        other = int(bucket["other"])
+        passive = coupon + dividend + interest + other
+        total = passive + redemption
+        return CalendarMonth(
+            year=key[0],
+            month=key[1],
+            coupon=RubleAmount(coupon),
+            dividend=RubleAmount(dividend),
+            interest=RubleAmount(interest),
+            redemption=RubleAmount(redemption),
+            other=RubleAmount(other),
+            passive_net=RubleAmount(passive),
+            total_net=RubleAmount(total),
+            items=tuple(bucket["items"]),  # type: ignore[arg-type]
+        )
+
+    return tuple(build(key, bucket) for key, bucket in sorted(buckets.items()))
 
 
 def create_expected_cash_flow(

@@ -394,6 +394,33 @@ export type ExpectedFlow = {
   notes: string | null;
 };
 
+/** One expected payout inside a calendar month (E16). */
+export type ExpectedCalendarItem = {
+  id: number;
+  expected_date: string;
+  flow_type: string;
+  account_name: string;
+  instrument_name: string | null;
+  expected_net_amount: MoneyValue;
+  is_confirmed: boolean;
+  is_approximate: boolean;
+  source: string;
+};
+
+/** Aggregated expected payouts for one calendar month (E16). */
+export type ExpectedCalendarMonth = {
+  year: number;
+  month: number;
+  coupon: MoneyValue;
+  dividend: MoneyValue;
+  interest: MoneyValue;
+  redemption: MoneyValue;
+  other: MoneyValue;
+  passive_net: MoneyValue;
+  total_net: MoneyValue;
+  items: ExpectedCalendarItem[];
+};
+
 export type ExpectedFlowCreate = {
   reporting_month_id: number;
   account_id: number;

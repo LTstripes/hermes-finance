@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { ExpectedFlow, ExpectedFlowCreate } from "./types";
+import type { ExpectedCalendarMonth, ExpectedFlow, ExpectedFlowCreate } from "./types";
 
 export function listExpectedFlows(
   monthId: number,
@@ -11,6 +11,21 @@ export function listExpectedFlows(
     forecast_version: forecastVersion,
   });
   return apiRequest<ExpectedFlow[]>(`/api/expected-flows?${query.toString()}`, {
+    method: "GET",
+    signal,
+  });
+}
+
+export function listExpectedFlowsCalendar(
+  monthId: number,
+  forecastVersion: string,
+  signal?: AbortSignal,
+): Promise<ExpectedCalendarMonth[]> {
+  const query = new URLSearchParams({
+    month_id: String(monthId),
+    forecast_version: forecastVersion,
+  });
+  return apiRequest<ExpectedCalendarMonth[]>(`/api/expected-flows/calendar?${query.toString()}`, {
     method: "GET",
     signal,
   });
