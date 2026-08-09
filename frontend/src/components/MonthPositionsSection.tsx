@@ -20,6 +20,12 @@ import {
   Th,
 } from "./ui";
 import { formatDate, formatMoney } from "../lib/format";
+import {
+  ACCOUNT_TYPE_LABELS,
+  INSTRUMENT_TYPE_LABELS,
+  PRICE_SOURCE_LABELS,
+  labelOf,
+} from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type MonthPositionsSectionProps = {
@@ -65,7 +71,7 @@ function normalizeQuantity(value: string): string | null {
 
 function instrumentLabel(instrument: Instrument): string {
   const ticker = instrument.ticker ? ` (${instrument.ticker})` : "";
-  return `${instrument.name}${ticker} · ${instrument.instrument_type}`;
+  return `${instrument.name}${ticker} · ${labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)}`;
 }
 
 export function MonthPositionsSection({
@@ -249,10 +255,10 @@ export function MonthPositionsSection({
     try {
       const qty = normalizeQuantity(draft.quantity);
       if (!qty) {
-        throw new Error("Некорректное quantity");
+        throw new Error("Некорректное количество");
       }
       if (!normalizeMoneyInput(draft.average_cost) || !normalizeMoneyInput(draft.market_price)) {
-        throw new Error("Укажи average cost и market price");
+        throw new Error("Укажи среднюю стоимость и рыночную цену");
       }
       let accountId = Number(draft.account_id);
       if (!Number.isInteger(accountId) || accountId < 1) {
@@ -302,7 +308,7 @@ export function MonthPositionsSection({
     try {
       const qty = normalizeQuantity(editDraft.quantity);
       if (!qty) {
-        throw new Error("Некорректное quantity");
+        throw new Error("Некорректное количество");
       }
       await updatePosition(
         editingId,
@@ -380,7 +386,7 @@ export function MonthPositionsSection({
               <option value="">Все счета</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} ({a.account_type})
+                  {a.name} ({labelOf(ACCOUNT_TYPE_LABELS, a.account_type)})
                 </option>
               ))}
             </Select>
@@ -392,12 +398,12 @@ export function MonthPositionsSection({
               value={filterType}
             >
               <option value="">Все типы</option>
-              <option value="stock">stock</option>
-              <option value="bond">bond</option>
-              <option value="fund">fund</option>
-              <option value="currency">currency</option>
-              <option value="gold">gold</option>
-              <option value="other">other</option>
+              <option value="stock">Акции</option>
+              <option value="bond">Облигации</option>
+              <option value="fund">Фонды</option>
+              <option value="currency">Валюта</option>
+              <option value="gold">Золото</option>
+              <option value="other">Прочее</option>
             </Select>
           </Field>
         </div>
@@ -414,12 +420,12 @@ export function MonthPositionsSection({
               <tr>
                 <Th>Счёт</Th>
                 <Th>Инструмент</Th>
-                <Th numeric>Qty</Th>
-                <Th numeric>Avg cost</Th>
-                <Th numeric>Price</Th>
-                <Th numeric>Market value</Th>
-                <Th numeric>Result</Th>
-                <Th>Price date / src</Th>
+                <Th numeric>Количество</Th>
+                <Th numeric>Средняя стоимость</Th>
+                <Th numeric>Цена</Th>
+                <Th numeric>Рыночная стоимость</Th>
+                <Th numeric>Результат</Th>
+                <Th>Дата и источник цены</Th>
                 <Th>Действия</Th>
               </tr>
             </thead>
@@ -435,7 +441,9 @@ export function MonthPositionsSection({
                       {instrument
                         ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
                         : `#${row.instrument_id}`}
-                      <div className="muted tiny">{instrument?.instrument_type ?? "—"}</div>
+                      <div className="muted tiny">
+                        {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")}
+                      </div>
                     </Td>
                     <Td numeric>
                       {editing ? (
@@ -498,9 +506,9 @@ export function MonthPositionsSection({
                               setEditDraft({ ...editDraft, price_source: e.target.value })
                             }
                           >
-                            <option value="manual">manual</option>
-                            <option value="moex">moex</option>
-                            <option value="alfa_pdf">alfa_pdf</option>
+                            <option value="manual">Вручную</option>
+                            <option value="moex">Мосбиржа</option>
+                            <option value="alfa_pdf">Выписка Альфа-Банка</option>
                           </Select>
                           <Input
                             className="input--money"
@@ -517,7 +525,9 @@ export function MonthPositionsSection({
                       ) : (
                         <>
                           <div>{formatDate(row.price_date)}</div>
-                          <div className="muted tiny">{row.price_source}</div>
+                          <div className="muted tiny">
+                            {labelOf(PRICE_SOURCE_LABELS, row.price_source)}
+                          </div>
                           {row.accrued_interest ? (
                             <div className="muted tiny">
                               НКД {formatMoney(moneyAmount(row.accrued_interest))}
@@ -595,17 +605,18 @@ export function MonthPositionsSection({
 
         <div className="totals-bar">
           <span>
-            Market value: <strong>{formatMoney(totals.market)}</strong>
+            Рыночная стоимость: <strong>{formatMoney(totals.market)}</strong>
           </span>
           <span>
-            Cost basis: <strong>{formatMoney(totals.cost)}</strong>
+            Себестоимость: <strong>{formatMoney(totals.cost)}</strong>
           </span>
           <span>
-            Unrealized: <strong>{formatMoney(totals.result)}</strong>
+            Нереализованный результат: <strong>{formatMoney(totals.result)}</strong>
           </span>
         </div>
         <p className="muted field-hint">
-          market_value / cost_basis / unrealized_result считает backend. Клиент только отображает.
+          Рыночную стоимость, себестоимость и нереализованный результат рассчитывает backend. Клиент
+          только отображает.
         </p>
 
         {!readOnly ? (
@@ -628,12 +639,12 @@ export function MonthPositionsSection({
                     onChange={(e) => setNewInstrumentType(e.target.value)}
                     value={newInstrumentType}
                   >
-                    <option value="stock">stock</option>
-                    <option value="bond">bond</option>
-                    <option value="fund">fund</option>
-                    <option value="currency">currency</option>
-                    <option value="gold">gold</option>
-                    <option value="other">other</option>
+                    <option value="stock">Акции</option>
+                    <option value="bond">Облигации</option>
+                    <option value="fund">Фонды</option>
+                    <option value="currency">Валюта</option>
+                    <option value="gold">Золото</option>
+                    <option value="other">Прочее</option>
                   </Select>
                 </Field>
                 <Field htmlFor="instr-ticker" label="Тикер">
@@ -663,7 +674,7 @@ export function MonthPositionsSection({
                     <option value="">авто (создать «Брокерский»)</option>
                     {brokerAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.name} ({a.account_type})
+                        {a.name} ({labelOf(ACCOUNT_TYPE_LABELS, a.account_type)})
                       </option>
                     ))}
                   </Select>
@@ -683,7 +694,7 @@ export function MonthPositionsSection({
                     ))}
                   </Select>
                 </Field>
-                <Field htmlFor="pos-qty" label="Quantity">
+                <Field htmlFor="pos-qty" label="Количество">
                   <Input
                     className="input--money"
                     id="pos-qty"
@@ -693,7 +704,7 @@ export function MonthPositionsSection({
                     value={draft.quantity}
                   />
                 </Field>
-                <Field htmlFor="pos-avg" label="Average cost">
+                <Field htmlFor="pos-avg" label="Средняя стоимость">
                   <Input
                     className="input--money"
                     id="pos-avg"
@@ -703,7 +714,7 @@ export function MonthPositionsSection({
                     value={draft.average_cost}
                   />
                 </Field>
-                <Field htmlFor="pos-price" label="Market price">
+                <Field htmlFor="pos-price" label="Рыночная цена">
                   <Input
                     className="input--money"
                     id="pos-price"
@@ -713,7 +724,7 @@ export function MonthPositionsSection({
                     value={draft.market_price}
                   />
                 </Field>
-                <Field htmlFor="pos-nkd" label="НКД (bonds, optional)">
+                <Field htmlFor="pos-nkd" label="НКД (облигации, необязательно)">
                   <Input
                     className="input--money"
                     id="pos-nkd"
@@ -722,7 +733,7 @@ export function MonthPositionsSection({
                     value={draft.accrued_interest}
                   />
                 </Field>
-                <Field htmlFor="pos-price-date" label="Price date">
+                <Field htmlFor="pos-price-date" label="Дата цены">
                   <Input
                     id="pos-price-date"
                     onChange={(e) => setDraft({ ...draft, price_date: e.target.value })}
@@ -731,15 +742,15 @@ export function MonthPositionsSection({
                     value={draft.price_date}
                   />
                 </Field>
-                <Field htmlFor="pos-source" label="Price source">
+                <Field htmlFor="pos-source" label="Источник цены">
                   <Select
                     id="pos-source"
                     onChange={(e) => setDraft({ ...draft, price_source: e.target.value })}
                     value={draft.price_source}
                   >
-                    <option value="manual">manual</option>
-                    <option value="moex">moex</option>
-                    <option value="alfa_pdf">alfa_pdf</option>
+                    <option value="manual">Вручную</option>
+                    <option value="moex">Мосбиржа</option>
+                    <option value="alfa_pdf">Выписка Альфа-Банка</option>
                   </Select>
                 </Field>
               </div>

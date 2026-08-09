@@ -38,6 +38,7 @@ import {
   Th,
 } from "./ui";
 import { formatMoney } from "../lib/format";
+import { BENEFIT_STATUS_LABELS, IIS_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub } from "../lib/money";
 
 type Props = {
@@ -157,7 +158,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
     event.preventDefault();
     const accountId = Number(iisAccountId);
     if (!accountId) {
-      setActionError("Выбери IIS-счёт");
+      setActionError("Выбери счёт ИИС");
       return;
     }
     setBusy(true);
@@ -182,7 +183,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
     setActionError(null);
     try {
       if (!accountId || !normalizeMoneyInput(contribAmount)) {
-        throw new Error("IIS account и сумма обязательны");
+        throw new Error("Счёт ИИС и сумма обязательны");
       }
       await createIisContribution(accountId, {
         tax_year: Number(contribYear),
@@ -204,7 +205,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
     setActionError(null);
     try {
       if (!accountId || !normalizeMoneyInput(benefitAmount)) {
-        throw new Error("IIS account и сумма benefit обязательны");
+        throw new Error("Счёт ИИС и сумма льготы обязательны");
       }
       await createTaxBenefit(accountId, {
         tax_year: Number(benefitYear),
@@ -251,9 +252,9 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
       <Panel
         action={
           status === "closed" ? (
-            <Badge tone="closed">closed</Badge>
+            <Badge tone="closed">Утверждён</Badge>
           ) : (
-            <Badge tone="draft">draft</Badge>
+            <Badge tone="draft">Черновик</Badge>
           )
         }
         label="Закрытие ввода"
@@ -262,21 +263,21 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
         {previewKpis ? (
           <div className="totals-bar">
             <span>
-              Liquid capital:{" "}
+              Ликвидный капитал:{" "}
               <strong>{formatMoney(moneyAmount(previewKpis.liquid_capital_net))}</strong>
             </span>
             <span>
-              Passive avg:{" "}
+              Средний пассивный доход:{" "}
               <strong>{formatMoney(moneyAmount(previewKpis.passive_income_average))}</strong>
             </span>
             <span>
-              Passive forecast:{" "}
+              Прогноз пассивного дохода:{" "}
               <strong>
                 {formatMoney(moneyAmount(previewKpis.forecast_monthly_passive_income))}
               </strong>
             </span>
             <span>
-              Goal:{" "}
+              Цель:{" "}
               <strong>
                 {previewKpis.goal_progress_pct != null ? `${previewKpis.goal_progress_pct}%` : "—"}
               </strong>
@@ -324,19 +325,19 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
 
       <Panel label="Закрытие ввода" title="ИИС">
         <div className="inline-alert inline-alert--warn" role="status">
-          Налоговые данные (benefits/status) — информационные. Это не налоговый расчёт и не замена
+          Налоговые данные (льготы и статусы) — информационные. Это не налоговый расчёт и не замена
           декларации.
         </div>
         {iisAccounts.length === 0 ? (
           <EmptyState
-            description="Нет счетов account_type=iis. Создай IIS-счёт в словаре accounts."
+            description="Нет счетов типа ИИС. Создай счёт ИИС в справочнике счетов."
             inline
-            title="Нет IIS"
+            title="Счёта ИИС нет"
           />
         ) : (
           <>
             <div className="editor-grid filter-grid">
-              <Field htmlFor="iis-acc" label="IIS account">
+              <Field htmlFor="iis-acc" label="Счёт ИИС">
                 <Select
                   id="iis-acc"
                   onChange={(e) => setIisAccountId(e.target.value)}
@@ -360,9 +361,9 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                       onChange={(e) => setIisType(e.target.value)}
                       value={iisType}
                     >
-                      <option value="type_a">type_a</option>
-                      <option value="type_b">type_b</option>
-                      <option value="type_3">type_3</option>
+                      <option value="type_a">Тип А</option>
+                      <option value="type_b">Тип Б</option>
+                      <option value="type_3">Тип 3</option>
                     </Select>
                   </Field>
                   <Field htmlFor="iis-opened" label="Дата открытия">
@@ -380,7 +381,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                 </Button>
                 {profile ? (
                   <p className="muted field-hint">
-                    Профиль id={profile.id}, opened {profile.opened_at}
+                    Профиль №{profile.id}, открыт {profile.opened_at}
                   </p>
                 ) : null}
               </form>
@@ -412,7 +413,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
             {!readOnly ? (
               <form className="form-stack asset-form" onSubmit={addContribution}>
                 <div className="editor-grid">
-                  <Field htmlFor="c-year" label="Tax year взноса">
+                  <Field htmlFor="c-year" label="Налоговый год взноса">
                     <Input
                       id="c-year"
                       onChange={(e) => setContribYear(e.target.value)}
@@ -436,9 +437,9 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
               </form>
             ) : null}
 
-            <h3 className="section-subhead">Tax benefits (info)</h3>
+            <h3 className="section-subhead">Налоговые льготы (справочно)</h3>
             {benefits.length === 0 ? (
-              <EmptyState description="Benefits нет." inline title="Пусто" />
+              <EmptyState description="Налоговых льгот нет." inline title="Пусто" />
             ) : (
               <Table>
                 <thead>
@@ -453,8 +454,8 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                   {benefits.map((row) => (
                     <tr key={row.id}>
                       <Td>{row.tax_year}</Td>
-                      <Td>{row.benefit_type}</Td>
-                      <Td>{row.status}</Td>
+                      <Td>{labelOf(IIS_TYPE_LABELS, row.benefit_type)}</Td>
+                      <Td>{labelOf(BENEFIT_STATUS_LABELS, row.status)}</Td>
                       <Td numeric>{formatMoney(moneyAmount(row.amount))}</Td>
                     </tr>
                   ))}
@@ -464,7 +465,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
             {!readOnly ? (
               <form className="form-stack asset-form" onSubmit={addBenefit}>
                 <div className="editor-grid">
-                  <Field htmlFor="b-year" label="Tax year benefit">
+                  <Field htmlFor="b-year" label="Налоговый год льготы">
                     <Input
                       id="b-year"
                       onChange={(e) => setBenefitYear(e.target.value)}
@@ -472,19 +473,19 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                       value={benefitYear}
                     />
                   </Field>
-                  <Field htmlFor="b-status" label="Статус benefit">
+                  <Field htmlFor="b-status" label="Статус льготы">
                     <Select
                       id="b-status"
                       onChange={(e) => setBenefitStatus(e.target.value)}
                       value={benefitStatus}
                     >
-                      <option value="planned">planned</option>
-                      <option value="submitted">submitted</option>
-                      <option value="received">received</option>
-                      <option value="rejected">rejected</option>
+                      <option value="planned">Запланировано</option>
+                      <option value="submitted">Подано</option>
+                      <option value="received">Получено</option>
+                      <option value="rejected">Отклонено</option>
                     </Select>
                   </Field>
-                  <Field htmlFor="b-amt" label="Сумма benefit">
+                  <Field htmlFor="b-amt" label="Сумма льготы">
                     <Input
                       className="input--money"
                       id="b-amt"
@@ -495,7 +496,7 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
                   </Field>
                 </div>
                 <Button disabled={busy || !iisAccountId} type="submit">
-                  Добавить benefit
+                  Добавить льготу
                 </Button>
               </form>
             ) : null}
@@ -504,20 +505,22 @@ export function MonthCloseoutSection({ monthId, readOnly, year, status, onStatus
       </Panel>
 
       <Panel
-        action={<Badge>goal {goalProgress != null ? `${goalProgress}%` : "—"}</Badge>}
+        action={<Badge>цель {goalProgress != null ? `${goalProgress}%` : "—"}</Badge>}
         label="Закрытие ввода"
         title="Основная цель"
       >
         <div className="inline-alert inline-alert--warn" role="status">
-          API <code>/api/goals</code> отсутствует (gap). Ниже — progress из month summary coverage,
-          если backend его отдаёт. CRUD целей в E-фазе не чиним.
+          API <code>/api/goals</code> пока отсутствует. Сейчас прогресс берётся из покрытия в сводке
+          месяца, если backend его отдаёт. Полноценное создание и редактирование целей — отдельная
+          задача E-фазы.
         </div>
         <div className="totals-bar">
           <span>
-            Goal target: <strong>{goalTarget ? formatMoney(moneyAmount(goalTarget)) : "—"}</strong>
+            Целевое значение:{" "}
+            <strong>{goalTarget ? formatMoney(moneyAmount(goalTarget)) : "—"}</strong>
           </span>
           <span>
-            Progress: <strong>{goalProgress != null ? `${goalProgress}%` : "—"}</strong>
+            Прогресс: <strong>{goalProgress != null ? `${goalProgress}%` : "—"}</strong>
           </span>
         </div>
       </Panel>

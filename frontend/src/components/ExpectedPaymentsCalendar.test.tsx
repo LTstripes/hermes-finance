@@ -60,7 +60,7 @@ describe("ExpectedPaymentsCalendar", () => {
     expect(chip(`Купон ${formatMoney("870.00")}`)).toBeInTheDocument();
     expect(chip(`Дивиденды ${formatMoney("500.00")}`)).toBeInTheDocument();
     expect(chip(`Погашение ${formatMoney("10000.00")}`)).toBeInTheDocument();
-    expect(screen.getAllByText(/Passive net:/)).toHaveLength(2);
+    expect(screen.getAllByText(/Пассивный доход, нетто:/)).toHaveLength(2);
   });
 
   it("renders an empty state without calendar months", () => {

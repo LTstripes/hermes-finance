@@ -21,7 +21,7 @@ export function App() {
               <PlaceholderPage
                 description="Справочник счетов и инструментов — после базового month editor."
                 eyebrow="Данные"
-                phaseHint="E later"
+                phaseHint="E-фаза · позже"
                 title="Счета и инструменты"
               />
             }
@@ -30,10 +30,10 @@ export function App() {
             path="goals"
             element={
               <PlaceholderPage
-                description="Цели капитала. Backend gap: нет /api/goals — только визуальный stub."
+                description="Цели капитала. Backend пока не предоставляет /api/goals — здесь только визуальная заглушка."
                 eyebrow="Данные"
                 gaps={["API /api/goals отсутствует"]}
-                phaseHint="E later · API gap"
+                phaseHint="E-фаза · ограничение API"
                 title="Цели"
               />
             }
@@ -43,10 +43,10 @@ export function App() {
             path="settings"
             element={
               <PlaceholderPage
-                description="Локальные настройки приложения. Gaps: tax-brackets, cash endpoints — не в scope E02."
+                description="Локальные настройки приложения. Пока не подключены налоговые ставки и отдельные API денежных средств."
                 eyebrow="Система"
-                gaps={["API /api/tax-brackets", "API cash endpoints"]}
-                phaseHint="E later · API gaps"
+                gaps={["API /api/tax-brackets", "API денежных средств"]}
+                phaseHint="E-фаза · ограничения API"
                 title="Настройки"
               />
             }

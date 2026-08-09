@@ -176,7 +176,7 @@ describe("App", () => {
     expect(document.getElementById("main")).not.toBeNull();
     // KPI labels render immediately (values may be loading placeholders)
     expect(screen.getByText("Ликвидный капитал")).toBeInTheDocument();
-    expect(screen.getByText("Forecast passive")).toBeInTheDocument();
+    expect(screen.getByText("Прогноз пассивного дохода")).toBeInTheDocument();
   });
 
   it("loads live KPI values from dashboard API for the latest month", async () => {
@@ -214,12 +214,12 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
-    expect(screen.getByText("Month delta")).toBeInTheDocument();
-    expect(screen.getByText("Actual average")).toBeInTheDocument();
-    expect(screen.getByText("Goal progress")).toBeInTheDocument();
-    expect(screen.getByText("Mandatory expenses")).toBeInTheDocument();
-    expect(screen.getByText("Expense coverage")).toBeInTheDocument();
-    expect(screen.getByText("Mortgage coverage")).toBeInTheDocument();
+    expect(screen.getByText("Изменение за месяц")).toBeInTheDocument();
+    expect(screen.getByText("Средний фактический доход")).toBeInTheDocument();
+    expect(screen.getByText("Прогресс цели")).toBeInTheDocument();
+    expect(screen.getByText("Обязательные расходы")).toBeInTheDocument();
+    expect(screen.getByText("Покрытие расходов")).toBeInTheDocument();
+    expect(screen.getByText("Покрытие ипотеки")).toBeInTheDocument();
     expect(screen.getAllByText(/68,0%/).length).toBeGreaterThan(0);
   });
 
@@ -235,7 +235,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Backend подключён")).toBeInTheDocument();
+    expect(await screen.findByText("Сервер подключён")).toBeInTheDocument();
     expect(screen.getByText("API v0.1.0")).toBeInTheDocument();
   });
 
@@ -244,7 +244,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Backend недоступен")).toBeInTheDocument();
+    expect(await screen.findByText("Сервер недоступен")).toBeInTheDocument();
   });
 
   it("lists months, creates a draft, opens editor, and deletes with confirm", async () => {
@@ -308,8 +308,8 @@ describe("App", () => {
     const julyRow = periodCell(/Июль/);
     await user.click(within(julyRow).getByRole("link", { name: "Открыть" }));
     expect(await screen.findByRole("heading", { level: 1, name: /Июль/ })).toBeInTheDocument();
-    expect(screen.getByLabelText("Зарплата gross")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Cashback/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Кэшбэк/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: /К списку/i }));
     expect(await screen.findByRole("heading", { level: 1, name: "Месяцы" })).toBeInTheDocument();
@@ -318,7 +318,7 @@ describe("App", () => {
     const julyAgain = periodCell(/Июль/);
     await user.click(within(julyAgain).getByRole("button", { name: "Удалить" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Удалить draft" }));
+    await user.click(screen.getByRole("button", { name: "Удалить черновик" }));
 
     expect(await within(screen.getByRole("table")).findByText(/Август/)).toBeInTheDocument();
     expect(within(screen.getByRole("table")).queryByText(/Июль/)).not.toBeInTheDocument();
@@ -388,7 +388,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Клонировать" }));
     expect(await screen.findByRole("heading", { level: 1, name: /Август/ })).toBeInTheDocument();
-    expect(screen.getByLabelText("Зарплата gross")).toBeInTheDocument();
+    expect(screen.getByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();
   });
 
   it("edits salary fields, shows dirty state, and saves incomes", async () => {
@@ -428,12 +428,12 @@ describe("App", () => {
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
-    expect(await screen.findByLabelText("Зарплата gross")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();
     expect(screen.queryByText(/несохранённые изменения/i)).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("Зарплата gross"), "200000");
-    await user.type(screen.getByLabelText("Фактический net (employer)"), "170000");
-    await user.type(screen.getByLabelText(/Cashback/i), "500");
+    await user.type(screen.getByLabelText("Зарплата до вычета налогов"), "200000");
+    await user.type(screen.getByLabelText("Фактическая зарплата после налогов"), "170000");
+    await user.type(screen.getByLabelText(/Кэшбэк/i), "500");
 
     expect(screen.getAllByText(/несохранённые изменения/i).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
@@ -528,9 +528,9 @@ describe("App", () => {
     expect(await screen.findByText("Вклад Альфа")).toBeInTheDocument();
     expect(screen.getAllByText(/1\s*000\s*₽/).length).toBeGreaterThan(0);
 
-    await user.type(screen.getByLabelText("Название cash"), "Кошелёк");
-    await user.type(screen.getByLabelText("Сумма cash"), "2500.50");
-    await user.click(screen.getByRole("button", { name: "Добавить cash" }));
+    await user.type(screen.getByLabelText("Название денежной позиции"), "Кошелёк");
+    await user.type(screen.getByLabelText("Сумма наличных"), "2500.50");
+    await user.click(screen.getByRole("button", { name: "Добавить денежную позицию" }));
 
     expect(await screen.findByText("Кошелёк")).toBeInTheDocument();
     expect(screen.getAllByText(/2\s*500[,.]50\s*₽/).length).toBeGreaterThan(0);
@@ -605,12 +605,12 @@ describe("App", () => {
     expect(await screen.findByText("Позиции")).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Счёт позиции"), "2");
     await user.selectOptions(screen.getByLabelText("Инструмент позиции"), "10");
-    await user.clear(screen.getByLabelText("Quantity"));
-    await user.type(screen.getByLabelText("Quantity"), "10");
-    await user.clear(screen.getByLabelText("Average cost"));
-    await user.type(screen.getByLabelText("Average cost"), "1000");
-    await user.clear(screen.getByLabelText("Market price"));
-    await user.type(screen.getByLabelText("Market price"), "1250");
+    await user.clear(screen.getByLabelText("Количество"));
+    await user.type(screen.getByLabelText("Количество"), "10");
+    await user.clear(screen.getByLabelText("Средняя стоимость"));
+    await user.type(screen.getByLabelText("Средняя стоимость"), "1000");
+    await user.clear(screen.getByLabelText("Рыночная цена"));
+    await user.type(screen.getByLabelText("Рыночная цена"), "1250");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
 
     expect(await screen.findAllByText(/SBER/)).not.toHaveLength(0);
@@ -674,26 +674,26 @@ describe("App", () => {
 
     expect(await screen.findByText("Фактические потоки")).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Тип потока"), "coupon");
-    await user.selectOptions(screen.getByLabelText("Счёт выплаты"), "2");
-    await user.clear(screen.getByLabelText("Gross"));
-    await user.type(screen.getByLabelText("Gross"), "1000");
-    await user.clear(screen.getByLabelText("Net"));
-    await user.type(screen.getByLabelText("Net"), "870");
+    await user.selectOptions(screen.getByLabelText("Счёт фактической выплаты"), "2");
+    await user.clear(screen.getByLabelText("Брутто"));
+    await user.type(screen.getByLabelText("Брутто"), "1000");
+    await user.clear(screen.getByLabelText("Нетто"));
+    await user.type(screen.getByLabelText("Нетто"), "870");
     await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
 
-    expect(await screen.findByText("passive income")).toBeInTheDocument();
+    expect(await screen.findByText("пассивный доход")).toBeInTheDocument();
     expect(screen.getAllByText(/870\s*₽/).length).toBeGreaterThan(0);
 
     await user.selectOptions(screen.getByLabelText("Тип потока"), "redemption");
-    await user.clear(screen.getByLabelText("Gross"));
-    await user.type(screen.getByLabelText("Gross"), "5000");
-    await user.clear(screen.getByLabelText("Net"));
-    await user.type(screen.getByLabelText("Net"), "5000");
+    await user.clear(screen.getByLabelText("Брутто"));
+    await user.type(screen.getByLabelText("Брутто"), "5000");
+    await user.clear(screen.getByLabelText("Нетто"));
+    await user.type(screen.getByLabelText("Нетто"), "5000");
     await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
 
     expect(await screen.findByText(/не доход \(погашение\)/)).toBeInTheDocument();
     // passive total stays 870, redemption separate
-    expect(screen.getByText(/Passive income \(net\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Пассивный доход \(нетто\)/i)).toBeInTheDocument();
   });
 
   it("adds mandatory expense and saving allocation", async () => {
@@ -752,7 +752,7 @@ describe("App", () => {
     expect(await screen.findByText("Аренда")).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Назначение"), "Подушка");
-    await user.type(screen.getByLabelText("Сумма savings"), "10000");
+    await user.type(screen.getByLabelText("Сумма к откладыванию"), "10000");
     await user.click(screen.getByRole("button", { name: "Добавить откладывание" }));
     expect(await screen.findByText("Подушка")).toBeInTheDocument();
   });
@@ -832,7 +832,7 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Ежемесячный платёж"), "45000");
     await user.click(screen.getByRole("button", { name: "Добавить объект" }));
     expect(await screen.findByText("Квартира")).toBeInTheDocument();
-    expect(screen.getAllByText(/Mortgage coverage/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Покрытие ипотеки/i).length).toBeGreaterThan(0);
 
     expect(screen.getByRole("heading", { level: 2, name: "Комментарии" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();

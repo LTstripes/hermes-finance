@@ -37,6 +37,7 @@ import {
 } from "./ui";
 import { ExpectedPaymentsCalendar } from "./ExpectedPaymentsCalendar";
 import { formatDate, formatMoney } from "../lib/format";
+import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import {
   isPassiveExpectedFlowType,
   isPassiveInvestmentFlowType,
@@ -277,7 +278,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         throw new Error("Выбери счёт");
       }
       if (!Number.isInteger(instrumentId) || instrumentId < 1) {
-        throw new Error("Выбери инструмент для expected flow");
+        throw new Error("Выбери инструмент для ожидаемой выплаты");
       }
       const payload = {
         reporting_month_id: monthId,
@@ -356,13 +357,15 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
       ) : null}
 
       <Panel
-        action={<Badge tone="draft">passive net {formatMoney(passiveActualTotal)}</Badge>}
+        action={
+          <Badge tone="draft">пассивный доход, нетто {formatMoney(passiveActualTotal)}</Badge>
+        }
         label="Выплаты"
         title="Фактические потоки"
       >
         {sortedActual.length === 0 ? (
           <EmptyState
-            description="Фактических coupon/dividend/interest ещё нет."
+            description="Фактических купонов, дивидендов и процентов ещё нет."
             inline
             title="Пусто"
           />
@@ -373,10 +376,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Th>Дата</Th>
                 <Th>Тип</Th>
                 <Th>Счёт / инструмент</Th>
-                <Th numeric>Gross</Th>
-                <Th numeric>Tax</Th>
-                <Th numeric>Comm</Th>
-                <Th numeric>Net</Th>
+                <Th numeric>Брутто</Th>
+                <Th numeric>Налог</Th>
+                <Th numeric>Комиссия</Th>
+                <Th numeric>Нетто</Th>
                 <Th>Действия</Th>
               </tr>
             </thead>
@@ -392,10 +395,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                     <Td>{formatDate(row.event_date)}</Td>
                     <Td>
                       <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
-                        {row.flow_type}
+                        {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
                       </span>
                       {redemption ? <div className="muted tiny">не доход (погашение)</div> : null}
-                      {passive ? <div className="muted tiny">passive income</div> : null}
+                      {passive ? <div className="muted tiny">пассивный доход</div> : null}
                     </Td>
                     <Td>
                       <div>{accountName(row.account_id)}</div>
@@ -425,15 +428,15 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
 
         <div className="totals-bar">
           <span>
-            Passive income (net): <strong>{formatMoney(passiveActualTotal)}</strong>
+            Пассивный доход (нетто): <strong>{formatMoney(passiveActualTotal)}</strong>
           </span>
           <span>
-            Redemption (не income): <strong>{formatMoney(redemptionActualTotal)}</strong>
+            Погашение (не доход): <strong>{formatMoney(redemptionActualTotal)}</strong>
           </span>
         </div>
         <p className="muted field-hint">
-          Passive = interest/coupon/dividend/other. Redemption — возврат номинала, не пассивный
-          доход. Deposit interest actual живёт в deposit snapshots, не здесь.
+          Пассивный доход = проценты/купоны/дивиденды/прочее. Погашение — возврат номинала, не
+          пассивный доход. Фактический процент по депозиту хранится в снимке депозита, а не здесь.
         </p>
 
         {!readOnly ? (
@@ -448,13 +451,13 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   onChange={(e) => setActualDraft({ ...actualDraft, flow_type: e.target.value })}
                   value={actualDraft.flow_type}
                 >
-                  <option value="coupon">coupon</option>
-                  <option value="dividend">dividend</option>
-                  <option value="interest">interest</option>
-                  <option value="redemption">redemption</option>
-                  <option value="commission">commission</option>
-                  <option value="tax">tax</option>
-                  <option value="other">other</option>
+                  <option value="coupon">Купон</option>
+                  <option value="dividend">Дивиденды</option>
+                  <option value="interest">Проценты</option>
+                  <option value="redemption">Погашение</option>
+                  <option value="commission">Комиссия</option>
+                  <option value="tax">Налог</option>
+                  <option value="other">Прочее</option>
                 </Select>
               </Field>
               <Field htmlFor="act-date" label="Дата события">
@@ -466,7 +469,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={actualDraft.event_date}
                 />
               </Field>
-              <Field htmlFor="act-account" label="Счёт выплаты">
+              <Field htmlFor="act-account" label="Счёт фактической выплаты">
                 <Select
                   id="act-account"
                   onChange={(e) => setActualDraft({ ...actualDraft, account_id: e.target.value })}
@@ -481,7 +484,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   ))}
                 </Select>
               </Field>
-              <Field htmlFor="act-instr" label="Инструмент (optional)">
+              <Field htmlFor="act-instr" label="Инструмент (необязательно)">
                 <Select
                   id="act-instr"
                   onChange={(e) =>
@@ -498,7 +501,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   ))}
                 </Select>
               </Field>
-              <Field htmlFor="act-gross" label="Gross">
+              <Field htmlFor="act-gross" label="Брутто">
                 <Input
                   className="input--money"
                   id="act-gross"
@@ -507,7 +510,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={actualDraft.gross}
                 />
               </Field>
-              <Field htmlFor="act-tax" label="Tax">
+              <Field htmlFor="act-tax" label="Налог">
                 <Input
                   className="input--money"
                   id="act-tax"
@@ -515,7 +518,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={actualDraft.tax}
                 />
               </Field>
-              <Field htmlFor="act-comm" label="Commission">
+              <Field htmlFor="act-comm" label="Комиссия">
                 <Input
                   className="input--money"
                   id="act-comm"
@@ -523,7 +526,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={actualDraft.commission}
                 />
               </Field>
-              <Field htmlFor="act-net" label="Net">
+              <Field htmlFor="act-net" label="Нетто">
                 <Input
                   className="input--money"
                   id="act-net"
@@ -541,12 +544,12 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
       </Panel>
 
       <Panel
-        action={<Badge>expected passive {formatMoney(expectedPassiveTotal)}</Badge>}
+        action={<Badge>прогноз пассивного дохода {formatMoney(expectedPassiveTotal)}</Badge>}
         label="Календарь"
         title="Ожидаемые потоки"
       >
         <div className="editor-grid filter-grid">
-          <Field htmlFor="exp-version" label="Forecast version">
+          <Field htmlFor="exp-version" label="Версия прогноза">
             <Input
               id="exp-version"
               onChange={(e) => setForecastVersion(e.target.value || "v1")}
@@ -558,7 +561,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
 
         {sortedExpected.length === 0 ? (
           <EmptyState
-            description={`Нет expected flows для version «${forecastVersion}».`}
+            description={`Нет ожидаемых выплат для версии «${forecastVersion}».`}
             inline
             title="Пусто"
           />
@@ -569,9 +572,9 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Th>Дата</Th>
                 <Th>Тип</Th>
                 <Th>Инструмент</Th>
-                <Th numeric>Gross</Th>
-                <Th numeric>Exp. tax</Th>
-                <Th numeric>Exp. net</Th>
+                <Th numeric>Брутто</Th>
+                <Th numeric>Прогноз налога</Th>
+                <Th numeric>Прогноз нетто</Th>
                 <Th>Статус</Th>
                 <Th>Действия</Th>
               </tr>
@@ -584,9 +587,9 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                     <Td>{formatDate(row.expected_date)}</Td>
                     <Td>
                       <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
-                        {row.flow_type}
+                        {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
                       </span>
-                      {redemption ? <div className="muted tiny">погашение ≠ income</div> : null}
+                      {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
                     </Td>
                     <Td>{instrumentName(row.instrument_id)}</Td>
                     <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
@@ -598,8 +601,8 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                     <Td numeric>{formatMoney(moneyAmount(row.expected_net_amount))}</Td>
                     <Td>
                       <div className="muted tiny">
-                        {row.is_confirmed ? "confirmed" : "plan"}
-                        {row.is_approximate ? " · approx" : ""}
+                        {row.is_confirmed ? "подтверждено" : "план"}
+                        {row.is_approximate ? " · примерно" : ""}
                       </div>
                       <div className="muted tiny">{row.forecast_version}</div>
                     </Td>
@@ -623,17 +626,17 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
 
         <div className="totals-bar">
           <span>
-            Expected passive (net): <strong>{formatMoney(expectedPassiveTotal)}</strong>
+            Прогноз пассивного дохода (нетто): <strong>{formatMoney(expectedPassiveTotal)}</strong>
           </span>
         </div>
 
         {!readOnly ? (
           <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
             <p className="panel__label" style={{ marginBottom: 0 }}>
-              Новый expected flow
+              Новая ожидаемая выплата
             </p>
             <div className="editor-grid">
-              <Field htmlFor="exp-type" label="Тип expected">
+              <Field htmlFor="exp-type" label="Тип выплаты">
                 <Select
                   id="exp-type"
                   onChange={(e) =>
@@ -641,14 +644,14 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   }
                   value={expectedDraft.flow_type}
                 >
-                  <option value="coupon">coupon</option>
-                  <option value="dividend">dividend</option>
-                  <option value="interest">interest</option>
-                  <option value="redemption">redemption</option>
-                  <option value="other">other</option>
+                  <option value="coupon">Купон</option>
+                  <option value="dividend">Дивиденды</option>
+                  <option value="interest">Проценты</option>
+                  <option value="redemption">Погашение</option>
+                  <option value="other">Прочее</option>
                 </Select>
               </Field>
-              <Field htmlFor="exp-date" label="Expected date">
+              <Field htmlFor="exp-date" label="Дата выплаты">
                 <Input
                   id="exp-date"
                   onChange={(e) =>
@@ -659,7 +662,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={expectedDraft.expected_date}
                 />
               </Field>
-              <Field htmlFor="exp-account" label="Счёт expected">
+              <Field htmlFor="exp-account" label="Счёт выплаты">
                 <Select
                   id="exp-account"
                   onChange={(e) =>
@@ -676,7 +679,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   ))}
                 </Select>
               </Field>
-              <Field htmlFor="exp-instr" label="Инструмент expected">
+              <Field htmlFor="exp-instr" label="Инструмент выплаты">
                 <Select
                   id="exp-instr"
                   onChange={(e) =>
@@ -694,7 +697,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   ))}
                 </Select>
               </Field>
-              <Field htmlFor="exp-gross" label="Expected gross">
+              <Field htmlFor="exp-gross" label="Прогноз брутто">
                 <Input
                   className="input--money"
                   id="exp-gross"
@@ -703,7 +706,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={expectedDraft.gross}
                 />
               </Field>
-              <Field htmlFor="exp-tax" label="Expected tax (opt)">
+              <Field htmlFor="exp-tax" label="Прогноз налога (необязательно)">
                 <Input
                   className="input--money"
                   id="exp-tax"
@@ -711,7 +714,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={expectedDraft.tax}
                 />
               </Field>
-              <Field htmlFor="exp-net" label="Expected net (opt)">
+              <Field htmlFor="exp-net" label="Прогноз нетто (необязательно)">
                 <Input
                   className="input--money"
                   id="exp-net"
@@ -719,7 +722,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                   value={expectedDraft.net}
                 />
               </Field>
-              <Field htmlFor="exp-ver" label="Version">
+              <Field htmlFor="exp-ver" label="Версия">
                 <Input
                   id="exp-ver"
                   onChange={(e) =>
@@ -730,7 +733,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               </Field>
             </div>
             <Button disabled={busy} type="submit" variant="primary">
-              Добавить expected
+              Добавить ожидаемую выплату
             </Button>
           </form>
         ) : null}
@@ -747,7 +750,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         danger
         description={
           pendingDeleteActual
-            ? `Удалить ${pendingDeleteActual.flow_type} от ${pendingDeleteActual.event_date}?`
+            ? `Удалить выплату «${labelOf(FLOW_TYPE_LABELS, pendingDeleteActual.flow_type)}» от ${pendingDeleteActual.event_date}?`
             : ""
         }
         onCancel={() => setPendingDeleteActual(null)}
@@ -762,13 +765,13 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         danger
         description={
           pendingDeleteExpected
-            ? `Удалить expected ${pendingDeleteExpected.flow_type} на ${pendingDeleteExpected.expected_date}?`
+            ? `Удалить ожидаемую выплату «${labelOf(FLOW_TYPE_LABELS, pendingDeleteExpected.flow_type)}» на ${pendingDeleteExpected.expected_date}?`
             : ""
         }
         onCancel={() => setPendingDeleteExpected(null)}
         onConfirm={() => void confirmDeleteExpected()}
         open={pendingDeleteExpected !== null}
-        title="Удалить expected?"
+        title="Удалить ожидаемую выплату?"
       />
     </div>
   );

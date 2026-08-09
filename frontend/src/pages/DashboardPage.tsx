@@ -32,6 +32,7 @@ import {
   formatMonth,
   formatPercent,
 } from "../lib/format";
+import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
 
 function deltaToneFromAmount(amount: string | null | undefined): "up" | "down" | "neutral" {
@@ -197,15 +198,15 @@ export function DashboardPage() {
           value={loadingDash || !kpis ? "…" : formatMoney(moneyAmount(kpis.liquid_capital_net))}
           delta={
             loadingDash || !kpis
-              ? "month delta"
+              ? "изменение за месяц"
               : kpis.liquid_capital_delta
                 ? `${formatMoneyDelta(liquidDelta)} · месяц`
-                : "нет delta"
+                : "нет изменений"
           }
           deltaTone={liquidTone}
         />
         <KpiCard
-          label="Month delta"
+          label="Изменение за месяц"
           value={
             loadingDash || !kpis
               ? "…"
@@ -213,11 +214,11 @@ export function DashboardPage() {
                 ? formatMoneyDelta(liquidDelta)
                 : "—"
           }
-          delta="liquid capital Δ"
+          delta="ликвидный капитал Δ"
           deltaTone={liquidTone}
         />
         <KpiCard
-          label="Forecast passive"
+          label="Прогноз пассивного дохода"
           value={
             loadingDash || !kpis
               ? "…"
@@ -227,31 +228,31 @@ export function DashboardPage() {
           deltaTone="neutral"
         />
         <KpiCard
-          label="Actual average"
+          label="Средний фактический доход"
           value={loadingDash || !kpis ? "…" : formatMoney(moneyAmount(kpis.passive_income_average))}
-          delta="средний факт passive"
+          delta="среднее фактическое значение"
           deltaTone="neutral"
         />
         <KpiCard
-          label="Goal progress"
+          label="Прогресс цели"
           value={loadingDash || !kpis ? "…" : pctLabel(kpis.goal_progress_pct)}
-          delta="цель / coverage"
+          delta="цель / покрытие"
           deltaTone="neutral"
         />
         <KpiCard
-          label="Mandatory expenses"
+          label="Обязательные расходы"
           value={loadingDash || !kpis ? "…" : formatMoney(moneyAmount(kpis.mandatory_expenses))}
           delta="обязательные"
           deltaTone="neutral"
         />
         <KpiCard
-          label="Expense coverage"
+          label="Покрытие расходов"
           value={loadingDash || !kpis ? "…" : pctLabel(kpis.mandatory_expense_coverage_pct)}
-          delta="passive vs mandatory"
+          delta="пассивный доход / обязательные"
           deltaTone="neutral"
         />
         <KpiCard
-          label="Mortgage coverage"
+          label="Покрытие ипотеки"
           value={loadingDash || !kpis ? "…" : pctLabel(kpis.mortgage_coverage_pct)}
           delta={
             loadingDash || !kpis
@@ -340,7 +341,7 @@ export function DashboardPage() {
               <p className="muted field-hint">
                 Статус:{" "}
                 <Badge tone={selectedMonth?.status === "draft" ? "draft" : "closed"}>
-                  {selectedMonth?.status}
+                  {selectedMonth ? labelOf(MONTH_STATUS_LABELS, selectedMonth.status) : "—"}
                 </Badge>{" "}
                 · снимок {selectedMonth ? formatDate(selectedMonth.snapshot_date) : "—"}
                 {dashboard.calculation_version ? ` · calc ${dashboard.calculation_version}` : null}
@@ -377,7 +378,9 @@ export function DashboardPage() {
                 <tr key={row.id}>
                   <Td>{formatMonth(row.year, row.month)}</Td>
                   <Td>
-                    <Badge tone={row.status === "draft" ? "draft" : "closed"}>{row.status}</Badge>
+                    <Badge tone={row.status === "draft" ? "draft" : "closed"}>
+                      {labelOf(MONTH_STATUS_LABELS, row.status)}
+                    </Badge>
                   </Td>
                   <Td numeric>{formatDate(row.snapshot_date)}</Td>
                   <Td>
@@ -441,7 +444,7 @@ function FieldMonthSelect({
           {months.length === 0 ? <option value="">—</option> : null}
           {months.map((m) => (
             <option key={m.id} value={m.id}>
-              {formatMonth(m.year, m.month)} · {m.status}
+              {formatMonth(m.year, m.month)} · {labelOf(MONTH_STATUS_LABELS, m.status)}
             </option>
           ))}
         </Select>

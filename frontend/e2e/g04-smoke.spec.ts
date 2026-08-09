@@ -13,12 +13,12 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await page.getByRole("button", { name: "Создать месяц" }).click();
 
   const monthRow = page.getByRole("row").filter({ hasText: "Декабрь" }).last();
-  await expect(monthRow).toContainText("draft");
+  await expect(monthRow).toContainText("Черновик");
   await monthRow.getByRole("link", { name: "Открыть" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Декабрь 2049" })).toBeVisible();
 
-  await page.getByLabel("Зарплата gross").fill("100000");
-  await page.getByLabel("Фактический net (employer)").fill("87000");
+  await page.getByLabel("Зарплата до вычета налогов").fill("100000");
+  await page.getByLabel("Фактическая зарплата после налогов").fill("87000");
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText(/Сохранено/)).toBeVisible();
 
@@ -36,8 +36,8 @@ test("G04 critical monthly workflow", async ({ page }) => {
 
   await page.getByRole("link", { name: "Дашборд" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
-  await expect(page.getByText("Ликвидный капитал")).toBeVisible();
-  await expect(page.getByText("Forecast passive")).toBeVisible();
+  await expect(page.getByText("Ликвидный капитал", { exact: true })).toBeVisible();
+  await expect(page.getByText("Прогноз пассивного дохода")).toBeVisible();
 
   await page.getByRole("link", { name: "Экспорт" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Экспорт" })).toBeVisible();

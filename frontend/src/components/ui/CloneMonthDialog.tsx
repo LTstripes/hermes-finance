@@ -24,22 +24,22 @@ const MONTH_LABELS = [
 ] as const;
 
 const COPIED = [
-  "Позиции (qty / цены / valuations)",
-  "Депозиты (факт процента → 0, expected пересчитан)",
+  "Позиции (количество, цены и оценка)",
+  "Депозиты (фактический процент → 0, прогноз пересчитан)",
   "Денежные средства",
   "Обязательные расходы",
-  "Откладывание (savings)",
+  "Откладывание накоплений",
   "Долги",
   "Недвижимость / ипотека",
-  "Шаблон зарплаты (recurring salary)",
+  "Шаблон зарплаты (регулярная зарплата)",
 ] as const;
 
 const NOT_COPIED = [
-  "Investment cash flows (купоны, дивиденды, …)",
-  "Expected cash flows / forecast",
-  "Необязательные расходы, bonus, cashback",
+  "Инвестиционные денежные потоки (купоны, дивиденды, …)",
+  "Ожидаемые денежные потоки и прогноз",
+  "Необязательные расходы, премии и кэшбэк",
   "Комментарии месяца",
-  "Глобальные accounts / instruments / goals / IIS",
+  "Глобальные счета, инструменты, цели и ИИС",
 ] as const;
 
 type CloneMonthDialogProps = {
@@ -103,7 +103,7 @@ export function CloneMonthDialog({ open, source, onCancel, onCloned }: CloneMont
         month: target.month,
         snapshot_date: target.snapshot_date,
       });
-      setSuccess(`Создан draft ${formatMonth(cloned.year, cloned.month)}`);
+      setSuccess(`Создан черновик ${formatMonth(cloned.year, cloned.month)}`);
       onCloned(cloned);
     } catch (err) {
       setError(formatApiError(err));
@@ -125,8 +125,8 @@ export function CloneMonthDialog({ open, source, onCancel, onCloned }: CloneMont
         </h2>
         <p className="dialog__body" id={descriptionId}>
           Клон из <strong>{formatMonth(source.year, source.month)}</strong>
-          {source.status === "closed" ? " (closed — ок)" : " (draft — ок)"}. Одна транзакция на
-          backend: либо полный draft, либо ничего.
+          {source.status === "closed" ? " (утверждён — можно)" : " (черновик — можно)"}. Одна
+          транзакция на backend: либо полный черновик, либо ничего.
         </p>
 
         <div className="clone-grid">
@@ -192,7 +192,7 @@ export function CloneMonthDialog({ open, source, onCancel, onCloned }: CloneMont
               </Select>
             </Field>
           </div>
-          <Field htmlFor="clone-snapshot" label="Дата снимка target">
+          <Field htmlFor="clone-snapshot" label="Дата снимка нового периода">
             <Input
               id="clone-snapshot"
               name="snapshot_date"

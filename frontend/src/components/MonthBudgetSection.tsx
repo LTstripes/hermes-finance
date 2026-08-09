@@ -19,6 +19,7 @@ import {
   Th,
 } from "./ui";
 import { formatMoney } from "../lib/format";
+import { EXPENSE_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type Props = { monthId: number; readOnly: boolean };
@@ -150,7 +151,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
       ) : null}
 
       <Panel
-        action={<Badge>mandatory {formatMoney(mandatoryTotal)}</Badge>}
+        action={<Badge>обязательные {formatMoney(mandatoryTotal)}</Badge>}
         label="Бюджет"
         title="Расходы"
       >
@@ -179,7 +180,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
                           : "badge badge--draft"
                       }
                     >
-                      {row.expense_type}
+                      {labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}
                     </span>
                   </Td>
                   <Td numeric>{formatMoney(moneyAmount(row.amount))}</Td>
@@ -204,10 +205,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
         )}
         <div className="totals-bar">
           <span>
-            Mandatory: <strong>{formatMoney(mandatoryTotal)}</strong>
+            Обязательные: <strong>{formatMoney(mandatoryTotal)}</strong>
           </span>
           <span>
-            Comfortable/other: <strong>{formatMoney(otherExpenseTotal)}</strong>
+            Комфортные и прочие: <strong>{formatMoney(otherExpenseTotal)}</strong>
           </span>
         </div>
         {!readOnly ? (
@@ -223,9 +224,9 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
               </Field>
               <Field htmlFor="exp-type" label="Тип расхода">
                 <Select id="exp-type" onChange={(e) => setExpType(e.target.value)} value={expType}>
-                  <option value="mandatory">mandatory</option>
-                  <option value="comfortable">comfortable</option>
-                  <option value="other">other</option>
+                  <option value="mandatory">Обязательный</option>
+                  <option value="comfortable">Комфортный</option>
+                  <option value="other">Прочее</option>
                 </Select>
               </Field>
               <Field htmlFor="exp-amt" label="Сумма расхода">
@@ -253,12 +254,12 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
       </Panel>
 
       <Panel
-        action={<Badge>savings {formatMoney(savingsTotal)}</Badge>}
+        action={<Badge>отложено {formatMoney(savingsTotal)}</Badge>}
         label="Бюджет"
         title="Откладывание"
       >
         <p className="muted field-hint">
-          Saving allocations — отдельно от расходов (не expense_type).
+          Отложенные суммы учитываются отдельно от расходов (это не тип расхода).
         </p>
         {savings.length === 0 ? (
           <EmptyState description="Откладываний нет." inline title="Пусто" />
@@ -298,7 +299,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
         )}
         <div className="totals-bar">
           <span>
-            Итого savings: <strong>{formatMoney(savingsTotal)}</strong>
+            Итого отложено: <strong>{formatMoney(savingsTotal)}</strong>
           </span>
         </div>
         {!readOnly ? (
@@ -312,7 +313,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
                   value={savDest}
                 />
               </Field>
-              <Field htmlFor="sav-amt" label="Сумма savings">
+              <Field htmlFor="sav-amt" label="Сумма к откладыванию">
                 <Input
                   className="input--money"
                   id="sav-amt"
@@ -321,7 +322,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
                   value={savAmount}
                 />
               </Field>
-              <Field htmlFor="sav-notes" label="Комментарий savings">
+              <Field htmlFor="sav-notes" label="Комментарий к откладыванию">
                 <Input
                   id="sav-notes"
                   onChange={(e) => setSavNotes(e.target.value)}
@@ -362,7 +363,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
         cancelLabel="Отмена"
         confirmLabel="Удалить"
         danger
-        description={delSaving ? `Удалить savings «${delSaving.destination}»?` : ""}
+        description={delSaving ? `Удалить откладывание «${delSaving.destination}»?` : ""}
         onCancel={() => setDelSaving(null)}
         onConfirm={() => {
           if (!delSaving) return;
@@ -376,7 +377,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
             });
         }}
         open={delSaving !== null}
-        title="Удалить savings?"
+        title="Удалить откладывание?"
       />
     </div>
   );

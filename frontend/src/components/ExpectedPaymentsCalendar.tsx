@@ -1,20 +1,13 @@
 import type { ExpectedCalendarMonth } from "../api/types";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
+import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
 import { EmptyState, Table, Td, Th } from "./ui";
-
-const FLOW_LABELS: Record<string, string> = {
-  coupon: "Купон",
-  dividend: "Дивиденды",
-  interest: "Проценты",
-  redemption: "Погашение",
-  other: "Прочее",
-};
 
 function flowChip(flowType: string, amount: string) {
   return (
     <span className={`flow-chip flow-chip--${flowType}`} key={flowType}>
-      {FLOW_LABELS[flowType] ?? flowType} {formatMoney(amount)}
+      {labelOf(FLOW_TYPE_LABELS, flowType)} {formatMoney(amount)}
     </span>
   );
 }
@@ -53,7 +46,7 @@ export function ExpectedPaymentsCalendar({ months }: { months: ExpectedCalendarM
             </span>
             <span className="payments-calendar__chips">{monthChips(month)}</span>
             <span className="payments-calendar__passive">
-              Passive net: <strong>{formatMoney(moneyAmount(month.passive_net))}</strong>
+              Пассивный доход, нетто: <strong>{formatMoney(moneyAmount(month.passive_net))}</strong>
             </span>
           </summary>
           <Table>
@@ -62,7 +55,7 @@ export function ExpectedPaymentsCalendar({ months }: { months: ExpectedCalendarM
                 <Th>Дата</Th>
                 <Th>Тип</Th>
                 <Th>Счёт / инструмент</Th>
-                <Th numeric>Net</Th>
+                <Th numeric>Нетто</Th>
               </tr>
             </thead>
             <tbody>
@@ -71,7 +64,7 @@ export function ExpectedPaymentsCalendar({ months }: { months: ExpectedCalendarM
                   <Td>{formatDate(item.expected_date)}</Td>
                   <Td>
                     <span className={`flow-chip flow-chip--${item.flow_type}`}>
-                      {FLOW_LABELS[item.flow_type] ?? item.flow_type}
+                      {labelOf(FLOW_TYPE_LABELS, item.flow_type)}
                     </span>
                   </Td>
                   <Td>

@@ -24,6 +24,7 @@ import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
+import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput } from "../lib/money";
 
 type EditorForm = {
@@ -160,11 +161,11 @@ export function MonthDetailPage() {
     try {
       // validate money fields first
       for (const [label, value] of [
-        ["Зарплата gross", form.salaryGross],
-        ["Фактический net", form.salaryActualNet],
-        ["Bonus", form.bonus],
-        ["Side income", form.sideIncome],
-        ["Cashback", form.cashback],
+        ["Зарплата до вычета налогов", form.salaryGross],
+        ["Фактическая зарплата после налогов", form.salaryActualNet],
+        ["Премия", form.bonus],
+        ["Дополнительный доход", form.sideIncome],
+        ["Кэшбэк", form.cashback],
       ] as const) {
         if (value.trim() !== "" && normalizeMoneyInput(value) == null) {
           throw new Error(`Некорректная сумма: ${label}`);
@@ -202,7 +203,7 @@ export function MonthDetailPage() {
       });
 
       await load();
-      setSaveOk("Сохранено. Расчётный налог/net обновлены с backend summary.");
+      setSaveOk("Сохранено. Расчётный налог и сумма после налогов обновлены по сводке backend.");
     } catch (err) {
       setSaveError(formatApiError(err));
     } finally {
@@ -247,7 +248,9 @@ export function MonthDetailPage() {
         <Button onClick={() => setCloneOpen(true)} type="button">
           Создать следующий месяц
         </Button>
-        <Badge tone={month.status === "draft" ? "draft" : "closed"}>{month.status}</Badge>
+        <Badge tone={month.status === "draft" ? "draft" : "closed"}>
+          {labelOf(MONTH_STATUS_LABELS, month.status)}
+        </Badge>
         {dirty ? <Badge tone="draft">несохранённые изменения</Badge> : null}
       </div>
 
@@ -258,7 +261,8 @@ export function MonthDetailPage() {
       ) : null}
       {readOnly ? (
         <div className="inline-alert" role="status">
-          Месяц closed — редактирование заблокировано (reopen на backend / later UI).
+          Месяц утверждён — редактирование заблокировано. Для изменений сначала открой его заново
+          ниже.
         </div>
       ) : null}
       {saveError ? (
@@ -279,7 +283,7 @@ export function MonthDetailPage() {
               <Input id="period-label" readOnly value={formatMonth(month.year, month.month)} />
             </Field>
             <Field htmlFor="status" label="Статус">
-              <Input id="status" readOnly value={month.status} />
+              <Input id="status" readOnly value={labelOf(MONTH_STATUS_LABELS, month.status)} />
             </Field>
             <Field htmlFor="snapshot" label="Дата снимка">
               <Input
@@ -292,7 +296,7 @@ export function MonthDetailPage() {
               />
             </Field>
             <Field htmlFor="source" label="Источник">
-              <Input id="source" readOnly value={month.source} />
+              <Input id="source" readOnly value={labelOf(SOURCE_LABELS, month.source)} />
             </Field>
           </div>
           <p className="muted field-hint">Снимок: {formatDate(form.snapshot_date)}</p>
@@ -300,7 +304,7 @@ export function MonthDetailPage() {
 
         <Panel label="Доходы" title="Зарплата и прочее">
           <div className="editor-grid">
-            <Field htmlFor="salary-gross" label="Зарплата gross">
+            <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
               <Input
                 className="input--money"
                 disabled={readOnly}
@@ -319,7 +323,7 @@ export function MonthDetailPage() {
                 value={calcTax ? formatMoney(calcTax) : "—"}
               />
             </Field>
-            <Field htmlFor="salary-calc-net" label="Расчётный net (backend)">
+            <Field htmlFor="salary-calc-net" label="Расчётная зарплата после налогов (backend)">
               <Input
                 className="input--money input--calc"
                 id="salary-calc-net"
@@ -327,7 +331,7 @@ export function MonthDetailPage() {
                 value={calcNet ? formatMoney(calcNet) : "—"}
               />
             </Field>
-            <Field htmlFor="salary-actual-net" label="Фактический net (employer)">
+            <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
               <Input
                 className="input--money"
                 disabled={readOnly}
@@ -338,7 +342,7 @@ export function MonthDetailPage() {
                 value={form.salaryActualNet}
               />
             </Field>
-            <Field htmlFor="bonus" label="Bonus">
+            <Field htmlFor="bonus" label="Премия">
               <Input
                 className="input--money"
                 disabled={readOnly}
@@ -349,7 +353,7 @@ export function MonthDetailPage() {
                 value={form.bonus}
               />
             </Field>
-            <Field htmlFor="side" label="Side income">
+            <Field htmlFor="side" label="Дополнительный доход">
               <Input
                 className="input--money"
                 disabled={readOnly}
@@ -360,7 +364,7 @@ export function MonthDetailPage() {
                 value={form.sideIncome}
               />
             </Field>
-            <Field htmlFor="cashback" label="Cashback (не passive)">
+            <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
               <Input
                 className="input--money"
                 disabled={readOnly}
@@ -373,7 +377,7 @@ export function MonthDetailPage() {
             </Field>
           </div>
           <p className="muted field-hint">
-            Cashback хранится отдельной строкой income_type=cashback и не входит в passive income.
+            Кэшбэк хранится отдельной строкой income_type=cashback и не входит в пассивный доход.
             Расчётный налог обновляется после сохранения (GET /summary).
           </p>
         </Panel>

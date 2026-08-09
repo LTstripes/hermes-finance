@@ -84,7 +84,7 @@ export function AppLayout() {
 
       <div className="workspace">
         <header className="topbar">
-          <span>Finance Dashboard</span>
+          <span>Финансовая панель</span>
           <div className="topbar__actions">
             <Badge tone="ok">MVP · 127.0.0.1</Badge>
             <Badge>локально</Badge>

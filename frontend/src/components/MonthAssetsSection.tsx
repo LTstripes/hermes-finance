@@ -26,6 +26,7 @@ import {
   Th,
 } from "./ui";
 import { formatMoney } from "../lib/format";
+import { ACCOUNT_TYPE_LABELS, DEPOSIT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type MonthAssetsSectionProps = {
@@ -312,7 +313,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
   }
 
   if (loading) {
-    return <LoadingState description="Загружаем депозиты и cash…" inline />;
+    return <LoadingState description="Загружаем депозиты и наличные…" inline />;
   }
 
   if (error) {
@@ -378,11 +379,11 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                             setEditDeposit({ ...editDeposit, deposit_type: e.target.value })
                           }
                         >
-                          <option value="deposit">deposit</option>
-                          <option value="savings">savings</option>
+                          <option value="deposit">Депозит</option>
+                          <option value="savings">Накопления</option>
                         </Select>
                       ) : (
-                        row.deposit_type
+                        labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)
                       )}
                     </Td>
                     <Td numeric>
@@ -531,8 +532,8 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                   }
                   value={depositDraft.deposit_type}
                 >
-                  <option value="deposit">deposit</option>
-                  <option value="savings">savings</option>
+                  <option value="deposit">Депозит</option>
+                  <option value="savings">Накопления</option>
                 </Select>
               </Field>
               <Field htmlFor="dep-account" label="Счёт">
@@ -544,7 +545,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                   <option value="">авто (создать «Депозиты»)</option>
                   {depositAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name} ({a.account_type})
+                      {a.name} ({labelOf(ACCOUNT_TYPE_LABELS, a.account_type)})
                     </option>
                   ))}
                 </Select>
@@ -584,7 +585,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
               Добавить вклад
             </Button>
             <p className="muted field-hint">
-              expected_monthly_interest считает backend (balance × rate / 12).
+              Ожидаемый месячный процент рассчитывает backend (баланс × ставка / 12).
             </p>
           </form>
         ) : null}
@@ -593,7 +594,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
       <Panel
         action={
           <Badge>
-            cash {formatMoney(moneyAmount(cashTotal?.total))} · capital{" "}
+            наличные {formatMoney(moneyAmount(cashTotal?.total))} · в капитале{" "}
             {formatMoney(moneyAmount(cashTotal?.total_in_capital))}
           </Badge>
         }
@@ -646,10 +647,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
 
         <div className="totals-bar">
           <span>
-            Всего cash: <strong>{formatMoney(moneyAmount(cashTotal?.total) || "0.00")}</strong>
+            Всего наличных: <strong>{formatMoney(moneyAmount(cashTotal?.total) || "0.00")}</strong>
           </span>
           <span>
-            В liquid capital:{" "}
+            В ликвидном капитале:{" "}
             <strong>{formatMoney(moneyAmount(cashTotal?.total_in_capital) || "0.00")}</strong>
           </span>
         </div>
@@ -660,7 +661,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
               Новая денежная позиция
             </p>
             <div className="editor-grid">
-              <Field htmlFor="cash-name" label="Название cash">
+              <Field htmlFor="cash-name" label="Название денежной позиции">
                 <Input
                   id="cash-name"
                   onChange={(e) => setCashDraft({ ...cashDraft, name: e.target.value })}
@@ -668,7 +669,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                   value={cashDraft.name}
                 />
               </Field>
-              <Field htmlFor="cash-amount" label="Сумма cash">
+              <Field htmlFor="cash-amount" label="Сумма наличных">
                 <Input
                   className="input--money"
                   id="cash-amount"
@@ -687,10 +688,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                 }
                 type="checkbox"
               />
-              Включать в liquid capital
+              Включать в ликвидный капитал
             </label>
             <Button disabled={busy} type="submit" variant="primary">
-              Добавить cash
+              Добавить денежную позицию
             </Button>
           </form>
         ) : null}
@@ -712,11 +713,13 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
         cancelLabel="Отмена"
         confirmLabel="Удалить"
         danger
-        description={pendingDeleteCash ? `Удалить cash «${pendingDeleteCash.name}»?` : ""}
+        description={
+          pendingDeleteCash ? `Удалить денежную позицию «${pendingDeleteCash.name}»?` : ""
+        }
         onCancel={() => setPendingDeleteCash(null)}
         onConfirm={() => void handleDeleteCash()}
         open={pendingDeleteCash !== null}
-        title="Удалить cash?"
+        title="Удалить денежную позицию?"
       />
     </div>
   );

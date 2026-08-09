@@ -240,11 +240,11 @@ describe("ExportPage", () => {
 
     render(<ExportPage />);
 
-    expect(screen.getByText("Загружаем список backup…")).toBeInTheDocument();
+    expect(screen.getByText("Загружаем список резервных копий…")).toBeInTheDocument();
     await act(async () => {
       resolveList(jsonResponse([]));
     });
-    expect(await screen.findByText("Backup пока нет")).toBeInTheDocument();
+    expect(await screen.findByText("Резервных копий пока нет")).toBeInTheDocument();
   });
 
   it("shows backup loading and then success after creating a backup", async () => {
@@ -263,10 +263,10 @@ describe("ExportPage", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<ExportPage />);
-    const createButton = await screen.findByRole("button", { name: "Создать backup" });
+    const createButton = await screen.findByRole("button", { name: "Создать резервную копию" });
     await user.click(createButton);
 
-    expect(await screen.findByRole("button", { name: "Создаём backup…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Создаём резервную копию…" })).toBeDisabled();
     resolveCreate(jsonResponse(backups[0], 201));
 
     expect(await screen.findByRole("status")).toHaveTextContent(/создан/i);
@@ -300,7 +300,7 @@ describe("ExportPage", () => {
     render(<ExportPage />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Backup storage is not available");
-    expect(screen.getByRole("button", { name: "Создать backup" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Создать резервную копию" })).toBeEnabled();
   });
 
   it("requires explicit confirmation and shows restore loading and success states", async () => {

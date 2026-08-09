@@ -19,6 +19,7 @@ import {
   Th,
 } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
+import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 
 export function ExportPage() {
   const [months, setMonths] = useState<ReportingMonth[]>([]);
@@ -137,7 +138,7 @@ export function ExportPage() {
     try {
       const backup = await createBackup();
       setBackups((current) => [backup, ...current]);
-      setSuccess(`Backup ${backup.name} создан.`);
+      setSuccess(`Резервная копия ${backup.name} создана.`);
     } catch (error) {
       setBackupsError(formatApiError(error));
     } finally {
@@ -200,7 +201,8 @@ export function ExportPage() {
               >
                 {months.map((month) => (
                   <option key={month.id} value={month.id}>
-                    {formatMonth(month.year, month.month)} · {month.status}
+                    {formatMonth(month.year, month.month)} ·{" "}
+                    {labelOf(MONTH_STATUS_LABELS, month.status)}
                   </option>
                 ))}
               </Select>
@@ -243,21 +245,25 @@ export function ExportPage() {
             onClick={() => void handleCreateBackup()}
             type="button"
           >
-            {creatingBackup ? "Создаём backup…" : "Создать backup"}
+            {creatingBackup ? "Создаём резервную копию…" : "Создать резервную копию"}
           </Button>
         }
         label="Локальная база"
         title="Резервные копии"
       >
         {backupsLoading ? (
-          <LoadingState description="Загружаем список backup…" inline />
+          <LoadingState description="Загружаем список резервных копий…" inline />
         ) : backupsError ? (
-          <ErrorState description={backupsError} inline title="Не удалось загрузить backup" />
+          <ErrorState
+            description={backupsError}
+            inline
+            title="Не удалось загрузить резервные копии"
+          />
         ) : backups.length === 0 ? (
           <EmptyState
             description="Создай первую локальную копию базы."
             inline
-            title="Backup пока нет"
+            title="Резервных копий пока нет"
           />
         ) : (
           <>

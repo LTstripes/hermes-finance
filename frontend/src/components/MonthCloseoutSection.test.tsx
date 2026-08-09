@@ -112,9 +112,9 @@ describe("MonthCloseoutSection closeout panel", () => {
   it("shows KPI preview and warnings for a draft month", async () => {
     setup({ status: "draft" });
     expect(await screen.findByText("Закрытие месяца")).toBeInTheDocument();
-    expect(screen.getByText(/Liquid capital:/)).toBeInTheDocument();
-    expect(screen.getByText(/Passive avg:/)).toBeInTheDocument();
-    expect(screen.getByText(/Passive forecast:/)).toBeInTheDocument();
+    expect(screen.getByText(/Ликвидный капитал:/)).toBeInTheDocument();
+    expect(screen.getByText(/Средний пассивный доход:/)).toBeInTheDocument();
+    expect(screen.getByText(/Прогноз пассивного дохода:/)).toBeInTheDocument();
     expect(screen.getByText(/учтено 6 месяцев из 12/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeInTheDocument();
   });

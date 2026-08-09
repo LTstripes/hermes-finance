@@ -21,6 +21,7 @@ import {
   Th,
 } from "./ui";
 import { formatMoney } from "../lib/format";
+import { DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type Props = { monthId: number; readOnly: boolean };
@@ -133,7 +134,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         !normalizeMoneyInput(propMortgage) ||
         !normalizeMoneyInput(propPayment)
       ) {
-        throw new Error("Заполни name / value / mortgage / payment");
+        throw new Error("Заполни название, стоимость, остаток ипотеки и платёж");
       }
       await createProperty({
         reporting_month_id: monthId,
@@ -179,7 +180,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
                 <Th>Название</Th>
                 <Th>Тип</Th>
                 <Th numeric>Баланс</Th>
-                <Th>В liquid capital</Th>
+                <Th>В ликвидном капитале</Th>
                 <Th>Действия</Th>
               </tr>
             </thead>
@@ -187,7 +188,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
               {debts.map((row) => (
                 <tr key={row.id}>
                   <Td>{row.name}</Td>
-                  <Td>{row.debt_type}</Td>
+                  <Td>{labelOf(DEBT_TYPE_LABELS, row.debt_type)}</Td>
                   <Td numeric>{formatMoney(moneyAmount(row.current_balance))}</Td>
                   <Td>{row.include_in_liquid_capital ? "да" : "нет"}</Td>
                   <Td>
@@ -208,7 +209,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         )}
         <div className="totals-bar">
           <span>
-            Credit card debt: <strong>{formatMoney(cardDebtTotal)}</strong>
+            Долг по кредитным картам: <strong>{formatMoney(cardDebtTotal)}</strong>
           </span>
         </div>
         {!readOnly ? (
@@ -228,8 +229,8 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
                   onChange={(e) => setDebtType(e.target.value)}
                   value={debtType}
                 >
-                  <option value="credit_card">credit_card</option>
-                  <option value="other">other</option>
+                  <option value="credit_card">Кредитная карта</option>
+                  <option value="other">Прочее</option>
                 </Select>
               </Field>
               <Field htmlFor="debt-bal" label="Текущий баланс долга">
@@ -255,8 +256,8 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         title="Недвижимость"
       >
         <div className="inline-alert" role="status">
-          Real estate не входит в liquid capital. Mortgage coverage — preview с backend
-          dashboard/summary.
+          Недвижимость не входит в ликвидный капитал. Покрытие ипотеки — предварительный расчёт по
+          backend dashboard/summary.
         </div>
         {properties.length === 0 ? (
           <EmptyState description="Объектов нет." inline title="Пусто" />
@@ -296,25 +297,26 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         )}
         <div className="totals-bar">
           <span>
-            Value: <strong>{formatMoney(propertyValueTotal)}</strong>
+            Стоимость: <strong>{formatMoney(propertyValueTotal)}</strong>
           </span>
           <span>
-            Mortgage bal: <strong>{formatMoney(mortgageBalanceTotal)}</strong>
+            Остаток ипотеки: <strong>{formatMoney(mortgageBalanceTotal)}</strong>
           </span>
           <span>
-            Payment: <strong>{formatMoney(paymentTotal)}</strong>
+            Платёж: <strong>{formatMoney(paymentTotal)}</strong>
           </span>
         </div>
         <div className="totals-bar">
           <span>
-            Mortgage coverage (backend):{" "}
+            Покрытие ипотеки (backend):{" "}
             <strong>{mortgage?.coverage_pct != null ? `${mortgage.coverage_pct}%` : "—"}</strong>
           </span>
           <span>
-            Gap: <strong>{mortgage ? formatMoney(moneyAmount(mortgage.gap)) : "—"}</strong>
+            Недостаток покрытия:{" "}
+            <strong>{mortgage ? formatMoney(moneyAmount(mortgage.gap)) : "—"}</strong>
           </span>
           <span>
-            Mandatory expense coverage:{" "}
+            Покрытие обязательных расходов:{" "}
             <strong>{coveragePct != null ? `${coveragePct}%` : "—"}</strong>
           </span>
         </div>

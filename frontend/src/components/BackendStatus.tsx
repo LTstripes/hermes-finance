@@ -19,7 +19,7 @@ const statusCopy = {
     chip: "Статус",
   },
   unavailable: {
-    title: "Backend недоступен",
+    title: "Сервер недоступен",
     detail: "Запусти API на 127.0.0.1:8000",
     chip: "Офлайн",
   },
@@ -61,7 +61,7 @@ export function BackendStatus() {
   const copy =
     state.kind === "connected"
       ? {
-          title: "Backend подключён",
+          title: "Сервер подключён",
           detail: `API v${state.version}`,
           chip: "Онлайн",
         }

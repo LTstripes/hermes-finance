@@ -29,7 +29,7 @@ export function PlaceholderPage({
       </Panel>
 
       {gaps.length > 0 ? (
-        <Panel label="Заметки" title="Известные gaps">
+        <Panel label="Заметки" title="Известные ограничения">
           <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--muted)", lineHeight: 1.7 }}>
             {gaps.map((gap) => (
               <li key={gap}>

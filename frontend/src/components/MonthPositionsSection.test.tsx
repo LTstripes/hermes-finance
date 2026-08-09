@@ -96,9 +96,9 @@ describe("MonthPositionsSection G03 component contract", () => {
     const user = userEvent.setup();
 
     await screen.findByText("Позиции");
-    await user.type(screen.getByLabelText("Quantity"), "10");
-    await user.type(screen.getByLabelText("Average cost"), "1000.00");
-    await user.type(screen.getByLabelText("Market price"), "1100.00");
+    await user.type(screen.getByLabelText("Количество"), "10");
+    await user.type(screen.getByLabelText("Средняя стоимость"), "1000.00");
+    await user.type(screen.getByLabelText("Рыночная цена"), "1100.00");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
 
     const post = fetchMock.mock.calls.find(

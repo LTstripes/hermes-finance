@@ -21,6 +21,7 @@ import {
   Th,
 } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
+import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import { lastDayOfMonth } from "../lib/period";
 
 const MONTH_LABELS = [
@@ -46,16 +47,7 @@ function defaultCreateDraft(): { year: number; month: number; snapshot_date: str
 }
 
 function sourceLabel(source: string): string {
-  switch (source) {
-    case "manual":
-      return "manual";
-    case "excel_migration":
-      return "excel";
-    case "alfa_pdf":
-      return "alfa pdf";
-    default:
-      return source;
-  }
+  return labelOf(SOURCE_LABELS, source);
 }
 
 export function MonthsPage() {
@@ -155,7 +147,7 @@ export function MonthsPage() {
         <p className="eyebrow">Периоды</p>
         <h1>Месяцы</h1>
         <p className="page-header__description">
-          Отчётные периоды: список, создание, клонирование в следующий месяц и удаление draft.
+          Отчётные периоды: список, создание, клонирование в следующий месяц и удаление черновиков.
         </p>
       </header>
 
@@ -197,7 +189,7 @@ export function MonthsPage() {
             <ErrorState description={error} inline title="Не удалось загрузить" />
           ) : months.length === 0 ? (
             <EmptyState
-              description="Пока нет периодов — создай первый draft справа."
+              description="Пока нет периодов — создай первый черновик справа."
               inline
               title="Пусто"
             />
@@ -217,7 +209,9 @@ export function MonthsPage() {
                   <tr key={row.id}>
                     <Td>{formatMonth(row.year, row.month)}</Td>
                     <Td>
-                      <Badge tone={row.status === "draft" ? "draft" : "closed"}>{row.status}</Badge>
+                      <Badge tone={row.status === "draft" ? "draft" : "closed"}>
+                        {labelOf(MONTH_STATUS_LABELS, row.status)}
+                      </Badge>
                     </Td>
                     <Td>
                       <span className="muted">{sourceLabel(row.source)}</span>
@@ -250,7 +244,7 @@ export function MonthsPage() {
           )}
         </Panel>
 
-        <Panel label="Создание" title="Новый draft">
+        <Panel label="Создание" title="Новый черновик">
           <form className="form-stack" onSubmit={handleCreate}>
             <Field htmlFor="year" label="Год">
               <Input
@@ -320,11 +314,11 @@ export function MonthsPage() {
       <ConfirmDialog
         busy={deleting}
         cancelLabel="Отмена"
-        confirmLabel="Удалить draft"
+        confirmLabel="Удалить черновик"
         danger
         description={
           pendingDelete
-            ? `Удалить ${formatMonth(pendingDelete.year, pendingDelete.month)}? Действие необратимо. Closed месяцы удалить нельзя.`
+            ? `Удалить ${formatMonth(pendingDelete.year, pendingDelete.month)}? Действие необратимо. Утверждённые месяцы удалить нельзя.`
             : ""
         }
         onCancel={() => {
@@ -336,7 +330,7 @@ export function MonthsPage() {
           void handleConfirmDelete();
         }}
         open={pendingDelete !== null}
-        title="Удалить draft?"
+        title="Удалить черновик?"
       />
 
       <CloneMonthDialog
