@@ -86,6 +86,25 @@ def test_dividend_expected_flow_is_ignored() -> None:
     assert result.breakdown.expected_dividend_component == RubleAmount(0)
 
 
+def test_forecast_uses_actual_dividends_and_excludes_expected_dividends_and_redemptions() -> None:
+    result = calculate_forecast_passive_income(
+        ForecastPassiveIncomeInput(
+            expected_flows=(
+                mk_flow("interest", 10_000),
+                mk_flow("dividend", 500_000),
+                mk_flow("redemption", 1_000_000),
+            ),
+            dividend_months=(mk_month(2031, 1, 100_000),),
+        )
+    )
+
+    # Only expected interest + annualised actual dividend history count.
+    assert result.breakdown.expected_deposit_interest == RubleAmount(10_000)
+    assert result.breakdown.expected_dividend_component == RubleAmount(1_200_000)
+    assert result.annual_total == RubleAmount(1_210_000)
+    assert result.monthly_total == RubleAmount(100_833)
+
+
 def test_approximate_dividend_flow_still_sets_approximate_flag() -> None:
     result = calculate_forecast_passive_income(
         ForecastPassiveIncomeInput(expected_flows=(mk_flow("dividend", 500_000, approximate=True),))

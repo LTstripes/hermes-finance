@@ -23,3 +23,4 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     reload: bool = False
     database_path: Path = REPOSITORY_ROOT / "data" / "finance.db"
+    frontend_dist: Path = REPOSITORY_ROOT / "frontend" / "dist"

@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  privacy:
+    name: Privacy guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Check tracked files for private data
+        run: python3 scripts/privacy_check.py
+
   backend:
     name: Backend
     runs-on: ubuntu-latest

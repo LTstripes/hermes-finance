@@ -1,7 +1,9 @@
+from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from starlette.responses import FileResponse
 
 from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
@@ -25,6 +27,7 @@ from hermes_finance.api.properties import router as properties_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
 from hermes_finance.database import Database
+from hermes_finance.settings import Settings
 
 
 class HealthResponse(BaseModel):
@@ -32,7 +35,23 @@ class HealthResponse(BaseModel):
     version: str
 
 
-def create_app(database: Database | None = None) -> FastAPI:
+def _frontend_response(static_dir: Path, path: str) -> FileResponse:
+    if path == "" or path.startswith("api/"):
+        candidate = static_dir / "index.html"
+    else:
+        candidate = (static_dir / path).resolve()
+        if not candidate.is_relative_to(static_dir) or not candidate.is_file():
+            candidate = static_dir / "index.html"
+
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Frontend build is not available")
+    return FileResponse(candidate)
+
+
+def create_app(
+    database: Database | None = None,
+    static_dir: Path | None = None,
+) -> FastAPI:
     application = FastAPI(title="Hermes Finance API", version=__version__)
     if database is not None:
         application.state.database = database
@@ -60,6 +79,17 @@ def create_app(database: Database | None = None) -> FastAPI:
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", version=__version__)
+
+    resolved_static_dir = (
+        (static_dir or Settings(_env_file=None).frontend_dist).expanduser().resolve()
+    )
+    if resolved_static_dir.is_dir():
+
+        @application.get("/{path:path}", include_in_schema=False)
+        async def frontend(path: str) -> FileResponse:
+            if path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not Found")
+            return _frontend_response(resolved_static_dir, path)
 
     return application
 

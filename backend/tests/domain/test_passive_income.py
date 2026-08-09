@@ -104,6 +104,23 @@ def test_mixed_buckets_sum_correctly() -> None:
     assert result.breakdown.other_capital_income == RubleAmount(30_000)
 
 
+def test_passive_income_uses_stored_net_without_second_tax_or_commission_deduction() -> None:
+    # 1000.00 gross - 100.00 tax - 30.00 commission = 870.00 net.
+    # The calculator receives the persisted net amount and must not deduct
+    # tax or commission a second time.
+    result = calculate_passive_income(
+        PassiveIncomeInput(
+            deposit_interest=RubleAmount(0),
+            bond_coupons=RubleAmount(87_000),
+            dividends=RubleAmount(0),
+            other_capital_income=RubleAmount(0),
+        )
+    )
+
+    assert result.total_net_passive_income == RubleAmount(87_000)
+    assert result.breakdown.bond_coupons == RubleAmount(87_000)
+
+
 def test_breakdown_sums_to_total() -> None:
     result = calculate_passive_income(
         PassiveIncomeInput(

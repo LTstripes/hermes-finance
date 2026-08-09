@@ -102,3 +102,15 @@ def test_percentage_rate_rounds_decimal_to_nearest_basis_point(
 def test_percentage_rate_rejects_binary_float(operation: Callable[[], object]) -> None:
     with pytest.raises(TypeError, match="float"):
         operation()
+
+
+@pytest.mark.parametrize("rate", ["", "not-rate", "1,25"])
+def test_percentage_rate_rejects_malformed_api_string(rate: str) -> None:
+    with pytest.raises(ValueError, match="decimal string"):
+        PercentageRate.from_api(rate)
+
+
+@pytest.mark.parametrize("rate", [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")])
+def test_percentage_rate_rejects_non_finite_decimal(rate: Decimal) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        PercentageRate.from_decimal(rate)

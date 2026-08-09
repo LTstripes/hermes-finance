@@ -100,6 +100,24 @@ def test_payment_starting_exactly_at_threshold_uses_upper_rate() -> None:
     assert result.calculated_net_kopecks == 8_500_000
 
 
+@pytest.mark.parametrize(
+    ("ytd", "expected_rate_bps"),
+    [
+        (500_000_000, 1800),
+        (2_000_000_000, 2000),
+        (5_000_000_000, 2200),
+    ],
+)
+def test_payment_starting_at_each_remaining_threshold_uses_next_rate(
+    ytd: int, expected_rate_bps: int
+) -> None:
+    result = calc(ytd=ytd, payment=1_000_000)
+
+    assert len(result.parts) == 1
+    assert result.parts[0].rate_bps == expected_rate_bps
+    assert result.parts[0].taxable_kopecks == 1_000_000
+
+
 # --- inside the first bracket ---
 
 

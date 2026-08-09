@@ -97,6 +97,27 @@ def test_mortgage_coverage_percentage_and_gap(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_mortgage_coverage_rounds_half_up(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        first_id, _ = build_environment(session)
+        create_property_snapshot(
+            session,
+            reporting_month_id=first_id,
+            name="Synthetic Rounding Flat",
+            estimated_value="1000.00",
+            mortgage_balance="1000.00",
+            monthly_payment="0.00",
+        )
+        # 12.35 / 1000.00 * 100 = 1.235%, which must become 1.24%.
+        percentage, gap = mortgage_coverage(session, first_id, RubleAmount(1_235))
+        assert percentage == Decimal("1.24")
+        assert gap == RubleAmount(-98_765)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_property_crud_updates_and_deletes(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
