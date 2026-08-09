@@ -116,4 +116,70 @@ describe("ExportPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
     expect(screen.queryByText(/Файл .*скачан/i)).not.toBeInTheDocument();
   });
+
+  it("downloads JSON beside Markdown and shows loading and success states", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const createObjectURL = vi.fn(() => "blob:json-export");
+    const revokeObjectURL = vi.fn();
+    let resolveExport!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveExport = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+
+    render(<ExportPage />);
+    const button = await screen.findByRole("button", { name: "Скачать JSON" });
+    await user.selectOptions(screen.getByLabelText("Месяц отчёта"), "1");
+    await user.click(button);
+
+    expect(await screen.findByRole("button", { name: "Готовим JSON…" })).toBeDisabled();
+    resolveExport(
+      new Response('{"schema_version":"1.0"}', {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition": 'attachment; filename="finance_data_2026-06.json"',
+        },
+      }),
+    );
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/months/1/export/json",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(anchorClick.mock.instances[0]).toHaveProperty("download", "finance_data_2026-06.json");
+    expect(await screen.findByRole("status")).toHaveTextContent(/скачан/i);
+  });
+
+  it("shows a JSON export error without a success message", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            { error: { code: "not_found", message: "Month missing", details: [] } },
+            404,
+          ),
+        ),
+    );
+
+    render(<ExportPage />);
+    await user.click(await screen.findByRole("button", { name: "Скачать JSON" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Month missing");
+    expect(screen.queryByText(/Файл .*скачан/i)).not.toBeInTheDocument();
+  });
 });

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
-from hermes_finance.services.dashboard import build_dashboard
+from hermes_finance.services.dashboard import DashboardResult, build_dashboard
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
 from hermes_finance.services.reporting_months import get_reporting_month
 
@@ -125,8 +125,8 @@ class CashBalanceOut(BaseModel):
 class TaxPartOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    from_kopecks: int
-    to_kopecks: int | None
+    from_kopecks: MoneyValue
+    to_kopecks: MoneyValue | None
     rate_bps: int
     taxable: MoneyValue
     tax: MoneyValue
@@ -384,8 +384,10 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             calculated_net=_money(tax.calculated_net_kopecks),
             parts=[
                 TaxPartOut(
-                    from_kopecks=part.from_kopecks,
-                    to_kopecks=part.to_kopecks,
+                    from_kopecks=_money(part.from_kopecks),
+                    to_kopecks=_money_opt(
+                        RubleAmount(part.to_kopecks) if part.to_kopecks is not None else None
+                    ),
                     rate_bps=part.rate_bps,
                     taxable=_money(part.taxable_kopecks),
                     tax=_money(part.tax_kopecks),
@@ -435,13 +437,7 @@ def get_month_summary(
     return _summary_out(month, summary)
 
 
-@router.get("/{month_id}/dashboard", response_model=DashboardOut)
-def get_month_dashboard(
-    month_id: int,
-    forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
-    session: Session = Depends(session_for_request),
-) -> DashboardOut:
-    dashboard = build_dashboard(session, month_id, forecast_version=forecast_version)
+def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
     summary_out = _summary_out(dashboard.month, dashboard.summary)
     return DashboardOut(
         month=summary_out.month,
@@ -519,3 +515,12 @@ def get_month_dashboard(
         warnings=list(dashboard.warnings),
         calculation_version=dashboard.summary.calculation_version,
     )
+
+
+@router.get("/{month_id}/dashboard", response_model=DashboardOut)
+def get_month_dashboard(
+    month_id: int,
+    forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
+    session: Session = Depends(session_for_request),
+) -> DashboardOut:
+    return dashboard_to_out(build_dashboard(session, month_id, forecast_version=forecast_version))

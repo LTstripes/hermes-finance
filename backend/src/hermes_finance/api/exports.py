@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.dashboard import dashboard_to_out
+from hermes_finance.api.json_export import build_json_export, build_raw_source_data
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
@@ -170,6 +172,35 @@ def export_markdown(
             content=content,
             media_type="text/markdown",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        session.rollback()
+
+
+@router.post("/{month_id}/export/json")
+def export_json(
+    month_id: int,
+    forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
+    session: Session = Depends(session_for_request),
+) -> Response:
+    try:
+        month = get_reporting_month(session, month_id)
+        _prepare_read_only_defaults(session, month.year)
+        raw = build_raw_source_data(session, month)
+        report = _report_for_month(session, month_id, forecast_version=forecast_version)
+        payload = build_json_export(
+            raw=raw,
+            dashboard=dashboard_to_out(report.dashboard),
+            report=report,
+        )
+        filename = f"finance_data_{month.year:04d}-{month.month:02d}.json"
+        return Response(
+            content=payload.model_dump_json(indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Type": "application/json; charset=utf-8",
+            },
         )
     finally:
         session.rollback()

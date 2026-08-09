@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatApiError } from "../api/client";
-import { downloadMarkdownReport } from "../api/exports";
+import { downloadJsonReport, downloadMarkdownReport } from "../api/exports";
 import { listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
 import {
@@ -22,7 +22,7 @@ export function ExportPage() {
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"markdown" | "json" | null>(null);
 
   const loadMonths = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -62,15 +62,18 @@ export function ExportPage() {
     [months, selectedMonthId],
   );
 
-  async function handleDownload() {
+  async function handleDownload(format: "markdown" | "json") {
     if (!selectedMonth) {
       return;
     }
-    setDownloading(true);
+    setDownloading(format);
     setDownloadError(null);
     setSuccess(null);
     try {
-      const file = await downloadMarkdownReport(selectedMonth.id);
+      const file =
+        format === "markdown"
+          ? await downloadMarkdownReport(selectedMonth.id)
+          : await downloadJsonReport(selectedMonth.id);
       const url = URL.createObjectURL(file.blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -84,7 +87,7 @@ export function ExportPage() {
     } catch (error) {
       setDownloadError(formatApiError(error));
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   }
 
@@ -94,11 +97,11 @@ export function ExportPage() {
         <p className="eyebrow">Система</p>
         <h1>Экспорт</h1>
         <p className="page-header__description">
-          Скачай готовый Markdown-отчёт выбранного отчётного месяца для анализа в Hermes.
+          Скачай Markdown-отчёт или машинно-читаемый JSON выбранного отчётного месяца.
         </p>
       </header>
 
-      <Panel label="Markdown" title="Скачать отчёт">
+      <Panel label="Markdown и JSON" title="Скачать отчёт">
         {loading ? (
           <LoadingState description="Загружаем месяцы…" inline />
         ) : loadingError ? (
@@ -138,14 +141,23 @@ export function ExportPage() {
                 {success}
               </div>
             ) : null}
-            <Button
-              disabled={downloading || selectedMonth === null}
-              onClick={() => void handleDownload()}
-              type="button"
-              variant="primary"
-            >
-              {downloading ? "Готовим файл…" : "Скачать Markdown"}
-            </Button>
+            <div className="stack-12">
+              <Button
+                disabled={downloading !== null || selectedMonth === null}
+                onClick={() => void handleDownload("markdown")}
+                type="button"
+                variant="primary"
+              >
+                {downloading === "markdown" ? "Готовим файл…" : "Скачать Markdown"}
+              </Button>
+              <Button
+                disabled={downloading !== null || selectedMonth === null}
+                onClick={() => void handleDownload("json")}
+                type="button"
+              >
+                {downloading === "json" ? "Готовим JSON…" : "Скачать JSON"}
+              </Button>
+            </div>
           </div>
         )}
       </Panel>

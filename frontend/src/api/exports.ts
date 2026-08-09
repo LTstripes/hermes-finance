@@ -9,3 +9,10 @@ export function downloadMarkdownReport(
     signal,
   });
 }
+
+export function downloadJsonReport(monthId: number, signal?: AbortSignal): Promise<ApiDownload> {
+  return apiDownload(`/api/months/${monthId}/export/json`, {
+    method: "POST",
+    signal,
+  });
+}
