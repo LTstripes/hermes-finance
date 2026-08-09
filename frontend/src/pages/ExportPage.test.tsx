@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExportPage } from "./ExportPage";
@@ -20,6 +21,19 @@ const months = [
     status: "closed" as const,
     snapshot_date: "2026-06-30",
     source: "manual",
+  },
+];
+
+const backups = [
+  {
+    id: "finance_backup_20320731T123456789000Z",
+    name: "finance_backup_20320731T123456789000Z.sqlite3",
+    created_at: "2032-07-31T12:34:56.789000Z",
+    size_bytes: 4096,
+    source_database: {
+      name: "synthetic-finance.db",
+      size_bytes: 8192,
+    },
   },
 ];
 
@@ -46,6 +60,7 @@ describe("ExportPage", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
         new Response("# Июнь 2026\n", {
           status: 200,
@@ -79,18 +94,23 @@ describe("ExportPage", () => {
     let rejectRequest!: (error: Error) => void;
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        () =>
-          new Promise<Response>((_resolve, reject) => {
-            rejectRequest = reject;
-          }),
-      ),
+      vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((_resolve, reject) => {
+              rejectRequest = reject;
+            }),
+        )
+        .mockResolvedValueOnce(jsonResponse([])),
     );
 
     render(<ExportPage />);
 
-    expect(screen.getByRole("status")).toHaveTextContent(/Загружаем месяцы/i);
-    rejectRequest(new Error("backend offline"));
+    expect(screen.getByText("Загружаем месяцы…")).toBeInTheDocument();
+    await act(async () => {
+      rejectRequest(new Error("backend offline"));
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("backend offline");
   });
@@ -102,6 +122,7 @@ describe("ExportPage", () => {
       vi
         .fn()
         .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(jsonResponse([]))
         .mockResolvedValueOnce(
           jsonResponse(
             { error: { code: "internal_error", message: "Export failed", details: [] } },
@@ -128,6 +149,7 @@ describe("ExportPage", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
       .mockImplementationOnce(
         () =>
           new Promise<Response>((resolve) => {
@@ -168,6 +190,7 @@ describe("ExportPage", () => {
       vi
         .fn()
         .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(jsonResponse([]))
         .mockResolvedValueOnce(
           jsonResponse(
             { error: { code: "not_found", message: "Month missing", details: [] } },
@@ -181,5 +204,102 @@ describe("ExportPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Month missing");
     expect(screen.queryByText(/Файл .*скачан/i)).not.toBeInTheDocument();
+  });
+
+  it("loads backup metadata newest first and shows the source database", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(jsonResponse(backups)),
+    );
+
+    render(<ExportPage />);
+
+    expect(await screen.findByRole("heading", { name: "Резервные копии" })).toBeInTheDocument();
+    expect(await screen.findByText(backups[0].name)).toBeInTheDocument();
+    expect(screen.getByText("synthetic-finance.db")).toBeInTheDocument();
+    expect(screen.getByText("4096 Б")).toBeInTheDocument();
+  });
+
+  it("shows a loading state while backup metadata is being fetched", async () => {
+    let resolveList!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              resolveList = resolve;
+            }),
+        ),
+    );
+
+    render(<ExportPage />);
+
+    expect(screen.getByText("Загружаем список backup…")).toBeInTheDocument();
+    await act(async () => {
+      resolveList(jsonResponse([]));
+    });
+    expect(await screen.findByText("Backup пока нет")).toBeInTheDocument();
+  });
+
+  it("shows backup loading and then success after creating a backup", async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveCreate = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExportPage />);
+    const createButton = await screen.findByRole("button", { name: "Создать backup" });
+    await user.click(createButton);
+
+    expect(await screen.findByRole("button", { name: "Создаём backup…" })).toBeDisabled();
+    resolveCreate(jsonResponse(backups[0], 201));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/создан/i);
+    expect(screen.getByText(backups[0].name)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/backups",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("shows a readable backup-list error and keeps the create button available", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            {
+              error: {
+                code: "internal_error",
+                message: "Backup storage is not available",
+                details: [],
+              },
+            },
+            500,
+          ),
+        ),
+    );
+
+    render(<ExportPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Backup storage is not available");
+    expect(screen.getByRole("button", { name: "Создать backup" })).toBeEnabled();
   });
 });

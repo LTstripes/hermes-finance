@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 @dataclass(frozen=True, slots=True)
 class Database:
+    database_path: Path
     engine: Engine
     session_factory: sessionmaker[Session]
 
@@ -33,4 +34,8 @@ def create_database(database_path: Path) -> Database:
     event.listen(engine, "connect", _enable_sqlite_foreign_keys)
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-    return Database(engine=engine, session_factory=session_factory)
+    return Database(
+        database_path=resolved_path,
+        engine=engine,
+        session_factory=session_factory,
+    )

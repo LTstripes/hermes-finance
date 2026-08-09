@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatApiError } from "../api/client";
+import { createBackup, listBackups } from "../api/backups";
 import { downloadJsonReport, downloadMarkdownReport } from "../api/exports";
 import { listMonths } from "../api/months";
-import type { ReportingMonth } from "../api/types";
+import type { BackupMetadata, ReportingMonth } from "../api/types";
 import {
   Button,
   EmptyState,
@@ -12,8 +13,11 @@ import {
   LoadingState,
   Panel,
   Select,
+  Table,
+  Td,
+  Th,
 } from "../components/ui";
-import { formatMonth } from "../lib/format";
+import { formatDate, formatMonth } from "../lib/format";
 
 export function ExportPage() {
   const [months, setMonths] = useState<ReportingMonth[]>([]);
@@ -23,6 +27,10 @@ export function ExportPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<"markdown" | "json" | null>(null);
+  const [backups, setBackups] = useState<BackupMetadata[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(true);
+  const [backupsError, setBackupsError] = useState<string | null>(null);
+  const [creatingBackup, setCreatingBackup] = useState(false);
 
   const loadMonths = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -57,6 +65,32 @@ export function ExportPage() {
     return () => controller.abort();
   }, [loadMonths]);
 
+  const loadBackups = useCallback(async (signal?: AbortSignal) => {
+    setBackupsLoading(true);
+    setBackupsError(null);
+    try {
+      const data = await listBackups(signal);
+      if (!signal?.aborted) {
+        setBackups(data);
+      }
+    } catch (error) {
+      if (!signal?.aborted) {
+        setBackupsError(formatApiError(error));
+        setBackups([]);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setBackupsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadBackups(controller.signal);
+    return () => controller.abort();
+  }, [loadBackups]);
+
   const selectedMonth = useMemo(
     () => months.find((month) => month.id === selectedMonthId) ?? null,
     [months, selectedMonthId],
@@ -88,6 +122,21 @@ export function ExportPage() {
       setDownloadError(formatApiError(error));
     } finally {
       setDownloading(null);
+    }
+  }
+
+  async function handleCreateBackup() {
+    setCreatingBackup(true);
+    setBackupsError(null);
+    setSuccess(null);
+    try {
+      const backup = await createBackup();
+      setBackups((current) => [backup, ...current]);
+      setSuccess(`Backup ${backup.name} создан.`);
+    } catch (error) {
+      setBackupsError(formatApiError(error));
+    } finally {
+      setCreatingBackup(false);
     }
   }
 
@@ -159,6 +208,51 @@ export function ExportPage() {
               </Button>
             </div>
           </div>
+        )}
+      </Panel>
+
+      <Panel
+        action={
+          <Button disabled={creatingBackup} onClick={() => void handleCreateBackup()} type="button">
+            {creatingBackup ? "Создаём backup…" : "Создать backup"}
+          </Button>
+        }
+        label="Локальная база"
+        title="Резервные копии"
+      >
+        {backupsLoading ? (
+          <LoadingState description="Загружаем список backup…" inline />
+        ) : backupsError ? (
+          <ErrorState description={backupsError} inline title="Не удалось загрузить backup" />
+        ) : backups.length === 0 ? (
+          <EmptyState
+            description="Создай первую локальную копию базы."
+            inline
+            title="Backup пока нет"
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Имя</Th>
+                <Th>Создан</Th>
+                <Th numeric>Размер</Th>
+                <Th>Исходная база</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {backups.map((backup) => (
+                <tr key={backup.id}>
+                  <Td>{backup.name}</Td>
+                  <Td>
+                    <time dateTime={backup.created_at}>{formatDate(backup.created_at)}</time>
+                  </Td>
+                  <Td numeric>{backup.size_bytes} Б</Td>
+                  <Td>{backup.source_database.name}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
         )}
       </Panel>
     </section>

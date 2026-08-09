@@ -51,6 +51,19 @@ export type ReportingMonthUpdate = {
   source?: ReportingMonthSource;
 };
 
+export type BackupSource = {
+  name: string;
+  size_bytes: number;
+};
+
+export type BackupMetadata = {
+  id: string;
+  name: string;
+  created_at: string;
+  size_bytes: number;
+  source_database: BackupSource;
+};
+
 export type HealthResponse = {
   status: "ok";
   version: string;
