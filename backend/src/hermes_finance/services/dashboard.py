@@ -12,13 +12,15 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from hermes_finance.domain.liquid_capital import LiquidCapitalResult
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
+    Account,
     Instrument,
     PositionSnapshot,
     ReportingMonth,
@@ -120,6 +122,43 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
     return tuple(points)
 
 
+def _asset_allocation(
+    session: Session,
+    reporting_month_id: int,
+    liquid: LiquidCapitalResult,
+) -> tuple[AssetClassSlice, ...]:
+    """Liquid-asset allocation by E14 classes: cash, deposits, stocks, bonds, gold/other.
+
+    Securities market value is split by ``instrument_type``: ``stock`` and
+    ``bond`` are their own classes; every remaining instrument type (fund,
+    currency, gold, other) plus ``other_liquid_assets`` is grouped under
+    ``gold_other``. Real estate is never included — property is not liquid
+    capital (MASTER_SPEC §10.1).
+    """
+    rows = session.execute(
+        select(Instrument.instrument_type, func.sum(PositionSnapshot.market_value_kopecks))
+        .join(Instrument, PositionSnapshot.instrument_id == Instrument.id)
+        .join(Account, PositionSnapshot.account_id == Account.id)
+        .where(PositionSnapshot.reporting_month_id == reporting_month_id)
+        .where(Account.include_in_capital.is_(True))
+        .group_by(Instrument.instrument_type)
+    ).all()
+    by_type = {instrument_type: int(total or 0) for instrument_type, total in rows}
+    stocks = RubleAmount(by_type.get("stock", 0))
+    bonds = RubleAmount(by_type.get("bond", 0))
+    gold_other = RubleAmount(
+        sum(value for kind, value in by_type.items() if kind not in ("stock", "bond"))
+        + liquid.breakdown.other_liquid_assets.kopecks
+    )
+    return (
+        AssetClassSlice("cash", liquid.breakdown.cash),
+        AssetClassSlice("deposits", liquid.breakdown.deposits),
+        AssetClassSlice("stocks", stocks),
+        AssetClassSlice("bonds", bonds),
+        AssetClassSlice("gold_other", gold_other),
+    )
+
+
 def _instrument_class_results(
     session: Session, reporting_month_id: int
 ) -> tuple[InstrumentClassResult, ...]:
@@ -194,12 +233,7 @@ def build_dashboard(
     month = get_reporting_month(session, reporting_month_id)
     summary = monthly_summary(session, reporting_month_id, forecast_version=forecast_version)
     liquid = summary.liquid_capital
-    allocation = (
-        AssetClassSlice("cash", liquid.breakdown.cash),
-        AssetClassSlice("deposits", liquid.breakdown.deposits),
-        AssetClassSlice("securities", liquid.breakdown.securities),
-        AssetClassSlice("other_liquid_assets", liquid.breakdown.other_liquid_assets),
-    )
+    allocation = _asset_allocation(session, reporting_month_id, liquid)
     by_account = tuple(
         AccountResultSlice(account_id=item.account_id, amount=item.amount)
         for item in liquid.accounts

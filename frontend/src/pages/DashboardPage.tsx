@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { BackendStatus } from "../components/BackendStatus";
+import { AssetAllocationChart } from "../components/charts/AssetAllocationChart";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
 import {
@@ -288,6 +289,18 @@ export function DashboardPage() {
           />
         ) : (
           <EmptyState description="Нет данных для графика." inline title="Пусто" />
+        )}
+      </Panel>
+
+      <Panel label="Активы" title="Распределение активов">
+        {loadingDash ? (
+          <LoadingState description="Тянем dashboard API…" inline />
+        ) : error && !dashboard ? (
+          <ErrorState description={error} inline title="Ошибка dashboard" />
+        ) : dashboard ? (
+          <AssetAllocationChart allocation={dashboard.asset_allocation ?? []} />
+        ) : (
+          <EmptyState description="Нет данных для диаграммы." inline title="Пусто" />
         )}
       </Panel>
 

@@ -1233,3 +1233,61 @@ th.num {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* E14 — asset allocation donut + table */
+.asset-allocation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 20px;
+  align-items: center;
+}
+
+.asset-allocation__chart {
+  min-width: 0;
+}
+
+.asset-allocation__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.asset-allocation__table th,
+.asset-allocation__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+}
+
+.asset-allocation__table tfoot td {
+  border-bottom: 0;
+  border-top: 2px solid var(--line);
+  font-weight: 600;
+}
+
+.asset-allocation__dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .asset-allocation {
+    grid-template-columns: 1fr;
+  }
+}

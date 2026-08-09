@@ -165,11 +165,18 @@ export type CapitalHistoryPoint = {
   passive_income_actual: MoneyValue;
 };
 
+/** One liquid-asset class slice (E14 allocation: cash/deposits/stocks/bonds/gold_other). */
+export type AssetAllocationPoint = {
+  asset_class: string;
+  amount: MoneyValue;
+};
+
 export type DashboardSlice = {
   month?: DashboardMonthRef;
   kpis?: DashboardKpis;
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];
+  asset_allocation?: AssetAllocationPoint[];
   warnings?: string[];
   calculation_version?: string;
 };

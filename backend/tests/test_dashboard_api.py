@@ -178,7 +178,13 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert dash["historical_series"][0]["reporting_month_id"] == _m1_id
     assert dash["historical_series"][0]["liquid_capital_net"] == _rub("111000.00")
     classes = {item["asset_class"] for item in dash["asset_allocation"]}
-    assert classes == {"cash", "deposits", "securities", "other_liquid_assets"}
+    assert classes == {"cash", "deposits", "stocks", "bonds", "gold_other"}
+    allocation = {item["asset_class"]: item["amount"] for item in dash["asset_allocation"]}
+    assert allocation["cash"] == _rub("0.00")
+    assert allocation["deposits"] == _rub("100000.00")
+    assert allocation["stocks"] == _rub("0.00")
+    assert allocation["bonds"] == _rub("11000.00")
+    assert allocation["gold_other"] == _rub("0.00")
     assert any(item["instrument_type"] == "bond" for item in dash["result_by_instrument_class"])
     assert len(dash["expected_payments"]) == 1
     assert dash["expected_payments"][0]["expected_net_amount"] == _rub("870.00")
