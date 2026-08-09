@@ -1143,3 +1143,39 @@ th.num {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* E12 — capital dynamics chart */
+.capital-chart {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.capital-chart__note {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 10px 2px 0;
+}
+
+.chart-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(23 32 25 / 10%);
+  padding: 8px 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.chart-tooltip strong {
+  display: block;
+  font-weight: 600;
+}
+
+.chart-tooltip__amount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}

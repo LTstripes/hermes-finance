@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
+from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
     Instrument,
@@ -97,7 +98,11 @@ class DashboardResult:
 
 def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
     months = list(
-        session.scalars(select(ReportingMonth).order_by(ReportingMonth.year, ReportingMonth.month))
+        session.scalars(
+            select(ReportingMonth)
+            .where(ReportingMonth.status == ReportingMonthStatus.CLOSED)
+            .order_by(ReportingMonth.year, ReportingMonth.month)
+        )
     )
     points: list[HistoricalPoint] = []
     for month in months:

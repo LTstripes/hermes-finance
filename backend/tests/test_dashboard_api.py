@@ -165,9 +165,12 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     }
     assert dash["kpis"]["mandatory_expenses"] == _rub("20000.00")
     assert dash["kpis"]["mortgage_balance"] == _rub("4000000.00")
-    assert len(dash["historical_series"]) == 2
+    # historical series covers closed months only; the February clone is a draft
+    assert len(dash["historical_series"]) == 1
     assert dash["historical_series"][0]["month"] == 1
-    assert dash["historical_series"][1]["month"] == 2
+    assert dash["historical_series"][0]["year"] == 2031
+    assert dash["historical_series"][0]["reporting_month_id"] == _m1_id
+    assert dash["historical_series"][0]["liquid_capital_net"] == _rub("111000.00")
     classes = {item["asset_class"] for item in dash["asset_allocation"]}
     assert classes == {"cash", "deposits", "securities", "other_liquid_assets"}
     assert any(item["instrument_type"] == "bond" for item in dash["result_by_instrument_class"])
@@ -175,6 +178,23 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert dash["expected_payments"][0]["expected_net_amount"] == _rub("870.00")
     assert dash["mortgage"]["mortgage_balance"] == _rub("4000000.00")
     assert dash["calculation_version"] == "v1"
+
+
+def test_historical_series_grows_when_draft_closes(client: TestClient) -> None:
+    _m1_id, m2_id = _seed_two_months(client)
+
+    draft_dash = client.get(f"/api/months/{m2_id}/dashboard")
+    assert draft_dash.status_code == 200, draft_dash.text
+    # February clone is still a draft: only the closed January point qualifies
+    assert [p["month"] for p in draft_dash.json()["historical_series"]] == [1]
+
+    close = client.post(f"/api/months/{m2_id}/close")
+    assert close.status_code == 200, close.text
+
+    closed_dash = client.get(f"/api/months/{m2_id}/dashboard")
+    assert closed_dash.status_code == 200, closed_dash.text
+    series = closed_dash.json()["historical_series"]
+    assert [(p["year"], p["month"]) for p in series] == [(2031, 1), (2031, 2)]
 
 
 def test_summary_missing_month_is_404(client: TestClient) -> None:

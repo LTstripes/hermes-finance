@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { BackendStatus } from "../components/BackendStatus";
+import { CapitalChart } from "../components/charts/CapitalChart";
 import {
   Badge,
   Button,
@@ -258,6 +259,18 @@ export function DashboardPage() {
         />
       </section>
 
+      <Panel label="История" title="Динамика капитала">
+        {loadingDash ? (
+          <LoadingState description="Тянем dashboard API…" inline />
+        ) : error && !dashboard ? (
+          <ErrorState description={error} inline title="Ошибка dashboard" />
+        ) : dashboard ? (
+          <CapitalChart points={dashboard.historical_series ?? []} />
+        ) : (
+          <EmptyState description="Нет данных для графика." inline title="Пусто" />
+        )}
+      </Panel>
+
       <div className="dashboard-grid">
         <BackendStatus />
 
@@ -288,7 +301,7 @@ export function DashboardPage() {
                   {dashboard.warnings.join(" · ")}
                 </div>
               ) : (
-                <p className="muted">Предупреждений нет. Charts — E12+.</p>
+                <p className="muted">Предупреждений нет.</p>
               )}
             </div>
           ) : (

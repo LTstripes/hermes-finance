@@ -153,10 +153,20 @@ export type DashboardMonthRef = {
   source: string;
 };
 
+/** One point of the closed-month capital history (D07 historical_series). */
+export type CapitalHistoryPoint = {
+  year: number;
+  month: number;
+  reporting_month_id: number;
+  liquid_capital_net: MoneyValue;
+  passive_income_actual: MoneyValue;
+};
+
 export type DashboardSlice = {
   month?: DashboardMonthRef;
   kpis?: DashboardKpis;
   mortgage: DashboardMortgage;
+  historical_series?: CapitalHistoryPoint[];
   warnings?: string[];
   calculation_version?: string;
 };
