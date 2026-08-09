@@ -226,9 +226,7 @@ def test_asset_allocation_splits_by_instrument_type_and_respects_capital_flag(
         json={"name": "Не в капитале", "account_type": "brokerage", "include_in_capital": False},
     ).json()
 
-    bond = client.post(
-        "/api/instruments", json={"name": "ОФЗ", "instrument_type": "bond"}
-    ).json()
+    bond = client.post("/api/instruments", json={"name": "ОФЗ", "instrument_type": "bond"}).json()
     stock = client.post(
         "/api/instruments", json={"name": "Акция", "instrument_type": "stock"}
     ).json()
