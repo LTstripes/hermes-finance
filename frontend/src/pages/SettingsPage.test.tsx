@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError } from "../api/client";
@@ -22,6 +23,14 @@ const settings = {
 const getSettingsMock = vi.mocked(getSettings);
 const updateSettingsMock = vi.mocked(updateSettings);
 
+function renderSettings() {
+  return render(
+    <MemoryRouter>
+      <SettingsPage />
+    </MemoryRouter>,
+  );
+}
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,20 +39,21 @@ describe("SettingsPage", () => {
   });
 
   it("loads settings and keeps financial goal read-only", async () => {
-    render(<SettingsPage />);
+    renderSettings();
 
     expect(screen.getByText("Настройки")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("ru-RU")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Europe/Moscow")).toBeInTheDocument();
     expect(screen.getByText("100000.00")).toBeInTheDocument();
-    expect(screen.getByText(/управление основной целью будет перенесено/i)).toBeInTheDocument();
+    expect(screen.getByText(/основная цель и её параметры управляются/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
     expect(screen.queryByDisplayValue("100000.00")).toBeNull();
   });
 
   it("retries after a settings load error", async () => {
     const user = userEvent.setup();
     getSettingsMock.mockRejectedValueOnce(new Error("settings unavailable"));
-    render(<SettingsPage />);
+    renderSettings();
 
     expect(await screen.findByText("settings unavailable")).toBeInTheDocument();
     getSettingsMock.mockResolvedValueOnce(settings);
@@ -56,7 +66,7 @@ describe("SettingsPage", () => {
   it("sends only changed safe fields", async () => {
     const user = userEvent.setup();
     updateSettingsMock.mockResolvedValue({ ...settings, locale: "en-US" });
-    render(<SettingsPage />);
+    renderSettings();
 
     const locale = await screen.findByLabelText("Локаль");
     const save = screen.getByRole("button", { name: "Сохранить" });
@@ -73,7 +83,7 @@ describe("SettingsPage", () => {
 
   it("blocks invalid locale before PUT", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     const locale = await screen.findByLabelText("Локаль");
     await user.clear(locale);
@@ -93,7 +103,7 @@ describe("SettingsPage", () => {
         details: [{ field: "timezone", message: "invalid timezone" }],
       }),
     );
-    render(<SettingsPage />);
+    renderSettings();
 
     const timezone = await screen.findByLabelText("Часовой пояс");
     await user.clear(timezone);
