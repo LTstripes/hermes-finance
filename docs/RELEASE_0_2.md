@@ -59,8 +59,8 @@
 | R02-09 | Безопасная сериализация backup restore на Windows | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
 | R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | DEFERRED | Luna High / — / Terra only if semantics change | — |
 | R02-11 | Goals API + единый source of truth основной цели | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
-| R02-12 | Контракт и backend прогноза даты достижения цели | P1 | IN_PROGRESS | Sol High / Terra High bounded worker / Sol High | R02-11 |
-| R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | BLOCKED | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
+| R02-12 | Контракт и backend прогноза даты достижения цели | P1 | DONE | Sol High / Terra High bounded worker / Sol High | R02-11 |
+| R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
 | R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-15 | Accounts & Instruments UI вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-16 | Settings UI baseline вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
@@ -374,7 +374,7 @@ Persistence/service для `goals` уже существуют, включая `
 # R02-12. Контракт и backend прогноза даты достижения цели
 
 **Priority:** P1  
-**Status:** IN_PROGRESS  
+**Status:** DONE  
 **Route:** Sol High / Terra High bounded worker / Sol High reviewer  
 **Contract:** `docs/adr/0005-goal-achievement-forecast.md`
 
@@ -402,7 +402,7 @@ Persistence/service для `goals` уже существуют, включая `
 # R02-13. Полноценный Goals UI + прогресс основной цели на Dashboard
 
 **Priority:** P1  
-**Status:** BLOCKED by R02-12  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Сделать
