@@ -273,11 +273,17 @@ export function AccountsPage() {
                   {ACCOUNT_STATUS_LABELS[account.status] ?? account.status}
                 </Badge>
               </Td>
-              <Td><BooleanBadge value={account.include_in_capital} /></Td>
-              <Td><BooleanBadge value={account.include_in_returns} /></Td>
+              <Td>
+                <BooleanBadge value={account.include_in_capital} />
+              </Td>
+              <Td>
+                <BooleanBadge value={account.include_in_returns} />
+              </Td>
               <Td>
                 <div className="row-actions">
-                  <Button onClick={() => openEditAccount(account)} size="sm">Изменить</Button>
+                  <Button onClick={() => openEditAccount(account)} size="sm">
+                    Изменить
+                  </Button>
                   {account.status === "hidden" ? (
                     <Button onClick={() => void setAccountStatus(account, "active")} size="sm">
                       Показать
@@ -344,7 +350,9 @@ export function AccountsPage() {
               </Td>
               <Td>
                 <div className="row-actions">
-                  <Button onClick={() => openEditInstrument(instrument)} size="sm">Изменить</Button>
+                  <Button onClick={() => openEditInstrument(instrument)} size="sm">
+                    Изменить
+                  </Button>
                   <Button
                     onClick={() => void setInstrumentActive(instrument, !instrument.is_active)}
                     size="sm"
@@ -379,7 +387,7 @@ export function AccountsPage() {
         </p>
       </header>
 
-      <div className="toolbar" aria-label="Раздел справочника">
+      <div className="toolbar" role="group" aria-label="Раздел справочника">
         <Button
           aria-pressed={tab === "accounts"}
           onClick={() => setTab("accounts")}
@@ -409,7 +417,9 @@ export function AccountsPage() {
       </div>
 
       {actionError ? (
-        <div className="inline-alert inline-alert--error" role="alert">{actionError}</div>
+        <div className="inline-alert inline-alert--error" role="alert">
+          {actionError}
+        </div>
       ) : null}
 
       {tab === "accounts" ? (
@@ -419,11 +429,17 @@ export function AccountsPage() {
           ) : accountsError ? (
             <div className="stack-8">
               <ErrorState description={accountsError} inline title="Не удалось загрузить счета" />
-              <Button onClick={() => void loadAccounts()} size="sm">Повторить</Button>
+              <Button onClick={() => void loadAccounts()} size="sm">
+                Повторить
+              </Button>
             </div>
           ) : accounts.length === 0 ? (
             <EmptyState
-              action={<Button onClick={openCreateAccount} size="sm" variant="primary">Создать счёт</Button>}
+              action={
+                <Button onClick={openCreateAccount} size="sm" variant="primary">
+                  Создать счёт
+                </Button>
+              }
               description="Справочник пока пуст."
               inline
               title="Нет счетов"
@@ -443,12 +459,22 @@ export function AccountsPage() {
             <LoadingState description="Загружаем /api/instruments…" inline />
           ) : instrumentsError ? (
             <div className="stack-8">
-              <ErrorState description={instrumentsError} inline title="Не удалось загрузить инструменты" />
-              <Button onClick={() => void loadInstruments()} size="sm">Повторить</Button>
+              <ErrorState
+                description={instrumentsError}
+                inline
+                title="Не удалось загрузить инструменты"
+              />
+              <Button onClick={() => void loadInstruments()} size="sm">
+                Повторить
+              </Button>
             </div>
           ) : instruments.length === 0 ? (
             <EmptyState
-              action={<Button onClick={openCreateInstrument} size="sm" variant="primary">Создать инструмент</Button>}
+              action={
+                <Button onClick={openCreateInstrument} size="sm" variant="primary">
+                  Создать инструмент
+                </Button>
+              }
               description="Справочник пока пуст."
               inline
               title="Нет инструментов"
