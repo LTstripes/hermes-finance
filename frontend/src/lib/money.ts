@@ -39,26 +39,77 @@ export function isBlankMoney(value: string): boolean {
   return n == null || n === "0.00" || n === "-0.00";
 }
 
-/** Sum money amount strings via integer kopecks (no binary float). */
+function normalizedToKopecks(normalized: string): bigint {
+  const negative = normalized.startsWith("-");
+  const unsigned = negative ? normalized.slice(1) : normalized;
+  const [intPart, frac = "00"] = unsigned.split(".");
+  const kopecks = BigInt(intPart) * 100n + BigInt(frac.padEnd(2, "0").slice(0, 2));
+  return negative ? -kopecks : kopecks;
+}
+
+/** Parse a money amount into exact integer kopecks. Invalid values are rejected. */
+export function toKopecks(amount: string): bigint {
+  const normalized = normalizeMoneyInput(amount);
+  if (normalized == null) {
+    throw new Error(`invalid money amount: ${amount}`);
+  }
+  return normalizedToKopecks(normalized);
+}
+
+/** Convert exact integer kopecks back to the canonical decimal-string amount. */
+export function fromKopecks(kopecks: bigint): string {
+  const negative = kopecks < 0n;
+  const abs = negative ? -kopecks : kopecks;
+  const major = abs / 100n;
+  const cents = String(abs % 100n).padStart(2, "0");
+  return `${negative ? "-" : ""}${major}.${cents}`;
+}
+
+/** Sum money amount strings via exact integer kopecks. Invalid/blank optional lines are ignored. */
 export function sumMoneyAmounts(amounts: Array<string | null | undefined>): string {
-  let totalKopecks = 0;
+  let totalKopecks = 0n;
   for (const raw of amounts) {
     if (raw == null || raw === "") {
       continue;
     }
-    const n = normalizeMoneyInput(raw);
-    if (n == null) {
+    const normalized = normalizeMoneyInput(raw);
+    if (normalized == null) {
       continue;
     }
-    const negative = n.startsWith("-");
-    const unsigned = negative ? n.slice(1) : n;
-    const [intPart, frac = "00"] = unsigned.split(".");
-    const kopecks = Number(intPart) * 100 + Number(frac.padEnd(2, "0").slice(0, 2));
-    totalKopecks += negative ? -kopecks : kopecks;
+    totalKopecks += normalizedToKopecks(normalized);
   }
-  const neg = totalKopecks < 0;
-  const abs = Math.abs(totalKopecks);
-  const major = Math.floor(abs / 100);
-  const cents = String(abs % 100).padStart(2, "0");
-  return `${neg ? "-" : ""}${major}.${cents}`;
+  return fromKopecks(totalKopecks);
+}
+
+/**
+ * Exact percentage of one money amount within another, rounded HALF_UP for display.
+ * The result is a decimal string in percentage points (e.g. "33.3").
+ */
+export function moneySharePercent(
+  partAmount: string,
+  totalAmount: string,
+  digits: 1 | 2 = 1,
+): string {
+  const part = toKopecks(partAmount);
+  const total = toKopecks(totalAmount);
+  if (part < 0n || total <= 0n) {
+    throw new Error("money share requires a non-negative part and positive total");
+  }
+
+  const scale = 10n ** BigInt(digits);
+  const numerator = part * 100n * scale;
+  const quotient = numerator / total;
+  const remainder = numerator % total;
+  const rounded = remainder * 2n >= total ? quotient + 1n : quotient;
+  const major = rounded / scale;
+  const fraction = String(rounded % scale).padStart(digits, "0");
+  return `${major}.${fraction}`;
+}
+
+/**
+ * Deliberate lossy boundary for chart libraries that require JavaScript numbers.
+ * Never use the returned value for financial aggregation, comparison, or percentages.
+ */
+export function moneyToChartNumber(amount: string): number {
+  return Number(toKopecks(amount)) / 100;
 }
