@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { ApiClientError, formatApiError } from "../api/client";
-import { getSettings, updateSettings, type AppSettings, type AppSettingsUpdate } from "../api/settings";
+import {
+  getSettings,
+  updateSettings,
+  type AppSettings,
+  type AppSettingsUpdate,
+} from "../api/settings";
 import { Badge, Button, ErrorState, Field, Input, LoadingState, Panel } from "../components/ui";
 
 export function SettingsPage() {
@@ -102,7 +107,10 @@ export function SettingsPage() {
   if (loadError || !settings) {
     return (
       <div className="stack-18">
-        <ErrorState description={loadError ?? "Настройки недоступны"} title="Не удалось загрузить настройки" />
+        <ErrorState
+          description={loadError ?? "Настройки недоступны"}
+          title="Не удалось загрузить настройки"
+        />
         <Button onClick={() => void load()}>Повторить</Button>
       </div>
     );
@@ -114,7 +122,8 @@ export function SettingsPage() {
         <p className="eyebrow">Система</p>
         <h1>Настройки</h1>
         <p className="page-header__description">
-          Только локальные настройки с подтверждённым backend-контрактом. Финансовые правила здесь не редактируются.
+          Только локальные настройки с подтверждённым backend-контрактом. Финансовые правила здесь
+          не редактируются.
         </p>
       </header>
 
@@ -126,7 +135,8 @@ export function SettingsPage() {
               <Badge tone="info">{settings.passive_income_goal.currency}</Badge>
             </p>
             <p className="muted">
-              Сейчас только для просмотра. Управление основной целью будет перенесено в раздел «Цели» после R02-11, чтобы не создавать два source of truth.
+              Сейчас только для просмотра. Управление основной целью будет перенесено в раздел
+              «Цели» после R02-11, чтобы не создавать два source of truth.
             </p>
           </div>
         </Panel>
@@ -165,34 +175,58 @@ export function SettingsPage() {
                 />
               </Field>
             </div>
-            {fieldErrors.locale ? <p className="inline-alert inline-alert--error">{fieldErrors.locale}</p> : null}
-            {fieldErrors.timezone ? <p className="inline-alert inline-alert--error">{fieldErrors.timezone}</p> : null}
+            {fieldErrors.locale ? (
+              <p className="inline-alert inline-alert--error">{fieldErrors.locale}</p>
+            ) : null}
+            {fieldErrors.timezone ? (
+              <p className="inline-alert inline-alert--error">{fieldErrors.timezone}</p>
+            ) : null}
             <p className="muted">
-              Локаль и часовой пояс сохраняются backend, но пока не управляют всем форматированием интерфейса.
+              Локаль и часовой пояс сохраняются backend, но пока не управляют всем форматированием
+              интерфейса.
             </p>
             <div className="form-row-2">
               <div className="field">
                 <span className="field__label">Базовая валюта</span>
-                <p><Badge tone="neutral">{settings.base_currency}</Badge></p>
+                <p>
+                  <Badge tone="neutral">{settings.base_currency}</Badge>
+                </p>
                 <p className="muted tiny">Поддерживается только RUB.</p>
               </div>
               <div className="field">
                 <span className="field__label">Версия формул</span>
-                <p><code>{settings.formula_version}</code></p>
+                <p>
+                  <code>{settings.formula_version}</code>
+                </p>
                 <p className="muted tiny">Служебное значение; вручную не редактируется.</p>
               </div>
             </div>
-            {saveError ? <div className="inline-alert inline-alert--error" role="alert">{saveError}</div> : null}
-            {success ? <div className="inline-alert inline-alert--ok" role="status">{success}</div> : null}
+            {saveError ? (
+              <div className="inline-alert inline-alert--error" role="alert">
+                {saveError}
+              </div>
+            ) : null}
+            {success ? (
+              <div className="inline-alert inline-alert--ok" role="status">
+                {success}
+              </div>
+            ) : null}
           </div>
         </Panel>
       </form>
 
       <Panel empty label="Ограничения" title="Пока недоступно">
         <div className="stack-8">
-          <p><Badge tone="info">R02-11</Badge> Редактирование основной финансовой цели.</p>
-          <p><Badge tone="info">R02-17</Badge> Управление налоговыми ставками.</p>
-          <p className="muted">Путь резервных копий и настройки экспорта пока не имеют отдельного settings API-контракта.</p>
+          <p>
+            <Badge tone="info">R02-11</Badge> Редактирование основной финансовой цели.
+          </p>
+          <p>
+            <Badge tone="info">R02-17</Badge> Управление налоговыми ставками.
+          </p>
+          <p className="muted">
+            Путь резервных копий и настройки экспорта пока не имеют отдельного settings
+            API-контракта.
+          </p>
         </div>
       </Panel>
     </section>
