@@ -7,6 +7,7 @@ import { ExportPage } from "../pages/ExportPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
+import { SettingsPage } from "../pages/SettingsPage";
 
 export function App() {
   return (
@@ -30,18 +31,7 @@ export function App() {
             }
           />
           <Route path="export" element={<ExportPage />} />
-          <Route
-            path="settings"
-            element={
-              <PlaceholderPage
-                description="Локальные настройки приложения. Пока не подключены налоговые ставки и отдельные API денежных средств."
-                eyebrow="Система"
-                gaps={["API /api/tax-brackets", "API денежных средств"]}
-                phaseHint="E-фаза · ограничения API"
-                title="Настройки"
-              />
-            }
-          />
+          <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
