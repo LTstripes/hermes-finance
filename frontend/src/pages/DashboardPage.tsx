@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { BackendStatus } from "../components/BackendStatus";
+import { MainGoalPanel } from "../components/MainGoalPanel";
 import { AssetAllocationChart } from "../components/charts/AssetAllocationChart";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { InvestmentResultChart } from "../components/charts/InvestmentResultChart";
@@ -262,6 +263,8 @@ export function DashboardPage() {
           deltaTone="neutral"
         />
       </section>
+
+      <MainGoalPanel reportingMonthId={selectedId} />
 
       <Panel label="История" title="Динамика капитала">
         {loadingDash ? (
