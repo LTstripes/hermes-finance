@@ -454,7 +454,9 @@ function GoalProgress({
         <span>Прогресс: {formatPercent(forecast.progress_pct, { digits: 2 })}</span>
       ) : null}
       {forecast.remaining_amount ? (
-        <span className="muted tiny">Осталось: {formatMoney(forecast.remaining_amount.amount)}</span>
+        <span className="muted tiny">
+          Осталось: {formatMoney(forecast.remaining_amount.amount)}
+        </span>
       ) : null}
     </div>
   );
