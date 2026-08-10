@@ -1,9 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 
-import type {
-  InstrumentCreatePayload,
-  InstrumentUpdatePayload,
-} from "../api/instruments";
+import type { InstrumentCreatePayload, InstrumentUpdatePayload } from "../api/instruments";
 import type { Instrument } from "../api/types";
 import { INSTRUMENT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { Button, Field, Input, Select } from "./ui";
@@ -23,14 +20,7 @@ function normalizeMoney(value: string): string {
   return value.trim().replace(",", ".");
 }
 
-export function InstrumentFormDialog({
-  open,
-  instrument,
-  busy,
-  error,
-  onCancel,
-  onSubmit,
-}: Props) {
+export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, onSubmit }: Props) {
   const titleId = useId();
   const descriptionId = useId();
   const [name, setName] = useState("");
@@ -145,7 +135,9 @@ export function InstrumentFormDialog({
         </h2>
         <p className="dialog__body" id={descriptionId}>
           Денежные значения передаются строками; клиент их не пересчитывает.
-          {instrument ? " Очистка уже заполненного optional-поля backend пока не поддерживается." : ""}
+          {instrument
+            ? " Очистка уже заполненного optional-поля backend пока не поддерживается."
+            : ""}
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="instrument-name" label="Название">
@@ -221,7 +213,11 @@ export function InstrumentFormDialog({
             </Field>
           </div>
           <label className="check-row">
-            <input checked={isActive} onChange={(event) => setIsActive(event.target.checked)} type="checkbox" />
+            <input
+              checked={isActive}
+              onChange={(event) => setIsActive(event.target.checked)}
+              type="checkbox"
+            />
             Активен
           </label>
           <label className="check-row">
