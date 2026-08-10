@@ -1,4 +1,5 @@
 import { formatMonth } from "./format";
+import { moneyToChartNumber } from "./money";
 
 const SHORT_MONTHS_RU = [
   "Янв",
@@ -71,8 +72,8 @@ export function buildGappedSeries(points: SeriesPoint[]): ChartDatum[] {
       month: point.month,
       label: formatMonth(point.year, point.month),
       shortLabel: `${SHORT_MONTHS_RU[point.month - 1] ?? ""} ${point.year}`.trim(),
-      // Axis position only — display always goes through formatMoney on the string.
-      rubles: Number(point.amount),
+      // Recharts coordinate only; all financial logic stays on exact decimal strings/kopecks.
+      rubles: moneyToChartNumber(point.amount),
       amount: point.amount,
     });
     previous = { year: point.year, month: point.month };

@@ -13,7 +13,7 @@ import {
 
 import type { AccountResultPoint, InstrumentClassResultPoint } from "../../api/types";
 import { formatMoneyDelta } from "../../lib/format";
-import { moneyAmount, sumMoneyAmounts } from "../../lib/money";
+import { moneyAmount, moneyToChartNumber, sumMoneyAmounts } from "../../lib/money";
 import { EmptyState, Td, Th } from "../ui";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -52,9 +52,9 @@ function buildBars(accounts: AccountResultPoint[]): AccountBar[] {
       key: String(account.account_id),
       name: account.account_name,
       accountType: ACCOUNT_TYPE_LABELS[account.account_type] ?? account.account_type,
-      // Axis position only — display always uses formatMoneyDelta on strings.
-      cash: Number(cashAmount),
-      unrealized: Number(unrealizedAmount),
+      // Recharts coordinates only; financial sums remain exact decimal strings/kopecks.
+      cash: moneyToChartNumber(cashAmount),
+      unrealized: moneyToChartNumber(unrealizedAmount),
       cashAmount,
       unrealizedAmount,
     };

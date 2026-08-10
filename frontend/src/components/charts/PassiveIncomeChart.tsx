@@ -13,7 +13,7 @@ import {
 import type { CapitalHistoryPoint } from "../../api/types";
 import { buildGappedSeries, axisMoney } from "../../lib/chartData";
 import { formatMoney } from "../../lib/format";
-import { moneyAmount } from "../../lib/money";
+import { moneyAmount, moneyToChartNumber } from "../../lib/money";
 import { EmptyState } from "../ui";
 import { MoneyTooltip } from "./MoneyTooltip";
 
@@ -114,9 +114,9 @@ export function PassiveIncomeChart({
             strokeWidth={2}
             type="linear"
           />
-          <ReferenceLine stroke="#6f786f" strokeDasharray="4 4" y={Number(average)} />
-          <ReferenceLine stroke="#9a6a1d" strokeDasharray="4 4" y={Number(forecast)} />
-          <ReferenceLine stroke="#27734c" strokeDasharray="6 3" y={Number(goal)} />
+          <ReferenceLine stroke="#6f786f" strokeDasharray="4 4" y={moneyToChartNumber(average)} />
+          <ReferenceLine stroke="#9a6a1d" strokeDasharray="4 4" y={moneyToChartNumber(forecast)} />
+          <ReferenceLine stroke="#27734c" strokeDasharray="6 3" y={moneyToChartNumber(goal)} />
         </LineChart>
       </ResponsiveContainer>
 
