@@ -50,10 +50,10 @@
 |---|---|---:|---|---|---|
 | R02-01 | Startup migrations + schema readiness gate | P0 | DONE | Luna High / — / Terra High | — |
 | R02-02 | Контракт opening YTD gross для НДФЛ | P0 | DONE | Sol High / — / Terra High | — |
-| R02-03 | Реализация opening YTD gross для НДФЛ | P0 | READY | Terra High / Luna High optional / Terra High | R02-02 |
-| R02-04 | Passive-income invariants и защита от double count | P0 | READY | Terra High / DeepSeek Free optional / Terra High | — |
+| R02-03 | Реализация opening YTD gross для НДФЛ | P0 | DONE | Terra High / Luna High optional / Terra High | R02-02 |
+| R02-04 | Passive-income invariants и защита от double count | P0 | DONE | Terra High / DeepSeek Free optional / Terra High | — |
 | R02-05 | Localhost Host/Origin protection | P1 | READY | Sol High / Luna High bounded worker / Sol High | — |
-| R02-06 | Убрать внешние Google Fonts / true-offline UI | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
+| R02-06 | Убрать внешние Google Fonts / true-offline UI | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-07 | Убрать финансовые вычисления через JS `Number` | P1 | READY | Luna High / DeepSeek Free bounded worker / Terra High spot review | — |
 | R02-08 | Windows production smoke в CI | P1 | READY | Luna High / DeepSeek Free optional / Luna | R02-01 |
 | R02-09 | Безопасная сериализация backup restore на Windows | P1 | READY | Terra High / Luna High bounded worker / Terra High | — |
@@ -62,9 +62,11 @@
 | R02-12 | Контракт и backend прогноза даты достижения цели | P1 | BLOCKED | Sol High / Terra High bounded worker / Sol High | R02-11 |
 | R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | BLOCKED | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
 | R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-15 | Accounts & Instruments UI вместо placeholder | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
+| R02-15 | Accounts & Instruments UI вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-16 | Settings UI baseline вместо placeholder | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
 | R02-17 | Tax brackets administration contract/API/UI | P2 | DEFERRED | Terra High / Luna High bounded worker / Terra High | R02-16 |
+| R02-18 | Контракт include_in_cash_flow и OTHER non-passive income | P1 | READY | Sol High / — / Terra High | — |
+| R02-19 | Реализация income cash-flow inclusion contract | P1 | BLOCKED | Terra High / Luna High bounded worker / Terra High | R02-18 |
 
 `Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
 
@@ -220,7 +222,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-06. Убрать внешние Google Fonts / true-offline UI
 
 **Priority:** P2  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Сделать
@@ -462,7 +464,7 @@ Persistence/service для `goals` уже существуют, включая `
 # R02-15. Accounts & Instruments UI вместо placeholder
 
 **Priority:** P2  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Контекст
@@ -528,6 +530,67 @@ Tax brackets уже участвуют в чувствительной нало�
 - можно ли редактировать прошлые tax rules;
 - связь изменения rules с уже закрытыми месяцами;
 - API validation и audit expectations.
+
+---
+
+# R02-18. Контракт `include_in_cash_flow` и `OTHER` non-passive income
+
+**Priority:** P1  
+**Status:** READY  
+**Route:** Sol High / — / Terra High reviewer
+
+## Проблема
+
+`IncomeEntry.include_in_cash_flow` существует в persistence/API, но текущий monthly cash-balance assembler его не использует. Одновременно `IncomeType.OTHER` с `include_in_passive_income=false` вообще не попадает в текущую формулу cash balance. Из существующих документов нельзя однозначно вывести, является ли это намеренной семантикой или неполным контрактом.
+
+## Сделать
+
+До реализации зафиксировать нормативно:
+
+- означает ли `include_in_cash_flow=false` полное исключение записи из monthly cash balance для каждого `IncomeType`;
+- должен ли `OTHER + include_in_passive_income=false + include_in_cash_flow=true` участвовать в monthly cash balance;
+- если участвует, нужен ли отдельный `other_income` bucket/DTO или допустимо иное однозначное представление;
+- как взаимодействуют `include_in_cash_flow` и `include_in_passive_income` для `OTHER`;
+- backward compatibility для существующих строк и отсутствие скрытого изменения закрытых месяцев.
+
+## Не делать
+
+- не менять код cash balance до принятия контракта;
+- не переопределять passive-income invariants R02-04;
+- не придумывать автоматическую миграцию значений без owner decision.
+
+## Acceptance
+
+- решение записано в `MASTER_SPEC.md` или ADR/contract section;
+- приведена type/flag matrix для `SALARY`, `BONUS`, `SIDE_INCOME`, `CASHBACK`, `OTHER`;
+- описано поведение legacy rows;
+- R02-19 можно реализовать без самостоятельного выбора финансовой семантики worker-моделью.
+
+---
+
+# R02-19. Реализация income cash-flow inclusion contract
+
+**Priority:** P1  
+**Status:** BLOCKED by R02-18  
+**Route:** Terra High / Luna High bounded worker / Terra High reviewer
+
+## Сделать
+
+После принятия R02-18 реализовать ровно утверждённую семантику:
+
+- monthly cash-balance assembler учитывает `include_in_cash_flow` согласно contract matrix;
+- `OTHER` non-passive income учитывается или исключается ровно по принятому правилу;
+- breakdown/API меняются только если этого требует контракт;
+- закрытые месяцы и legacy data остаются читаемыми;
+- pure money arithmetic остаётся integer minor units/Decimal без binary float.
+
+## Acceptance
+
+- type/flag matrix покрыта regression tests;
+- `include_in_cash_flow=false` имеет проверяемое нормативное поведение;
+- `OTHER + passive=false` имеет проверяемое нормативное поведение;
+- passive-income behavior R02-04 не регрессирует;
+- monthly cash-balance total и breakdown согласованы.
 
 ---
 
