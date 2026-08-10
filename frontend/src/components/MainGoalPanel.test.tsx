@@ -70,8 +70,6 @@ describe("MainGoalPanel", () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText("Цель достигнута на снимке 30.06.2031"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Цель достигнута на снимке 30.06.2031")).toBeInTheDocument();
   });
 });
