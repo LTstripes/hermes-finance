@@ -100,7 +100,7 @@ describe("AccountsPage", () => {
     render(<AccountsPage />);
 
     await screen.findByText("Нет счетов");
-    await user.click(screen.getByRole("button", { name: "Создать счёт" }));
+    await user.click(screen.getAllByRole("button", { name: "Создать счёт" })[0]);
     await user.type(screen.getByLabelText("Название"), "Новый ИИС");
     await user.selectOptions(screen.getByLabelText("Тип"), "iis");
     await user.click(screen.getByRole("button", { name: "Создать" }));
