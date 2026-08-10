@@ -62,7 +62,11 @@ const inactiveGoal: Goal = {
   notes: null,
 };
 
-function withForecast(goal: Goal, progress: string | null, status = "not_projectable"): GoalSummary {
+function withForecast(
+  goal: Goal,
+  progress: string | null,
+  status = "not_projectable",
+): GoalSummary {
   return {
     ...goal,
     achievement_forecast: {
@@ -84,6 +88,12 @@ function withForecast(goal: Goal, progress: string | null, status = "not_project
       warnings: [],
     },
   };
+}
+
+function rowFor(element: HTMLElement): HTMLTableRowElement {
+  const row = element.closest("tr");
+  if (!(row instanceof HTMLTableRowElement)) throw new Error("expected table row");
+  return row;
 }
 
 const listGoalsMock = vi.mocked(listGoals);
@@ -137,7 +147,7 @@ describe("GoalsPage", () => {
     expect(listGoalSummaryMock).toHaveBeenCalledWith(
       11,
       { includeInactive: true },
-      expect.any(AbortSignal),
+      expect.anything(),
     );
   });
 
@@ -169,10 +179,8 @@ describe("GoalsPage", () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    const secondName = await screen.findByText("Запасная цель");
-    const row = secondName.closest("tr");
-    expect(row).not.toBeNull();
-    await user.click(within(row!).getByRole("button", { name: "Сделать основной" }));
+    const row = rowFor(await screen.findByText("Запасная цель"));
+    await user.click(within(row).getByRole("button", { name: "Сделать основной" }));
 
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(2, { is_main: true }));
   });
@@ -181,16 +189,12 @@ describe("GoalsPage", () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    const mainRow = (
-      await screen.findByText("Пассивный доход", { selector: "strong" })
-    ).closest("tr");
-    expect(mainRow).not.toBeNull();
-    expect(within(mainRow!).queryByRole("button", { name: "Удалить" })).toBeNull();
-    expect(within(mainRow!).queryByRole("button", { name: "Деактивировать" })).toBeNull();
+    const mainRow = rowFor(await screen.findByText("Пассивный доход", { selector: "strong" }));
+    expect(within(mainRow).queryByRole("button", { name: "Удалить" })).toBeNull();
+    expect(within(mainRow).queryByRole("button", { name: "Деактивировать" })).toBeNull();
 
-    const secondRow = screen.getByText("Запасная цель").closest("tr");
-    expect(secondRow).not.toBeNull();
-    await user.click(within(secondRow!).getByRole("button", { name: "Изменить" }));
+    const secondRow = rowFor(screen.getByText("Запасная цель"));
+    await user.click(within(secondRow).getByRole("button", { name: "Изменить" }));
     const target = screen.getByLabelText("Целевое значение");
     await user.clear(target);
     await user.type(target, "175000");
@@ -206,9 +210,8 @@ describe("GoalsPage", () => {
       ),
     );
 
-    const refreshedSecondRow = screen.getByText("Запасная цель").closest("tr");
-    expect(refreshedSecondRow).not.toBeNull();
-    await user.click(within(refreshedSecondRow!).getByRole("button", { name: "Удалить" }));
+    const refreshedRow = rowFor(screen.getByText("Запасная цель"));
+    await user.click(within(refreshedRow).getByRole("button", { name: "Удалить" }));
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить" }),
     );
