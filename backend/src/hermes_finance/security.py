@@ -50,10 +50,7 @@ def _is_starlette_test_client(request: Request, host_header: str | None) -> bool
 
     client = request.scope.get("client")
     return bool(
-        host_header == "testserver"
-        and client
-        and len(client) >= 1
-        and client[0] == "testclient"
+        host_header == "testserver" and client and len(client) >= 1 and client[0] == "testclient"
     )
 
 
