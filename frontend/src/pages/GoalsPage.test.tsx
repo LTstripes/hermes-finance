@@ -71,7 +71,9 @@ function withForecast(goal: Goal, progress: string | null, status = "not_project
       as_of_date: "2031-02-28",
       method_version: "goal_achievement_v1",
       source_forecast_version: goal.goal_type === "passive_income" ? "v1" : null,
-      status: goal.is_active ? (status as GoalSummary["achievement_forecast"]["status"]) : "inactive",
+      status: goal.is_active
+        ? (status as GoalSummary["achievement_forecast"]["status"])
+        : "inactive",
       reason_code: goal.is_active ? "no_trajectory_model" : "goal_inactive",
       current_value: goal.is_active ? { amount: "80000.00", currency: "RUB" } : null,
       target_value: goal.target_value,
@@ -126,7 +128,7 @@ describe("GoalsPage", () => {
   it("shows active/inactive goals and backend-derived progress for the newest month", async () => {
     render(<GoalsPage />);
 
-    expect(await screen.findByText("Пассивный доход")).toBeInTheDocument();
+    expect(await screen.findByText("Пассивный доход", { selector: "strong" })).toBeInTheDocument();
     expect(screen.getByText("Капитал потом")).toBeInTheDocument();
     expect(screen.getByLabelText("Оценка на месяц")).toHaveValue("11");
     expect(screen.getByText("80,00%")).toBeInTheDocument();
@@ -143,7 +145,7 @@ describe("GoalsPage", () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    await screen.findByText("Пассивный доход");
+    await screen.findByText("Пассивный доход", { selector: "strong" });
     await user.click(screen.getByRole("button", { name: "Создать цель" }));
     await user.type(screen.getByLabelText("Название"), "Новая цель");
     await user.type(screen.getByLabelText("Целевое значение"), "250000,50");
@@ -179,7 +181,9 @@ describe("GoalsPage", () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    const mainRow = (await screen.findByText("Пассивный доход")).closest("tr");
+    const mainRow = (
+      await screen.findByText("Пассивный доход", { selector: "strong" })
+    ).closest("tr");
     expect(mainRow).not.toBeNull();
     expect(within(mainRow!).queryByRole("button", { name: "Удалить" })).toBeNull();
     expect(within(mainRow!).queryByRole("button", { name: "Деактивировать" })).toBeNull();
@@ -202,8 +206,12 @@ describe("GoalsPage", () => {
       ),
     );
 
-    await user.click(within(secondRow!).getByRole("button", { name: "Удалить" }));
-    await user.click(screen.getByRole("button", { name: "Удалить" }));
+    const refreshedSecondRow = screen.getByText("Запасная цель").closest("tr");
+    expect(refreshedSecondRow).not.toBeNull();
+    await user.click(within(refreshedSecondRow!).getByRole("button", { name: "Удалить" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить" }),
+    );
     await waitFor(() => expect(deleteGoalMock).toHaveBeenCalledWith(2));
   });
 });
