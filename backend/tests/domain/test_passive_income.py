@@ -19,7 +19,7 @@ from hermes_finance.domain.passive_income import (
 @pytest.mark.parametrize(
     ("flow_type", "expected_bucket"),
     [
-        (InvestmentCashFlowType.INTEREST, PassiveIncomeSourceBucket.DEPOSIT_INTEREST),
+        (InvestmentCashFlowType.INTEREST, PassiveIncomeSourceBucket.OTHER_CAPITAL_INCOME),
         (InvestmentCashFlowType.COUPON, PassiveIncomeSourceBucket.BOND_COUPONS),
         (InvestmentCashFlowType.DIVIDEND, PassiveIncomeSourceBucket.DIVIDENDS),
         (InvestmentCashFlowType.OTHER, PassiveIncomeSourceBucket.OTHER_CAPITAL_INCOME),

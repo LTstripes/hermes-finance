@@ -3,6 +3,7 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -15,7 +16,7 @@ from hermes_finance.domain import (
     RubleAmount,
 )
 from hermes_finance.domain.passive_income import PassiveIncomeSourceBucket
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, IncomeEntry, InvestmentCashFlow
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.incomes import create_income_entry
@@ -131,8 +132,45 @@ def test_deposit_interest_not_duplicated_from_cash_flows(tmp_path: Path) -> None
             source="synthetic",
         )
         result = passive_income_for_month(session, month_id)
-        # Deposit interest = 500.00 from snapshots + 100.00 INTEREST flow from brokerage
-        assert result.breakdown.deposit_interest == RubleAmount(60_000)
+        # Deposit interest comes only from snapshots; brokerage INTEREST is other capital income.
+        assert result.breakdown.deposit_interest == RubleAmount(50_000)
+        assert result.breakdown.other_capital_income == RubleAmount(10_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "account_type", [AccountType.BROKERAGE, AccountType.IIS, AccountType.OTHER]
+)
+def test_interest_on_capital_accounts_goes_to_other_capital_income(
+    tmp_path: Path, account_type: AccountType
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        account = create_account(
+            session, name=f"Synthetic {account_type.value}", account_type=account_type
+        )
+        create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.id,
+            instrument_id=None,
+            flow_type=InvestmentCashFlowType.INTEREST,
+            event_date=date(2030, 5, 10),
+            gross_amount="100.00",
+            tax_amount="0.00",
+            commission_amount="0.00",
+            net_amount="100.00",
+            source="synthetic",
+        )
+
+        result = passive_income_for_month(session, month_id)
+
+        assert result.breakdown.deposit_interest == RubleAmount(0)
+        assert result.breakdown.other_capital_income == RubleAmount(10_000)
+        assert result.total_net_passive_income == RubleAmount(10_000)
     finally:
         session.close()
         database.engine.dispose()
@@ -340,8 +378,8 @@ def test_income_include_in_passive_true_counted(tmp_path: Path) -> None:
         create_income_entry(
             session,
             reporting_month_id=month_id,
-            income_type=IncomeType.SIDE_INCOME,
-            name="Synthetic Rent",
+            income_type=IncomeType.OTHER,
+            name="Synthetic Other",
             gross_amount="10000.00",
             tax_amount="1300.00",
             net_amount="8700.00",
@@ -350,6 +388,82 @@ def test_income_include_in_passive_true_counted(tmp_path: Path) -> None:
         result = passive_income_for_month(session, month_id)
         assert result.breakdown.other_capital_income == RubleAmount(870_000)
         assert result.total_net_passive_income == RubleAmount(870_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_legacy_invalid_income_passive_flags_are_ignored(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        for income_type in (
+            IncomeType.SALARY,
+            IncomeType.BONUS,
+            IncomeType.SIDE_INCOME,
+        ):
+            session.add(
+                IncomeEntry(
+                    reporting_month_id=month_id,
+                    income_type=income_type.value,
+                    name=f"Legacy invalid {income_type.value}",
+                    gross_amount_kopecks=100_000,
+                    tax_amount_kopecks=0,
+                    net_amount_kopecks=100_000,
+                    include_in_cash_flow=True,
+                    include_in_passive_income=True,
+                )
+            )
+        session.commit()
+
+        result = passive_income_for_month(session, month_id)
+
+        assert result.total_net_passive_income == RubleAmount(0)
+        assert result.breakdown.other_capital_income == RubleAmount(0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_legacy_deposit_interest_flow_is_ignored_beside_snapshot(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        deposit = create_account(
+            session, name="Synthetic Legacy Deposit", account_type=AccountType.DEPOSIT
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=deposit.id,
+            name="Legacy Depo",
+            deposit_type=DepositType.DEPOSIT,
+            balance="100000.00",
+            annual_rate="10.00",
+            actual_interest_received="500.00",
+        )
+        session.add(
+            InvestmentCashFlow(
+                reporting_month_id=month_id,
+                account_id=deposit.id,
+                instrument_id=None,
+                flow_type=InvestmentCashFlowType.INTEREST.value,
+                event_date=date(2030, 5, 10),
+                gross_amount_kopecks=10_000,
+                tax_amount_kopecks=0,
+                commission_amount_kopecks=0,
+                net_amount_kopecks=10_000,
+                currency="RUB",
+                source="legacy",
+            )
+        )
+        session.commit()
+
+        result = passive_income_for_month(session, month_id)
+
+        assert result.breakdown.deposit_interest == RubleAmount(50_000)
+        assert result.breakdown.other_capital_income == RubleAmount(0)
+        assert result.total_net_passive_income == RubleAmount(50_000)
     finally:
         session.close()
         database.engine.dispose()

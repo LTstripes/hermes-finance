@@ -155,6 +155,26 @@ def test_income_crud_and_cashback_flag(client: TestClient) -> None:
     _assert_error(missing.json(), "not_found")
 
 
+@pytest.mark.parametrize("income_type", ["salary", "bonus", "side_income", "cashback"])
+def test_income_api_rejects_forbidden_passive_types(client: TestClient, income_type: str) -> None:
+    month_id = _month(client, year=2031, month=2)
+    response = client.post(
+        "/api/incomes",
+        json={
+            "reporting_month_id": month_id,
+            "income_type": income_type,
+            "name": "Forbidden passive",
+            "gross_amount": _rub("100.00"),
+            "tax_amount": _rub("0.00"),
+            "net_amount": _rub("100.00"),
+            "include_in_passive_income": True,
+        },
+    )
+
+    assert response.status_code == 422
+    _assert_error(response.json(), "unprocessable")
+
+
 # --- investment flows ---
 
 

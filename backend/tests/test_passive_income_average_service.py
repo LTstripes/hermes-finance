@@ -214,8 +214,8 @@ def test_month_aggregates_deposit_coupon_and_income_sources(tmp_path: Path) -> N
         create_income_entry(
             session,
             reporting_month_id=month_id,
-            income_type=IncomeType.SIDE_INCOME,
-            name="Synthetic Rent",
+            income_type=IncomeType.OTHER,
+            name="Synthetic Other",
             gross_amount="10000.00",
             tax_amount="1300.00",
             net_amount="8700.00",

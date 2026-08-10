@@ -160,7 +160,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-04. Passive-income invariants и защита от double count
 
 **Priority:** P0  
-**Status:** READY  
+**Status:** DONE
 **Route:** Terra High / DeepSeek Free optional tests worker / Terra High reviewer
 
 ## Проблема

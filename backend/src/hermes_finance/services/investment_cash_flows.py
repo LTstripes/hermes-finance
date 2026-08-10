@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import InvestmentCashFlowType, RubleAmount
@@ -117,9 +117,14 @@ def list_passive_income_cash_flows(
     return list(
         session.scalars(
             select(InvestmentCashFlow)
+            .join(Account, InvestmentCashFlow.account_id == Account.id)
             .where(
                 InvestmentCashFlow.reporting_month_id == reporting_month_id,
                 InvestmentCashFlow.flow_type.in_(types),
+                or_(
+                    InvestmentCashFlow.flow_type != InvestmentCashFlowType.INTEREST.value,
+                    Account.account_type.notin_({"deposit", "savings"}),
+                ),
             )
             .order_by(InvestmentCashFlow.event_date, InvestmentCashFlow.id)
         )

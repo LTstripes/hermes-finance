@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType, InvestmentCashFlowType
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, InvestmentCashFlow
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.investment_cash_flows import (
@@ -154,6 +154,47 @@ def test_deposit_interest_must_not_duplicate_deposit_snapshot(tmp_path: Path) ->
                 commission_amount="0.00",
                 net_amount="100.00",
             )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_passive_flow_list_ignores_legacy_deposit_interest(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, brokerage_id, deposit_id, instrument_id = build_environment(session)
+        legacy_deposit_interest = InvestmentCashFlow(
+            reporting_month_id=month_id,
+            account_id=deposit_id,
+            instrument_id=instrument_id,
+            flow_type=InvestmentCashFlowType.INTEREST.value,
+            event_date=date(2030, 5, 12),
+            gross_amount_kopecks=10_000,
+            tax_amount_kopecks=0,
+            commission_amount_kopecks=0,
+            net_amount_kopecks=10_000,
+            currency="RUB",
+            source="legacy",
+        )
+        valid_brokerage_interest = InvestmentCashFlow(
+            reporting_month_id=month_id,
+            account_id=brokerage_id,
+            instrument_id=instrument_id,
+            flow_type=InvestmentCashFlowType.INTEREST.value,
+            event_date=date(2030, 5, 13),
+            gross_amount_kopecks=20_000,
+            tax_amount_kopecks=0,
+            commission_amount_kopecks=0,
+            net_amount_kopecks=20_000,
+            currency="RUB",
+            source="legacy",
+        )
+        session.add_all([legacy_deposit_interest, valid_brokerage_interest])
+        session.commit()
+
+        passive = list_passive_income_cash_flows(session, month_id)
+
+        assert [flow.id for flow in passive] == [valid_brokerage_interest.id]
     finally:
         session.close()
         database.engine.dispose()

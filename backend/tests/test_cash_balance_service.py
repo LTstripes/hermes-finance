@@ -14,7 +14,7 @@ from hermes_finance.domain import (
     RubleAmount,
 )
 from hermes_finance.domain.cash_balance import CashBalanceBreakdown, CashBalanceResult
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, IncomeEntry
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash_balance import cash_balance_for_month
 from hermes_finance.services.deposits import create_deposit_snapshot
@@ -180,6 +180,42 @@ def test_income_excluded_from_passive_still_counts_in_balance(tmp_path: Path) ->
         assert result.breakdown.salary_net == RubleAmount(1_000_000)
         assert result.breakdown.passive_income == RubleAmount(0)
         assert result.total == RubleAmount(1_000_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_legacy_invalid_passive_income_flags_count_cash_once(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        legacy_rows = (
+            (IncomeType.SALARY, 100_000),
+            (IncomeType.BONUS, 200_000),
+            (IncomeType.SIDE_INCOME, 300_000),
+        )
+        for income_type, net_amount_kopecks in legacy_rows:
+            session.add(
+                IncomeEntry(
+                    reporting_month_id=month_id,
+                    income_type=income_type.value,
+                    name=f"Legacy {income_type.value}",
+                    gross_amount_kopecks=net_amount_kopecks,
+                    tax_amount_kopecks=0,
+                    net_amount_kopecks=net_amount_kopecks,
+                    include_in_cash_flow=True,
+                    include_in_passive_income=True,
+                )
+            )
+        session.commit()
+
+        result = cash_balance_for_month(session, month_id)
+
+        assert result.breakdown.salary_net == RubleAmount(100_000)
+        assert result.breakdown.bonus_net == RubleAmount(200_000)
+        assert result.breakdown.side_income_net == RubleAmount(300_000)
+        assert result.breakdown.passive_income == RubleAmount(0)
+        assert result.total == RubleAmount(600_000)
     finally:
         session.close()
         database.engine.dispose()

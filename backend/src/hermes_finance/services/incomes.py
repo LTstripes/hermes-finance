@@ -43,11 +43,9 @@ def _passive_income_flag(
     income_type: IncomeType,
     include_in_passive_income: bool | None,
 ) -> bool:
-    if income_type is IncomeType.CASHBACK:
-        if include_in_passive_income is True:
-            raise ValueError("cashback must not be included in passive income")
-        return False
-    return bool(include_in_passive_income)
+    if include_in_passive_income is True and income_type is not IncomeType.OTHER:
+        raise ValueError("only other income may be included in passive income")
+    return income_type is IncomeType.OTHER and bool(include_in_passive_income)
 
 
 def list_income_entries(session: Session) -> list[IncomeEntry]:
@@ -123,8 +121,8 @@ def update_income_entry(
         if income_type is not None
         else IncomeType(entry.income_type)
     )
-    if income_type is not None:
-        entry.income_type = final_type.value
+    if final_type is not IncomeType.OTHER and include_in_passive_income is True:
+        _passive_income_flag(final_type, include_in_passive_income)
     if name is not None:
         entry.name = _normalize_name(name)
     if gross_amount is not None:
@@ -139,7 +137,9 @@ def update_income_entry(
         entry.is_recurring = is_recurring
     if include_in_cash_flow is not None:
         entry.include_in_cash_flow = include_in_cash_flow
-    if final_type is IncomeType.CASHBACK:
+    if income_type is not None:
+        entry.income_type = final_type.value
+    if final_type is not IncomeType.OTHER:
         entry.include_in_passive_income = False
     elif include_in_passive_income is not None:
         entry.include_in_passive_income = _passive_income_flag(

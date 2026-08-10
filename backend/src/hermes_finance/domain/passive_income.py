@@ -17,8 +17,9 @@ Deposit actual interest comes ONLY from ``deposit_snapshots.actual_interest_rece
 calculator receives the already-separated amounts.
 
 Cashback is never passive income (wiki invariant; also ``IncomeType.CASHBACK``
-excluded at the ORM layer).  The classification helper excludes CASHBACK because
-it is not an :class:`InvestmentCashFlowType` that counts as passive income.
+excluded at the ORM layer).  Generic investment interest is capital income,
+not deposit interest; the ORM layer excludes legacy deposit/savings interest
+flows because deposit snapshots are the canonical source for that bucket.
 
 All money values use :class:`~hermes_finance.domain.values.RubleAmount`
 (integer kopecks); binary ``float`` is never used.
@@ -90,7 +91,7 @@ class PassiveIncomeResult:
 
 # Mapping from cash-flow types to passive-income buckets.
 _FLOW_TYPE_TO_BUCKET: dict[InvestmentCashFlowType, PassiveIncomeSourceBucket] = {
-    InvestmentCashFlowType.INTEREST: PassiveIncomeSourceBucket.DEPOSIT_INTEREST,
+    InvestmentCashFlowType.INTEREST: PassiveIncomeSourceBucket.OTHER_CAPITAL_INCOME,
     InvestmentCashFlowType.COUPON: PassiveIncomeSourceBucket.BOND_COUPONS,
     InvestmentCashFlowType.DIVIDEND: PassiveIncomeSourceBucket.DIVIDENDS,
     InvestmentCashFlowType.OTHER: PassiveIncomeSourceBucket.OTHER_CAPITAL_INCOME,

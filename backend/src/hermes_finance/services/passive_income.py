@@ -38,7 +38,7 @@ from hermes_finance.domain.passive_income import (
     classify_flow_type,
 )
 from hermes_finance.domain.values import RubleAmount
-from hermes_finance.persistence import DepositSnapshot, IncomeEntry, InvestmentCashFlow
+from hermes_finance.persistence import Account, DepositSnapshot, IncomeEntry, InvestmentCashFlow
 
 
 def passive_income_for_month(session: Session, reporting_month_id: int) -> PassiveIncomeResult:
@@ -77,7 +77,10 @@ def passive_income_for_month(session: Session, reporting_month_id: int) -> Passi
             InvestmentCashFlow.account_id,
             InvestmentCashFlow.instrument_id,
             InvestmentCashFlow.net_amount_kopecks,
-        ).where(InvestmentCashFlow.reporting_month_id == reporting_month_id)
+            Account.account_type,
+        )
+        .join(Account, InvestmentCashFlow.account_id == Account.id)
+        .where(InvestmentCashFlow.reporting_month_id == reporting_month_id)
     ).all()
 
     bucket_totals: dict[PassiveIncomeSourceBucket, int] = {
@@ -87,7 +90,9 @@ def passive_income_for_month(session: Session, reporting_month_id: int) -> Passi
         PassiveIncomeSourceBucket.OTHER_CAPITAL_INCOME: 0,
     }
 
-    for flow_type_str, account_id, instrument_id, net_kop in flow_rows:
+    for flow_type_str, account_id, instrument_id, net_kop, account_type in flow_rows:
+        if flow_type_str == "interest" and account_type in {"deposit", "savings"}:
+            continue
         counts, bucket = classify_flow_type(flow_type_str)
         if not counts or bucket is None:
             continue
@@ -103,7 +108,7 @@ def passive_income_for_month(session: Session, reporting_month_id: int) -> Passi
             )
         )
 
-    # --- Income entries: include_in_passive_income=True AND income_type != CASHBACK ---
+    # --- Income entries: only OTHER with include_in_passive_income=True ---
     income_rows = session.execute(
         select(
             IncomeEntry.id,
@@ -111,8 +116,8 @@ def passive_income_for_month(session: Session, reporting_month_id: int) -> Passi
             IncomeEntry.net_amount_kopecks,
         ).where(
             IncomeEntry.reporting_month_id == reporting_month_id,
+            IncomeEntry.income_type == "other",
             IncomeEntry.include_in_passive_income.is_(True),
-            IncomeEntry.income_type != "cashback",
         )
     ).all()
 
@@ -127,9 +132,7 @@ def passive_income_for_month(session: Session, reporting_month_id: int) -> Passi
             )
         )
 
-    deposit_interest = RubleAmount(
-        deposit_interest_kopecks + bucket_totals[PassiveIncomeSourceBucket.DEPOSIT_INTEREST]
-    )
+    deposit_interest = RubleAmount(deposit_interest_kopecks)
     bond_coupons = RubleAmount(bucket_totals[PassiveIncomeSourceBucket.BOND_COUPONS])
     dividends = RubleAmount(bucket_totals[PassiveIncomeSourceBucket.DIVIDENDS])
     other_capital_income = RubleAmount(

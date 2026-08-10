@@ -53,7 +53,7 @@ def test_cashback_rejects_explicit_passive_income_flag(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id = build_environment(session)
-        with pytest.raises(ValueError, match="must not be included in passive income"):
+        with pytest.raises(ValueError, match="passive income"):
             create_income_entry(
                 session,
                 reporting_month_id=month_id,
@@ -69,21 +69,46 @@ def test_cashback_rejects_explicit_passive_income_flag(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-def test_non_cashback_income_can_be_marked_passive(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("income_type", "allowed"),
+    [
+        (IncomeType.SALARY, False),
+        (IncomeType.BONUS, False),
+        (IncomeType.SIDE_INCOME, False),
+        (IncomeType.CASHBACK, False),
+        (IncomeType.OTHER, True),
+    ],
+)
+def test_only_other_income_can_be_marked_passive(
+    tmp_path: Path, income_type: IncomeType, allowed: bool
+) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id = build_environment(session)
-        entry = create_income_entry(
-            session,
-            reporting_month_id=month_id,
-            income_type=IncomeType.SIDE_INCOME,
-            name="Synthetic Rent",
-            gross_amount="10000.00",
-            tax_amount="1300.00",
-            net_amount="8700.00",
-            include_in_passive_income=True,
-        )
-        assert entry.include_in_passive_income is True
+        if allowed:
+            entry = create_income_entry(
+                session,
+                reporting_month_id=month_id,
+                income_type=income_type,
+                name="Synthetic Other",
+                gross_amount="10000.00",
+                tax_amount="1300.00",
+                net_amount="8700.00",
+                include_in_passive_income=True,
+            )
+            assert entry.include_in_passive_income is True
+        else:
+            with pytest.raises(ValueError, match="passive income"):
+                create_income_entry(
+                    session,
+                    reporting_month_id=month_id,
+                    income_type=income_type,
+                    name="Synthetic Forbidden Passive",
+                    gross_amount="10000.00",
+                    tax_amount="1300.00",
+                    net_amount="8700.00",
+                    include_in_passive_income=True,
+                )
     finally:
         session.close()
         database.engine.dispose()
@@ -188,52 +213,70 @@ def test_income_validation_rejects_bad_inputs(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-def _build_passive_income_entry(session: Session, month_id: int):
-    return create_income_entry(
-        session,
-        reporting_month_id=month_id,
-        income_type=IncomeType.SIDE_INCOME,
-        name="Synthetic Passive Rent",
-        gross_amount="10000.00",
-        tax_amount="1300.00",
-        net_amount="8700.00",
-        include_in_passive_income=True,
-    )
-
-
-def test_update_switching_type_to_cashback_forces_passive_income_false(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "target_type",
+    [IncomeType.SALARY, IncomeType.BONUS, IncomeType.SIDE_INCOME, IncomeType.CASHBACK],
+)
+def test_update_other_passive_to_forbidden_type_resets_passive_without_flag(
+    tmp_path: Path, target_type: IncomeType
+) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id = build_environment(session)
-        entry = _build_passive_income_entry(session, month_id)
-        assert entry.include_in_passive_income is True
-
-        updated = update_income_entry(session, entry.id, income_type=IncomeType.CASHBACK)
-
-        assert updated.income_type == IncomeType.CASHBACK.value
-        assert updated.include_in_passive_income is False
-    finally:
-        session.close()
-        database.engine.dispose()
-
-
-def test_update_switching_to_cashback_ignores_explicit_passive_true(tmp_path: Path) -> None:
-    session, database = session_for(tmp_path)
-    try:
-        month_id = build_environment(session)
-        entry = _build_passive_income_entry(session, month_id)
-
-        updated = update_income_entry(
-            session, entry.id, income_type=IncomeType.CASHBACK, include_in_passive_income=True
+        entry = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.OTHER,
+            name="Synthetic Other Passive",
+            gross_amount="10000.00",
+            tax_amount="1300.00",
+            net_amount="8700.00",
+            include_in_passive_income=True,
         )
 
+        updated = update_income_entry(session, entry.id, income_type=target_type)
+
+        assert updated.income_type == target_type.value
         assert updated.include_in_passive_income is False
     finally:
         session.close()
         database.engine.dispose()
 
 
-def test_update_cashback_entry_keeps_passive_income_false(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "target_type",
+    [IncomeType.SALARY, IncomeType.BONUS, IncomeType.SIDE_INCOME, IncomeType.CASHBACK],
+)
+def test_update_other_passive_to_forbidden_type_rejects_explicit_passive_true(
+    tmp_path: Path, target_type: IncomeType
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_environment(session)
+        entry = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.OTHER,
+            name="Synthetic Other Passive",
+            gross_amount="10000.00",
+            tax_amount="1300.00",
+            net_amount="8700.00",
+            include_in_passive_income=True,
+        )
+
+        with pytest.raises(ValueError, match="passive income"):
+            update_income_entry(
+                session,
+                entry.id,
+                income_type=target_type,
+                include_in_passive_income=True,
+            )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_update_cashback_entry_rejects_explicit_passive_true(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id = build_environment(session)
@@ -248,11 +291,10 @@ def test_update_cashback_entry_keeps_passive_income_false(tmp_path: Path) -> Non
         )
         assert entry.include_in_passive_income is False
 
-        updated = update_income_entry(
-            session, entry.id, name="Updated Cashback", include_in_passive_income=True
-        )
-
-        assert updated.include_in_passive_income is False
+        with pytest.raises(ValueError, match="passive income"):
+            update_income_entry(
+                session, entry.id, name="Updated Cashback", include_in_passive_income=True
+            )
     finally:
         session.close()
         database.engine.dispose()
@@ -280,15 +322,15 @@ def test_update_cashback_entry_without_flag_keeps_passive_income_false(tmp_path:
         database.engine.dispose()
 
 
-def test_update_non_cashback_keeps_explicit_passive_income_flag(tmp_path: Path) -> None:
+def test_update_other_keeps_explicit_passive_income_flag(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id = build_environment(session)
         entry = create_income_entry(
             session,
             reporting_month_id=month_id,
-            income_type=IncomeType.SIDE_INCOME,
-            name="Synthetic Rent",
+            income_type=IncomeType.OTHER,
+            name="Synthetic Other",
             gross_amount="10000.00",
             tax_amount="1300.00",
             net_amount="8700.00",
@@ -298,7 +340,7 @@ def test_update_non_cashback_keeps_explicit_passive_income_flag(tmp_path: Path) 
 
         updated = update_income_entry(session, entry.id, include_in_passive_income=True)
 
-        assert updated.income_type == IncomeType.SIDE_INCOME.value
+        assert updated.income_type == IncomeType.OTHER.value
         assert updated.include_in_passive_income is True
     finally:
         session.close()
