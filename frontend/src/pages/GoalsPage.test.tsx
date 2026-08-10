@@ -141,8 +141,8 @@ describe("GoalsPage", () => {
     expect(await screen.findByText("Пассивный доход", { selector: "strong" })).toBeInTheDocument();
     expect(screen.getByText("Капитал потом")).toBeInTheDocument();
     expect(screen.getByLabelText("Оценка на месяц")).toHaveValue("11");
-    expect(screen.getByText("80,00%")).toBeInTheDocument();
-    expect(screen.getByText("53,33%")).toBeInTheDocument();
+    expect(await screen.findByText(/80,00%/)).toBeInTheDocument();
+    expect(await screen.findByText(/53,33%/)).toBeInTheDocument();
     expect(screen.getAllByText("Нет честного прогноза даты").length).toBeGreaterThan(0);
     expect(listGoalSummaryMock).toHaveBeenCalledWith(
       11,
