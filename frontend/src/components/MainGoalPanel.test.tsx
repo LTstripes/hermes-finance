@@ -56,7 +56,7 @@ describe("MainGoalPanel", () => {
 
     expect(await screen.findByText("Свобода")).toBeInTheDocument();
     expect(screen.getByText("12,34%")).toBeInTheDocument();
-    expect(screen.getByText("999,99 ₽")).toBeInTheDocument();
+    expect(screen.getByText(/999,99\s₽/)).toBeInTheDocument();
     expect(screen.getByText("Дата достижения: нет честного прогноза")).toBeInTheDocument();
     expect(screen.getByText("Недостаточно данных для траектории")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
