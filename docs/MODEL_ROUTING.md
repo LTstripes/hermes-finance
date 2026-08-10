@@ -4,11 +4,11 @@
 
 ## Обязательный launch gate
 
-До начала **каждой** backlog-задачи агент обязан:
+До начала **каждой task-card из активного release backlog** агент обязан:
 
-1. прочитать этот файл, точную карточку из `HERMES_TASKS.md` и связанные ADR/спецификацию;
+1. прочитать этот файл, точную task-card из активного release-файла (например, `docs/RELEASE_0_2.md`) и связанные ADR/разделы спецификации; `docs/HERMES_TASKS.md` использовать как исторический MVP reference, когда это нужно для контекста;
 2. определить route в форме `primary / worker / reviewer`, указав reasoning level, причину и необходимость делегирования;
-3. считать сообщение владельца `начинаем <ID>`, `запускай <ID>` или эквивалентное явное назначение согласием на канонический route из этого файла; отдельное повторное подтверждение модели не требуется, если владелец не задал другой route;
+3. считать сообщение владельца `начинаем <ID>`, `запускай <ID>` или эквивалентное явное назначение согласием на канонический route из активной task-card с ограничениями этого файла; отдельное повторное подтверждение модели не требуется, если владелец не задал другой route;
 4. если канонического route нет, владелец его переопределил или сработал escalation gate, предложить route и дождаться выбора;
 5. не менять Hermes-конфиг заранее;
 6. после завершения задачи указать рекомендуемый route следующей задачи и явно отметить её как не начатую.
@@ -55,7 +55,7 @@
 | B14 expected flows | Terra High | Luna High по закрытому контракту | Terra | forecast semantics и versioned snapshots |
 | B15 expenses/savings | Luna High | DeepSeek Free как альтернатива | Luna | стандартные сущности и суммы по готовым правилам |
 | B16 debts | Luna High | DeepSeek Free как альтернатива | Luna | простой вычет долга из капитала |
-| B17 property/mortgage | Luna High | DeepSeek Free как альтернатива | Terra только при новом контракте | formula contract и zero-division behavior уже заданы |
+| B17 property/mortgage | Luna High | DeepSeek Free как альтернатива | Terra только при новом контракте | formula contract и zero-division behavior уже задан |
 | B18 goals | Luna High | DeepSeek Free как альтернатива | Luna | конфигурируемые цели без UI hardcode |
 | B19 comments | Luna High | DeepSeek Free как альтернатива | Luna | упорядоченный CRUD без финансовой логики |
 | checkpoint после B19 | Sol High | — | Sol | один blocker-level архитектурный обзор без автоматического rewrite |
