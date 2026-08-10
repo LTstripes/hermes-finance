@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import {
   createGoal,
   deleteGoal,
@@ -71,7 +71,11 @@ export function GoalsPage() {
     } catch (error) {
       if (!signal?.aborted) {
         setGoals([]);
-        setGoalsError(formatApiError(error));
+        setGoalsError(
+          error instanceof ApiClientError && error.status === 404
+            ? "API /api/goals отсутствует"
+            : formatApiError(error),
+        );
       }
     } finally {
       if (!signal?.aborted) setGoalsLoading(false);
