@@ -4,7 +4,13 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import type { AssetAllocationPoint } from "../../api/types";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { moneyAmount, sumMoneyAmounts } from "../../lib/money";
+import {
+  moneyAmount,
+  moneySharePercent,
+  moneyToChartNumber,
+  sumMoneyAmounts,
+  toKopecks,
+} from "../../lib/money";
 import { EmptyState, Td, Th } from "../ui";
 
 const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
@@ -24,23 +30,26 @@ type Slice = {
 };
 
 function buildSlices(allocation: AssetAllocationPoint[]): Slice[] {
-  return allocation
-    .map((point) => {
-      const meta = ASSET_CLASS_META[point.asset_class] ?? {
-        label: point.asset_class,
-        color: "#6f786f",
-      };
-      const amount = moneyAmount(point.amount);
-      return {
+  return allocation.flatMap((point) => {
+    const meta = ASSET_CLASS_META[point.asset_class] ?? {
+      label: point.asset_class,
+      color: "#6f786f",
+    };
+    const amount = moneyAmount(point.amount);
+    if (toKopecks(amount) <= 0n) {
+      return [];
+    }
+    return [
+      {
         key: point.asset_class,
         label: meta.label,
         color: meta.color,
-        // Axis/arc position only — display always uses formatMoney on the string.
-        value: Number(amount),
+        // Recharts arc coordinate only; all totals/shares stay exact.
+        value: moneyToChartNumber(amount),
         amount,
-      };
-    })
-    .filter((slice) => slice.value > 0);
+      },
+    ];
+  });
 }
 
 function AllocationTooltip({ active, payload }: TooltipContentProps) {
@@ -68,8 +77,7 @@ export function AssetAllocationChart({ allocation }: { allocation: AssetAllocati
     );
   }
 
-  const totalKopecks = sumMoneyAmounts(slices.map((s) => s.amount));
-  const totalValue = slices.reduce((acc, s) => acc + s.value, 0);
+  const totalAmount = sumMoneyAmounts(slices.map((s) => s.amount));
 
   return (
     <section aria-label="Распределение ликвидных активов по классам" className="asset-allocation">
@@ -116,16 +124,14 @@ export function AssetAllocationChart({ allocation }: { allocation: AssetAllocati
                 {slice.label}
               </Td>
               <Td numeric>{formatMoney(slice.amount)}</Td>
-              <Td numeric>
-                {formatPercent(String((slice.value / totalValue) * 100), { digits: 1 })}
-              </Td>
+              <Td numeric>{formatPercent(moneySharePercent(slice.amount, totalAmount, 1))}</Td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
             <Td>Итого</Td>
-            <Td numeric>{formatMoney(totalKopecks)}</Td>
+            <Td numeric>{formatMoney(totalAmount)}</Td>
             <Td numeric>100%</Td>
           </tr>
         </tfoot>
