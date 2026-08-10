@@ -141,6 +141,9 @@ def test_g02_monthly_workflow_through_http(client: TestClient) -> None:
     assert summary_body["coverage"]["mandatory_expenses"] == _rub("20000.00")
     assert summary_body["cash_balance"]["breakdown"]["salary_net"] == _rub("87000.00")
 
+    source_closed = client.post(f"/api/months/{source_id}/close")
+    assert source_closed.status_code == 200, source_closed.text
+
     cloned = client.post(
         f"/api/months/{source_id}/clone",
         json={"year": 2031, "month": 2, "snapshot_date": "2031-02-28"},

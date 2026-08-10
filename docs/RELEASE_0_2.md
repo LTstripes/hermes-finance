@@ -138,7 +138,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-03. Реализация opening YTD gross для НДФЛ
 
 **Priority:** P0  
-**Status:** READY  
+**Status:** DONE
 **Route:** Terra High / Luna High optional worker / Terra High reviewer
 
 ## Сделать

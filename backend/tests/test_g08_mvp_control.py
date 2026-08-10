@@ -176,6 +176,15 @@ def test_g08_mvp_control_scenario(client: TestClient) -> None:
         )
     )
 
+    opening_context = client.put(
+        "/api/salary-tax/years/2049/opening-context",
+        json={
+            "effective_from_month": 12,
+            "opening_taxable_gross": _rub("0.00"),
+        },
+    )
+    assert opening_context.status_code == 200, opening_context.text
+
     source_dashboard = client.get(f"/api/months/{source_id}/dashboard")
     assert source_dashboard.status_code == 200, source_dashboard.text
     assert source_dashboard.json()["kpis"]["liquid_capital_net"]["amount"]

@@ -28,7 +28,16 @@ def _create_month(client: TestClient) -> int:
         json={"year": 2032, "month": 7, "snapshot_date": "2032-07-31"},
     )
     assert response.status_code == 201, response.text
-    return response.json()["id"]
+    month_id = response.json()["id"]
+    opening_context = client.put(
+        "/api/salary-tax/years/2032/opening-context",
+        json={
+            "effective_from_month": 7,
+            "opening_taxable_gross": {"amount": "0.00", "currency": "RUB"},
+        },
+    )
+    assert opening_context.status_code == 200, opening_context.text
+    return month_id
 
 
 def _table_counts(database: Database) -> dict[str, int]:

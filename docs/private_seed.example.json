@@ -30,5 +30,12 @@
       "include_in_returns": true,
       "notes": "Synthetic example only"
     }
+  ],
+  "salary_tax_opening_contexts": [
+    {
+      "tax_year": 2031,
+      "effective_from_month": 5,
+      "opening_taxable_gross": "400000.00"
+    }
   ]
 }

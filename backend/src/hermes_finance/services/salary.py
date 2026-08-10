@@ -11,10 +11,10 @@ Official progressive scale source:
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import IncomeType, RubleAmount
+from hermes_finance.domain import IncomeType, ReportingMonthStatus, RubleAmount
 from hermes_finance.domain.salary_tax import (
     SalaryTaxInput,
     SalaryTaxResult,
@@ -23,6 +23,10 @@ from hermes_finance.domain.salary_tax import (
 )
 from hermes_finance.persistence import IncomeEntry, ReportingMonth
 from hermes_finance.services.reporting_months import get_reporting_month
+from hermes_finance.services.salary_tax_context import (
+    SalaryTaxHistoryIncompleteError,
+    get_salary_tax_year_context,
+)
 from hermes_finance.services.tax_brackets import get_or_create_default_tax_brackets
 
 
@@ -30,8 +34,8 @@ def calculate_salary_tax(session: Session, reporting_month_id: int) -> SalaryTax
     """Calculate progressive НДФЛ for a reporting month's salary payment.
 
     * ``payment_gross`` = sum of SALARY gross for this reporting month.
-    * ``ytd_gross`` = sum of SALARY gross in strictly earlier reporting
-      months of the same calendar year.
+    * ``ytd_gross`` follows the opening-context contract: prior months must be
+      explicitly closed, and an optional annual opening baseline is used once.
     * Brackets are loaded (or seeded) from the tax-brackets configuration
       table for the reporting month's year.
 
@@ -48,15 +52,52 @@ def calculate_salary_tax(session: Session, reporting_month_id: int) -> SalaryTax
         )
     ).scalar_one()
 
-    ytd_gross = session.execute(
-        select(func.coalesce(func.sum(IncomeEntry.gross_amount_kopecks), 0))
-        .join(ReportingMonth, IncomeEntry.reporting_month_id == ReportingMonth.id)
-        .where(
-            ReportingMonth.year == year,
-            ReportingMonth.month < month,
-            IncomeEntry.income_type == IncomeType.SALARY.value,
-        )
-    ).scalar_one()
+    payment_gross = int(payment_gross)
+    if payment_gross == 0:
+        return SalaryTaxResult(tax_kopecks=0, calculated_net_kopecks=0, parts=())
+
+    context = get_salary_tax_year_context(session, year)
+    if month == 1:
+        ytd_gross = 0
+    else:
+        opening_gross = 0
+        first_required_month = 1
+        if context is not None and month >= context.effective_from_month:
+            opening_gross = context.opening_taxable_gross_kopecks
+            first_required_month = context.effective_from_month
+
+        known_month_rows = session.execute(
+            select(
+                ReportingMonth.month,
+                func.coalesce(func.sum(IncomeEntry.gross_amount_kopecks), 0),
+            )
+            .outerjoin(
+                IncomeEntry,
+                and_(
+                    IncomeEntry.reporting_month_id == ReportingMonth.id,
+                    IncomeEntry.income_type == IncomeType.SALARY.value,
+                ),
+            )
+            .where(
+                ReportingMonth.year == year,
+                ReportingMonth.month >= first_required_month,
+                ReportingMonth.month < month,
+                ReportingMonth.status == ReportingMonthStatus.CLOSED.value,
+            )
+            .group_by(ReportingMonth.month)
+        ).all()
+        known_months = {
+            int(month_number): int(gross or 0) for month_number, gross in known_month_rows
+        }
+        required_months = set(range(first_required_month, month))
+        missing_months = sorted(required_months - known_months.keys())
+        if missing_months:
+            raise SalaryTaxHistoryIncompleteError(
+                "salary tax history is incomplete before "
+                f"{year:04d}-{month:02d}; missing known month(s): "
+                + ", ".join(f"{year:04d}-{missing:02d}" for missing in missing_months)
+            )
+        ytd_gross = opening_gross + sum(known_months.values())
 
     brackets_orm = get_or_create_default_tax_brackets(session, year)
     brackets = tuple(

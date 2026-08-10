@@ -10,7 +10,7 @@ from hermes_finance.database import create_database
 from hermes_finance.domain import IncomeType, RubleAmount
 from hermes_finance.persistence import Base
 from hermes_finance.services.incomes import create_income_entry
-from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.salary import actual_net_for_month, calculate_salary_tax
 from hermes_finance.services.tax_brackets import (
     create_tax_bracket,
@@ -56,6 +56,7 @@ def test_ytd_accumulation_crosses_into_second_bracket(tmp_path: Path) -> None:
         month_ids = [build_month(session, 2031, m) for m in range(1, 5)]
         for month_id in month_ids:
             add_salary(session, month_id, "500000.00", "435000.00")
+            close_reporting_month(session, month_id)
         may_id = build_month(session, 2031, 5)
         add_salary(session, may_id, "500000.00", "435000.00")
 
@@ -102,11 +103,11 @@ def test_month_without_salary_returns_zeros(tmp_path: Path) -> None:
 def test_two_salary_entries_sum_into_payment_gross(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month_id = build_month(session, 2031, 7)
+        month_id = build_month(session, 2031, 1)
         add_salary(session, month_id, "250000.00", "217500.00")
         add_salary(session, month_id, "250000.00", "217500.00")
 
-        # payment = 500_000.00 RUB, no prior months -> 13% flat
+        # payment = 500_000.00 RUB in January -> 13% flat
         result = calculate_salary_tax(session, month_id)
         assert len(result.parts) == 1
         assert result.parts[0].rate_bps == 1300

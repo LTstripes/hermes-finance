@@ -21,6 +21,12 @@
       "items": {
         "$ref": "#/$defs/account"
       }
+    },
+    "salary_tax_opening_contexts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/salary_tax_opening_context"
+      }
     }
   },
   "$defs": {
@@ -105,6 +111,27 @@
         "notes": {
           "type": ["string", "null"],
           "maxLength": 2000
+        }
+      }
+    },
+    "salary_tax_opening_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tax_year", "effective_from_month", "opening_taxable_gross"],
+      "properties": {
+        "tax_year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "effective_from_month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "opening_taxable_gross": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$"
         }
       }
     }

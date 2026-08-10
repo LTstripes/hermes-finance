@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
+from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
 
 logger = logging.getLogger("hermes_finance.api.errors")
 
@@ -148,6 +149,18 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(409, "conflict", str(exc))
+
+    @application.exception_handler(SalaryTaxHistoryIncompleteError)
+    async def _salary_tax_history_incomplete_handler(
+        request: Request, exc: SalaryTaxHistoryIncompleteError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=422 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(422, exc.code, str(exc))
 
     @application.exception_handler(ValueError)
     async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:

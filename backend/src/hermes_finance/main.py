@@ -24,6 +24,7 @@ from hermes_finance.api.investment_flows import router as investment_flows_route
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.positions import router as positions_router
 from hermes_finance.api.properties import router as properties_router
+from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
 from hermes_finance.database import Database
@@ -71,6 +72,7 @@ def create_app(
     application.include_router(expected_flows_router)
     application.include_router(expenses_router)
     application.include_router(savings_router)
+    application.include_router(salary_tax_router)
     application.include_router(debts_router)
     application.include_router(properties_router)
     application.include_router(comments_router)

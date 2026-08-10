@@ -23,6 +23,7 @@ from hermes_finance.persistence import (
     DEFAULT_TIMEZONE,
     Account,
     AppSettings,
+    SalaryTaxYearContext,
 )
 
 DEFAULT_PRIVATE_SEED_FILENAME = "private_seed.json"
@@ -73,6 +74,22 @@ class _SeedAccount(BaseModel):
         return normalized
 
 
+class _SeedSalaryTaxOpeningContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tax_year: int = Field(ge=1, le=9999)
+    effective_from_month: int = Field(ge=1, le=12)
+    opening_taxable_gross: str = Field(min_length=1)
+
+    @field_validator("opening_taxable_gross")
+    @classmethod
+    def validate_opening_gross(cls, value: str) -> str:
+        amount = RubleAmount.from_api(value)
+        if amount.kopecks < 0:
+            raise ValueError("opening taxable gross must not be negative")
+        return value
+
+
 class _PrivateSeed(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -80,6 +97,7 @@ class _PrivateSeed(BaseModel):
     schema_version: Literal[1]
     settings: _SeedSettings
     accounts: list[_SeedAccount]
+    salary_tax_opening_contexts: list[_SeedSalaryTaxOpeningContext] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +122,9 @@ def _parse_seed(path: Path) -> _PrivateSeed:
     external_codes = [account.external_code for account in seed.accounts]
     if len(external_codes) != len(set(external_codes)):
         raise ValueError("private seed contains duplicate account keys")
+    tax_years = [context.tax_year for context in seed.salary_tax_opening_contexts]
+    if len(tax_years) != len(set(tax_years)):
+        raise ValueError("private seed contains duplicate salary tax years")
     return seed
 
 
@@ -151,6 +172,20 @@ def _upsert_accounts(session: Session, seed: _PrivateSeed) -> tuple[int, int]:
     return created, updated
 
 
+def _upsert_salary_tax_contexts(session: Session, seed: _PrivateSeed) -> None:
+    for item in seed.salary_tax_opening_contexts:
+        opening_kopecks = RubleAmount.from_api(item.opening_taxable_gross).kopecks
+        if item.effective_from_month == 1 and opening_kopecks != 0:
+            raise ValueError("opening taxable gross must be zero when effective_from_month is 1")
+
+        context = session.get(SalaryTaxYearContext, item.tax_year)
+        if context is None:
+            context = SalaryTaxYearContext(tax_year=item.tax_year)
+            session.add(context)
+        context.effective_from_month = item.effective_from_month
+        context.opening_taxable_gross_kopecks = opening_kopecks
+
+
 def load_private_seed(database: Database, seed_path: Path | None = None) -> PrivateSeedLoadResult:
     """Validate and idempotently apply the local private seed in one transaction."""
     path = seed_path or database.database_path.parent / DEFAULT_PRIVATE_SEED_FILENAME
@@ -160,6 +195,7 @@ def load_private_seed(database: Database, seed_path: Path | None = None) -> Priv
         try:
             _settings_from_seed(session, seed)
             accounts_created, accounts_updated = _upsert_accounts(session, seed)
+            _upsert_salary_tax_contexts(session, seed)
             session.commit()
         except Exception:
             session.rollback()

@@ -36,7 +36,7 @@ from hermes_finance.services.iis import create_iis_profile, create_tax_benefit
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.monthly_summary import monthly_summary
-from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 DELTA_WARNING = "Нет предыдущего месяца для расчёта дельты"
 NORM_BONUS_WARNING = "Нет закрытых месяцев для оценки нормализованной премии"
@@ -304,6 +304,7 @@ def test_deltas_only_liquid_capital_and_passive_income(tmp_path: Path) -> None:
         add_salary(session, month_id=feb_id, net_amount="150000.00")
 
         jan = monthly_summary(session, jan_id)
+        close_reporting_month(session, jan_id)
         feb = monthly_summary(session, feb_id)
 
         # Salary is neither liquid capital nor passive income, so a salary-only

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from hermes_finance.database import Database, create_database
-from hermes_finance.persistence import Account, AppSettings, Base
+from hermes_finance.persistence import Account, AppSettings, Base, SalaryTaxYearContext
 from hermes_finance.private_seed_cli import main
 from hermes_finance.services.private_seed import load_private_seed
 
@@ -128,3 +128,29 @@ def test_private_seed_cli_reports_invalid_seed_without_payload(tmp_path: Path, c
     assert captured.out.strip() == "private seed load failed: private seed validation failed"
     assert "not-json" not in captured.out
     assert str(seed_path) not in captured.out
+
+
+def test_private_seed_upserts_salary_tax_opening_context(tmp_path: Path) -> None:
+    database = _database(tmp_path)
+    try:
+        payload = _seed_payload()
+        payload["salary_tax_opening_contexts"] = [
+            {
+                "tax_year": 2031,
+                "effective_from_month": 5,
+                "opening_taxable_gross": "400000.00",
+            }
+        ]
+        seed_path = _write_seed(tmp_path, payload)
+
+        load_private_seed(database, seed_path)
+        load_private_seed(database, seed_path)
+
+        with database.session_factory() as session:
+            contexts = session.query(SalaryTaxYearContext).all()
+            assert len(contexts) == 1
+            assert contexts[0].tax_year == 2031
+            assert contexts[0].effective_from_month == 5
+            assert contexts[0].opening_taxable_gross_kopecks == 40_000_000
+    finally:
+        database.engine.dispose()

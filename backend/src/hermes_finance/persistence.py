@@ -100,6 +100,41 @@ class ReportingMonth(Base):
     )
 
 
+class SalaryTaxYearContext(Base):
+    __tablename__ = "salary_tax_year_contexts"
+    __table_args__ = (
+        CheckConstraint(
+            "tax_year BETWEEN 1 AND 9999",
+            name="ck_salary_tax_year_contexts_tax_year_range",
+        ),
+        CheckConstraint(
+            "effective_from_month BETWEEN 1 AND 12",
+            name="ck_salary_tax_year_contexts_effective_month_range",
+        ),
+        CheckConstraint(
+            "opening_taxable_gross_kopecks >= 0",
+            name="ck_salary_tax_year_contexts_opening_gross_nonnegative",
+        ),
+        CheckConstraint(
+            "effective_from_month != 1 OR opening_taxable_gross_kopecks = 0",
+            name="ck_salary_tax_year_contexts_january_zero_opening",
+        ),
+    )
+
+    tax_year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    effective_from_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    opening_taxable_gross_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = (
