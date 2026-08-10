@@ -87,7 +87,7 @@ describe("AccountsPage", () => {
     expect(screen.getByText("Старый счёт")).toBeInTheDocument();
     expect(screen.getByText("Активные (1)")).toBeInTheDocument();
     expect(screen.getByText("Скрытые и закрытые (1)")).toBeInTheDocument();
-    expect(screen.getByText("Брокерский")).toBeInTheDocument();
+    expect(screen.getAllByText("Брокерский")).toHaveLength(2);
   });
 
   it("creates an account with backend-aligned true defaults", async () => {
