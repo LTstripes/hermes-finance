@@ -65,6 +65,20 @@ describe("AssetAllocationChart", () => {
     expect(cellWithText("60,2%")).toBeInTheDocument(); // deposits share
   });
 
+  it("keeps totals and shares exact above Number.MAX_SAFE_INTEGER kopecks", () => {
+    render(
+      <AssetAllocationChart
+        allocation={allocation([
+          ["cash", "90071992547409.93"],
+          ["deposits", "90071992547409.93"],
+        ])}
+      />,
+    );
+    const table = screen.getByRole("table");
+    expect(within(table).getByText(formatMoney("180143985094819.86"))).toBeInTheDocument();
+    expect(within(table).getAllByText("50,0%")).toHaveLength(2);
+  });
+
   it("renders an empty state when every class is zero", () => {
     render(
       <AssetAllocationChart
