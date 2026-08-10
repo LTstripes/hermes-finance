@@ -59,10 +59,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps
 
 1. собирает frontend production bundle;
 2. проверяет наличие `frontend/dist/index.html`;
-3. запускает backend через `uv`;
-4. проверяет API и HTML-интерфейс;
-5. печатает URL;
-6. останавливает backend после `Ctrl+C`.
+3. применяет `alembic upgrade head` к локальной SQLite-базе;
+4. запускает backend через `uv`;
+5. проверяет health, DB endpoint `/api/months` и HTML-интерфейс;
+6. печатает URL;
+7. останавливает backend после `Ctrl+C`.
 
 После сообщения:
 
@@ -92,7 +93,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 ```
 
-Интерфейс будет доступен на `http://127.0.0.1:5173`, а Vite проксирует `/api` в backend на `http://127.0.0.1:8000`. Для обычного использования владельцу достаточно production-команды выше.
+Интерфейс будет доступен на `http://127.0.0.1:5173`, а Vite проксирует `/api` в backend на `http://127.0.0.1:8000`. Dev launcher также применяет миграции через backend CLI и считает стек готовым только после успешного DB endpoint. Для обычного использования владельцу достаточно production-команды выше.
 
 ### Проверка backend
 

@@ -77,7 +77,11 @@ function Wait-ForDevelopmentStack {
                 -Uri "http://127.0.0.1:5173/api/health" `
                 -UseBasicParsing `
                 -TimeoutSec 2
-            if ($response.StatusCode -eq 200) {
+            $databaseResponse = Invoke-WebRequest `
+                -Uri "http://127.0.0.1:5173/api/months" `
+                -UseBasicParsing `
+                -TimeoutSec 2
+            if ($response.StatusCode -eq 200 -and $databaseResponse.StatusCode -eq 200) {
                 return
             }
         }

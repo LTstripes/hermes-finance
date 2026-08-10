@@ -95,12 +95,17 @@ function Wait-ForProductionStack {
                 -Uri "http://127.0.0.1:8000/api/health" `
                 -UseBasicParsing `
                 -TimeoutSec 2
+            $months = Invoke-WebRequest `
+                -Uri "http://127.0.0.1:8000/api/months" `
+                -UseBasicParsing `
+                -TimeoutSec 2
             $frontend = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/" `
                 -UseBasicParsing `
                 -TimeoutSec 2
             if (
                 $health.StatusCode -eq 200 -and
+                $months.StatusCode -eq 200 -and
                 $frontend.StatusCode -eq 200 -and
                 $frontend.Content -match "Hermes Finance"
             ) {

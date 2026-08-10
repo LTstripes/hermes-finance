@@ -1,4 +1,5 @@
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import URL
@@ -16,7 +17,9 @@ target_metadata = Base.metadata
 
 
 def database_url() -> str:
-    database_path = Settings().database_path.expanduser().resolve()
+    configured_path = config.attributes.get("database_path")
+    database_path = Settings().database_path if configured_path is None else Path(configured_path)
+    database_path = database_path.expanduser().resolve()
     return URL.create("sqlite+pysqlite", database=database_path.as_posix()).render_as_string(
         hide_password=False
     )
@@ -35,7 +38,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    database = create_database(Settings().database_path)
+    configured_path = config.attributes.get("database_path")
+    database_path = Settings().database_path if configured_path is None else Path(configured_path)
+    database = create_database(database_path)
     try:
         with database.engine.connect() as connection:
             context.configure(connection=connection, target_metadata=target_metadata)

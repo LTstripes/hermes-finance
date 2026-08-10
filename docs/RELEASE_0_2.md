@@ -48,7 +48,7 @@
 
 | ID | Задача | Priority | Status | Proposed route | Depends on |
 |---|---|---:|---|---|---|
-| R02-01 | Startup migrations + schema readiness gate | P0 | READY | Luna High / — / Terra High | — |
+| R02-01 | Startup migrations + schema readiness gate | P0 | DONE | Luna High / — / Terra High | — |
 | R02-02 | Контракт opening YTD gross для НДФЛ | P0 | READY | Sol High / — / Terra High | — |
 | R02-03 | Реализация opening YTD gross для НДФЛ | P0 | BLOCKED | Terra High / Luna High optional / Terra High | R02-02 |
 | R02-04 | Passive-income invariants и защита от double count | P0 | READY | Terra High / DeepSeek Free optional / Terra High | — |
@@ -73,7 +73,7 @@
 # R02-01. Startup migrations + schema readiness gate
 
 **Priority:** P0  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / — / Terra High reviewer
 
 ## Проблема
