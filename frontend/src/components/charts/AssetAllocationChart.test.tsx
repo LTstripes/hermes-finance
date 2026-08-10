@@ -75,7 +75,8 @@ describe("AssetAllocationChart", () => {
       />,
     );
     const table = screen.getByRole("table");
-    expect(within(table).getByText(formatMoney("180143985094819.86"))).toBeInTheDocument();
+    const exactTotal = formatMoney("180143985094819.86");
+    expect(within(table).getByText((_, el) => el?.textContent === exactTotal)).toBeInTheDocument();
     expect(within(table).getAllByText("50,0%")).toHaveLength(2);
   });
 
