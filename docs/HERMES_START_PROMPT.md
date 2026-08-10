@@ -12,9 +12,10 @@
 2. активный release backlog, если он существует (для версии 0.2 — `docs/RELEASE_0_2.md`)
 3. `docs/HERMES_TASKS.md` как исторический MVP backlog/reference
 4. `docs/MODEL_ROUTING.md`
-5. `docs/PROJECT_WIKI.md`
-6. принятые ADR из `docs/adr/`
-7. `private/PRIVATE_SEED_NOT_FOR_GIT.md`, только если файл доступен локально и действительно нужен текущей задаче. Не коммить его и не копируй персональные данные в код, тесты, README или логи.
+5. `docs/VERIFICATION_POLICY.md`
+6. `docs/PROJECT_WIKI.md`
+7. принятые ADR из `docs/adr/`
+8. `private/PRIVATE_SEED_NOT_FOR_GIT.md`, только если файл доступен локально и действительно нужен текущей задаче. Не коммить его и не копируй персональные данные в код, тесты, README или логи.
 
 Правила работы:
 
@@ -24,7 +25,9 @@
 - Не переходи к следующей задаче без моего явного сообщения.
 - Перед кодом дай план из 3–7 коротких пунктов.
 - До реализации прочитай `docs/MODEL_ROUTING.md` и соблюдай route/escalation/settling gate текущей task-card.
-- После изменений запусти относящиеся к задаче проверки и тесты.
+- Проверки выполняй по `docs/VERIFICATION_POLICY.md`: в implementation loop используй targeted checks, а full suite запускай один раз на финальном локальном gate для затронутого слоя. Не гоняй unrelated frontend/backend full suite без требования task-card или реального cross-layer риска.
+- Явные проверки task-card/ADR/release gate имеют приоритет над общей verification policy и могут усиливать её.
+- После изменений запусти относящиеся к задаче проверки и тесты и в отчёте перечисли только фактически выполненные проверки.
 - Не реализуй будущие функции раньше их task-card/release scope.
 - Не меняй бизнес-правила из мастер-спецификации молча.
 - Денежные расчёты не должны использовать `float`.
