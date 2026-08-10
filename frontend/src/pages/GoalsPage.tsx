@@ -294,7 +294,7 @@ export function GoalsPage() {
         {goalsLoading ? (
           <LoadingState description="Загружаем цели…" inline />
         ) : goalsError ? (
-          <ErrorState description={goalsError} inline title="Не удалось загрузить цели" />
+          <p className="muted">Архив недоступен, пока список целей не загружен.</p>
         ) : (
           <GoalTable
             goals={inactiveGoals}
