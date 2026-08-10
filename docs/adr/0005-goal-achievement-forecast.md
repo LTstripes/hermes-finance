@@ -209,6 +209,8 @@ GET /api/goals/summary
 
 The response is a list of goal records plus a nested backend-derived `achievement_forecast` object matching the normative result contract. Money uses the existing `MoneyValue` decimal-string shape; percentages are decimal strings; dates are ISO dates.
 
+Because the existing router already has `GET /api/goals/{goal_id}`, the static `/summary` route must be registered before the dynamic `/{goal_id}` route (or otherwise be structured so `summary` cannot be shadowed and parsed as a goal id).
+
 The endpoint must compute shared source metrics once per request where practical (for example one passive-income forecast and one liquid-capital result), not once per goal via an N+1 calculator loop.
 
 Existing `GET /api/goals`, `GET /api/goals/{id}`, `POST`, `PATCH`, and `DELETE` remain source-of-truth CRUD endpoints and do not require a reporting month.
