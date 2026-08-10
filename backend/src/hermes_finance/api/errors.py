@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
@@ -143,6 +144,17 @@ def register_error_handlers(application: FastAPI) -> None:
 
     @application.exception_handler(ConcurrencyError)
     async def _concurrency_error_handler(request: Request, exc: ConcurrencyError) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=conflict",
+            exc.__class__.__name__,
+            request.url.path,
+        )
+        return _error_response(409, "conflict", str(exc))
+
+    @application.exception_handler(DatabaseMaintenanceError)
+    async def _database_maintenance_handler(
+        request: Request, exc: DatabaseMaintenanceError
+    ) -> JSONResponse:
         logger.info(
             "%s path=%s status=409 code=conflict",
             exc.__class__.__name__,

@@ -65,8 +65,9 @@ def _database_for_request(request: Request) -> Database:
 
 def session_for_request(request: Request) -> Generator[Session, None, None]:
     database = _database_for_request(request)
-    with database.session_factory() as session:
-        yield session
+    with database.maintenance.operation():
+        with database.session_factory() as session:
+            yield session
 
 
 def _response_from_settings(settings: object) -> SettingsResponse:

@@ -1,5 +1,8 @@
 import shutil
 import sqlite3
+import threading
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -7,10 +10,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from hermes_finance.database import Database, create_database
+from hermes_finance.database import Database, DatabaseMaintenanceError, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
-from hermes_finance.services.backups import backup_directory, create_backup
+from hermes_finance.services.backups import backup_directory, create_backup, restore_backup
 from hermes_finance.services.settings import update_settings
 
 
@@ -57,6 +60,15 @@ def _settings_locale(client: TestClient) -> str:
     response = client.get("/api/settings")
     assert response.status_code == 200, response.text
     return response.json()["locale"]
+
+
+def _wait_until(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition was not reached before timeout")
 
 
 def test_restore_valid_backup_creates_pre_restore_backup_and_refreshes_new_requests(
@@ -161,3 +173,73 @@ def test_restore_requires_explicit_confirmation(
     assert response.json()["error"]["code"] == "unprocessable"
     assert _settings_locale(client) == "still-live"
     assert len(list(backup_directory(database).glob("*.sqlite3"))) == 1
+
+
+def test_restore_drains_active_operation_and_rejects_new_operations(
+    app_context: tuple[TestClient, Database], tmp_path: Path
+) -> None:
+    client, database = app_context
+    _set_locale(database, "before-restore")
+    candidate_path = _make_candidate_backup(database, tmp_path, locale="after-restore")
+    restore_finished = threading.Event()
+    restore_result: list[object] = []
+
+    def run_restore() -> None:
+        try:
+            restore_result.append(restore_backup(database, candidate_path.stem))
+        finally:
+            restore_finished.set()
+
+    with database.maintenance.operation():
+        restore_thread = threading.Thread(target=run_restore)
+        restore_thread.start()
+        _wait_until(lambda: database.maintenance.is_restoring)
+
+        with pytest.raises(DatabaseMaintenanceError, match="restore is in progress"):
+            with database.maintenance.operation():
+                pass
+        with pytest.raises(DatabaseMaintenanceError, match="restore is in progress"):
+            restore_backup(database, candidate_path.stem)
+        assert restore_finished.wait(0.05) is False
+
+    restore_thread.join(timeout=2.0)
+    assert restore_finished.is_set()
+    assert len(restore_result) == 1
+    assert _settings_locale(client) == "after-restore"
+
+
+def test_restore_conflict_is_mapped_to_http_409_during_an_active_restore(
+    app_context: tuple[TestClient, Database], tmp_path: Path
+) -> None:
+    client, database = app_context
+    _set_locale(database, "before-restore")
+    candidate_path = _make_candidate_backup(database, tmp_path, locale="after-restore")
+    restore_finished = threading.Event()
+    restore_responses: list[Any] = []
+
+    def run_restore_request() -> None:
+        try:
+            restore_responses.append(
+                client.post(
+                    f"/api/backups/{candidate_path.stem}/restore",
+                    json={"confirm": True},
+                )
+            )
+        finally:
+            restore_finished.set()
+
+    with database.maintenance.operation():
+        restore_thread = threading.Thread(target=run_restore_request)
+        restore_thread.start()
+        _wait_until(lambda: database.maintenance.is_restoring)
+
+        blocked = client.get("/api/settings")
+        assert blocked.status_code == 409
+        assert blocked.json()["error"]["code"] == "conflict"
+        assert restore_finished.wait(0.05) is False
+
+    restore_thread.join(timeout=2.0)
+    assert restore_finished.is_set()
+    assert len(restore_responses) == 1
+    assert restore_responses[0].status_code == 200
+    assert _settings_locale(client) == "after-restore"

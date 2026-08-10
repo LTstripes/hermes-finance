@@ -293,7 +293,7 @@ Backend следует `Decimal`/integer minor-unit contract, но frontend help
 # R02-09. Безопасная сериализация backup restore на Windows
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE
 **Route:** Terra High / Luna High bounded worker / Terra High reviewer
 
 ## Проблема

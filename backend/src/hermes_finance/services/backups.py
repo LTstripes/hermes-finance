@@ -114,7 +114,7 @@ def _metadata_for_path(database: Database, path: Path, *, created_at: datetime) 
     )
 
 
-def create_backup(database: Database, *, now: datetime | None = None) -> BackupMetadata:
+def _create_backup(database: Database, *, now: datetime | None = None) -> BackupMetadata:
     """Create an atomic snapshot using SQLite's online backup API."""
     directory = _usable_backup_directory(database, create=True)
     created_at = _normalized_now(now)
@@ -148,6 +148,12 @@ def create_backup(database: Database, *, now: datetime | None = None) -> BackupM
             destination.unlink()
 
     return _metadata_for_path(database, destination, created_at=created_at)
+
+
+def create_backup(database: Database, *, now: datetime | None = None) -> BackupMetadata:
+    """Create a backup while participating in database maintenance admission control."""
+    with database.maintenance.operation():
+        return _create_backup(database, now=now)
 
 
 def _backup_path(database: Database, backup_id: str) -> Path:
@@ -215,7 +221,7 @@ def _sequence_from_path(path: Path) -> int:
     return int(match.group("sequence") or 0) if match is not None else 0
 
 
-def list_backups(database: Database) -> list[BackupMetadata]:
+def _list_backups(database: Database) -> list[BackupMetadata]:
     """List valid local backups newest first; a missing directory is empty."""
     directory = _usable_backup_directory(database, create=False)
     if not directory.exists():
@@ -239,7 +245,13 @@ def list_backups(database: Database) -> list[BackupMetadata]:
     ]
 
 
-def restore_backup(database: Database, backup_id: str) -> RestoreResult:
+def list_backups(database: Database) -> list[BackupMetadata]:
+    """List backups while participating in database maintenance admission control."""
+    with database.maintenance.operation():
+        return _list_backups(database)
+
+
+def _restore_backup(database: Database, backup_id: str) -> RestoreResult:
     """Restore a validated local backup, preserving an automatic pre-restore copy."""
     candidate = _backup_path(database, backup_id)
     _validate_sqlite_backup(candidate, database)
@@ -256,7 +268,7 @@ def restore_backup(database: Database, backup_id: str) -> RestoreResult:
         shutil.copyfile(candidate, temporary)
         _validate_sqlite_backup(temporary, database)
 
-        pre_restore_backup = create_backup(database)
+        pre_restore_backup = _create_backup(database)
         database.engine.dispose()
         os.replace(temporary, database.database_path)
         temporary = None
@@ -271,3 +283,9 @@ def restore_backup(database: Database, backup_id: str) -> RestoreResult:
         restored_backup=_metadata_for_path(database, candidate, created_at=restored_created_at),
         pre_restore_backup=pre_restore_backup,
     )
+
+
+def restore_backup(database: Database, backup_id: str) -> RestoreResult:
+    """Restore a backup under the application-level maintenance guard."""
+    with database.maintenance.restore():
+        return _restore_backup(database, backup_id)
