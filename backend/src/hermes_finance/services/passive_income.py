@@ -15,13 +15,15 @@ Implements MASTER_SPEC §10.4:
 Key invariants (wiki §7):
 - Deposit actual interest comes ONLY from ``deposit_snapshots.actual_interest_received``.
 - ``net_amount`` already includes tax/commission; never subtract them again.
-- Cashback is never passive income.
+- Only ``IncomeType.OTHER`` may be marked as passive income; salary, bonus,
+  side income and cashback are never passive-income sources.
+- Generic investment ``INTEREST`` on non-deposit accounts contributes to
+  ``other_capital_income``; deposit/savings interest comes only from snapshots.
 - Reads are allowed on closed months (B19-R2 guard is for writes only).
 
-Income entries (IncomeEntry) with ``include_in_passive_income=True`` and
-``income_type != CASHBACK`` contribute to ``other_capital_income``.
-SALARY/BONUS/SIDE_INCOME/OTHER do not fit the deposit-interest, bond-coupon
-or dividend buckets, so they fall into the fourth bucket per MASTER_SPEC.
+Income entries contribute to ``other_capital_income`` only when
+``income_type == OTHER`` and ``include_in_passive_income=True``.  The read path
+also ignores legacy-invalid active-income rows that still carry a passive flag.
 """
 
 from __future__ import annotations
