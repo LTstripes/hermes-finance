@@ -109,6 +109,7 @@ class CashBalanceBreakdownOut(BaseModel):
     bonus_net: MoneyValue
     side_income_net: MoneyValue
     cashback: MoneyValue
+    other_income: MoneyValue
     passive_income: MoneyValue
     mandatory_expenses: MoneyValue
     other_expenses: MoneyValue
@@ -373,6 +374,7 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
                 bonus_net=_money(cash.breakdown.bonus_net),
                 side_income_net=_money(cash.breakdown.side_income_net),
                 cashback=_money(cash.breakdown.cashback),
+                other_income=_money(cash.breakdown.other_income),
                 passive_income=_money(cash.breakdown.passive_income),
                 mandatory_expenses=_money(cash.breakdown.mandatory_expenses),
                 other_expenses=_money(cash.breakdown.other_expenses),

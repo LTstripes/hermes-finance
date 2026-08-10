@@ -93,6 +93,7 @@ def make_dashboard() -> DashboardResult:
                 bonus_net=R(3_000_000),
                 side_income_net=R(1_500_000),
                 cashback=R(300_000),
+                other_income=R(0),
                 passive_income=R(4_525_000),
                 mandatory_expenses=R(5_000_000),
                 other_expenses=R(2_000_000),
@@ -234,7 +235,7 @@ def test_render_markdown_report_has_complete_stable_snapshot() -> None:
 - Статус: closed
 - Дата снимка: 31.07.2026
 - Источник: manual
-- Версия расчётов: v1
+- Версия расчётов: v2
 
 ## 2. Итоговые KPI
 | Показатель | Значение |

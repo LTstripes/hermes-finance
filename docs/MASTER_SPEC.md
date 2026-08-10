@@ -719,6 +719,7 @@ monthly_cash_balance =
   + actual_net_bonus
   + side_income_net
   + cashback
+  + other_income
   + actual_net_passive_income
   - mandatory_expenses
   - other_recorded_expenses
@@ -726,6 +727,13 @@ monthly_cash_balance =
 ```
 
 Кэшбэк участвует в денежном потоке, но не в пассивном доходе.
+
+Для `income_entries` месячный денежный поток учитывает только строки с
+`include_in_cash_flow=true`. `OTHER` с `include_in_passive_income=false`
+попадает в отдельный `other_income`; пассивный `OTHER` учитывается через
+`actual_net_passive_income` только если он также включён в cash flow.
+Пассивный `OTHER` с `include_in_cash_flow=false` остаётся в аналитике
+фактического пассивного дохода, но исключается из остатка денежного потока.
 
 ## 10.10. Депозиты
 

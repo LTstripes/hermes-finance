@@ -11,6 +11,7 @@ Implements MASTER_SPEC §10.9:
       + actual_net_bonus
       + side_income_net
       + cashback
+      + other_income
       + actual_net_passive_income
       - mandatory_expenses
       - other_recorded_expenses
@@ -21,9 +22,10 @@ Key invariants (wiki §7):
 - Only ACTUAL recorded bonus entries count (normalized bonus of C08
   is a separate analytical metric and must not appear here).
 - Saving allocations reduce the monthly balance.
-- All income entries participate in the cash flow regardless of
-  ``include_in_passive_income``; the passive flag only matters for
-  the passive-income classification.
+- Income entries participate only when ``include_in_cash_flow`` is true.
+- Non-passive ``OTHER`` income has its own ``other_income`` bucket.
+- Passive ``OTHER`` rows with ``include_in_cash_flow=False`` remain in
+  actual passive-income analytics but are excluded from this balance.
 - Reads are allowed on closed months (B19-R2 guard is for writes only).
 """
 
@@ -56,6 +58,35 @@ def _sum_income_by_type(
         select(func.coalesce(func.sum(IncomeEntry.net_amount_kopecks), 0)).where(
             IncomeEntry.reporting_month_id == reporting_month_id,
             IncomeEntry.income_type == income_type.value,
+            IncomeEntry.include_in_cash_flow.is_(True),
+        )
+    )
+    return RubleAmount(int(total or 0))
+
+
+def _sum_other_income(session: Session, reporting_month_id: int) -> RubleAmount:
+    """Sum cash-flow-enabled, non-passive ``OTHER`` income entries."""
+    total = session.scalar(
+        select(func.coalesce(func.sum(IncomeEntry.net_amount_kopecks), 0)).where(
+            IncomeEntry.reporting_month_id == reporting_month_id,
+            IncomeEntry.income_type == IncomeType.OTHER.value,
+            IncomeEntry.include_in_cash_flow.is_(True),
+            IncomeEntry.include_in_passive_income.is_(False),
+        )
+    )
+    return RubleAmount(int(total or 0))
+
+
+def _sum_passive_other_excluded_from_cash_flow(
+    session: Session, reporting_month_id: int
+) -> RubleAmount:
+    """Sum passive ``OTHER`` rows kept for analytics but excluded from cash flow."""
+    total = session.scalar(
+        select(func.coalesce(func.sum(IncomeEntry.net_amount_kopecks), 0)).where(
+            IncomeEntry.reporting_month_id == reporting_month_id,
+            IncomeEntry.income_type == IncomeType.OTHER.value,
+            IncomeEntry.include_in_cash_flow.is_(False),
+            IncomeEntry.include_in_passive_income.is_(True),
         )
     )
     return RubleAmount(int(total or 0))
@@ -67,8 +98,15 @@ def cash_balance_for_month(session: Session, reporting_month_id: int) -> CashBal
     bonus_net = _sum_income_by_type(session, reporting_month_id, IncomeType.BONUS)
     side_income_net = _sum_income_by_type(session, reporting_month_id, IncomeType.SIDE_INCOME)
     cashback = _sum_income_by_type(session, reporting_month_id, IncomeType.CASHBACK)
+    other_income = _sum_other_income(session, reporting_month_id)
 
-    passive_income = passive_income_for_month(session, reporting_month_id).total_net_passive_income
+    passive_income_actual = passive_income_for_month(
+        session, reporting_month_id
+    ).total_net_passive_income
+    passive_income_excluded = _sum_passive_other_excluded_from_cash_flow(
+        session, reporting_month_id
+    )
+    passive_income = RubleAmount(passive_income_actual.kopecks - passive_income_excluded.kopecks)
 
     mandatory_expenses = total_mandatory_expenses(session, reporting_month_id)
     all_expenses = total_expenses(session, reporting_month_id)
@@ -81,6 +119,7 @@ def cash_balance_for_month(session: Session, reporting_month_id: int) -> CashBal
             bonus_net=bonus_net,
             side_income_net=side_income_net,
             cashback=cashback,
+            other_income=other_income,
             passive_income=passive_income,
             mandatory_expenses=mandatory_expenses,
             other_expenses=other_expenses,

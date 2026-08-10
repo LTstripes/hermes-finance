@@ -140,11 +140,12 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert body["month"]["id"] == m2_id
     assert body["month"]["year"] == 2031
     assert body["month"]["month"] == 2
-    assert body["calculation_version"] == "v1"
+    assert body["calculation_version"] == "v2"
     assert "liquid_capital_net" in body["liquid_capital"]
     assert body["liquid_capital"]["breakdown"]["securities"]["currency"] == "RUB"
     assert body["liquid_capital_delta"] is not None
     assert body["passive_income_delta"] is not None
+    assert body["cash_balance"]["breakdown"]["other_income"] == _rub("0.00")
     assert isinstance(body["warnings"], list)
     assert isinstance(body["iis"], list)
 
@@ -209,7 +210,7 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert len(dash["expected_payments"]) == 1
     assert dash["expected_payments"][0]["expected_net_amount"] == _rub("870.00")
     assert dash["mortgage"]["mortgage_balance"] == _rub("4000000.00")
-    assert dash["calculation_version"] == "v1"
+    assert dash["calculation_version"] == "v2"
 
 
 def test_historical_series_grows_when_draft_closes(client: TestClient) -> None:

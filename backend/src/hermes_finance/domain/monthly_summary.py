@@ -28,7 +28,7 @@ from hermes_finance.domain.normalized_bonus import NormalizedBonusResult
 from hermes_finance.domain.salary_tax import SalaryTaxResult
 from hermes_finance.domain.values import RubleAmount
 
-CALCULATION_VERSION = "v1"
+CALCULATION_VERSION = "v2"
 
 _NO_PREVIOUS_MONTH_WARNING = "Нет предыдущего месяца для расчёта дельты"
 

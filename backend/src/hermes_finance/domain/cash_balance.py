@@ -7,6 +7,7 @@ Implements MASTER_SPEC §10.9:
       + actual_net_bonus
       + side_income_net
       + cashback
+      + other_income
       + actual_net_passive_income
       - mandatory_expenses
       - other_recorded_expenses
@@ -41,6 +42,7 @@ class CashBalanceInput:
     bonus_net: RubleAmount
     side_income_net: RubleAmount
     cashback: RubleAmount
+    other_income: RubleAmount
     passive_income: RubleAmount
     mandatory_expenses: RubleAmount
     other_expenses: RubleAmount
@@ -59,6 +61,7 @@ class CashBalanceBreakdown:
     bonus_net: RubleAmount
     side_income_net: RubleAmount
     cashback: RubleAmount
+    other_income: RubleAmount
     passive_income: RubleAmount
     mandatory_expenses: RubleAmount
     other_expenses: RubleAmount
@@ -85,6 +88,7 @@ def calculate_cash_balance(input_data: CashBalanceInput) -> CashBalanceResult:
         bonus_net=input_data.bonus_net,
         side_income_net=input_data.side_income_net,
         cashback=input_data.cashback,
+        other_income=input_data.other_income,
         passive_income=input_data.passive_income,
         mandatory_expenses=input_data.mandatory_expenses,
         other_expenses=input_data.other_expenses,
@@ -96,6 +100,7 @@ def calculate_cash_balance(input_data: CashBalanceInput) -> CashBalanceResult:
         + input_data.bonus_net.kopecks
         + input_data.side_income_net.kopecks
         + input_data.cashback.kopecks
+        + input_data.other_income.kopecks
         + input_data.passive_income.kopecks
         - input_data.mandatory_expenses.kopecks
         - input_data.other_expenses.kopecks

@@ -3,6 +3,7 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -11,6 +12,7 @@ from hermes_finance.domain import (
     DepositType,
     ExpenseType,
     IncomeType,
+    InvestmentCashFlowType,
     RubleAmount,
 )
 from hermes_finance.domain.cash_balance import CashBalanceBreakdown, CashBalanceResult
@@ -23,7 +25,9 @@ from hermes_finance.services.expenses import (
     create_saving_allocation,
 )
 from hermes_finance.services.incomes import create_income_entry
-from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
+from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 
 def session_for(tmp_path: Path) -> tuple[Session, object]:
@@ -94,6 +98,19 @@ def test_full_month_scenario(tmp_path: Path) -> None:
             annual_rate="10.00",
             actual_interest_received="3000.00",
         )
+        brokerage_account = create_account(
+            session, name="Synthetic Brokerage Account", account_type=AccountType.BROKERAGE
+        )
+        create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=brokerage_account.id,
+            flow_type=InvestmentCashFlowType.INTEREST,
+            event_date=date(2030, 5, 10),
+            gross_amount="700.00",
+            net_amount="700.00",
+            source="synthetic brokerage interest",
+        )
         create_expense_entry(
             session,
             reporting_month_id=month_id,
@@ -117,14 +134,14 @@ def test_full_month_scenario(tmp_path: Path) -> None:
 
         result = cash_balance_for_month(session, month_id)
         assert isinstance(result, CashBalanceResult)
-        # 100000.00 + 20000.00 + 5000.00 + 1000.00 + 3000.00
-        # - 40000.00 - 5000.00 - 20000.00 = 64000.00 RUB = 6_400_000 kopecks
-        assert result.total == RubleAmount(6_400_000)
+        # 100000.00 + 20000.00 + 5000.00 + 1000.00 + 3000.00 + 700.00
+        # - 40000.00 - 5000.00 - 20000.00 = 64700.00 RUB = 6_470_000 kopecks
+        assert result.total == RubleAmount(6_470_000)
         assert result.breakdown.salary_net == RubleAmount(10_000_000)
         assert result.breakdown.bonus_net == RubleAmount(2_000_000)
         assert result.breakdown.side_income_net == RubleAmount(500_000)
         assert result.breakdown.cashback == RubleAmount(100_000)
-        assert result.breakdown.passive_income == RubleAmount(300_000)
+        assert result.breakdown.passive_income == RubleAmount(370_000)
         assert result.breakdown.mandatory_expenses == RubleAmount(4_000_000)
         assert result.breakdown.other_expenses == RubleAmount(500_000)
         assert result.breakdown.saving_allocations == RubleAmount(2_000_000)
@@ -266,6 +283,7 @@ def test_zero_month_returns_all_zeros(tmp_path: Path) -> None:
             bonus_net=RubleAmount(0),
             side_income_net=RubleAmount(0),
             cashback=RubleAmount(0),
+            other_income=RubleAmount(0),
             passive_income=RubleAmount(0),
             mandatory_expenses=RubleAmount(0),
             other_expenses=RubleAmount(0),
@@ -310,6 +328,155 @@ def test_other_expenses_sum_comfortable_and_other_types(tmp_path: Path) -> None:
         # comfortable + other: 5000.00 + 2000.00 = 7000.00
         assert result.breakdown.other_expenses == RubleAmount(700_000)
         assert result.total == RubleAmount(-1_000_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("income_type", "breakdown_field"),
+    [
+        (IncomeType.SALARY, "salary_net"),
+        (IncomeType.BONUS, "bonus_net"),
+        (IncomeType.SIDE_INCOME, "side_income_net"),
+        (IncomeType.CASHBACK, "cashback"),
+        (IncomeType.OTHER, "other_income"),
+    ],
+)
+def test_cash_flow_false_excludes_every_income_type(
+    tmp_path: Path, income_type: IncomeType, breakdown_field: str
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=income_type,
+            name=f"Excluded {income_type.value}",
+            gross_amount="1000.00",
+            tax_amount="0.00",
+            net_amount="1000.00",
+            include_in_cash_flow=False,
+            include_in_passive_income=False,
+        )
+        result = cash_balance_for_month(session, month_id)
+        assert getattr(result.breakdown, breakdown_field) == RubleAmount(0)
+        assert result.total == RubleAmount(0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("income_type", "breakdown_field"),
+    [
+        (IncomeType.SALARY, "salary_net"),
+        (IncomeType.BONUS, "bonus_net"),
+        (IncomeType.SIDE_INCOME, "side_income_net"),
+        (IncomeType.CASHBACK, "cashback"),
+        (IncomeType.OTHER, "other_income"),
+    ],
+)
+def test_cash_flow_true_includes_every_income_type_in_its_bucket(
+    tmp_path: Path, income_type: IncomeType, breakdown_field: str
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=income_type,
+            name=f"Included {income_type.value}",
+            gross_amount="1000.00",
+            tax_amount="0.00",
+            net_amount="1000.00",
+            include_in_cash_flow=True,
+            include_in_passive_income=False,
+        )
+        result = cash_balance_for_month(session, month_id)
+        assert getattr(result.breakdown, breakdown_field) == RubleAmount(100_000)
+        assert result.total == RubleAmount(100_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_passive_other_cash_flow_flag_controls_balance_without_changing_actual_passive(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.OTHER,
+            name="Passive included",
+            gross_amount="1000.00",
+            tax_amount="0.00",
+            net_amount="1000.00",
+            include_in_cash_flow=True,
+            include_in_passive_income=True,
+        )
+        create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.OTHER,
+            name="Passive analytics only",
+            gross_amount="2000.00",
+            tax_amount="0.00",
+            net_amount="2000.00",
+            include_in_cash_flow=False,
+            include_in_passive_income=True,
+        )
+
+        result = cash_balance_for_month(session, month_id)
+        actual_passive = passive_income_for_month(session, month_id)
+        assert result.breakdown.passive_income == RubleAmount(100_000)
+        assert result.breakdown.other_income == RubleAmount(0)
+        assert result.total == RubleAmount(100_000)
+        assert actual_passive.total_net_passive_income == RubleAmount(300_000)
+        assert result.total == RubleAmount(
+            result.breakdown.salary_net.kopecks
+            + result.breakdown.bonus_net.kopecks
+            + result.breakdown.side_income_net.kopecks
+            + result.breakdown.cashback.kopecks
+            + result.breakdown.other_income.kopecks
+            + result.breakdown.passive_income.kopecks
+            - result.breakdown.mandatory_expenses.kopecks
+            - result.breakdown.other_expenses.kopecks
+            - result.breakdown.saving_allocations.kopecks
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_closed_month_read_uses_flag_without_mutating_income_row(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        entry = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.SALARY,
+            name="Closed excluded salary",
+            gross_amount="1000.00",
+            tax_amount="0.00",
+            net_amount="1000.00",
+            include_in_cash_flow=False,
+            include_in_passive_income=False,
+        )
+        close_reporting_month(session, month_id)
+
+        result = cash_balance_for_month(session, month_id)
+        stored = session.get(IncomeEntry, entry.id)
+        assert result.total == RubleAmount(0)
+        assert stored is not None
+        assert stored.include_in_cash_flow is False
+        assert stored.include_in_passive_income is False
     finally:
         session.close()
         database.engine.dispose()

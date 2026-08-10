@@ -98,7 +98,7 @@ def test_empty_month_assembles(tmp_path: Path) -> None:
 
         assert summary.year == 2031
         assert summary.month == 1
-        assert summary.calculation_version == "v1"
+        assert summary.calculation_version == "v2"
         assert summary.iis == ()
         assert summary.liquid_capital.liquid_capital_net == RubleAmount(0)
         assert summary.passive_income_actual == RubleAmount(0)
@@ -203,7 +203,7 @@ def test_forecast_version_passthrough(tmp_path: Path) -> None:
         # Default v1: the v2 flow is excluded from the forecast.
         v1_summary = monthly_summary(session, month_id)
         assert v1_summary.forecast.annual_total == RubleAmount(0)
-        assert v1_summary.calculation_version == "v1"
+        assert v1_summary.calculation_version == "v2"
     finally:
         session.close()
         database.engine.dispose()
