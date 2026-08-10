@@ -2,12 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createAccount,
-  deleteAccount,
-  listAccounts,
-  updateAccount,
-} from "../api/accounts";
+import { createAccount, deleteAccount, listAccounts, updateAccount } from "../api/accounts";
 import {
   createInstrument,
   deleteInstrument,
