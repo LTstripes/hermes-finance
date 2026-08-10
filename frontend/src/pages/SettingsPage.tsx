@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import {
@@ -128,15 +129,19 @@ export function SettingsPage() {
       </header>
 
       <form className="stack-18" onSubmit={handleSubmit}>
-        <Panel label="Цели" title="Цель пассивного дохода">
+        <Panel
+          action={<Link to="/goals">Открыть цели →</Link>}
+          label="Цели"
+          title="Цель пассивного дохода"
+        >
           <div className="stack-8">
             <p>
               <strong>{settings.passive_income_goal.amount}</strong>{" "}
               <Badge tone="info">{settings.passive_income_goal.currency}</Badge>
             </p>
             <p className="muted">
-              Сейчас только для просмотра. Управление основной целью будет перенесено в раздел
-              «Цели» после R02-11, чтобы не создавать два source of truth.
+              Здесь значение остаётся только для совместимости и просмотра. Основная цель и её
+              параметры управляются в разделе «Цели», чтобы сохранять один runtime source of truth.
             </p>
           </div>
         </Panel>
@@ -217,9 +222,6 @@ export function SettingsPage() {
 
       <Panel empty label="Ограничения" title="Пока недоступно">
         <div className="stack-8">
-          <p>
-            <Badge tone="info">R02-11</Badge> Редактирование основной финансовой цели.
-          </p>
           <p>
             <Badge tone="info">R02-17</Badge> Управление налоговыми ставками.
           </p>
