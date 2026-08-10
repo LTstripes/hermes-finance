@@ -132,8 +132,11 @@ function MainGoalBody({ goal }: { goal: GoalSummary }) {
           </div>
         ) : null}
         <span className="muted tiny">
-          Значения рассчитаны backend на {formatDate(forecast.as_of_date)} · {forecast.method_version}
-          {forecast.source_forecast_version ? ` · forecast ${forecast.source_forecast_version}` : ""}
+          Значения рассчитаны backend на {formatDate(forecast.as_of_date)} ·{" "}
+          {forecast.method_version}
+          {forecast.source_forecast_version
+            ? ` · forecast ${forecast.source_forecast_version}`
+            : ""}
         </span>
       </div>
     </div>
