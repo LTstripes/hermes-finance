@@ -113,6 +113,8 @@ Existing persisted booleans are taken at face value:
 - rows with `include_in_cash_flow=false` begin to be correctly excluded from cash balance;
 - existing `OTHER + passive=false + cash_flow=true` rows begin to contribute through `other_income`.
 
+The current month editor writes `include_in_cash_flow=true` for its salary/bonus/side-income/cashback rows, so ordinary rows created through the existing UI are expected to keep the same cash-balance inclusion behavior.
+
 Closed-month rows remain immutable. Because cash balance is a derived read-time calculation rather than a persisted monthly total, historical cash-balance output may change for closed months that already contain one of the affected flag combinations. This is an intentional formula correction, not a data rewrite.
 
 To make that change observable, R02-19 must advance the externally reported monthly-summary/dashboard `calculation_version` from `v1` to `v2` (or the next canonical version if it has already advanced before implementation).
@@ -127,8 +129,12 @@ R02-19 should:
 - include `OTHER + passive=true + cash_flow=true` through `passive_income` only;
 - exclude `OTHER + passive=true + cash_flow=false` from the cash-balance passive subtotal without removing it from actual passive-income metrics;
 - preserve the R02-04 source-of-truth and deposit-interest invariants;
+- update `MASTER_SPEC.md` §10.9 and relevant cash-balance contract/docstrings to the accepted formula before R02-19 is marked DONE;
+- advance the public monthly-summary/dashboard calculation version;
 - use integer kopecks/`RubleAmount` only; no binary float;
 - avoid DB migration unless an implementation-only schema need is independently proven (none is required by this contract).
+
+Exposing `include_in_cash_flow` as a new user-facing control in the month editor is **not required by R02-19**. That is a separate UI choice; R02-19 is responsible for making the already persisted/API-visible flag semantically correct.
 
 ## Required regression tests for R02-19
 
