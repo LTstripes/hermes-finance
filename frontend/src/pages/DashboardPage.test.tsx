@@ -8,6 +8,11 @@ import { DashboardPage } from "./DashboardPage";
 vi.mock("../components/BackendStatus", () => ({
   BackendStatus: () => <div>backend status stub</div>,
 }));
+vi.mock("../components/MainGoalPanel", () => ({
+  MainGoalPanel: ({ reportingMonthId }: { reportingMonthId: number | null }) => (
+    <div>main goal {reportingMonthId ?? "none"}</div>
+  ),
+}));
 vi.mock("../components/charts/AssetAllocationChart", () => ({
   AssetAllocationChart: () => <div>asset chart stub</div>,
 }));
@@ -99,7 +104,7 @@ afterEach(() => {
 });
 
 describe("DashboardPage G03 component contract", () => {
-  it("selects the newest month, switches KPI source, and renders warnings", async () => {
+  it("selects the newest month, switches KPI and main-goal source, and renders warnings", async () => {
     const fetchMock = setupDashboard((monthId) =>
       jsonResponse(dashboard(monthId, monthId === 2 ? "Среднее доступно за 6 месяцев" : null)),
     );
@@ -107,11 +112,13 @@ describe("DashboardPage G03 component contract", () => {
 
     const selector = await screen.findByLabelText("Месяц KPI");
     expect(selector).toHaveValue("2");
+    expect(screen.getByText("main goal 2")).toBeInTheDocument();
     expect(await screen.findByText("Среднее доступно за 6 месяцев")).toBeInTheDocument();
 
     await user.selectOptions(selector, "1");
 
     expect(selector).toHaveValue("1");
+    expect(await screen.findByText("main goal 1")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input]) => String(input) === "/api/months/1/dashboard"),
     ).toBe(true);
