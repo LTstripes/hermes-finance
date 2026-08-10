@@ -86,3 +86,18 @@ def test_originless_local_api_write_remains_available(tmp_path: Path) -> None:
     response = client.post("/api/security-probe")
 
     assert response.status_code == 200
+
+
+def test_cross_site_browser_write_without_origin_is_rejected(tmp_path: Path) -> None:
+    client = TestClient(
+        _app_without_frontend(tmp_path),
+        base_url="http://127.0.0.1:8000",
+    )
+
+    response = client.post(
+        "/api/security-probe",
+        headers={"sec-fetch-site": "cross-site"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
