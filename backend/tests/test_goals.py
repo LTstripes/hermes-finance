@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session
 
+import hermes_finance.services.goals as goals_service
 from hermes_finance.database import create_database
 from hermes_finance.domain import GoalType
 from hermes_finance.persistence import Base
@@ -36,6 +37,7 @@ def test_main_goal_is_seeded_from_settings_and_created_once(tmp_path: Path) -> N
         assert first.target_value_kopecks == 10_000_000
         assert first.calculation_mode == DEFAULT_PASSIVE_INCOME_CALCULATION_MODE
         assert first.is_active is True
+        assert first.is_main is True
         assert len(list_goals(session)) == 1
     finally:
         session.close()
@@ -146,6 +148,79 @@ def test_goal_validation_rejects_bad_inputs(tmp_path: Path) -> None:
                 target_value="-1.00",
                 calculation_mode="custom",
             )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_main_goal_selection_is_explicit_and_persists(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        first = get_or_create_main_goal(session)
+        second = create_goal(
+            session,
+            name="Synthetic Passive Goal 2",
+            goal_type=GoalType.PASSIVE_INCOME,
+            target_value="200000.00",
+            calculation_mode=DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
+        )
+
+        selected = goals_service.select_main_goal(session, second.id)
+
+        assert selected.id == second.id
+        assert selected.is_main is True
+        assert get_goal(session, first.id).is_main is False
+        session.close()
+
+        fresh_session = database.session_factory()
+        try:
+            assert get_goal(fresh_session, second.id).is_main is True
+            assert [goal.id for goal in list_goals(fresh_session) if goal.is_main] == [second.id]
+        finally:
+            fresh_session.close()
+    finally:
+        database.engine.dispose()
+
+
+def test_main_goal_cannot_be_deleted_or_deactivated(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        main_goal = get_or_create_main_goal(session)
+
+        with pytest.raises(ValueError, match="main goal"):
+            delete_goal(session, main_goal.id)
+        with pytest.raises(ValueError, match="main goal"):
+            update_goal(session, main_goal.id, is_active=False)
+
+        assert get_goal(session, main_goal.id).is_main is True
+        assert get_goal(session, main_goal.id).is_active is True
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_missing_main_goal_with_multiple_active_passive_goals_fails_closed(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        create_goal(
+            session,
+            name="Synthetic Passive Goal A",
+            goal_type=GoalType.PASSIVE_INCOME,
+            target_value="100000.00",
+            calculation_mode=DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
+        )
+        create_goal(
+            session,
+            name="Synthetic Passive Goal B",
+            goal_type=GoalType.PASSIVE_INCOME,
+            target_value="200000.00",
+            calculation_mode=DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
+        )
+
+        with pytest.raises(ValueError, match="multiple active passive-income goals"):
+            get_or_create_main_goal(session)
     finally:
         session.close()
         database.engine.dispose()

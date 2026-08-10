@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import Database, create_database
 from hermes_finance.domain import RubleAmount
+from hermes_finance.services.goals import get_or_create_main_goal
 from hermes_finance.services.settings import get_or_create_settings, update_settings
 from hermes_finance.settings import Settings as AppConfig
 
@@ -70,14 +71,14 @@ def session_for_request(request: Request) -> Generator[Session, None, None]:
             yield session
 
 
-def _response_from_settings(settings: object) -> SettingsResponse:
+def _response_from_settings(settings: object, main_goal: object) -> SettingsResponse:
     model = settings
     return SettingsResponse(
         base_currency=model.base_currency,
         locale=model.locale,
         timezone=model.timezone,
         passive_income_goal=MoneyValue(
-            amount=RubleAmount(model.passive_income_goal_kopecks).to_api(),
+            amount=RubleAmount(main_goal.target_value_kopecks).to_api(),
             currency=model.base_currency,
         ),
         formula_version=model.formula_version,
@@ -88,7 +89,8 @@ def _response_from_settings(settings: object) -> SettingsResponse:
 def read_settings(
     session: Session = Depends(session_for_request),
 ) -> SettingsResponse:
-    return _response_from_settings(get_or_create_settings(session))
+    settings = get_or_create_settings(session)
+    return _response_from_settings(settings, get_or_create_main_goal(session))
 
 
 @router.put("", response_model=SettingsResponse)
@@ -111,4 +113,4 @@ def write_settings(
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return _response_from_settings(settings)
+    return _response_from_settings(settings, get_or_create_main_goal(session))

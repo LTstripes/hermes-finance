@@ -226,3 +226,45 @@ def test_json_export_does_not_mutate_persistence(
 
     assert response.status_code == 200, response.text
     assert _table_counts(database) == before
+
+
+def test_exports_preserve_selected_main_goal_and_mark_progress_only_on_main(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    month_id = _create_month(client)
+
+    initial = client.get("/api/goals")
+    assert initial.status_code == 200, initial.text
+    initial_goal = initial.json()[0]
+    alternative = client.post(
+        "/api/goals",
+        json={
+            "name": "Synthetic Passive Alternative",
+            "goal_type": "passive_income",
+            "target_value": {"amount": "200000.00", "currency": "RUB"},
+            "calculation_mode": "monthly_net_passive_income",
+        },
+    )
+    assert alternative.status_code == 201, alternative.text
+    selected = client.patch(f"/api/goals/{alternative.json()['id']}", json={"is_main": True})
+    assert selected.status_code == 200, selected.text
+
+    json_response = client.post(f"/api/months/{month_id}/export/json")
+    assert json_response.status_code == 200, json_response.text
+    json_payload = json.loads(json_response.content.decode("utf-8"))
+    raw_goals = {goal["id"]: goal for goal in json_payload["raw"]["goals"]}
+    assert raw_goals[initial_goal["id"]]["is_main"] is False
+    assert raw_goals[alternative.json()["id"]]["is_main"] is True
+    assert json_payload["raw"]["app_settings"]["passive_income_goal"] == {
+        "amount": "200000.00",
+        "currency": "RUB",
+    }
+
+    markdown_response = client.post(f"/api/months/{month_id}/export/markdown")
+    assert markdown_response.status_code == 200, markdown_response.text
+    markdown_lines = markdown_response.content.decode("utf-8").splitlines()
+    main_line = next(line for line in markdown_lines if "Synthetic Passive Alternative" in line)
+    non_main_line = next(line for line in markdown_lines if initial_goal["name"] in line)
+    assert "0,00%" in main_line
+    assert "—" in non_main_line

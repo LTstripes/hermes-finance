@@ -17,6 +17,7 @@ from hermes_finance.api.errors import register_error_handlers
 from hermes_finance.api.expected_flows import router as expected_flows_router
 from hermes_finance.api.expenses import router as expenses_router
 from hermes_finance.api.exports import router as exports_router
+from hermes_finance.api.goals import router as goals_router
 from hermes_finance.api.iis import router as iis_router
 from hermes_finance.api.incomes import router as incomes_router
 from hermes_finance.api.instruments import router as instruments_router
@@ -79,6 +80,7 @@ def create_app(
     application.include_router(properties_router)
     application.include_router(comments_router)
     application.include_router(exports_router)
+    application.include_router(goals_router)
 
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])
     async def health() -> HealthResponse:

@@ -258,6 +258,7 @@ class RawGoal(ExportModel):
     target_value: MoneyValue
     target_date: date | None
     is_active: bool
+    is_main: bool
     calculation_mode: str
     notes: str | None
 
@@ -391,6 +392,9 @@ def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceD
     settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
     if settings is None:
         raise RuntimeError("app settings must be prepared before building an export")
+    main_goal = session.execute(select(Goal).where(Goal.is_main.is_(True))).scalar_one_or_none()
+    if main_goal is None:
+        raise RuntimeError("main goal must be selected before building an export")
     accounts = list(session.scalars(select(Account).order_by(Account.id)))
     instruments = list(session.scalars(select(Instrument).order_by(Instrument.id)))
     return RawSourceData(
@@ -400,7 +404,7 @@ def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceD
             locale=settings.locale,
             timezone=settings.timezone,
             passive_income_goal=_required_money(
-                settings.passive_income_goal_kopecks, settings.base_currency
+                main_goal.target_value_kopecks, settings.base_currency
             ),
             formula_version=settings.formula_version,
         ),
@@ -610,6 +614,7 @@ def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceD
                 target_value=_required_money(item.target_value_kopecks),
                 target_date=item.target_date,
                 is_active=item.is_active,
+                is_main=item.is_main,
                 calculation_mode=item.calculation_mode,
                 notes=item.notes,
             )

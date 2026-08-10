@@ -9,6 +9,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -622,6 +623,12 @@ class PropertySnapshot(Base):
 class Goal(Base):
     __tablename__ = "goals"
     __table_args__ = (
+        Index(
+            "uq_goals_single_main",
+            "is_main",
+            unique=True,
+            sqlite_where=text("is_main = 1"),
+        ),
         CheckConstraint(
             "goal_type IN ('passive_income', 'capital', 'expense_coverage', "
             "'mortgage_coverage', 'other')",
@@ -637,6 +644,9 @@ class Goal(Base):
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    is_main: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
     )
     calculation_mode: Mapped[str] = mapped_column(String(64), nullable=False)
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)

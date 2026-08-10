@@ -52,7 +52,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0021_salary_tax_year_contexts",
+        "revision": "0022_goal_main_selection",
         "months_status": 200,
     }
 
@@ -82,7 +82,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0021_salary_tax_year_contexts"}
+    assert observed == {"revision": "0022_goal_main_selection"}
     assert starts == 2
 
 

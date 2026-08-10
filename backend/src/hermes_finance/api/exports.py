@@ -24,7 +24,11 @@ from hermes_finance.services.comments import list_monthly_comments
 from hermes_finance.services.dashboard import build_dashboard
 from hermes_finance.services.debts import list_debts
 from hermes_finance.services.expenses import list_expense_entries
-from hermes_finance.services.goals import DEFAULT_PASSIVE_INCOME_CALCULATION_MODE, list_goals
+from hermes_finance.services.goals import (
+    DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
+    MainGoalSelectionError,
+    list_goals,
+)
 from hermes_finance.services.incomes import list_income_entries
 from hermes_finance.services.investment_cash_flows import list_investment_cash_flows
 from hermes_finance.services.markdown_export import (
@@ -58,9 +62,24 @@ def _prepare_read_only_defaults(session: Session, year: int) -> None:
         session.add(settings)
         session.flush()
 
-    main_goal = session.scalar(
-        select(Goal).where(Goal.goal_type == "passive_income").order_by(Goal.id).limit(1)
-    )
+    main_goal = session.execute(select(Goal).where(Goal.is_main.is_(True))).scalar_one_or_none()
+    if main_goal is None:
+        candidates = list(
+            session.scalars(
+                select(Goal).where(
+                    Goal.goal_type == "passive_income",
+                    Goal.is_active.is_(True),
+                )
+            )
+        )
+        if len(candidates) > 1:
+            raise MainGoalSelectionError(
+                "multiple active passive-income goals exist without a persisted main selection; "
+                "choose exactly one main goal"
+            )
+        if candidates:
+            main_goal = candidates[0]
+            main_goal.is_main = True
     if main_goal is None:
         session.add(
             Goal(
@@ -69,6 +88,7 @@ def _prepare_read_only_defaults(session: Session, year: int) -> None:
                 target_value_kopecks=settings.passive_income_goal_kopecks,
                 target_date=None,
                 is_active=True,
+                is_main=True,
                 calculation_mode=DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
                 notes=None,
             )
@@ -137,7 +157,7 @@ def _report_for_month(
             target=RubleAmount(item.target_value_kopecks),
             progress_pct=(
                 dashboard.summary.coverage.goal_progress_pct
-                if item.goal_type == "passive_income"
+                if item.goal_type == "passive_income" and item.is_main
                 else None
             ),
         )
