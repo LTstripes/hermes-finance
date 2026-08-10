@@ -387,7 +387,7 @@ export function AccountsPage() {
         </p>
       </header>
 
-      <div className="toolbar" role="group" aria-label="Раздел справочника">
+      <div className="toolbar">
         <Button
           aria-pressed={tab === "accounts"}
           onClick={() => setTab("accounts")}
