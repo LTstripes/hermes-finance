@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router";
 
 import { AppLayout } from "../components/AppLayout";
+import { AccountsPage } from "../pages/AccountsPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { ExportPage } from "../pages/ExportPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
@@ -15,17 +16,7 @@ export function App() {
           <Route index element={<DashboardPage />} />
           <Route path="months" element={<MonthsPage />} />
           <Route path="months/:monthId" element={<MonthDetailPage />} />
-          <Route
-            path="accounts"
-            element={
-              <PlaceholderPage
-                description="Справочник счетов и инструментов — после базового month editor."
-                eyebrow="Данные"
-                phaseHint="E-фаза · позже"
-                title="Счета и инструменты"
-              />
-            }
-          />
+          <Route path="accounts" element={<AccountsPage />} />
           <Route
             path="goals"
             element={

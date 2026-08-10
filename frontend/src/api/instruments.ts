@@ -1,5 +1,31 @@
 import { apiRequest } from "./client";
-import type { Instrument, InstrumentCreate } from "./types";
+import type { Instrument, MoneyValue } from "./types";
+
+export type InstrumentCreatePayload = {
+  name: string;
+  instrument_type: string;
+  isin?: string | null;
+  ticker?: string | null;
+  moex_secid?: string | null;
+  currency?: string;
+  nominal_value?: MoneyValue | null;
+  is_active?: boolean;
+  manual_price_allowed?: boolean;
+  notes?: string | null;
+};
+
+export type InstrumentUpdatePayload = {
+  name?: string;
+  instrument_type?: string;
+  isin?: string | null;
+  ticker?: string | null;
+  moex_secid?: string | null;
+  currency?: string;
+  nominal_value?: MoneyValue | null;
+  is_active?: boolean;
+  manual_price_allowed?: boolean;
+  notes?: string | null;
+};
 
 export function listInstruments(
   params: { active?: boolean; instrument_type?: string } = {},
@@ -17,12 +43,31 @@ export function listInstruments(
 }
 
 export function createInstrument(
-  payload: InstrumentCreate,
+  payload: InstrumentCreatePayload,
   signal?: AbortSignal,
 ): Promise<Instrument> {
   return apiRequest<Instrument>("/api/instruments", {
     method: "POST",
     body: payload,
+    signal,
+  });
+}
+
+export function updateInstrument(
+  instrumentId: number,
+  payload: InstrumentUpdatePayload,
+  signal?: AbortSignal,
+): Promise<Instrument> {
+  return apiRequest<Instrument>(`/api/instruments/${instrumentId}`, {
+    method: "PATCH",
+    body: payload,
+    signal,
+  });
+}
+
+export function deleteInstrument(instrumentId: number, signal?: AbortSignal): Promise<void> {
+  return apiRequest<void>(`/api/instruments/${instrumentId}`, {
+    method: "DELETE",
     signal,
   });
 }
