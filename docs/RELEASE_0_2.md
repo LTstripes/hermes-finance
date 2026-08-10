@@ -49,8 +49,8 @@
 | ID | Задача | Priority | Status | Proposed route | Depends on |
 |---|---|---:|---|---|---|
 | R02-01 | Startup migrations + schema readiness gate | P0 | DONE | Luna High / — / Terra High | — |
-| R02-02 | Контракт opening YTD gross для НДФЛ | P0 | READY | Sol High / — / Terra High | — |
-| R02-03 | Реализация opening YTD gross для НДФЛ | P0 | BLOCKED | Terra High / Luna High optional / Terra High | R02-02 |
+| R02-02 | Контракт opening YTD gross для НДФЛ | P0 | DONE | Sol High / — / Terra High | — |
+| R02-03 | Реализация opening YTD gross для НДФЛ | P0 | READY | Terra High / Luna High optional / Terra High | R02-02 |
 | R02-04 | Passive-income invariants и защита от double count | P0 | READY | Terra High / DeepSeek Free optional / Terra High | — |
 | R02-05 | Localhost Host/Origin protection | P1 | READY | Sol High / Luna High bounded worker / Sol High | — |
 | R02-06 | Убрать внешние Google Fonts / true-offline UI | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
@@ -61,7 +61,7 @@
 | R02-11 | Goals API + единый source of truth основной цели | P1 | READY | Terra High / Luna High bounded worker / Terra High | — |
 | R02-12 | Контракт и backend прогноза даты достижения цели | P1 | BLOCKED | Sol High / Terra High bounded worker / Sol High | R02-11 |
 | R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | BLOCKED | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
-| R02-14 | Зафиксировать левую панель на desktop | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
+| R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-15 | Accounts & Instruments UI вместо placeholder | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
 | R02-16 | Settings UI baseline вместо placeholder | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
 | R02-17 | Tax brackets administration contract/API/UI | P2 | DEFERRED | Terra High / Luna High bounded worker / Terra High | R02-16 |
@@ -106,7 +106,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-02. Контракт opening YTD gross для НДФЛ
 
 **Priority:** P0  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Sol High / — / Terra High reviewer
 
 ## Проблема
@@ -138,7 +138,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-03. Реализация opening YTD gross для НДФЛ
 
 **Priority:** P0  
-**Status:** BLOCKED by R02-02  
+**Status:** READY  
 **Route:** Terra High / Luna High optional worker / Terra High reviewer
 
 ## Сделать
@@ -437,7 +437,7 @@ Persistence/service для `goals` уже существуют, включая `
 # R02-14. Зафиксировать левую панель на desktop
 
 **Priority:** P2  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Сделать
