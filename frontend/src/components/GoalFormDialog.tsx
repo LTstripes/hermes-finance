@@ -1,7 +1,12 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 
 import type { Goal, GoalCreatePayload, GoalUpdatePayload } from "../api/goals";
-import { defaultCalculationMode, GOAL_TYPE_LABELS, GOAL_TYPES, goalForecastSupportLabel } from "../lib/goals";
+import {
+  defaultCalculationMode,
+  GOAL_TYPE_LABELS,
+  GOAL_TYPES,
+  goalForecastSupportLabel,
+} from "../lib/goals";
 import { normalizeMoneyInput } from "../lib/money";
 import { Button, Field, Input, Select } from "./ui";
 
@@ -23,9 +28,7 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
   const [targetDate, setTargetDate] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isMain, setIsMain] = useState(false);
-  const [calculationMode, setCalculationMode] = useState(
-    defaultCalculationMode("passive_income"),
-  );
+  const [calculationMode, setCalculationMode] = useState(defaultCalculationMode("passive_income"));
   const [notes, setNotes] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -89,11 +92,15 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
       return;
     }
     if (goal?.target_date && !targetDate) {
-      setLocalError("Backend пока не поддерживает очистку уже заданной даты. Укажи новую дату или оставь прежнюю.");
+      setLocalError(
+        "Backend пока не поддерживает очистку уже заданной даты. Укажи новую дату или оставь прежнюю.",
+      );
       return;
     }
     if (goal?.notes && !normalizedNotes) {
-      setLocalError("Backend пока не поддерживает очистку уже заданной заметки. Измени текст или оставь прежний.");
+      setLocalError(
+        "Backend пока не поддерживает очистку уже заданной заметки. Измени текст или оставь прежний.",
+      );
       return;
     }
     if (isMain && (goalType !== "passive_income" || !isActive)) {
@@ -146,8 +153,8 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
           {goal ? "Редактировать цель" : "Создать цель"}
         </h2>
         <p className="dialog__body" id={descriptionId}>
-          Финансовый прогресс и прогноз рассчитывает backend. Поле «срок» — пользовательский дедлайн,
-          а не обещанная дата достижения.
+          Финансовый прогресс и прогноз рассчитывает backend. Поле «срок» — пользовательский
+          дедлайн, а не обещанная дата достижения.
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="goal-name" label="Название">
