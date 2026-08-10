@@ -52,21 +52,21 @@
 | R02-02 | Контракт opening YTD gross для НДФЛ | P0 | DONE | Sol High / — / Terra High | — |
 | R02-03 | Реализация opening YTD gross для НДФЛ | P0 | DONE | Terra High / Luna High optional / Terra High | R02-02 |
 | R02-04 | Passive-income invariants и защита от double count | P0 | DONE | Terra High / DeepSeek Free optional / Terra High | — |
-| R02-05 | Localhost Host/Origin protection | P1 | READY | Sol High / Luna High bounded worker / Sol High | — |
+| R02-05 | Localhost Host/Origin protection | P1 | DONE | Sol High / Luna High bounded worker / Sol High | — |
 | R02-06 | Убрать внешние Google Fonts / true-offline UI | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-07 | Убрать финансовые вычисления через JS `Number` | P1 | READY | Luna High / DeepSeek Free bounded worker / Terra High spot review | — |
-| R02-08 | Windows production smoke в CI | P1 | READY | Luna High / DeepSeek Free optional / Luna | R02-01 |
-| R02-09 | Безопасная сериализация backup restore на Windows | P1 | READY | Terra High / Luna High bounded worker / Terra High | — |
+| R02-07 | Убрать финансовые вычисления через JS `Number` | P1 | DONE | Luna High / DeepSeek Free bounded worker / Terra High spot review | — |
+| R02-08 | Windows production smoke в CI | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-01 |
+| R02-09 | Безопасная сериализация backup restore на Windows | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
 | R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | DEFERRED | Luna High / — / Terra only if semantics change | — |
-| R02-11 | Goals API + единый source of truth основной цели | P1 | READY | Terra High / Luna High bounded worker / Terra High | — |
-| R02-12 | Контракт и backend прогноза даты достижения цели | P1 | BLOCKED | Sol High / Terra High bounded worker / Sol High | R02-11 |
+| R02-11 | Goals API + единый source of truth основной цели | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
+| R02-12 | Контракт и backend прогноза даты достижения цели | P1 | IN_PROGRESS | Sol High / Terra High bounded worker / Sol High | R02-11 |
 | R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | BLOCKED | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
 | R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-15 | Accounts & Instruments UI вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-16 | Settings UI baseline вместо placeholder | P2 | READY | Luna High / DeepSeek Free optional / Luna | — |
+| R02-16 | Settings UI baseline вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-17 | Tax brackets administration contract/API/UI | P2 | DEFERRED | Terra High / Luna High bounded worker / Terra High | R02-16 |
-| R02-18 | Контракт include_in_cash_flow и OTHER non-passive income | P1 | READY | Sol High / — / Terra High | — |
-| R02-19 | Реализация income cash-flow inclusion contract | P1 | BLOCKED | Terra High / Luna High bounded worker / Terra High | R02-18 |
+| R02-18 | Контракт include_in_cash_flow и OTHER non-passive income | P1 | DONE | Sol High / — / Terra High | — |
+| R02-19 | Реализация income cash-flow inclusion contract | P1 | DONE | Terra High / Luna High bounded worker / Terra High | R02-18 |
 
 `Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
 
@@ -190,7 +190,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-05. Localhost Host/Origin protection
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Sol High / Luna High bounded worker / Sol High reviewer
 
 ## Контекст
@@ -242,7 +242,7 @@ Production launcher строит frontend и запускает API, но шта
 # R02-07. Убрать финансовые вычисления через JS `Number`
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free bounded worker / Terra High spot review
 
 ## Проблема
@@ -268,7 +268,7 @@ Backend следует `Decimal`/integer minor-unit contract, но frontend help
 # R02-08. Windows production smoke в CI
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Сделать
@@ -337,7 +337,7 @@ Single-user SQLite сейчас достаточен. Не нужно заран
 # R02-11. Goals API + единый source of truth основной цели
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Terra High / Luna High bounded worker / Terra High reviewer
 
 ## Текущее состояние
@@ -374,8 +374,9 @@ Persistence/service для `goals` уже существуют, включая `
 # R02-12. Контракт и backend прогноза даты достижения цели
 
 **Priority:** P1  
-**Status:** BLOCKED by R02-11  
-**Route:** Sol High / Terra High bounded worker / Sol High reviewer
+**Status:** IN_PROGRESS  
+**Route:** Sol High / Terra High bounded worker / Sol High reviewer  
+**Contract:** `docs/adr/0005-goal-achievement-forecast.md`
 
 ## Почему отдельная задача
 
@@ -401,7 +402,7 @@ Persistence/service для `goals` уже существуют, включая `
 # R02-13. Полноценный Goals UI + прогресс основной цели на Dashboard
 
 **Priority:** P1  
-**Status:** BLOCKED by R02-11, R02-12  
+**Status:** BLOCKED by R02-12  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Сделать
@@ -492,7 +493,7 @@ Backend CRUD счетов и инструментов уже в основном
 # R02-16. Settings UI baseline вместо placeholder
 
 **Priority:** P2  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / DeepSeek Free optional / Luna reviewer
 
 ## Сделать
@@ -536,7 +537,7 @@ Tax brackets уже участвуют в чувствительной нало�
 # R02-18. Контракт `include_in_cash_flow` и `OTHER` non-passive income
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Sol High / — / Terra High reviewer
 
 ## Проблема
@@ -571,7 +572,7 @@ Tax brackets уже участвуют в чувствительной нало�
 # R02-19. Реализация income cash-flow inclusion contract
 
 **Priority:** P1  
-**Status:** BLOCKED by R02-18  
+**Status:** DONE  
 **Route:** Terra High / Luna High bounded worker / Terra High reviewer
 
 ## Сделать
