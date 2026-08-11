@@ -19,7 +19,7 @@ const statusCopy = {
     chip: "Статус",
   },
   unavailable: {
-    title: "Приложение недоступно",
+    title: "Сервер недоступен",
     detail: "Запусти Hermes Finance и обнови страницу",
     chip: "Офлайн",
   },
@@ -61,8 +61,8 @@ export function BackendStatus() {
   const copy =
     state.kind === "connected"
       ? {
-          title: "Приложение работает",
-          detail: `Версия ${state.version}`,
+          title: "Сервер подключён",
+          detail: "Локальное приложение работает",
           chip: "Онлайн",
         }
       : statusCopy[state.kind];
@@ -81,6 +81,12 @@ export function BackendStatus() {
           <span>{copy.detail}</span>
         </span>
       </div>
+      {state.kind === "connected" ? (
+        <details className="muted tiny">
+          <summary>Технические подробности</summary>
+          <span>API v{state.version}</span>
+        </details>
+      ) : null}
     </Panel>
   );
 }
