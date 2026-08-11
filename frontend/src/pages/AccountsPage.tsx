@@ -59,6 +59,10 @@ function BooleanBadge({ value }: { value: boolean }) {
   return <Badge tone={value ? "ok" : "neutral"}>{value ? "Да" : "Нет"}</Badge>;
 }
 
+function accountCodeLabel(code: string): string {
+  return code.startsWith("legacy:") ? "Импортирован из прежней версии" : `Код: ${code}`;
+}
+
 export function AccountsPage() {
   const [tab, setTab] = useState<Tab>("accounts");
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -263,14 +267,14 @@ export function AccountsPage() {
                 <div className="stack-8">
                   <strong>{account.name}</strong>
                   {account.external_code ? (
-                    <span className="muted tiny">Код: {account.external_code}</span>
+                    <span className="muted tiny">{accountCodeLabel(account.external_code)}</span>
                   ) : null}
                 </div>
               </Td>
               <Td>{labelOf(ACCOUNT_TYPE_LABELS, account.account_type)}</Td>
               <Td>
                 <Badge tone={accountStatusTone(account.status)}>
-                  {ACCOUNT_STATUS_LABELS[account.status] ?? account.status}
+                  {ACCOUNT_STATUS_LABELS[account.status] ?? "Статус неизвестен"}
                 </Badge>
               </Td>
               <Td>
@@ -383,7 +387,7 @@ export function AccountsPage() {
         <p className="eyebrow">Данные</p>
         <h1>Счета и инструменты</h1>
         <p className="page-header__description">
-          Справочники счетов и инвестиционных инструментов. Без финансовых расчётов на клиенте.
+          Справочники счетов и инвестиционных инструментов для отчётных месяцев.
         </p>
       </header>
 
@@ -425,7 +429,7 @@ export function AccountsPage() {
       {tab === "accounts" ? (
         <Panel label="Справочник" title="Счета">
           {accountsLoading ? (
-            <LoadingState description="Загружаем /api/accounts…" inline />
+            <LoadingState description="Загружаем счета…" inline />
           ) : accountsError ? (
             <div className="stack-8">
               <ErrorState description={accountsError} inline title="Не удалось загрузить счета" />
@@ -456,7 +460,7 @@ export function AccountsPage() {
       ) : (
         <Panel label="Справочник" title="Инструменты">
           {instrumentsLoading ? (
-            <LoadingState description="Загружаем /api/instruments…" inline />
+            <LoadingState description="Загружаем инструменты…" inline />
           ) : instrumentsError ? (
             <div className="stack-8">
               <ErrorState
@@ -522,7 +526,7 @@ export function AccountsPage() {
         busy={deleting}
         confirmLabel="Удалить"
         danger
-        description={`Удалить «${deleteName}»? Если объект уже используется в финансовых данных, backend отклонит операцию.`}
+        description={`Удалить «${deleteName}»? Если запись уже используется в финансовых данных, приложение не позволит её удалить.`}
         onCancel={() => {
           if (!deleting) setPendingDelete(null);
         }}
