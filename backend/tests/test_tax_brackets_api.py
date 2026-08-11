@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from hermes_finance.database import create_database
 from hermes_finance.domain import IncomeType, ReportingMonthStatus
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, ReportingMonth
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.services.salary import calculate_salary_tax
@@ -123,7 +123,7 @@ def test_closed_month_locks_tax_year_until_reopened(tmp_path: Path) -> None:
             assert client.get("/api/tax-brackets/2037").json()["source"] == "official_default"
 
         with database.session_factory() as session:
-            month = session.get(__import__("hermes_finance.persistence", fromlist=["ReportingMonth"]).ReportingMonth, month_id)
+            month = session.get(ReportingMonth, month_id)
             assert month is not None
             month.status = ReportingMonthStatus.DRAFT.value
             session.commit()
