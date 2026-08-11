@@ -147,7 +147,6 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         setActualDraft((prev) => ({
           ...prev,
           account_id: prev.account_id || (firstAccount ? String(firstAccount.id) : ""),
-          instrument_id: prev.instrument_id || (firstInstrument ? String(firstInstrument.id) : ""),
           event_date: prev.event_date || defaultDate,
         }));
         setExpectedDraft((prev) => ({
@@ -254,7 +253,6 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
       setActualDraft((prev) => ({
         ...emptyActual(defaultDate),
         account_id: prev.account_id,
-        instrument_id: prev.instrument_id,
       }));
       await load();
     } catch (err) {
