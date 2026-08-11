@@ -1,305 +1,197 @@
 # Finance Dashboard — Project Wiki
 
-> Живой контекст проекта для длительной разработки. Обновлять после принятых архитектурных и продуктовых решений, но не дублировать сюда весь backlog и не помещать персональные финансовые данные.
+> Долгоживущий контекст Hermes Finance. Здесь фиксируется текущее состояние проекта и принятые решения; подробный execution journal остаётся в Git history, release/backlog docs и `CHANGELOG.md`. Персональные финансовые данные сюда не помещаются.
 
 ## 1. Что мы строим
 
-Локальное однопользовательское веб-приложение для ежемесячного ведения личных финансов. Оно заменяет текущую Excel-модель, хранит финансовые снимки по отчётным месяцам и показывает:
+Hermes Finance — локальное однопользовательское Windows-first веб-приложение для ежемесячного ведения личных финансов. Оно хранит snapshots по отчётным месяцам и показывает:
 
-- ликвидный капитал после краткосрочных долгов;
+- ликвидный капитал после включённых долгов;
 - динамику капитала;
 - фактический и прогнозный чистый пассивный доход;
-- прогресс к цели пассивного дохода;
+- прогресс основной цели;
 - покрытие обязательных расходов;
-- инвестиционный результат без ложного смешения с денежными потоками;
-- показатели ИИС и полученной налоговой выгоды;
-- справочную стоимость недвижимости и покрытие ипотеки ликвидными активами.
+- инвестиционный результат отдельно от денежных потоков;
+- ИИС и полученную/планируемую налоговую выгоду;
+- справочную недвижимость и покрытие ипотеки.
 
 Приложение не является бухгалтерской, налоговой или торговой системой.
 
 ## 2. Источники истины
 
-При конфликте документов использовать такой приоритет:
+При конфликте документов использовать такой порядок:
 
-1. `MASTER_SPEC.md` — бизнес-правила, границы продукта и архитектурные решения.
-2. `HERMES_TASKS.md` — порядок и scope отдельных задач.
-3. `HERMES_START_PROMPT.md` — рабочий протокол одной итерации.
-4. `IDEA.md` — исходная краткая идея, не подробная спецификация.
-5. Этот wiki — принятые уточнения, открытые вопросы и долговременный контекст.
+1. `docs/MASTER_SPEC.md` — бизнес-инварианты, формулы и границы продукта.
+2. Принятые ADR в `docs/adr/` — более конкретные нормативные решения по отдельным контрактам.
+3. Активный release backlog (`docs/RELEASE_0_2.md` для 0.2) — текущие task-cards, статусы и release gate.
+4. `docs/MODEL_ROUTING.md` — текущий routing/settling protocol.
+5. `docs/VERIFICATION_POLICY.md` — обязательная стратегия targeted/full-suite/CI проверок.
+6. `docs/HERMES_START_PROMPT.md` и `AGENTS.md` — рабочий протокол агентов.
+7. Этот wiki — долговременный контекст и краткая карта принятых решений.
+8. `docs/HERMES_TASKS.md` — исторический backlog строительства MVP 0.1, не источник новых post-MVP задач.
 
-`PRIVATE_SEED_NOT_FOR_GIT.md` содержит только локальные персональные данные. Его нельзя коммитить, цитировать в публичных документах, тестах, логах и примерах.
+Private seed, SQLite DB, exports, backups и реальные финансовые значения остаются локальными и Git-ignored.
 
-Проектные документы хранятся в `docs/`, ADR — в `docs/adr/`, а локальный private seed — в исключённом из Git каталоге `private/`.
+## 3. Продуктовые границы
 
-## 3. Зафиксированные границы MVP 0.1
+### Входит в текущий локальный продукт
 
-### Входит
-
-- Windows-first локальный запуск, браузерный UI, SQLite;
+- Windows-first production launcher;
+- SQLite;
 - один пользователь без авторизации;
-- ручной месячный ввод и клонирование предыдущего месяца;
-- счета, позиции, депозиты, cash, золото/другие ликвидные активы;
-- доходы, расходы, savings, долги, недвижимость, ипотека, ИИС и цели;
-- расчёты на backend;
-- dashboard, Markdown/JSON export, backup/restore;
-- разовая проверяемая миграция истории из Excel.
+- месячный draft/closed lifecycle, reopen и клонирование;
+- счета, инструменты, позиции, депозиты, cash и другие ликвидные активы;
+- зарплата/доходы, прогрессивный НДФЛ, расходы, savings, долги, недвижимость, ипотека и ИИС;
+- фактические/ожидаемые investment cash flows;
+- Goals и основная цель;
+- Dashboard и графики;
+- Markdown/JSON export;
+- SQLite online backup/restore;
+- private seed и legacy Excel migration tooling.
 
-### Не входит
+### Не входит без отдельного решения
 
 - торговые операции;
 - автоматические банковские транзакции;
-- автоматические котировки и PDF-импорт до следующих версий;
-- облачный сервис, VPS, авторизация и многопользовательский режим;
-- фоновая телеметрия и фоновые обновления;
-- универсальный импортёр любого Excel;
-- точная доходность до реализации датированных потоков и Modified Dietz.
+- cloud/VPS/multi-user/auth;
+- фоновая телеметрия;
+- автоматические котировки в текущем 0.2;
+- автоматическое формирование календаря купонов/дивидендов/погашений в 0.2;
+- универсальный импорт любого Excel/PDF;
+- точная доходность с датированными внешними потоками до отдельного контракта.
 
-## 4. Зафиксированный технический контур
+## 4. Технический контур 0.2
 
-- Backend: Python, FastAPI, SQLAlchemy 2, Alembic, Pydantic.
-- Хранилище MVP: SQLite с включёнными foreign keys.
-- Frontend: React, TypeScript, Vite, React Router, TanStack Query, Recharts, Tailwind CSS и простые UI-примитивы.
-- Тесты: pytest, Vitest/Testing Library, минимальные Playwright-сценарии.
-- Доменная логика отделяется от API и UI.
-- Frontend получает рассчитанные финансовые показатели и не дублирует формулы.
-- Локальный backend по умолчанию слушает только `127.0.0.1`.
+- Backend: Python 3.13, FastAPI, SQLAlchemy 2, Alembic, Pydantic.
+- Storage: SQLite с foreign keys.
+- Frontend: React 19, TypeScript, Vite, React Router 8, Recharts и собственные UI/CSS primitives.
+- Backend tests: pytest; lint/format: Ruff.
+- Frontend tests: Vitest + Testing Library; lint/format: Biome; минимальный Playwright smoke.
+- Production UI и API обслуживаются локально на `127.0.0.1:8000`.
+- Dev frontend работает на `127.0.0.1:5173` и проксирует `/api` в локальный backend.
+- Финансовые формулы живут на backend. Frontend получает exact API values и занимается presentation/UI validation, но не дублирует денежные формулы.
 
-## 5. Неприкосновенные бизнес-инварианты
+## 5. Неприкосновенные инварианты
 
 Без явного решения владельца нельзя:
 
 - использовать binary `float` для денег;
 - включать кэшбэк в пассивный доход;
-- включать недвижимость в ликвидный капитал;
-- считать погашение номинала облигации доходом;
-- называть изменение стоимости портфеля доходностью без учёта внешних потоков;
-- прибавлять планируемый, но ещё не полученный вычет ИИС к фактическому результату;
-- доверять рассчитанным значениям, присланным frontend;
-- коммитить реальные номера счетов, базы, PDF, Excel, exports и backups;
-- добавлять авторизацию, облако, фоновые котировки или торговые действия в MVP.
+- включать недвижимость в liquid capital;
+- считать redemption номинала облигации доходом;
+- называть изменение стоимости портфеля доходностью без учёта потоков;
+- прибавлять planned/submitted IIS benefit к фактически полученному результату;
+- доверять рассчитанным финансовым значениям от frontend;
+- молча изменять данные закрытого месяца;
+- коммитить private DB/seed/export/backup/реальные финансовые payload;
+- добавлять cloud/auth/telemetry/trading capabilities в локальный продукт без отдельного scope decision.
 
-## 6. Масштаб roadmap
+Деньги в persistence/domain используют integer minor units/`Decimal` и `ROUND_HALF_UP`. API передаёт деньги как decimal string + ISO currency.
 
-Backlog содержит 112 задач:
+## 6. Ключевые финансовые контракты
 
-| Фаза | Задач | Смысл |
-|---|---:|---|
-| A | 7 | каркас, инструменты и GitHub Actions CI |
-| B | 19 | база и доменная модель |
-| C | 10 | расчётный слой |
-| D | 8 | API |
-| E | 18 | frontend MVP |
-| F | 10 | export, backup и миграция Excel |
-| G | 8 | системная проверка и выпуск 0.1 |
-| H | 6 | котировки MOEX |
-| I | 12 | PDF Альфа-Инвестиций |
-| J | 8 | точная доходность |
-| K | 6 | позднее развитие |
+### Пассивный доход
 
-Рабочее правило: одна задача backlog за итерацию; следующая не начинается автоматически. Контрольные точки из backlog сохраняются.
+Фактический passive income включает проценты депозитов, купоны, дивиденды и прочий доход от капитала; active income, cashback и redemption исключены.
 
-## 7. Принятые уточнения финансовых контрактов
+`deposit_snapshots.actual_interest_received` — канонический источник фактического процента депозита/накопительного счёта. Generic `investment_cash_flows.interest` не дублирует его.
 
-1. **Деньги.** В БД денежные значения хранятся целым количеством minor units (для RUB — копеек). Доменная арифметика использует `Decimal`. API передаёт объект с ISO currency и decimal string в major units, например `{"amount": "1234.56", "currency": "RUB"}`. Преобразование в minor units явно использует `ROUND_HALF_UP` до ближайшей копейки; половинные значения округляются от нуля.
-2. **Процентные ставки.** В БД ставки хранятся integer basis points. API передаёт decimal string в процентных пунктах: `"13.50"` означает 13,50%. На доменной границе значение преобразуется в `Decimal`; binary `float` не используется. Преобразование в basis points использует тот же `ROUND_HALF_UP` до ближайшего basis point.
-3. **Мультивалютность MVP.** Исходная сумма и валюта сохраняются. Для включения в RUB-агрегаты хранится ручная RUB-оценка вместе с датой и источником курса. Автоматические FX-котировки в MVP не добавляются.
-4. **Ожидаемые выплаты.** Прогнозный набор привязывается к отчётному месяцу и версии снимка прогноза. Минимальный контракт включает `reporting_month_id`, `source_as_of_date` и `forecast_version`; агрегаты используют выбранную актуальную версию и не смешивают снимки.
-5. **Проценты по депозитам.** `deposit_snapshots.actual_interest_received` является единственным источником фактических процентов депозитов и накопительных счетов. `investment_cash_flows.interest` не дублирует эти суммы и используется для других инвестиционных процентных событий.
-6. **Клонирование месяца.** `accounts` и `instruments` остаются глобальными справочниками. Клонируются только месячные snapshots, состояния и плановые значения; сами справочники не копируются.
-7. **Закрытый месяц.** Любое изменение финансовых данных закрытого месяца запрещено до явного `reopen`. После повторного открытия редактирование снова разрешено, а время изменения фиксируется.
-8. **Прогноз депозитов.** `balance × annual_rate / 12` маркируется как оценка, а не точное банковское начисление.
-9. **Лицензия.** Не добавлять до решения владельца.
-10. **Размер MVP.** Backlog не сокращать молча; рабочие вертикальные срезы оцениваются на контрольных точках.
-11. **НДФЛ (C07).** Прогрессивная шкала хранится в конфигурационной таблице `tax_brackets` (пороги в копейках, ставки в basis points, верхняя граница может быть открытой) и редактируется без изменения кода. Официальные ставки 2025+ (ФЗ-176-ФЗ от 12.07.2024, источник https://www.nalog.gov.ru/rn77/news/tax_doc_news/15562179/): 13% до 2,4 млн ₽/год, 15% от 2,4 до 5 млн, 18% от 5 до 20 млн, 20% от 20 до 50 млн, 22% свыше 50 млн; ставка применяется только к части дохода внутри диапазона. Seed вставляется только для пустого года и не перезаписывает пользовательские правки. Алгоритм: YTD gross (SALARY строго более ранних месяцев того же года) → разбиение текущей выплаты по диапазонам → налог части = `Decimal(taxable) × rate_bps / 10000` с `ROUND_HALF_UP`; фактический net (employer) хранится отдельно от расчётного.
-12. **ИИС-результат (C09, зафиксировано владельцем на launch gate).** `portfolio_result_without_tax_benefit` — накопленный с открытия счёта: unrealized (position_snapshots счёта на конец отчётного месяца) + все полученные купоны и дивиденды за всё время (net_amount) + весь realized PnL за всё время (realized_profit + realized_loss, убыток со знаком). Взносы, депозиты, выводы и погашения облигаций (redemption — возврат номинала, не доход) никогда не входят в результат. `portfolio_result_with_tax_benefit = without + received_tax_benefits`; planned/submitted показываются только в разбивке и не прибавляются; rejected игнорируется.
+Фактический dividend остаётся полностью в месяце получения. Forecast dividend component использует среднее фактических net dividends по доступным закрытым месяцам, максимум rolling 12.
 
-## 8. Стратегия работы с моделями
+### Income cash flow
 
-> Операционный источник истины — `docs/MODEL_ROUTING.md`. Перед каждым backlog launch он требует recommendation модели и явный выбор владельца; здесь остаётся только долговременная архитектурная договорённость.
+`include_in_cash_flow` нормативно управляет попаданием income row в месячный cash balance. Active/non-passive и passive OTHER не должны double-count между active и passive buckets. Контракт R02-18/R02-19 является нормативным уточнением к общим формулам `MASTER_SPEC`.
 
-### Рекомендация
+### НДФЛ и opening YTD
 
-Проектный skill полезен, но не как копия спецификации. Лучшее разделение:
+Прогрессивный salary tax считается backend по календарному YTD.
 
-- проектный `.hermes.md` или `AGENTS.md` — автоматически загружаемые правила репозитория: источники истины, приватность, одна задача за итерацию, команды проверок;
-- skill `hermes-finance-orchestration` — процедурная маршрутизация задач между моделями, шаблон handoff и независимая проверка результатов;
-- этот wiki и `MASTER_SPEC.md` — знания и решения проекта.
+- `known month` = существующий reporting month со статусом `closed`;
+- draft не считается известным нулём;
+- reopen снова делает месяц unknown для downstream YTD;
+- при неполной истории используется fail-closed `salary_tax_history_incomplete`;
+- для года, история которого начинается позже января, может быть задан annual opening tax context с `effective_from_month` и aggregate taxable gross до boundary;
+- opening context учитывается ровно один раз и не должен double-count реальные месяцы;
+- редактор старого draft остаётся доступным даже если расчётная налоговая часть временно недоступна.
 
-Skill разумно создавать после `A01`/`A02`, когда структура, команды и ADR стабилизированы. До этого он будет повторять черновые пути и быстро протухнет.
+Нормативный контракт opening YTD находится в `docs/adr/0002-opening-ytd-gross.md`.
 
-### Роли
+### Tax bracket administration
 
-| Уровень | Рекомендуемый владелец | Примеры |
-|---|---|---|
-| High | Sol 5.6 | новый/конфликтующий архитектурный контракт, destructive migration semantics, privacy/auth и редкие checkpoint reviews |
-| High | Terra 5.6 | сложная финансовая семантика, налоги, потоки и формулы по утверждённой архитектуре |
-| High | Luna 5.6 | основной исполнитель schema/CRUD/API/frontend, графиков, форм, тестов, документации и мелкого рефакторинга |
-| Внешний, free | DeepSeek V4 Flash Free | bounded standard implementation в изоляции или review; без private seed, commit/push и финальной приёмки |
+Шкала хранится как полный набор ступеней на календарный год. API/UI валидирует целостную шкалу атомарно. Если в этом году существует хотя бы один `closed` reporting month, шкала защищена от молчаливого исторического изменения. Сознательная историческая правка требует явного reopen закрытых месяцев соответствующего года.
 
-### Техническая реальность Hermes
+Month editor показывает ставки из backend `salary_tax.parts`; при пересечении порога одной выплатой UI показывает несколько применённых ставок и текущую marginal bracket, а не вычисляет «ставку» делением tax/gross.
 
-- `delegate_task` сейчас не имеет per-call выбора модели; пустая настройка `delegation.model/provider` означает наследование модели родительской сессии.
-- Для гарантированного Luna/Terra/DeepSeek route используется отдельная session/profile или bounded Hermes one-shot с подтверждёнными provider/model/level.
-- Изменение общей delegation route или model default выполняется только после отдельного согласования владельца.
-- Write-worker работает в изолированном worktree/session, не делает commit/push и не получает private seed; несколько агентов не редактируют одну миграцию/schema/subtree параллельно.
-- Отчёт worker/reviewer не является доказательством: принимающий primary проверяет diff, scope, тесты и отсутствие приватных данных.
-- До конца B19 стандартная работа максимально маршрутизируется на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High. После B19 выполняется один blocker-level архитектурный обзор на Sol High без автоматического переписывания кода.
+### Goals
 
-### Состояние доступности моделей
+`goals` — runtime source of truth. `app_settings.passive_income_goal_kopecks` используется только как compatibility/default seed path, а не как конкурирующее runtime-значение.
 
-- текущий runtime model и reasoning level фиксируются для каждой задачи и не считаются постоянным default;
-- публичная документация Hermes не является доказательством сравнительной силы внутренних Sol/Terra/Luna tiers; проектная карта маршрутизации — решение владельца об уровне риска и расходовании лимитов;
-- проверенный внешний free route: `custom:open.cherryin.ai` / `deepseek/deepseek-v4-flash(free)`;
-- direct provider или configured route не доказывает, что конкретный child его использовал: нужна runtime confirmation;
-- точная карта B01–B19, escalation rules и settling gate находятся в `docs/MODEL_ROUTING.md`.
+Основная passive-income цель использует backend forecast monthly passive income. Прогноз даты достижения не придумывает future growth: если траектории нет, статус остаётся `not_projectable`/локализованным пользовательским сообщением.
 
-После всех checks/commit/push/CI/guard retries агент делает финальный state read-back и короткий settling checkpoint, а затем отправляет один отчёт с меткой **«Канонический итог»**. До этого progress-сообщения не называют задачу готовой; последующие дубли итогов не отправляются без запроса владельца.
+## 7. Месяцы и защита истории
 
-## 9. Протокол делегированной задачи
+- один reporting month на `year + month`;
+- draft редактируем;
+- closed read-only до явного reopen;
+- sanctioned delete разрешён только для draft и удаляет принадлежащие месяцу строки транзакционно до parent row;
+- DB `ON DELETE RESTRICT` остаётся общей защитой вне sanctioned service path;
+- clone переносит permanent state/snapshots, но не копирует фактические выплаты/комментарии как новые события.
 
-Каждый handoff должен содержать:
+## 8. Позиции и количества
 
-1. один ID из backlog и точный outcome;
-2. связанные разделы `MASTER_SPEC.md`;
-3. разрешённые файлы и запрет scope creep;
-4. критерии приёмки и команды тестов;
-5. запрет commit/push и доступа к приватным данным без явного разрешения;
-6. требование перечислить изменённые файлы, команды и ограничения.
+Persistence допускает точность `Numeric(18,6)` для типов, где дробное количество легитимно. В 0.2 введён более строгий invariant для `stock`: количество должно быть положительным целым (`>= 1`) на API/backend boundary. UI скрывает бессмысленные trailing zeroes и форматирует user-facing quantity без перевода финансовых денег в JS float.
 
-После возврата результата Sol обязана независимо проверить полный diff и реально запустить проверки.
+Market value/cost basis/unrealized result пересчитываются backend и не принимаются от frontend как source of truth.
 
-## 10. Решения и открытые вопросы
+## 9. Expected payments
 
-### Принято
+`expected_cash_flows` привязаны к reporting month + `forecast_version` и одному `source_as_of_date` внутри версии. Redemption отображается, но не входит в passive-income forecast.
 
-- Рабочее имя: Finance Dashboard / `hermes-finance`.
-- Локальный репозиторий отделяется от родительского `hermes-dashboard` собственным `.git`.
-- Удалённый хостинг: приватный GitHub-репозиторий `LTstripes/hermes-finance`.
-- CI реализуется через GitHub Actions; прежнее упоминание GitLab CI в backlog заменено.
-- Для общих правил разных агентов создан корневой `AGENTS.md`; знания проекта остаются в спецификации и wiki.
-- Создан user-local skill `hermes-finance-orchestration` для маршрутизации Sol/Terra/Luna/DeepSeek, handoff и независимой приёмки.
-- Финансовые контракты из раздела 7 одобрены владельцем.
-- Backend использует Python 3.13: версия закреплена в `backend/.python-version`, чтобы editable install корректно работал с UTF-8 путями Windows.
-- Frontend использует Node.js 22.22+, React 19, React Router 8, TypeScript, Vite и Vitest; `/api` проксируется только в локальный backend.
-- Корневые PowerShell 5.1-compatible скрипты `scripts/dev.ps1` и `scripts/test.ps1` запускают общий dev stack и единый набор проверок; для локального `Restricted` policy README использует process-only `-ExecutionPolicy Bypass`.
-- Python форматируется и проверяется Ruff; TypeScript/React/CSS — Biome. Biome выбран вместо ESLint TypeScript stack, потому что stable `typescript-eslint` не поддерживает закреплённый TypeScript 7 без принудительного обхода peer dependency.
-- Корневые PowerShell-команды `scripts/lint.ps1` и `scripts/format-check.ps1` проверяют обе части проекта и ничего не форматируют автоматически.
-- GitHub Actions CI состоит из независимых backend/frontend jobs на `ubuntu-latest`, использует только lockfile-зависимости и не обращается к локальной базе, private-файлам или secrets context.
-- До B19 стандартные задачи экономно маршрутизируются на Luna High/DeepSeek Free, сложные финансовые задачи — на Terra High; Sol High используется для новых/конфликтующих контрактов и одного архитектурного checkpoint после B19.
-- Итог по задаче отправляется один раз после settling gate: все side effects/CI/guard retries завершены, выполнен финальный state read-back, временные probes удалены.
-- `A01`–`A07` и `B01`–`B07` выполнены по явному разрешению владельца и прошли локальную приёмку; `B08` автоматически не начинается.
-- `B08`–`B12` выполнены по явному разрешению владельца (primary DeepSeek V4 Flash) и прошли локальную приёмку; `B13` автоматически не начинается.
-- `instruments` — глобальный справочник: `instrument_type` из фиксированного набора, ISIN необязателен, но при заполнении уникален (нормализация в верхний регистр и strip; `NULL` может встречаться многократно), `nominal_value` хранится в копейках через `RubleAmount` и допускается только для неотрицательных значений, `currency` нормализуется в верхний регистр (дефолт `RUB`).
-- `position_snapshots` — уникальность месяц+счёт+инструмент; `quantity` — `Numeric(18,6)` (дробные лоты допустимы); расчётные `market_value`/`cost_basis`/`unrealized_result` всегда пересчитываются сервисом по формуле спецификации §10.11 и не принимаются от вызывающего; `price_source` из `manual/moex/alfa_pdf`; `accrued_interest` необязателен и неотрицателен.
-- `deposit_snapshots` — `expected_monthly_interest` всегда пересчитывается сервисом как `balance × annual_rate / 12` с `ROUND_HALF_UP`; `actual_interest_received` хранится отдельно и прогнозом не заменяется.
-- `cash_balances` — простая сумма по месяцу через `total_cash()`; отсутствие данных трактуется как ноль; флаг `include_in_capital` фильтрует агрегат.
-- `income_entries` — кэшбэк никогда не включается в passive income (инвариант): явный `include_in_passive_income=True` для `cashback` отклоняется; фактический `net_amount` может отличаться от расчётного `gross − tax` и не валидируется на равенство.
-- `investment_cash_flows` — gross/tax/commission хранятся как неотрицательные абсолютные величины, а `net_amount` валидируется как `gross − tax − commission` и может быть отрицательным для отдельного tax/commission event. В passive income попадают только `interest`, `coupon`, `dividend` и `other`; `redemption`, `deposit`, `withdrawal`, комиссии, налоги и realised P/L исключены. Для account типов deposit/savings поток `interest` отклоняется: фактический процент — исключительно `deposit_snapshots.actual_interest_received`.
-- `expected_cash_flows` привязаны к `reporting_month_id` и `forecast_version`; в рамках одной пары месяц+версия разрешена только одна `source_as_of_date`, поэтому агрегаты не смешивают прогнозные snapshots. Окно календаря — `[snapshot_date, snapshot_date + 1 year)`. При известном expected tax service валидирует `expected_net = gross − tax`; при неизвестном tax хранится `NULL`, net равен gross и флаг `is_approximate=true`. Redemption отображается в календаре, но исключён из forecast passive income.
-- `expense_entries` и `saving_allocations` разделены: `total_mandatory_expenses()` считает только тип `mandatory`, `total_saving_allocations()` — отдельный агрегат; откладывание не является расходом для покрытия обязательных расходов, но уменьшает остаток месяца.
-- `debts` — `total_included_debts()` вычитает только долги с `include_in_liquid_capital=true` (кредитка по умолчанию включена).
-- `property_snapshots` — недвижимость не входит в liquid capital; `property_equity = value − mortgage`; `mortgage_coverage()` возвращает `None` вместо деления на ноль при нулевом остатке ипотеки (UI показывает «ипотека закрыта»).
-- `goals` — глобальная справочная таблица (без привязки к месяцу); `get_or_create_main_goal()` создаётся из `app_settings.passive_income_goal_kopecks` с `calculation_mode="monthly_net_passive_income"`; цель не хардкодится в frontend.
-- `monthly_comments` — несколько упорядоченных заметок месяца; `position >= 1`, уникальность (месяц, позиция), перестановка и удаление компактируют позиции двухфазным обновлением (обход UNIQUE-конфликта при сдвиге).
-- Post-B19 Sol checkpoint выполнен на `8031aa6`: canonical suite и exact-HEAD GitHub CI зелёные, но ad-hoc probes воспроизвели четыре blocker-level gap — mixed-currency arithmetic без RUB valuation, изменение дочерних данных закрытого месяца, сохранение passive flag при update типа дохода на cashback и расхождение settings/main goal.
-- До C01 обязательны две remediation-итерации: `B19-R1` фиксирует точный валютный/RUB valuation contract; `B19-R2` централизует closed-month guard, cashback invariant и единственный runtime source основной цели.
-- Для C-слоя принят контур `ORM query/assembler → pure domain calculator → immutable domain result DTO → API mapping`. Новые финансовые формулы не принимают SQLAlchemy `Session` и не зависят от FastAPI/Pydantic/React.
-- `goals` является runtime source of truth основной цели; `app_settings.passive_income_goal_kopecks` после seed используется как default/template, а не независимое конкурирующее значение.
-- Явная команда владельца `начинаем <ID>` или `запускай <ID>` одновременно назначает задачу и одобряет её canonical model route из `MODEL_ROUTING.md`; оркестратор сам запускает exact per-run models без изменения shared config и останавливается при невозможности подтвердить runtime route.
-- Composite write operations должны владеть одной транзакцией. Текущие CRUD commits не переписываются в checkpoint, но до D03 cloning и bulk import nested mutations должны поддерживать `flush` без самостоятельного commit.
-- `F10` legacy import использует durable SHA-256 marker в `legacy_migration_runs`, создаёт online backup до write-транзакции и коммитит все месяцы либо откатывает всё. Конфликтующий период не перезаписывается по умолчанию; explicit replacement разрешён только для `draft/manual` периода после отдельного решения владельца. Legacy securities без ISIN создаются с `NULL` ISIN и ручной ценой, а исходные название и счёт сохраняются через instrument + account-linked position. Усреднённые legacy dividends, исторические monthly goals и receivables без честного 1:1 контракта не выдаются за фактические сущности и учитываются в private migration report как `not_imported`.
-- `C01`–`C10` выполнены по явному разрешению владельца (маршрутизация GLM 5.2 / DeepSeek V4 Flash через opencode-go по `MODEL_ROUTING.md`) и прошли локальную приёмку + exact-HEAD CI; `D01` автоматически не начинается.
-- Block review фазы C выполнен Kimi k3 (`moonshotai/kimi-k3`, read-only, exact HEAD `67e99c3`): **0 блокеров, 9/9 критериев PASS**, 212 C-тестов зелёные, репозиторий не изменён. Четыре неблокирующих наблюдения: (1) C03-DTO не несёт warnings, слот в C10 пустой (осознанно, зафиксировано); (2) флаг `include_in_passive_income` широкий — SALARY/BONUS могут попасть в other_capital_income, соответствует §10.4; (3) C04: annual = avg×12, monthly = annual/12 — теоретическое ±1 коп. двойное округление, контракт не нарушен; (4) `get_or_create_default_tax_brackets` делает `session.commit()` внутри read-цепочки `calculate_salary_tax` — скрытый write; **deferred**: учесть при composite-транзакциях D-фазы (D03 clone) и при GET-эндпоинтах поверх monthly_summary.
-- `D01`+`D02`+`D08` выполнены батчем по явному разрешению владельца: API месяцев CRUD + close/reopen + единый error-контракт `{"error": {code, message, details}}` (404/409/422/405 маппинг, логирование без финансовых payload); duplicate period → 409 через аддитивный `get_reporting_month_by_period` без изменения ValueError-контракта B-сервиса; `D03` автоматически не начинается.
-- `D04`+`D05` выполнены батчем по явному разрешению владельца: CRUD-API accounts/instruments/iis (профиль, взносы, выгоды) с фильтрами active/hidden/status и pre-check дублей → 409; CRUD позиций и депозитов месяца с server-side пересчётом (B09/B10 не тронуты) и optimistic concurrency: миграция 0019 добавила `updated_at` в position/deposit snapshots (SQLite batch_alter_table), PATCH требует `If-Match` (нет → 428, устарел → 409 ConcurrencyError); общий `LookupError → 404` и `ConcurrencyError → 409` в errors.py. По замечанию DeepSeek-тестов: 404 для всех *NotFoundError-наследников вместо 500, дубли IIS → 409. Suite 406, `D03` автоматически не начинается.
-- `D06` выполнен Grok 4.5 primary (xai-oauth): отдельные CRUD-API incomes / investment-flows / expected-flows / expenses / savings / debts / properties / comments (не универсальный endpoint); month-scoped list filters, enum validation, cashback≠passive, closed-month → 409, unified error contract; 8 API-тестов, suite 414. `D03`/`D07` автоматически не начинаются. Временный route фазы D: Grok 4.5 primary (OpenCode-квоты исчерпаны); Kimi — точечный reviewer по запросу.
-- `D03` выполнен Grok 4.5 primary: `POST /api/months/{id}/clone` + `services/month_clone.py` — одна транзакция (flush без nested commit, один commit/rollback); копируются position/deposit(cash interest=0)/cash/mandatory expenses/savings/debts/property/recurring salary; не копируются investment flows, expected flows, comments, bonus/cashback, comfortable expenses; accounts/instruments/goals/IIS глобальные; source может быть closed; duplicate target → 409; аварийный rollback не оставляет target. Kimi №4 (seed-commit C07) на путь clone не влияет (tax seed не вызывается). Suite 418. `D07` автоматически не начинается.
-- `D07` выполнен Grok 4.5 primary: `GET /api/months/{id}/summary` (C10 DTO → JSON/MoneyValue) и `GET /api/months/{id}/dashboard` (KPI-карточки, historical series liquid/passive, asset allocation, result by account + instrument class, expected payments calendar, mortgage coverage, warnings). Формулы не дублируются — wiring C10 + B-queries. Suite 421. **Фаза D закрыта** (D01–D08). `E01` автоматически не начинается.
-- `E01` выполнен Grok 4.5 primary: design system **Balanced Fintech** (hybrid dark forest sidebar + light content), CSS tokens, layout/nav, UI primitives (Button/Panel/Badge/Field/Table/Kpi/Loading-Error-Empty), number/date formatters (`formatMoney`/`formatDate`/`formatMonth`/…), placeholder routes для разделов MASTER_SPEC; sketches A/B/C в `sketches/`; без wiring бизнес-данных и без backend API. Frontend: Biome/Vitest 12/build green. `E02` автоматически не начинается. Отмеченные API gaps: `/api/goals`, tax-brackets UI, cash endpoints — не чинились.
-- `E02` выполнен Grok 4.5 primary: frontend API client (`apiRequest` + D08 `ApiClientError`), months endpoints (list/create/delete/get), `MonthsPage` (список/статус/snapshot/source/открыть/создать/удалить draft+ConfirmDialog), `MonthDetailPage` stub до E04; 21 frontend tests, lint/format/build green. `E03` автоматически не начинается.
-- `E03` выполнен Grok 4.5 primary: UI клонирования месяца (`CloneMonthDialog` + `cloneMonth` API), выбор target period, описание copy/zero, success/error, переход в новый draft; 26 frontend tests. `E04` автоматически не начинается.
-- `E04` выполнен Grok 4.5 primary: редактор месяца — period/snapshot/status, salary gross, calculated tax/net из GET /summary (без FE-формул), actual net, bonus/side/cashback, unsaved-changes banner + beforeunload; incomes upsert API helpers; 31 frontend tests. `E05` автоматически не начинается.
-- `E05` выполнен Grok 4.5 primary: deposits table (add/edit/delete, balance/rate/expected_monthly_interest from backend, actual interest), cash balances CRUD API `/api/cash-balances` (+ total), MonthAssetsSection totals; 33 frontend tests + cash API test. `E06` автоматически не начинается.
-- `E06` выполнен Grok 4.5 primary: позиции (account/instrument/qty/avg cost/market price, backend market_value/cost_basis/unrealized_result, price date/source, НКД), add/edit/delete, фильтры по счёту и типу, quick instrument create; 34 frontend tests. `E07` автоматически не начинается.
-- `E07` выполнен Grok 4.5 primary: фактические investment flows (coupon/dividend/interest/redemption + tax/commission/net), expected flows calendar by forecast_version, visual redemption≠income, passive income section totals; 38 frontend tests. `E08` автоматически не начинается.
-- `E08` выполнен Grok 4.5 primary: expenses (mandatory/comfortable/other) + savings allocations separately, totals, notes; 40 frontend tests after E08–E10 bundle.
-- `E09` выполнен Grok 4.5 primary: debts (credit_card), properties (value/mortgage/payment), mortgage coverage preview from dashboard/summary; real estate not liquid capital note.
-- `E10` выполнен Grok 4.5 primary: IIS profile/contributions/benefits (tax info warning), goal progress from summary + /api/goals gap note, comments with reorder; `E11` не начинается.
-- `E11` выполнен Grok 4.5 primary: live dashboard KPIs from `GET /api/months/{id}/dashboard` (liquid capital, month delta, forecast passive, actual average, goal progress, mandatory expenses, expense/mortgage coverage); month selector; no FE finance formulas; 41 frontend tests; `E12` не начинается.
-- `E12` выполнен DeepSeek V4 Flash primary + GLM 5.2 (Nvidia NIM) reviewer: график динамики капитала — `historical_series` теперь только закрытые месяцы (draft исключены), Recharts 3.10.1 (MASTER_SPEC §10), `CapitalChart` (line chart, tooltip с `formatMoney`, компактная Y-ось тыс/млн, разрыв линии при пропущенном месяце без интерполяции, empty state, accessibilityLayer), панель «Динамика капитала» на DashboardPage, типы `CapitalHistoryPoint`; frontend 53 теста (12 новых), backend 423 (dashboard 4); `E13` не начинается.
-- `E13` выполнен DeepSeek V4 Flash primary + GLM 5.2 reviewer: график пассивного дохода — факт по закрытым месяцам (historical_series.passive_income_actual), ReferenceLine среднего/прогноза/цели (kpis.passive_income_average / forecast_monthly_passive_income / goal_target), легенда с значениями, пометка неполной истории «Среднее за доступный период. Учтено N месяцев из 12.» (MASTER_SPEC §10.5; новые KPI-поля passive_income_average_months/complete + goal_target в API), общий модуль графиков `lib/chartData` (gap-логика без интерполяции) и `MoneyTooltip` (вынесены из E12); frontend 61 тест, backend 423; `E14` не начинается.
-- `E14` выполнен DeepSeek V4 Flash primary + GLM 5.2 reviewer: распределение активов — donut (Recharts PieChart, innerRadius 55%) + таблица значений рядом для доступности; `asset_allocation` в dashboard пересобран по классам E14: cash/deposits/stocks/bonds/gold_other (секьюритиз разбиты по instrument_type, недвижимость исключена — она не liquid capital); нулевые классы скрыты, доли и итог в таблице, empty state; frontend 68 тестов, backend 423; `E15` не начинается.
-- `E15` выполнен DeepSeek V4 Flash primary + GLM 5.2 reviewer: результат по классам и счетам — bar-диаграмма по счетам (денежный доход и нереализованный результат отдельными сериями) + две таблицы (счета и классы) с итогами; cash income по семантике WIKI п.12 (net купоны/дивиденды/проценты + realized P&L; redemption/пополнения не доход), unrealized из position_snapshots; предупреждение про точную доходность (модифицированный Дитц, MASTER_SPEC §10.13); result_by_account переведён с активов на результат (имя/тип счёта, cash_income, unrealized_result), realized_result добавлен в классы; клон месяца не копирует cash-flow события (зафиксировано тестом); frontend 73 теста, backend 424; `E16` не начинается.
-- `E16` выполнен DeepSeek V4 Flash primary + GLM 5.2 reviewer: календарь будущих выплат — новый endpoint `/api/expected-flows/calendar` (агрегация ожидаемых потоков по календарным месяцам на 12 мес: суммы по типам coupon/dividend/interest/redemption/other, passive_net без redemption, total_net, детализация items со счётом/инструментом), панель «Календарь выплат» в MonthFlowsSection (суммы по месяцам с цветными метками типов, детализация по клику через details, пометки approx/не подтверждено); redemption отображается отдельной меткой и не входит в passive net (MASTER_SPEC §10.10); frontend 77 тестов, backend 426; `E17` не начинается.
-- `E17` выполнен DeepSeek V4 Flash primary + GLM 5.2 reviewer: закрытие месяца в UI — панель «Закрытие месяца» в MonthCloseoutSection: preview KPI (liquid capital, passive avg/forecast, goal progress из dashboard), список warnings, кнопка «Закрыть месяц» с ConfirmDialog (POST /api/months/{id}/close), для закрытого месяца — «Открыть заново» (POST /reopen, изменения не блокируются безвозвратно), после смены статуса перезагрузка страницы; frontend 80 тестов, backend 426; `E18` не начинается.
-- `E18` выполнен DeepSeek V4 Flash primary + GLM 5.2 reviewer: доступность и UX-полировка — skip-link «К содержанию» → #main в AppLayout (клавиатурная навигация), aria-labels на символьных кнопках ↑↓ (перемещение комментариев), контраст muted-текста усилен (#5b655b, WCAG AA для обычного текста), явные :focus-visible для input/select/links/summary календаря; таблицы/формы уже в table-wrap с overflow и media-запросами (1366×768 и FHD); frontend 81 тест, backend 426; фаза E завершена.
+В 0.2 expected payment calendar **ручной**: пользователь создаёт persisted expected flows. Автогенерация из позиций/MOEX отложена; до реализации нужно определить source provenance, refresh/version semantics, reconciliation и запрет неоднозначных дублей manual/generated rows.
 
-### Требует ответа владельца
+## 10. Backup, SQLite и локальная безопасность
 
-1. Выбрать лицензию или подтвердить отсутствие лицензии на первом этапе.
+- startup применяет Alembic migrations до readiness;
+- backup/restore защищены process-local maintenance guard;
+- restore дожидается активных DB requests, создаёт pre-restore backup и проверяет SQLite/schema candidate;
+- SQLite остаётся в rollback journal (`journal_mode=delete`) с effective `busy_timeout=5000 ms`; WAL не включён без воспроизводимой необходимости, чтобы не усложнять Windows backup/restore sidecars;
+- production unsafe requests ограничены localhost Host/Origin contract;
+- приложение по умолчанию слушает только `127.0.0.1:8000`.
 
+## 11. Verification policy
 
-## 11. Журнал изменений wiki
+`docs/VERIFICATION_POLICY.md` — нормативный процесс проверок.
 
-- 2026-08-04 — создан первичный проектный контекст по `MASTER_SPEC.md`, `HERMES_TASKS.md`, `HERMES_START_PROMPT.md`, `IDEA.md` и локальному private seed; кодирование и `A01` не начинались.
-- 2026-08-04 — создан приватный `LTstripes/hermes-finance`, выполнен каркас `A01`, принят ADR `0001`, GitLab CI заменён на GitHub Actions, а финансовые контракты уточнены владельцем.
-- 2026-08-04 — добавлены корневой `AGENTS.md` и user-local skill `hermes-finance-orchestration`; следующий backlog `A03` не начат.
-- 2026-08-04 — выполнен `A03`: создан минимальный FastAPI backend, env-settings, package dev-команда и pytest для `/api/health`; `A04` не начат.
-- 2026-08-04 — выполнен `A04`: создан React/TypeScript/Vite frontend с router, Dashboard, health-индикатором, dev proxy и компонентными тестами; `A05` не начат.
-- 2026-08-04 — выполнен `A05`: добавлены единые Windows-команды запуска и тестирования с dependency checks, readiness probe и очисткой дочерних процессов; `A06` не начат.
-- 2026-08-05 — выполнен `A06`: добавлены Ruff и Biome, единые команды `lint`/`format-check`, а существующий scaffold приведён к зафиксированному формату; `A07` не начат.
-- 2026-08-05 — выполнен `A07`: добавлен GitHub Actions CI для backend/frontend tests, lint, format-check и frontend build без зависимости от локальных финансовых данных; оба удалённых job успешно прошли, `B01` не начат.
-- 2026-08-05 — выполнен `B01`: добавлены конфиг пути SQLite, SQLAlchemy 2 engine/session, обязательный `PRAGMA foreign_keys=ON`, создание каталога при local startup и изолированные тесты на временной БД; `B02` не начат.
-- 2026-08-05 — выполнен `B02`: добавлены Alembic config, пустая service baseline migration, команды upgrade/downgrade и проверка новой временной SQLite до head; `B03` не начат.
-- 2026-08-05 — выполнен `B03`: добавлены точные доменные типы RUB и процентной ставки, преобразования API string ↔ `Decimal` ↔ integer minor units, единое `ROUND_HALF_UP` и тесты запрета binary `float`; `B04` не начат.
-- 2026-08-05 — выполнен `B04`: добавлены singleton `app_settings` с базовыми RUB/ru-RU/Europe/Moscow, целью 100 000 ₽ и версией формул, Alembic migration, `GET/PUT /api/settings`, точный money-object API и валидация; `B05` не начат.
-- 2026-08-05 — выполнен `B05`: добавлены `reporting_months`, период отдельно от snapshot date, уникальность year+month, статусы draft/closed, source enum, Alembic migration и CRUD service с close/reopen guards; `B06` не начат.
-- 2026-08-05 — выполнен `B06`: добавлены account type/status enums, `accounts` migration/model/service, capital/returns flags, nullable unique external code и unit-тесты frozen account/statuses; `B07` не начат.
-- 2026-08-05 — выполнен `B07`: добавлены IIS profiles, contributions и tax benefits, статусы planned/submitted/received/rejected, точные суммы в копейках, FK/unique/check constraints и тест, исключающий planned benefit из received результата; `B08` не начат.
-- 2026-08-06 — выполнен `B08`: добавлен справочник `instruments` (тип из фиксированного набора, ISIN/ticker/MOEX SECID, валюта, номинал в копейках, флаги `is_active` и `manual_price_allowed`, notes), миграция, CRUD-сервис с уникальностью ISIN при заполнении (нормализация в верхний регистр) и unit/migration тесты; API остаётся в фазе D (D04); `B09` не начат.
-- 2026-08-06 — выполнен `B09`: добавлены `position_snapshots` (уникальность месяц+счёт+инструмент, `quantity` как `Numeric(18,6)`, расчётные market value/cost basis/unrealized result по спецификации §10.11 с пересчётом при изменении цены, `price_source`/`manual_adjustment`) с миграцией, сервисом и тестами; `B10` не начата.
-- 2026-08-06 — выполнен `B10`: добавлены `deposit_snapshots` (deposit/savings, баланс и ставка в точных единицах, `expected_monthly_interest = balance × rate / 12` с `ROUND_HALF_UP`, фактический процент хранится отдельно) с миграцией, сервисом и тестами; `B11` не начата.
-- 2026-08-06 — выполнен `B11`: добавлены `cash_balances` (сумма по месяцу через `total_cash()`, отсутствие данных = ноль, флаг `include_in_capital`) с миграцией, сервисом и тестами; `B12` не начата.
-- 2026-08-06 — выполнен `B12`: добавлены `income_entries` (типы salary/bonus/side_income/cashback/other, gross/tax/net в копейках, фактический net не обязан равняться расчётному, кэшбэк исключён из passive income) с миграцией, сервисом и тестами; `B13` не начата.
-- 2026-08-07 — выполнен `B13`: добавлены `investment_cash_flows` с complete type set, exact net validation (`gross − tax − commission`), исключением redemption/deposit/withdrawal/commission/tax/realised P/L из passive income и защитой от дублирования процентов deposit/savings; миграция, CRUD/query-сервис и unit-тесты; `B14` не начата.
-- 2026-08-07 — выполнен `B14`: добавлены versioned `expected_cash_flows`, привязанные к отчётному месяцу и единой `source_as_of_date` на forecast version; календарная выборка `[snapshot_date, +1 year)`, known/unknown tax семантика с `is_approximate`, redemption остаётся в календаре, но исключён из forecast passive income; миграция, CRUD/query-сервис и unit-тесты; `B15` не начата.
-- 2026-08-07 — выполнен `B15`: добавлены `expense_entries` (mandatory/comfortable/other) и `saving_allocations` с раздельными агрегатами сумм; откладывание не входит в покрытие обязательных расходов; миграция, CRUD-сервисы и unit-тесты; `B16` не начата.
-- 2026-08-07 — выполнен `B16`: добавлены `debts` (credit_card/other), агрегат `total_included_debts()` для вычета из liquid capital; миграция, CRUD-сервис и unit-тесты; `B17` не начата.
-- 2026-08-07 — выполнен `B17`: добавлены `property_snapshots`, сервисы `property_equity` и `mortgage_coverage` с защитой от деления на ноль при нулевой ипотеке; недвижимость не входит в liquid capital; миграция, CRUD-сервис и unit-тесты; `B18` не начата.
-- 2026-08-07 — выполнен `B18`: добавлены `goals` с типами из спецификации, `get_or_create_main_goal()` создаётся из настроек (100 000 ₽/мес, `monthly_net_passive_income`); миграция, CRUD-сервис и unit-тесты; `B19` не начата.
-- 2026-08-07 — выполнен `B19`: добавлены `monthly_comments` с позиционной упорядоченностью, перестановкой и компактированием позиций (двухфазное обновление против UNIQUE-конфликта); миграция, CRUD/move-сервис и unit-тесты; после B19 по маршрутизации следует Sol High checkpoint, `C01` не начат.
-- 2026-08-07 — выполнен post-B19 Sol High architecture checkpoint: зафиксированы B19-R1/B19-R2 remediation gates, pure calculation boundary, routes C01–C10 и standing approval на автоматический exact-model launch по явной команде владельца; кодовые исправления и C01 не начаты.
-- 2026-08-08 — выполнен `C01`: доменный расчёт ликвидного капитала после краткосрочных долгов (cash + deposits + securities + other liquid − included debts) с разбивкой по классам и тестами; `C02` не начат.
-- 2026-08-08 — выполнен `C02`: фактический net passive income месяца (проценты депозитов из `deposit_snapshots.actual_interest_received` + купоны/дивиденды/other из `investment_cash_flows` без redemption/deposit/withdrawal; кэшбэк исключён) с разбивкой и тестами; `C03` не начат.
-- 2026-08-08 — выполнен `C03`: средний пассивный доход за доступный период (rolling-окно последних ≤12 закрытых месяцев, среднее с `ROUND_HALF_UP`, warning при неполном окне) с переиспользованием окна в C04/C08; `C04` не начат.
-- 2026-08-08 — выполнен `C04`: прогноз пассивного дохода на 12 месяцев (ожидаемые проценты депозитов + купоны net + дивидендный компонент из закрытой истории + other; redemption исключён; warning при неполной дивидендной истории) с `forecast_version` и тестами; `C05` не начат.
-- 2026-08-08 — выполнен `C05`: покрытие обязательных расходов и прогресс к цели (`coverage_pct`, `goal_progress_pct`; нулевые знаменатели → `None`; цель — runtime source из `goals`; расходы — только mandatory) с warnings и тестами; `C06` не начат.
-- 2026-08-08 — выполнен `C06`: денежный остаток месяца по §10.9 (`salary + bonus + side + cashback + passive − mandatory − other − savings`; кэшбэк отдельной строкой и никогда в passive; `other = total − mandatory`) с разбивкой и тестами; `C07` не начат.
-- 2026-08-08 — выполнен `C07`: конфигурируемые налоговые ступени НДФЛ (таблица `tax_brackets` + миграция `0018_tax_brackets`, официальный seed по ФЗ-176-ФЗ, CRUD с overlap-валидацией), прогрессивный калькулятор (YTD gross → разбиение выплаты по ступеням, налог части с `ROUND_HALF_UP`), расчётный налог/net отдельно от фактического employer net; тесты перехода через порог; `C08` не начат.
-- 2026-08-08 — выполнен `C08`: нормализованная премия (сумма BONUS net за окно ≤12 закрытых месяцев / 12, `ROUND_HALF_UP`, закрытый месяц без премии = ноль через LEFT JOIN; только аналитика, не в cash flow) и тесты; `C09` не начат.
-- 2026-08-08 — выполнен `C09`: результат ИИС-счёта без налоговой выгоды и с ней (состав зафиксирован владельцем на launch gate — см. раздел 7 п.12; received benefits прибавляются, planned/submitted отдельно, rejected игнорируется, redemption/взносы не входят) с разбивкой и тестами; `C10` не начат.
-- 2026-08-08 — выполнен `C10`: единый Monthly Summary DTO (KPI и разбивки C01–C09, дельты к предыдущему месяцу для liquid capital и фактического passive income, агрегация warnings, `calculation_version="v1"`, IIS-результаты по всем профилям) с тестами; раздел C завершён, `D01` не начат.
-- 2026-08-08 — выполнен block review фазы C на Kimi k3 (read-only, exact HEAD `67e99c3`): 0 блокеров, 9/9 PASS, 212 C-тестов; четыре неблокирующих наблюдения зафиксированы, №4 (seed-commit в read-цепочке C07) отложен до D-фазы.
-- 2026-08-08 — выполнен батч `D01`+`D02`+`D08`: API отчётных месяцев (CRUD, delete draft only), close/reopen с обязательной датой снимка, единый error-контракт и exception handlers (404/409/422/405, per-field validation details, логирование без финансовых payload), duplicate → 409 через аддитивный query-хелпер; 7 API-тестов, suite 348; `D03` не начат.
-- 2026-08-08 — выполнен батч `D04`+`D05`: CRUD-API справочников (accounts/instruments/iis profile+contributions+benefits, фильтры status/active/tax_year, pre-check дублей → 409) и редакторов активов месяца (positions/deposits: server-side пересчёты из B09/B10, optimistic concurrency через `updated_at` + `If-Match`: миграция 0019, 428 без заголовка, 409 при устаревшем значении); общий LookupError → 404 (все NotFoundError-наследники), ConcurrencyError → 409; 58 API-тестов, suite 406; `D03` не начат.
-- 2026-08-08 — выполнен `D06` (Grok 4.5 primary): API финансовых событий — 8 отдельных роутеров (incomes, investment-flows, expected-flows, expenses, savings, debts, properties, comments); month-scoped lists, enum validation, closed-month 409; 8 API-тестов, suite 414; `D03`/`D07` не начаты.
-- 2026-08-08 — выполнен `D03` (Grok 4.5 primary): транзакционное клонирование месяца (`POST /api/months/{id}/clone`); permanent state copied, actuals/comments zeroed, single commit or full rollback; 4 теста (happy/duplicate/rollback/API), suite 418; `D07` не начат.
-- 2026-08-08 — выполнен `D07` (Grok 4.5 primary): summary + dashboard API поверх C10 (KPI, historical series, allocation, instrument-class results, expected payments, mortgage coverage); 3 API-теста, suite 421; **фаза D закрыта**; `E01` не начат.
-- 2026-08-08 — выполнен `E01` (Grok 4.5 primary): frontend design system Balanced Fintech (hybrid), primitives, formatters, full nav shell + placeholders; 12 frontend tests, lint/format/build green; sketches e01-*; `E02` не начат; API gaps goals/tax-brackets/cash только отмечены.
-- 2026-08-08 — выполнен `E02` (Grok 4.5 primary): api client + months list/create/delete/open UI; 21 frontend tests; `E03` не начат.
-- 2026-08-08 — выполнен `E03` (Grok 4.5 primary): clone UI + API helper; 26 frontend tests; `E04` не начат.
-- 2026-08-08 — выполнен `E04` (Grok 4.5 primary): month editor salary/incomes + dirty guard; 31 frontend tests; `E05` не начат.
-- 2026-08-08 — выполнен `E05` (Grok 4.5 primary): deposits+cash UI and cash API gap fill; 33 frontend tests; `E06` не начат.
-- 2026-08-08 — выполнен `E06` (Grok 4.5 primary): brokerage positions UI in month editor; 34 frontend tests; `E07` не начат.
-- 2026-08-08 — выполнен `E07` (Grok 4.5 primary): payouts/expected flows UI; 38 frontend tests; `E08` не начат.
-- 2026-08-08 — выполнен `E08`–`E10` (Grok 4.5 primary): budget/liabilities/closeout sections; 40 frontend tests; `E11` не начат.
-- 2026-08-08 — выполнен `E11` (Grok 4.5 primary): dashboard KPI cards live from API; 41 frontend tests; `E12` не начат.
-- 2026-08-09 — выполнен `E12` (DeepSeek V4 Flash primary + GLM 5.2/Nvidia NIM reviewer): closed-month capital chart — backend `historical_series` фильтруется по закрытым месяцам (draft исключены; series растёт при закрытии), Recharts 3.10.1 по MASTER_SPEC §10, `CapitalChart` с tooltip/₽/разрывом линии без интерполяции/empty state на DashboardPage; tooltip-тесты добавлены по follow-up ревью; frontend 53, backend 423, lint/format/build green; `E13` не начат.
-- 2026-08-09 — выполнен `E13` (DeepSeek V4 Flash primary + GLM 5.2 reviewer): passive income chart — факт/среднее/прогноз/цель (100 000 ₽) из dashboard KPI, пометка неполной истории по новым полям API `passive_income_average_months/complete` + `goal_target`; общий `lib/chartData` + `MoneyTooltip` вынесены из E12; frontend 61, backend 423, lint/format/build green; `E14` не начат.
-- 2026-08-09 — выполнен `E14` (DeepSeek V4 Flash primary + GLM 5.2 reviewer): asset allocation donut + a11y table — backend `asset_allocation` пересобран (cash/deposits/stocks/bonds/gold_other по instrument_type, без недвижимости); frontend 68, backend 423, lint/format/build green; `E15` не начат.
-- 2026-08-09 — выполнен `E15` (DeepSeek V4 Flash primary + GLM 5.2 reviewer): результат по классам и счетам — bar по счетам (cash income vs unrealized) + таблицы счетов/классов; cash income по WIKI п.12 (net купоны/дивиденды/проценты + realized P&L), redemption/пополнения не доход; note про модифицированный Дитц (§10.13); `result_by_account` переведён на результат (имя/тип, cash_income, unrealized_result), классы получили realized_result; клон не копирует события (зафиксировано); frontend 73, backend 425, lint/format/build green; `E16` не начат.
-- 2026-08-09 — выполнен `E16` (DeepSeek V4 Flash primary + GLM 5.2 reviewer): календарь будущих выплат — `GET /api/expected-flows/calendar` (месяцы × типы × детализация, passive_net без redemption), панель «Календарь выплат» (метки типов, details по клику); frontend 77, backend 426, lint/format/build green; `E17` не начат.
-- 2026-08-09 — выполнен `E17` (DeepSeek V4 Flash primary + GLM 5.2 reviewer): закрытие месяца в UI — панель в MonthCloseoutSection с preview KPI/warnings из dashboard, кнопка «Закрыть месяц» (ConfirmDialog → POST /close), для закрытого «Открыть заново» (POST /reopen) — изменения не блокируются безвозвратно; frontend 80, backend 426, lint/format/build green; `E18` не начат.
-- 2026-08-09 — выполнен `E18` (DeepSeek V4 Flash primary + GLM 5.2 reviewer): доступность и UX-полировка — skip-link → #main, aria-labels для ↑↓ кнопок комментариев, контраст --muted (#5b655b, AA), :focus-visible для input/select/ссылок/summary календаря; layout уже адаптивен (table-wrap, media 960/900/680, prefers-reduced-motion); frontend 81, backend 426, lint/format/build green; фаза E завершена.
-- 2026-08-09 — выполнен `F10` (Sol High primary-only): добавлены Alembic `0020`, durable workbook-SHA idempotency marker, backup + single-transaction importer/rollback, explicit guarded replacement `draft/manual` периода и aggregate-only CLI/report; owner-approved `create_without_isin` сохраняет instrument name и account relation для ручной правки в панели; private workbook/database/review/report/backups остаются Git-ignored.
-- 2026-08-05 — по решению владельца routing переписан на экономный режим Luna High/Terra High/DeepSeek Free, Sol оставлен для новых архитектурных контрактов и checkpoint после B19; добавлен settling gate с одним каноническим итогом.
+Коротко:
+
+- targeted tests во время реализации;
+- после стабилизации — один full suite затронутого слоя;
+- docs-only не требуют локального full suite;
+- API/shared-contract — проверки затронутых слоёв;
+- Windows/migrations/backup/restore/security/concurrency — targeted → relevant full suite → task probe → exact-HEAD CI;
+- task-card может только усилить policy.
+
+GitHub Actions включает backend, frontend, privacy guard и Windows production smoke.
+
+## 12. Release 0.2
+
+К 2026-08-11 выполнены основные R02-01…R02-24 изменения, включая owner-led smoke hotfixes. Диагностика R02-25 закрыта без code fix: заявленные дивиденды были заведены владельцем как `coupon`, поэтому нулевой dividend component соответствовал данным и расчётная цепочка не теряла ненулевое значение.
+
+R02-26 (автоматическое наполнение expected-payments calendar) сознательно переносится как non-blocking follow-up; для 0.2 нормативен ручной workflow.
+
+R02-21 синхронизирует version/docs. Tag `v0.2.0` создаётся только после release gate и blocker-level review exact candidate HEAD.
+
+## 13. Работа агентов
+
+- одна write-задача имеет одного primary/owner;
+- параллельная работа допустима только по независимым файлам/контрактам;
+- explicit `начинаем <ID>`/`запускай <ID>` авторизует конкретную task-card;
+- worker report не заменяет diff/tests review primary;
+- приватные данные не передаются внешним workers;
+- после side effects/CI выполняется final state read-back и один canonical итог.
+
+Операционный routing находится в `docs/MODEL_ROUTING.md`.
+
+## 14. История
+
+Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/HERMES_TASKS.md` и Git history. Изменения 0.2 фиксируются в `docs/RELEASE_0_2.md`, smoke/follow-up logs и `CHANGELOG.md`; wiki намеренно не дублирует сотни завершённых шагов.
