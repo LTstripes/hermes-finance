@@ -2,6 +2,7 @@
 
 > **Статус:** ACTIVE  
 > **Релиз:** `0.2.0`  
+> **Release checkpoint:** IN_PROGRESS; tag удерживается до завершения активных follow-up задач и пользовательского smoke 2026-08-11.  
 > **Главная спецификация:** `docs/MASTER_SPEC.md`  
 > **Модельный протокол:** `docs/MODEL_ROUTING.md`  
 > **Исторический MVP backlog:** `docs/HERMES_TASKS.md`
@@ -57,16 +58,18 @@
 | R02-07 | Убрать финансовые вычисления через JS `Number` | P1 | DONE | Luna High / DeepSeek Free bounded worker / Terra High spot review | — |
 | R02-08 | Windows production smoke в CI | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-01 |
 | R02-09 | Безопасная сериализация backup restore на Windows | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
-| R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | DEFERRED | Luna High / — / Terra only if semantics change | — |
+| R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | READY | Luna High / — / Terra only if semantics change | — |
 | R02-11 | Goals API + единый source of truth основной цели | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
 | R02-12 | Контракт и backend прогноза даты достижения цели | P1 | DONE | Sol High / Terra High bounded worker / Sol High | R02-11 |
 | R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
 | R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-15 | Accounts & Instruments UI вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-16 | Settings UI baseline вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-17 | Tax brackets administration contract/API/UI | P2 | DEFERRED | Terra High / Luna High bounded worker / Terra High | R02-16 |
+| R02-17 | Tax brackets administration contract/API/UI | P2 | READY | Terra High / Luna High bounded worker / Terra High | R02-16 |
 | R02-18 | Контракт include_in_cash_flow и OTHER non-passive income | P1 | DONE | Sol High / — / Terra High | — |
 | R02-19 | Реализация income cash-flow inclusion contract | P1 | DONE | Terra High / Luna High bounded worker / Terra High | R02-18 |
+| R02-20 | Локализация user-facing UI и API errors | P2 | READY | Luna High / — / Luna | — |
+| R02-21 | Release metadata + docs для 0.2.0 | P1 | READY | Sol High / Luna High bounded worker / Sol High | R02-10, R02-17, R02-20 |
 
 `Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
 
@@ -319,18 +322,26 @@ Restore валидирует backup и делает pre-restore copy, но за�
 # R02-10. SQLite lock hardening (`busy_timeout`/WAL decision)
 
 **Priority:** P2  
-**Status:** DEFERRED
+**Status:** READY
+**Route:** Luna High / — / Terra only if semantics change
 
 ## Контекст
 
-Single-user SQLite сейчас достаточен. Не нужно заранее усложнять архитектуру без воспроизводимого `database is locked` сценария.
+Single-user SQLite сейчас достаточен. Изначально задача была отложена до воспроизводимого `database is locked` сценария; 2026-08-11 владелец явно вернул её в активный план 0.2 для профилактического bounded review/hardening перед релизом.
 
-## Возобновить, если
+## Сделать
 
-- появится реальная конкуренция нескольких write requests;
-- тесты или пользовательский workflow воспроизводят lock errors.
+- сначала проверить текущие engine/connect args, transaction boundaries и фактическое поведение SQLite под несколькими локальными requests;
+- принять явное решение по `busy_timeout` и WAL только на основании воспроизводимого сценария/риска;
+- если изменение не даёт измеримой пользы для single-user workflow, допустимый результат задачи — документированное решение оставить текущий режим без semantic code change;
+- не расширять задачу до PostgreSQL, внешнего DB service или общей переработки persistence.
 
-Тогда отдельно оценить `busy_timeout`, WAL и transaction boundaries. Не включать PostgreSQL/VPS как «решение» локальной проблемы.
+## Acceptance
+
+- есть воспроизводимый concurrency/locking probe либо документированное доказательство, почему hardening не требуется;
+- любое добавленное SQLite setting покрыто targeted regression/integration check;
+- backup/restore и Windows semantics не регрессируют;
+- решение явно зафиксировано и может быть независимо reviewed.
 
 ---
 
@@ -520,10 +531,10 @@ Backend CRUD счетов и инструментов уже в основном
 # R02-17. Tax brackets administration contract/API/UI
 
 **Priority:** P2  
-**Status:** DEFERRED  
+**Status:** READY  
 **Route:** Terra High / Luna High bounded worker / Terra High reviewer
 
-Tax brackets уже участвуют в чувствительной налоговой логике, поэтому отсутствие UI не следует закрывать обычным CRUD «на глаз». Возобновить отдельно, если владельцу реально нужно ручное управление ставками из приложения.
+Tax brackets уже участвуют в чувствительной налоговой логике, поэтому отсутствие UI не следует закрывать обычным CRUD «на глаз». 2026-08-11 владелец явно вернул задачу в активный план 0.2.
 
 Перед implementation определить:
 
@@ -531,6 +542,13 @@ Tax brackets уже участвуют в чувствительной нало�
 - можно ли редактировать прошлые tax rules;
 - связь изменения rules с уже закрытыми месяцами;
 - API validation и audit expectations.
+
+## Acceptance
+
+- сначала принят однозначный contract по version/effective dates и историческим правилам;
+- API не позволяет молча переписать налоговую семантику закрытых месяцев;
+- UI показывает источник/период действия и validation errors;
+- существующий salary-tax calculation и opening YTD contract не регрессируют.
 
 ---
 
@@ -595,9 +613,71 @@ Tax brackets уже участвуют в чувствительной нало�
 
 ---
 
+# R02-20. Локализация user-facing UI и API errors
+
+**Priority:** P2  
+**Status:** READY  
+**Route:** Luna High / — / Luna reviewer
+
+## Проблема
+
+После R02-13 в обычном пользовательском интерфейсе местами видны внутренние API/domain identifiers и developer-oriented тексты: например `no_trajectory_model`, `goal_achievement_v1`, `forecast v1`, `monthly_net_passive_income`, `liquid_capital_net`, raw `/api/...` descriptions и английские backend error messages вроде `salary_tax_history_incomplete` detail.
+
+## Сделать
+
+- провести census user-facing frontend по всем основным страницам и диалогам;
+- заменить internal enums/reason codes/calculation modes на понятные русские labels, не меняя wire values/API contracts;
+- убрать developer-oriented `/api/...`, `backend`, method/version identifiers из обычного UX либо спрятать их в явно технический secondary/debug контекст;
+- локализовать известные D08/API error codes на frontend, в том числе `salary_tax_history_incomplete`, `network_error` и generic HTTP fallback;
+- сохранить actionable детали ошибки, но не показывать пользователю необработанный internal code как основное сообщение;
+- не менять финансовую семантику, backend error codes или persistence.
+
+## Acceptance
+
+- на Dashboard/Goals/Settings/Months/Accounts/Export нет raw internal identifiers там, где существует пользовательский label;
+- salary-tax incomplete history показывается по-русски и объясняет, что нужны закрытые прошлые месяцы или opening tax context;
+- regression tests покрывают mapping reason/error codes и основные UI места;
+- wire/API значения остаются неизменными.
+
+---
+
+# R02-21. Release metadata + docs для 0.2.0
+
+**Priority:** P1  
+**Status:** READY  
+**Route:** Sol High / Luna High bounded worker / Sol High reviewer  
+**Depends on:** R02-10, R02-17, R02-20
+
+## Проблема
+
+Release gate 2026-08-11 обнаружил, что runtime/package metadata и пользовательские документы ещё описывают `0.1.0`: backend/frontend version остаются `0.1.0`, `README.md` приводит health example `0.1.0`, `CHANGELOG.md` не содержит 0.2 и всё ещё называет Goals/Settings/Accounts placeholders, а `PROJECT_WIKI.md` частично содержит устаревший source-of-truth/stack контекст.
+
+## Сделать
+
+После стабилизации оставшихся 0.2 follow-up задач:
+
+- поднять canonical backend/frontend package/runtime version до `0.2.0` и синхронизировать lock/metadata, которые реально зависят от версии;
+- обновить README для фактического 0.2 workflow, health/version и доступных UI разделов;
+- добавить `CHANGELOG.md` entry 0.2.0 с фактическими изменениями и актуальными known limitations;
+- актуализировать `PROJECT_WIKI.md`: active release backlog, verification policy, принятые ADR/0.2 изменения и фактический frontend/tooling stack;
+- проверить `MASTER_SPEC.md` на противоречия с принятыми ADR и фактической 0.2 реализацией, не переписывая историю без причины;
+- не создавать tag/release до завершения обязательного Release Gate и final Sol review exact candidate HEAD.
+
+## Acceptance
+
+- `/api/health` и package metadata сообщают `0.2.0` согласованно;
+- README/Wiki/CHANGELOG не описывают завершённые страницы как placeholders и не ссылаются на устаревший active-backlog protocol;
+- docs не содержат private financial data;
+- docs/version diff проходит релевантные checks и exact-HEAD CI;
+- после задачи остаётся только release checkpoint/final review, а не скрытый feature scope.
+
+---
+
 # 2. Release Gate перед `0.2.0`
 
 Перед созданием tag/release `0.2.0` выполнить отдельный release checkpoint.
+
+**Checkpoint status:** IN_PROGRESS с 2026-08-11. Текущий tag candidate намеренно не фиксируется до завершения R02-10, R02-17, R02-20, R02-21 и пользовательского smoke/backfill прошлых месяцев.
 
 ## Обязательный gate
 
