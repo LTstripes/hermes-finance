@@ -30,7 +30,12 @@ import {
   Th,
 } from "../components/ui";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
-import { GOAL_STATUS_LABELS, GOAL_TYPE_LABELS } from "../lib/goals";
+import {
+  GOAL_STATUS_LABELS,
+  GOAL_TYPE_LABELS,
+  goalCalculationModeLabel,
+  goalReasonLabel,
+} from "../lib/goals";
 
 function newestMonth(rows: ReportingMonth[]): ReportingMonth | null {
   return (
@@ -73,7 +78,7 @@ export function GoalsPage() {
         setGoals([]);
         setGoalsError(
           error instanceof ApiClientError && error.status === 404
-            ? "API /api/goals отсутствует"
+            ? "Раздел целей недоступен в текущей версии приложения."
             : formatApiError(error),
         );
       }
@@ -202,8 +207,8 @@ export function GoalsPage() {
         <p className="eyebrow">Планирование</p>
         <h1>Цели</h1>
         <p className="page-header__description">
-          Цели хранятся в backend. Текущее значение, прогресс и дата достижения приходят готовыми из
-          <code> GET /api/goals/summary</code> — React не пересчитывает финансовые показатели.
+          Здесь можно вести финансовые цели и смотреть их прогресс по выбранному отчётному месяцу.
+          Все финансовые показатели рассчитываются автоматически.
         </p>
       </header>
 
@@ -241,8 +246,8 @@ export function GoalsPage() {
         </p>
       ) : (
         <div className="inline-alert inline-alert--warn" role="status">
-          Нет отчётного месяца: CRUD целей доступен, но backend-derived прогресс пока показать
-          нельзя.
+          Нет отчётного месяца: цели можно редактировать, но их финансовый прогресс пока нельзя
+          показать.
         </div>
       )}
 
@@ -259,7 +264,7 @@ export function GoalsPage() {
 
       <Panel label="Основные" title={`Активные цели (${activeGoals.length})`}>
         {goalsLoading ? (
-          <LoadingState description="Загружаем /api/goals…" inline />
+          <LoadingState description="Загружаем цели…" inline />
         ) : goalsError ? (
           <div className="stack-8">
             <ErrorState description={goalsError} inline title="Не удалось загрузить цели" />
@@ -388,10 +393,12 @@ function GoalTable({
                   {goal.target_date ? (
                     <span className="muted tiny">Срок: {formatDate(goal.target_date)}</span>
                   ) : null}
-                  <span className="muted tiny">Режим: {goal.calculation_mode}</span>
+                  <span className="muted tiny">
+                    Способ расчёта: {goalCalculationModeLabel(goal.calculation_mode)}
+                  </span>
                 </div>
               </Td>
-              <Td>{GOAL_TYPE_LABELS[goal.goal_type] ?? goal.goal_type}</Td>
+              <Td>{GOAL_TYPE_LABELS[goal.goal_type] ?? "Другая цель"}</Td>
               <Td>{formatMoney(goal.target_value.amount)}</Td>
               <Td>
                 <GoalProgress forecast={forecast} loading={summaryLoading} />
@@ -447,7 +454,7 @@ function GoalProgress({
   return (
     <div className="stack-8">
       <Badge tone={forecastTone(forecast.status)}>
-        {GOAL_STATUS_LABELS[forecast.status] ?? forecast.status}
+        {GOAL_STATUS_LABELS[forecast.status] ?? "Статус недоступен"}
       </Badge>
       {forecast.current_value ? (
         <span>
@@ -475,7 +482,7 @@ function AchievementDate({
   const message = forecast.estimated_achievement_date
     ? `Достигнута на ${formatDate(forecast.estimated_achievement_date)}`
     : forecast.status === "not_projectable"
-      ? "Нет честного прогноза даты"
+      ? "Пока нельзя надёжно спрогнозировать дату"
       : forecast.status === "unsupported"
         ? "Расчёт пока не поддерживается"
         : forecast.status === "inactive"
@@ -484,7 +491,9 @@ function AchievementDate({
   return (
     <div className="stack-8">
       <strong>{message}</strong>
-      {forecast.reason_code ? <span className="muted tiny">{forecast.reason_code}</span> : null}
+      {forecast.reason_code ? (
+        <span className="muted tiny">{goalReasonLabel(forecast.reason_code)}</span>
+      ) : null}
       {forecast.warnings.length > 0 ? (
         <span className="muted tiny">{forecast.warnings.join(" · ")}</span>
       ) : null}
