@@ -37,6 +37,8 @@ import {
   goalReasonLabel,
 } from "../lib/goals";
 
+const GOALS_API_MISSING_MESSAGE = "Раздел целей недоступен в текущей версии приложения.";
+
 function newestMonth(rows: ReportingMonth[]): ReportingMonth | null {
   return (
     [...rows].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year))[0] ?? null
@@ -78,7 +80,7 @@ export function GoalsPage() {
         setGoals([]);
         setGoalsError(
           error instanceof ApiClientError && error.status === 404
-            ? "Раздел целей недоступен в текущей версии приложения."
+            ? GOALS_API_MISSING_MESSAGE
             : formatApiError(error),
         );
       }
@@ -268,6 +270,12 @@ export function GoalsPage() {
         ) : goalsError ? (
           <div className="stack-8">
             <ErrorState description={goalsError} inline title="Не удалось загрузить цели" />
+            {goalsError === GOALS_API_MISSING_MESSAGE ? (
+              <details className="muted tiny">
+                <summary>Технические подробности</summary>
+                <span>API /api/goals отсутствует</span>
+              </details>
+            ) : null}
             <Button onClick={() => void loadGoals()} size="sm">
               Повторить
             </Button>
