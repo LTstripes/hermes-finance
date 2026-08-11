@@ -210,6 +210,8 @@ function localizeApiMessage(error: ApiClientError): string {
       return "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.";
     case "http_error":
       return "Не удалось выполнить запрос к локальному приложению.";
+    case "internal_error":
+      return "Внутренняя ошибка приложения. Попробуй обновить данные.";
     case "not_found":
       return "Запрошенные данные не найдены.";
     case "conflict":
