@@ -75,7 +75,7 @@
 | R02-24 | Show backend-derived salary tax rate in month editor | P2 | DONE | Sol bounded implementation / Sol review | R02-17 |
 | R02-25 | Passive-income goal/dividend diagnostic | P1 | DONE | Codex + Hermes read-only diagnostics / Sol review | — |
 | R02-26 | Automatic expected-payment population/source UX | P2 | DEFERRED | future contract | — |
-| R02-27 | Passive-income goal current-value semantics | P1 | REVIEW | Sol bounded implementation / Sol reviewer | R02-04, R02-13 |
+| R02-27 | Passive-income goal current-value semantics | P1 | DONE | Sol bounded implementation / Sol reviewer | R02-04, R02-13 |
 
 `Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
 
@@ -759,7 +759,7 @@ Codex и Hermes независимо подтвердили read-only, что в
 # R02-27. Passive-income goal current-value semantics
 
 **Priority:** P1
-**Status:** REVIEW
+**Status:** DONE
 **Route:** Sol bounded implementation / Sol reviewer
 **Depends on:** R02-04, R02-13
 
@@ -788,13 +788,21 @@ Owner smoke показал, что Dashboard корректно отобража
 - regression test покрывает actual deposit interest + coupon + dividend при пустом expected calendar;
 - backend/full exact-head CI green; никаких migrations/schema changes.
 
+## Outcome R02-27
+
+- passive-income Goal `current_value`/`progress_pct` переключены с C04 forecast monthly total на C03 rolling average фактического net passive income по CLOSED месяцам;
+- C04 forecast сохранён как отдельная прогнозная метрика; exact gap/progress formula и capital-goal semantics не менялись;
+- integration regression покрывает deposit interest + coupon + dividend при пустом `expected_cash_flows`;
+- PR #21 candidate CI `31532650301` green: Backend, Frontend, Privacy guard, Windows production smoke;
+- migrations/schema changes отсутствуют.
+
 ---
 
 # 2. Release Gate перед `0.2.0`
 
 Перед созданием tag/release `0.2.0` выполнить отдельный release checkpoint.
 
-**Checkpoint status:** FINAL_GATE. R02-27 закрывает последний owner-smoke semantic finding; tag удерживается до его exact-head CI/merge и final local production probe на новом `main`.
+**Checkpoint status:** FINAL_GATE. R02-27 DONE и candidate CI green; tag удерживается до merge, exact-main CI и final local production probe на новом `main`.
 
 ## Обязательный gate
 
@@ -812,8 +820,9 @@ Owner smoke показал, что Dashboard корректно отобража
 - [x] `MASTER_SPEC.md`, `README.md`, `PROJECT_WIKI.md` и `CHANGELOG.md` reviewed/актуализированы для фактического 0.2 поведения.
 - [x] `R02-26` явно DEFERRED как non-blocking known follow-up.
 - [x] **Sol High release review** выполнен на R02-21 candidate: blocker-level review без blocker.
-- [ ] Финальный docs-only R02-21 HEAD после синхронизации backlog должен пройти CI перед merge.
-- [ ] Owner/Hermes local production probe на синхронизированном `main`: start/health/months/`127.0.0.1:8000`/port cleanup + clean working tree.
+- [x] R02-21 merged main exact CI `31530369330` green после финальной синхронизации release metadata/docs.
+- [x] R02-27 candidate exact CI `31532650301` green, включая actual-passive-income regression и Windows production smoke.
+- [ ] Owner/Hermes local production probe на финальном `main`: start/health/months/`127.0.0.1:8000`/port cleanup + clean working tree.
 - [ ] Только после этого создаётся `v0.2.0`.
 
 ## Release review route
