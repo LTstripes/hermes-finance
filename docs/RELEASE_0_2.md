@@ -58,7 +58,7 @@
 | R02-07 | Убрать финансовые вычисления через JS `Number` | P1 | DONE | Luna High / DeepSeek Free bounded worker / Terra High spot review | — |
 | R02-08 | Windows production smoke в CI | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-01 |
 | R02-09 | Безопасная сериализация backup restore на Windows | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
-| R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | READY | Luna High / — / Terra only if semantics change | — |
+| R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | DONE | Luna High / — / Terra only if semantics change | — |
 | R02-11 | Goals API + единый source of truth основной цели | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
 | R02-12 | Контракт и backend прогноза даты достижения цели | P1 | DONE | Sol High / Terra High bounded worker / Sol High | R02-11 |
 | R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
@@ -322,7 +322,7 @@ Restore валидирует backup и делает pre-restore copy, но за�
 # R02-10. SQLite lock hardening (`busy_timeout`/WAL decision)
 
 **Priority:** P2  
-**Status:** READY
+**Status:** DONE
 **Route:** Luna High / — / Terra only if semantics change
 
 ## Контекст
@@ -342,6 +342,26 @@ Single-user SQLite сейчас достаточен. Изначально за�
 - любое добавленное SQLite setting покрыто targeted regression/integration check;
 - backup/restore и Windows semantics не регрессируют;
 - решение явно зафиксировано и может быть независимо reviewed.
+
+## Решение и evidence (2026-08-11)
+
+- Текущий SQLAlchemy/SQLite engine фактически использует `busy_timeout=5000 ms`,
+  `journal_mode=delete`, `locking_mode=normal`, `synchronous=2`.
+- Synthetic concurrency probe проверил две схемы: конкурирующие короткие write
+  transactions и read transaction против write. Обе операции корректно дождались
+  освобождения lock (примерно `0.30 s`) и завершились без `database is locked`.
+- Для текущего local single-user workflow измеримой пользы от WAL не выявлено.
+  WAL не включается: он создаёт persistent `-wal`/`-shm` sidecars и увеличивает
+  риск/сложность Windows backup/restore без принятой необходимости.
+- SQLite connect policy оставлена без semantic code change: текущий 5-секундный
+  timeout уже является effective driver behavior; произвольное увеличение timeout
+  не маскирует потенциально длинные транзакции и не решает их root cause.
+- Decision покрыт regression/integration test:
+  `backend/tests/test_r02_10_sqlite_locking.py`.
+- Если появится реальный `database is locked` или длительная конкуренция write
+  requests, следующая итерация должна отдельно пересмотреть transaction
+  boundaries и explicit `busy_timeout`; WAL не считается автоматически выбранным
+  решением.
 
 ---
 
