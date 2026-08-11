@@ -11,9 +11,17 @@ import { normalizeMoneyInput, rub, toKopecks } from "../lib/money";
 import { Badge, Button, Field, Input, Panel, Table, Td, Th } from "./ui";
 
 type EditableBracket = {
+  id: string;
   to: string;
   rate: string;
 };
+
+let nextRowId = 0;
+
+function editableBracket(to: string, rate: string): EditableBracket {
+  nextRowId += 1;
+  return { id: `tax-bracket-row-${nextRowId}`, to, rate };
+}
 
 const MONTH_NAMES = [
   "январь",
@@ -55,10 +63,9 @@ function monthCodeLabel(code: string): string {
 }
 
 function rowsFromConfig(config: TaxBracketYearConfig): EditableBracket[] {
-  return config.brackets.map((bracket) => ({
-    to: bracket.threshold_to?.amount ?? "",
-    rate: rateBpsToPercent(bracket.rate_bps),
-  }));
+  return config.brackets.map((bracket) =>
+    editableBracket(bracket.threshold_to?.amount ?? "", rateBpsToPercent(bracket.rate_bps)),
+  );
 }
 
 function sourceLabel(source: TaxBracketYearConfig["source"]): string {
@@ -124,7 +131,7 @@ export function TaxBracketsPanel() {
     if (!config?.mutable || rows.length === 0) return;
     setRows((current) => {
       const last = current[current.length - 1];
-      return [...current.slice(0, -1), { to: "", rate: last.rate }, last];
+      return [...current.slice(0, -1), editableBracket("", last.rate), last];
     });
     setSuccess(null);
     setError(null);
@@ -265,7 +272,7 @@ export function TaxBracketsPanel() {
                   {rows.map((row, index) => {
                     const isLast = index === rows.length - 1;
                     return (
-                      <tr key={`${index}-${lowerBounds[index]}`}>
+                      <tr key={row.id}>
                         <Td>{lowerBounds[index]}</Td>
                         <Td>
                           {isLast ? (
