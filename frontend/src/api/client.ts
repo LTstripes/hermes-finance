@@ -157,6 +157,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: "Название",
   target_value: "Целевое значение",
   target_date: "Срок",
+  closed_month: "Закрытый месяц",
 };
 
 const MONTH_NAMES = [
@@ -207,6 +208,8 @@ function localizeApiMessage(error: ApiClientError): string {
   switch (error.code) {
     case "salary_tax_history_incomplete":
       return salaryTaxHistoryMessage(error.message);
+    case "tax_brackets_year_locked":
+      return "Налоговые ступени этого года зафиксированы закрытыми отчётными месяцами. Сначала открой их, если действительно хочешь пересчитать историю.";
     case "network_error":
       return "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.";
     case "http_error":
@@ -232,7 +235,11 @@ export function formatApiError(error: unknown): string {
       const fields = error.details
         .map((detail) => {
           const field = FIELD_LABELS[detail.field] ?? detail.field;
-          return `${field}: ${localizeValidationMessage(detail.message)}`;
+          const detailMessage =
+            detail.field === "closed_month"
+              ? localizeMonthCode(detail.message)
+              : localizeValidationMessage(detail.message);
+          return `${field}: ${detailMessage}`;
         })
         .join("; ");
       return `${message} (${fields})`;

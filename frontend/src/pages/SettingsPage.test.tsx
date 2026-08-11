@@ -12,6 +12,10 @@ vi.mock("../api/settings", () => ({
   updateSettings: vi.fn(),
 }));
 
+vi.mock("../components/TaxBracketsPanel", () => ({
+  TaxBracketsPanel: () => <div>Налоговые ступени</div>,
+}));
+
 const settings = {
   base_currency: "RUB",
   locale: "ru-RU",
@@ -49,6 +53,7 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
     expect(screen.queryByDisplayValue("100000.00")).toBeNull();
     expect(screen.queryByText("v1")).toBeNull();
+    expect(screen.getByText("Налоговые ступени")).toBeInTheDocument();
   });
 
   it("retries after a settings load error", async () => {

@@ -26,6 +26,7 @@ from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
+from hermes_finance.services.tax_brackets import TaxBracketYearLockedError
 
 logger = logging.getLogger("hermes_finance.api.errors")
 
@@ -132,6 +133,25 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(409, "conflict", str(exc))
+
+    @application.exception_handler(TaxBracketYearLockedError)
+    async def _tax_bracket_year_locked_handler(
+        request: Request, exc: TaxBracketYearLockedError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=tax_brackets_year_locked",
+            exc.__class__.__name__,
+            request.url.path,
+        )
+        return _error_response(
+            409,
+            "tax_brackets_year_locked",
+            str(exc),
+            [
+                ErrorDetail(field="closed_month", message=f"{exc.year:04d}-{month:02d}")
+                for month in exc.closed_months
+            ],
+        )
 
     @application.exception_handler(IntegrityError)
     async def _integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
