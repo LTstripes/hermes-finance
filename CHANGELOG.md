@@ -2,6 +2,49 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.2.0] — 2026-08-11
+
+Первый post-MVP релиз, сфокусированный на финансовых инвариантах, локальной надёжности, полноценных пользовательских разделах и owner-led smoke/backfill.
+
+### Добавлено
+
+- annual opening YTD gross context для корректного прогрессивного НДФЛ при неполной истории календарного года;
+- fail-closed ошибка `salary_tax_history_incomplete` и нормативная семантика `closed`/`draft`/`reopen` для известности прошлых месяцев;
+- Goals API/UI, единый source of truth основной цели и backend-derived status/progress/forecast;
+- Accounts & Instruments и Settings как полноценные UI-разделы вместо staged placeholders;
+- безопасное администрирование налоговой шкалы целиком на календарный год с блокировкой ретроактивной правки года, содержащего закрытые месяцы;
+- отображение backend-derived текущей ставки НДФЛ и нескольких ставок при пересечении порога одной выплатой;
+- Windows production smoke в CI;
+- localhost Host/Origin protection для state-changing запросов;
+- process-local DB maintenance guard для backup/restore;
+- явная verification policy для targeted/full-suite проверок;
+- полная локализация основных user-facing error/reason/domain labels;
+- единое user-facing форматирование количества позиций и backend validation: акции — положительное целое количество, дробность сохраняется для типов, где она допустима.
+
+### Изменено
+
+- frontend exact-money boundary больше не использует JS `Number` для финансовой арифметики; деньги остаются exact decimal/minor-unit до presentation boundary;
+- SQLite locking contract зафиксирован на rollback journal + эффективном `busy_timeout=5000 ms`; WAL не включён без воспроизводимой необходимости, чтобы не усложнять локальный Windows backup/restore;
+- cash-flow contract явно учитывает `include_in_cash_flow` и исключает double count active/passive income;
+- optional instrument в новой фактической инвестиционной выплате теперь по умолчанию пуст и сбрасывается после сохранения;
+- пользовательская документация и runtime/package metadata синхронизированы с 0.2.0.
+
+### Исправлено по owner smoke
+
+- неполная YTD-история НДФЛ больше не блокирует открытие и заполнение исторического draft-месяца: недоступной остаётся только расчётная налоговая часть;
+- заполненный draft-месяц можно штатно удалить вместе с принадлежащими ему месячными строками в одной транзакции, сохраняя DB-level `ON DELETE RESTRICT` как общий safety guard;
+- диагностированный `0 ₽` dividend component не оказался дефектом: owner подтвердил, что выплата была заведена как `coupon`; расчётная цепочка dividend → rolling average → forecast → goal изменений не потребовала.
+
+### Известные ограничения
+
+- приложение остаётся single-user/local-only: auth, cloud, VPS и HTTPS-контур не входят в 0.2.0;
+- автоматические MOEX-котировки не загружаются;
+- календарь ожидаемых выплат в 0.2.0 заполняется вручную через `expected_cash_flows`; автоматическая генерация по позициям/MOEX отложена до отдельного контракта источника и refresh semantics;
+- PDF-импорт Альфа-Инвестиций не входит в обычный пользовательский workflow;
+- точная доходность с датированными внешними потоками (например Modified Dietz) остаётся будущей задачей;
+- приложение не является бухгалтерской, налоговой или торговой системой;
+- private seed, база, exports и backups должны оставаться локальными и не попадать в Git.
+
 ## [0.1.0] — 2026-08-09
 
 Первый локальный MVP для ежемесячного контроля личных финансов.
@@ -34,4 +77,5 @@
 - приложение не является бухгалтерской, налоговой или торговой системой;
 - private seed, база, exports и backups должны оставаться локальными и не попадать в Git.
 
+[0.2.0]: https://github.com/LTstripes/hermes-finance/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LTstripes/hermes-finance/releases/tag/v0.1.0

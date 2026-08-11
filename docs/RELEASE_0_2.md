@@ -2,7 +2,7 @@
 
 > **Статус:** ACTIVE  
 > **Релиз:** `0.2.0`  
-> **Release checkpoint:** IN_PROGRESS; tag удерживается до завершения активных follow-up задач и пользовательского smoke 2026-08-11.  
+> **Release checkpoint:** FINAL_GATE; R02-21 завершён, tag удерживается до финального local production probe и exact-main проверки.  
 > **Главная спецификация:** `docs/MASTER_SPEC.md`  
 > **Модельный протокол:** `docs/MODEL_ROUTING.md`  
 > **Исторический MVP backlog:** `docs/HERMES_TASKS.md`
@@ -65,11 +65,16 @@
 | R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-15 | Accounts & Instruments UI вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
 | R02-16 | Settings UI baseline вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-17 | Tax brackets administration contract/API/UI | P2 | READY | Terra High / Luna High bounded worker / Terra High | R02-16 |
+| R02-17 | Tax brackets administration contract/API/UI | P2 | DONE | Terra High / Luna High bounded worker / Terra High | R02-16 |
 | R02-18 | Контракт include_in_cash_flow и OTHER non-passive income | P1 | DONE | Sol High / — / Terra High | — |
 | R02-19 | Реализация income cash-flow inclusion contract | P1 | DONE | Terra High / Luna High bounded worker / Terra High | R02-18 |
-| R02-20 | Локализация user-facing UI и API errors | P2 | READY | Luna High / — / Luna | — |
-| R02-21 | Release metadata + docs для 0.2.0 | P1 | READY | Sol High / Luna High bounded worker / Sol High | R02-10, R02-17, R02-20 |
+| R02-20 | Локализация user-facing UI и API errors | P2 | DONE | Luna High / — / Luna | — |
+| R02-21 | Release metadata + docs для 0.2.0 | P1 | DONE | Sol High / Luna High bounded worker / Sol High | R02-10, R02-17, R02-20 |
+| R02-22 | Consistent numeric formatting + position quantity semantics | P2 | DONE | Hermes bounded implementation / Sol review | — |
+| R02-23 | Optional instrument starts empty for actual investment flows | P2 | DONE | Sol bounded implementation / Sol review | — |
+| R02-24 | Show backend-derived salary tax rate in month editor | P2 | DONE | Sol bounded implementation / Sol review | R02-17 |
+| R02-25 | Passive-income goal/dividend diagnostic | P1 | DONE | Codex + Hermes read-only diagnostics / Sol review | — |
+| R02-26 | Automatic expected-payment population/source UX | P2 | DEFERRED | future contract | — |
 
 `Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
 
@@ -551,7 +556,7 @@ Backend CRUD счетов и инструментов уже в основном
 # R02-17. Tax brackets administration contract/API/UI
 
 **Priority:** P2  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Terra High / Luna High bounded worker / Terra High reviewer
 
 Tax brackets уже участвуют в чувствительной налоговой логике, поэтому отсутствие UI не следует закрывать обычным CRUD «на глаз». 2026-08-11 владелец явно вернул задачу в активный план 0.2.
@@ -636,7 +641,7 @@ Tax brackets уже участвуют в чувствительной нало�
 # R02-20. Локализация user-facing UI и API errors
 
 **Priority:** P2  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Luna High / — / Luna reviewer
 
 ## Проблема
@@ -664,7 +669,7 @@ Tax brackets уже участвуют в чувствительной нало�
 # R02-21. Release metadata + docs для 0.2.0
 
 **Priority:** P1  
-**Status:** READY  
+**Status:** DONE  
 **Route:** Sol High / Luna High bounded worker / Sol High reviewer  
 **Depends on:** R02-10, R02-17, R02-20
 
@@ -691,31 +696,88 @@ Release gate 2026-08-11 обнаружил, что runtime/package metadata и �
 - docs/version diff проходит релевантные checks и exact-HEAD CI;
 - после задачи остаётся только release checkpoint/final review, а не скрытый feature scope.
 
+## Outcome R02-21
+
+- backend runtime/project/`uv.lock` и frontend package/lock metadata синхронизированы на `0.2.0` без изменения dependency graph;
+- README, CHANGELOG и PROJECT_WIKI обновлены под фактический 0.2 workflow и принятые контракты;
+- `MASTER_SPEC.md` §§10/18 проверены на противоречия; нормативного конфликта с принятыми 0.2 ADR/task decisions не найдено;
+- exact candidate PR CI `31529401605` зелёный: Backend, Frontend, Privacy guard, Windows production smoke;
+- Sol blocker-level review R02-21 принят без blocker;
+- tag `v0.2.0` этой задачей не создаётся.
+
+---
+
+# R02-22. Consistent numeric formatting + position quantity semantics
+
+**Priority:** P2  
+**Status:** DONE
+
+Whole quantities больше не показывают persistence padding; `stock` quantity валидируется как положительное целое `>= 1` на frontend/backend boundary, дробные количества для допустимых типов сохранены. Финальный main implementation `cdb439f68a6dade7a4801fbbcbcd5e97a70e5e6e`, CI `31527275884` green.
+
+Подробности: `docs/RELEASE_0_2_FOLLOWUPS_2026-08-11.md`.
+
+---
+
+# R02-23. Optional instrument starts empty for actual investment flows
+
+**Priority:** P2  
+**Status:** DONE
+
+Optional instrument в новой фактической выплате начинается и после сохранения снова становится `—`; expected-flow instrument остаётся required. PR #18, merge `6cfa1355f52102d1d734a8496a793753cbb66d65`, exact CI `31526151737` green.
+
+---
+
+# R02-24. Show backend-derived salary tax rate in month editor
+
+**Priority:** P2  
+**Status:** DONE
+
+Month editor отображает ставки из существующего backend `salary_tax.parts`; threshold-crossing payment показывает несколько применённых ставок и marginal/current bracket без frontend tax arithmetic. PR #19, merge `264408b4d7a600745ba26b2cc4085c968d19e96b`, exact CI `31526654331` green.
+
+---
+
+# R02-25. Passive-income goal/dividend diagnostic
+
+**Priority:** P1  
+**Status:** DONE — no code defect
+
+Codex и Hermes независимо подтвердили read-only, что в локальной БД не было `dividend` rows: owner-entered выплаты были классифицированы как `coupon`. Ненулевое dividend value внутри pipeline не терялось; владелец подтвердил input classification mistake. Code fix не требуется.
+
+---
+
+# R02-26. Automatic expected-payment population/source UX
+
+**Priority:** P2  
+**Status:** DEFERRED — non-blocking after 0.2
+
+Для 0.2 календарь ожидаемых выплат нормативно остаётся ручным через persisted `expected_cash_flows`. Автогенерация из позиций/MOEX требует отдельного контракта provenance, refresh/version и reconciliation manual/generated rows.
+
 ---
 
 # 2. Release Gate перед `0.2.0`
 
 Перед созданием tag/release `0.2.0` выполнить отдельный release checkpoint.
 
-**Checkpoint status:** IN_PROGRESS с 2026-08-11. Текущий tag candidate намеренно не фиксируется до завершения R02-10, R02-17, R02-20, R02-21 и пользовательского smoke/backfill прошлых месяцев.
+**Checkpoint status:** FINAL_GATE. R02-10/R02-17/R02-20/R02-21 и owner smoke/follow-ups завершены; tag удерживается до final local production probe и exact-main проверки.
 
 ## Обязательный gate
 
-- [ ] Все **P0** task-cards имеют статус `DONE`.
-- [ ] Нет открытых blocker/high findings по финансовой корректности, миграциям или риску потери данных.
-- [ ] Backend canonical test suite green.
-- [ ] Frontend tests/lint/build green.
-- [ ] Windows production smoke green.
-- [ ] Clean install: пустая DB → standard launcher → рабочий DB endpoint.
-- [ ] Upgrade smoke: schema/data `0.1.0` → current Alembic head → приложение стартует и читает данные.
-- [ ] Regression tests финансовых invariants (`Decimal`, rounding, passive-income exclusions, tax YTD) green.
-- [ ] Backup create → validate → restore smoke green.
-- [ ] Privacy check: никаких private DB/seed/export/backup/financial payload в Git/logs; приложение по умолчанию остаётся local-only.
-- [ ] Host/Origin security contract проверен для production local flow.
-- [ ] `MASTER_SPEC.md`, `README.md`, `PROJECT_WIKI.md` и `CHANGELOG.md` актуальны для фактического поведения.
-- [ ] Все `DEFERRED` задачи явно перечислены как non-blocking known follow-ups.
-- [ ] **Sol High release review** выполнен на exact candidate `HEAD`: blocker-level review без автоматического broad rewrite.
-- [ ] После review исправления, если были, снова прошли релевантные проверки; зафиксирован exact final `HEAD`.
+- [x] Все **P0** task-cards имеют статус `DONE`.
+- [x] Нет открытых blocker/high findings по финансовой корректности, миграциям или риску потери данных.
+- [x] Backend canonical test suite green на R02-21 candidate.
+- [x] Frontend tests/lint/format/build green на R02-21 candidate.
+- [x] Windows production smoke green на R02-21 candidate.
+- [x] Clean/synthetic startup readiness покрыт Windows production smoke и startup regressions.
+- [x] Upgrade/schema regressions green; owner smoke подтверждает чтение существующей локальной истории после обновлений.
+- [x] Regression tests финансовых invariants (`Decimal`, rounding, passive-income exclusions, tax YTD) green.
+- [x] Backup create/validate/restore regression coverage green (`test_backups_api.py`, `test_f05_restore_backup.py`).
+- [x] Privacy guard green: private DB/seed/export/backup/financial payload не попали в tracked release diff; local-only defaults сохранены.
+- [x] Host/Origin security regressions green в canonical backend suite.
+- [x] `MASTER_SPEC.md`, `README.md`, `PROJECT_WIKI.md` и `CHANGELOG.md` reviewed/актуализированы для фактического 0.2 поведения.
+- [x] `R02-26` явно DEFERRED как non-blocking known follow-up.
+- [x] **Sol High release review** выполнен на R02-21 candidate: blocker-level review без blocker.
+- [ ] Финальный docs-only R02-21 HEAD после синхронизации backlog должен пройти CI перед merge.
+- [ ] Owner/Hermes local production probe на синхронизированном `main`: start/health/months/`127.0.0.1:8000`/port cleanup + clean working tree.
 - [ ] Только после этого создаётся `v0.2.0`.
 
 ## Release review route

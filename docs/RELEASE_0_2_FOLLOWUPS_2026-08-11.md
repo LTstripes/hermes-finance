@@ -1,125 +1,94 @@
 # Release 0.2 — owner smoke follow-ups — 2026-08-11
 
-These bounded follow-ups were discovered during the owner-led manual backfill/UI smoke before the `v0.2.0` tag. They are temporary release working cards and must be synchronized into `docs/RELEASE_0_2.md` by R02-21 before release.
+These bounded follow-ups were discovered during the owner-led manual backfill/UI smoke before the `v0.2.0` tag. R02-21 synchronizes their final state into the canonical release record.
 
 ## R02-22 — Consistent numeric formatting and position quantity semantics
 
 **Priority:** P2  
-**Status:** READY  
-**Suggested owner:** Lera / Luna-class frontend implementation; backend validation review if quantity invariant changes
+**Status:** DONE
 
-### Problem
+### Outcome
 
-Numeric grouping is inconsistent between input/display surfaces. Position quantities render persistence precision such as `64.000000` even for whole-unit instruments.
+- user-facing position quantity no longer exposes persistence padding such as `64.000000`;
+- whole quantities are shown without meaningless trailing zeroes and with readable grouping;
+- `stock` quantity is enforced as a positive whole number (`>= 1`) on frontend and backend/API boundary;
+- fractional quantities remain allowed for instrument types where the existing contract permits them;
+- no persistence precision migration and no financial arithmetic moved into React.
 
-### Scope
-
-- use consistent Russian digit grouping for user-facing monetary/large-number displays;
-- define safe input formatting behavior without converting exact decimal strings through binary float;
-- position quantity display must trim meaningless trailing zeroes and group the integer part;
-- stock quantity must be a positive whole number (`>= 1`) in both UI and backend/API validation;
-- preserve fractional quantities for instrument types where they are legitimate (for example currency/gold/funds/other unless a stricter contract already exists);
-- add regression tests for large exact values and whole/fractional quantities.
-
-### Non-goals
-
-- no persistence precision migration;
-- no financial arithmetic in React.
+**Delivery:** commits `a93f2265d22c0c24b88a332d7dfa718c9391de7a`, `fe455bce85d38fde27d03e1c2c19cd07aaca8d85`, `cdb439f68a6dade7a4801fbbcbcd5e97a70e5e6e`.  
+**Verification:** exact main push CI `31527275884` green.
 
 ## R02-23 — Optional instrument starts empty for actual investment flows
 
 **Priority:** P2  
-**Status:** READY  
-**Suggested owner:** Lera
+**Status:** DONE
 
-### Problem
+### Outcome
 
-In “Новая фактическая выплата”, `Инструмент (необязательно)` is currently preselected to the first active instrument even though the field is optional. This makes accidental attribution easy.
+- new actual-flow draft starts with optional instrument = `—`;
+- after creating an actual flow the optional instrument resets to empty;
+- account convenience default remains;
+- expected-flow instrument remains required and unchanged.
 
-### Acceptance
-
-- new actual-flow draft starts with instrument = empty/`—`;
-- after creating an actual flow, the optional instrument resets to empty;
-- expected-flow instrument remains required and may keep its existing behavior;
-- focused frontend regression.
+**Delivery:** PR #18, merge `6cfa1355f52102d1d734a8496a793753cbb66d65`.  
+**Verification:** exact PR CI `31526151737` green across backend/frontend/privacy/Windows production smoke.
 
 ## R02-24 — Show salary tax bracket/rate in the month editor
 
 **Priority:** P2  
-**Status:** SPECIFIED  
-**Suggested route:** Sol primary / bounded implementation / Terra review
+**Status:** DONE
 
-### Problem
+### Outcome
 
-The salary editor shows calculated tax/net but not which progressive НДФЛ rate(s) were applied to the current salary payment.
+The existing month-summary API already exposed backend `salary_tax.parts` with `rate_bps`, so no tax formula/API semantic change was required.
 
-### Contract direction
+- normal salary shows the backend-derived current applied/marginal rate;
+- a payment crossing a threshold shows all applied rates and the marginal rate after the payment;
+- incomplete salary-tax history shows no invented rate;
+- frontend does not infer a rate from gross/tax or perform tax arithmetic.
 
-- backend remains source of truth; frontend must not infer the bracket from gross/tax;
-- reuse `SalaryTaxResult.parts` / bracket rates;
-- expose a compact API summary such as applied rate(s) and current marginal rate;
-- if one payment crosses a threshold, UI must show that multiple rates were applied rather than lying with one percentage;
-- distinguish marginal bracket from effective tax percentage if both are shown.
+**Delivery:** PR #19, merge `264408b4d7a600745ba26b2cc4085c968d19e96b`.  
+**Verification:** exact PR CI `31526654331` green across backend/frontend/privacy/Windows production smoke.
 
-### Acceptance
-
-- normal payment shows the current applied/marginal rate in Russian UI;
-- threshold-crossing payment clearly shows both applied rates;
-- no binary-float tax calculation in frontend.
-
-## R02-25 — Passive-income goal current value / dividend forecast smoke blocker
+## R02-25 — Passive-income goal current value / dividend forecast diagnostic
 
 **Priority:** P1  
-**Status:** BLOCKED on read-only local-data reproduction  
-**Suggested route:** Lera contract/review + Hermes local read-only diagnostic, then implementation owner chosen from root cause
+**Status:** DONE — no code defect reproduced
 
-### Observation
+### Observation and resolution
 
-Owner added actual July dividends and closed historical months, but Dashboard “Основная цель” still displayed `Текущее значение = 0 ₽ / 0%` while warning that the dividend component was estimated from closed months.
+The owner initially expected July dividend data to feed the rolling dividend component, while Dashboard showed `0` for the forecast/main-goal current value.
 
-### Existing contract
+Two independent read-only diagnostics (Codex and Hermes) followed the full chain and found:
 
-- actual dividend stays entirely in the month when it was received;
-- forecast passive income annualises the average actual net dividends from closed months;
-- the passive-income goal current value consumes `forecast_passive_income.monthly_total`.
+- zero `investment_cash_flows` rows with `flow_type=dividend`;
+- the relevant owner-entered flows were classified as `coupon`;
+- therefore every closed-month dividend bucket was legitimately zero;
+- dividend average, expected dividend component and forecast/goal dividend contribution remained zero without any layer dropping a non-zero dividend.
 
-Therefore, if a closed month contains a correctly classified actual dividend, a zero goal current value requires investigation; it must not be papered over in the frontend.
-
-### Diagnostic acceptance
-
-Read-only local diagnostic must report for the selected Dashboard month:
-
-1. the actual `investment_cash_flows` dividend row(s) and net amount;
-2. `passive_income_for_month(...).breakdown.dividends` for each relevant closed month;
-3. closed months included by the forecast;
-4. dividend average/months used;
-5. forecast annual/monthly total and breakdown;
-6. `/api/goals/summary` current value for the main goal;
-7. exact first layer where a non-zero dividend becomes zero.
-
-No DB writes or data repair during diagnosis.
+The owner confirmed the input classification mistake. **No code fix is required.** The contract remains: actual dividends stay in the month received; forecast dividend component uses the average actual net dividends from available closed months, up to rolling 12.
 
 ## R02-26 — Expected payments calendar population/source UX
 
 **Priority:** P2  
-**Status:** SPECIFIED; not a correctness blocker for 0.2 if manual workflow is explicitly documented  
-**Suggested route:** Sol contract / later implementation
+**Status:** DEFERRED — non-blocking follow-up after 0.2
 
-### Current behavior
+### 0.2 contract
 
-The 12-month calendar is built from persisted `expected_cash_flows`. In 0.2 these rows are entered manually in “Новая ожидаемая выплата”; the application does not currently generate coupon/dividend/redemption schedules automatically from portfolio positions.
+The 12-month calendar is built from persisted `expected_cash_flows`. In 0.2 rows are entered manually through “Новая ожидаемая выплата”. The application does not generate coupon/dividend/redemption schedules automatically from current portfolio positions or MOEX.
 
-### Follow-up direction
+README/CHANGELOG/Wiki explicitly document this manual workflow for 0.2.
 
-- make the manual source/workflow explicit in UI/docs for 0.2;
-- separately decide whether future automatic population comes from instrument metadata, MOEX schedules, statement/import data, or another bounded source;
-- define refresh/version semantics before any automatic overwrite of user-entered forecasts;
-- never mix generated and manual rows ambiguously.
+### Future contract required before implementation
+
+- choose authoritative source(s): instrument metadata/MOEX/import/other;
+- define provenance and manual-vs-generated row identity;
+- define refresh/version/reconciliation semantics;
+- never silently overwrite or ambiguously duplicate manual rows.
 
 ## Release handling
 
-- R02-23 is a safe pre-release UX hotfix candidate.
-- R02-22 and R02-24 are bounded pre-release polish tasks if time permits.
-- R02-25 is a release blocker until the observed `0 ₽` is explained as either correct input state or fixed defect.
-- R02-26 may remain a documented manual workflow for 0.2 and move to the next release if owner accepts it.
-- R02-21 must synchronize these outcomes, the main release backlog, version metadata, README/Wiki/CHANGELOG, and the final smoke log before `v0.2.0`.
+- R02-22, R02-23 and R02-24 are DONE;
+- R02-25 is DONE as a diagnostic resolution with no code change;
+- R02-26 is explicitly DEFERRED and non-blocking for 0.2;
+- R02-21 owns final version/docs/backlog synchronization and release-candidate review preparation.
