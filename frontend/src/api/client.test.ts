@@ -153,12 +153,12 @@ describe("months API helpers", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await cloneMonth(2, { year: 2026, month: 8, snapshot_date: "2031-08-31" });
+    await cloneMonth(2, { year: 2026, month: 8, snapshot_date: "2026-08-31" });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/months/2/clone",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ year: 2026, month: 8, snapshot_date: "2031-08-31" }),
+        body: JSON.stringify({ year: 2026, month: 8, snapshot_date: "2026-08-31" }),
       }),
     );
   });
