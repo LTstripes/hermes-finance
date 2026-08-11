@@ -67,9 +67,10 @@ export async function upsertSalaryLine(monthId: number, line: SalaryLine): Promi
   }
   const gross = rub(isBlankMoney(line.gross) ? "0" : line.gross);
   const net = rub(isBlankMoney(line.actualNet) ? "0" : line.actualNet);
-  const tax = rub(
-    line.calculatedTax && !isBlankMoney(line.calculatedTax) ? line.calculatedTax : "0",
-  );
+  const tax =
+    line.calculatedTax && !isBlankMoney(line.calculatedTax)
+      ? rub(line.calculatedTax)
+      : (existing?.tax_amount ?? { amount: "0.00", currency: "RUB" });
 
   if (existing) {
     await updateIncome(existing.id, {
