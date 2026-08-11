@@ -128,9 +128,7 @@ def test_passive_goal_current_value_uses_actual_closed_month_average_without_exp
         assert str(result.progress_pct) == "4.50"
         assert result.remaining_amount == RubleAmount(95_500_00)
         assert result.source_forecast_version is None
-        assert result.warnings == (
-            "Среднее за доступный период. Учтено 2 месяцев из 12.",
-        )
+        assert result.warnings == ("Среднее за доступный период. Учтено 2 месяцев из 12.",)
     finally:
         session.close()
         database.engine.dispose()
