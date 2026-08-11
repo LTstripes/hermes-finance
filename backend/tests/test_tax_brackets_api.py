@@ -77,7 +77,9 @@ def test_tax_bracket_api_rejects_invalid_set_atomically(tmp_path: Path) -> None:
     Base.metadata.create_all(database.engine)
     try:
         with TestClient(create_app(database)) as client:
-            assert client.put("/api/tax-brackets/2036", json=_two_bracket_payload()).status_code == 200
+            assert (
+                client.put("/api/tax-brackets/2036", json=_two_bracket_payload()).status_code == 200
+            )
 
             invalid = client.put(
                 "/api/tax-brackets/2036",
