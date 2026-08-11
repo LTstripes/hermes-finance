@@ -147,9 +147,9 @@ def test_summary_reuses_each_supported_source_metric_once_and_skips_inactive_and
             nonlocal passive_calls
             passive_calls += 1
             return SimpleNamespace(
-                monthly_total=RubleAmount(120_000_00),
-                is_approximate=True,
-                warnings=("forecast warning",),
+                average=RubleAmount(120_000_00),
+                count_months=7,
+                is_complete_12m=False,
             )
 
         def fake_capital(*args):
@@ -158,7 +158,7 @@ def test_summary_reuses_each_supported_source_metric_once_and_skips_inactive_and
             return SimpleNamespace(liquid_capital_net=RubleAmount(60_000_00))
 
         monkeypatch.setattr(
-            "hermes_finance.services.goal_achievement.forecast_passive_income", fake_passive
+            "hermes_finance.services.goal_achievement.passive_income_average", fake_passive
         )
         monkeypatch.setattr(
             "hermes_finance.services.goal_achievement.liquid_capital_for_month", fake_capital
@@ -173,8 +173,11 @@ def test_summary_reuses_each_supported_source_metric_once_and_skips_inactive_and
         assert capital_calls == 1
         assert by_id[passive.id].achievement_forecast.current_value == RubleAmount(120_000_00)
         assert by_id[passive_b.id].achievement_forecast.current_value == RubleAmount(120_000_00)
-        assert by_id[passive.id].achievement_forecast.source_forecast_version == "custom-v2"
-        assert by_id[passive.id].achievement_forecast.warnings == ("forecast warning",)
+        assert by_id[passive.id].achievement_forecast.source_forecast_version is None
+        assert by_id[passive.id].achievement_forecast.warnings == (
+            "Среднее за доступный период. Учтено 7 месяцев из 12.",
+        )
+        assert by_id[passive.id].achievement_forecast.is_approximate is False
         assert by_id[passive.id].achievement_forecast.progress_pct == Decimal("120.00")
         assert by_id[passive.id].achievement_forecast.remaining_amount == RubleAmount(0)
         assert by_id[passive.id].achievement_forecast.status == "achieved"
@@ -190,6 +193,37 @@ def test_summary_reuses_each_supported_source_metric_once_and_skips_inactive_and
         assert by_id[inactive.id].achievement_forecast.status == "inactive"
         assert by_id[inactive.id].achievement_forecast.current_value is None
         assert by_id[unsupported.id].achievement_forecast.reason_code == "unsupported_goal_type"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_passive_goal_without_closed_history_uses_zero_actual_average_and_explains_source(
+    monkeypatch, tmp_path
+) -> None:
+    database = create_database(tmp_path / "no-passive-history.db")
+    Base.metadata.create_all(database.engine)
+    session = database.session_factory()
+    try:
+        month = create_reporting_month(session, year=2030, month=5, snapshot_date=REPORTING_DATE)
+        create_goal(
+            session,
+            name="Passive",
+            goal_type=GoalType.PASSIVE_INCOME,
+            target_value=RubleAmount(100_000_00),
+            calculation_mode="monthly_net_passive_income",
+        )
+        monkeypatch.setattr(
+            "hermes_finance.services.goal_achievement.passive_income_average",
+            lambda *_: SimpleNamespace(average=RubleAmount(0), count_months=0, is_complete_12m=False),
+        )
+
+        result = build_goal_achievement_summary(session, month.id)[0].achievement_forecast
+        assert result.current_value == RubleAmount(0)
+        assert result.source_forecast_version is None
+        assert result.warnings == (
+            "Нет закрытых месяцев для расчёта текущего пассивного дохода",
+        )
     finally:
         session.close()
         database.engine.dispose()
@@ -234,7 +268,7 @@ def test_passive_wrong_mode_is_unsupported_without_calculator(monkeypatch, tmp_p
             calculation_mode="passive_total",
         )
         monkeypatch.setattr(
-            "hermes_finance.services.goal_achievement.forecast_passive_income",
+            "hermes_finance.services.goal_achievement.passive_income_average",
             lambda *_: pytest.fail("calculator must not run for unsupported mode"),
         )
         result = build_goal_achievement_summary(session, month.id)[0].achievement_forecast
@@ -264,7 +298,7 @@ def test_unsupported_goal_types_are_reported_without_calculator(
             calculation_mode="anything",
         )
         monkeypatch.setattr(
-            "hermes_finance.services.goal_achievement.forecast_passive_income",
+            "hermes_finance.services.goal_achievement.passive_income_average",
             lambda *_: pytest.fail("passive calculator must not run for unsupported type"),
         )
         monkeypatch.setattr(
