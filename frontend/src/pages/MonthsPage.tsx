@@ -184,7 +184,7 @@ export function MonthsPage() {
       <div className="dashboard-grid">
         <Panel label="Список" title="Отчётные месяцы">
           {loading ? (
-            <LoadingState description="Загружаем /api/months…" inline />
+            <LoadingState description="Загружаем отчётные месяцы…" inline />
           ) : error ? (
             <ErrorState description={error} inline title="Не удалось загрузить" />
           ) : months.length === 0 ? (
