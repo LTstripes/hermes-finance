@@ -42,15 +42,13 @@ function setup() {
     const method = (init?.method ?? "GET").toUpperCase();
 
     if (method === "GET" && url === "/api/accounts") return jsonResponse([account]);
-    if (method === "GET" && url === "/api/instruments?active=true") return jsonResponse([instrument]);
+    if (method === "GET" && url === "/api/instruments?active=true")
+      return jsonResponse([instrument]);
     if (method === "GET" && url === "/api/investment-flows?month_id=7") return jsonResponse([]);
     if (method === "GET" && url === "/api/expected-flows?month_id=7&forecast_version=v1") {
       return jsonResponse([]);
     }
-    if (
-      method === "GET" &&
-      url === "/api/expected-flows/calendar?month_id=7&forecast_version=v1"
-    ) {
+    if (method === "GET" && url === "/api/expected-flows/calendar?month_id=7&forecast_version=v1") {
       return jsonResponse([]);
     }
     if (method === "POST" && url === "/api/investment-flows") {
