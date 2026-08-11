@@ -49,10 +49,6 @@ export type ApiDownload = {
   filename: string;
 };
 
-/**
- * Fetch wrapper for `/api/*` via Vite proxy.
- * Parses D08 error shape into ApiClientError; 204 returns undefined.
- */
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { body, headers, signal, ...rest } = options;
   const init: RequestInit = {
@@ -202,6 +198,7 @@ function localizeValidationMessage(message: string): string {
   if (max) return `Значение должно быть не больше ${max}`;
   const min = /^Input should be greater than or equal to (.+)$/i.exec(message)?.[1];
   if (min) return `Значение должно быть не меньше ${min}`;
+  if (/^[\x00-\x7F]+$/.test(message)) return "Некорректное значение";
   return message;
 }
 
