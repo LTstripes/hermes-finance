@@ -2,11 +2,12 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import ReportingMonthSource, ReportingMonthStatus
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, CashBalance, IncomeEntry
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
     close_reporting_month,
@@ -108,6 +109,66 @@ def test_closed_reporting_month_requires_reopen_before_edit_or_delete(tmp_path: 
         delete_reporting_month(session, updated.id)
         with pytest.raises(LookupError):
             get_reporting_month(session, updated.id)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_delete_populated_draft_removes_month_owned_rows(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        reporting_month = create_reporting_month(
+            session,
+            year=2026,
+            month=5,
+            snapshot_date=date(2026, 5, 31),
+        )
+        session.add_all(
+            [
+                IncomeEntry(
+                    reporting_month_id=reporting_month.id,
+                    income_type="salary",
+                    name="Зарплата",
+                    gross_amount_kopecks=100_000,
+                    tax_amount_kopecks=13_000,
+                    net_amount_kopecks=87_000,
+                    received_at=None,
+                    is_recurring=True,
+                    include_in_cash_flow=True,
+                    include_in_passive_income=False,
+                    notes=None,
+                ),
+                CashBalance(
+                    reporting_month_id=reporting_month.id,
+                    name="Наличные",
+                    amount_kopecks=50_000,
+                    currency="RUB",
+                    include_in_capital=True,
+                    notes=None,
+                ),
+            ]
+        )
+        session.commit()
+
+        delete_reporting_month(session, reporting_month.id)
+
+        assert session.get(type(reporting_month), reporting_month.id) is None
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(IncomeEntry)
+                .where(IncomeEntry.reporting_month_id == reporting_month.id)
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(CashBalance)
+                .where(CashBalance.reporting_month_id == reporting_month.id)
+            )
+            == 0
+        )
     finally:
         session.close()
         database.engine.dispose()
