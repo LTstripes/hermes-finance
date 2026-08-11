@@ -1,740 +1,173 @@
-# Release 0.2 — active backlog
+# Release 0.2 — canonical release record
 
-> **Статус:** ACTIVE  
 > **Релиз:** `0.2.0`  
-> **Release checkpoint:** IN_PROGRESS; tag удерживается до завершения активных follow-up задач и пользовательского smoke 2026-08-11.  
-> **Главная спецификация:** `docs/MASTER_SPEC.md`  
-> **Модельный протокол:** `docs/MODEL_ROUTING.md`  
-> **Исторический MVP backlog:** `docs/HERMES_TASKS.md`
+> **Статус release checkpoint:** REVIEW  
+> **Tag:** удерживается до exact-candidate CI, локального production probe и final Sol blocker-level review.  
+> **Бизнес-источник истины:** `docs/MASTER_SPEC.md` + принятые ADR.  
+> **Verification:** `docs/VERIFICATION_POLICY.md`.  
+> **Исторический MVP backlog:** `docs/HERMES_TASKS.md`.
 
-## 0. Назначение файла
+## 0. Назначение
 
-Этот файл — активный исполняемый backlog версии `0.2.0` после завершения MVP `0.1.0`.
+Этот файл — канонический итог release train 0.2. Подробные промежуточные task-card формулировки сохранены в Git history; owner-led smoke и временные follow-ups находятся в:
 
-`docs/HERMES_TASKS.md` сохраняется как исторический пошаговый backlog строительства MVP и больше не является источником новых post-MVP задач. Старые разделы H/I/J/K в нём являются legacy roadmap: они не входят в `0.2.0` автоматически. Любая такая идея сначала должна быть явно перенесена владельцем в активный release backlog отдельной `R02-*` task-card.
+- `docs/RELEASE_0_2_SMOKE_2026-08-11.md`;
+- `docs/RELEASE_0_2_FOLLOWUPS_2026-08-11.md`.
 
-Правило работы остаётся прежним: **одна task-card за одну итерацию; следующая задача не начинается без явной команды владельца**.
+Новые post-0.2 задачи не добавляются сюда автоматически: после релиза для них создаётся следующий active release backlog.
 
-### Статусы
+Статусы: `IDEA → SPECIFIED → READY → IN_PROGRESS → REVIEW → DONE`; также используются `BLOCKED` и `DEFERRED`.
 
-`IDEA → SPECIFIED → READY → IN_PROGRESS → REVIEW → DONE`
+## 1. Итоговый backlog 0.2
 
-Дополнительно:
+| ID | Задача | Priority | Status | Итог |
+|---|---|---:|---|---|
+| R02-01 | Startup migrations + schema readiness gate | P0 | DONE | Canonical launchers применяют Alembic до readiness; DB endpoint входит в smoke. |
+| R02-02 | Контракт opening YTD gross для НДФЛ | P0 | DONE | Принят fail-closed opening-YTD contract и ADR. |
+| R02-03 | Реализация opening YTD gross для НДФЛ | P0 | DONE | Annual opening context реализован без double count; обязательный `salary_tax_history_incomplete`. |
+| R02-04 | Passive-income invariants / double-count protection | P0 | DONE | Active income/cashback не могут стать passive; deposit interest имеет канонический источник. |
+| R02-05 | Localhost Host/Origin protection | P1 | DONE | Unsafe requests защищены local Host/Origin contract без auth/cloud. |
+| R02-06 | True-offline UI / external fonts | P2 | DONE | Внешняя font-зависимость удалена. |
+| R02-07 | Exact-money frontend boundary | P1 | DONE | Финансовая арифметика не проходит через JS `Number`; chart conversion только presentation boundary. |
+| R02-08 | Windows production smoke CI | P1 | DONE | CI запускает production launcher и проверяет local startup/readiness. |
+| R02-09 | Safe backup/restore serialization | P1 | DONE | Process-local DB maintenance guard, request drain и pre-restore safety. |
+| R02-10 | SQLite locking decision | P2 | DONE | `journal_mode=delete`, effective `busy_timeout=5000 ms`; WAL осознанно не включён. |
+| R02-11 | Goals API + main-goal source of truth | P1 | DONE | Persistent `is_main`, CRUD и compatibility seed/mirror. |
+| R02-12 | Goal achievement forecast contract/backend | P1 | DONE | `goal_achievement_v1`; no invented future growth. |
+| R02-13 | Goals UI + Dashboard main goal | P1 | DONE | Полноценный Goals UI и backend-derived Dashboard goal panel. |
+| R02-14 | Fixed desktop sidebar | P2 | DONE | Desktop navigation закреплена и owner-smoke accepted. |
+| R02-15 | Accounts & Instruments UI | P2 | DONE | Placeholder заменён полноценным справочником. |
+| R02-16 | Settings UI baseline | P2 | DONE | Placeholder заменён рабочими настройками. |
+| R02-17 | Tax brackets administration | P2 | DONE | Year-scoped atomic contract/API/UI; closed-year history protected from silent rewrite. |
+| R02-18 | Income cash-flow inclusion contract | P1 | DONE | Принята нормативная matrix для `include_in_cash_flow` и OTHER. |
+| R02-19 | Income cash-flow implementation | P1 | DONE | Monthly cash balance реализует R02-18 без passive double count. |
+| R02-20 | User-facing localization | P2 | DONE | Internal reason/error identifiers локализованы/скрыты из обычного UX. |
+| R02-21 | Release metadata + docs для 0.2.0 | P1 | REVIEW | Version/docs синхронизируются; exact candidate review ещё не завершён. |
+| R02-22 | Numeric formatting + quantity semantics | P2 | DONE | Whole quantities cleanly rendered; stock quantity positive whole integer on UI/backend. |
+| R02-23 | Optional actual-flow instrument | P2 | DONE | Optional instrument starts/resets to `—`; expected-flow contract unchanged. |
+| R02-24 | Salary NDFL rate in editor | P2 | DONE | UI displays backend `salary_tax.parts`, including threshold crossing. |
+| R02-25 | Passive-goal/dividend diagnostic | P1 | DONE | No defect: owner-entered flow was `coupon`, not `dividend`; two read-only diagnostics agreed. |
+| R02-26 | Automatic expected-payment population | P2 | DEFERRED | 0.2 keeps explicit manual expected-flow workflow; automatic source/refresh semantics deferred. |
 
-- `BLOCKED` — есть обязательная зависимость или нерешённый контракт;
-- `DEFERRED` — задача сознательно отложена и не блокирует релиз.
+## 2. Нормативные 0.2 решения
 
-### Приоритеты
+### 2.1. Salary tax / opening YTD
 
-- **P0** — корректность данных/финансов или возможность штатно запустить/обновить приложение; блокирует релиз.
-- **P1** — существенная надёжность, безопасность или продуктовая функция; обычно должна попасть в релиз.
-- **P2** — улучшение UX/качества; может быть перенесено без нарушения корректности продукта.
+- known historical month = existing `reporting_month` with status `closed`;
+- draft is unknown, not a known zero;
+- reopen makes that month unknown again for downstream YTD;
+- incomplete history fails closed with `salary_tax_history_incomplete`;
+- annual opening context covers January 1 through the month immediately before `effective_from_month` and is included exactly once;
+- historical draft editor remains usable when only the calculated tax slice is unavailable;
+- tax bracket administration operates on one complete calendar-year scale and is blocked once that year contains closed months unless history is explicitly reopened.
 
-### Общий Definition of Done
+Normative opening contract: `docs/adr/0002-opening-ytd-gross.md`.
 
-Для каждой `R02-*` задачи:
+### 2.2. Passive income and cash flow
 
-1. Прочитаны эта task-card, связанные разделы `MASTER_SPEC.md`, актуальные ADR и `MODEL_ROUTING.md`.
-2. Перед кодом дан короткий план; scope не расширяется «заодно».
-3. Финансовая логика сохраняет `Decimal`/integer minor units и `ROUND_HALF_UP`; финансовые вычисления через binary `float` не добавляются.
-4. Изменение покрыто минимально достаточными тестами/проверками.
-5. Приватные финансовые данные, локальная БД, backup/export/seed не попадают в Git или логи.
-6. Не добавляются cloud, auth, telemetry, VPS или trading capabilities.
-7. Primary принимает фактический diff и проверки согласно settling gate из `MODEL_ROUTING.md`.
-8. Документация обновляется, если изменён контракт, запуск или пользовательский workflow.
+- salary/bonus/side income/cashback are not passive income;
+- deposit actual interest comes only from `deposit_snapshots.actual_interest_received`;
+- redemption is principal return, not income;
+- `include_in_cash_flow` controls income inclusion in monthly cash balance according to the accepted R02-18 matrix;
+- actual dividend stays in the month received; forecast dividend component averages actual net dividends across available closed months, max rolling 12.
 
----
+### 2.3. Goals
 
-## 1. Сводный backlog
+- `goals` is runtime source of truth;
+- main passive-income goal consumes backend forecast monthly passive income;
+- no synthetic growth trajectory is invented when none exists;
+- internal calculation/reason codes are not primary user-facing UI.
 
-| ID | Задача | Priority | Status | Proposed route | Depends on |
-|---|---|---:|---|---|---|
-| R02-01 | Startup migrations + schema readiness gate | P0 | DONE | Luna High / — / Terra High | — |
-| R02-02 | Контракт opening YTD gross для НДФЛ | P0 | DONE | Sol High / — / Terra High | — |
-| R02-03 | Реализация opening YTD gross для НДФЛ | P0 | DONE | Terra High / Luna High optional / Terra High | R02-02 |
-| R02-04 | Passive-income invariants и защита от double count | P0 | DONE | Terra High / DeepSeek Free optional / Terra High | — |
-| R02-05 | Localhost Host/Origin protection | P1 | DONE | Sol High / Luna High bounded worker / Sol High | — |
-| R02-06 | Убрать внешние Google Fonts / true-offline UI | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-07 | Убрать финансовые вычисления через JS `Number` | P1 | DONE | Luna High / DeepSeek Free bounded worker / Terra High spot review | — |
-| R02-08 | Windows production smoke в CI | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-01 |
-| R02-09 | Безопасная сериализация backup restore на Windows | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
-| R02-10 | SQLite lock hardening (`busy_timeout`/WAL decision) | P2 | DONE | Luna High / — / Terra only if semantics change | — |
-| R02-11 | Goals API + единый source of truth основной цели | P1 | DONE | Terra High / Luna High bounded worker / Terra High | — |
-| R02-12 | Контракт и backend прогноза даты достижения цели | P1 | DONE | Sol High / Terra High bounded worker / Sol High | R02-11 |
-| R02-13 | Полноценный Goals UI + прогресс основной цели на Dashboard | P1 | DONE | Luna High / DeepSeek Free optional / Luna | R02-11, R02-12 |
-| R02-14 | Зафиксировать левую панель на desktop | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-15 | Accounts & Instruments UI вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-16 | Settings UI baseline вместо placeholder | P2 | DONE | Luna High / DeepSeek Free optional / Luna | — |
-| R02-17 | Tax brackets administration contract/API/UI | P2 | READY | Terra High / Luna High bounded worker / Terra High | R02-16 |
-| R02-18 | Контракт include_in_cash_flow и OTHER non-passive income | P1 | DONE | Sol High / — / Terra High | — |
-| R02-19 | Реализация income cash-flow inclusion contract | P1 | DONE | Terra High / Luna High bounded worker / Terra High | R02-18 |
-| R02-20 | Локализация user-facing UI и API errors | P2 | READY | Luna High / — / Luna | — |
-| R02-21 | Release metadata + docs для 0.2.0 | P1 | READY | Sol High / Luna High bounded worker / Sol High | R02-10, R02-17, R02-20 |
+### 2.4. Exact money
 
-`Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
+- persistence/domain money: integer minor units / `Decimal` + `ROUND_HALF_UP`;
+- API money: decimal strings + currency;
+- frontend does not perform financial money arithmetic through binary float;
+- position quantity persistence may remain decimal where legitimate, but `stock` quantity is a positive whole integer.
 
----
+### 2.5. SQLite / backup / local security
 
-# R02-01. Startup migrations + schema readiness gate
+- local-only default remains `127.0.0.1:8000`;
+- no cloud/auth/telemetry added;
+- Host/Origin protections cover unsafe local requests;
+- backup/restore operations are serialized with active request draining where required;
+- SQLite remains rollback-journal mode with `busy_timeout=5000 ms`; WAL requires a future reproducible need.
 
-**Priority:** P0  
-**Status:** DONE  
-**Route:** Luna High / — / Terra High reviewer
+### 2.6. Expected payment calendar
 
-## Проблема
+0.2 uses persisted, manually entered `expected_cash_flows`. Automatic MOEX/position-derived schedules are not implemented and are explicitly DEFERRED (R02-26) until provenance, refresh/version and manual/generated reconciliation semantics are defined.
 
-Production launcher строит frontend и запускает API, но штатный путь запуска не гарантирует `alembic upgrade head`. Health/root могут вернуть `200`, даже если SQLite существует без актуальной схемы. На clean install или после будущей миграции приложение может выглядеть «запущенным», а первый реальный DB endpoint упадёт.
+## 3. Owner-led smoke 2026-08-11
 
-## Сделать
+Smoke/backfill produced two real defects and one diagnostic false alarm:
 
-- встроить применение/проверку Alembic migrations в канонический local startup;
-- запуск должен оставаться локальным на `127.0.0.1`;
-- readiness должен проверять не только HTTP-process, но и пригодность DB schema;
-- повторный запуск на уже актуальной БД должен быть безопасным и идемпотентным;
-- README update workflow должен соответствовать реальному поведению launcher.
+1. **Historical draft blocked by incomplete tax history** — fixed in PR #15 / merge `83271d106ca1065ddf6778540065fe45c0e508cc`.
+2. **Populated draft could not be deleted** — fixed in PR #16 / merge `8a77ba92716f5f9b897c91d007e13e16814164b2`.
+3. **Dividend forecast/main goal zero** — no code defect; local DB contained coupon flows and zero dividend rows, confirmed independently by Codex and Hermes; owner confirmed input classification error.
 
-## Не делать
+Additional smoke polish R02-22/23/24 is DONE. See the dedicated smoke/follow-up logs for detail.
 
-- не использовать `Base.metadata.create_all()` как замену versioned migrations;
-- не добавлять внешний installer/service/cloud database.
-
-## Acceptance
-
-- новая пустая local DB → standard launcher → `/api/months` работает без ручного `alembic upgrade`;
-- существующая DB на head не повреждается и запускается повторно;
-- тестовая DB на предыдущей revision обновляется до head;
-- readiness не сообщает успех при schema mismatch/migration failure;
-- regression test покрывает production startup contract настолько близко, насколько позволяет test harness.
-
----
-
-# R02-02. Контракт opening YTD gross для НДФЛ
-
-**Priority:** P0  
-**Status:** DONE  
-**Route:** Sol High / — / Terra High reviewer
-
-## Проблема
-
-Расчёт прогрессивного НДФЛ суммирует gross только из существующих `reporting_months`. Если история приложения начинается не с января, ранее полученный в том же календарном году доход отсутствует из YTD и пороги налога сдвигаются.
-
-## Сделать
-
-До реализации зафиксировать один канонический способ задать taxable gross до первого месяца истории приложения, например opening YTD baseline/annual tax context.
-
-Контракт должен определить:
-
-- единицы и точный смысл opening value;
-- привязку к календарному году;
-- взаимодействие с импортированной историей, чтобы не возник double count;
-- где хранится source of truth;
-- как значение попадает из private/local seed без персональных данных в Git;
-- поведение при добавлении более ранних reporting months;
-- migration/backward compatibility для существующей `0.1.0` базы.
-
-## Acceptance
-
-- решение записано в `MASTER_SPEC.md` или отдельный принятый ADR/contract section;
-- приведён контрольный пример: первая история начинается в мае, но YTD до мая ненулевой;
-- реализация R02-03 может быть выполнена без самостоятельного придумывания финансовой семантики worker-моделью.
-
----
-
-# R02-03. Реализация opening YTD gross для НДФЛ
-
-**Priority:** P0  
-**Status:** DONE
-**Route:** Terra High / Luna High optional worker / Terra High reviewer
-
-## Сделать
-
-- реализовать утверждённый R02-02 storage/domain/API/seed contract;
-- salary-tax service должен учитывать opening YTD ровно один раз;
-- private seed example остаётся синтетическим, реальные суммы — только локально;
-- миграция существующей БД не должна выдумывать исторический доход.
-
-## Acceptance
-
-- первая reporting month = May, opening Jan–Apr gross задан → правильная tax bracket progression;
-- Jan–Apr присутствуют как реальные reporting months → opening не дублирует их;
-- переход через порог внутри выплаты остаётся корректным;
-- `Decimal`/minor units/`ROUND_HALF_UP` invariants сохранены.
-
----
-
-# R02-04. Passive-income invariants и защита от double count
-
-**Priority:** P0  
-**Status:** DONE
-**Route:** Terra High / DeepSeek Free optional tests worker / Terra High reviewer
-
-## Проблема
-
-Сейчас `salary`, `bonus` и `side_income` технически могут получить `include_in_passive_income=true`. `cash_balance` отдельно учитывает активный доход и затем добавляет passive income, поэтому такая запись может попасть в итог дважды. Дополнительно generic `investment_cash_flows.interest` не должен автоматически маркироваться как deposit interest, если фактический процент депозита берётся из `deposit_snapshots.actual_interest_received`.
-
-## Сделать
-
-- enforce business invariant: salary/bonus/side income/cashback не являются passive income;
-- passive flag нельзя сохранить в несовместимом состоянии ни create, ни update путём;
-- устранить double-count в monthly cash balance даже для legacy/invalid data;
-- проверить mapping `investment_cash_flows.interest` к корректному passive-income bucket;
-- не дублировать фактический процент депозита между двумя источниками.
-
-## Acceptance
-
-- type-matrix tests на все income types;
-- update income type не позволяет оставить запрещённый passive flag;
-- cash balance regression подтверждает отсутствие двойного учёта;
-- deposit actual interest учитывается ровно из канонического источника;
-- passive breakdown имеет семантически правильные buckets.
-
----
-
-# R02-05. Localhost Host/Origin protection
+## 4. R02-21 — Release metadata + docs
 
 **Priority:** P1  
-**Status:** DONE  
-**Route:** Sol High / Luna High bounded worker / Sol High reviewer
-
-## Контекст
-
-Приложение сознательно single-user, без auth и слушает только `127.0.0.1:8000`. Это решение не меняется. При этом отсутствие CORS само по себе не является защитой от всех cross-origin write requests к localhost.
-
-## Сделать
-
-- зафиксировать allowlist `Host` для local production (`127.0.0.1`, при необходимости `localhost`, с ожидаемым port behavior);
-- unsafe HTTP methods принимать только с ожидаемого own-origin contract; dev-origin (`Vite`) поддержать явно, а не wildcard;
-- сохранить API удобным для штатного local UI;
-- добавить security regression tests для чужого Host/Origin и разрешённого local flow.
-
-## Не делать
-
-- auth/login/accounts;
-- cloud/VPS/HTTPS reverse proxy;
-- wildcard CORS.
-
-## Acceptance
-
-- обычный local UI продолжает работать;
-- чужой Host/Origin не может выполнить state-changing request;
-- GET/read-only contract не становится случайно недоступным штатному UI;
-- security assumptions документированы.
-
----
-
-# R02-06. Убрать внешние Google Fonts / true-offline UI
-
-**Priority:** P2  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free optional / Luna reviewer
-
-## Сделать
-
-- удалить runtime requests к `fonts.googleapis.com`/`fonts.gstatic.com`;
-- использовать system font stack или локально поставляемые assets без внешнего запроса;
-- сохранить визуальную иерархию и layout без заметной деградации.
-
-## Acceptance
-
-- production page не делает обязательных внешних network requests для шрифтов;
-- frontend build/tests green;
-- приложение визуально приемлемо offline.
-
----
-
-# R02-07. Убрать финансовые вычисления через JS `Number`
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free bounded worker / Terra High spot review
-
-## Проблема
-
-Backend следует `Decimal`/integer minor-unit contract, но frontend helper/chart code местами преобразует денежные строки в JS `Number` и самостоятельно суммирует/вычисляет доли.
-
-## Сделать
-
-- финансовые суммы и derived values получать готовыми из backend там, где это публичный финансовый показатель;
-- для необходимой frontend агрегации использовать integer minor units/`BigInt` или иной exact representation;
-- `Number` допускается только на последней границе визуализации chart geometry, когда точное значение уже посчитано и не становится source of truth;
-- документировать эту boundary в helper tests/comments без дублирования backend formulas.
-
-## Acceptance
-
-- helper с комментарием «no binary float» фактически не использует `Number` для денежных вычислений;
-- asset allocation total/share не выводятся из неточной финансовой арифметики клиента;
-- Recharts получает числа только как presentation boundary;
-- frontend tests на крупные суммы и копейки.
-
----
-
-# R02-08. Windows production smoke в CI
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free optional / Luna reviewer
-
-## Сделать
-
-Добавить небольшой Windows job/smoke, ориентированный на реальный product contract, не дублируя весь Linux CI:
-
-- install минимально нужных зависимостей;
-- production frontend build;
-- clean local DB startup через канонический launcher или максимально близкий эквивалент;
-- schema/migration check из R02-01;
-- `/api/health`, `/`, один DB endpoint;
-- корректное завершение процесса.
-
-## Acceptance
-
-- Windows job запускается на `windows-latest`;
-- clean install path проверяется автоматически;
-- job не требует private seed/real DB.
-
----
-
-# R02-09. Безопасная сериализация backup restore на Windows
-
-**Priority:** P1  
-**Status:** DONE
-**Route:** Terra High / Luna High bounded worker / Terra High reviewer
-
-## Проблема
-
-Restore валидирует backup и делает pre-restore copy, но замена SQLite-файла может пересечься с активным request/session. `engine.dispose()` не является гарантией отсутствия checked-out connections; на Windows открытые handles особенно важны.
-
-## Сделать
-
-- определить и реализовать application-level serialization/maintenance guard для restore;
-- во время критической секции новые DB операции не должны стартовать или должны fail predictably;
-- существующие активные DB операции должны быть корректно завершены/остановлены до file replace;
-- сохранить pre-restore backup и validation contract.
-
-## Acceptance
-
-- integration test моделирует конкурирующий DB access вокруг restore;
-- restore либо безопасно сериализуется, либо возвращает понятный conflict, не оставляя DB в промежуточном состоянии;
-- сценарий ориентирован на Windows filesystem semantics;
-- после restore приложение снова читает новую БД.
-
----
-
-# R02-10. SQLite lock hardening (`busy_timeout`/WAL decision)
-
-**Priority:** P2  
-**Status:** DONE
-**Route:** Luna High / — / Terra only if semantics change
-
-## Контекст
-
-Single-user SQLite сейчас достаточен. Изначально задача была отложена до воспроизводимого `database is locked` сценария; 2026-08-11 владелец явно вернул её в активный план 0.2 для профилактического bounded review/hardening перед релизом.
-
-## Сделать
-
-- сначала проверить текущие engine/connect args, transaction boundaries и фактическое поведение SQLite под несколькими локальными requests;
-- принять явное решение по `busy_timeout` и WAL только на основании воспроизводимого сценария/риска;
-- если изменение не даёт измеримой пользы для single-user workflow, допустимый результат задачи — документированное решение оставить текущий режим без semantic code change;
-- не расширять задачу до PostgreSQL, внешнего DB service или общей переработки persistence.
-
-## Acceptance
-
-- есть воспроизводимый concurrency/locking probe либо документированное доказательство, почему hardening не требуется;
-- любое добавленное SQLite setting покрыто targeted regression/integration check;
-- backup/restore и Windows semantics не регрессируют;
-- решение явно зафиксировано и может быть независимо reviewed.
-
-## Решение и evidence (2026-08-11)
-
-- Текущий SQLAlchemy/SQLite engine фактически использует `busy_timeout=5000 ms`,
-  `journal_mode=delete`, `locking_mode=normal`, `synchronous=2`.
-- Synthetic concurrency probe проверил две схемы: конкурирующие короткие write
-  transactions и read transaction против write. Обе операции корректно дождались
-  освобождения lock (примерно `0.30 s`) и завершились без `database is locked`.
-- Для текущего local single-user workflow измеримой пользы от WAL не выявлено.
-  WAL не включается: он создаёт persistent `-wal`/`-shm` sidecars и увеличивает
-  риск/сложность Windows backup/restore без принятой необходимости.
-- SQLite connect policy оставлена без semantic code change: текущий 5-секундный
-  timeout уже является effective driver behavior; произвольное увеличение timeout
-  не маскирует потенциально длинные транзакции и не решает их root cause.
-- Decision покрыт regression/integration test:
-  `backend/tests/test_r02_10_sqlite_locking.py`.
-- Если появится реальный `database is locked` или длительная конкуренция write
-  requests, следующая итерация должна отдельно пересмотреть transaction
-  boundaries и explicit `busy_timeout`; WAL не считается автоматически выбранным
-  решением.
-
----
-
-# R02-11. Goals API + единый source of truth основной цели
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Terra High / Luna High bounded worker / Terra High reviewer
-
-## Текущее состояние
-
-Persistence/service для `goals` уже существуют, включая `list/create/update/delete` и helper основной passive-income goal, но HTTP router `/api/goals` не подключён. Текущий helper фактически выбирает первый passive-income goal, а settings и goals не должны становиться двумя независимыми runtime source of truth.
-
-## Сделать
-
-- проверить текущую schema/migrations/service перед изменениями;
-- закрепить `goals` как runtime source of truth значений целей;
-- обеспечить **явный persisted contract выбора одной основной цели**, а не зависимость от «первой строки»/порядка ID;
-- не дублировать target value в новом независимом runtime storage;
-- сохранить backward compatibility существующего settings passive-income target как seed/default или согласованный compatibility path;
-- добавить router и DTO:
-  - `GET /api/goals` — список;
-  - `POST /api/goals` — создание;
-  - `PATCH /api/goals/{id}` — изменение;
-  - `DELETE /api/goals/{id}` — удаление;
-  - endpoint/action для выбора основной цели либо однозначное поле существующего PATCH contract;
-- money values в API — decimal strings согласно общему контракту;
-- определить поведение удаления/деактивации основной цели.
-
-## Acceptance
-
-- router зарегистрирован в FastAPI;
-- CRUD и validation покрыты integration tests;
-- одновременно существует не более одной однозначно выбранной основной цели;
-- main goal selection переживает restart;
-- изменение не создаёт competing target между settings и goals;
-- existing DB мигрируется без потери текущей passive-income цели.
-
----
-
-# R02-12. Контракт и backend прогноза даты достижения цели
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Sol High / Terra High bounded worker / Sol High reviewer  
-**Contract:** `docs/adr/0005-goal-achievement-forecast.md`
-
-## Почему отдельная задача
-
-«Прогнозная дата достижения» — не просто UI. Дата зависит от допущений: какой показатель растёт, используются ли регулярные взносы, доходность, forecast passive income, trailing average, target date и т.д. Worker не должен молча выбрать формулу.
-
-## Сделать
-
-1. Для каждого поддерживаемого goal type определить, существует ли вообще осмысленный forecast.
-2. Зафиксировать входные данные, assumptions, units, rounding и insufficient-data behavior.
-3. Не обещать точную дату, если данных недостаточно: API должен уметь вернуть `null` + reason/warning.
-4. Реализовать backend-derived forecast только после фиксации контракта.
-5. Frontend не рассчитывает дату сам.
-
-## Acceptance
-
-- формула/методика задокументирована и versioned, если влияет на финансовую интерпретацию;
-- deterministic unit tests на контрольные сценарии;
-- `null`/warning при невозможности честного прогноза;
-- goal DTO/summary отдаёт готовое значение для UI.
-
----
-
-# R02-13. Полноценный Goals UI + прогресс основной цели на Dashboard
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free optional / Luna reviewer
-
-## Сделать
-
-### Страница «Цели»
-
-- убрать placeholder;
-- показать список active/inactive goals;
-- создать цель;
-- изменить название, тип, target value, target date и разрешённые параметры;
-- удалить/деактивировать с безопасным UX;
-- выбрать основную цель;
-- loading/error/empty states.
-
-### Dashboard
-
-Для основной цели показывать готовые backend values:
-
-- текущая сумма/текущее значение;
-- целевая сумма;
-- процент выполнения;
-- прогнозная дата достижения или честный `нет прогноза`/warning;
-- понятный переход к странице целей.
-
-## Acceptance
-
-- никаких hardcoded `100 000 ₽` как runtime source;
-- percentage/current/forecast не пересчитываются собственной финансовой формулой React;
-- выбор основной цели сразу отражается на Dashboard;
-- component/integration tests на CRUD, main selection и dashboard states;
-- mobile/desktop layout не ломается.
-
----
-
-# R02-14. Зафиксировать левую панель на desktop
-
-**Priority:** P2  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free optional / Luna reviewer
-
-## Сделать
-
-- на desktop sidebar остаётся видимым при вертикальной прокрутке контента;
-- основной контент справа скроллится независимо/естественно;
-- сохранить текущую ширину, визуальную иерархию и active navigation;
-- на узком viewport не заставлять fixed desktop sidebar ломать layout: оставить normal flow или существующий compact/mobile pattern;
-- проверить viewport минимум 1366×768 и Full HD плюс узкий экран.
-
-## Acceptance
-
-- длинная Dashboard/Month page прокручивается, navigation остаётся доступной на desktop;
-- нет horizontal overflow из-за sidebar;
-- keyboard focus/navigation не ухудшены;
-- component/layout tests обновлены при необходимости.
-
-> Внешняя UI-модель, подключённая владельцем, может быть назначена bounded worker этой задачи только явным override route и в отдельной ветке/worktree. Пока она не добавлена в `MODEL_ROUTING.md`, это не канонический default route.
-
----
-
-# R02-15. Accounts & Instruments UI вместо placeholder
-
-**Priority:** P2  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free optional / Luna reviewer
-
-## Контекст
-
-Backend CRUD счетов и инструментов уже в основном существует; главный gap — полноценная пользовательская страница.
-
-## Сделать
-
-- убрать placeholder `/accounts`;
-- список счетов и инструментов с понятным разделением;
-- create/edit/delete или deactivate/hide согласно существующему backend contract;
-- показать важные флаги (`include_in_capital`, `include_in_returns`, status/type) без придумывания новой финансовой семантики;
-- client validation должна дополнять, а не заменять server validation;
-- loading/error/empty states.
-
-## Acceptance
-
-- основные CRUD операции доступны без ручного API;
-- existing backend semantics не меняются «ради формы»;
-- duplicate/validation errors отображаются понятно;
-- UI tests покрывают базовый happy path и error state.
-
----
-
-# R02-16. Settings UI baseline вместо placeholder
-
-**Priority:** P2  
-**Status:** DONE  
-**Route:** Luna High / DeepSeek Free optional / Luna reviewer
-
-## Сделать
-
-- подключить существующий `/api/settings`;
-- убрать placeholder `/settings`;
-- показывать и редактировать только уже определённые безопасные настройки;
-- passive-income target не должен становиться вторым source of truth в обход R02-11;
-- явно отделить настройки, для которых backend contract пока отсутствует.
-
-## Не делать
-
-- не придумывать UI редактирования tax brackets до R02-17;
-- не добавлять auth/cloud/telemetry preferences.
-
-## Acceptance
-
-- settings читаются/сохраняются через backend;
-- validation/errors видны пользователю;
-- изменение совместимых goal settings соблюдает source-of-truth contract R02-11.
-
----
-
-# R02-17. Tax brackets administration contract/API/UI
-
-**Priority:** P2  
-**Status:** READY  
-**Route:** Terra High / Luna High bounded worker / Terra High reviewer
-
-Tax brackets уже участвуют в чувствительной налоговой логике, поэтому отсутствие UI не следует закрывать обычным CRUD «на глаз». 2026-08-11 владелец явно вернул задачу в активный план 0.2.
-
-Перед implementation определить:
-
-- source/version/effective dates правил;
-- можно ли редактировать прошлые tax rules;
-- связь изменения rules с уже закрытыми месяцами;
-- API validation и audit expectations.
-
-## Acceptance
-
-- сначала принят однозначный contract по version/effective dates и историческим правилам;
-- API не позволяет молча переписать налоговую семантику закрытых месяцев;
-- UI показывает источник/период действия и validation errors;
-- существующий salary-tax calculation и opening YTD contract не регрессируют.
-
----
-
-# R02-18. Контракт `include_in_cash_flow` и `OTHER` non-passive income
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Sol High / — / Terra High reviewer
-
-## Проблема
-
-`IncomeEntry.include_in_cash_flow` существует в persistence/API, но текущий monthly cash-balance assembler его не использует. Одновременно `IncomeType.OTHER` с `include_in_passive_income=false` вообще не попадает в текущую формулу cash balance. Из существующих документов нельзя однозначно вывести, является ли это намеренной семантикой или неполным контрактом.
-
-## Сделать
-
-До реализации зафиксировать нормативно:
-
-- означает ли `include_in_cash_flow=false` полное исключение записи из monthly cash balance для каждого `IncomeType`;
-- должен ли `OTHER + include_in_passive_income=false + include_in_cash_flow=true` участвовать в monthly cash balance;
-- если участвует, нужен ли отдельный `other_income` bucket/DTO или допустимо иное однозначное представление;
-- как взаимодействуют `include_in_cash_flow` и `include_in_passive_income` для `OTHER`;
-- backward compatibility для существующих строк и отсутствие скрытого изменения закрытых месяцев.
-
-## Не делать
-
-- не менять код cash balance до принятия контракта;
-- не переопределять passive-income invariants R02-04;
-- не придумывать автоматическую миграцию значений без owner decision.
-
-## Acceptance
-
-- решение записано в `MASTER_SPEC.md` или ADR/contract section;
-- приведена type/flag matrix для `SALARY`, `BONUS`, `SIDE_INCOME`, `CASHBACK`, `OTHER`;
-- описано поведение legacy rows;
-- R02-19 можно реализовать без самостоятельного выбора финансовой семантики worker-моделью.
-
----
-
-# R02-19. Реализация income cash-flow inclusion contract
-
-**Priority:** P1  
-**Status:** DONE  
-**Route:** Terra High / Luna High bounded worker / Terra High reviewer
-
-## Сделать
-
-После принятия R02-18 реализовать ровно утверждённую семантику:
-
-- monthly cash-balance assembler учитывает `include_in_cash_flow` согласно contract matrix;
-- `OTHER` non-passive income учитывается или исключается ровно по принятому правилу;
-- breakdown/API меняются только если этого требует контракт;
-- закрытые месяцы и legacy data остаются читаемыми;
-- pure money arithmetic остаётся integer minor units/Decimal без binary float.
-
-## Acceptance
-
-- type/flag matrix покрыта regression tests;
-- `include_in_cash_flow=false` имеет проверяемое нормативное поведение;
-- `OTHER + passive=false` имеет проверяемое нормативное поведение;
-- passive-income behavior R02-04 не регрессирует;
-- monthly cash-balance total и breakdown согласованы.
-
----
-
-# R02-20. Локализация user-facing UI и API errors
-
-**Priority:** P2  
-**Status:** READY  
-**Route:** Luna High / — / Luna reviewer
-
-## Проблема
-
-После R02-13 в обычном пользовательском интерфейсе местами видны внутренние API/domain identifiers и developer-oriented тексты: например `no_trajectory_model`, `goal_achievement_v1`, `forecast v1`, `monthly_net_passive_income`, `liquid_capital_net`, raw `/api/...` descriptions и английские backend error messages вроде `salary_tax_history_incomplete` detail.
-
-## Сделать
-
-- провести census user-facing frontend по всем основным страницам и диалогам;
-- заменить internal enums/reason codes/calculation modes на понятные русские labels, не меняя wire values/API contracts;
-- убрать developer-oriented `/api/...`, `backend`, method/version identifiers из обычного UX либо спрятать их в явно технический secondary/debug контекст;
-- локализовать известные D08/API error codes на frontend, в том числе `salary_tax_history_incomplete`, `network_error` и generic HTTP fallback;
-- сохранить actionable детали ошибки, но не показывать пользователю необработанный internal code как основное сообщение;
-- не менять финансовую семантику, backend error codes или persistence.
-
-## Acceptance
-
-- на Dashboard/Goals/Settings/Months/Accounts/Export нет raw internal identifiers там, где существует пользовательский label;
-- salary-tax incomplete history показывается по-русски и объясняет, что нужны закрытые прошлые месяцы или opening tax context;
-- regression tests покрывают mapping reason/error codes и основные UI места;
-- wire/API значения остаются неизменными.
-
----
-
-# R02-21. Release metadata + docs для 0.2.0
-
-**Priority:** P1  
-**Status:** READY  
-**Route:** Sol High / Luna High bounded worker / Sol High reviewer  
-**Depends on:** R02-10, R02-17, R02-20
-
-## Проблема
-
-Release gate 2026-08-11 обнаружил, что runtime/package metadata и пользовательские документы ещё описывают `0.1.0`: backend/frontend version остаются `0.1.0`, `README.md` приводит health example `0.1.0`, `CHANGELOG.md` не содержит 0.2 и всё ещё называет Goals/Settings/Accounts placeholders, а `PROJECT_WIKI.md` частично содержит устаревший source-of-truth/stack контекст.
-
-## Сделать
-
-После стабилизации оставшихся 0.2 follow-up задач:
-
-- поднять canonical backend/frontend package/runtime version до `0.2.0` и синхронизировать lock/metadata, которые реально зависят от версии;
-- обновить README для фактического 0.2 workflow, health/version и доступных UI разделов;
-- добавить `CHANGELOG.md` entry 0.2.0 с фактическими изменениями и актуальными known limitations;
-- актуализировать `PROJECT_WIKI.md`: active release backlog, verification policy, принятые ADR/0.2 изменения и фактический frontend/tooling stack;
-- проверить `MASTER_SPEC.md` на противоречия с принятыми ADR и фактической 0.2 реализацией, не переписывая историю без причины;
-- не создавать tag/release до завершения обязательного Release Gate и final Sol review exact candidate HEAD.
-
-## Acceptance
-
-- `/api/health` и package metadata сообщают `0.2.0` согласованно;
-- README/Wiki/CHANGELOG не описывают завершённые страницы как placeholders и не ссылаются на устаревший active-backlog protocol;
-- docs не содержат private financial data;
-- docs/version diff проходит релевантные checks и exact-HEAD CI;
-- после задачи остаётся только release checkpoint/final review, а не скрытый feature scope.
-
----
-
-# 2. Release Gate перед `0.2.0`
-
-Перед созданием tag/release `0.2.0` выполнить отдельный release checkpoint.
-
-**Checkpoint status:** IN_PROGRESS с 2026-08-11. Текущий tag candidate намеренно не фиксируется до завершения R02-10, R02-17, R02-20, R02-21 и пользовательского smoke/backfill прошлых месяцев.
-
-## Обязательный gate
-
-- [ ] Все **P0** task-cards имеют статус `DONE`.
-- [ ] Нет открытых blocker/high findings по финансовой корректности, миграциям или риску потери данных.
-- [ ] Backend canonical test suite green.
-- [ ] Frontend tests/lint/build green.
-- [ ] Windows production smoke green.
-- [ ] Clean install: пустая DB → standard launcher → рабочий DB endpoint.
-- [ ] Upgrade smoke: schema/data `0.1.0` → current Alembic head → приложение стартует и читает данные.
-- [ ] Regression tests финансовых invariants (`Decimal`, rounding, passive-income exclusions, tax YTD) green.
-- [ ] Backup create → validate → restore smoke green.
-- [ ] Privacy check: никаких private DB/seed/export/backup/financial payload в Git/logs; приложение по умолчанию остаётся local-only.
-- [ ] Host/Origin security contract проверен для production local flow.
-- [ ] `MASTER_SPEC.md`, `README.md`, `PROJECT_WIKI.md` и `CHANGELOG.md` актуальны для фактического поведения.
-- [ ] Все `DEFERRED` задачи явно перечислены как non-blocking known follow-ups.
-- [ ] **Sol High release review** выполнен на exact candidate `HEAD`: blocker-level review без автоматического broad rewrite.
-- [ ] После review исправления, если были, снова прошли релевантные проверки; зафиксирован exact final `HEAD`.
-- [ ] Только после этого создаётся `v0.2.0`.
-
-## Release review route
-
-**Primary/reviewer:** Sol High.  
-**Worker:** не нужен по умолчанию; найденные bounded fixes запускаются как отдельные task-cards/iterations соответствующего класса риска.
-
----
-
-# 3. Параллельная работа агентов
-
-Для `0.2.0` допускается несколько исполнителей, но не параллельное редактирование одного и того же контракта.
-
-- У каждой активной write-задачи должен быть один owner/primary.
-- Параллельные workers работают в отдельных branch/worktree/session.
-- Нельзя одновременно менять одну migration, shared domain model, `main.py` routing block, общий financial helper или один frontend layout subtree без заранее определённого порядка интеграции.
-- Хороший параллелизм: один агент делает backend invariant, другой — независимый UI component/ticket.
-- Плохой параллелизм: два агента одновременно «улучшают Goals», sidebar/layout или одну и ту же tax/passive-income семантику.
-- Интегрировать изменения последовательно; следующий diff ревьюится уже относительно нового HEAD.
-- Отчёт модели не заменяет diff/tests review primary.
-
-Это правило дополняет, а не отменяет `MODEL_ROUTING.md`.
+**Status:** REVIEW  
+**Route:** Sol High primary / bounded mechanical worker if required / Sol High reviewer.
+
+### Scope
+
+- canonical backend/frontend/runtime version → `0.2.0`;
+- synchronize package/lock metadata that carries project version;
+- README → actual 0.2 startup/workflow/UI/limitations;
+- CHANGELOG → 0.2.0 release entry;
+- PROJECT_WIKI → current source-of-truth hierarchy, stack, accepted contracts and verification policy;
+- reconcile this backlog and owner smoke follow-ups;
+- inspect `MASTER_SPEC.md` for contradictions without broad historical rewrite;
+- do not create `v0.2.0` before mandatory gate and exact candidate review.
+
+### MASTER_SPEC audit
+
+`MASTER_SPEC.md` §§10 and 18 remain compatible with the accepted 0.2 invariants: backend-only financial formulas, exact money, passive-income exclusions, redemption semantics, local-only architecture and manual expected-flow forecast remain intact.
+
+The version roadmap in §16 is historical planning rather than a prohibition on shipping features earlier: Goals/forecast capabilities were intentionally promoted into 0.2 through accepted R02-11…13. No financial formula or non-negotiable §18 rule requires a spec rewrite for R02-21.
+
+### Acceptance
+
+- [ ] runtime `/api/health` and canonical package/lock metadata consistently report `0.2.0`;
+- [x] README no longer describes completed Goals/Settings/Accounts pages as placeholders;
+- [x] CHANGELOG contains actual 0.2 changes and current limitations;
+- [x] PROJECT_WIKI uses the active release/verification protocol rather than `HERMES_TASKS.md` as post-MVP source of truth;
+- [x] R02-22…26 outcomes are reconciled;
+- [x] docs contain no private financial data by design;
+- [ ] exact candidate CI green;
+- [ ] final Sol blocker-level review accepted.
+
+## 5. Release Gate перед `v0.2.0`
+
+Tag/release создаётся только после отдельного exact-candidate checkpoint.
+
+- [x] Все P0 task-cards DONE.
+- [x] Нет известного открытого blocker/high finding по финансовой корректности из owner smoke; R02-25 закрыт как input classification issue, а не code defect.
+- [ ] Backend canonical test suite green на exact 0.2 candidate HEAD.
+- [ ] Frontend tests/lint/build green на exact 0.2 candidate HEAD.
+- [ ] Windows production smoke green на exact 0.2 candidate HEAD.
+- [ ] Clean-install startup contract подтверждён final probe/CI evidence.
+- [ ] Upgrade/read-existing-data contract подтверждён final probe/relevant regression evidence.
+- [ ] Финансовые invariant regressions green на exact candidate.
+- [ ] Backup create/validate/restore relevant regression/probe green.
+- [ ] Privacy guard green; local-only defaults сохранены.
+- [ ] Host/Origin security regression green.
+- [x] `MASTER_SPEC.md`, README, Wiki and CHANGELOG reviewed for 0.2 behavior; final diff still awaits exact-candidate review.
+- [x] DEFERRED задачи перечислены: R02-26 — automatic expected-payment population.
+- [ ] Sol High release review on exact candidate HEAD completed with no blockers.
+- [ ] If review creates fixes, the final resulting HEAD passes required checks again.
+- [ ] Only then create tag `v0.2.0`.
+
+## 6. Parallel work rule
+
+Until the tag is created:
+
+- one write task has one primary owner;
+- independent local read-only smoke/probes may run in parallel;
+- no new feature scope is folded into R02-21;
+- any new material defect becomes a bounded task before release;
+- reports do not substitute for diff/tests/exact-HEAD evidence.
