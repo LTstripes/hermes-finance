@@ -184,10 +184,7 @@ function localizeMonthCode(value: string): string {
 
 function salaryTaxHistoryMessage(message: string): string {
   const missing = /missing known month\(s\):\s*(.+)$/i.exec(message)?.[1];
-  const months = missing
-    ?.split(",")
-    .map(localizeMonthCode)
-    .filter(Boolean);
+  const months = missing?.split(",").map(localizeMonthCode).filter(Boolean);
   const suffix = months && months.length > 0 ? ` Не хватает данных за: ${months.join(", ")}.` : "";
   return `Не хватает истории для расчёта НДФЛ. Закрой предыдущие отчётные месяцы или задай начальный налоговый контекст.${suffix}`;
 }
