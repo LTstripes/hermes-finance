@@ -192,13 +192,17 @@ function salaryTaxHistoryMessage(message: string): string {
   return `Не хватает истории для расчёта НДФЛ. Закрой предыдущие отчётные месяцы или задай начальный налоговый контекст.${suffix}`;
 }
 
+function isAsciiOnly(value: string): boolean {
+  return Array.from(value).every((character) => character.charCodeAt(0) <= 127);
+}
+
 function localizeValidationMessage(message: string): string {
   if (/^Field required$/i.test(message)) return "Обязательное поле";
   const max = /^Input should be less than or equal to (.+)$/i.exec(message)?.[1];
   if (max) return `Значение должно быть не больше ${max}`;
   const min = /^Input should be greater than or equal to (.+)$/i.exec(message)?.[1];
   if (min) return `Значение должно быть не меньше ${min}`;
-  if (/^[\x00-\x7F]+$/.test(message)) return "Некорректное значение";
+  if (isAsciiOnly(message)) return "Некорректное значение";
   return message;
 }
 
