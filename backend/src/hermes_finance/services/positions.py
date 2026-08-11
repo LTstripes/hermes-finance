@@ -210,7 +210,9 @@ def update_position_snapshot(
     if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
         raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
     if quantity is not None:
-        snapshot.quantity = _normalize_quantity(quantity, instrument_type=instrument.instrument_type)
+        snapshot.quantity = _normalize_quantity(
+            quantity, instrument_type=instrument.instrument_type
+        )
     if average_cost_per_unit is not None:
         snapshot.average_cost_per_unit_kopecks = _normalize_per_unit_kopecks(
             average_cost_per_unit, field="average_cost_per_unit"
