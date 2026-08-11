@@ -86,9 +86,18 @@ README/CHANGELOG/Wiki explicitly document this manual workflow for 0.2.
 - define refresh/version/reconciliation semantics;
 - never silently overwrite or ambiguously duplicate manual rows.
 
+
+## R02-27 — Passive-income goal current-value semantics
+
+**Priority:** P1
+**Status:** DONE
+
+Owner smoke подтвердил semantic mismatch: Goal `Текущее значение` использовало C04 forecast monthly total, поэтому при пустом manual expected-calendar фактические проценты депозитов и купоны не участвовали в прогрессе. Исправлено: current/progress = C03 rolling average actual net passive income по CLOSED месяцам; C04 остаётся отдельным прогнозом. PR #21 candidate CI `31532650301` green. Canonical contract/task-card находится в `docs/RELEASE_0_2.md`.
+
 ## Release handling
 
 - R02-22, R02-23 and R02-24 are DONE;
 - R02-25 is DONE as a diagnostic resolution with no code change;
 - R02-26 is explicitly DEFERRED and non-blocking for 0.2;
-- R02-21 owns final version/docs/backlog synchronization and release-candidate review preparation.
+- R02-27 is DONE with exact candidate CI green;
+- after merge only exact-main CI + final local production probe remain before `v0.2.0` tag.
