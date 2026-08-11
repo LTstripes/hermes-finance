@@ -1,19 +1,18 @@
 {
   "name": "hermes-finance-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc -b && vite build",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "format-check": "biome format .",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
-    "preview": "vite preview --host 127.0.0.1"
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format-check": "biome format ."
   },
   "dependencies": {
     "react": "^19.2.8",
