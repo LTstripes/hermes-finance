@@ -28,6 +28,7 @@ from hermes_finance.api.properties import router as properties_router
 from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
+from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.database import Database
 from hermes_finance.security import LocalhostSecurityMiddleware
 from hermes_finance.settings import Settings
@@ -61,6 +62,7 @@ def create_app(
         application.state.database = database
     register_error_handlers(application)
     application.include_router(settings_router)
+    application.include_router(tax_brackets_router)
     application.include_router(months_router)
     application.include_router(dashboard_router)
     application.include_router(accounts_router)
