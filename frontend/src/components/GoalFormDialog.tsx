@@ -154,8 +154,8 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
           {goal ? "Редактировать цель" : "Создать цель"}
         </h2>
         <p className="dialog__body" id={descriptionId}>
-          Финансовый прогресс и прогноз рассчитываются автоматически. Поле «срок» — твой дедлайн,
-          а не обещанная дата достижения.
+          Финансовый прогресс и прогноз рассчитываются автоматически. Поле «срок» — твой дедлайн, а
+          не обещанная дата достижения.
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="goal-name" label="Название">
