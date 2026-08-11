@@ -89,8 +89,11 @@ export function SettingsPage() {
       if (error instanceof ApiClientError && error.details.length > 0) {
         const serverFieldErrors: Record<string, string> = {};
         for (const detail of error.details) {
-          if (detail.field === "locale" || detail.field === "timezone") {
-            serverFieldErrors[detail.field] = detail.message;
+          if (detail.field === "locale") {
+            serverFieldErrors.locale = "Некорректная локаль.";
+          }
+          if (detail.field === "timezone") {
+            serverFieldErrors.timezone = "Некорректный часовой пояс.";
           }
         }
         setFieldErrors(serverFieldErrors);
