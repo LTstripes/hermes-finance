@@ -91,9 +91,7 @@ describe("AccountsPage", () => {
   });
 
   it("shows a friendly label instead of a legacy account code", async () => {
-    listAccountsMock.mockResolvedValue([
-      { ...account, external_code: "legacy:brokerage:1" },
-    ]);
+    listAccountsMock.mockResolvedValue([{ ...account, external_code: "legacy:brokerage:1" }]);
     render(<AccountsPage />);
 
     expect(await screen.findByText("Импортирован из прежней версии")).toBeInTheDocument();
