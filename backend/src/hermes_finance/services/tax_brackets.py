@@ -101,7 +101,9 @@ def validate_complete_tax_bracket_rules(
                 raise ValueError(f"bracket {index}: only the final bracket may be open-ended")
         else:
             if rule.to_kopecks <= rule.from_kopecks:
-                raise ValueError(f"bracket {index}: threshold_to must be greater than threshold_from")
+                raise ValueError(
+                    f"bracket {index}: threshold_to must be greater than threshold_from"
+                )
             if is_last:
                 raise ValueError("final tax bracket must be open-ended")
 
