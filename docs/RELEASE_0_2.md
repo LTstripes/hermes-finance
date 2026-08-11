@@ -1,8 +1,8 @@
 # Release 0.2 — canonical release record
 
 > **Релиз:** `0.2.0`  
-> **Статус release checkpoint:** REVIEW  
-> **Tag:** удерживается до exact-candidate CI, локального production probe и final Sol blocker-level review.  
+> **Статус release checkpoint:** FINAL_GATE — local production probe pending  
+> **Tag:** удерживается до завершения final gate; `v0.2.0` пока не создаётся.  
 > **Бизнес-источник истины:** `docs/MASTER_SPEC.md` + принятые ADR.  
 > **Verification:** `docs/VERIFICATION_POLICY.md`.  
 > **Исторический MVP backlog:** `docs/HERMES_TASKS.md`.
@@ -42,7 +42,7 @@
 | R02-18 | Income cash-flow inclusion contract | P1 | DONE | Принята нормативная matrix для `include_in_cash_flow` и OTHER. |
 | R02-19 | Income cash-flow implementation | P1 | DONE | Monthly cash balance реализует R02-18 без passive double count. |
 | R02-20 | User-facing localization | P2 | DONE | Internal reason/error identifiers локализованы/скрыты из обычного UX. |
-| R02-21 | Release metadata + docs для 0.2.0 | P1 | REVIEW | Version/docs синхронизируются; exact candidate review ещё не завершён. |
+| R02-21 | Release metadata + docs для 0.2.0 | P1 | DONE | Runtime/package/lock metadata = 0.2.0; README/Wiki/CHANGELOG/backlog reconciled; blocker-level review accepted. |
 | R02-22 | Numeric formatting + quantity semantics | P2 | DONE | Whole quantities cleanly rendered; stock quantity positive whole integer on UI/backend. |
 | R02-23 | Optional actual-flow instrument | P2 | DONE | Optional instrument starts/resets to `—`; expected-flow contract unchanged. |
 | R02-24 | Salary NDFL rate in editor | P2 | DONE | UI displays backend `salary_tax.parts`, including threshold crossing. |
@@ -110,19 +110,19 @@ Additional smoke polish R02-22/23/24 is DONE. See the dedicated smoke/follow-up 
 ## 4. R02-21 — Release metadata + docs
 
 **Priority:** P1  
-**Status:** REVIEW  
+**Status:** DONE  
 **Route:** Sol High primary / bounded mechanical worker if required / Sol High reviewer.
 
-### Scope
+### Scope delivered
 
 - canonical backend/frontend/runtime version → `0.2.0`;
-- synchronize package/lock metadata that carries project version;
-- README → actual 0.2 startup/workflow/UI/limitations;
-- CHANGELOG → 0.2.0 release entry;
-- PROJECT_WIKI → current source-of-truth hierarchy, stack, accepted contracts and verification policy;
-- reconcile this backlog and owner smoke follow-ups;
-- inspect `MASTER_SPEC.md` for contradictions without broad historical rewrite;
-- do not create `v0.2.0` before mandatory gate and exact candidate review.
+- package/lock metadata carrying the project version synchronized without dependency-graph changes;
+- README updated to actual 0.2 startup/workflow/UI/limitations;
+- CHANGELOG contains 0.2.0 release entry;
+- PROJECT_WIKI reflects current source-of-truth hierarchy, stack, accepted contracts and verification policy;
+- release backlog, owner smoke and R02-22…26 follow-ups reconciled;
+- `MASTER_SPEC.md` audited for contradictions without broad historical rewrite;
+- `v0.2.0` tag intentionally not created by R02-21.
 
 ### MASTER_SPEC audit
 
@@ -130,16 +130,16 @@ Additional smoke polish R02-22/23/24 is DONE. See the dedicated smoke/follow-up 
 
 The version roadmap in §16 is historical planning rather than a prohibition on shipping features earlier: Goals/forecast capabilities were intentionally promoted into 0.2 through accepted R02-11…13. No financial formula or non-negotiable §18 rule requires a spec rewrite for R02-21.
 
-### Acceptance
+### Verification / acceptance
 
-- [ ] runtime `/api/health` and canonical package/lock metadata consistently report `0.2.0`;
+- [x] runtime `/api/health`, backend project/lock metadata and frontend package/lock metadata consistently report `0.2.0`;
 - [x] README no longer describes completed Goals/Settings/Accounts pages as placeholders;
 - [x] CHANGELOG contains actual 0.2 changes and current limitations;
 - [x] PROJECT_WIKI uses the active release/verification protocol rather than `HERMES_TASKS.md` as post-MVP source of truth;
 - [x] R02-22…26 outcomes are reconciled;
-- [x] docs contain no private financial data by design;
-- [ ] exact candidate CI green;
-- [ ] final Sol blocker-level review accepted.
+- [x] privacy guard confirms tracked release docs contain no private financial data;
+- [x] exact candidate PR CI `31529401605` green: Backend, Frontend, Privacy guard, Windows production smoke;
+- [x] Sol blocker-level review found no release blocker in the R02-21 diff.
 
 ## 5. Release Gate перед `v0.2.0`
 
@@ -147,19 +147,20 @@ Tag/release создаётся только после отдельного exac
 
 - [x] Все P0 task-cards DONE.
 - [x] Нет известного открытого blocker/high finding по финансовой корректности из owner smoke; R02-25 закрыт как input classification issue, а не code defect.
-- [ ] Backend canonical test suite green на exact 0.2 candidate HEAD.
-- [ ] Frontend tests/lint/build green на exact 0.2 candidate HEAD.
-- [ ] Windows production smoke green на exact 0.2 candidate HEAD.
-- [ ] Clean-install startup contract подтверждён final probe/CI evidence.
-- [ ] Upgrade/read-existing-data contract подтверждён final probe/relevant regression evidence.
-- [ ] Финансовые invariant regressions green на exact candidate.
-- [ ] Backup create/validate/restore relevant regression/probe green.
-- [ ] Privacy guard green; local-only defaults сохранены.
-- [ ] Host/Origin security regression green.
-- [x] `MASTER_SPEC.md`, README, Wiki and CHANGELOG reviewed for 0.2 behavior; final diff still awaits exact-candidate review.
+- [x] Backend canonical full suite green на R02-21 candidate; suite includes salary-tax/opening-YTD, passive-income, migrations/startup, backup/restore, SQLite locking and local-security regressions.
+- [x] Frontend tests/lint/format/build green на R02-21 candidate.
+- [x] Windows production smoke green на R02-21 candidate.
+- [x] Clean/synthetic startup readiness contract covered by Windows production smoke and startup regressions.
+- [x] Upgrade/schema regression coverage present in the green backend suite.
+- [x] Финансовые invariant regressions green in the backend suite.
+- [x] Backup create/validate/restore regressions green in the backend suite (`test_backups_api.py`, `test_f05_restore_backup.py`).
+- [x] Privacy guard green; local-only defaults preserved.
+- [x] Host/Origin security regression green in the backend suite (`test_local_security.py`).
+- [x] `MASTER_SPEC.md`, README, Wiki and CHANGELOG reviewed for 0.2 behavior.
 - [x] DEFERRED задачи перечислены: R02-26 — automatic expected-payment population.
-- [ ] Sol High release review on exact candidate HEAD completed with no blockers.
-- [ ] If review creates fixes, the final resulting HEAD passes required checks again.
+- [x] Sol High release review on the R02-21 candidate completed with no blockers.
+- [ ] Final status-only R02-21 HEAD passes CI after this bookkeeping update.
+- [ ] Owner/Hermes local production probe on synchronized main confirms local start/health/months/bind/port cleanup with clean working tree.
 - [ ] Only then create tag `v0.2.0`.
 
 ## 6. Parallel work rule
