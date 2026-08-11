@@ -102,7 +102,7 @@ export function SettingsPage() {
   }
 
   if (loading) {
-    return <LoadingState description="Загружаем /api/settings…" title="Настройки" />;
+    return <LoadingState description="Загружаем настройки…" title="Настройки" />;
   }
 
   if (loadError || !settings) {
@@ -123,8 +123,7 @@ export function SettingsPage() {
         <p className="eyebrow">Система</p>
         <h1>Настройки</h1>
         <p className="page-header__description">
-          Только локальные настройки с подтверждённым backend-контрактом. Финансовые правила здесь
-          не редактируются.
+          Локальные настройки приложения. Финансовые правила здесь не меняются.
         </p>
       </header>
 
@@ -140,8 +139,8 @@ export function SettingsPage() {
               <Badge tone="info">{settings.passive_income_goal.currency}</Badge>
             </p>
             <p className="muted">
-              Здесь значение остаётся только для совместимости и просмотра. Основная цель и её
-              параметры управляются в разделе «Цели», чтобы сохранять один runtime source of truth.
+              Здесь значение показано только для совместимости. Основной целью и её параметрами
+              управляй в разделе «Цели».
             </p>
           </div>
         </Panel>
@@ -187,8 +186,8 @@ export function SettingsPage() {
               <p className="inline-alert inline-alert--error">{fieldErrors.timezone}</p>
             ) : null}
             <p className="muted">
-              Локаль и часовой пояс сохраняются backend, но пока не управляют всем форматированием
-              интерфейса.
+              Локаль и часовой пояс сохраняются в приложении, но пока не управляют всем
+              форматированием интерфейса.
             </p>
             <div className="form-row-2">
               <div className="field">
@@ -199,11 +198,9 @@ export function SettingsPage() {
                 <p className="muted tiny">Поддерживается только RUB.</p>
               </div>
               <div className="field">
-                <span className="field__label">Версия формул</span>
-                <p>
-                  <code>{settings.formula_version}</code>
-                </p>
-                <p className="muted tiny">Служебное значение; вручную не редактируется.</p>
+                <span className="field__label">Расчётные правила</span>
+                <p>Управляются приложением</p>
+                <p className="muted tiny">Служебная версия меняется вместе с расчётной логикой.</p>
               </div>
             </div>
             {saveError ? (
@@ -222,12 +219,9 @@ export function SettingsPage() {
 
       <Panel empty label="Ограничения" title="Пока недоступно">
         <div className="stack-8">
-          <p>
-            <Badge tone="info">R02-17</Badge> Управление налоговыми ставками.
-          </p>
+          <p>Управление налоговыми ставками пока готовится.</p>
           <p className="muted">
-            Путь резервных копий и настройки экспорта пока не имеют отдельного settings
-            API-контракта.
+            Отдельные настройки пути резервных копий и параметров экспорта пока недоступны.
           </p>
         </div>
       </Panel>
