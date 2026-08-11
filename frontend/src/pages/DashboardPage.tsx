@@ -71,7 +71,6 @@ export function DashboardPage() {
     try {
       const rows = await listMonths(signal);
       if (signal?.aborted) return;
-      // newest first for selector convenience
       const sorted = [...rows].sort((a, b) =>
         a.year === b.year ? b.month - a.month : b.year - a.year,
       );
@@ -144,8 +143,7 @@ export function DashboardPage() {
         <p className="eyebrow">Обзор</p>
         <h1>Дашборд</h1>
         <p className="page-header__description">
-          KPI приходят готовыми из <code>GET /api/months/{"{id}"}/dashboard</code>. Без клиентских
-          финансовых формул.
+          Ключевые показатели рассчитываются автоматически по данным выбранного отчётного месяца.
         </p>
       </header>
 
@@ -268,9 +266,9 @@ export function DashboardPage() {
 
       <Panel label="История" title="Динамика капитала">
         {loadingDash ? (
-          <LoadingState description="Тянем dashboard API…" inline />
+          <LoadingState description="Загружаем показатели…" inline />
         ) : error && !dashboard ? (
-          <ErrorState description={error} inline title="Ошибка dashboard" />
+          <ErrorState description={error} inline title="Не удалось загрузить показатели" />
         ) : dashboard ? (
           <CapitalChart points={dashboard.historical_series ?? []} />
         ) : (
@@ -280,9 +278,9 @@ export function DashboardPage() {
 
       <Panel label="Доход" title="Пассивный доход">
         {loadingDash ? (
-          <LoadingState description="Тянем dashboard API…" inline />
+          <LoadingState description="Загружаем показатели…" inline />
         ) : error && !dashboard ? (
-          <ErrorState description={error} inline title="Ошибка dashboard" />
+          <ErrorState description={error} inline title="Не удалось загрузить показатели" />
         ) : dashboard?.kpis ? (
           <PassiveIncomeChart
             average={moneyAmount(dashboard.kpis.passive_income_average)}
@@ -299,9 +297,9 @@ export function DashboardPage() {
 
       <Panel label="Результат" title="Результат по классам и счетам">
         {loadingDash ? (
-          <LoadingState description="Тянем dashboard API…" inline />
+          <LoadingState description="Загружаем показатели…" inline />
         ) : error && !dashboard ? (
-          <ErrorState description={error} inline title="Ошибка dashboard" />
+          <ErrorState description={error} inline title="Не удалось загрузить показатели" />
         ) : dashboard ? (
           <InvestmentResultChart
             accounts={dashboard.result_by_account ?? []}
@@ -314,9 +312,9 @@ export function DashboardPage() {
 
       <Panel label="Активы" title="Распределение активов">
         {loadingDash ? (
-          <LoadingState description="Тянем dashboard API…" inline />
+          <LoadingState description="Загружаем показатели…" inline />
         ) : error && !dashboard ? (
-          <ErrorState description={error} inline title="Ошибка dashboard" />
+          <ErrorState description={error} inline title="Не удалось загрузить показатели" />
         ) : dashboard ? (
           <AssetAllocationChart allocation={dashboard.asset_allocation ?? []} />
         ) : (
@@ -336,9 +334,9 @@ export function DashboardPage() {
           }
         >
           {loadingDash ? (
-            <LoadingState description="Тянем dashboard API…" inline />
+            <LoadingState description="Загружаем показатели…" inline />
           ) : error && !dashboard ? (
-            <ErrorState description={error} inline title="Ошибка dashboard" />
+            <ErrorState description={error} inline title="Не удалось загрузить показатели" />
           ) : dashboard?.kpis ? (
             <div className="stack-8">
               <p className="muted field-hint">
@@ -347,7 +345,6 @@ export function DashboardPage() {
                   {selectedMonth ? labelOf(MONTH_STATUS_LABELS, selectedMonth.status) : "—"}
                 </Badge>{" "}
                 · снимок {selectedMonth ? formatDate(selectedMonth.snapshot_date) : "—"}
-                {dashboard.calculation_version ? ` · calc ${dashboard.calculation_version}` : null}
               </p>
               {dashboard.warnings && dashboard.warnings.length > 0 ? (
                 <div className="inline-alert inline-alert--warn" role="status">
