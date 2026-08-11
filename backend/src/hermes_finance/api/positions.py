@@ -8,6 +8,7 @@ stays in the service layer (B09); this module only maps the HTTP boundary.
 from __future__ import annotations
 
 from datetime import date, datetime
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
