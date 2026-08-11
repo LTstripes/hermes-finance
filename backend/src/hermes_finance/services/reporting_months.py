@@ -1,12 +1,12 @@
 from calendar import monthrange
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ReportingMonthSource, ReportingMonthStatus
-from hermes_finance.persistence import ReportingMonth
+from hermes_finance.persistence import Base, ReportingMonth
 
 
 class ReportingMonthNotFoundError(LookupError):
@@ -30,6 +30,29 @@ def _coerce_source(source: ReportingMonthSource | str) -> ReportingMonthSource:
         return ReportingMonthSource(source)
     except ValueError as error:
         raise ValueError(f"unsupported reporting month source: {source!r}") from error
+
+
+def _reporting_month_owned_tables() -> tuple[object, ...]:
+    """Return direct child tables whose lifecycle is owned by a reporting month.
+
+    The schema deliberately keeps ``ON DELETE RESTRICT`` as a last-resort guard.
+    The sanctioned draft-delete workflow removes month-owned rows explicitly in
+    one transaction before deleting the parent month.
+    """
+    reporting_months = ReportingMonth.__table__
+    owned_tables = []
+    for table in reversed(Base.metadata.sorted_tables):
+        if table is reporting_months:
+            continue
+        column = table.c.get("reporting_month_id")
+        if column is None:
+            continue
+        if any(
+            foreign_key.column.table is reporting_months and foreign_key.column.name == "id"
+            for foreign_key in column.foreign_keys
+        ):
+            owned_tables.append(table)
+    return tuple(owned_tables)
 
 
 def list_reporting_months(session: Session) -> list[ReportingMonth]:
@@ -129,8 +152,16 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
     reporting_month = get_reporting_month(session, month_id)
     if reporting_month.status == ReportingMonthStatus.CLOSED.value:
         raise ClosedReportingMonthError("closed reporting month must be reopened before deletion")
-    session.delete(reporting_month)
-    session.commit()
+
+    try:
+        for table in _reporting_month_owned_tables():
+            reporting_month_id = table.c.reporting_month_id
+            session.execute(delete(table).where(reporting_month_id == month_id))
+        session.delete(reporting_month)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
 
 
 def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:
