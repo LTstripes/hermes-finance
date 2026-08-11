@@ -5,6 +5,7 @@ import {
   defaultCalculationMode,
   GOAL_TYPE_LABELS,
   GOAL_TYPES,
+  goalCalculationModeLabel,
   goalForecastSupportLabel,
 } from "../lib/goals";
 import { normalizeMoneyInput } from "../lib/money";
@@ -93,13 +94,13 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
     }
     if (goal?.target_date && !targetDate) {
       setLocalError(
-        "Backend пока не поддерживает очистку уже заданной даты. Укажи новую дату или оставь прежнюю.",
+        "Пока нельзя полностью очистить уже заданный срок. Укажи новую дату или оставь прежнюю.",
       );
       return;
     }
     if (goal?.notes && !normalizedNotes) {
       setLocalError(
-        "Backend пока не поддерживает очистку уже заданной заметки. Измени текст или оставь прежний.",
+        "Пока нельзя полностью очистить уже заданную заметку. Измени текст или оставь прежний.",
       );
       return;
     }
@@ -153,8 +154,8 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
           {goal ? "Редактировать цель" : "Создать цель"}
         </h2>
         <p className="dialog__body" id={descriptionId}>
-          Финансовый прогресс и прогноз рассчитывает backend. Поле «срок» — пользовательский
-          дедлайн, а не обещанная дата достижения.
+          Финансовый прогресс и прогноз рассчитываются автоматически. Поле «срок» — твой дедлайн, а
+          не обещанная дата достижения.
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="goal-name" label="Название">
@@ -205,10 +206,8 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
           </Field>
 
           <div className="field">
-            <span className="field__label">Режим расчёта</span>
-            <p>
-              <code>{calculationMode}</code>
-            </p>
+            <span className="field__label">Способ расчёта</span>
+            <p>{goalCalculationModeLabel(calculationMode)}</p>
             <p className="muted tiny">{goalForecastSupportLabel(goalType, calculationMode)}</p>
           </div>
 

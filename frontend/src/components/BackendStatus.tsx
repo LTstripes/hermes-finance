@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Badge, Panel } from "./ui";
+import { Panel } from "./ui";
 
 type HealthResponse = {
   status: "ok";
@@ -15,12 +15,12 @@ type HealthState =
 const statusCopy = {
   checking: {
     title: "Проверяем подключение…",
-    detail: "Запрашиваем локальный API",
+    detail: "Связываемся с локальным приложением",
     chip: "Статус",
   },
   unavailable: {
     title: "Сервер недоступен",
-    detail: "Запусти API на 127.0.0.1:8000",
+    detail: "Запусти Hermes Finance и обнови страницу",
     chip: "Офлайн",
   },
 } as const;
@@ -62,7 +62,7 @@ export function BackendStatus() {
     state.kind === "connected"
       ? {
           title: "Сервер подключён",
-          detail: `API v${state.version}`,
+          detail: "Локальное приложение работает",
           chip: "Онлайн",
         }
       : statusCopy[state.kind];
@@ -71,7 +71,7 @@ export function BackendStatus() {
     <Panel
       action={<span className={`status-chip status-chip--${state.kind}`}>{copy.chip}</span>}
       label="Состояние системы"
-      title="Локальный API"
+      title="Локальное приложение"
       titleId="backend-status-title"
     >
       <div aria-live="polite" className="status-line" role="status">
@@ -82,9 +82,10 @@ export function BackendStatus() {
         </span>
       </div>
       {state.kind === "connected" ? (
-        <p className="muted" style={{ margin: "14px 0 0", fontSize: "0.8rem" }}>
-          Health-check через Vite proxy → <Badge tone="info">/api/health</Badge>
-        </p>
+        <details className="muted tiny">
+          <summary>Технические подробности</summary>
+          <span>API v{state.version}</span>
+        </details>
       ) : null}
     </Panel>
   );

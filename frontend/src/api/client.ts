@@ -49,10 +49,6 @@ export type ApiDownload = {
   filename: string;
 };
 
-/**
- * Fetch wrapper for `/api/*` via Vite proxy.
- * Parses D08 error shape into ApiClientError; 204 returns undefined.
- */
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { body, headers, signal, ...rest } = options;
   const init: RequestInit = {
@@ -152,13 +148,96 @@ export async function apiDownload(
   };
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  year: "Год",
+  month: "Месяц",
+  snapshot_date: "Дата снимка",
+  locale: "Локаль",
+  timezone: "Часовой пояс",
+  name: "Название",
+  target_value: "Целевое значение",
+  target_date: "Срок",
+};
+
+const MONTH_NAMES = [
+  "январь",
+  "февраль",
+  "март",
+  "апрель",
+  "май",
+  "июнь",
+  "июль",
+  "август",
+  "сентябрь",
+  "октябрь",
+  "ноябрь",
+  "декабрь",
+] as const;
+
+function localizeMonthCode(value: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (!match) return value.trim();
+  const monthIndex = Number(match[2]) - 1;
+  const monthName = MONTH_NAMES[monthIndex];
+  return monthName ? `${monthName} ${match[1]}` : value.trim();
+}
+
+function salaryTaxHistoryMessage(message: string): string {
+  const missing = /missing known month\(s\):\s*(.+)$/i.exec(message)?.[1];
+  const months = missing?.split(",").map(localizeMonthCode).filter(Boolean);
+  const suffix = months && months.length > 0 ? ` Не хватает данных за: ${months.join(", ")}.` : "";
+  return `Не хватает истории для расчёта НДФЛ. Закрой предыдущие отчётные месяцы или задай начальный налоговый контекст.${suffix}`;
+}
+
+function isAsciiOnly(value: string): boolean {
+  return Array.from(value).every((character) => character.charCodeAt(0) <= 127);
+}
+
+function localizeValidationMessage(message: string): string {
+  if (/^Field required$/i.test(message)) return "Обязательное поле";
+  const max = /^Input should be less than or equal to (.+)$/i.exec(message)?.[1];
+  if (max) return `Значение должно быть не больше ${max}`;
+  const min = /^Input should be greater than or equal to (.+)$/i.exec(message)?.[1];
+  if (min) return `Значение должно быть не меньше ${min}`;
+  if (isAsciiOnly(message)) return "Некорректное значение";
+  return message;
+}
+
+function localizeApiMessage(error: ApiClientError): string {
+  switch (error.code) {
+    case "salary_tax_history_incomplete":
+      return salaryTaxHistoryMessage(error.message);
+    case "network_error":
+      return "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.";
+    case "http_error":
+      return "Не удалось выполнить запрос к локальному приложению.";
+    case "internal_error":
+      return "Внутренняя ошибка приложения. Попробуй обновить данные.";
+    case "not_found":
+      return "Запрошенные данные не найдены.";
+    case "conflict":
+      return "Операцию нельзя выполнить в текущем состоянии данных.";
+    case "unprocessable":
+    case "validation_error":
+      return "Проверь введённые данные.";
+    default:
+      return error.message;
+  }
+}
+
 export function formatApiError(error: unknown): string {
   if (error instanceof ApiClientError) {
+    const message = localizeApiMessage(error);
     if (error.details.length > 0) {
-      const fields = error.details.map((d) => `${d.field}: ${d.message}`).join("; ");
-      return `${error.message} (${fields})`;
+      const fields = error.details
+        .map((detail) => {
+          const field = FIELD_LABELS[detail.field] ?? detail.field;
+          return `${field}: ${localizeValidationMessage(detail.message)}`;
+        })
+        .join("; ");
+      return `${message} (${fields})`;
     }
-    return error.message;
+    return message;
   }
   if (error instanceof Error) {
     return error.message;

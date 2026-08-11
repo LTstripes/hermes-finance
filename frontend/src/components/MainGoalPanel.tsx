@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { listGoalSummary, type GoalSummary } from "../api/goals";
 import { formatApiError } from "../api/client";
 import { formatDate, formatMoney, formatPercent } from "../lib/format";
-import { GOAL_STATUS_LABELS, GOAL_TYPE_LABELS } from "../lib/goals";
+import { GOAL_STATUS_LABELS, GOAL_TYPE_LABELS, goalReasonLabel } from "../lib/goals";
 import { Badge, Button, EmptyState, ErrorState, LoadingState, Panel } from "./ui";
 
 function statusTone(status: string): "ok" | "info" | "closed" | "neutral" {
@@ -83,11 +83,11 @@ function MainGoalBody({ goal }: { goal: GoalSummary }) {
           <strong>{goal.name}</strong>
           <Badge tone="info">Основная</Badge>
           <Badge tone={statusTone(forecast.status)}>
-            {GOAL_STATUS_LABELS[forecast.status] ?? forecast.status}
+            {GOAL_STATUS_LABELS[forecast.status] ?? "Статус недоступен"}
           </Badge>
         </div>
         <span className="muted tiny">
-          {GOAL_TYPE_LABELS[goal.goal_type] ?? goal.goal_type}
+          {GOAL_TYPE_LABELS[goal.goal_type] ?? "Другая цель"}
           {goal.target_date ? ` · срок ${formatDate(goal.target_date)}` : ""}
         </span>
       </div>
@@ -116,15 +116,15 @@ function MainGoalBody({ goal }: { goal: GoalSummary }) {
           {forecast.estimated_achievement_date
             ? `Цель достигнута на снимке ${formatDate(forecast.estimated_achievement_date)}`
             : forecast.status === "not_projectable"
-              ? "Дата достижения: нет честного прогноза"
+              ? "Дата достижения: пока нельзя надёжно спрогнозировать"
               : forecast.status === "unsupported"
-                ? "Дата достижения: расчёт не поддерживается"
+                ? "Дата достижения: расчёт пока не поддерживается"
                 : forecast.status === "inactive"
                   ? "Цель не отслеживается"
                   : "Дата достижения: —"}
         </strong>
         {forecast.reason_code ? (
-          <span className="muted tiny">Причина: {forecast.reason_code}</span>
+          <span className="muted tiny">Почему: {goalReasonLabel(forecast.reason_code)}</span>
         ) : null}
         {forecast.warnings.length > 0 ? (
           <div className="inline-alert inline-alert--warn" role="status">
@@ -132,11 +132,8 @@ function MainGoalBody({ goal }: { goal: GoalSummary }) {
           </div>
         ) : null}
         <span className="muted tiny">
-          Значения рассчитаны backend на {formatDate(forecast.as_of_date)} ·{" "}
-          {forecast.method_version}
-          {forecast.source_forecast_version
-            ? ` · forecast ${forecast.source_forecast_version}`
-            : ""}
+          Данные на {formatDate(forecast.as_of_date)}.
+          {forecast.is_approximate ? " Часть значений является оценочной." : ""}
         </span>
       </div>
     </div>

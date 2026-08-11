@@ -45,9 +45,10 @@ describe("SettingsPage", () => {
     expect(await screen.findByDisplayValue("ru-RU")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Europe/Moscow")).toBeInTheDocument();
     expect(screen.getByText("100000.00")).toBeInTheDocument();
-    expect(screen.getByText(/основная цель и её параметры управляются/i)).toBeInTheDocument();
+    expect(screen.getByText(/основной целью и её параметрами/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
     expect(screen.queryByDisplayValue("100000.00")).toBeNull();
+    expect(screen.queryByText("v1")).toBeNull();
   });
 
   it("retries after a settings load error", async () => {
@@ -94,7 +95,7 @@ describe("SettingsPage", () => {
     expect(updateSettingsMock).not.toHaveBeenCalled();
   });
 
-  it("shows D08 field validation errors from the server", async () => {
+  it("localizes D08 field validation errors from the server", async () => {
     const user = userEvent.setup();
     updateSettingsMock.mockRejectedValue(
       new ApiClientError(422, {
@@ -110,7 +111,8 @@ describe("SettingsPage", () => {
     await user.type(timezone, "UTC+3");
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByText("invalid timezone")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Request validation failed");
+    expect(await screen.findByText("Некорректный часовой пояс.")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Проверь введённые данные");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("invalid timezone");
   });
 });

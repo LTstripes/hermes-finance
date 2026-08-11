@@ -125,7 +125,7 @@ describe("DashboardPage G03 component contract", () => {
     expect(screen.getByText("Предупреждений нет.")).toBeInTheDocument();
   });
 
-  it("shows dashboard error state without pretending that KPI data loaded", async () => {
+  it("shows localized dashboard error state without pretending that KPI data loaded", async () => {
     setupDashboard(() =>
       jsonResponse(
         { error: { code: "internal_error", message: "Dashboard API failed", details: [] } },
@@ -134,8 +134,13 @@ describe("DashboardPage G03 component contract", () => {
     );
 
     const alerts = await screen.findAllByRole("alert");
-    expect(alerts.some((alert) => alert.textContent === "Dashboard API failed")).toBe(true);
-    expect(screen.getAllByText("Ошибка dashboard")).toHaveLength(5);
+    expect(
+      alerts.some(
+        (alert) => alert.textContent === "Внутренняя ошибка приложения. Попробуй обновить данные.",
+      ),
+    ).toBe(true);
+    expect(screen.getAllByText("Не удалось загрузить показатели")).toHaveLength(5);
+    expect(screen.queryByText("Dashboard API failed")).toBeNull();
     expect(screen.getAllByText("…").length).toBeGreaterThan(0);
   });
 });

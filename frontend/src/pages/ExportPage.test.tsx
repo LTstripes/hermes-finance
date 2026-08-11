@@ -112,7 +112,11 @@ describe("ExportPage", () => {
       rejectRequest(new Error("backend offline"));
     });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("backend offline");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.",
+    );
+    expect(alert).not.toHaveTextContent("backend offline");
   });
 
   it("shows an export error without claiming that a file was downloaded", async () => {
@@ -134,7 +138,9 @@ describe("ExportPage", () => {
     render(<ExportPage />);
     await user.click(await screen.findByRole("button", { name: "Скачать Markdown" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Export failed");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Внутренняя ошибка приложения. Попробуй обновить данные.");
+    expect(alert).not.toHaveTextContent("Export failed");
     expect(screen.queryByText(/Файл .*скачан/i)).not.toBeInTheDocument();
   });
 
@@ -202,7 +208,9 @@ describe("ExportPage", () => {
     render(<ExportPage />);
     await user.click(await screen.findByRole("button", { name: "Скачать JSON" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Month missing");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Запрошенные данные не найдены.");
+    expect(alert).not.toHaveTextContent("Month missing");
     expect(screen.queryByText(/Файл .*скачан/i)).not.toBeInTheDocument();
   });
 
@@ -299,7 +307,9 @@ describe("ExportPage", () => {
 
     render(<ExportPage />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Backup storage is not available");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Внутренняя ошибка приложения. Попробуй обновить данные.");
+    expect(alert).not.toHaveTextContent("Backup storage is not available");
     expect(screen.getByRole("button", { name: "Создать резервную копию" })).toBeEnabled();
   });
 
@@ -377,7 +387,9 @@ describe("ExportPage", () => {
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Backup is corrupt");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Проверь введённые данные.");
+    expect(alert).not.toHaveTextContent("Backup is corrupt");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

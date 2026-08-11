@@ -46,7 +46,7 @@ describe("MainGoalPanel", () => {
     vi.clearAllMocks();
   });
 
-  it("renders backend values verbatim instead of recomputing progress or remaining", async () => {
+  it("renders backend values without leaking implementation identifiers", async () => {
     listGoalSummaryMock.mockResolvedValue([mainSummary("not_projectable")]);
     render(
       <MemoryRouter>
@@ -57,8 +57,15 @@ describe("MainGoalPanel", () => {
     expect(await screen.findByText("Свобода")).toBeInTheDocument();
     expect(screen.getByText("12,34%")).toBeInTheDocument();
     expect(screen.getByText(/999,99\s₽/)).toBeInTheDocument();
-    expect(screen.getByText("Дата достижения: нет честного прогноза")).toBeInTheDocument();
+    expect(
+      screen.getByText("Дата достижения: пока нельзя надёжно спрогнозировать"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/),
+    ).toBeInTheDocument();
     expect(screen.getByText("Недостаточно данных для траектории")).toBeInTheDocument();
+    expect(screen.queryByText("no_trajectory_model")).toBeNull();
+    expect(screen.queryByText("goal_achievement_v1")).toBeNull();
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
   });
 
