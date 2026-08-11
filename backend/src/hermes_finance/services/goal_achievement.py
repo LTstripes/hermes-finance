@@ -1,7 +1,14 @@
-"""Read-time goal achievement summary assembly for R02-12.
+"""Read-time goal achievement summary assembly.
 
-This service reuses canonical C04/C01 source metrics and computes each source
-metric at most once per request.  It never persists an achievement date.
+This service reuses canonical current-state source metrics and computes each
+source metric at most once per request. It never persists an achievement date.
+
+R02-27 clarification:
+- passive-income goal current value/progress uses the rolling average of
+  ACTUAL net passive income from CLOSED reporting months (C03);
+- the C04 forecast remains a separate projection concern and no longer
+  substitutes for the goal's user-facing current value;
+- capital goals continue to use canonical liquid capital.
 """
 
 from __future__ import annotations
@@ -18,10 +25,10 @@ from hermes_finance.domain.goal_achievement import (
     calculate_goal_achievement_forecast,
 )
 from hermes_finance.persistence import Goal
-from hermes_finance.services.forecast_passive_income import forecast_passive_income
 from hermes_finance.services.goals import list_goals
 from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
+from hermes_finance.services.passive_income_average import passive_income_average
 from hermes_finance.services.reporting_months import get_reporting_month
 
 PASSIVE_INCOME_MODE = "monthly_net_passive_income"
@@ -30,6 +37,7 @@ LIQUID_CAPITAL_MODE = "liquid_capital_net"
 _INACTIVE_WARNING = "Цель неактивна и не отслеживается"
 _UNSUPPORTED_GOAL_TYPE_WARNING = "Тип цели не поддерживается прогнозом достижения"
 _UNSUPPORTED_MODE_WARNING = "Режим расчёта цели не поддерживается прогнозом достижения"
+_NO_PASSIVE_HISTORY_WARNING = "Нет закрытых месяцев для расчёта текущего пассивного дохода"
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +93,14 @@ def _unsupported_forecast(
     )
 
 
+def _passive_average_warnings(*, count_months: int, is_complete_12m: bool) -> tuple[str, ...]:
+    if count_months == 0:
+        return (_NO_PASSIVE_HISTORY_WARNING,)
+    if not is_complete_12m:
+        return (f"Среднее за доступный период. Учтено {count_months} месяцев из 12.",)
+    return ()
+
+
 def build_goal_achievement_summary(
     session: Session,
     reporting_month_id: int,
@@ -92,7 +108,12 @@ def build_goal_achievement_summary(
     include_inactive: bool = False,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
 ) -> list[GoalAchievementSummaryItem]:
-    """Build the backend-derived goal summary for one reporting snapshot."""
+    """Build the backend-derived goal summary for one reporting snapshot.
+
+    ``forecast_version`` remains accepted for API backward compatibility. R02-27
+    deliberately removes C04 forecast values from passive-goal current progress;
+    the value now comes from C03 actual closed-month history.
+    """
     reporting_month = get_reporting_month(session, reporting_month_id)
     goals = list_goals(session, include_inactive=include_inactive)
 
@@ -111,11 +132,7 @@ def build_goal_achievement_summary(
         and goal.calculation_mode == LIQUID_CAPITAL_MODE
     ]
 
-    passive_forecast = (
-        forecast_passive_income(session, reporting_month_id, forecast_version)
-        if passive_goals
-        else None
-    )
+    passive_average = passive_income_average(session) if passive_goals else None
     liquid_capital = (
         liquid_capital_for_month(session, reporting_month_id) if capital_goals else None
     )
@@ -158,16 +175,18 @@ def build_goal_achievement_summary(
                 warning=_UNSUPPORTED_MODE_WARNING,
             )
         elif goal.goal_type == GoalType.PASSIVE_INCOME.value:
-            assert passive_forecast is not None
+            assert passive_average is not None
             result = calculate_goal_achievement_forecast(
                 goal_id=goal.id,
                 reporting_month_id=reporting_month_id,
                 as_of_date=reporting_month.snapshot_date,
-                current_value=passive_forecast.monthly_total,
+                current_value=passive_average.average,
                 target_value=RubleAmount(goal.target_value_kopecks),
-                source_forecast_version=forecast_version,
-                is_approximate=passive_forecast.is_approximate,
-                warnings=passive_forecast.warnings,
+                source_forecast_version=None,
+                warnings=_passive_average_warnings(
+                    count_months=passive_average.count_months,
+                    is_complete_12m=passive_average.is_complete_12m,
+                ),
             )
         else:
             assert liquid_capital is not None
