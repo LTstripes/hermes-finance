@@ -19,12 +19,14 @@ describe("getMonthSummary", () => {
   it("keeps the editor loadable when salary-tax history is incomplete", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        errorResponse(
-          "salary_tax_history_incomplete",
-          "salary tax history is incomplete before 2026-07; missing known month(s): 2026-01",
+      vi
+        .fn()
+        .mockResolvedValue(
+          errorResponse(
+            "salary_tax_history_incomplete",
+            "salary tax history is incomplete before 2026-07; missing known month(s): 2026-01",
+          ),
         ),
-      ),
     );
 
     const summary = await getMonthSummary(7);
