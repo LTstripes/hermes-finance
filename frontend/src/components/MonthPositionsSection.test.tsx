@@ -127,7 +127,10 @@ describe("MonthPositionsSection G03 component contract", () => {
     });
 
     expect(await screen.findByText("Не удалось загрузить позиции")).toBeInTheDocument();
-    expect(screen.getByText("Positions API failed")).toBeInTheDocument();
+    expect(
+      screen.getByText("Внутренняя ошибка приложения. Попробуй обновить данные."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Positions API failed")).toBeNull();
     expect(screen.queryByRole("button", { name: "Добавить позицию" })).not.toBeInTheDocument();
   });
 
