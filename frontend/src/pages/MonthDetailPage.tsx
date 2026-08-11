@@ -22,6 +22,7 @@ import { MonthCloseoutSection } from "../components/MonthCloseoutSection";
 import { MonthFlowsSection } from "../components/MonthFlowsSection";
 import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
+import { SalaryTaxRateSummary } from "../components/SalaryTaxRateSummary";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
@@ -34,6 +35,10 @@ type EditorForm = {
   bonus: string;
   sideIncome: string;
   cashback: string;
+};
+
+type SalaryTaxRatePart = {
+  rate_bps: number;
 };
 
 function emptyForm(): EditorForm {
@@ -77,6 +82,7 @@ export function MonthDetailPage() {
   const [baseline, setBaseline] = useState<EditorForm>(emptyForm);
   const [calcTax, setCalcTax] = useState("");
   const [calcNet, setCalcNet] = useState("");
+  const [calcTaxParts, setCalcTaxParts] = useState<SalaryTaxRatePart[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +119,10 @@ export function MonthDetailPage() {
         setBaseline(next);
         setCalcTax(moneyAmount(summary.salary_tax.tax));
         setCalcNet(moneyAmount(summary.salary_tax.calculated_net));
+        const salaryTax = summary.salary_tax as typeof summary.salary_tax & {
+          parts?: SalaryTaxRatePart[];
+        };
+        setCalcTaxParts(salaryTax.parts ?? []);
       } catch (err) {
         if (!signal?.aborted) {
           setError(formatApiError(err));
@@ -323,6 +333,7 @@ export function MonthDetailPage() {
                 value={calcTax ? formatMoney(calcTax) : "—"}
               />
             </Field>
+            <SalaryTaxRateSummary parts={calcTaxParts} />
             <Field htmlFor="salary-calc-net" label="Расчётная зарплата после налогов (backend)">
               <Input
                 className="input--money input--calc"
@@ -378,7 +389,7 @@ export function MonthDetailPage() {
           </div>
           <p className="muted field-hint">
             Кэшбэк хранится отдельной строкой income_type=cashback и не входит в пассивный доход.
-            Расчётный налог обновляется после сохранения (GET /summary).
+            Расчётный налог и применённые ставки приходят из GET /summary после сохранения.
           </p>
         </Panel>
 
