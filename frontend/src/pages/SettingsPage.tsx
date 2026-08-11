@@ -8,6 +8,7 @@ import {
   type AppSettings,
   type AppSettingsUpdate,
 } from "../api/settings";
+import { TaxBracketsPanel } from "../components/TaxBracketsPanel";
 import { Badge, Button, ErrorState, Field, Input, LoadingState, Panel } from "../components/ui";
 
 export function SettingsPage() {
@@ -126,7 +127,7 @@ export function SettingsPage() {
         <p className="eyebrow">Система</p>
         <h1>Настройки</h1>
         <p className="page-header__description">
-          Локальные настройки приложения. Финансовые правила здесь не меняются.
+          Локальные настройки приложения и безопасное управление налоговыми правилами.
         </p>
       </header>
 
@@ -220,13 +221,12 @@ export function SettingsPage() {
         </Panel>
       </form>
 
+      <TaxBracketsPanel />
+
       <Panel empty label="Ограничения" title="Пока недоступно">
-        <div className="stack-8">
-          <p>Управление налоговыми ставками пока готовится.</p>
-          <p className="muted">
-            Отдельные настройки пути резервных копий и параметров экспорта пока недоступны.
-          </p>
-        </div>
+        <p className="muted">
+          Отдельные настройки пути резервных копий и параметров экспорта пока недоступны.
+        </p>
       </Panel>
     </section>
   );
