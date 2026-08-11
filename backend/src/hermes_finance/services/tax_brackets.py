@@ -1,29 +1,55 @@
-"""CRUD service for configurable progressive tax brackets (НДФЛ).
+"""Year-scoped administration for progressive salary-tax brackets.
 
-Tax brackets are stored in a configuration table (``tax_brackets``) so that
-thresholds and rates can be edited without code changes (MASTER_SPEC §10.14).
-
-Official progressive scale (ФЗ-176-ФЗ of 12.07.2024, in force since 2025):
-    up to 2 400 000 RUB       — 13%
-    2 400 000 – 5 000 000     — 15%
-    5 000 000 – 20 000 000    — 18%
-    20 000 000 – 50 000 000   — 20%
-    over 50 000 000           — 22%
-
-Source: https://www.nalog.gov.ru/rn77/news/tax_doc_news/15562179/
+R02-17 / ADR 0006 defines one complete bracket set per calendar tax year.
+Public administration replaces a complete set atomically and years containing
+closed reporting months are immutable until those months are explicitly reopened.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from collections.abc import Iterable
+
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import RubleAmount
-from hermes_finance.persistence import TaxBracket
+from hermes_finance.domain import ReportingMonthStatus, RubleAmount
+from hermes_finance.domain.salary_tax import TaxBracketRule
+from hermes_finance.persistence import ReportingMonth, TaxBracket
+
+TAX_BRACKETS_CONTRACT_VERSION = "tax_brackets_year_v1"
+TAX_BRACKETS_SOURCE_OFFICIAL = "official_default"
+TAX_BRACKETS_SOURCE_MANUAL = "manual_configuration"
 
 
 class TaxBracketNotFoundError(LookupError):
     pass
+
+
+class TaxBracketYearLockedError(RuntimeError):
+    def __init__(self, year: int, closed_months: tuple[int, ...]) -> None:
+        self.year = year
+        self.closed_months = closed_months
+        months = ", ".join(f"{year:04d}-{month:02d}" for month in closed_months)
+        super().__init__(f"tax brackets for {year} are locked by closed month(s): {months}")
+
+
+# Official progressive НДФЛ scale introduced in 2025 (ФЗ-176-ФЗ of 12.07.2024).
+# Thresholds are integer kopecks; rates are integer basis points.
+# Source: https://www.nalog.gov.ru/rn77/news/tax_doc_news/15562179/
+_DEFAULT_BRACKETS: tuple[tuple[int, int | None, int], ...] = (
+    (0, 240_000_000, 1300),
+    (240_000_000, 500_000_000, 1500),
+    (500_000_000, 2_000_000_000, 1800),
+    (2_000_000_000, 5_000_000_000, 2000),
+    (5_000_000_000, None, 2200),
+)
+
+
+def official_default_tax_bracket_rules() -> tuple[TaxBracketRule, ...]:
+    return tuple(
+        TaxBracketRule(from_kopecks=lower, to_kopecks=upper, rate_bps=rate)
+        for lower, upper, rate in _DEFAULT_BRACKETS
+    )
 
 
 def _normalize_kopecks(amount: RubleAmount | str, *, field: str) -> int:
@@ -39,9 +65,106 @@ def _normalize_kopecks(amount: RubleAmount | str, *, field: str) -> int:
 def _validate_rate_bps(rate_bps: int) -> int:
     if not isinstance(rate_bps, int) or isinstance(rate_bps, bool):
         raise TypeError("rate_bps must be an int")
-    if rate_bps < 0:
-        raise ValueError("rate_bps must not be negative")
+    if rate_bps < 0 or rate_bps > 10_000:
+        raise ValueError("rate_bps must be between 0 and 10000")
     return rate_bps
+
+
+def _as_rule(bracket: TaxBracket | TaxBracketRule) -> TaxBracketRule:
+    if isinstance(bracket, TaxBracketRule):
+        return bracket
+    return TaxBracketRule(
+        from_kopecks=bracket.threshold_from_kopecks,
+        to_kopecks=bracket.threshold_to_kopecks,
+        rate_bps=bracket.rate_bps,
+    )
+
+
+def validate_complete_tax_bracket_rules(
+    brackets: Iterable[TaxBracketRule],
+) -> tuple[TaxBracketRule, ...]:
+    rules = tuple(sorted(brackets, key=lambda item: item.from_kopecks))
+    if not rules:
+        raise ValueError("tax brackets must not be empty")
+    if rules[0].from_kopecks != 0:
+        raise ValueError("first tax bracket must start at zero")
+
+    previous_upper: int | None = None
+    for index, rule in enumerate(rules):
+        if rule.from_kopecks < 0:
+            raise ValueError(f"bracket {index}: threshold_from must not be negative")
+        _validate_rate_bps(rule.rate_bps)
+
+        is_last = index == len(rules) - 1
+        if rule.to_kopecks is None:
+            if not is_last:
+                raise ValueError(f"bracket {index}: only the final bracket may be open-ended")
+        else:
+            if rule.to_kopecks <= rule.from_kopecks:
+                raise ValueError(f"bracket {index}: threshold_to must be greater than threshold_from")
+            if is_last:
+                raise ValueError("final tax bracket must be open-ended")
+
+        if index > 0 and rule.from_kopecks != previous_upper:
+            raise ValueError(
+                f"bracket {index}: tax brackets must be contiguous without gaps or overlaps"
+            )
+        previous_upper = rule.to_kopecks
+
+    return rules
+
+
+def list_tax_brackets(session: Session, year: int) -> list[TaxBracket]:
+    return list(
+        session.scalars(
+            select(TaxBracket)
+            .where(TaxBracket.year == year)
+            .order_by(TaxBracket.threshold_from_kopecks)
+        )
+    )
+
+
+def effective_tax_bracket_rules(session: Session, year: int) -> tuple[TaxBracketRule, ...]:
+    existing = list_tax_brackets(session, year)
+    if not existing:
+        return official_default_tax_bracket_rules()
+    return tuple(_as_rule(bracket) for bracket in existing)
+
+
+def tax_bracket_source(brackets: Iterable[TaxBracket | TaxBracketRule]) -> str:
+    rules = tuple(_as_rule(bracket) for bracket in brackets)
+    return (
+        TAX_BRACKETS_SOURCE_OFFICIAL
+        if rules == official_default_tax_bracket_rules()
+        else TAX_BRACKETS_SOURCE_MANUAL
+    )
+
+
+def closed_month_numbers_for_tax_year(session: Session, year: int) -> tuple[int, ...]:
+    return tuple(
+        int(month)
+        for month in session.scalars(
+            select(ReportingMonth.month)
+            .where(
+                ReportingMonth.year == year,
+                ReportingMonth.status == ReportingMonthStatus.CLOSED.value,
+            )
+            .order_by(ReportingMonth.month)
+        )
+    )
+
+
+def ensure_tax_bracket_year_mutable(session: Session, year: int) -> None:
+    closed_months = closed_month_numbers_for_tax_year(session, year)
+    if closed_months:
+        raise TaxBracketYearLockedError(year, closed_months)
+
+
+def get_tax_bracket(session: Session, bracket_id: int) -> TaxBracket:
+    bracket = session.get(TaxBracket, bracket_id)
+    if bracket is None:
+        raise TaxBracketNotFoundError(f"tax bracket {bracket_id} was not found")
+    return bracket
 
 
 def _validate_no_overlap(
@@ -58,39 +181,20 @@ def _validate_no_overlap(
             continue
         b_from = bracket.threshold_from_kopecks
         b_to = bracket.threshold_to_kopecks
-        new_to = threshold_to
-        # Overlap check: ranges [from, to) overlap if max(from) < min(to).
         lower = max(b_from, threshold_from)
-        if b_to is not None and new_to is not None:
-            upper = min(b_to, new_to)
+        if b_to is not None and threshold_to is not None:
+            upper = min(b_to, threshold_to)
         elif b_to is not None:
             upper = b_to
-        elif new_to is not None:
-            upper = new_to
+        elif threshold_to is not None:
+            upper = threshold_to
         else:
-            upper = None  # both open-ended — overlap
+            upper = None
         if upper is None or lower < upper:
             raise ValueError(
                 f"new bracket [{threshold_from}, {threshold_to}] overlaps "
                 f"existing bracket [{b_from}, {b_to}] for year {year}"
             )
-
-
-def list_tax_brackets(session: Session, year: int) -> list[TaxBracket]:
-    return list(
-        session.scalars(
-            select(TaxBracket)
-            .where(TaxBracket.year == year)
-            .order_by(TaxBracket.threshold_from_kopecks)
-        )
-    )
-
-
-def get_tax_bracket(session: Session, bracket_id: int) -> TaxBracket:
-    bracket = session.get(TaxBracket, bracket_id)
-    if bracket is None:
-        raise TaxBracketNotFoundError(f"tax bracket {bracket_id} was not found")
-    return bracket
 
 
 def create_tax_bracket(
@@ -101,6 +205,7 @@ def create_tax_bracket(
     threshold_to: RubleAmount | str | None = None,
     rate_bps: int,
 ) -> TaxBracket:
+    ensure_tax_bracket_year_mutable(session, year)
     from_kopecks = _normalize_kopecks(threshold_from, field="threshold_from")
     to_kopecks: int | None = None
     if threshold_to is not None:
@@ -133,14 +238,16 @@ def update_tax_bracket(
     rate_bps: int | None = None,
 ) -> TaxBracket:
     bracket = get_tax_bracket(session, bracket_id)
-
     new_year = year if year is not None else bracket.year
+    ensure_tax_bracket_year_mutable(session, bracket.year)
+    if new_year != bracket.year:
+        ensure_tax_bracket_year_mutable(session, new_year)
+
     new_from = (
         _normalize_kopecks(threshold_from, field="threshold_from")
         if threshold_from is not None
         else bracket.threshold_from_kopecks
     )
-    new_to: int | None
     if threshold_to is not None:
         new_to = _normalize_kopecks(threshold_to, field="threshold_to")
         if new_to <= new_from:
@@ -149,7 +256,6 @@ def update_tax_bracket(
         new_to = bracket.threshold_to_kopecks
 
     new_rate = _validate_rate_bps(rate_bps) if rate_bps is not None else bracket.rate_bps
-
     _validate_no_overlap(session, new_year, new_from, new_to, exclude_id=bracket.id)
 
     bracket.year = new_year
@@ -163,45 +269,58 @@ def update_tax_bracket(
 
 def delete_tax_bracket(session: Session, bracket_id: int) -> None:
     bracket = get_tax_bracket(session, bracket_id)
+    ensure_tax_bracket_year_mutable(session, bracket.year)
     session.delete(bracket)
     session.commit()
 
 
-# Official 2025+ progressive НДФЛ brackets (ФЗ-176-ФЗ of 12.07.2024).
-# Thresholds in kopecks, rates in basis points.
-# Source: https://www.nalog.gov.ru/rn77/news/tax_doc_news/15562179/
-_DEFAULT_BRACKETS: tuple[tuple[int, int | None, int], ...] = (
-    (0, 240_000_000, 1300),
-    (240_000_000, 500_000_000, 1500),
-    (500_000_000, 2_000_000_000, 1800),
-    (2_000_000_000, 5_000_000_000, 2000),
-    (5_000_000_000, None, 2200),
-)
+def replace_tax_brackets_for_year(
+    session: Session,
+    year: int,
+    brackets: Iterable[TaxBracketRule],
+) -> list[TaxBracket]:
+    """Atomically replace one mutable tax year's complete rule set."""
+    ensure_tax_bracket_year_mutable(session, year)
+    rules = validate_complete_tax_bracket_rules(brackets)
+
+    try:
+        session.execute(delete(TaxBracket).where(TaxBracket.year == year))
+        for rule in rules:
+            session.add(
+                TaxBracket(
+                    year=year,
+                    threshold_from_kopecks=rule.from_kopecks,
+                    threshold_to_kopecks=rule.to_kopecks,
+                    rate_bps=rule.rate_bps,
+                )
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return list_tax_brackets(session, year)
 
 
 def get_or_create_default_tax_brackets(
     session: Session, year: int, *, commit: bool = True
 ) -> list[TaxBracket]:
-    """Return tax brackets for ``year``, seeding the official defaults if empty.
+    """Return persisted rules, seeding the official default set when empty.
 
-    The five official progressive ranges (ФЗ-176-ФЗ of 12.07.2024) are seeded
-    only when no rows exist for the given year.  Existing user-edited brackets
-    are never overwritten.  ``commit=False`` is used by read-only report
-    generation so defaults remain transient in the request transaction.
-
-    Source: https://www.nalog.gov.ru/rn77/news/tax_doc_news/15562179/
+    This compatibility/read-calculation path is intentionally separate from
+    user administration. It may seed defaults even when a year is closed,
+    because it does not reinterpret an existing configured rule set.
     """
     existing = list_tax_brackets(session, year)
     if existing:
         return existing
 
-    for from_kopecks, to_kopecks, rate_bps in _DEFAULT_BRACKETS:
+    for rule in official_default_tax_bracket_rules():
         session.add(
             TaxBracket(
                 year=year,
-                threshold_from_kopecks=from_kopecks,
-                threshold_to_kopecks=to_kopecks,
-                rate_bps=rate_bps,
+                threshold_from_kopecks=rule.from_kopecks,
+                threshold_to_kopecks=rule.to_kopecks,
+                rate_bps=rule.rate_bps,
             )
         )
     if commit:
