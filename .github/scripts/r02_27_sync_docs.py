@@ -54,9 +54,9 @@ replace_once(
 r02_27_card = """
 # R02-27. Passive-income goal current-value semantics
 
-**Priority:** P1  
-**Status:** REVIEW  
-**Route:** Sol bounded implementation / Sol reviewer  
+**Priority:** P1
+**Status:** REVIEW
+**Route:** Sol bounded implementation / Sol reviewer
 **Depends on:** R02-04, R02-13
 
 ## Проблема
@@ -98,10 +98,10 @@ replace_once(
 smoke_block = """
 ## Smoke finding 4 — passive-income Goal подменял текущее значение forecast-метрикой
 
-**Статус:** R02-27 REVIEW.  
-**Наблюдение:** Dashboard показывал фактический passive income/rolling average по закрытым месяцам, а Goal при пустом expected-calendar учитывал только dividend average и игнорировал фактические deposit interest/coupons в `Текущем значении`.  
-**Root cause:** `goal_achievement` использовал `forecast_passive_income.monthly_total` вместо C03 actual rolling average.  
-**Решение:** Goal current/progress переводится на C03 actual average; C04 forecast остаётся отдельной прогнозной метрикой.  
+**Статус:** R02-27 REVIEW.
+**Наблюдение:** Dashboard показывал фактический passive income/rolling average по закрытым месяцам, а Goal при пустом expected-calendar учитывал только dividend average и игнорировал фактические deposit interest/coupons в `Текущем значении`.
+**Root cause:** `goal_achievement` использовал `forecast_passive_income.monthly_total` вместо C03 actual rolling average.
+**Решение:** Goal current/progress переводится на C03 actual average; C04 forecast остаётся отдельной прогнозной метрикой.
 **Regression:** actual deposit interest + coupon + dividend при пустом expected calendar должны давать ненулевой Goal current value.
 
 """
@@ -110,7 +110,7 @@ append_once("docs/RELEASE_0_2_SMOKE_2026-08-11.md", "## Release handoff", smoke_
 followup_block = """
 ## R02-27 — Passive-income goal current-value semantics
 
-**Priority:** P1  
+**Priority:** P1
 **Status:** REVIEW
 
 Owner smoke подтвердил semantic mismatch: Goal `Текущее значение` использовало C04 forecast monthly total, поэтому при пустом manual expected-calendar фактические проценты депозитов и купоны не участвовали в прогрессе. Нормативное решение: current/progress = C03 rolling average actual net passive income по CLOSED месяцам; C04 остаётся отдельным прогнозом. Canonical contract/task-card находится в `docs/RELEASE_0_2.md`.
