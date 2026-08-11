@@ -1,11 +1,11 @@
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import FINANCIAL_ROUNDING, PriceSource, RubleAmount
+from hermes_finance.domain import FINANCIAL_ROUNDING, InstrumentType, PriceSource, RubleAmount
 from hermes_finance.persistence import (
     Account,
     Instrument,
@@ -29,22 +29,28 @@ def _require_account(session: Session, account_id: int) -> None:
         raise AccountNotFoundError(f"account {account_id} was not found")
 
 
-def _require_instrument(session: Session, instrument_id: int) -> None:
-    if session.get(Instrument, instrument_id) is None:
+def _require_instrument(session: Session, instrument_id: int) -> Instrument:
+    instrument = session.get(Instrument, instrument_id)
+    if instrument is None:
         raise InstrumentNotFoundError(f"instrument {instrument_id} was not found")
+    return instrument
 
 
-def _normalize_quantity(quantity: int | Decimal | str) -> Decimal:
+def _normalize_quantity(quantity: int | Decimal | str, *, instrument_type: str) -> Decimal:
     if isinstance(quantity, bool):
         raise TypeError("quantity must be a number, not a bool")
     try:
         value = Decimal(quantity) if isinstance(quantity, str) else Decimal(quantity)
-    except (TypeError, ValueError) as error:
+    except (InvalidOperation, TypeError, ValueError) as error:
         raise TypeError("quantity must be an int, Decimal or decimal string") from error
     if not value.is_finite():
         raise ValueError("quantity must be finite")
-    if value < 0:
-        raise ValueError("quantity must not be negative")
+    if value <= 0:
+        raise ValueError("quantity must be positive")
+    if value % Decimal("0.000001") != 0:
+        raise ValueError("quantity must have at most 6 decimal places")
+    if instrument_type == InstrumentType.STOCK.value and value % Decimal("1") != 0:
+        raise ValueError("stock quantity must be a positive whole number")
     return value
 
 
@@ -144,8 +150,8 @@ def create_position_snapshot(
 ) -> PositionSnapshot:
     require_editable_reporting_month(session, reporting_month_id)
     _require_account(session, account_id)
-    _require_instrument(session, instrument_id)
-    quantity = _normalize_quantity(quantity)
+    instrument = _require_instrument(session, instrument_id)
+    quantity = _normalize_quantity(quantity, instrument_type=instrument.instrument_type)
     average_cost = _normalize_per_unit_kopecks(average_cost_per_unit, field="average_cost_per_unit")
     market_price = _normalize_per_unit_kopecks(market_price_per_unit, field="market_price_per_unit")
     accrued = (
@@ -200,10 +206,11 @@ def update_position_snapshot(
 ) -> PositionSnapshot:
     snapshot = get_position_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)
+    instrument = _require_instrument(session, snapshot.instrument_id)
     if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
         raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
     if quantity is not None:
-        snapshot.quantity = _normalize_quantity(quantity)
+        snapshot.quantity = _normalize_quantity(quantity, instrument_type=instrument.instrument_type)
     if average_cost_per_unit is not None:
         snapshot.average_cost_per_unit_kopecks = _normalize_per_unit_kopecks(
             average_cost_per_unit, field="average_cost_per_unit"

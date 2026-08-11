@@ -90,8 +90,12 @@ def _create_account(client: TestClient, name: str = "Брокерский") -> d
     return response.json()
 
 
-def _create_instrument(client: TestClient, name: str = "Сбер") -> dict:
-    response = client.post("/api/instruments", json={"name": name, "instrument_type": "stock"})
+def _create_instrument(
+    client: TestClient, name: str = "Сбер", instrument_type: str = "stock"
+) -> dict:
+    response = client.post(
+        "/api/instruments", json={"name": name, "instrument_type": instrument_type}
+    )
     assert response.status_code == 201
     return response.json()
 
@@ -179,6 +183,54 @@ def test_position_create_recalculates_metrics(client: TestClient) -> None:
     assert created["price_date"] == "2031-01-15"
     assert created["notes"] is None
     assert isinstance(datetime.fromisoformat(created["updated_at"]), datetime)
+
+
+def test_position_quantity_semantics_by_instrument_type(client: TestClient) -> None:
+    month_id = _create_month(client)
+    account = _create_account(client)
+    stock = _create_instrument(client, "Акция")
+
+    fractional_stock = client.post(
+        "/api/positions",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account["id"],
+            "instrument_id": stock["id"],
+            "quantity": "0.5",
+            "average_cost_per_unit": _rub("100.00"),
+            "market_price_per_unit": _rub("100.00"),
+            "price_source": "manual",
+            "price_date": "2031-01-15",
+        },
+    )
+    assert fractional_stock.status_code == 422
+    assert "positive whole number" in fractional_stock.json()["error"]["message"]
+
+    zero_stock = client.post(
+        "/api/positions",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account["id"],
+            "instrument_id": stock["id"],
+            "quantity": "0",
+            "average_cost_per_unit": _rub("100.00"),
+            "market_price_per_unit": _rub("100.00"),
+            "price_source": "manual",
+            "price_date": "2031-01-15",
+        },
+    )
+    assert zero_stock.status_code == 422
+    assert "must be positive" in zero_stock.json()["error"]["message"]
+
+    fund = _create_instrument(client, "Фонд", instrument_type="fund")
+    fractional_fund = _create_position(
+        client,
+        month_id=month_id,
+        account_id=account["id"],
+        instrument_id=fund["id"],
+        quantity="0.5",
+    )
+    assert Decimal(fractional_fund["quantity"]) == Decimal("0.5")
 
 
 def test_position_create_includes_accrued_interest_in_market_value(

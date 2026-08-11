@@ -27,11 +27,13 @@ def session_for(tmp_path: Path) -> tuple[Session, object]:
     return database.session_factory(), database
 
 
-def build_environment(session: Session) -> tuple[int, int, int]:
+def build_environment(
+    session: Session, *, instrument_type: InstrumentType = InstrumentType.BOND
+) -> tuple[int, int, int]:
     month = create_reporting_month(session, year=2030, month=5, snapshot_date=date(2030, 5, 12))
     account = create_account(session, name="Synthetic Broker", account_type=AccountType.BROKERAGE)
     instrument = create_instrument(
-        session, name="Synthetic Bond", instrument_type=InstrumentType.BOND
+        session, name="Synthetic Instrument", instrument_type=instrument_type
     )
     return month.id, account.id, instrument.id
 
@@ -153,7 +155,7 @@ def test_position_validation_rejects_bad_inputs(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, instrument_id = build_environment(session)
-        with pytest.raises(ValueError, match="must not be negative"):
+        with pytest.raises(ValueError, match="must be positive"):
             create_position_snapshot(
                 session,
                 reporting_month_id=month_id,
@@ -185,6 +187,39 @@ def test_position_validation_rejects_bad_inputs(tmp_path: Path) -> None:
                 quantity=1,
                 average_cost_per_unit="10.00",
                 market_price_per_unit="-1.00",
+                price_date=date(2030, 5, 12),
+            )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_stock_quantity_must_be_positive_whole_number(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(
+            session, instrument_type=InstrumentType.STOCK
+        )
+        with pytest.raises(ValueError, match="positive whole number"):
+            create_position_snapshot(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+                quantity="0.5",
+                average_cost_per_unit="10.00",
+                market_price_per_unit="10.00",
+                price_date=date(2030, 5, 12),
+            )
+        with pytest.raises(ValueError, match="must be positive"):
+            create_position_snapshot(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+                quantity=0,
+                average_cost_per_unit="10.00",
+                market_price_per_unit="10.00",
                 price_date=date(2030, 5, 12),
             )
     finally:

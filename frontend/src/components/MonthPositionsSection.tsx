@@ -19,7 +19,7 @@ import {
   Td,
   Th,
 } from "./ui";
-import { formatDate, formatMoney } from "../lib/format";
+import { formatDate, formatMoney, formatQuantity } from "../lib/format";
 import {
   ACCOUNT_TYPE_LABELS,
   INSTRUMENT_TYPE_LABELS,
@@ -58,15 +58,22 @@ function emptyDraft(priceDate: string): PositionDraft {
   };
 }
 
-function normalizeQuantity(value: string): string | null {
+function normalizeQuantity(value: string, instrumentType?: string): string | null {
   const cleaned = value.trim().replace(",", ".").replace(/\s/g, "");
   if (!cleaned) {
     return null;
   }
-  if (!/^\d+(\.\d{1,8})?$/.test(cleaned)) {
+  const pattern = instrumentType === "stock" ? /^\d+$/ : /^\d+(\.\d{1,6})?$/;
+  if (!pattern.test(cleaned) || /^0+(\.0+)?$/.test(cleaned)) {
     return null;
   }
   return cleaned;
+}
+
+function quantityError(instrumentType?: string): string {
+  return instrumentType === "stock"
+    ? "Количество акций должно быть целым числом не меньше 1"
+    : "Количество должно быть больше нуля и содержать не более 6 знаков после запятой";
 }
 
 function instrumentLabel(instrument: Instrument): string {
@@ -253,10 +260,6 @@ export function MonthPositionsSection({
     setActionError(null);
     setBusy(true);
     try {
-      const qty = normalizeQuantity(draft.quantity);
-      if (!qty) {
-        throw new Error("Некорректное количество");
-      }
       if (!normalizeMoneyInput(draft.average_cost) || !normalizeMoneyInput(draft.market_price)) {
         throw new Error("Укажи среднюю стоимость и рыночную цену");
       }
@@ -267,6 +270,11 @@ export function MonthPositionsSection({
       const instrumentId = Number(draft.instrument_id);
       if (!Number.isInteger(instrumentId) || instrumentId < 1) {
         throw new Error("Выбери или создай инструмент");
+      }
+      const instrumentType = instrumentById.get(instrumentId)?.instrument_type;
+      const qty = normalizeQuantity(draft.quantity, instrumentType);
+      if (!qty) {
+        throw new Error(quantityError(instrumentType));
       }
       const payload = {
         reporting_month_id: monthId,
@@ -306,9 +314,10 @@ export function MonthPositionsSection({
     setBusy(true);
     setActionError(null);
     try {
-      const qty = normalizeQuantity(editDraft.quantity);
+      const instrumentType = instrumentById.get(current.instrument_id)?.instrument_type;
+      const qty = normalizeQuantity(editDraft.quantity, instrumentType);
       if (!qty) {
-        throw new Error("Некорректное количество");
+        throw new Error(quantityError(instrumentType));
       }
       await updatePosition(
         editingId,
@@ -453,7 +462,7 @@ export function MonthPositionsSection({
                           onChange={(e) => setEditDraft({ ...editDraft, quantity: e.target.value })}
                         />
                       ) : (
-                        row.quantity
+                        formatQuantity(row.quantity)
                       )}
                     </Td>
                     <Td numeric>

@@ -8,8 +8,6 @@ stays in the service layer (B09); this module only maps the HTTP boundary.
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
-
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -174,7 +172,7 @@ def create_position_endpoint(
         reporting_month_id=payload.reporting_month_id,
         account_id=payload.account_id,
         instrument_id=payload.instrument_id,
-        quantity=Decimal(payload.quantity),
+        quantity=payload.quantity,
         average_cost_per_unit=_amount(payload.average_cost_per_unit),
         market_price_per_unit=_amount(payload.market_price_per_unit),
         accrued_interest=_amount(payload.accrued_interest)
@@ -205,7 +203,7 @@ def update_position_endpoint(
     snapshot = update_position_snapshot(
         session,
         snapshot_id,
-        quantity=Decimal(payload.quantity) if payload.quantity is not None else None,
+        quantity=payload.quantity if payload.quantity is not None else None,
         average_cost_per_unit=_amount(payload.average_cost_per_unit)
         if payload.average_cost_per_unit is not None
         else None,

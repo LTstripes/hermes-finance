@@ -42,7 +42,7 @@ const account = {
 const instrument = {
   id: 21,
   name: "Synthetic Bond",
-  instrument_type: "bond",
+  instrument_type: "stock",
   isin: null,
   ticker: "SYNB",
   moex_secid: null,
@@ -74,10 +74,11 @@ const position = {
 function setup(
   overrides: Record<string, (init?: RequestInit) => Promise<Response> | Response> = {},
   positions: unknown[] = [],
+  instruments: unknown[] = [instrument],
 ) {
   const fetchMock = mockFetchRouter({
     "GET /api/accounts": () => jsonResponse([account]),
-    "GET /api/instruments?active=true": () => jsonResponse([instrument]),
+    "GET /api/instruments?active=true": () => jsonResponse(instruments),
     "GET /api/positions?month_id=7": () => jsonResponse(positions),
     ...overrides,
   });
@@ -140,5 +141,52 @@ describe("MonthPositionsSection G03 component contract", () => {
     const table = await screen.findByRole("table");
     expect(table).toHaveTextContent(/1\s000\s₽/);
     expect(table).toHaveTextContent(/1\s100\s₽/);
+  });
+
+  it("formats whole quantities without persistence precision noise", async () => {
+    setup({}, [{ ...position, quantity: "64.000000" }]);
+
+    const table = await screen.findByRole("table");
+    expect(table).toHaveTextContent("64");
+    expect(table).not.toHaveTextContent("64.000000");
+  });
+
+  it("rejects fractional stock quantities before posting", async () => {
+    const fetchMock = setup();
+    const user = userEvent.setup();
+
+    await screen.findByText("Позиции");
+    await user.type(screen.getByLabelText("Количество"), "0.5");
+    await user.type(screen.getByLabelText("Средняя стоимость"), "1000.00");
+    await user.type(screen.getByLabelText("Рыночная цена"), "1100.00");
+    await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("целым числом не меньше 1");
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => String(input) === "/api/positions" && init?.method === "POST",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps fractional quantities for non-stock instruments", async () => {
+    const fund = { ...instrument, id: 22, name: "Synthetic Fund", instrument_type: "fund" };
+    const fetchMock = setup(
+      { "POST /api/positions": () => jsonResponse({ id: 31 }, 201) },
+      [],
+      [fund],
+    );
+    const user = userEvent.setup();
+
+    await screen.findByText("Позиции");
+    await user.type(screen.getByLabelText("Количество"), "0.5");
+    await user.type(screen.getByLabelText("Средняя стоимость"), "1000.00");
+    await user.type(screen.getByLabelText("Рыночная цена"), "1100.00");
+    await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
+
+    const post = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/positions" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(post?.[1]?.body)).quantity).toBe("0.5");
   });
 });

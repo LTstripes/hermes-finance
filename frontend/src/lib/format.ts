@@ -55,6 +55,32 @@ export function formatMoney(
   return `${sign}${body}${NBSP}${currency}`;
 }
 
+/**
+ * Format a non-negative decimal quantity without binary-float conversion.
+ * Trailing fractional zeroes are omitted and the integer part uses Russian
+ * digit grouping: "64.000000" → "64", "1234567.500000" → "1 234 567,5".
+ */
+export function formatQuantity(
+  value: string | null | undefined,
+  options: { empty?: string } = {},
+): string {
+  const { empty = "—" } = options;
+  if (value == null || value.trim() === "") {
+    return empty;
+  }
+
+  const raw = value.trim().replace(/\s/g, "").replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(raw)) {
+    return empty;
+  }
+
+  const [intPart, fraction = ""] = raw.split(".");
+  const normalizedInteger = intPart.replace(/^0+(?=\d)/, "");
+  const normalizedFraction = fraction.replace(/0+$/, "");
+  const grouped = groupInteger(normalizedInteger);
+  return normalizedFraction ? `${grouped},${normalizedFraction}` : grouped;
+}
+
 /** Signed delta helper: "+1 200 ₽" / "−48 200 ₽" */
 export function formatMoneyDelta(
   major: string | null | undefined,

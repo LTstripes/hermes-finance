@@ -7,6 +7,7 @@ import {
   formatMonth,
   formatMonthKey,
   formatPercent,
+  formatQuantity,
   formatRatio,
 } from "./format";
 
@@ -62,5 +63,17 @@ describe("formatRatio", () => {
   it("formats coverage multipliers", () => {
     expect(formatRatio("0.68")).toBe("0,68×");
     expect(formatRatio(1)).toBe("1,00×");
+  });
+});
+
+describe("formatQuantity", () => {
+  it("groups the integer part and trims meaningless fractional zeroes", () => {
+    expect(formatQuantity("64.000000")).toBe("64");
+    expect(formatQuantity("1234567.500000")).toBe("1\u00a0234\u00a0567,5");
+  });
+
+  it("accepts comma input without using binary float conversion", () => {
+    expect(formatQuantity("00012,3400")).toBe("12,34");
+    expect(formatQuantity("-1")).toBe("—");
   });
 });
