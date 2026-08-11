@@ -143,7 +143,9 @@ describe("GoalsPage", () => {
     expect(screen.getByLabelText("Оценка на месяц")).toHaveValue("11");
     expect(await screen.findByText(/80,00%/)).toBeInTheDocument();
     expect(await screen.findByText(/53,33%/)).toBeInTheDocument();
-    expect(screen.getAllByText("Пока нельзя надёжно спрогнозировать дату").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Пока нельзя надёжно спрогнозировать дату").length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getAllByText(/Чистый пассивный доход в месяц/).length).toBeGreaterThan(0);
     expect(screen.queryByText("monthly_net_passive_income")).toBeNull();
     expect(screen.queryByText("no_trajectory_model")).toBeNull();
