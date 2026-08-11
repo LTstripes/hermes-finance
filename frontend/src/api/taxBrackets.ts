@@ -22,10 +22,7 @@ export type TaxBracketYearUpdate = {
   brackets: TaxBracketRule[];
 };
 
-export function getTaxBrackets(
-  year: number,
-  signal?: AbortSignal,
-): Promise<TaxBracketYearConfig> {
+export function getTaxBrackets(year: number, signal?: AbortSignal): Promise<TaxBracketYearConfig> {
   return apiRequest<TaxBracketYearConfig>(`/api/tax-brackets/${year}`, {
     method: "GET",
     signal,
