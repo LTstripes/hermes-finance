@@ -51,6 +51,15 @@ The release tag remains held until R02-21 and the final release checkpoint/revie
 - R02-22/23/24 were implemented and verified before the release candidate.
 - R02-26 automatic expected-payment population is DEFERRED; 0.2 documents the existing manual expected-flow workflow explicitly.
 
+
+## Smoke finding 4 — passive-income Goal подменял текущее значение forecast-метрикой
+
+**Статус:** R02-27 REVIEW.
+**Наблюдение:** Dashboard показывал фактический passive income/rolling average по закрытым месяцам, а Goal при пустом expected-calendar учитывал только dividend average и игнорировал фактические deposit interest/coupons в `Текущем значении`.
+**Root cause:** `goal_achievement` использовал `forecast_passive_income.monthly_total` вместо C03 actual rolling average.
+**Решение:** Goal current/progress переводится на C03 actual average; C04 forecast остаётся отдельной прогнозной метрикой.
+**Regression:** actual deposit interest + coupon + dividend при пустом expected calendar должны давать ненулевой Goal current value.
+
 ## Release handoff
 
 R02-21 synchronizes version metadata, README/Wiki/CHANGELOG, canonical `RELEASE_0_2.md` status and this smoke record. The final `v0.2.0` tag remains blocked until the release gate and exact-candidate review are complete.

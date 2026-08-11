@@ -75,6 +75,7 @@
 | R02-24 | Show backend-derived salary tax rate in month editor | P2 | DONE | Sol bounded implementation / Sol review | R02-17 |
 | R02-25 | Passive-income goal/dividend diagnostic | P1 | DONE | Codex + Hermes read-only diagnostics / Sol review | — |
 | R02-26 | Automatic expected-payment population/source UX | P2 | DEFERRED | future contract | — |
+| R02-27 | Passive-income goal current-value semantics | P1 | REVIEW | Sol bounded implementation / Sol reviewer | R02-04, R02-13 |
 
 `Proposed route` означает `primary / worker / reviewer`. Владелец может явно переопределить маршрут при запуске task-card; escalation gate из `MODEL_ROUTING.md` остаётся обязательным.
 
@@ -754,11 +755,46 @@ Codex и Hermes независимо подтвердили read-only, что в
 
 ---
 
+
+# R02-27. Passive-income goal current-value semantics
+
+**Priority:** P1
+**Status:** REVIEW
+**Route:** Sol bounded implementation / Sol reviewer
+**Depends on:** R02-04, R02-13
+
+## Проблема
+
+Owner smoke показал, что Dashboard корректно отображает фактический net passive income и его rolling average по закрытым месяцам, но основная passive-income цель использует `forecast_passive_income.monthly_total` как `current_value`. При пустом ручном expected-payment calendar это обнуляет фактические проценты депозитов и купоны; в Goal остаётся только dividend average. В результате подпись `Текущее значение` показывает прогнозную, а не фактическую метрику прогресса.
+
+## Нормативное решение
+
+- `current_value` и `progress_pct` цели `passive_income / monthly_net_passive_income` используют C03 rolling average **фактического net passive income** по `closed` reporting months, максимум последние 12;
+- до накопления 12 месяцев среднее считается по доступным закрытым месяцам и сопровождается явным предупреждением `Среднее за доступный период. Учтено N месяцев из 12.`;
+- депозитные проценты, купоны, дивиденды и прочий passive income попадают в Goal ровно через существующий C02 → C03 actual pipeline;
+- C04 `forecast_passive_income` остаётся отдельной прогнозной метрикой и больше не является source of truth для user-facing `Текущего значения`/progress;
+- `source_forecast_version` для actual-progress passive goal равен `null`; query `forecast_version` сохраняется для API backward compatibility;
+- exact gap/progress formula и `ROUND_HALF_UP` из `goal_achievement_v1` не меняются;
+- future achievement trajectory по-прежнему не изобретается: ниже target статус остаётся `not_projectable / no_trajectory_model`;
+- capital goal semantics не меняются.
+
+## Acceptance
+
+- закрытые месяцы с фактическими deposit interest/coupon/dividend дают Goal тот же rolling actual average, что C03/Dashboard;
+- пустой `expected_cash_flows` calendar не обнуляет купоны/проценты в `current_value`;
+- draft months не входят в среднее;
+- история короче 12 месяцев явно сообщает использованный count;
+- frontend не считает деньги или progress самостоятельно, а отображает backend-derived values;
+- regression test покрывает actual deposit interest + coupon + dividend при пустом expected calendar;
+- backend/full exact-head CI green; никаких migrations/schema changes.
+
+---
+
 # 2. Release Gate перед `0.2.0`
 
 Перед созданием tag/release `0.2.0` выполнить отдельный release checkpoint.
 
-**Checkpoint status:** FINAL_GATE. R02-10/R02-17/R02-20/R02-21 и owner smoke/follow-ups завершены; tag удерживается до final local production probe и exact-main проверки.
+**Checkpoint status:** FINAL_GATE. R02-27 закрывает последний owner-smoke semantic finding; tag удерживается до его exact-head CI/merge и final local production probe на новом `main`.
 
 ## Обязательный gate
 

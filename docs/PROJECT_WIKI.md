@@ -126,7 +126,7 @@ Month editor показывает ставки из backend `salary_tax.parts`; 
 
 `goals` — runtime source of truth. `app_settings.passive_income_goal_kopecks` используется только как compatibility/default seed path, а не как конкурирующее runtime-значение.
 
-Основная passive-income цель использует backend forecast monthly passive income. Прогноз даты достижения не придумывает future growth: если траектории нет, статус остаётся `not_projectable`/локализованным пользовательским сообщением.
+Основная passive-income цель использует rolling average фактического net passive income по `closed` reporting months (C03, максимум последние 12) как `current_value` и источник `progress_pct`. C04 forecast остаётся отдельной прогнозной метрикой и не подменяет фактический прогресс. Прогноз даты достижения по-прежнему не придумывает future growth: если траектории нет, статус остаётся `not_projectable`/локализованным пользовательским сообщением. Это уточнение R02-27 сознательно supersede'ит только выбор source metric из R02-12, не меняя exact progress/gap formula.
 
 ## 7. Месяцы и защита истории
 

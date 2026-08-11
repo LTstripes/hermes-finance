@@ -86,6 +86,14 @@ README/CHANGELOG/Wiki explicitly document this manual workflow for 0.2.
 - define refresh/version/reconciliation semantics;
 - never silently overwrite or ambiguously duplicate manual rows.
 
+
+## R02-27 — Passive-income goal current-value semantics
+
+**Priority:** P1
+**Status:** REVIEW
+
+Owner smoke подтвердил semantic mismatch: Goal `Текущее значение` использовало C04 forecast monthly total, поэтому при пустом manual expected-calendar фактические проценты депозитов и купоны не участвовали в прогрессе. Нормативное решение: current/progress = C03 rolling average actual net passive income по CLOSED месяцам; C04 остаётся отдельным прогнозом. Canonical contract/task-card находится в `docs/RELEASE_0_2.md`.
+
 ## Release handling
 
 - R02-22, R02-23 and R02-24 are DONE;
