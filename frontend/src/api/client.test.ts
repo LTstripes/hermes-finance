@@ -171,7 +171,9 @@ describe("formatApiError", () => {
       message: "Request validation failed",
       details: [{ field: "month", message: "Input should be less than or equal to 12" }],
     });
-    expect(formatApiError(err)).toBe("Проверь введённые данные. (Месяц: Значение должно быть не больше 12)");
+    expect(formatApiError(err)).toBe(
+      "Проверь введённые данные. (Месяц: Значение должно быть не больше 12)",
+    );
   });
 
   it("localizes salary-tax incomplete history and keeps actionable months", () => {
