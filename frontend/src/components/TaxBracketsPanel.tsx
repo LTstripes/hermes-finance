@@ -227,7 +227,10 @@ export function TaxBracketsPanel() {
           <div className="field">
             <span className="field__label">Период действия</span>
             <p>{config ? `01.01.${config.year} — 31.12.${config.year}` : "—"}</p>
-            <Button disabled={!validYear || loading || saving} onClick={() => void handleLoadYear()}>
+            <Button
+              disabled={!validYear || loading || saving}
+              onClick={() => void handleLoadYear()}
+            >
               {loading ? "Загружаем…" : "Открыть год"}
             </Button>
           </div>
@@ -251,7 +254,7 @@ export function TaxBracketsPanel() {
                 </p>
               ) : (
                 <p className="inline-alert inline-alert--info">
-                  Ставки нельзя менять, пока в этом году есть закрытые месяцы: {" "}
+                  Ставки нельзя менять, пока в этом году есть закрытые месяцы:{" "}
                   {config.closed_months.map(monthCodeLabel).join(", ")}. Чтобы намеренно пересчитать
                   историю, сначала открой все закрытые месяцы этого года.
                 </p>
