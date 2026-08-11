@@ -215,15 +215,15 @@ def test_passive_goal_without_closed_history_uses_zero_actual_average_and_explai
         )
         monkeypatch.setattr(
             "hermes_finance.services.goal_achievement.passive_income_average",
-            lambda *_: SimpleNamespace(average=RubleAmount(0), count_months=0, is_complete_12m=False),
+            lambda *_: SimpleNamespace(
+                average=RubleAmount(0), count_months=0, is_complete_12m=False
+            ),
         )
 
         result = build_goal_achievement_summary(session, month.id)[0].achievement_forecast
         assert result.current_value == RubleAmount(0)
         assert result.source_forecast_version is None
-        assert result.warnings == (
-            "Нет закрытых месяцев для расчёта текущего пассивного дохода",
-        )
+        assert result.warnings == ("Нет закрытых месяцев для расчёта текущего пассивного дохода",)
     finally:
         session.close()
         database.engine.dispose()
