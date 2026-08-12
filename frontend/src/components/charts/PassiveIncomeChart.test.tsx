@@ -7,15 +7,18 @@ import { formatMoney } from "../../lib/format";
 import { rub } from "../../lib/money";
 import { PassiveIncomeChart } from "./PassiveIncomeChart";
 
-vi.mock("recharts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("recharts")>();
-  return {
-    ...actual,
-    ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
-      <div style={{ height: 280, width: 600 }}>{children}</div>
-    ),
-  };
-});
+vi.mock("recharts", () => ({
+  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
+  Bar: ({ name }: { name?: string }) => <div data-name={name} data-testid="actual-bars" />,
+  ReferenceLine: ({ y }: { y?: number }) => <div data-testid="reference-line" data-y={y} />,
+  CartesianGrid: () => null,
+  Tooltip: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+}));
 
 function point(year: number, month: number, amount: string): CapitalHistoryPoint {
   return {
@@ -43,16 +46,15 @@ describe("PassiveIncomeChart", () => {
   });
 
   it("renders monthly actual as bars while forecast and goal remain references", () => {
-    const { container } = render(<PassiveIncomeChart {...baseProps} />);
+    render(<PassiveIncomeChart {...baseProps} />);
 
     expect(
       screen.getByRole("region", {
         name: /Фактический пассивный доход по закрытым месяцам с прогнозом и целью/,
       }),
     ).toBeInTheDocument();
-    expect(container.querySelector(".recharts-bar")).not.toBeNull();
-    expect(container.querySelector(".recharts-line")).toBeNull();
-    expect(container.querySelectorAll(".recharts-reference-line").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByTestId("actual-bars")).toHaveAttribute("data-name", "Факт");
+    expect(screen.getAllByTestId("reference-line")).toHaveLength(3);
   });
 
   it("keeps incomplete rolling-window detail behind compact help", async () => {
