@@ -255,10 +255,13 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         label="Обязательства"
         title="Недвижимость"
       >
-        <div className="inline-alert" role="status">
-          Недвижимость не входит в ликвидный капитал. Покрытие ипотеки — предварительный расчёт по
-          backend dashboard/summary.
-        </div>
+        <details className="field-details">
+          <summary>О недвижимости и покрытии</summary>
+          <p>
+            Недвижимость не входит в ликвидный капитал. Покрытие ипотеки показывается как ориентир
+            из сводки месяца.
+          </p>
+        </details>
         {properties.length === 0 ? (
           <EmptyState description="Объектов нет." inline title="Пусто" />
         ) : (
@@ -308,7 +311,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         </div>
         <div className="totals-bar">
           <span>
-            Покрытие ипотеки (backend):{" "}
+            Покрытие ипотеки (ориентир):{" "}
             <strong>{mortgage?.coverage_pct != null ? `${mortgage.coverage_pct}%` : "—"}</strong>
           </span>
           <span>

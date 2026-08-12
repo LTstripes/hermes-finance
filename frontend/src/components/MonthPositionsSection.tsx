@@ -623,17 +623,18 @@ export function MonthPositionsSection({
             Нереализованный результат: <strong>{formatMoney(totals.result)}</strong>
           </span>
         </div>
-        <p className="muted field-hint">
-          Рыночную стоимость, себестоимость и нереализованный результат рассчитывает backend. Клиент
-          только отображает.
-        </p>
+        <details className="field-details">
+          <summary>Как читаются итоги позиции</summary>
+          <p>
+            Рыночная стоимость, себестоимость и нереализованный результат приходят из расчёта
+            позиции.
+          </p>
+        </details>
 
         {!readOnly ? (
           <>
             <form className="form-stack asset-form" onSubmit={handleCreateInstrument}>
-              <p className="panel__label" style={{ marginBottom: 0 }}>
-                Быстрый инструмент (словарь)
-              </p>
+              <p className="panel__label section-form-label">Быстрый инструмент (словарь)</p>
               <div className="editor-grid">
                 <Field htmlFor="instr-name" label="Название инструмента">
                   <Input
@@ -670,9 +671,7 @@ export function MonthPositionsSection({
             </form>
 
             <form className="form-stack asset-form" onSubmit={handleCreatePosition}>
-              <p className="panel__label" style={{ marginBottom: 0 }}>
-                Новая позиция
-              </p>
+              <p className="panel__label section-form-label">Новая позиция</p>
               <div className="editor-grid">
                 <Field htmlFor="pos-account" label="Счёт позиции">
                   <Select

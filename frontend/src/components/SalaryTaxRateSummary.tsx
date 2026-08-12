@@ -1,3 +1,5 @@
+import { DataValue } from "./ui";
+
 type SalaryTaxRatePart = {
   rate_bps: number;
 };
@@ -21,12 +23,7 @@ function uniqueRates(parts: SalaryTaxRatePart[]): number[] {
 export function SalaryTaxRateSummary({ parts }: { parts: SalaryTaxRatePart[] }) {
   const rates = uniqueRates(parts);
   if (rates.length === 0) {
-    return (
-      <div className="field">
-        <span className="field__label">Ставка НДФЛ</span>
-        <strong>—</strong>
-      </div>
-    );
+    return <DataValue label="Ставка НДФЛ" value="—" muted />;
   }
 
   const marginalRate = rates[rates.length - 1];
@@ -34,20 +31,20 @@ export function SalaryTaxRateSummary({ parts }: { parts: SalaryTaxRatePart[] }) 
 
   if (rates.length === 1) {
     return (
-      <div className="field">
-        <span className="field__label">Текущая ставка НДФЛ</span>
-        <strong>{marginalLabel}</strong>
-        <span className="muted tiny">По расчёту backend для этой выплаты.</span>
-      </div>
+      <DataValue
+        label="Текущая ставка НДФЛ"
+        meta="Применённая ступень для этой выплаты."
+        value={marginalLabel}
+      />
     );
   }
 
   const applied = rates.map(formatRateBps).join(" + ");
   return (
-    <div className="field">
-      <span className="field__label">Ставки НДФЛ в этой выплате</span>
-      <strong>{applied}</strong>
-      <span className="muted tiny">Текущая ступень после выплаты: {marginalLabel}.</span>
-    </div>
+    <DataValue
+      label="Ставки НДФЛ в этой выплате"
+      meta={`Текущая ступень после выплаты: ${marginalLabel}.`}
+      value={applied}
+    />
   );
 }

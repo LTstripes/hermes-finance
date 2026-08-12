@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -171,6 +171,16 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(screen.getByText("Раздел: Активы")).toBeInTheDocument();
     expect(screen.queryByText("positions stub")).toBeNull();
     expect(screen.getByLabelText("Период")).not.toBeVisible();
+  });
+
+  it("presents calculated salary values as read-only summary data", async () => {
+    renderPage("/months/1?section=income");
+
+    const summary = await screen.findByLabelText("Расчёт зарплаты");
+    expect(within(summary).getByText("Расчётный налог")).toBeInTheDocument();
+    expect(within(summary).getByText("Расчётный net")).toBeInTheDocument();
+    expect(within(summary).queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText("Расчётный налог (backend)")).toBeNull();
   });
 
   it("preserves unsaved form state across section navigation without silent save", async () => {

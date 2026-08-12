@@ -545,6 +545,40 @@ a.btn {
   line-height: 1.5;
 }
 
+.section-form-label {
+  margin-bottom: 0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.field-details {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.field-details summary {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.field-details p {
+  max-width: 680px;
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
 .totals-bar {
   display: flex;
   flex-wrap: wrap;
@@ -612,6 +646,10 @@ a.btn {
 
 @media (max-width: 680px) {
   .editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 }

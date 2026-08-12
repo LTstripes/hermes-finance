@@ -258,9 +258,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
         label="Бюджет"
         title="Откладывание"
       >
-        <p className="muted field-hint">
-          Отложенные суммы учитываются отдельно от расходов (это не тип расхода).
-        </p>
+        <details className="field-details">
+          <summary>О накоплениях</summary>
+          <p>Отложенные суммы учитываются отдельно от расходов и не являются типом расхода.</p>
+        </details>
         {savings.length === 0 ? (
           <EmptyState description="Откладываний нет." inline title="Пусто" />
         ) : (

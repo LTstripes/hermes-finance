@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { formatApiError } from "../api/client";
@@ -26,14 +19,16 @@ import {
   Button,
   CloneMonthDialog,
   ConfirmDialog,
+  DataValue,
   ErrorState,
   Field,
+  HelpTip,
   Input,
   LoadingState,
   Panel,
   StickySubheader,
 } from "../components/ui";
-import { formatDate, formatMoney, formatMonth } from "../lib/format";
+import { formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput } from "../lib/money";
@@ -156,7 +151,9 @@ export function MonthDetailPage() {
     });
   }, [activeSection, monthId]);
   const visitedSectionsForMonth =
-    visitedMonthIdRef.current === monthId ? visitedSections : new Set<MonthSectionId>([activeSection]);
+    visitedMonthIdRef.current === monthId
+      ? visitedSections
+      : new Set<MonthSectionId>([activeSection]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -350,12 +347,7 @@ export function MonthDetailPage() {
       Закрыть месяц
     </Button>
   ) : (
-    <Button
-      onClick={() => selectSection("review")}
-      size="sm"
-      type="button"
-      variant="primary"
-    >
+    <Button onClick={() => selectSection("review")} size="sm" type="button" variant="primary">
       Проверить и закрыть
     </Button>
   );
@@ -397,10 +389,7 @@ export function MonthDetailPage() {
           </span>
         }
         summary={
-          <MonthStickySummary
-            kpis={dashboardKpis}
-            warningCount={dashboardWarnings.length}
-          />
+          <MonthStickySummary kpis={dashboardKpis} warningCount={dashboardWarnings.length} />
         }
         title={formatMonth(month.year, month.month)}
       />
@@ -409,8 +398,7 @@ export function MonthDetailPage() {
         {MONTH_SECTIONS.map((section) => {
           const isActive = section.id === activeSection;
           const hasUnsaved =
-            (section.id === "general" && generalDirty) ||
-            (section.id === "income" && incomeDirty);
+            (section.id === "general" && generalDirty) || (section.id === "income" && incomeDirty);
           const warningCount = section.id === "review" ? dashboardWarnings.length : 0;
           return (
             <button
@@ -496,7 +484,10 @@ export function MonthDetailPage() {
                 <Input id="source" readOnly value={labelOf(SOURCE_LABELS, month.source)} />
               </Field>
             </div>
-            <p className="muted field-hint">Снимок: {formatDate(form.snapshot_date)}</p>
+            <details className="field-details">
+              <summary>Как используется дата снимка</summary>
+              <p>Это дата, на которую фиксируются состояния активов и другие данные месяца.</p>
+            </details>
           </Panel>
         </section>
 
@@ -514,23 +505,34 @@ export function MonthDetailPage() {
                   value={form.salaryGross}
                 />
               </Field>
-              <Field htmlFor="salary-tax" label="Расчётный налог (backend)">
-                <Input
-                  className="input--money input--calc"
-                  id="salary-tax"
-                  readOnly
+              <section className="summary-grid" aria-label="Расчёт зарплаты">
+                <DataValue
+                  label={
+                    <>
+                      Расчётный налог
+                      <HelpTip label="О расчётном налоге">
+                        Значение обновляется после сохранения зарплаты и рассчитывается по правилам
+                        налогообложения месяца.
+                      </HelpTip>
+                    </>
+                  }
                   value={calcTax ? formatMoney(calcTax) : "—"}
+                  muted
                 />
-              </Field>
-              <SalaryTaxRateSummary parts={calcTaxParts} />
-              <Field htmlFor="salary-calc-net" label="Расчётная зарплата после налогов (backend)">
-                <Input
-                  className="input--money input--calc"
-                  id="salary-calc-net"
-                  readOnly
+                <SalaryTaxRateSummary parts={calcTaxParts} />
+                <DataValue
+                  label={
+                    <>
+                      Расчётный net
+                      <HelpTip label="О расчётном net">
+                        Это ориентир после расчётного налога. Фактическая выплата вводится отдельно.
+                      </HelpTip>
+                    </>
+                  }
                   value={calcNet ? formatMoney(calcNet) : "—"}
+                  muted
                 />
-              </Field>
+              </section>
               <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
                 <Input
                   className="input--money"
@@ -576,9 +578,13 @@ export function MonthDetailPage() {
                 />
               </Field>
             </div>
-            <p className="muted field-hint">
-              Кэшбэк не входит в пассивный доход. Расчётные значения обновляются после сохранения.
-            </p>
+            <details className="field-details">
+              <summary>О расчёте и кэшбэке</summary>
+              <p>
+                Кэшбэк учитывается отдельно и не входит в пассивный доход. Расчётные значения
+                обновляются после ручного сохранения.
+              </p>
+            </details>
           </Panel>
         </section>
       </form>
@@ -683,9 +689,7 @@ function MonthStickySummary({
       <span className="month-workspace__summary-item">
         Пассивный доход <strong>{formatMoney(moneyAmount(kpis.passive_income_average))}</strong>
       </span>
-      <span
-        className={`month-workspace__summary-item${warningCount > 0 ? " is-warning" : ""}`}
-      >
+      <span className={`month-workspace__summary-item${warningCount > 0 ? " is-warning" : ""}`}>
         {warningCount > 0 ? `${warningCount} предупреждений` : "Без предупреждений"}
       </span>
     </div>

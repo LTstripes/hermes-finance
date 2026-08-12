@@ -432,16 +432,17 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
             Погашение (не доход): <strong>{formatMoney(redemptionActualTotal)}</strong>
           </span>
         </div>
-        <p className="muted field-hint">
-          Пассивный доход = проценты/купоны/дивиденды/прочее. Погашение — возврат номинала, не
-          пассивный доход. Фактический процент по депозиту хранится в снимке депозита, а не здесь.
-        </p>
+        <details className="field-details">
+          <summary>О классификации выплат</summary>
+          <p>
+            Погашение — возврат номинала, а не доход. Фактический процент по депозиту вводится в
+            разделе активов.
+          </p>
+        </details>
 
         {!readOnly ? (
           <form className="form-stack asset-form" onSubmit={handleCreateActual}>
-            <p className="panel__label" style={{ marginBottom: 0 }}>
-              Новая фактическая выплата
-            </p>
+            <p className="panel__label section-form-label">Новая фактическая выплата</p>
             <div className="editor-grid">
               <Field htmlFor="act-type" label="Тип потока">
                 <Select
@@ -630,9 +631,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
 
         {!readOnly ? (
           <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
-            <p className="panel__label" style={{ marginBottom: 0 }}>
-              Новая ожидаемая выплата
-            </p>
+            <p className="panel__label section-form-label">Новая ожидаемая выплата</p>
             <div className="editor-grid">
               <Field htmlFor="exp-type" label="Тип выплаты">
                 <Select
