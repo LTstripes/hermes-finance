@@ -90,10 +90,11 @@ function withForecast(
   };
 }
 
-function rowFor(element: HTMLElement): HTMLTableRowElement {
-  const row = element.closest("tr");
-  if (!(row instanceof HTMLTableRowElement)) throw new Error("expected table row");
-  return row;
+function cardFor(name: string): HTMLElement {
+  const heading = screen.getByRole("heading", { level: 3, name });
+  const card = heading.closest("article");
+  if (!card) throw new Error("expected goal card");
+  return card;
 }
 
 const listGoalsMock = vi.mocked(listGoals);
@@ -103,10 +104,10 @@ const updateGoalMock = vi.mocked(updateGoal);
 const deleteGoalMock = vi.mocked(deleteGoal);
 const listMonthsMock = vi.mocked(listMonths);
 
-describe("GoalsPage", () => {
+describe("GoalsPage R03-09 cards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    listGoalsMock.mockResolvedValue([mainGoal, secondGoal, inactiveGoal]);
+    listGoalsMock.mockResolvedValue([secondGoal, inactiveGoal, mainGoal]);
     listGoalSummaryMock.mockResolvedValue([
       withForecast(mainGoal, "80.00"),
       withForecast(secondGoal, "53.33"),
@@ -135,20 +136,49 @@ describe("GoalsPage", () => {
     deleteGoalMock.mockResolvedValue(undefined);
   });
 
-  it("shows active/inactive goals with localized backend-derived progress", async () => {
+  it("puts the main active goal first, shows progress cards, and keeps inactive goals collapsed", async () => {
+    const user = userEvent.setup();
     render(<GoalsPage />);
 
-    expect(await screen.findByText("Пассивный доход", { selector: "strong" })).toBeInTheDocument();
-    expect(screen.getByText("Капитал потом")).toBeInTheDocument();
-    expect(screen.getByLabelText("Оценка на месяц")).toHaveValue("11");
-    expect(await screen.findByText(/80,00%/)).toBeInTheDocument();
-    expect(await screen.findByText(/53,33%/)).toBeInTheDocument();
-    expect(screen.getAllByText("Пока нельзя надёжно спрогнозировать дату").length).toBeGreaterThan(
-      0,
+    await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
+    const activePanel = screen.getByText("Цели (2)").closest(".panel");
+    if (!activePanel) throw new Error("expected active goals panel");
+
+    const activeCards = within(activePanel).getAllByRole("listitem");
+    expect(activeCards).toHaveLength(2);
+    expect(within(activeCards[0]).getByRole("heading", { name: "Пассивный доход" })).toBeInTheDocument();
+    expect(activeCards[0]).toHaveClass("goal-card--main");
+
+    const mainCard = cardFor("Пассивный доход");
+    expect(within(mainCard).getByText("80,0%")).toBeInTheDocument();
+    expect(within(mainCard).getByRole("progressbar", { name: /Пассивный доход/ })).toHaveAttribute(
+      "value",
+      "80.00",
     );
-    expect(screen.getAllByText(/Чистый пассивный доход в месяц/).length).toBeGreaterThan(0);
-    expect(screen.queryByText("monthly_net_passive_income")).toBeNull();
+    expect(within(mainCard).getByText(/80\s*000\s*₽/)).toBeInTheDocument();
+    expect(within(mainCard).getByText(/100\s*000\s*₽/)).toBeInTheDocument();
+    expect(within(mainCard).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
+    expect(within(mainCard).getByText("Прогноз даты пока недоступен")).toBeInTheDocument();
+
+    expect(within(mainCard).queryByRole("button", { name: /Действия для цели/ })).toBeNull();
+    expect(within(mainCard).getByRole("button", { name: "Изменить" })).toBeInTheDocument();
+
+    await user.click(
+      within(mainCard).getByRole("button", { name: /Почему нет прогноза даты для цели/ }),
+    );
+    expect(
+      screen.getByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/),
+    ).toBeInTheDocument();
     expect(screen.queryByText("no_trajectory_model")).toBeNull();
+
+    const archiveLabel = screen.getByText("Архив");
+    const archive = archiveLabel.closest("details");
+    if (!archive) throw new Error("expected goals archive");
+    expect(archive).not.toHaveAttribute("open");
+    await user.click(archiveLabel);
+    expect(archive).toHaveAttribute("open");
+    expect(within(archive).getByRole("heading", { name: "Капитал потом" })).toBeInTheDocument();
+
     expect(listGoalSummaryMock).toHaveBeenCalledWith(
       11,
       { includeInactive: true },
@@ -160,7 +190,7 @@ describe("GoalsPage", () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    await screen.findByText("Пассивный доход", { selector: "strong" });
+    await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
     await user.click(screen.getByRole("button", { name: "Создать цель" }));
     await user.type(screen.getByLabelText("Название"), "Новая цель");
     await user.type(screen.getByLabelText("Целевое значение"), "250000,50");
@@ -180,26 +210,31 @@ describe("GoalsPage", () => {
     );
   });
 
-  it("selects another passive goal as main through PATCH", async () => {
+  it("moves make-main and lifecycle actions into the overflow menu", async () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    const row = rowFor(await screen.findByText("Запасная цель"));
-    await user.click(within(row).getByRole("button", { name: "Сделать основной" }));
+    await screen.findByRole("heading", { level: 3, name: "Запасная цель" });
+    const card = cardFor("Запасная цель");
+
+    expect(within(card).queryByRole("button", { name: "Сделать основной" })).toBeNull();
+    await user.click(within(card).getByRole("button", { name: "Действия для цели «Запасная цель»" }));
+    await user.click(within(card).getByRole("menuitem", { name: "Сделать основной" }));
 
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(2, { is_main: true }));
   });
 
-  it("edits and deletes a non-main goal while keeping destructive actions off the main goal", async () => {
+  it("keeps edit visible and destructive actions unavailable for the main goal", async () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
-    const mainRow = rowFor(await screen.findByText("Пассивный доход", { selector: "strong" }));
-    expect(within(mainRow).queryByRole("button", { name: "Удалить" })).toBeNull();
-    expect(within(mainRow).queryByRole("button", { name: "Деактивировать" })).toBeNull();
+    await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
+    const mainCard = cardFor("Пассивный доход");
+    expect(within(mainCard).getByRole("button", { name: "Изменить" })).toBeInTheDocument();
+    expect(within(mainCard).queryByRole("button", { name: /Действия для цели/ })).toBeNull();
 
-    const secondRow = rowFor(screen.getByText("Запасная цель"));
-    await user.click(within(secondRow).getByRole("button", { name: "Изменить" }));
+    const secondCard = cardFor("Запасная цель");
+    await user.click(within(secondCard).getByRole("button", { name: "Изменить" }));
     const target = screen.getByLabelText("Целевое значение");
     await user.clear(target);
     await user.type(target, "175000");
@@ -215,11 +250,31 @@ describe("GoalsPage", () => {
       ),
     );
 
-    const refreshedRow = rowFor(screen.getByText("Запасная цель"));
-    await user.click(within(refreshedRow).getByRole("button", { name: "Удалить" }));
+    const refreshedCard = cardFor("Запасная цель");
+    await user.click(
+      within(refreshedCard).getByRole("button", { name: "Действия для цели «Запасная цель»" }),
+    );
+    await user.click(within(refreshedCard).getByRole("menuitem", { name: "Удалить" }));
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить" }),
     );
     await waitFor(() => expect(deleteGoalMock).toHaveBeenCalledWith(2));
+  });
+
+  it("can reactivate an archived goal from its overflow menu", async () => {
+    const user = userEvent.setup();
+    render(<GoalsPage />);
+
+    await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
+    const archiveLabel = screen.getByText("Архив");
+    await user.click(archiveLabel);
+
+    const archivedCard = cardFor("Капитал потом");
+    await user.click(
+      within(archivedCard).getByRole("button", { name: "Действия для цели «Капитал потом»" }),
+    );
+    await user.click(within(archivedCard).getByRole("menuitem", { name: "Активировать" }));
+
+    await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(3, { is_active: true }));
   });
 });
