@@ -14,7 +14,7 @@ export function AnalyticsPage() {
 
       <Panel label="Капитал" title="Динамика состава капитала">
         <EmptyState
-          description="График по классам активов появится здесь после подключения исторического API."
+          description="Здесь появится график состава капитала по закрытым месяцам."
           inline
           title="Аналитика готовится"
         />
