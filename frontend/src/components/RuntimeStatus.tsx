@@ -71,7 +71,10 @@ export function DiagnosticsPanel() {
   return (
     <Panel
       action={
-        <Badge tone={connected ? "ok" : state.kind === "checking" ? "neutral" : "danger"}>
+        <Badge
+          className={state.kind === "unavailable" ? "diagnostics-badge--error" : ""}
+          tone={connected ? "ok" : "neutral"}
+        >
           {connected ? "Работает" : state.kind === "checking" ? "Проверяем" : "Недоступно"}
         </Badge>
       }
