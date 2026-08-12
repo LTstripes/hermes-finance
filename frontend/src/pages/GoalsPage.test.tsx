@@ -97,6 +97,13 @@ function cardFor(name: string): HTMLElement {
   return card;
 }
 
+function archiveSummary(): HTMLElement {
+  const label = screen.getByText("Архив");
+  const summary = label.closest("summary");
+  if (!summary) throw new Error("expected archive summary");
+  return summary;
+}
+
 const listGoalsMock = vi.mocked(listGoals);
 const listGoalSummaryMock = vi.mocked(listGoalSummary);
 const createGoalMock = vi.mocked(createGoal);
@@ -136,25 +143,27 @@ describe("GoalsPage R03-09 cards", () => {
     deleteGoalMock.mockResolvedValue(undefined);
   });
 
-  it("puts the main active goal first, shows progress cards, and keeps inactive goals collapsed", async () => {
+  it("puts the main active goal first and keeps inactive goals collapsed", async () => {
     const user = userEvent.setup();
     render(<GoalsPage />);
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
+    expect(screen.queryByRole("table")).toBeNull();
+
     const activePanel = screen.getByText("Цели (2)").closest(".panel");
     if (!activePanel) throw new Error("expected active goals panel");
 
     const activeCards = within(activePanel).getAllByRole("listitem");
     expect(activeCards).toHaveLength(2);
-    expect(within(activeCards[0]).getByRole("heading", { name: "Пассивный доход" })).toBeInTheDocument();
+    expect(
+      within(activeCards[0]).getByRole("heading", { name: "Пассивный доход" }),
+    ).toBeInTheDocument();
     expect(activeCards[0]).toHaveClass("goal-card--main");
 
     const mainCard = cardFor("Пассивный доход");
     expect(within(mainCard).getByText("80,0%")).toBeInTheDocument();
-    expect(within(mainCard).getByRole("progressbar", { name: /Пассивный доход/ })).toHaveAttribute(
-      "value",
-      "80.00",
-    );
+    const progress = within(mainCard).getByRole("progressbar", { name: /Пассивный доход/ });
+    expect((progress as HTMLProgressElement).value).toBe(80);
     expect(within(mainCard).getByText(/80\s*000\s*₽/)).toBeInTheDocument();
     expect(within(mainCard).getByText(/100\s*000\s*₽/)).toBeInTheDocument();
     expect(within(mainCard).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
@@ -171,11 +180,11 @@ describe("GoalsPage R03-09 cards", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("no_trajectory_model")).toBeNull();
 
-    const archiveLabel = screen.getByText("Архив");
-    const archive = archiveLabel.closest("details");
+    const summary = archiveSummary();
+    const archive = summary.closest("details");
     if (!archive) throw new Error("expected goals archive");
     expect(archive).not.toHaveAttribute("open");
-    await user.click(archiveLabel);
+    await user.click(summary);
     expect(archive).toHaveAttribute("open");
     expect(within(archive).getByRole("heading", { name: "Капитал потом" })).toBeInTheDocument();
 
@@ -218,7 +227,9 @@ describe("GoalsPage R03-09 cards", () => {
     const card = cardFor("Запасная цель");
 
     expect(within(card).queryByRole("button", { name: "Сделать основной" })).toBeNull();
-    await user.click(within(card).getByRole("button", { name: "Действия для цели «Запасная цель»" }));
+    await user.click(
+      within(card).getByRole("button", { name: "Действия для цели «Запасная цель»" }),
+    );
     await user.click(within(card).getByRole("menuitem", { name: "Сделать основной" }));
 
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(2, { is_main: true }));
@@ -252,7 +263,9 @@ describe("GoalsPage R03-09 cards", () => {
 
     const refreshedCard = cardFor("Запасная цель");
     await user.click(
-      within(refreshedCard).getByRole("button", { name: "Действия для цели «Запасная цель»" }),
+      within(refreshedCard).getByRole("button", {
+        name: "Действия для цели «Запасная цель»",
+      }),
     );
     await user.click(within(refreshedCard).getByRole("menuitem", { name: "Удалить" }));
     await user.click(
@@ -266,12 +279,13 @@ describe("GoalsPage R03-09 cards", () => {
     render(<GoalsPage />);
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
-    const archiveLabel = screen.getByText("Архив");
-    await user.click(archiveLabel);
+    await user.click(archiveSummary());
 
     const archivedCard = cardFor("Капитал потом");
     await user.click(
-      within(archivedCard).getByRole("button", { name: "Действия для цели «Капитал потом»" }),
+      within(archivedCard).getByRole("button", {
+        name: "Действия для цели «Капитал потом»",
+      }),
     );
     await user.click(within(archivedCard).getByRole("menuitem", { name: "Активировать" }));
 
