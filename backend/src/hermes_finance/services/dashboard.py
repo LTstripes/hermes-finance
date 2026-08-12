@@ -1,7 +1,7 @@
 """Dashboard assembly for the selected reporting month (D07).
 
 Builds historical series and presentation-oriented slices on top of the
-existing C10 monthly summary and B-layer queries.  No financial formulas
+existing C10 monthly summary and B-layer queries. No financial formulas
 are reinvented here — liquid capital / passive income / forecast all come
 from the Phase-C services.
 """
@@ -15,7 +15,6 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain.liquid_capital import LiquidCapitalResult
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
@@ -26,6 +25,7 @@ from hermes_finance.persistence import (
     PositionSnapshot,
     ReportingMonth,
 )
+from hermes_finance.services.asset_allocation import AssetClassSlice, asset_allocation_for_month
 from hermes_finance.services.expected_cash_flows import list_expected_cash_flows
 from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
@@ -49,12 +49,6 @@ class HistoricalPoint:
     reporting_month_id: int
     liquid_capital_net: RubleAmount
     passive_income_actual: RubleAmount
-
-
-@dataclass(frozen=True, slots=True)
-class AssetClassSlice:
-    asset_class: str
-    amount: RubleAmount
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,43 +127,6 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
             )
         )
     return tuple(points)
-
-
-def _asset_allocation(
-    session: Session,
-    reporting_month_id: int,
-    liquid: LiquidCapitalResult,
-) -> tuple[AssetClassSlice, ...]:
-    """Liquid-asset allocation by E14 classes: cash, deposits, stocks, bonds, gold/other.
-
-    Securities market value is split by ``instrument_type``: ``stock`` and
-    ``bond`` are their own classes; every remaining instrument type (fund,
-    currency, gold, other) plus ``other_liquid_assets`` is grouped under
-    ``gold_other``. Real estate is never included — property is not liquid
-    capital (MASTER_SPEC §10.1).
-    """
-    rows = session.execute(
-        select(Instrument.instrument_type, func.sum(PositionSnapshot.market_value_kopecks))
-        .join(Instrument, PositionSnapshot.instrument_id == Instrument.id)
-        .join(Account, PositionSnapshot.account_id == Account.id)
-        .where(PositionSnapshot.reporting_month_id == reporting_month_id)
-        .where(Account.include_in_capital.is_(True))
-        .group_by(Instrument.instrument_type)
-    ).all()
-    by_type = {instrument_type: int(total or 0) for instrument_type, total in rows}
-    stocks = RubleAmount(by_type.get("stock", 0))
-    bonds = RubleAmount(by_type.get("bond", 0))
-    gold_other = RubleAmount(
-        sum(value for kind, value in by_type.items() if kind not in ("stock", "bond"))
-        + liquid.breakdown.other_liquid_assets.kopecks
-    )
-    return (
-        AssetClassSlice("cash", liquid.breakdown.cash),
-        AssetClassSlice("deposits", liquid.breakdown.deposits),
-        AssetClassSlice("stocks", stocks),
-        AssetClassSlice("bonds", bonds),
-        AssetClassSlice("gold_other", gold_other),
-    )
 
 
 def _instrument_class_results(
@@ -328,7 +285,7 @@ def build_dashboard(
     month = get_reporting_month(session, reporting_month_id)
     summary = monthly_summary(session, reporting_month_id, forecast_version=forecast_version)
     liquid = summary.liquid_capital
-    allocation = _asset_allocation(session, reporting_month_id, liquid)
+    allocation = asset_allocation_for_month(session, reporting_month_id, liquid)
     by_account = _account_results(session, reporting_month_id)
     mortgage_balance = total_mortgage_balance(session, reporting_month_id)
     coverage_pct, gap = mortgage_coverage(session, reporting_month_id, liquid.liquid_capital_net)
