@@ -9,18 +9,20 @@ These rules apply to the entire `hermes-finance` repository. More specific `AGEN
 Use this precedence when documents disagree:
 
 1. `docs/MASTER_SPEC.md` — business rules, scope and architecture.
-2. `docs/HERMES_TASKS.md` — task order, scope and acceptance criteria.
-3. `docs/HERMES_START_PROMPT.md` — iteration protocol.
-4. Accepted ADRs in `docs/adr/`.
+2. Active `docs/releases/<version>.md` — current release task order, scope and acceptance criteria.
+3. Accepted ADRs in `docs/adr/` — normative contracts and accepted architectural decisions.
+4. `docs/MODEL_ROUTING.md` — launch gate, model risk class and delegation rules.
 5. `docs/PROJECT_WIKI.md` — accepted clarifications and project history.
-6. `docs/IDEA.md` — original concept only.
+6. `docs/HERMES_TASKS.md` — historical MVP backlog/reference only; not a source of new post-MVP work.
+7. `docs/HERMES_START_PROMPT.md` — historical/operational iteration reference where still applicable.
+8. `docs/IDEA.md` — original concept only.
 
 Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely requires local owner data. Never quote, summarize or copy its personal values into tracked files, prompts, logs, tests or reports.
 
 ## Iteration contract
 
 - Work on only the task ID explicitly named by the owner.
-- When the owner writes `начинаем <ID>`, `запускай <ID>` or an equivalent explicit start command, that message assigns the named task and approves its canonical route from `docs/MODEL_ROUTING.md`; do not ask for a second model-selection confirmation unless the owner overrides the route or no canonical route exists.
+- When the owner writes `начинаем <ID>`, `запускай <ID>` or an equivalent explicit start command, that message assigns the named task and approves its canonical route from the active `docs/releases/<version>.md` plus `docs/MODEL_ROUTING.md`; do not ask for a second model-selection confirmation unless the owner overrides the route or no canonical route exists.
 - Before changes, provide a plan of 3–7 short steps.
 - Do not start the next backlog item automatically.
 - Do not implement future features “while here”.
@@ -78,7 +80,7 @@ Use only synthetic names and values in examples and tests. Verify ignore behavio
 
 Read `docs/MODEL_ROUTING.md` before choosing a model, delegating, or beginning a backlog task. It is the authoritative launch gate and records the owner-approved economy route.
 
-- Before every task, resolve `primary / worker / reviewer` with the actual reasoning level. A named start command from the owner approves the canonical route already recorded in `docs/MODEL_ROUTING.md`; ask only when the owner overrides it, the route is missing, or an escalation condition is reached.
+- Before every task, resolve `primary / worker / reviewer` with the actual reasoning level. A named start command from the owner approves the canonical route already recorded in the active release task-card; ask only when the owner overrides it, the route is missing, or an escalation condition is reached.
 - Default standard implementation to Luna High; use Terra High for complex financial semantics and Sol High only for new/conflicting architecture or explicit checkpoints.
 - DeepSeek V4 Flash Free may perform bounded standard implementation in an isolated worktree/session as well as read-only review; it never receives private data, commits, pushes or grants final acceptance.
 - After `B19`, run one Sol High blocker-level architecture review; do not rewrite accepted code merely because Sol would design it differently.
