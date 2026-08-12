@@ -1,4 +1,4 @@
-name: Consolidate release 0.2 docs
+name: Finalize release 0.2 docs cleanup
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  consolidate:
+  finalize:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -19,24 +19,31 @@ jobs:
           ref: docs/consolidate-release-0.2.0
           fetch-depth: 0
 
-      - name: Consolidate release archive
-        run: python .github/scripts/consolidate_release_0_2.py
-
-      - name: Verify and commit
+      - name: Finalize guidance and remove temporary helpers
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/HERMES_TASKS.md')
+          text = path.read_text(encoding='utf-8')
+          old = '> Новые post-MVP задачи ведутся в активных release-файлах, начиная с `docs/releases/0.2.0.md`.'
+          new = '> Новые post-MVP задачи ведутся в одном активном release-файле на версию под `docs/releases/`; завершённые файлы в этой папке считаются историческим архивом.'
+          if old not in text:
+              raise SystemExit('Expected HERMES_TASKS guidance line not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          git rm .github/scripts/consolidate_release_0_2.py
+          git rm .github/workflows/consolidate-release-0.2.yml
           git diff --check
           test -f docs/releases/0.2.0.md
           test ! -e docs/RELEASE_0_2.md
           test ! -e docs/RELEASE_0_2_SMOKE_2026-08-11.md
           test ! -e docs/RELEASE_0_2_FOLLOWUPS_2026-08-11.md
-          if git grep -n 'docs/RELEASE_0_2' -- '*.md'; then
-            echo 'Stale 0.2 release references remain'
-            exit 1
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "docs: consolidate 0.2 release archive"
+          git commit -m "docs: finalize consolidated 0.2 archive"
           git push origin HEAD:docs/consolidate-release-0.2.0
