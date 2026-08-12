@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { listGoalSummary, type GoalSummary } from "../api/goals";
 import { formatApiError } from "../api/client";
+import { listGoalSummary, type GoalSummary } from "../api/goals";
 import { formatDate, formatMoney, formatPercent } from "../lib/format";
-import { GOAL_STATUS_LABELS, GOAL_TYPE_LABELS, goalReasonLabel } from "../lib/goals";
-import { Badge, Button, EmptyState, ErrorState, LoadingState, Panel } from "./ui";
+import { goalReasonLabel } from "../lib/goals";
+import { Badge, Button, HelpTip } from "./ui";
 
-function statusTone(status: string): "ok" | "info" | "closed" | "neutral" {
-  if (status === "achieved") return "ok";
-  if (status === "not_projectable") return "info";
-  if (status === "inactive") return "closed";
-  return "neutral";
-}
+type MainGoalPanelProps = {
+  reportingMonthId: number | null;
+  fallbackProgressPct?: string | null;
+  fallbackTargetAmount?: string | null;
+};
 
-export function MainGoalPanel({ reportingMonthId }: { reportingMonthId: number | null }) {
+export function MainGoalPanel({
+  reportingMonthId,
+  fallbackProgressPct = null,
+  fallbackTargetAmount = null,
+}: MainGoalPanelProps) {
   const [mainGoal, setMainGoal] = useState<GoalSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,9 +27,7 @@ export function MainGoalPanel({ reportingMonthId }: { reportingMonthId: number |
     setError(null);
     try {
       const rows = await listGoalSummary(monthId, {}, signal);
-      if (!signal?.aborted) {
-        setMainGoal(rows.find((goal) => goal.is_main) ?? null);
-      }
+      if (!signal?.aborted) setMainGoal(rows.find((goal) => goal.is_main) ?? null);
     } catch (loadError) {
       if (!signal?.aborted) {
         setMainGoal(null);
@@ -49,93 +50,135 @@ export function MainGoalPanel({ reportingMonthId }: { reportingMonthId: number |
   }, [load, reportingMonthId]);
 
   return (
-    <Panel action={<Link to="/goals">Открыть цели →</Link>} label="Цель" title="Основная цель">
+    <article className="overview-card overview-card--goal">
+      <div className="overview-card__heading">
+        <div className="overview-card__label">Основная цель</div>
+        <Link className="overview-card__link" to="/goals">
+          Цели →
+        </Link>
+      </div>
+
       {reportingMonthId == null ? (
-        <EmptyState description="Выбери отчётный месяц." inline title="Нет месяца" />
+        <GoalFallback
+          message="Выбери отчётный месяц"
+          progressPct={fallbackProgressPct}
+          targetAmount={fallbackTargetAmount}
+        />
+      ) : mainGoal ? (
+        <MainGoalBody goal={mainGoal} />
       ) : loading ? (
-        <LoadingState description="Загружаем прогресс основной цели…" inline />
+        <GoalFallback
+          message="Загружаем детали цели…"
+          progressPct={fallbackProgressPct}
+          targetAmount={fallbackTargetAmount}
+        />
       ) : error ? (
-        <div className="stack-8">
-          <ErrorState description={error} inline title="Не удалось загрузить цель" />
-          <Button onClick={() => void load(reportingMonthId)} size="sm">
+        <div className="overview-card__goal-state">
+          <GoalFallback
+            message="Подробности цели временно недоступны"
+            progressPct={fallbackProgressPct}
+            targetAmount={fallbackTargetAmount}
+          />
+          <Button onClick={() => void load(reportingMonthId)} size="sm" type="button" variant="secondary">
             Повторить
           </Button>
         </div>
-      ) : !mainGoal ? (
-        <EmptyState
-          description="Основная цель не выбрана. Открой раздел «Цели» и выбери активную цель пассивного дохода."
-          inline
-          title="Нет основной цели"
-        />
       ) : (
-        <MainGoalBody goal={mainGoal} />
+        <div className="overview-card__goal-state">
+          <strong>Основная цель не выбрана</strong>
+          <span className="overview-card__context">Выбери её в разделе «Цели».</span>
+        </div>
       )}
-    </Panel>
+    </article>
+  );
+}
+
+function GoalFallback({
+  progressPct,
+  targetAmount,
+  message,
+}: {
+  progressPct: string | null;
+  targetAmount: string | null;
+  message: string;
+}) {
+  return (
+    <div className="overview-card__goal-state">
+      <div className="overview-card__metric-label">Прогресс цели</div>
+      <div className="overview-card__value">
+        {progressPct ? formatPercent(progressPct, { digits: 1 }) : "…"}
+      </div>
+      {targetAmount ? (
+        <div className="overview-card__supporting">
+          <span>Цель</span>
+          <strong>{formatMoney(targetAmount)}</strong>
+        </div>
+      ) : null}
+      <span className="overview-card__context">{message}</span>
+    </div>
   );
 }
 
 function MainGoalBody({ goal }: { goal: GoalSummary }) {
   const forecast = goal.achievement_forecast;
+  const help = goalHelpText(goal);
+
   return (
-    <div className="stack-18">
-      <div className="stack-8">
-        <div className="row-actions">
-          <strong>{goal.name}</strong>
-          <Badge tone="info">Основная</Badge>
-          <Badge tone={statusTone(forecast.status)}>
-            {GOAL_STATUS_LABELS[forecast.status] ?? "Статус недоступен"}
-          </Badge>
-        </div>
-        <span className="muted tiny">
-          {GOAL_TYPE_LABELS[goal.goal_type] ?? "Другая цель"}
-          {goal.target_date ? ` · срок ${formatDate(goal.target_date)}` : ""}
-        </span>
+    <div className="overview-card__goal-state">
+      <div className="overview-card__goal-name">
+        <strong>{goal.name}</strong>
+        <Badge tone="info">Основная</Badge>
       </div>
 
-      <div className="form-row-2">
-        <div className="field">
-          <span className="field__label">Текущее значение</span>
+      <div className="overview-card__metric-label">Прогресс цели</div>
+      <div className="overview-card__value">
+        {formatPercent(forecast.progress_pct, { digits: 1 })}
+      </div>
+
+      <div className="overview-card__goal-values">
+        <div>
+          <span>Сейчас</span>
           <strong>{formatMoney(forecast.current_value?.amount)}</strong>
         </div>
-        <div className="field">
-          <span className="field__label">Цель</span>
+        <div>
+          <span>Цель</span>
           <strong>{formatMoney(forecast.target_value.amount)}</strong>
         </div>
-        <div className="field">
-          <span className="field__label">Прогресс</span>
-          <strong>{formatPercent(forecast.progress_pct, { digits: 2 })}</strong>
-        </div>
-        <div className="field">
-          <span className="field__label">Осталось</span>
+        <div>
+          <span>Осталось</span>
           <strong>{formatMoney(forecast.remaining_amount?.amount)}</strong>
         </div>
       </div>
 
-      <div className="stack-8">
-        <strong>
-          {forecast.estimated_achievement_date
-            ? `Цель достигнута на снимке ${formatDate(forecast.estimated_achievement_date)}`
-            : forecast.status === "not_projectable"
-              ? "Дата достижения: пока нельзя надёжно спрогнозировать"
-              : forecast.status === "unsupported"
-                ? "Дата достижения: расчёт пока не поддерживается"
-                : forecast.status === "inactive"
-                  ? "Цель не отслеживается"
-                  : "Дата достижения: —"}
-        </strong>
-        {forecast.reason_code ? (
-          <span className="muted tiny">Почему: {goalReasonLabel(forecast.reason_code)}</span>
+      <div className="overview-card__goal-forecast">
+        <span>{goalForecastLabel(goal)}</span>
+        {help ? (
+          <HelpTip label="Почему прогноз цели выглядит так" align="start">
+            {help}
+          </HelpTip>
         ) : null}
-        {forecast.warnings.length > 0 ? (
-          <div className="inline-alert inline-alert--warn" role="status">
-            {forecast.warnings.join(" · ")}
-          </div>
-        ) : null}
-        <span className="muted tiny">
-          Данные на {formatDate(forecast.as_of_date)}.
-          {forecast.is_approximate ? " Часть значений является оценочной." : ""}
-        </span>
       </div>
     </div>
   );
+}
+
+function goalForecastLabel(goal: GoalSummary): string {
+  const forecast = goal.achievement_forecast;
+  if (forecast.estimated_achievement_date) {
+    return `Достигнута ${formatDate(forecast.estimated_achievement_date)}`;
+  }
+  if (forecast.status === "inactive") return "Цель не отслеживается";
+  if (forecast.status === "unsupported") return "Прогноз даты недоступен";
+  if (forecast.status === "not_projectable") return "Прогноз даты недоступен";
+  return "Дата достижения —";
+}
+
+function goalHelpText(goal: GoalSummary): string {
+  const forecast = goal.achievement_forecast;
+  const parts: string[] = [];
+  if (forecast.reason_code) parts.push(goalReasonLabel(forecast.reason_code));
+  parts.push(...forecast.warnings);
+  if (forecast.is_approximate) parts.push("Часть значений является оценочной.");
+  if (forecast.as_of_date) parts.push(`Данные на ${formatDate(forecast.as_of_date)}.`);
+  return parts.join(" ");
 }
