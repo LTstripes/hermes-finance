@@ -1,8 +1,8 @@
 """Read-only historical liquid-asset composition for Analytics (R03-12).
 
-The contract is fixed by ADR 0007.  Historical points contain CLOSED months
-only and reuse the existing dashboard allocation assembler plus the canonical
-liquid-capital service.  Missing calendar months are not synthesized here.
+The contract is fixed by ADR 0007. Historical points contain CLOSED months
+only and reuse the canonical asset-allocation assembler plus the canonical
+liquid-capital service. Missing calendar months are not synthesized here.
 """
 
 from __future__ import annotations
@@ -16,16 +16,12 @@ from sqlalchemy.orm import Session
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import ReportingMonth
-from hermes_finance.services.dashboard import AssetClassSlice, _asset_allocation
-from hermes_finance.services.liquid_capital import liquid_capital_for_month
-
-ASSET_CLASSES: tuple[str, ...] = (
-    "cash",
-    "deposits",
-    "stocks",
-    "bonds",
-    "gold_other",
+from hermes_finance.services.asset_allocation import (
+    ASSET_CLASSES,
+    AssetClassSlice,
+    asset_allocation_for_month,
 )
+from hermes_finance.services.liquid_capital import liquid_capital_for_month
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +55,7 @@ def capital_composition_history(session: Session) -> CapitalCompositionHistory:
     points: list[CapitalCompositionPoint] = []
     for month in months:
         liquid = liquid_capital_for_month(session, month.id)
-        allocation = _asset_allocation(session, month.id, liquid)
+        allocation = asset_allocation_for_month(session, month.id, liquid)
         points.append(
             CapitalCompositionPoint(
                 reporting_month_id=month.id,
