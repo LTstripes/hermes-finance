@@ -175,6 +175,20 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(closeMonthMock).not.toHaveBeenCalled();
   });
 
+  it("closes a clean draft only after review and explicit confirmation", async () => {
+    const user = userEvent.setup();
+    getMonthMock.mockResolvedValueOnce(draftMonth).mockResolvedValue(closedMonth);
+    renderPage();
+
+    await screen.findByRole("heading", { level: 1, name: "Февраль 2031" });
+    await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
+    await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+
+    await waitFor(() => expect(closeMonthMock).toHaveBeenCalledWith(1));
+  });
+
   it("offers reopen from the sticky header for a closed month without the old lock warning", async () => {
     const user = userEvent.setup();
     mockLoadedMonth(closedMonth);
