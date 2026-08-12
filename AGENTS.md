@@ -17,12 +17,18 @@ Use this precedence when documents disagree:
 7. `docs/HERMES_START_PROMPT.md` — historical/operational iteration reference where still applicable.
 8. `docs/IDEA.md` — original concept only.
 
+For remaining `0.3.0` Hermes work, also read `docs/releases/0.3.0-execution-cards.md`. It is the canonical detailed **execution extension** for the named task IDs. It may add implementation/verification/delivery detail but cannot override business semantics from `MASTER_SPEC` or an accepted ADR.
+
 Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely requires local owner data. Never quote, summarize or copy its personal values into tracked files, prompts, logs, tests or reports.
 
 ## Iteration contract
 
 - Work on only the task ID explicitly named by the owner.
 - When the owner writes `начинаем <ID>`, `запускай <ID>` or an equivalent explicit start command, that message assigns the named task and approves its canonical route from the active `docs/releases/<version>.md` plus `docs/MODEL_ROUTING.md`; do not ask for a second model-selection confirmation unless the owner overrides the route or no canonical route exists.
+- A named owner start command is intended to be **self-contained**. Do not ask the owner to copy a second long prompt when the active release/task execution card already defines scope, acceptance, verification and delivery. Resolve those requirements from repository docs yourself.
+- For `0.3.0`, read the matching ID in both `docs/releases/0.3.0.md` and `docs/releases/0.3.0-execution-cards.md`; if owner-review follow-ups are referenced, read `docs/releases/0.3.0-owner-review-2026-08-12.md` as well.
+- If a task is already in progress when docs-only execution guidance is updated, do not restart or discard correct work merely because the documentation commit is newer. Compare the in-progress work against the updated card and continue in the existing task branch/worktree unless a real contract conflict is found.
+- Unless a task-card pins an exact baseline, start from current `origin/main` only after verifying all named dependencies are already integrated. If a required dependency exists only in another task branch, stop and report that dependency instead of silently cherry-picking it.
 - Before changes, provide a plan of 3–7 short steps.
 - Do not start the next backlog item automatically.
 - Do not implement future features “while here”.
