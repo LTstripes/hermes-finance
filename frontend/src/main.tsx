@@ -5,6 +5,7 @@ import { App } from "./app/App";
 import "./styles/global.css";
 import "./styles/sticky-sidebar.css";
 import "./styles/ui-primitives.css";
+import "./styles/app-shell-v03.css";
 
 const root = document.getElementById("root");
 
