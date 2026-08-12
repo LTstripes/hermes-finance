@@ -53,7 +53,7 @@ export function RuntimeStatusBanner() {
       <div className="runtime-alert__inner">
         <span aria-hidden="true" className="runtime-alert__dot" />
         <div>
-          <strong>Локальное приложение недоступно</strong>
+          <strong>Сервер недоступен</strong>
           <span>Проверь запуск Hermes Finance или открой диагностику.</span>
         </div>
         <Link className="runtime-alert__link" to="/settings#diagnostics">
