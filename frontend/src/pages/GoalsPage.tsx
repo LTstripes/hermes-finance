@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiClientError, formatApiError } from "../api/client";
+import { formatApiError } from "../api/client";
 import {
   createGoal,
   deleteGoal,
@@ -38,8 +38,6 @@ import {
   goalReasonLabel,
 } from "../lib/goals";
 
-const GOALS_API_MISSING_MESSAGE = "Раздел целей недоступен в текущей версии приложения.";
-
 function newestMonth(rows: ReportingMonth[]): ReportingMonth | null {
   return (
     [...rows].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year))[0] ?? null
@@ -72,11 +70,7 @@ export function GoalsPage() {
     } catch (error) {
       if (!signal?.aborted) {
         setGoals([]);
-        setGoalsError(
-          error instanceof ApiClientError && error.status === 404
-            ? GOALS_API_MISSING_MESSAGE
-            : formatApiError(error),
-        );
+        setGoalsError(formatApiError(error));
       }
     } finally {
       if (!signal?.aborted) setGoalsLoading(false);
@@ -277,12 +271,6 @@ export function GoalsPage() {
         ) : goalsError ? (
           <div className="stack-8">
             <ErrorState description={goalsError} inline title="Не удалось загрузить цели" />
-            {goalsError === GOALS_API_MISSING_MESSAGE ? (
-              <details className="muted tiny">
-                <summary>Технические подробности</summary>
-                <span>API /api/goals отсутствует</span>
-              </details>
-            ) : null}
             <Button onClick={() => void loadGoals()} size="sm">
               Повторить
             </Button>
@@ -430,9 +418,7 @@ function GoalCard({
                   Сделать основной
                 </OverflowMenuItem>
               ) : null}
-              <OverflowMenuItem
-                onClick={() => void onPatch(goal, { is_active: !goal.is_active })}
-              >
+              <OverflowMenuItem onClick={() => void onPatch(goal, { is_active: !goal.is_active })}>
                 {goal.is_active ? "Деактивировать" : "Активировать"}
               </OverflowMenuItem>
               <OverflowMenuItem danger onClick={() => onDelete(goal)}>
@@ -468,9 +454,9 @@ function GoalMetrics({
   forecast: GoalSummary["achievement_forecast"] | undefined;
   loading: boolean;
 }) {
-  const progress = !loading ? forecast?.progress_pct ?? null : null;
-  const current = !loading ? forecast?.current_value?.amount ?? null : null;
-  const remaining = !loading ? forecast?.remaining_amount?.amount ?? null : null;
+  const progress = !loading ? (forecast?.progress_pct ?? null) : null;
+  const current = !loading ? (forecast?.current_value?.amount ?? null) : null;
+  const remaining = !loading ? (forecast?.remaining_amount?.amount ?? null) : null;
 
   return (
     <div className="goal-card__metrics">

@@ -32,6 +32,7 @@ import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/m
 type MonthAssetsSectionProps = {
   monthId: number;
   readOnly: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 type DepositDraft = {
@@ -64,7 +65,7 @@ const emptyCash = (): CashDraft => ({
   include_in_capital: true,
 });
 
-export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProps) {
+export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAssetsSectionProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [deposits, setDeposits] = useState<DepositSnapshot[]>([]);
   const [cashRows, setCashRows] = useState<CashBalance[]>([]);
@@ -76,10 +77,18 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
 
   const [depositDraft, setDepositDraft] = useState<DepositDraft>(emptyDeposit);
   const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCash);
+  const [depositDraftTouched, setDepositDraftTouched] = useState(false);
+  const [cashDraftTouched, setCashDraftTouched] = useState(false);
   const [editingDepositId, setEditingDepositId] = useState<number | null>(null);
   const [editDeposit, setEditDeposit] = useState<DepositDraft | null>(null);
   const [pendingDeleteDeposit, setPendingDeleteDeposit] = useState<DepositSnapshot | null>(null);
   const [pendingDeleteCash, setPendingDeleteCash] = useState<CashBalance | null>(null);
+
+  const localDirty = depositDraftTouched || cashDraftTouched || editingDepositId !== null;
+
+  useEffect(() => {
+    onDirtyChange?.(localDirty);
+  }, [localDirty, onDirtyChange]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -192,6 +201,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
         ),
       });
       setDepositDraft(() => ({ ...emptyDeposit(), account_id: String(accountId) }));
+      setDepositDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -270,6 +280,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
         include_in_capital: cashDraft.include_in_capital,
       });
       setCashDraft(emptyCash());
+      setCashDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -519,7 +530,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
               <Field htmlFor="dep-name" label="Название вклада">
                 <Input
                   id="dep-name"
-                  onChange={(e) => setDepositDraft({ ...depositDraft, name: e.target.value })}
+                  onChange={(e) => {
+                    setDepositDraft({ ...depositDraft, name: e.target.value });
+                    setDepositDraftTouched(true);
+                  }}
                   required
                   value={depositDraft.name}
                 />
@@ -527,9 +541,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
               <Field htmlFor="dep-type" label="Тип">
                 <Select
                   id="dep-type"
-                  onChange={(e) =>
-                    setDepositDraft({ ...depositDraft, deposit_type: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setDepositDraft({ ...depositDraft, deposit_type: e.target.value });
+                    setDepositDraftTouched(true);
+                  }}
                   value={depositDraft.deposit_type}
                 >
                   <option value="deposit">Депозит</option>
@@ -539,7 +554,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
               <Field htmlFor="dep-account" label="Счёт">
                 <Select
                   id="dep-account"
-                  onChange={(e) => setDepositDraft({ ...depositDraft, account_id: e.target.value })}
+                  onChange={(e) => {
+                    setDepositDraft({ ...depositDraft, account_id: e.target.value });
+                    setDepositDraftTouched(true);
+                  }}
                   value={depositDraft.account_id}
                 >
                   <option value="">авто (создать «Депозиты»)</option>
@@ -555,7 +573,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                   className="input--money"
                   id="dep-balance"
                   inputMode="decimal"
-                  onChange={(e) => setDepositDraft({ ...depositDraft, balance: e.target.value })}
+                  onChange={(e) => {
+                    setDepositDraft({ ...depositDraft, balance: e.target.value });
+                    setDepositDraftTouched(true);
+                  }}
                   required
                   value={depositDraft.balance}
                 />
@@ -564,9 +585,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                 <Input
                   className="input--money"
                   id="dep-rate"
-                  onChange={(e) =>
-                    setDepositDraft({ ...depositDraft, annual_rate: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setDepositDraft({ ...depositDraft, annual_rate: e.target.value });
+                    setDepositDraftTouched(true);
+                  }}
                   value={depositDraft.annual_rate}
                 />
               </Field>
@@ -574,9 +596,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                 <Input
                   className="input--money"
                   id="dep-actual"
-                  onChange={(e) =>
-                    setDepositDraft({ ...depositDraft, actual_interest: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setDepositDraft({ ...depositDraft, actual_interest: e.target.value });
+                    setDepositDraftTouched(true);
+                  }}
                   value={depositDraft.actual_interest}
                 />
               </Field>
@@ -666,7 +689,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
               <Field htmlFor="cash-name" label="Название денежной позиции">
                 <Input
                   id="cash-name"
-                  onChange={(e) => setCashDraft({ ...cashDraft, name: e.target.value })}
+                  onChange={(e) => {
+                    setCashDraft({ ...cashDraft, name: e.target.value });
+                    setCashDraftTouched(true);
+                  }}
                   required
                   value={cashDraft.name}
                 />
@@ -676,7 +702,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                   className="input--money"
                   id="cash-amount"
                   inputMode="decimal"
-                  onChange={(e) => setCashDraft({ ...cashDraft, amount: e.target.value })}
+                  onChange={(e) => {
+                    setCashDraft({ ...cashDraft, amount: e.target.value });
+                    setCashDraftTouched(true);
+                  }}
                   required
                   value={cashDraft.amount}
                 />
@@ -685,9 +714,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
             <label className="check-row">
               <input
                 checked={cashDraft.include_in_capital}
-                onChange={(e) =>
-                  setCashDraft({ ...cashDraft, include_in_capital: e.target.checked })
-                }
+                onChange={(e) => {
+                  setCashDraft({ ...cashDraft, include_in_capital: e.target.checked });
+                  setCashDraftTouched(true);
+                }}
                 type="checkbox"
               />
               Включать в ликвидный капитал

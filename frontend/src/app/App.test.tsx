@@ -342,13 +342,14 @@ describe("App", () => {
     expect(within(screen.getByRole("table")).queryByText(/Июль/)).not.toBeInTheDocument();
   });
 
-  it("navigates to goals placeholder from the sidebar", async () => {
+  it("navigates to goals from the sidebar", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
       mockFetchRouter({
         "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
         "GET /api/months": () => jsonResponse([]),
+        "GET /api/goals?include_inactive=true": () => jsonResponse([]),
       }),
     );
 
@@ -356,7 +357,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("link", { name: /Цели/i }));
     expect(screen.getByRole("heading", { level: 1, name: "Цели" })).toBeInTheDocument();
-    expect(screen.getByText("API /api/goals отсутствует")).toBeInTheDocument();
+    expect(screen.getByText("Нет целей")).toBeInTheDocument();
   });
 
   it("clones a month into the next period and opens the new draft editor", async () => {
@@ -859,11 +860,13 @@ describe("App", () => {
     expect(await screen.findByText("Квартира")).toBeInTheDocument();
     expect(screen.getAllByText(/Покрытие ипотеки/i).length).toBeGreaterThan(0);
 
-    await selectMonthSection(user, "Проверка");
-    expect(screen.getByRole("heading", { level: 2, name: "Комментарии" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();
-    await user.type(screen.getByLabelText("Новый комментарий"), "Первый месяц");
-    await user.click(screen.getByRole("button", { name: "Добавить комментарий" }));
+    await selectMonthSection(user, "Заметка");
+    expect(screen.getByRole("heading", { level: 2, name: "Заметка месяца" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Новая заметка"), "Первый месяц");
+    await user.click(screen.getByRole("button", { name: "Добавить заметку" }));
     expect(await screen.findByText("Первый месяц")).toBeInTheDocument();
+
+    await selectMonthSection(user, "Проверка");
+    expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();
   });
 });
