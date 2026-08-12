@@ -23,7 +23,7 @@ Hermes Finance — локальное однопользовательское W
 
 1. `docs/MASTER_SPEC.md` — бизнес-инварианты, формулы и границы продукта.
 2. Принятые ADR в `docs/adr/` — более конкретные нормативные решения по отдельным контрактам.
-3. Активный release backlog (`docs/RELEASE_0_2.md` для 0.2) — текущие task-cards, статусы и release gate.
+3. Активный release backlog (`docs/releases/0.2.0.md` для 0.2) — текущие task-cards, статусы и release gate.
 4. `docs/MODEL_ROUTING.md` — текущий routing/settling protocol.
 5. `docs/VERIFICATION_POLICY.md` — обязательная стратегия targeted/full-suite/CI проверок.
 6. `docs/HERMES_START_PROMPT.md` и `AGENTS.md` — рабочий протокол агентов.
@@ -194,4 +194,4 @@ R02-21 синхронизирует version/docs. Tag `v0.2.0` создаётс�
 
 ## 14. История
 
-Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/HERMES_TASKS.md` и Git history. Изменения 0.2 фиксируются в `docs/RELEASE_0_2.md`, smoke/follow-up logs и `CHANGELOG.md`; wiki намеренно не дублирует сотни завершённых шагов.
+Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/HERMES_TASKS.md` и Git history. Изменения 0.2 фиксируются в `docs/releases/0.2.0.md`, smoke/follow-up logs и `CHANGELOG.md`; wiki намеренно не дублирует сотни завершённых шагов.
