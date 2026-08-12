@@ -8,6 +8,7 @@ import {
   type AppSettings,
   type AppSettingsUpdate,
 } from "../api/settings";
+import { DiagnosticsPanel } from "../components/RuntimeStatus";
 import { TaxBracketsPanel } from "../components/TaxBracketsPanel";
 import { Badge, Button, ErrorState, Field, Input, LoadingState, Panel } from "../components/ui";
 
@@ -127,7 +128,7 @@ export function SettingsPage() {
         <p className="eyebrow">Система</p>
         <h1>Настройки</h1>
         <p className="page-header__description">
-          Локальные настройки приложения и безопасное управление налоговыми правилами.
+          Локальные настройки приложения, налоговые правила и техническая диагностика.
         </p>
       </header>
 
@@ -222,6 +223,10 @@ export function SettingsPage() {
       </form>
 
       <TaxBracketsPanel />
+
+      <div id="diagnostics">
+        <DiagnosticsPanel />
+      </div>
 
       <Panel empty label="Ограничения" title="Пока недоступно">
         <p className="muted">
