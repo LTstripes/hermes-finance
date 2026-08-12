@@ -8,6 +8,7 @@ import "./styles/ui-primitives.css";
 import "./styles/app-shell-v03.css";
 import "./styles/dashboard-v03.css";
 import "./styles/fact-forecast-goal-v03.css";
+import "./styles/goals-v03.css";
 
 const root = document.getElementById("root");
 
