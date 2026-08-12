@@ -258,7 +258,7 @@ Verification policy: [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md
 ## Документы проекта
 
 - [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) — бизнес-инварианты и границы продукта;
-- [`docs/RELEASE_0_2.md`](docs/RELEASE_0_2.md) — release 0.2 backlog/checkpoint;
+- [`docs/releases/0.2.0.md`](docs/releases/0.2.0.md) — release 0.2 backlog/checkpoint;
 - [`docs/MODEL_ROUTING.md`](docs/MODEL_ROUTING.md) — модельный routing;
 - [`docs/HERMES_START_PROMPT.md`](docs/HERMES_START_PROMPT.md) — рабочий протокол;
 - [`docs/HERMES_TASKS.md`](docs/HERMES_TASKS.md) — исторический backlog MVP 0.1;
