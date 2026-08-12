@@ -718,11 +718,36 @@ a.btn {
 
 .months-table {
   min-width: 620px;
+  table-layout: fixed;
 }
 
 .months-table th,
 .months-table td {
   padding-inline: 12px;
+}
+
+.months-table th:first-child,
+.months-table td:first-child {
+  width: 36%;
+}
+
+.months-table th:nth-child(2),
+.months-table td:nth-child(2) {
+  width: 18%;
+}
+
+.months-table__snapshot {
+  width: 18%;
+  min-width: 132px;
+  padding-right: 24px !important;
+  white-space: nowrap;
+}
+
+.months-table__actions {
+  width: 28%;
+  min-width: 190px;
+  padding-left: 24px !important;
+  border-left: 1px solid var(--line-soft);
 }
 
 .months-table th:first-child,
@@ -735,12 +760,13 @@ a.btn {
   padding-right: 0;
 }
 
-.months-table__snapshot {
+.months-table__open {
   white-space: nowrap;
 }
 
-.months-table__open {
-  white-space: nowrap;
+.months-page__content .overflow-menu__menu {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .month-period {
@@ -808,6 +834,8 @@ a.btn {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .kpi-grid {
@@ -903,6 +931,10 @@ a.btn {
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+}
+
+.months-page__content .table-wrap {
+  overflow: visible;
 }
 
 .table {

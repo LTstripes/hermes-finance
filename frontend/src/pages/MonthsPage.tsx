@@ -321,7 +321,7 @@ export function MonthsPage() {
                   <Th className="months-table__snapshot" numeric>
                     Снимок
                   </Th>
-                  <Th>Действия</Th>
+                  <Th className="months-table__actions">Действия</Th>
                 </tr>
               </thead>
               <tbody>
@@ -344,7 +344,7 @@ export function MonthsPage() {
                     <Td className="months-table__snapshot" numeric>
                       {formatDate(row.snapshot_date)}
                     </Td>
-                    <Td>
+                    <Td className="months-table__actions">
                       <div className="row-actions">
                         <Link
                           className="btn btn--sm btn--primary months-table__open"
