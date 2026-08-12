@@ -123,12 +123,24 @@
 }
 
 @media (max-width: 960px) {
+  .sidebar__nav > div {
+    display: contents;
+  }
+
   .runtime-alert__inner {
     padding-inline: 22px;
   }
 }
 
 @media (max-width: 680px) {
+  .topbar {
+    justify-content: flex-start;
+  }
+
+  .topbar > span:first-child {
+    display: inline;
+  }
+
   .runtime-alert__inner {
     grid-template-columns: auto minmax(0, 1fr);
   }
