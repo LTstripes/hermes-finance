@@ -7,6 +7,12 @@ followups_path = ROOT / 'docs' / 'RELEASE_0_2_FOLLOWUPS_2026-08-11.md'
 out_path = ROOT / 'docs' / 'releases' / '0.2.0.md'
 start_prompt = ROOT / 'docs' / 'HERMES_START_PROMPT.md'
 
+
+def clean_trailing_whitespace(text: str) -> str:
+    cleaned = '\n'.join(line.rstrip() for line in text.splitlines())
+    return cleaned + ('\n' if text.endswith('\n') else '')
+
+
 release = release_path.read_text(encoding='utf-8')
 smoke = smoke_path.read_text(encoding='utf-8')
 followups = followups_path.read_text(encoding='utf-8')
@@ -17,11 +23,14 @@ release = release.replace(
     1,
 )
 
-release_meta = '''\n\n> **Released:** 2026-08-12  
-> **Tag:** `v0.2.0`  
-> **Release commit:** `346d865e73cb44753a5b1adece7432fde4a275dc`  
-> **Final exact-main CI:** `31533137143` — Backend / Frontend / Privacy guard / Windows production smoke green.  
-> **Final local production probe:** ACCEPT on the same commit; health `0.2.0`, `/api/months` PASS, bind `127.0.0.1:8000`, port cleanup PASS, working tree clean.\n'''
+release_meta = '''
+
+> **Released:** 2026-08-12
+> **Tag:** `v0.2.0`
+> **Release commit:** `346d865e73cb44753a5b1adece7432fde4a275dc`
+> **Final exact-main CI:** `31533137143` — Backend / Frontend / Privacy guard / Windows production smoke green.
+> **Final local production probe:** ACCEPT on the same commit; health `0.2.0`, `/api/months` PASS, bind `127.0.0.1:8000`, port cleanup PASS, working tree clean.
+'''
 
 first_newline = release.find('\n')
 release = release[:first_newline] + release_meta + release[first_newline:]
@@ -39,12 +48,13 @@ release = release.replace(
     '- [x] `v0.2.0` создан на exact release commit после закрытия gate.',
 )
 
-# Remove duplicate top-level headings from the appended process logs, but preserve all evidence.
+
 def strip_first_heading(text: str) -> str:
     lines = text.splitlines()
     if lines and lines[0].startswith('# '):
         lines = lines[1:]
     return '\n'.join(lines).strip()
+
 
 archive = (
     release.rstrip()
@@ -54,6 +64,7 @@ archive = (
     + strip_first_heading(followups)
     + '\n'
 )
+archive = clean_trailing_whitespace(archive)
 
 out_path.parent.mkdir(parents=True, exist_ok=True)
 out_path.write_text(archive, encoding='utf-8')
@@ -72,7 +83,7 @@ prompt = prompt.replace(
     'Перед началом владелец должен явно назвать ID текущей задачи. Для активного release backlog это может быть, например, `R02-01`.',
     'Перед началом владелец должен явно назвать ID текущей задачи. Для активного release backlog это может быть, например, `R03-01`.',
 )
-start_prompt.write_text(prompt, encoding='utf-8')
+start_prompt.write_text(clean_trailing_whitespace(prompt), encoding='utf-8')
 
 # Replace stale links/references in remaining Markdown files.
 replacements = {
@@ -88,7 +99,7 @@ for path in ROOT.rglob('*.md'):
     for old, new in replacements.items():
         updated = updated.replace(old, new)
     if updated != text:
-        path.write_text(updated, encoding='utf-8')
+        path.write_text(clean_trailing_whitespace(updated), encoding='utf-8')
 
 release_path.unlink()
 smoke_path.unlink()
