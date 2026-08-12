@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -185,11 +185,8 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(screen.queryByText(/Месяц утверждён — редактирование заблокировано/)).toBeNull();
 
     await user.click(reopen);
-    await user.click(
-      screen.getByRole("alertdialog").querySelector("button.btn--primary") ??
-        screen.getByRole("button", { name: "Открыть" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Открыть" }));
 
-    expect(reopenMonthMock).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(reopenMonthMock).toHaveBeenCalledWith(1));
   });
 });
