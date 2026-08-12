@@ -20,6 +20,7 @@ import {
 import type { Account, Instrument } from "../api/types";
 import { AccountFormDialog } from "../components/AccountFormDialog";
 import { InstrumentFormDialog } from "../components/InstrumentFormDialog";
+import { IisAccountSection } from "../components/IisAccountSection";
 import {
   Badge,
   Button,
@@ -427,36 +428,39 @@ export function AccountsPage() {
       ) : null}
 
       {tab === "accounts" ? (
-        <Panel label="Справочник" title="Счета">
-          {accountsLoading ? (
-            <LoadingState description="Загружаем счета…" inline />
-          ) : accountsError ? (
-            <div className="stack-8">
-              <ErrorState description={accountsError} inline title="Не удалось загрузить счета" />
-              <Button onClick={() => void loadAccounts()} size="sm">
-                Повторить
-              </Button>
-            </div>
-          ) : accounts.length === 0 ? (
-            <EmptyState
-              action={
-                <Button onClick={openCreateAccount} size="sm" variant="primary">
-                  Создать счёт
+        <>
+          <Panel label="Справочник" title="Счета">
+            {accountsLoading ? (
+              <LoadingState description="Загружаем счета…" inline />
+            ) : accountsError ? (
+              <div className="stack-8">
+                <ErrorState description={accountsError} inline title="Не удалось загрузить счета" />
+                <Button onClick={() => void loadAccounts()} size="sm">
+                  Повторить
                 </Button>
-              }
-              description="Справочник пока пуст."
-              inline
-              title="Нет счетов"
-            />
-          ) : (
-            <>
-              <h3 className="section-subhead">Активные ({visibleAccounts.length})</h3>
-              {renderAccountsTable(visibleAccounts)}
-              <h3 className="section-subhead">Скрытые и закрытые ({archivedAccounts.length})</h3>
-              {renderAccountsTable(archivedAccounts)}
-            </>
-          )}
-        </Panel>
+              </div>
+            ) : accounts.length === 0 ? (
+              <EmptyState
+                action={
+                  <Button onClick={openCreateAccount} size="sm" variant="primary">
+                    Создать счёт
+                  </Button>
+                }
+                description="Справочник пока пуст."
+                inline
+                title="Нет счетов"
+              />
+            ) : (
+              <>
+                <h3 className="section-subhead">Активные ({visibleAccounts.length})</h3>
+                {renderAccountsTable(visibleAccounts)}
+                <h3 className="section-subhead">Скрытые и закрытые ({archivedAccounts.length})</h3>
+                {renderAccountsTable(archivedAccounts)}
+              </>
+            )}
+          </Panel>
+          <IisAccountSection accounts={accounts} />
+        </>
       ) : (
         <Panel label="Справочник" title="Инструменты">
           {instrumentsLoading ? (

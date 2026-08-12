@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listAccounts } from "../api/accounts";
 import { getDashboard } from "../api/dashboard";
+import { listGoalSummary } from "../api/goals";
 import { getCashTotal, listCashBalances } from "../api/cash";
 import { listDeposits } from "../api/deposits";
 import { listIncomes } from "../api/incomes";
@@ -14,6 +15,7 @@ import type { ReportingMonth } from "../api/types";
 import { MonthDetailPage } from "./MonthDetailPage";
 
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
+vi.mock("../api/goals", () => ({ listGoalSummary: vi.fn() }));
 vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../api/cash", () => ({
   getCashTotal: vi.fn(),
@@ -37,9 +39,10 @@ vi.mock("../components/MonthAssetsSection", async (importOriginal) => importOrig
 vi.mock("../components/MonthBudgetSection", () => ({
   MonthBudgetSection: () => <div>budget stub</div>,
 }));
-vi.mock("../components/MonthCloseoutSection", () => ({
-  MonthCloseoutSection: () => <div>review stub</div>,
+vi.mock("../components/MonthNoteSection", () => ({
+  MonthNoteSection: () => <div>note stub</div>,
 }));
+
 vi.mock("../components/MonthFlowsSection", () => ({
   MonthFlowsSection: () => <div>flows stub</div>,
 }));
@@ -73,6 +76,7 @@ const getCashTotalMock = vi.mocked(getCashTotal);
 const listDepositsMock = vi.mocked(listDeposits);
 const getMonthSummaryMock = vi.mocked(getMonthSummary);
 const getDashboardMock = vi.mocked(getDashboard);
+const listGoalSummaryMock = vi.mocked(listGoalSummary);
 const updateMonthMock = vi.mocked(updateMonth);
 const closeMonthMock = vi.mocked(closeMonth);
 const reopenMonthMock = vi.mocked(reopenMonth);
@@ -144,6 +148,7 @@ function mockLoadedMonth(month: ReportingMonth = draftMonth) {
     },
     warnings: ["Проверь данные"],
   });
+  listGoalSummaryMock.mockResolvedValue([]);
 }
 
 describe("MonthDetailPage R03-06 workspace", () => {
@@ -225,14 +230,49 @@ describe("MonthDetailPage R03-06 workspace", () => {
 
     await screen.findByRole("heading", { level: 1, name: /Февраль\s+2031/ });
     await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
-    expect(screen.getByText("review stub")).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: "Проверка месяца" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Проверка" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
 
     await user.click(screen.getByRole("button", { name: /^Доходы$/ }));
     await user.type(screen.getByLabelText("Зарплата до вычета налогов"), "100000");
     await user.click(screen.getByRole("button", { name: "Проверка" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Проверка месяца" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
     expect(closeMonthMock).not.toHaveBeenCalled();
+  });
+
+  it("runs save, review, close, and reopen in the month workspace", async () => {
+    const user = userEvent.setup();
+    getMonthMock
+      .mockResolvedValueOnce(draftMonth)
+      .mockResolvedValueOnce(draftMonth)
+      .mockResolvedValueOnce(closedMonth)
+      .mockResolvedValueOnce(draftMonth);
+    renderPage();
+
+    const snapshot = await screen.findByLabelText("Дата снимка");
+    await user.clear(snapshot);
+    await user.type(snapshot, "2031-03-01");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(updateMonthMock).toHaveBeenCalledWith(1, { snapshot_date: "2031-03-01" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
+    await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
+    const closeDialog = screen.getByRole("alertdialog");
+    await user.click(within(closeDialog).getByRole("button", { name: "Закрыть" }));
+    await waitFor(() => expect(closeMonthMock).toHaveBeenCalledWith(1));
+    expect(await screen.findByText("Закрыт")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Открыть заново" }));
+    const reopenDialog = screen.getByRole("alertdialog");
+    await user.click(within(reopenDialog).getByRole("button", { name: "Открыть заново" }));
+    await waitFor(() => expect(reopenMonthMock).toHaveBeenCalledWith(1));
   });
 
   it("scopes visited asset state to the current month route", async () => {
@@ -255,20 +295,6 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(await screen.findByLabelText("Название вклада")).toHaveValue("Новый месяц");
     expect(updateMonthMock).not.toHaveBeenCalled();
     expect(closeMonthMock).not.toHaveBeenCalled();
-  });
-
-  it("closes a clean draft only after review and explicit confirmation", async () => {
-    const user = userEvent.setup();
-    getMonthMock.mockResolvedValueOnce(draftMonth).mockResolvedValue(closedMonth);
-    renderPage();
-
-    await screen.findByRole("heading", { level: 1, name: /Февраль\s+2031/ });
-    await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
-    await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Закрыть" }));
-
-    await waitFor(() => expect(closeMonthMock).toHaveBeenCalledWith(1));
   });
 
   it("offers reopen from the sticky header for a closed month without the old lock warning", async () => {

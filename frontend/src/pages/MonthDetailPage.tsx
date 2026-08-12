@@ -9,7 +9,8 @@ import { getMonthSummary } from "../api/summary";
 import type { DashboardKpis, IncomeEntry, ReportingMonth } from "../api/types";
 import { MonthAssetsSection } from "../components/MonthAssetsSection";
 import { MonthBudgetSection } from "../components/MonthBudgetSection";
-import { MonthCloseoutSection } from "../components/MonthCloseoutSection";
+import { MonthNoteSection } from "../components/MonthNoteSection";
+import { MonthReviewSection } from "../components/MonthReviewSection";
 import { MonthFlowsSection } from "../components/MonthFlowsSection";
 import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
@@ -54,6 +55,7 @@ const MONTH_SECTIONS = [
   { id: "flows", label: "Выплаты" },
   { id: "budget", label: "Бюджет" },
   { id: "liabilities", label: "Долги" },
+  { id: "note", label: "Заметка" },
   { id: "review", label: "Проверка" },
 ] as const;
 
@@ -335,18 +337,7 @@ export function MonthDetailPage() {
     >
       Открыть для редактирования
     </Button>
-  ) : activeSection === "review" ? (
-    <Button
-      disabled={lifecycleBusy || dirty}
-      onClick={() => setPendingLifecycle("close")}
-      size="sm"
-      title={dirty ? "Сначала сохрани изменения" : undefined}
-      type="button"
-      variant="primary"
-    >
-      Закрыть месяц
-    </Button>
-  ) : (
+  ) : activeSection === "review" ? null : (
     <Button onClick={() => selectSection("review")} size="sm" type="button" variant="primary">
       Проверить и закрыть
     </Button>
@@ -627,14 +618,20 @@ export function MonthDetailPage() {
         </section>
       ) : null}
 
+      {visitedSectionsForMonth.has("note") ? (
+        <section hidden={activeSection !== "note"}>
+          <MonthNoteSection monthId={month.id} readOnly={readOnly} />
+        </section>
+      ) : null}
+
       {visitedSectionsForMonth.has("review") ? (
         <section hidden={activeSection !== "review"}>
-          <MonthCloseoutSection
+          <MonthReviewSection
+            dirty={dirty}
             monthId={month.id}
             onStatusChanged={() => void load()}
             readOnly={readOnly}
             status={month.status === "closed" ? "closed" : "draft"}
-            year={month.year}
           />
         </section>
       ) : null}
