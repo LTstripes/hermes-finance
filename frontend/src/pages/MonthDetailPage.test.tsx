@@ -3,7 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listAccounts } from "../api/accounts";
 import { getDashboard } from "../api/dashboard";
+import { getCashTotal, listCashBalances } from "../api/cash";
+import { listDeposits } from "../api/deposits";
 import { listIncomes } from "../api/incomes";
 import { closeMonth, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
@@ -11,6 +14,12 @@ import type { ReportingMonth } from "../api/types";
 import { MonthDetailPage } from "./MonthDetailPage";
 
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
+vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
+vi.mock("../api/cash", () => ({
+  getCashTotal: vi.fn(),
+  listCashBalances: vi.fn(),
+}));
+vi.mock("../api/deposits", () => ({ listDeposits: vi.fn() }));
 vi.mock("../api/incomes", () => ({ listIncomes: vi.fn() }));
 vi.mock("../api/months", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/months")>();
@@ -24,9 +33,7 @@ vi.mock("../api/months", async (importOriginal) => {
 });
 vi.mock("../api/summary", () => ({ getMonthSummary: vi.fn() }));
 
-vi.mock("../components/MonthAssetsSection", () => ({
-  MonthAssetsSection: () => <div>assets stub</div>,
-}));
+vi.mock("../components/MonthAssetsSection", async (importOriginal) => importOriginal());
 vi.mock("../components/MonthBudgetSection", () => ({
   MonthBudgetSection: () => <div>budget stub</div>,
 }));
@@ -59,6 +66,10 @@ const closedMonth: ReportingMonth = { ...draftMonth, status: "closed" };
 
 const getMonthMock = vi.mocked(getMonth);
 const listIncomesMock = vi.mocked(listIncomes);
+const listAccountsMock = vi.mocked(listAccounts);
+const listCashBalancesMock = vi.mocked(listCashBalances);
+const getCashTotalMock = vi.mocked(getCashTotal);
+const listDepositsMock = vi.mocked(listDeposits);
 const getMonthSummaryMock = vi.mocked(getMonthSummary);
 const getDashboardMock = vi.mocked(getDashboard);
 const updateMonthMock = vi.mocked(updateMonth);
@@ -123,6 +134,14 @@ describe("MonthDetailPage R03-06 workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLoadedMonth();
+    listAccountsMock.mockResolvedValue([]);
+    listCashBalancesMock.mockResolvedValue([]);
+    getCashTotalMock.mockResolvedValue({
+      reporting_month_id: 1,
+      total: { amount: "0.00", currency: "RUB" },
+      total_in_capital: { amount: "0.00", currency: "RUB" },
+    });
+    listDepositsMock.mockResolvedValue([]);
     updateMonthMock.mockResolvedValue(draftMonth);
     closeMonthMock.mockResolvedValue(closedMonth);
     reopenMonthMock.mockResolvedValue(draftMonth);
@@ -131,7 +150,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
   it("opens a section directly from the URL and keeps one section visible", async () => {
     renderPage("/months/1?section=assets");
 
-    expect(await screen.findByText("assets stub")).toBeVisible();
+    expect(await screen.findByLabelText("Название вклада")).toBeVisible();
     expect(screen.getByRole("button", { name: "Активы" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("Раздел: Активы")).toBeInTheDocument();
     expect(screen.queryByText("positions stub")).toBeNull();
@@ -147,7 +166,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(screen.getByText("Не сохранено")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Активы" }));
-    expect(screen.getByText("assets stub")).toBeVisible();
+    expect(screen.getByLabelText("Название вклада")).toBeVisible();
     expect(updateMonthMock).not.toHaveBeenCalled();
     expect(closeMonthMock).not.toHaveBeenCalled();
 
@@ -157,6 +176,21 @@ describe("MonthDetailPage R03-06 workspace", () => {
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  it("preserves an unfinished assets draft across section navigation without saving", async () => {
+    const user = userEvent.setup();
+    renderPage("/months/1?section=assets");
+
+    const depositName = await screen.findByLabelText("Название вклада");
+    await user.type(depositName, "Черновой вклад");
+
+    await user.click(screen.getByRole("button", { name: /^Доходы$/ }));
+    await user.click(screen.getByRole("button", { name: "Активы" }));
+
+    expect(await screen.findByLabelText("Название вклада")).toHaveValue("Черновой вклад");
+    expect(updateMonthMock).not.toHaveBeenCalled();
+    expect(closeMonthMock).not.toHaveBeenCalled();
   });
 
   it("uses review as an explicit step before closing and never closes dirty data", async () => {

@@ -124,6 +124,9 @@ export function MonthDetailPage() {
   const [pendingLifecycle, setPendingLifecycle] = useState<PendingLifecycle>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [visitedSections, setVisitedSections] = useState<Set<MonthSectionId>>(
+    () => new Set(["general"]),
+  );
 
   const dirty = useMemo(() => !sameForm(form, baseline), [form, baseline]);
   const generalDirty = form.snapshot_date !== baseline.snapshot_date;
@@ -137,6 +140,15 @@ export function MonthDetailPage() {
   const activeSection = normalizeSection(searchParams.get("section"));
   const activeSectionLabel =
     MONTH_SECTIONS.find((section) => section.id === activeSection)?.label ?? "Общие данные";
+
+  useEffect(() => {
+    setVisitedSections((previous) => {
+      if (previous.has(activeSection)) return previous;
+      const next = new Set(previous);
+      next.add(activeSection);
+      return next;
+    });
+  }, [activeSection]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -563,38 +575,54 @@ export function MonthDetailPage() {
         </section>
       </form>
 
-      {activeSection === "assets" ? <MonthAssetsSection monthId={month.id} readOnly={readOnly} /> : null}
-
-      {activeSection === "positions" ? (
-        <MonthPositionsSection
-          defaultPriceDate={month.snapshot_date}
-          monthId={month.id}
-          readOnly={readOnly}
-        />
+      {visitedSections.has("assets") ? (
+        <section hidden={activeSection !== "assets"}>
+          <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
+        </section>
       ) : null}
 
-      {activeSection === "flows" ? (
-        <MonthFlowsSection
-          defaultDate={month.snapshot_date}
-          monthId={month.id}
-          readOnly={readOnly}
-        />
+      {visitedSections.has("positions") ? (
+        <section hidden={activeSection !== "positions"}>
+          <MonthPositionsSection
+            defaultPriceDate={month.snapshot_date}
+            monthId={month.id}
+            readOnly={readOnly}
+          />
+        </section>
       ) : null}
 
-      {activeSection === "budget" ? <MonthBudgetSection monthId={month.id} readOnly={readOnly} /> : null}
-
-      {activeSection === "liabilities" ? (
-        <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
+      {visitedSections.has("flows") ? (
+        <section hidden={activeSection !== "flows"}>
+          <MonthFlowsSection
+            defaultDate={month.snapshot_date}
+            monthId={month.id}
+            readOnly={readOnly}
+          />
+        </section>
       ) : null}
 
-      {activeSection === "review" ? (
-        <MonthCloseoutSection
-          monthId={month.id}
-          onStatusChanged={() => void load()}
-          readOnly={readOnly}
-          status={month.status === "closed" ? "closed" : "draft"}
-          year={month.year}
-        />
+      {visitedSections.has("budget") ? (
+        <section hidden={activeSection !== "budget"}>
+          <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
+        </section>
+      ) : null}
+
+      {visitedSections.has("liabilities") ? (
+        <section hidden={activeSection !== "liabilities"}>
+          <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
+        </section>
+      ) : null}
+
+      {visitedSections.has("review") ? (
+        <section hidden={activeSection !== "review"}>
+          <MonthCloseoutSection
+            monthId={month.id}
+            onStatusChanged={() => void load()}
+            readOnly={readOnly}
+            status={month.status === "closed" ? "closed" : "draft"}
+            year={month.year}
+          />
+        </section>
       ) : null}
 
       <CloneMonthDialog
