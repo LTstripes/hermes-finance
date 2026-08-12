@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router";
 
 import { AppLayout } from "../components/AppLayout";
 import { AccountsPage } from "../pages/AccountsPage";
+import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { ExportPage } from "../pages/ExportPage";
 import { GoalsPage } from "../pages/GoalsPage";
@@ -15,6 +16,7 @@ export function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="months" element={<MonthsPage />} />
           <Route path="months/:monthId" element={<MonthDetailPage />} />
           <Route path="accounts" element={<AccountsPage />} />

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -11,10 +11,10 @@ import {
 } from "recharts";
 
 import type { CapitalHistoryPoint } from "../../api/types";
-import { buildGappedSeries, axisMoney } from "../../lib/chartData";
+import { axisMoney, buildGappedSeries } from "../../lib/chartData";
 import { formatMoney } from "../../lib/format";
 import { moneyAmount, moneyToChartNumber } from "../../lib/money";
-import { EmptyState } from "../ui";
+import { EmptyState, HelpTip } from "../ui";
 import { MoneyTooltip } from "./MoneyTooltip";
 
 type PassiveIncomeChartProps = {
@@ -32,10 +32,15 @@ type PassiveIncomeChartProps = {
   countMonths: number;
 };
 
-function legendMarker(className: string, label: string, value?: string) {
+type LegendKind = "fact" | "average" | "forecast" | "goal";
+
+function legendMarker(kind: LegendKind, label: string, value?: string) {
   return (
-    <span className="chart-legend__item">
-      <span aria-hidden="true" className={`chart-legend__marker ${className}`} />
+    <span className={`chart-legend__item chart-legend__item--${kind}`}>
+      <span
+        aria-hidden="true"
+        className={`chart-legend__marker chart-legend__marker--${kind}`}
+      />
       {label}
       {value ? (
         <>
@@ -58,10 +63,10 @@ export function PassiveIncomeChart({
   const data = useMemo(
     () =>
       buildGappedSeries(
-        points.map((p) => ({
-          year: p.year,
-          month: p.month,
-          amount: moneyAmount(p.passive_income_actual),
+        points.map((point) => ({
+          year: point.year,
+          month: point.month,
+          amount: moneyAmount(point.passive_income_actual),
         })),
       ),
     [points],
@@ -76,16 +81,16 @@ export function PassiveIncomeChart({
     );
   }
 
-  const hasGap = data.some((d) => d.rubles == null);
-  const labelByKey = new Map(data.map((d) => [d.key, d.shortLabel]));
+  const hasGap = data.some((datum) => datum.rubles == null);
+  const labelByKey = new Map(data.map((datum) => [datum.key, datum.shortLabel]));
 
   return (
     <section
-      aria-label="Фактический и прогнозный пассивный доход по закрытым месяцам"
-      className="passive-chart"
+      aria-label="Фактический пассивный доход по закрытым месяцам с прогнозом и целью"
+      className="passive-chart passive-chart--v03"
     >
       <ResponsiveContainer height={280} width="100%">
-        <LineChart
+        <BarChart
           accessibilityLayer
           data={data}
           margin={{ bottom: 4, left: 8, right: 16, top: 8 }}
@@ -101,42 +106,65 @@ export function PassiveIncomeChart({
           <YAxis axisLine={false} tickFormatter={axisMoney} tickLine={false} width={72} />
           <Tooltip
             content={(props) => <MoneyTooltip {...props} />}
-            cursor={{ stroke: "#b9c4b9" }}
+            cursor={{ fill: "rgb(23 32 25 / 5%)" }}
           />
-          <Line
-            activeDot={{ r: 5 }}
-            connectNulls={false}
+          <Bar
             dataKey="rubles"
-            dot={{ fill: "#172019", r: 3, strokeWidth: 0 }}
+            fill="#172019"
             isAnimationActive={false}
+            maxBarSize={34}
             name="Факт"
-            stroke="#172019"
-            strokeWidth={2}
-            type="linear"
+            radius={[5, 5, 0, 0]}
           />
-          <ReferenceLine stroke="#6f786f" strokeDasharray="4 4" y={moneyToChartNumber(average)} />
-          <ReferenceLine stroke="#9a6a1d" strokeDasharray="4 4" y={moneyToChartNumber(forecast)} />
-          <ReferenceLine stroke="#27734c" strokeDasharray="6 3" y={moneyToChartNumber(goal)} />
-        </LineChart>
+          <ReferenceLine
+            ifOverflow="extendDomain"
+            stroke="#6f786f"
+            strokeDasharray="2 3"
+            y={moneyToChartNumber(average)}
+          />
+          <ReferenceLine
+            ifOverflow="extendDomain"
+            stroke="#9a6a1d"
+            strokeDasharray="6 4"
+            y={moneyToChartNumber(forecast)}
+          />
+          <ReferenceLine
+            ifOverflow="extendDomain"
+            stroke="#27734c"
+            strokeWidth={2}
+            y={moneyToChartNumber(goal)}
+          />
+        </BarChart>
       </ResponsiveContainer>
 
-      <div className="chart-legend">
-        {legendMarker("chart-legend__marker--fact", "Факт")}
-        {legendMarker("chart-legend__marker--average", "Среднее", formatMoney(average))}
-        {legendMarker("chart-legend__marker--forecast", "Прогноз", formatMoney(forecast))}
-        {legendMarker("chart-legend__marker--goal", "Цель", formatMoney(goal))}
-      </div>
+      <fieldset className="chart-legend">
+        <legend className="sr-only">Обозначения графика</legend>
+        {legendMarker("fact", "Факт по месяцам")}
+        {legendMarker("average", "Среднее факта", formatMoney(average))}
+        {legendMarker("forecast", "Прогноз", formatMoney(forecast))}
+        {legendMarker("goal", "Цель", formatMoney(goal))}
+      </fieldset>
 
-      {!complete12m ? (
-        <p className="chart-note chart-note--warn" role="status">
-          Среднее за доступный период. Учтено {countMonths} {pluralMonths(countMonths)} из 12.
-        </p>
-      ) : null}
-      {hasGap ? (
-        <p className="chart-note">
-          Линия разрывается в месяцах без закрытых данных — без интерполяции.
-        </p>
-      ) : null}
+      <div className="chart-meta-row">
+        {!complete12m ? (
+          <span className="chart-meta-item">
+            Среднее: {countMonths} {pluralMonths(countMonths)} из 12
+            <HelpTip label="Как считается среднее пассивного дохода" align="start">
+              Среднее рассчитано только по доступным закрытым месяцам. Полное rolling-окно будет
+              доступно после 12 закрытых месяцев.
+            </HelpTip>
+          </span>
+        ) : null}
+        {hasGap ? (
+          <span className="chart-meta-item">
+            Есть пропуски в истории
+            <HelpTip label="Как отображаются пропуски в истории" align="start">
+              Месяц без закрытых данных остаётся пустым. Значение между соседними месяцами не
+              интерполируется.
+            </HelpTip>
+          </span>
+        ) : null}
+      </div>
     </section>
   );
 }

@@ -189,6 +189,23 @@ export type AssetAllocationPoint = {
   amount: MoneyValue;
 };
 
+/** One closed-month point from the read-only Analytics capital-composition API. */
+export type CapitalCompositionPoint = {
+  reporting_month_id: number;
+  year: number;
+  month: number;
+  snapshot_date: string;
+  allocation: AssetAllocationPoint[];
+  liquid_assets_total: MoneyValue;
+  included_debts: MoneyValue;
+  liquid_capital_net: MoneyValue;
+};
+
+export type CapitalCompositionHistory = {
+  asset_classes: string[];
+  points: CapitalCompositionPoint[];
+};
+
 /** Monetary result per account (E15): realized cash income + unrealized result. */
 export type AccountResultPoint = {
   account_id: number;

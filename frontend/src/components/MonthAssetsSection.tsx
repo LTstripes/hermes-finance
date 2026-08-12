@@ -352,7 +352,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
                 <Th numeric>Баланс</Th>
                 <Th numeric>Ставка %</Th>
                 <Th numeric>Прогноз / мес</Th>
-                <Th numeric>Факт %</Th>
+                <Th numeric>Получено</Th>
                 <Th>Действия</Th>
               </tr>
             </thead>
@@ -503,10 +503,10 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
             Баланс: <strong>{formatMoney(depositTotals.balance)}</strong>
           </span>
           <span>
-            Прогноз %%: <strong>{formatMoney(depositTotals.expected)}</strong>
+            Прогноз / мес: <strong>{formatMoney(depositTotals.expected)}</strong>
           </span>
           <span>
-            Факт %%: <strong>{formatMoney(depositTotals.actual)}</strong>
+            Получено: <strong>{formatMoney(depositTotals.actual)}</strong>
           </span>
         </div>
 
@@ -584,9 +584,13 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
             <Button disabled={busy} type="submit" variant="primary">
               Добавить вклад
             </Button>
-            <p className="muted field-hint">
-              Ожидаемый месячный процент рассчитывает backend (баланс × ставка / 12).
-            </p>
+            <details className="field-details">
+              <summary>О прогнозе процентов</summary>
+              <p>
+                Прогноз и фактическое начисление показываются отдельно; прогноз не является
+                обещанием выплаты.
+              </p>
+            </details>
           </form>
         ) : null}
       </Panel>
@@ -657,9 +661,7 @@ export function MonthAssetsSection({ monthId, readOnly }: MonthAssetsSectionProp
 
         {!readOnly ? (
           <form className="form-stack asset-form" onSubmit={handleCreateCash}>
-            <p className="panel__label" style={{ marginBottom: 0 }}>
-              Новая денежная позиция
-            </p>
+            <p className="panel__label section-form-label">Новая денежная позиция</p>
             <div className="editor-grid">
               <Field htmlFor="cash-name" label="Название денежной позиции">
                 <Input

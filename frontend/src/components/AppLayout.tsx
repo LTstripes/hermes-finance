@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router";
 
-import { Badge } from "./ui";
+import { RuntimeStatusBanner } from "./RuntimeStatus";
 
 type NavItem = {
   to: string;
@@ -19,15 +19,19 @@ const NAV: NavGroup[] = [
     section: "Обзор",
     items: [
       { to: "/", label: "Дашборд", icon: "◫", end: true },
-      { to: "/months", label: "Месяцы", icon: "☰" },
+      { to: "/analytics", label: "Аналитика", icon: "⌁" },
     ],
   },
   {
-    section: "Данные",
+    section: "Учёт",
     items: [
+      { to: "/months", label: "Месяцы", icon: "☰" },
       { to: "/accounts", label: "Счета и инструменты", icon: "⬡" },
-      { to: "/goals", label: "Цели", icon: "◎" },
     ],
+  },
+  {
+    section: "Планирование",
+    items: [{ to: "/goals", label: "Цели", icon: "◎" }],
   },
   {
     section: "Система",
@@ -85,11 +89,8 @@ export function AppLayout() {
       <div className="workspace">
         <header className="topbar">
           <span>Финансовая панель</span>
-          <div className="topbar__actions">
-            <Badge tone="ok">MVP · 127.0.0.1</Badge>
-            <Badge>локально</Badge>
-          </div>
         </header>
+        <RuntimeStatusBanner />
         <main className="content" id="main">
           <Outlet />
         </main>

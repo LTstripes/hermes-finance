@@ -12,7 +12,7 @@ type ButtonProps = {
 
 const variantClass: Record<ButtonVariant, string> = {
   primary: "btn btn--primary",
-  secondary: "btn",
+  secondary: "btn btn--secondary",
   ghost: "btn btn--ghost",
   danger: "btn btn--danger",
 };

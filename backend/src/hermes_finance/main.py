@@ -7,6 +7,7 @@ from starlette.responses import FileResponse
 
 from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
+from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
 from hermes_finance.api.cash import router as cash_router
 from hermes_finance.api.comments import router as comments_router
@@ -65,6 +66,7 @@ def create_app(
     application.include_router(tax_brackets_router)
     application.include_router(months_router)
     application.include_router(dashboard_router)
+    application.include_router(analytics_router)
     application.include_router(accounts_router)
     application.include_router(backups_router)
     application.include_router(instruments_router)
