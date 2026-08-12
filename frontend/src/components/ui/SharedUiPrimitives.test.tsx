@@ -21,7 +21,9 @@ describe("shared UI primitives", () => {
 
     await user.click(trigger);
 
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Берём только закрытые месяцы.");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Берём только закрытые месяцы.",
+    );
     expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     await user.keyboard("{Escape}");
@@ -30,7 +32,7 @@ describe("shared UI primitives", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("supports keyboard navigation and a visually secondary destructive overflow action", async () => {
+  it("supports keyboard navigation and a secondary destructive overflow action", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();
     render(
@@ -63,7 +65,7 @@ describe("shared UI primitives", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("renders read-only financial data and sticky workspace structure without editable controls", () => {
+  it("renders read-only data and sticky workspace structure without editable controls", () => {
     render(
       <StickySubheader
         actions={<button type="button">Сохранить</button>}
