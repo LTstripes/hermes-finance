@@ -1,0 +1,216 @@
+.dashboard-v03__header {
+  margin-bottom: var(--space-5);
+}
+
+.dashboard-v03__toolbar {
+  align-items: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: var(--space-2);
+}
+
+.overview-card {
+  min-width: 0;
+  min-height: 190px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.overview-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.overview-card__label,
+.overview-card__metric-label {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.overview-card__metric-label {
+  margin-top: var(--space-3);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.overview-card__value {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-card__context {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.overview-card__delta,
+.overview-card__supporting {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.overview-card__delta strong,
+.overview-card__supporting strong,
+.overview-card__compare strong,
+.overview-card__details strong,
+.overview-card__goal-values strong {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.overview-card__delta--up strong {
+  color: var(--green);
+}
+
+.overview-card__delta--down strong {
+  color: var(--red);
+}
+
+.overview-card__compare {
+  display: grid;
+  gap: 7px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.overview-card__compare > div,
+.overview-card__details > div,
+.overview-card__goal-values > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.overview-card__compare span,
+.overview-card__details span,
+.overview-card__goal-values span {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.overview-card__details {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.overview-card__details summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.overview-card__details[open] {
+  display: grid;
+  gap: 7px;
+}
+
+.overview-card__link {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.overview-card__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.overview-card__goal-state {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.overview-card__goal-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.overview-card__goal-name > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-card__goal-values {
+  display: grid;
+  gap: 6px;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line-soft);
+}
+
+.overview-card__goal-forecast {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .dashboard-v03__toolbar {
+    align-items: stretch;
+  }
+
+  .dashboard-v03__toolbar .field--inline,
+  .dashboard-v03__toolbar .field--inline .field,
+  .dashboard-v03__toolbar .btn {
+    width: 100%;
+  }
+
+  .dashboard-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-card {
+    min-height: 0;
+  }
+}
