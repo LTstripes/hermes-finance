@@ -1,0 +1,127 @@
+.analytics-v03__header {
+  max-width: 760px;
+}
+
+.analytics-v03__toolbar {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.analytics-v03__toolbar .field {
+  min-width: 280px;
+}
+
+.analytics-v03__toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 3px);
+  background: var(--surface-soft);
+}
+
+.analytics-v03__toggle legend {
+  padding: 0;
+}
+
+.analytics-v03__history-panel {
+  min-width: 0;
+}
+
+.capital-composition-chart {
+  min-width: 0;
+}
+
+.capital-composition-chart__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 6px 8px 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.composition-tooltip {
+  min-width: 240px;
+}
+
+.composition-tooltip__breakdown,
+.composition-tooltip__totals {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+.composition-tooltip__totals {
+  padding-top: 7px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.composition-tooltip__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.composition-tooltip__row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composition-tooltip__row i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.composition-tooltip__row strong {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.composition-tooltip__debt {
+  color: var(--muted);
+}
+
+.analytics-v03__drilldown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.analytics-v03__drilldown .panel {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .analytics-v03__drilldown {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .analytics-v03__toolbar {
+    align-items: stretch;
+  }
+
+  .analytics-v03__toolbar .field,
+  .analytics-v03__toolbar .btn {
+    width: 100%;
+  }
+
+  .analytics-v03__toggle {
+    width: 100%;
+  }
+
+  .analytics-v03__toggle .btn {
+    flex: 1;
+  }
+}

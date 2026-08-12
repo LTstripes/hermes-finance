@@ -10,6 +10,7 @@ import "./styles/dashboard-v03.css";
 import "./styles/fact-forecast-goal-v03.css";
 import "./styles/goals-v03.css";
 import "./styles/month-workspace-v03.css";
+import "./styles/analytics-v03.css";
 
 const root = document.getElementById("root");
 
