@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
-import { BackendStatus } from "../components/BackendStatus";
 import { MainGoalPanel } from "../components/MainGoalPanel";
 import { AssetAllocationChart } from "../components/charts/AssetAllocationChart";
 import { CapitalChart } from "../components/charts/CapitalChart";
@@ -323,8 +322,6 @@ export function DashboardPage() {
       </Panel>
 
       <div className="dashboard-grid">
-        <BackendStatus />
-
         <Panel
           label="Сводка"
           title={
