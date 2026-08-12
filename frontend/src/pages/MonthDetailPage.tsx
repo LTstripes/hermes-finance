@@ -422,7 +422,7 @@ export function MonthDetailPage() {
       </nav>
 
       <div className="toolbar month-workspace__secondary-actions">
-        <Link className="btn btn--ghost" to="/months">
+        <Link aria-label="К списку месяцев" className="btn btn--ghost" to="/months">
           ← Все месяцы
         </Link>
         <Button onClick={() => setCloneOpen(true)} type="button" variant="ghost">
@@ -638,11 +638,9 @@ function MonthStickySummary({
   warningCount: number;
 }) {
   if (!kpis) {
-    return (
-      <span className="month-workspace__summary-item">
-        {warningCount > 0 ? `${warningCount} предупреждений` : "Показатели загружаются по данным месяца"}
-      </span>
-    );
+    const fallback =
+      warningCount > 0 ? `${warningCount} предупреждений` : "Краткие показатели недоступны";
+    return <span className="month-workspace__summary-item">{fallback}</span>;
   }
 
   return (
