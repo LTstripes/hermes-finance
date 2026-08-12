@@ -1,0 +1,149 @@
+.runtime-alert {
+  position: relative;
+  z-index: 4;
+  border-bottom: 1px solid #ead0cc;
+  background: var(--red-soft);
+}
+
+.runtime-alert__inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(1100px, 100%);
+  min-height: 54px;
+  margin: 0 auto;
+  padding: 10px var(--space-10);
+  color: var(--red);
+}
+
+.runtime-alert__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 4px rgb(155 64 57 / 12%);
+}
+
+.runtime-alert__inner > div {
+  display: grid;
+  gap: 1px;
+}
+
+.runtime-alert__inner strong {
+  font-size: var(--text-md);
+}
+
+.runtime-alert__inner span:not(.runtime-alert__dot) {
+  color: #7f4d48;
+  font-size: var(--text-sm);
+}
+
+.runtime-alert__link {
+  color: var(--red);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.runtime-alert__link:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+#diagnostics {
+  scroll-margin-top: 88px;
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.diagnostics-grid .data-value {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.diagnostics-grid .data-value__value {
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.diagnostics-actions p {
+  max-width: 650px;
+  margin: 0;
+}
+
+.diagnostics-badge--error {
+  color: var(--red) !important;
+  background: var(--red-soft) !important;
+}
+
+@media (max-width: 1180px) and (min-width: 961px) {
+  .app-shell {
+    grid-template-columns: 216px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding-inline: 14px;
+  }
+
+  .brand {
+    gap: 9px;
+    padding-inline: 5px;
+  }
+
+  .brand__text small {
+    display: none;
+  }
+
+  .nav-item {
+    gap: 9px;
+    padding-inline: 10px;
+  }
+
+  .content,
+  .runtime-alert__inner {
+    padding-inline: 28px;
+  }
+}
+
+@media (max-width: 960px) {
+  .runtime-alert__inner {
+    padding-inline: 22px;
+  }
+}
+
+@media (max-width: 680px) {
+  .runtime-alert__inner {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .runtime-alert__link {
+    grid-column: 2;
+    width: fit-content;
+  }
+
+  .diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostics-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
