@@ -301,9 +301,12 @@ data/private_seed.json
 - локаль;
 - часовой пояс;
 - текущая цель пассивного дохода;
+- нижняя граница полной истории пассивного дохода `passive_income_history_start_month`, допускается `null` и логически представляется как `YYYY-MM`;
 - налоговые правила;
 - настройки экспорта;
 - путь резервных копий.
+
+`passive_income_history_start_month=null` означает прежнее поведение: вся доступная история CLOSED месяцев допускается в исторические passive-income метрики. Граница включительна и подробно определена в ADR 0008.
 
 ## 9.2. `reporting_months`
 
@@ -648,21 +651,37 @@ actual_net_passive_income =
 
 ## 10.5. Средний фактический пассивный доход
 
-До накопления 12 месяцев:
+Среднее строится по **eligible CLOSED reporting months**, а не по календарному году и не по всем календарным слотам подряд.
+
+Глобальная настройка:
+
+```text
+passive_income_history_start_month: YYYY-MM | null
+```
+
+задаёт включительную нижнюю границу полной истории пассивного дохода. `null` означает прежнее поведение — использовать всю доступную историю CLOSED месяцев.
+
+Месяц участвует в историческом среднем, только если он CLOSED и находится на/после границы. Сумма не определяет eligibility: настоящий CLOSED месяц с нулевым или отрицательным пассивным доходом участвует. DRAFT/reopened month не участвует до повторного закрытия. Отсутствующий календарный месяц не превращается в нулевой месяц и не увеличивает знаменатель.
+
+До накопления 12 eligible CLOSED месяцев:
 
 ```text
 actual_passive_income_avg =
-    sum(actual_net_passive_income for available months)
-    / count(available months)
+    sum(actual_net_passive_income for eligible available months)
+    / count(eligible available months)
 ```
 
-UI показывает предупреждение:
+После накопления 12 используются последние 12 **eligible CLOSED reporting-month records** по `(year, month)`. Это rolling window, а не calendar-year average.
+
+UI показывает фактически использованный count и настроенную границу, например:
 
 ```text
-Среднее за доступный период. Учтено N месяцев из 12.
+Среднее за 5 закрытых месяцев из 12 · учёт с мая 2026
 ```
 
-После накопления 12 месяцев используется скользящее окно последних 12 отчётных месяцев.
+Если eligible CLOSED месяцев нет, UI сообщает отсутствие закрытой истории в выбранном периоде, а не выдаёт это за измеренный нулевой месяц.
+
+Единый backend eligibility source применяется также к current/progress passive-income Goal и к actual-dividend history component прогноза. Подробный normative contract, migration/default и примеры определены в ADR 0008.
 
 ## 10.6. Прогнозный чистый пассивный доход
 
@@ -678,7 +697,8 @@ forecast_12m_net_passive_income =
 
 - ожидаемые купоны берутся из ручного календаря ожидаемых выплат;
 - проценты по депозитам могут рассчитываться из текущего остатка и ставки;
-- дивидендная часть до появления надёжного прогноза равна фактическому среднему за доступный период, позже — среднему за последние 12 месяцев;
+- дивидендная часть строится из фактического среднего net dividends по той же eligible CLOSED history и той же lower boundary, что определены §10.5 / ADR 0008; после 12 eligible месяцев используется rolling last-12;
+- граница исторического passive income не фильтрует forward-looking `expected_cash_flows` купонов, процентов и прочего ожидаемого дохода;
 - погашения облигаций исключаются;
 - налоги учитываются, если известны, иначе сумма маркируется как приблизительная.
 
@@ -688,12 +708,14 @@ forecast_monthly_net_passive_income = forecast_12m_net_passive_income / 12
 
 ## 10.7. Прогресс к цели
 
+Для passive-income Goal текущее значение и прогресс используют фактическое rolling average из §10.5 (R02-27), а C04 forecast остаётся отдельной прогнозной метрикой:
+
 ```text
 passive_income_goal_progress_pct =
-    forecast_monthly_net_passive_income / 100000 * 100
+    actual_passive_income_avg / passive_income_goal_target * 100
 ```
 
-По умолчанию прогресс строится по прогнозному показателю. Рядом показывается фактическое среднее.
+Точная цель берётся из canonical Goals source of truth, а не hardcode UI. Прогнозный passive income показывается рядом отдельно и не подменяет фактический current value цели.
 
 ## 10.8. Покрытие обязательных расходов
 
