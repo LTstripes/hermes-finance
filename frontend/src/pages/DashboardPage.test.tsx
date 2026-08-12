@@ -1,26 +1,17 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardPage } from "./DashboardPage";
 
-vi.mock("../components/BackendStatus", () => ({
-  BackendStatus: () => <div>backend status stub</div>,
-}));
 vi.mock("../components/MainGoalPanel", () => ({
   MainGoalPanel: ({ reportingMonthId }: { reportingMonthId: number | null }) => (
-    <div>main goal {reportingMonthId ?? "none"}</div>
+    <article>main goal {reportingMonthId ?? "none"}</article>
   ),
-}));
-vi.mock("../components/charts/AssetAllocationChart", () => ({
-  AssetAllocationChart: () => <div>asset chart stub</div>,
 }));
 vi.mock("../components/charts/CapitalChart", () => ({
   CapitalChart: () => <div>capital chart stub</div>,
-}));
-vi.mock("../components/charts/InvestmentResultChart", () => ({
-  InvestmentResultChart: () => <div>result chart stub</div>,
 }));
 vi.mock("../components/charts/PassiveIncomeChart", () => ({
   PassiveIncomeChart: () => <div>passive chart stub</div>,
@@ -34,8 +25,22 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 const months = [
-  { id: 1, year: 2031, month: 1, status: "closed", snapshot_date: "2031-01-31", source: "manual" },
-  { id: 2, year: 2031, month: 2, status: "draft", snapshot_date: "2031-02-28", source: "manual" },
+  {
+    id: 1,
+    year: 2031,
+    month: 1,
+    status: "closed",
+    snapshot_date: "2031-01-31",
+    source: "manual",
+  },
+  {
+    id: 2,
+    year: 2031,
+    month: 2,
+    status: "draft",
+    snapshot_date: "2031-02-28",
+    source: "manual",
+  },
 ];
 
 function dashboard(monthId: number, warning: string | null = null) {
@@ -76,15 +81,9 @@ function setupDashboard(
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url === "/api/months") {
-      return monthsResponse;
-    }
-    if (url === "/api/months/2/dashboard") {
-      return dashboardResponse(2);
-    }
-    if (url === "/api/months/1/dashboard") {
-      return dashboardResponse(1);
-    }
+    if (url === "/api/months") return monthsResponse;
+    if (url === "/api/months/2/dashboard") return dashboardResponse(2);
+    if (url === "/api/months/1/dashboard") return dashboardResponse(1);
     return jsonResponse(
       { error: { code: "not_found", message: `no mock for ${url}`, details: [] } },
       404,
@@ -103,29 +102,45 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("DashboardPage G03 component contract", () => {
-  it("selects the newest month, switches KPI and main-goal source, and renders warnings", async () => {
+describe("DashboardPage R03-03 hierarchy", () => {
+  it("keeps four overview blocks and moves drill-down content away from Dashboard", async () => {
     const fetchMock = setupDashboard((monthId) =>
       jsonResponse(dashboard(monthId, monthId === 2 ? "Среднее доступно за 6 месяцев" : null)),
     );
     const user = userEvent.setup();
 
-    const selector = await screen.findByLabelText("Месяц KPI");
+    const selector = await screen.findByLabelText("Отчётный месяц");
     expect(selector).toHaveValue("2");
+    expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
+
+    const overview = screen.getByRole("region", { name: "Ключевое состояние" });
+    expect(within(overview).getAllByRole("article")).toHaveLength(4);
+    expect(within(overview).getByText("Изменение за месяц")).toBeInTheDocument();
+    expect(within(overview).getByText("Средний фактический доход")).toBeInTheDocument();
+    expect(within(overview).getByText("Прогноз пассивного дохода")).toBeInTheDocument();
+    expect(within(overview).getByText("Покрытие расходов")).toBeInTheDocument();
     expect(screen.getByText("main goal 2")).toBeInTheDocument();
-    expect(await screen.findByText("Среднее доступно за 6 месяцев")).toBeInTheDocument();
+
+    expect(screen.queryByText("Среднее доступно за 6 месяцев")).toBeNull();
+    expect(screen.queryByText("Результат по классам и счетам")).toBeNull();
+    expect(screen.queryByText("Распределение активов")).toBeNull();
+    expect(screen.queryByText("Отчётные месяцы")).toBeNull();
+    expect(screen.getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
+      "href",
+      "/months/2",
+    );
+    expect(screen.getByRole("link", { name: "Все месяцы" })).toHaveAttribute("href", "/months");
+    expect(screen.getByRole("link", { name: "Аналитика" })).toHaveAttribute("href", "/analytics");
 
     await user.selectOptions(selector, "1");
-
     expect(selector).toHaveValue("1");
     expect(await screen.findByText("main goal 1")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input]) => String(input) === "/api/months/1/dashboard"),
     ).toBe(true);
-    expect(screen.getByText("Предупреждений нет.")).toBeInTheDocument();
   });
 
-  it("shows localized dashboard error state without pretending that KPI data loaded", async () => {
+  it("shows localized dashboard errors without bringing technical cards back", async () => {
     setupDashboard(() =>
       jsonResponse(
         { error: { code: "internal_error", message: "Dashboard API failed", details: [] } },
@@ -139,8 +154,10 @@ describe("DashboardPage G03 component contract", () => {
         (alert) => alert.textContent === "Внутренняя ошибка приложения. Попробуй обновить данные.",
       ),
     ).toBe(true);
-    expect(screen.getAllByText("Не удалось загрузить показатели")).toHaveLength(5);
+    expect(screen.getAllByText("Не удалось загрузить показатели")).toHaveLength(2);
     expect(screen.queryByText("Dashboard API failed")).toBeNull();
+    expect(screen.queryByText("Распределение активов")).toBeNull();
+    expect(screen.queryByText("Результат по классам и счетам")).toBeNull();
     expect(screen.getAllByText("…").length).toBeGreaterThan(0);
   });
 });
