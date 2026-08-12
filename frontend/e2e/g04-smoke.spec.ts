@@ -7,10 +7,12 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await page.getByRole("link", { name: "Месяцы" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Месяцы" })).toBeVisible();
 
-  await page.getByLabel("Год").fill("2049");
-  await page.getByLabel("Месяц").selectOption("12");
-  await page.getByLabel("Дата снимка").fill("2049-12-31");
-  await page.getByRole("button", { name: "Создать месяц" }).click();
+  await page.getByRole("button", { name: "Создать другой период" }).click();
+  const createDialog = page.getByRole("dialog", { name: "Создать месяц" });
+  await createDialog.getByLabel("Год").fill("2049");
+  await createDialog.getByLabel("Месяц").selectOption("12");
+  await createDialog.getByLabel("Дата снимка").fill("2049-12-31");
+  await createDialog.getByRole("button", { name: "Создать месяц" }).click();
 
   const monthRow = page.getByRole("row").filter({ hasText: "Декабрь" }).last();
   await expect(monthRow).toContainText("Черновик");

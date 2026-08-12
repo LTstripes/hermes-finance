@@ -303,14 +303,21 @@ describe("App", () => {
     expect(within(screen.getByRole("table")).getByText(/Июнь/)).toBeInTheDocument();
 
     const juneRow = periodCell(/Июнь/);
-    expect(within(juneRow).queryByRole("button", { name: "Удалить" })).toBeNull();
+    await user.click(within(juneRow).getByRole("button", { name: /Действия для Июнь/ }));
+    expect(within(juneRow).queryByRole("menuitem", { name: "Удалить черновик" })).toBeNull();
+    await user.keyboard("{Escape}");
 
+    await user.click(screen.getByRole("button", { name: "Создать другой период" }));
     await user.clear(screen.getByLabelText("Год"));
     await user.type(screen.getByLabelText("Год"), "2026");
     await user.selectOptions(screen.getByLabelText("Месяц"), "8");
     await user.clear(screen.getByLabelText("Дата снимка"));
     await user.type(screen.getByLabelText("Дата снимка"), "2026-08-31");
-    await user.click(screen.getByRole("button", { name: "Создать месяц" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Создать месяц" })).getByRole("button", {
+        name: "Создать месяц",
+      }),
+    );
 
     expect(await within(screen.getByRole("table")).findByText(/Август/)).toBeInTheDocument();
 
@@ -326,7 +333,8 @@ describe("App", () => {
     expect(await screen.findByRole("table")).toBeInTheDocument();
 
     const julyAgain = periodCell(/Июль/);
-    await user.click(within(julyAgain).getByRole("button", { name: "Удалить" }));
+    await user.click(within(julyAgain).getByRole("button", { name: /Действия для Июль/ }));
+    await user.click(within(julyAgain).getByRole("menuitem", { name: "Удалить черновик" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Удалить черновик" }));
 

@@ -673,9 +673,62 @@ a.btn {
 
 .row-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   align-items: center;
+}
+
+.months-table {
+  min-width: 620px;
+}
+
+.months-table th,
+.months-table td {
+  padding-inline: 12px;
+}
+
+.months-table th:first-child,
+.months-table td:first-child {
+  padding-left: 0;
+}
+
+.months-table th:last-child,
+.months-table td:last-child {
+  padding-right: 0;
+}
+
+.months-table__snapshot {
+  white-space: nowrap;
+}
+
+.months-table__open {
+  white-space: nowrap;
+}
+
+.month-period {
+  display: grid;
+  gap: 3px;
+  min-width: 132px;
+}
+
+.month-period strong {
+  font-weight: 650;
+}
+
+.month-period__details {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+.month-period__details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.month-period__details span {
+  display: block;
+  margin-top: 3px;
 }
 
 .detail-list {
@@ -710,6 +763,12 @@ a.btn {
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.months-page__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
