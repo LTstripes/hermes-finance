@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -67,6 +67,10 @@ function periodCell(label: RegExp): HTMLElement {
     throw new Error("row not found");
   }
   return row;
+}
+
+async function selectMonthSection(user: ReturnType<typeof userEvent.setup>, section: string) {
+  await user.click(screen.getByRole("button", { name: new RegExp(`^${section}$`) }));
 }
 
 function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[] = []) {
@@ -176,7 +180,7 @@ describe("App", () => {
     expect(document.getElementById("main")).not.toBeNull();
     // KPI labels render immediately (values may be loading placeholders)
     expect(screen.getByText("Ликвидный капитал")).toBeInTheDocument();
-    expect(screen.getByText("Прогноз пассивного дохода")).toBeInTheDocument();
+    expect(screen.getByText("Пассивный доход")).toBeInTheDocument();
   });
 
   it("loads live KPI values from dashboard API for the latest month", async () => {
@@ -215,7 +219,7 @@ describe("App", () => {
 
     expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
     expect(screen.getByText("Изменение за месяц")).toBeInTheDocument();
-    expect(screen.getByText("Средний фактический доход")).toBeInTheDocument();
+    expect(screen.getByText("Факт · среднее")).toBeInTheDocument();
     expect(screen.getByText("Прогресс цели")).toBeInTheDocument();
     expect(screen.getByText("Обязательные расходы")).toBeInTheDocument();
     expect(screen.getByText("Покрытие расходов")).toBeInTheDocument();
@@ -226,17 +230,22 @@ describe("App", () => {
   it("shows backend connected after a successful health check", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ status: "ok", version: "0.1.0" }),
-      }),
+      vi.fn((input: RequestInfo | URL) =>
+        String(input) === "/api/health"
+          ? jsonResponse({ status: "ok", version: "0.1.0" })
+          : jsonResponse([]),
+      ),
     );
 
     render(<App />);
 
-    expect(await screen.findByText("Сервер подключён")).toBeInTheDocument();
-    expect(screen.getByText("API v0.1.0")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("status")
+          .some((element) => element.textContent === "Сервер подключён · API v0.1.0"),
+      ).toBe(true),
+    );
   });
 
   it("shows backend unavailable when the health check fails", async () => {
@@ -286,7 +295,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     expect(screen.getByRole("heading", { level: 1, name: "Месяцы" })).toBeInTheDocument();
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
@@ -308,6 +317,7 @@ describe("App", () => {
     const julyRow = periodCell(/Июль/);
     await user.click(within(julyRow).getByRole("link", { name: "Открыть" }));
     expect(await screen.findByRole("heading", { level: 1, name: /Июль/ })).toBeInTheDocument();
+    await selectMonthSection(user, "Доходы");
     expect(screen.getByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();
     expect(screen.getByLabelText(/Кэшбэк/i)).toBeInTheDocument();
 
@@ -380,7 +390,7 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Создать следующий месяц" }));
@@ -388,6 +398,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Клонировать" }));
     expect(await screen.findByRole("heading", { level: 1, name: /Август/ })).toBeInTheDocument();
+    await selectMonthSection(user, "Доходы");
     expect(screen.getByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();
   });
 
@@ -423,11 +434,12 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     await user.click(
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
+    await selectMonthSection(user, "Доходы");
     expect(await screen.findByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();
     expect(screen.queryByText(/несохранённые изменения/i)).not.toBeInTheDocument();
 
@@ -510,11 +522,12 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     await user.click(
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
+    await selectMonthSection(user, "Активы");
     expect(await screen.findByRole("heading", { level: 2, name: "Депозиты" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: "Денежные средства" }),
@@ -597,12 +610,13 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     await user.click(
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
-    expect(await screen.findByText("Позиции")).toBeInTheDocument();
+    await selectMonthSection(user, "Позиции");
+    expect(await screen.findByRole("heading", { level: 2, name: "Позиции" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Счёт позиции"), "2");
     await user.selectOptions(screen.getByLabelText("Инструмент позиции"), "10");
     await user.clear(screen.getByLabelText("Количество"));
@@ -667,11 +681,12 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     await user.click(
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
+    await selectMonthSection(user, "Выплаты");
     expect(await screen.findByText("Фактические потоки")).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Тип потока"), "coupon");
     await user.selectOptions(screen.getByLabelText("Счёт фактической выплаты"), "2");
@@ -740,11 +755,12 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     await user.click(
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
+    await selectMonthSection(user, "Бюджет");
     expect(await screen.findByRole("heading", { level: 2, name: "Расходы" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("Категория расхода"), "Аренда");
     await user.type(screen.getByLabelText("Сумма расхода"), "50000");
@@ -816,11 +832,12 @@ describe("App", () => {
     );
 
     render(<App />);
-    await user.click(screen.getByRole("link", { name: /Месяцы/i }));
+    await user.click(screen.getByRole("link", { name: /^Месяцы$/ }));
     await user.click(
       within(await screen.findByRole("table")).getByRole("link", { name: "Открыть" }),
     );
 
+    await selectMonthSection(user, "Долги");
     expect(await screen.findByRole("heading", { level: 2, name: "Долги" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("Текущий баланс долга"), "15000");
     await user.click(screen.getByRole("button", { name: "Добавить долг" }));
@@ -834,6 +851,7 @@ describe("App", () => {
     expect(await screen.findByText("Квартира")).toBeInTheDocument();
     expect(screen.getAllByText(/Покрытие ипотеки/i).length).toBeGreaterThan(0);
 
+    await selectMonthSection(user, "Проверка");
     expect(screen.getByRole("heading", { level: 2, name: "Комментарии" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("Новый комментарий"), "Первый месяц");

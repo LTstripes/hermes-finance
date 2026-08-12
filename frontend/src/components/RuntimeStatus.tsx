@@ -16,6 +16,7 @@ function useRuntimeHealth(): [RuntimeState, () => void] {
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
+    void attempt;
     const controller = new AbortController();
     setState({ kind: "checking" });
     void getHealth(controller.signal)

@@ -305,7 +305,7 @@ export function GoalsPage() {
             title="Нет активных целей"
           />
         ) : (
-          <div className="goal-card-grid" role="list">
+          <ul className="goal-card-grid">
             {activeGoals.map((goal) => (
               <GoalCard
                 goal={goal}
@@ -317,7 +317,7 @@ export function GoalsPage() {
                 summaryLoading={summaryLoading}
               />
             ))}
-          </div>
+          </ul>
         )}
       </Panel>
 
@@ -327,7 +327,7 @@ export function GoalsPage() {
             <span>Архив</span>
             <strong>{inactiveGoals.length}</strong>
           </summary>
-          <div className="goal-card-grid goal-card-grid--archive" role="list">
+          <ul className="goal-card-grid goal-card-grid--archive">
             {inactiveGoals.map((goal) => (
               <GoalCard
                 compact
@@ -340,7 +340,7 @@ export function GoalsPage() {
                 summaryLoading={summaryLoading}
               />
             ))}
-          </div>
+          </ul>
         </details>
       ) : null}
 
@@ -399,11 +399,10 @@ function GoalCard({
   const hasOverflowActions = !goal.is_main;
 
   return (
-    <article
+    <li
       className={`goal-card${goal.is_main ? " goal-card--main" : ""}${
         compact ? " goal-card--compact" : ""
       }`}
-      role="listitem"
     >
       <header className="goal-card__header">
         <div className="goal-card__identity">
@@ -456,7 +455,7 @@ function GoalCard({
       {!compact ? <GoalForecast forecast={forecast} goal={goal} loading={summaryLoading} /> : null}
 
       <GoalDetails forecast={forecast} goal={goal} />
-    </article>
+    </li>
   );
 }
 

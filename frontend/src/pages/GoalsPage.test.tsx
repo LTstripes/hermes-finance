@@ -92,7 +92,7 @@ function withForecast(
 
 function cardFor(name: string): HTMLElement {
   const heading = screen.getByRole("heading", { level: 3, name });
-  const card = heading.closest("article");
+  const card = heading.closest("li");
   if (!card) throw new Error("expected goal card");
   return card;
 }
@@ -151,9 +151,9 @@ describe("GoalsPage R03-09 cards", () => {
     expect(screen.queryByRole("table")).toBeNull();
 
     const activePanel = screen.getByText("Цели (2)").closest(".panel");
-    if (!activePanel) throw new Error("expected active goals panel");
+    if (!(activePanel instanceof HTMLElement)) throw new Error("expected active goals panel");
 
-    const activeCards = within(activePanel).getAllByRole("listitem");
+    const activeCards = within(activePanel).getAllByRole("listitem") as HTMLElement[];
     expect(activeCards).toHaveLength(2);
     expect(
       within(activeCards[0]).getByRole("heading", { name: "Пассивный доход" }),
@@ -161,7 +161,7 @@ describe("GoalsPage R03-09 cards", () => {
     expect(activeCards[0]).toHaveClass("goal-card--main");
 
     const mainCard = cardFor("Пассивный доход");
-    expect(within(mainCard).getByText("80,0%")).toBeInTheDocument();
+    expect(await within(mainCard).findByText("80,0%")).toBeInTheDocument();
     const progress = within(mainCard).getByRole("progressbar", { name: /Пассивный доход/ });
     expect((progress as HTMLProgressElement).value).toBe(80);
     expect(within(mainCard).getByText(/80\s*000\s*₽/)).toBeInTheDocument();

@@ -134,7 +134,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(await screen.findByText("assets stub")).toBeVisible();
     expect(screen.getByRole("button", { name: "Активы" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("Раздел: Активы")).toBeInTheDocument();
-    expect(screen.getByText("positions stub")).not.toBeVisible();
+    expect(screen.queryByText("positions stub")).toBeNull();
     expect(screen.getByLabelText("Период")).not.toBeVisible();
   });
 
@@ -151,7 +151,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(updateMonthMock).not.toHaveBeenCalled();
     expect(closeMonthMock).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Доходы" }));
+    await user.click(screen.getByRole("button", { name: /^Доходы$/ }));
     expect(screen.getByLabelText("Зарплата до вычета налогов")).toHaveValue("100000");
 
     const beforeUnload = new Event("beforeunload", { cancelable: true });
@@ -163,12 +163,12 @@ describe("MonthDetailPage R03-06 workspace", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole("heading", { level: 1, name: "Февраль 2031" });
+    await screen.findByRole("heading", { level: 1, name: /Февраль\s+2031/ });
     await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
     expect(screen.getByText("review stub")).toBeVisible();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: "Доходы" }));
+    await user.click(screen.getByRole("button", { name: /^Доходы$/ }));
     await user.type(screen.getByLabelText("Зарплата до вычета налогов"), "100000");
     await user.click(screen.getByRole("button", { name: "Проверка" }));
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
@@ -180,7 +180,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
     getMonthMock.mockResolvedValueOnce(draftMonth).mockResolvedValue(closedMonth);
     renderPage();
 
-    await screen.findByRole("heading", { level: 1, name: "Февраль 2031" });
+    await screen.findByRole("heading", { level: 1, name: /Февраль\s+2031/ });
     await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
     await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();

@@ -137,12 +137,13 @@ export function PassiveIncomeChart({
         </BarChart>
       </ResponsiveContainer>
 
-      <div className="chart-legend" aria-label="Обозначения графика">
+      <fieldset className="chart-legend">
+        <legend className="sr-only">Обозначения графика</legend>
         {legendMarker("fact", "Факт по месяцам")}
         {legendMarker("average", "Среднее факта", formatMoney(average))}
         {legendMarker("forecast", "Прогноз", formatMoney(forecast))}
         {legendMarker("goal", "Цель", formatMoney(goal))}
-      </div>
+      </fieldset>
 
       <div className="chart-meta-row">
         {!complete12m ? (

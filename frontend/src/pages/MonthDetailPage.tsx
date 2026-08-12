@@ -403,14 +403,14 @@ export function MonthDetailPage() {
               <span>{section.label}</span>
               {hasUnsaved ? (
                 <span
-                  aria-label="Есть несохранённые изменения"
+                  aria-hidden="true"
                   className="month-section-nav__indicator month-section-nav__indicator--dirty"
                 >
                   •
                 </span>
               ) : warningCount > 0 ? (
                 <span
-                  aria-label={`${warningCount} предупреждений`}
+                  aria-hidden="true"
                   className="month-section-nav__indicator month-section-nav__indicator--warning"
                 >
                   {warningCount}
@@ -563,35 +563,31 @@ export function MonthDetailPage() {
         </section>
       </form>
 
-      <section hidden={activeSection !== "assets"}>
-        <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
-      </section>
+      {activeSection === "assets" ? <MonthAssetsSection monthId={month.id} readOnly={readOnly} /> : null}
 
-      <section hidden={activeSection !== "positions"}>
+      {activeSection === "positions" ? (
         <MonthPositionsSection
           defaultPriceDate={month.snapshot_date}
           monthId={month.id}
           readOnly={readOnly}
         />
-      </section>
+      ) : null}
 
-      <section hidden={activeSection !== "flows"}>
+      {activeSection === "flows" ? (
         <MonthFlowsSection
           defaultDate={month.snapshot_date}
           monthId={month.id}
           readOnly={readOnly}
         />
-      </section>
+      ) : null}
 
-      <section hidden={activeSection !== "budget"}>
-        <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
-      </section>
+      {activeSection === "budget" ? <MonthBudgetSection monthId={month.id} readOnly={readOnly} /> : null}
 
-      <section hidden={activeSection !== "liabilities"}>
+      {activeSection === "liabilities" ? (
         <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
-      </section>
+      ) : null}
 
-      <section hidden={activeSection !== "review"}>
+      {activeSection === "review" ? (
         <MonthCloseoutSection
           monthId={month.id}
           onStatusChanged={() => void load()}
@@ -599,7 +595,7 @@ export function MonthDetailPage() {
           status={month.status === "closed" ? "closed" : "draft"}
           year={month.year}
         />
-      </section>
+      ) : null}
 
       <CloneMonthDialog
         onCancel={() => setCloneOpen(false)}
