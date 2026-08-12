@@ -32,6 +32,7 @@ type MonthPositionsSectionProps = {
   monthId: number;
   readOnly: boolean;
   defaultPriceDate: string;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 type PositionDraft = {
@@ -85,6 +86,7 @@ export function MonthPositionsSection({
   monthId,
   readOnly,
   defaultPriceDate,
+  onDirtyChange,
 }: MonthPositionsSectionProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -100,10 +102,18 @@ export function MonthPositionsSection({
   const [newInstrumentName, setNewInstrumentName] = useState("");
   const [newInstrumentType, setNewInstrumentType] = useState("stock");
   const [newInstrumentTicker, setNewInstrumentTicker] = useState("");
+  const [draftTouched, setDraftTouched] = useState(false);
+  const [newInstrumentTouched, setNewInstrumentTouched] = useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<PositionDraft | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PositionSnapshot | null>(null);
+
+  const localDirty = draftTouched || newInstrumentTouched || editingId !== null;
+
+  useEffect(() => {
+    onDirtyChange?.(localDirty);
+  }, [localDirty, onDirtyChange]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -246,8 +256,10 @@ export function MonthPositionsSection({
       });
       setInstruments((prev) => [...prev, created]);
       setDraft((prev) => ({ ...prev, instrument_id: String(created.id) }));
+      setDraftTouched(true);
       setNewInstrumentName("");
       setNewInstrumentTicker("");
+      setNewInstrumentTouched(false);
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -295,6 +307,7 @@ export function MonthPositionsSection({
         account_id: String(accountId),
         instrument_id: String(instrumentId),
       }));
+      setDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -639,14 +652,20 @@ export function MonthPositionsSection({
                 <Field htmlFor="instr-name" label="Название инструмента">
                   <Input
                     id="instr-name"
-                    onChange={(e) => setNewInstrumentName(e.target.value)}
+                    onChange={(e) => {
+                      setNewInstrumentName(e.target.value);
+                      setNewInstrumentTouched(true);
+                    }}
                     value={newInstrumentName}
                   />
                 </Field>
                 <Field htmlFor="instr-type" label="Тип инструмента">
                   <Select
                     id="instr-type"
-                    onChange={(e) => setNewInstrumentType(e.target.value)}
+                    onChange={(e) => {
+                      setNewInstrumentType(e.target.value);
+                      setNewInstrumentTouched(true);
+                    }}
                     value={newInstrumentType}
                   >
                     <option value="stock">Акции</option>
@@ -660,7 +679,10 @@ export function MonthPositionsSection({
                 <Field htmlFor="instr-ticker" label="Тикер">
                   <Input
                     id="instr-ticker"
-                    onChange={(e) => setNewInstrumentTicker(e.target.value)}
+                    onChange={(e) => {
+                      setNewInstrumentTicker(e.target.value);
+                      setNewInstrumentTouched(true);
+                    }}
                     value={newInstrumentTicker}
                   />
                 </Field>
@@ -676,7 +698,10 @@ export function MonthPositionsSection({
                 <Field htmlFor="pos-account" label="Счёт позиции">
                   <Select
                     id="pos-account"
-                    onChange={(e) => setDraft({ ...draft, account_id: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, account_id: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     value={draft.account_id}
                   >
                     <option value="">авто (создать «Брокерский»)</option>
@@ -690,7 +715,10 @@ export function MonthPositionsSection({
                 <Field htmlFor="pos-instrument" label="Инструмент позиции">
                   <Select
                     id="pos-instrument"
-                    onChange={(e) => setDraft({ ...draft, instrument_id: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, instrument_id: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     required
                     value={draft.instrument_id}
                   >
@@ -707,7 +735,10 @@ export function MonthPositionsSection({
                     className="input--money"
                     id="pos-qty"
                     inputMode="decimal"
-                    onChange={(e) => setDraft({ ...draft, quantity: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, quantity: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     required
                     value={draft.quantity}
                   />
@@ -717,7 +748,10 @@ export function MonthPositionsSection({
                     className="input--money"
                     id="pos-avg"
                     inputMode="decimal"
-                    onChange={(e) => setDraft({ ...draft, average_cost: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, average_cost: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     required
                     value={draft.average_cost}
                   />
@@ -727,7 +761,10 @@ export function MonthPositionsSection({
                     className="input--money"
                     id="pos-price"
                     inputMode="decimal"
-                    onChange={(e) => setDraft({ ...draft, market_price: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, market_price: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     required
                     value={draft.market_price}
                   />
@@ -737,14 +774,20 @@ export function MonthPositionsSection({
                     className="input--money"
                     id="pos-nkd"
                     inputMode="decimal"
-                    onChange={(e) => setDraft({ ...draft, accrued_interest: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, accrued_interest: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     value={draft.accrued_interest}
                   />
                 </Field>
                 <Field htmlFor="pos-price-date" label="Дата цены">
                   <Input
                     id="pos-price-date"
-                    onChange={(e) => setDraft({ ...draft, price_date: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, price_date: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     required
                     type="date"
                     value={draft.price_date}
@@ -753,7 +796,10 @@ export function MonthPositionsSection({
                 <Field htmlFor="pos-source" label="Источник цены">
                   <Select
                     id="pos-source"
-                    onChange={(e) => setDraft({ ...draft, price_source: e.target.value })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, price_source: e.target.value });
+                      setDraftTouched(true);
+                    }}
                     value={draft.price_source}
                   >
                     <option value="manual">Вручную</option>

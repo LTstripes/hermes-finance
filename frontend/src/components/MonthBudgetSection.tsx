@@ -22,9 +22,9 @@ import { formatMoney } from "../lib/format";
 import { EXPENSE_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
-type Props = { monthId: number; readOnly: boolean };
+type Props = { monthId: number; readOnly: boolean; onDirtyChange?: (dirty: boolean) => void };
 
-export function MonthBudgetSection({ monthId, readOnly }: Props) {
+export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) {
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [savings, setSavings] = useState<SavingAllocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,8 +38,16 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
   const [savDest, setSavDest] = useState("");
   const [savAmount, setSavAmount] = useState("");
   const [savNotes, setSavNotes] = useState("");
+  const [expenseDraftTouched, setExpenseDraftTouched] = useState(false);
+  const [savingDraftTouched, setSavingDraftTouched] = useState(false);
   const [delExpense, setDelExpense] = useState<ExpenseEntry | null>(null);
   const [delSaving, setDelSaving] = useState<SavingAllocation | null>(null);
+
+  const localDirty = expenseDraftTouched || savingDraftTouched;
+
+  useEffect(() => {
+    onDirtyChange?.(localDirty);
+  }, [localDirty, onDirtyChange]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -106,6 +114,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
       setExpCategory("");
       setExpAmount("");
       setExpNotes("");
+      setExpenseDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -131,6 +140,7 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
       setSavDest("");
       setSavAmount("");
       setSavNotes("");
+      setSavingDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -217,13 +227,23 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
               <Field htmlFor="exp-cat" label="Категория расхода">
                 <Input
                   id="exp-cat"
-                  onChange={(e) => setExpCategory(e.target.value)}
+                  onChange={(e) => {
+                    setExpCategory(e.target.value);
+                    setExpenseDraftTouched(true);
+                  }}
                   required
                   value={expCategory}
                 />
               </Field>
               <Field htmlFor="exp-type" label="Тип расхода">
-                <Select id="exp-type" onChange={(e) => setExpType(e.target.value)} value={expType}>
+                <Select
+                  id="exp-type"
+                  onChange={(e) => {
+                    setExpType(e.target.value);
+                    setExpenseDraftTouched(true);
+                  }}
+                  value={expType}
+                >
                   <option value="mandatory">Обязательный</option>
                   <option value="comfortable">Комфортный</option>
                   <option value="other">Прочее</option>
@@ -233,7 +253,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
                 <Input
                   className="input--money"
                   id="exp-amt"
-                  onChange={(e) => setExpAmount(e.target.value)}
+                  onChange={(e) => {
+                    setExpAmount(e.target.value);
+                    setExpenseDraftTouched(true);
+                  }}
                   required
                   value={expAmount}
                 />
@@ -241,7 +264,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
               <Field htmlFor="exp-notes" label="Комментарий расхода">
                 <Input
                   id="exp-notes"
-                  onChange={(e) => setExpNotes(e.target.value)}
+                  onChange={(e) => {
+                    setExpNotes(e.target.value);
+                    setExpenseDraftTouched(true);
+                  }}
                   value={expNotes}
                 />
               </Field>
@@ -309,7 +335,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
               <Field htmlFor="sav-dest" label="Назначение">
                 <Input
                   id="sav-dest"
-                  onChange={(e) => setSavDest(e.target.value)}
+                  onChange={(e) => {
+                    setSavDest(e.target.value);
+                    setSavingDraftTouched(true);
+                  }}
                   required
                   value={savDest}
                 />
@@ -318,7 +347,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
                 <Input
                   className="input--money"
                   id="sav-amt"
-                  onChange={(e) => setSavAmount(e.target.value)}
+                  onChange={(e) => {
+                    setSavAmount(e.target.value);
+                    setSavingDraftTouched(true);
+                  }}
                   required
                   value={savAmount}
                 />
@@ -326,7 +358,10 @@ export function MonthBudgetSection({ monthId, readOnly }: Props) {
               <Field htmlFor="sav-notes" label="Комментарий к откладыванию">
                 <Input
                   id="sav-notes"
-                  onChange={(e) => setSavNotes(e.target.value)}
+                  onChange={(e) => {
+                    setSavNotes(e.target.value);
+                    setSavingDraftTouched(true);
+                  }}
                   value={savNotes}
                 />
               </Field>

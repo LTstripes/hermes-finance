@@ -61,6 +61,7 @@ const MONTH_SECTIONS = [
 
 type MonthSectionId = (typeof MONTH_SECTIONS)[number]["id"];
 type PendingLifecycle = "close" | "reopen" | null;
+type ChildDirtySection = Exclude<MonthSectionId, "general" | "income" | "review">;
 
 function emptyForm(): EditorForm {
   return {
@@ -125,8 +126,10 @@ export function MonthDetailPage() {
   const [visitedSections, setVisitedSections] = useState<Set<MonthSectionId>>(
     () => new Set(["general"]),
   );
+  const [childDirty, setChildDirty] = useState<Partial<Record<ChildDirtySection, boolean>>>({});
 
   const dirty = useMemo(() => !sameForm(form, baseline), [form, baseline]);
+  const workspaceDirty = dirty || Object.values(childDirty).some(Boolean);
   const generalDirty = form.snapshot_date !== baseline.snapshot_date;
   const incomeDirty =
     form.salaryGross !== baseline.salaryGross ||
@@ -141,8 +144,12 @@ export function MonthDetailPage() {
   const visitedMonthIdRef = useRef(monthId);
 
   useEffect(() => {
+    const monthChanged = visitedMonthIdRef.current !== monthId;
+    if (monthChanged) {
+      setChildDirty({});
+    }
     setVisitedSections((previous) => {
-      if (visitedMonthIdRef.current !== monthId) {
+      if (monthChanged) {
         visitedMonthIdRef.current = monthId;
         return new Set([activeSection]);
       }
@@ -152,6 +159,13 @@ export function MonthDetailPage() {
       return next;
     });
   }, [activeSection, monthId]);
+
+  function handleChildDirtyChange(section: ChildDirtySection, value: boolean) {
+    setChildDirty((previous) => {
+      if (previous[section] === value) return previous;
+      return { ...previous, [section]: value };
+    });
+  }
   const visitedSectionsForMonth =
     visitedMonthIdRef.current === monthId
       ? visitedSections
@@ -211,13 +225,13 @@ export function MonthDetailPage() {
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {
-      if (!dirty) return;
+      if (!workspaceDirty) return;
       event.preventDefault();
       event.returnValue = "";
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  }, [workspaceDirty]);
 
   function selectSection(sectionId: MonthSectionId) {
     const next = new URLSearchParams(searchParams);
@@ -292,7 +306,7 @@ export function MonthDetailPage() {
 
   async function confirmLifecycle() {
     if (!month || !pendingLifecycle) return;
-    if (pendingLifecycle === "close" && dirty) return;
+    if (pendingLifecycle === "close" && workspaceDirty) return;
 
     setLifecycleBusy(true);
     setLifecycleError(null);
@@ -375,7 +389,7 @@ export function MonthDetailPage() {
             <Badge tone={month.status === "draft" ? "draft" : "closed"}>
               {labelOf(MONTH_STATUS_LABELS, month.status)}
             </Badge>
-            {dirty ? <Badge tone="draft">Не сохранено</Badge> : null}
+            {workspaceDirty ? <Badge tone="draft">Не сохранено</Badge> : null}
             <span>Раздел: {activeSectionLabel}</span>
           </span>
         }
@@ -389,7 +403,12 @@ export function MonthDetailPage() {
         {MONTH_SECTIONS.map((section) => {
           const isActive = section.id === activeSection;
           const hasUnsaved =
-            (section.id === "general" && generalDirty) || (section.id === "income" && incomeDirty);
+            (section.id === "general" && generalDirty) ||
+            (section.id === "income" && incomeDirty) ||
+            (section.id !== "general" &&
+              section.id !== "income" &&
+              section.id !== "review" &&
+              childDirty[section.id]);
           const warningCount = section.id === "review" ? dashboardWarnings.length : 0;
           return (
             <button
@@ -429,7 +448,7 @@ export function MonthDetailPage() {
         </Button>
       </div>
 
-      {dirty ? (
+      {workspaceDirty ? (
         <div className="month-workspace__notice" role="status">
           Есть несохранённые изменения. Между разделами можно переходить свободно; перед выходом из
           редактора сохрани их вручную.
@@ -582,7 +601,11 @@ export function MonthDetailPage() {
 
       {visitedSectionsForMonth.has("assets") ? (
         <section hidden={activeSection !== "assets"}>
-          <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
+          <MonthAssetsSection
+            monthId={month.id}
+            onDirtyChange={(value) => handleChildDirtyChange("assets", value)}
+            readOnly={readOnly}
+          />
         </section>
       ) : null}
 
@@ -591,6 +614,7 @@ export function MonthDetailPage() {
           <MonthPositionsSection
             defaultPriceDate={month.snapshot_date}
             monthId={month.id}
+            onDirtyChange={(value) => handleChildDirtyChange("positions", value)}
             readOnly={readOnly}
           />
         </section>
@@ -601,6 +625,7 @@ export function MonthDetailPage() {
           <MonthFlowsSection
             defaultDate={month.snapshot_date}
             monthId={month.id}
+            onDirtyChange={(value) => handleChildDirtyChange("flows", value)}
             readOnly={readOnly}
           />
         </section>
@@ -608,26 +633,38 @@ export function MonthDetailPage() {
 
       {visitedSectionsForMonth.has("budget") ? (
         <section hidden={activeSection !== "budget"}>
-          <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
+          <MonthBudgetSection
+            monthId={month.id}
+            onDirtyChange={(value) => handleChildDirtyChange("budget", value)}
+            readOnly={readOnly}
+          />
         </section>
       ) : null}
 
       {visitedSectionsForMonth.has("liabilities") ? (
         <section hidden={activeSection !== "liabilities"}>
-          <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
+          <MonthLiabilitiesSection
+            monthId={month.id}
+            onDirtyChange={(value) => handleChildDirtyChange("liabilities", value)}
+            readOnly={readOnly}
+          />
         </section>
       ) : null}
 
       {visitedSectionsForMonth.has("note") ? (
         <section hidden={activeSection !== "note"}>
-          <MonthNoteSection monthId={month.id} readOnly={readOnly} />
+          <MonthNoteSection
+            monthId={month.id}
+            onDirtyChange={(value) => handleChildDirtyChange("note", value)}
+            readOnly={readOnly}
+          />
         </section>
       ) : null}
 
       {visitedSectionsForMonth.has("review") ? (
         <section hidden={activeSection !== "review"}>
           <MonthReviewSection
-            dirty={dirty}
+            dirty={workspaceDirty}
             monthId={month.id}
             onStatusChanged={() => void load()}
             readOnly={readOnly}

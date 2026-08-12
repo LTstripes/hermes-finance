@@ -24,9 +24,9 @@ import { formatMoney } from "../lib/format";
 import { DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
-type Props = { monthId: number; readOnly: boolean };
+type Props = { monthId: number; readOnly: boolean; onDirtyChange?: (dirty: boolean) => void };
 
-export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
+export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Props) {
   const [debts, setDebts] = useState<DebtEntry[]>([]);
   const [properties, setProperties] = useState<PropertySnapshot[]>([]);
   const [mortgage, setMortgage] = useState<DashboardMortgage | null>(null);
@@ -43,8 +43,16 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
   const [propValue, setPropValue] = useState("");
   const [propMortgage, setPropMortgage] = useState("");
   const [propPayment, setPropPayment] = useState("");
+  const [debtDraftTouched, setDebtDraftTouched] = useState(false);
+  const [propertyDraftTouched, setPropertyDraftTouched] = useState(false);
   const [delDebt, setDelDebt] = useState<DebtEntry | null>(null);
   const [delProp, setDelProp] = useState<PropertySnapshot | null>(null);
+
+  const localDirty = debtDraftTouched || propertyDraftTouched;
+
+  useEffect(() => {
+    onDirtyChange?.(localDirty);
+  }, [localDirty, onDirtyChange]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -115,6 +123,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
         include_in_liquid_capital: true,
       });
       setDebtBal("");
+      setDebtDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -147,6 +156,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
       setPropValue("");
       setPropMortgage("");
       setPropPayment("");
+      setPropertyDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -218,7 +228,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
               <Field htmlFor="debt-name" label="Название долга">
                 <Input
                   id="debt-name"
-                  onChange={(e) => setDebtName(e.target.value)}
+                  onChange={(e) => {
+                    setDebtName(e.target.value);
+                    setDebtDraftTouched(true);
+                  }}
                   required
                   value={debtName}
                 />
@@ -226,7 +239,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
               <Field htmlFor="debt-type" label="Тип долга">
                 <Select
                   id="debt-type"
-                  onChange={(e) => setDebtType(e.target.value)}
+                  onChange={(e) => {
+                    setDebtType(e.target.value);
+                    setDebtDraftTouched(true);
+                  }}
                   value={debtType}
                 >
                   <option value="credit_card">Кредитная карта</option>
@@ -237,7 +253,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
                 <Input
                   className="input--money"
                   id="debt-bal"
-                  onChange={(e) => setDebtBal(e.target.value)}
+                  onChange={(e) => {
+                    setDebtBal(e.target.value);
+                    setDebtDraftTouched(true);
+                  }}
                   required
                   value={debtBal}
                 />
@@ -329,7 +348,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
               <Field htmlFor="prop-name" label="Название объекта">
                 <Input
                   id="prop-name"
-                  onChange={(e) => setPropName(e.target.value)}
+                  onChange={(e) => {
+                    setPropName(e.target.value);
+                    setPropertyDraftTouched(true);
+                  }}
                   required
                   value={propName}
                 />
@@ -338,7 +360,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
                 <Input
                   className="input--money"
                   id="prop-val"
-                  onChange={(e) => setPropValue(e.target.value)}
+                  onChange={(e) => {
+                    setPropValue(e.target.value);
+                    setPropertyDraftTouched(true);
+                  }}
                   required
                   value={propValue}
                 />
@@ -347,7 +372,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
                 <Input
                   className="input--money"
                   id="prop-mort"
-                  onChange={(e) => setPropMortgage(e.target.value)}
+                  onChange={(e) => {
+                    setPropMortgage(e.target.value);
+                    setPropertyDraftTouched(true);
+                  }}
                   required
                   value={propMortgage}
                 />
@@ -356,7 +384,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly }: Props) {
                 <Input
                   className="input--money"
                   id="prop-pay"
-                  onChange={(e) => setPropPayment(e.target.value)}
+                  onChange={(e) => {
+                    setPropPayment(e.target.value);
+                    setPropertyDraftTouched(true);
+                  }}
                   required
                   value={propPayment}
                 />

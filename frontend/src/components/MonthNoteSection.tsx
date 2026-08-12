@@ -17,16 +17,21 @@ import {
   Th,
 } from "./ui";
 
-type Props = { monthId: number; readOnly: boolean };
+type Props = { monthId: number; readOnly: boolean; onDirtyChange?: (dirty: boolean) => void };
 
-export function MonthNoteSection({ monthId, readOnly }: Props) {
+export function MonthNoteSection({ monthId, readOnly, onDirtyChange }: Props) {
   const [comments, setComments] = useState<MonthlyComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const [commentTouched, setCommentTouched] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MonthlyComment | null>(null);
+
+  useEffect(() => {
+    onDirtyChange?.(commentTouched);
+  }, [commentTouched, onDirtyChange]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -58,6 +63,7 @@ export function MonthNoteSection({ monthId, readOnly }: Props) {
     try {
       await createComment({ reporting_month_id: monthId, text: commentText.trim() });
       setCommentText("");
+      setCommentTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -162,7 +168,10 @@ export function MonthNoteSection({ monthId, readOnly }: Props) {
             <Field htmlFor="month-note" label="Новая заметка">
               <Input
                 id="month-note"
-                onChange={(event) => setCommentText(event.target.value)}
+                onChange={(event) => {
+                  setCommentText(event.target.value);
+                  setCommentTouched(true);
+                }}
                 required
                 value={commentText}
               />

@@ -49,6 +49,7 @@ type MonthFlowsSectionProps = {
   monthId: number;
   readOnly: boolean;
   defaultDate: string;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 type ActualDraft = {
@@ -103,7 +104,12 @@ function emptyExpected(date: string): ExpectedDraft {
   };
 }
 
-export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlowsSectionProps) {
+export function MonthFlowsSection({
+  monthId,
+  readOnly,
+  defaultDate,
+  onDirtyChange,
+}: MonthFlowsSectionProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [actual, setActual] = useState<InvestmentFlow[]>([]);
@@ -118,8 +124,16 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
   const [expectedDraft, setExpectedDraft] = useState<ExpectedDraft>(() =>
     emptyExpected(defaultDate),
   );
+  const [actualDraftTouched, setActualDraftTouched] = useState(false);
+  const [expectedDraftTouched, setExpectedDraftTouched] = useState(false);
   const [pendingDeleteActual, setPendingDeleteActual] = useState<InvestmentFlow | null>(null);
   const [pendingDeleteExpected, setPendingDeleteExpected] = useState<ExpectedFlow | null>(null);
+
+  const localDirty = actualDraftTouched || expectedDraftTouched;
+
+  useEffect(() => {
+    onDirtyChange?.(localDirty);
+  }, [localDirty, onDirtyChange]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -254,6 +268,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         ...emptyActual(defaultDate),
         account_id: prev.account_id,
       }));
+      setActualDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -299,6 +314,7 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
         instrument_id: prev.instrument_id,
         forecast_version: payload.forecast_version,
       }));
+      setExpectedDraftTouched(false);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -447,7 +463,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="act-type" label="Тип потока">
                 <Select
                   id="act-type"
-                  onChange={(e) => setActualDraft({ ...actualDraft, flow_type: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, flow_type: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   value={actualDraft.flow_type}
                 >
                   <option value="coupon">Купон</option>
@@ -462,7 +481,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="act-date" label="Дата события">
                 <Input
                   id="act-date"
-                  onChange={(e) => setActualDraft({ ...actualDraft, event_date: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, event_date: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   required
                   type="date"
                   value={actualDraft.event_date}
@@ -471,7 +493,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="act-account" label="Счёт фактической выплаты">
                 <Select
                   id="act-account"
-                  onChange={(e) => setActualDraft({ ...actualDraft, account_id: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, account_id: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   required
                   value={actualDraft.account_id}
                 >
@@ -486,9 +511,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="act-instr" label="Инструмент (необязательно)">
                 <Select
                   id="act-instr"
-                  onChange={(e) =>
-                    setActualDraft({ ...actualDraft, instrument_id: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, instrument_id: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   value={actualDraft.instrument_id}
                 >
                   <option value="">—</option>
@@ -504,7 +530,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="act-gross"
-                  onChange={(e) => setActualDraft({ ...actualDraft, gross: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, gross: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   required
                   value={actualDraft.gross}
                 />
@@ -513,7 +542,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="act-tax"
-                  onChange={(e) => setActualDraft({ ...actualDraft, tax: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, tax: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   value={actualDraft.tax}
                 />
               </Field>
@@ -521,7 +553,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="act-comm"
-                  onChange={(e) => setActualDraft({ ...actualDraft, commission: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, commission: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   value={actualDraft.commission}
                 />
               </Field>
@@ -529,7 +564,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="act-net"
-                  onChange={(e) => setActualDraft({ ...actualDraft, net: e.target.value })}
+                  onChange={(e) => {
+                    setActualDraft({ ...actualDraft, net: e.target.value });
+                    setActualDraftTouched(true);
+                  }}
                   required
                   value={actualDraft.net}
                 />
@@ -636,9 +674,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="exp-type" label="Тип выплаты">
                 <Select
                   id="exp-type"
-                  onChange={(e) =>
-                    setExpectedDraft({ ...expectedDraft, flow_type: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, flow_type: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   value={expectedDraft.flow_type}
                 >
                   <option value="coupon">Купон</option>
@@ -651,9 +690,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="exp-date" label="Дата выплаты">
                 <Input
                   id="exp-date"
-                  onChange={(e) =>
-                    setExpectedDraft({ ...expectedDraft, expected_date: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, expected_date: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   required
                   type="date"
                   value={expectedDraft.expected_date}
@@ -662,9 +702,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="exp-account" label="Счёт выплаты">
                 <Select
                   id="exp-account"
-                  onChange={(e) =>
-                    setExpectedDraft({ ...expectedDraft, account_id: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, account_id: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   required
                   value={expectedDraft.account_id}
                 >
@@ -679,9 +720,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
               <Field htmlFor="exp-instr" label="Инструмент выплаты">
                 <Select
                   id="exp-instr"
-                  onChange={(e) =>
-                    setExpectedDraft({ ...expectedDraft, instrument_id: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, instrument_id: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   required
                   value={expectedDraft.instrument_id}
                 >
@@ -698,7 +740,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="exp-gross"
-                  onChange={(e) => setExpectedDraft({ ...expectedDraft, gross: e.target.value })}
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, gross: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   required
                   value={expectedDraft.gross}
                 />
@@ -707,7 +752,10 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="exp-tax"
-                  onChange={(e) => setExpectedDraft({ ...expectedDraft, tax: e.target.value })}
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, tax: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   value={expectedDraft.tax}
                 />
               </Field>
@@ -715,16 +763,20 @@ export function MonthFlowsSection({ monthId, readOnly, defaultDate }: MonthFlows
                 <Input
                   className="input--money"
                   id="exp-net"
-                  onChange={(e) => setExpectedDraft({ ...expectedDraft, net: e.target.value })}
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, net: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   value={expectedDraft.net}
                 />
               </Field>
               <Field htmlFor="exp-ver" label="Версия">
                 <Input
                   id="exp-ver"
-                  onChange={(e) =>
-                    setExpectedDraft({ ...expectedDraft, forecast_version: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setExpectedDraft({ ...expectedDraft, forecast_version: e.target.value });
+                    setExpectedDraftTouched(true);
+                  }}
                   value={expectedDraft.forecast_version}
                 />
               </Field>

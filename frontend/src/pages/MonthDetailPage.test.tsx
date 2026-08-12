@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +51,30 @@ vi.mock("../components/MonthLiabilitiesSection", () => ({
   MonthLiabilitiesSection: () => <div>liabilities stub</div>,
 }));
 vi.mock("../components/MonthPositionsSection", () => ({
-  MonthPositionsSection: () => <div>positions stub</div>,
+  MonthPositionsSection: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => {
+    const [draft, setDraft] = useState("");
+    return (
+      <div>
+        <label>
+          Позиция draft
+          <input
+            aria-label="Позиция draft"
+            onChange={(event) => {
+              setDraft(event.target.value);
+              onDirtyChange?.(true);
+            }}
+            value={draft}
+          />
+        </label>
+        <button onClick={() => onDirtyChange?.(false)} type="button">
+          Сохранить позицию
+        </button>
+        <button onClick={() => onDirtyChange?.(false)} type="button">
+          Отмена позиции
+        </button>
+      </div>
+    );
+  },
 }));
 vi.mock("../components/SalaryTaxRateSummary", () => ({
   SalaryTaxRateSummary: () => <div>tax rates stub</div>,
@@ -273,6 +297,34 @@ describe("MonthDetailPage R03-06 workspace", () => {
     const reopenDialog = screen.getByRole("alertdialog");
     await user.click(within(reopenDialog).getByRole("button", { name: "Открыть заново" }));
     await waitFor(() => expect(reopenMonthMock).toHaveBeenCalledWith(1));
+  });
+
+  it("blocks close for a positions draft and re-enables it after cancel without saving", async () => {
+    const user = userEvent.setup();
+    renderPage("/months/1?section=positions");
+
+    const draft = await screen.findByLabelText("Позиция draft");
+    await user.type(draft, "локальная правка");
+    await user.click(screen.getByRole("button", { name: "Проверка" }));
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+    expect(closeMonthMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Позиции" }));
+    expect(screen.getByLabelText("Позиция draft")).toHaveValue("локальная правка");
+    await user.click(screen.getByRole("button", { name: "Сохранить позицию" }));
+    await user.click(screen.getByRole("button", { name: "Проверка" }));
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
+    expect(updateMonthMock).not.toHaveBeenCalled();
+    expect(closeMonthMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Позиции" }));
+    await user.type(screen.getByLabelText("Позиция draft"), " ещё");
+    await user.click(screen.getByRole("button", { name: "Проверка" }));
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Позиции" }));
+    await user.click(screen.getByRole("button", { name: "Отмена позиции" }));
+    await user.click(screen.getByRole("button", { name: "Проверка" }));
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
   });
 
   it("scopes visited asset state to the current month route", async () => {
