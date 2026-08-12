@@ -8,7 +8,15 @@ import type { DashboardKpis, DashboardSlice, ReportingMonth } from "../api/types
 import { MainGoalPanel } from "../components/MainGoalPanel";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
-import { EmptyState, ErrorState, Field, LoadingState, Panel, Select } from "../components/ui";
+import {
+  EmptyState,
+  ErrorState,
+  Field,
+  HelpTip,
+  LoadingState,
+  Panel,
+  Select,
+} from "../components/ui";
 import { formatMoney, formatMoneyDelta, formatMonth, formatPercent } from "../lib/format";
 import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
@@ -178,7 +186,7 @@ export function DashboardPage() {
         )}
       </Panel>
 
-      <Panel label="Доход" title="Фактический пассивный доход">
+      <Panel label="Доход" title="Пассивный доход по месяцам">
         {loadingDash ? (
           <LoadingState description="Загружаем показатели…" inline />
         ) : error && !dashboard ? (
@@ -232,28 +240,40 @@ function PassiveIncomeOverviewCard({
   loading: boolean;
 }) {
   const ready = !loading && kpis != null;
+  const countMonths = ready ? kpis.passive_income_average_months : 0;
+  const completeWindow = ready && kpis.passive_income_average_complete;
 
   return (
     <article className="overview-card overview-card--comparison">
       <div className="overview-card__label">Пассивный доход</div>
-      <div className="overview-card__metric-label">Средний фактический доход</div>
+      <div className="semantic-label semantic-label--fact">Факт · среднее</div>
       <div className="overview-card__value">
         {ready ? formatMoney(moneyAmount(kpis.passive_income_average)) : "…"}
       </div>
-      <div className="overview-card__context">
-        {ready
-          ? `Факт · ${kpis.passive_income_average_months} мес.${
-              kpis.passive_income_average_complete ? "" : " из доступной истории"
-            }`
-          : "Факт"}
+      <div className="overview-card__context overview-card__context--with-help">
+        {ready ? (
+          completeWindow ? (
+            <span>12 закрытых месяцев</span>
+          ) : (
+            <>
+              <span>{countMonths} мес. из 12</span>
+              <HelpTip label="Почему среднее пока неполное" align="start">
+                Среднее фактического пассивного дохода рассчитано только по доступным закрытым
+                месяцам. После 12 закрытых месяцев окно станет полным.
+              </HelpTip>
+            </>
+          )
+        ) : (
+          <span>Фактические закрытые месяцы</span>
+        )}
       </div>
       <div className="overview-card__compare">
-        <div>
-          <span>Прогноз пассивного дохода</span>
+        <div className="overview-card__compare-item overview-card__compare-item--forecast">
+          <span className="semantic-label semantic-label--forecast">Прогноз</span>
           <strong>{ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}</strong>
         </div>
-        <div>
-          <span>Цель</span>
+        <div className="overview-card__compare-item overview-card__compare-item--goal">
+          <span className="semantic-label semantic-label--goal">Цель</span>
           <strong>{ready ? formatMoney(moneyAmount(kpis.goal_target)) : "…"}</strong>
         </div>
       </div>
