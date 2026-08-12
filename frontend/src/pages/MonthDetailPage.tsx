@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -140,15 +141,22 @@ export function MonthDetailPage() {
   const activeSection = normalizeSection(searchParams.get("section"));
   const activeSectionLabel =
     MONTH_SECTIONS.find((section) => section.id === activeSection)?.label ?? "Общие данные";
+  const visitedMonthIdRef = useRef(monthId);
 
   useEffect(() => {
     setVisitedSections((previous) => {
+      if (visitedMonthIdRef.current !== monthId) {
+        visitedMonthIdRef.current = monthId;
+        return new Set([activeSection]);
+      }
       if (previous.has(activeSection)) return previous;
       const next = new Set(previous);
       next.add(activeSection);
       return next;
     });
-  }, [activeSection]);
+  }, [activeSection, monthId]);
+  const visitedSectionsForMonth =
+    visitedMonthIdRef.current === monthId ? visitedSections : new Set<MonthSectionId>([activeSection]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -301,7 +309,7 @@ export function MonthDetailPage() {
     }
   }
 
-  if (loading) {
+  if (loading || (month !== null && month.id !== monthId)) {
     return (
       <section className="stack-18">
         <LoadingState description="Загружаем редактор месяца…" inline />
@@ -575,13 +583,13 @@ export function MonthDetailPage() {
         </section>
       </form>
 
-      {visitedSections.has("assets") ? (
+      {visitedSectionsForMonth.has("assets") ? (
         <section hidden={activeSection !== "assets"}>
           <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
         </section>
       ) : null}
 
-      {visitedSections.has("positions") ? (
+      {visitedSectionsForMonth.has("positions") ? (
         <section hidden={activeSection !== "positions"}>
           <MonthPositionsSection
             defaultPriceDate={month.snapshot_date}
@@ -591,7 +599,7 @@ export function MonthDetailPage() {
         </section>
       ) : null}
 
-      {visitedSections.has("flows") ? (
+      {visitedSectionsForMonth.has("flows") ? (
         <section hidden={activeSection !== "flows"}>
           <MonthFlowsSection
             defaultDate={month.snapshot_date}
@@ -601,19 +609,19 @@ export function MonthDetailPage() {
         </section>
       ) : null}
 
-      {visitedSections.has("budget") ? (
+      {visitedSectionsForMonth.has("budget") ? (
         <section hidden={activeSection !== "budget"}>
           <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
         </section>
       ) : null}
 
-      {visitedSections.has("liabilities") ? (
+      {visitedSectionsForMonth.has("liabilities") ? (
         <section hidden={activeSection !== "liabilities"}>
           <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
         </section>
       ) : null}
 
-      {visitedSections.has("review") ? (
+      {visitedSectionsForMonth.has("review") ? (
         <section hidden={activeSection !== "review"}>
           <MonthCloseoutSection
             monthId={month.id}

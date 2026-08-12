@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listAccounts } from "../api/accounts";
@@ -63,6 +63,7 @@ const draftMonth: ReportingMonth = {
 };
 
 const closedMonth: ReportingMonth = { ...draftMonth, status: "closed" };
+const nextMonth: ReportingMonth = { ...draftMonth, id: 2, month: 3 };
 
 const getMonthMock = vi.mocked(getMonth);
 const listIncomesMock = vi.mocked(listIncomes);
@@ -76,11 +77,26 @@ const updateMonthMock = vi.mocked(updateMonth);
 const closeMonthMock = vi.mocked(closeMonth);
 const reopenMonthMock = vi.mocked(reopenMonth);
 
-function renderPage(entry = "/months/1") {
+function MonthRouteHarness() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button onClick={() => navigate("/months/2?section=income")} type="button">
+        Перейти в следующий месяц
+      </button>
+      <MonthDetailPage />
+    </>
+  );
+}
+
+function renderPage(entry = "/months/1", withMonthSwitcher = false) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route element={<MonthDetailPage />} path="/months/:monthId" />
+        <Route
+          element={withMonthSwitcher ? <MonthRouteHarness /> : <MonthDetailPage />}
+          path="/months/:monthId"
+        />
         <Route element={<div>months list</div>} path="/months" />
       </Routes>
     </MemoryRouter>,
@@ -206,6 +222,28 @@ describe("MonthDetailPage R03-06 workspace", () => {
     await user.type(screen.getByLabelText("Зарплата до вычета налогов"), "100000");
     await user.click(screen.getByRole("button", { name: "Проверка" }));
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+    expect(closeMonthMock).not.toHaveBeenCalled();
+  });
+
+  it("scopes visited asset state to the current month route", async () => {
+    const user = userEvent.setup();
+    getMonthMock.mockImplementation(async (monthId) => (monthId === 1 ? draftMonth : nextMonth));
+    renderPage("/months/1?section=assets", true);
+
+    const monthADraft = await screen.findByLabelText("Название вклада");
+    await user.type(monthADraft, "Черновой вклад");
+    await user.click(screen.getByRole("button", { name: "Перейти в следующий месяц" }));
+
+    await screen.findByRole("heading", { level: 1, name: /Март\s+2031/ });
+    expect(screen.queryByLabelText("Название вклада")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Активы" }));
+    expect(await screen.findByLabelText("Название вклада")).toHaveValue("");
+    await user.type(screen.getByLabelText("Название вклада"), "Новый месяц");
+    await user.click(screen.getByRole("button", { name: /^Доходы$/ }));
+    await user.click(screen.getByRole("button", { name: "Активы" }));
+    expect(await screen.findByLabelText("Название вклада")).toHaveValue("Новый месяц");
+    expect(updateMonthMock).not.toHaveBeenCalled();
     expect(closeMonthMock).not.toHaveBeenCalled();
   });
 
