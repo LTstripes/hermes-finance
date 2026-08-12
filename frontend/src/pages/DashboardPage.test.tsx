@@ -71,7 +71,7 @@ function dashboard(monthId: number, warning: string | null = null) {
     result_by_account: [],
     result_by_instrument_class: [],
     warnings: warning ? [warning] : [],
-    calculation_version: "g03-test",
+    calculation_version: "g04-test",
   };
 }
 
@@ -102,8 +102,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("DashboardPage R03-03 hierarchy", () => {
-  it("keeps four overview blocks and moves drill-down content away from Dashboard", async () => {
+describe("DashboardPage R03-04 semantics", () => {
+  it("keeps four overview blocks and distinguishes fact forecast and goal", async () => {
     const fetchMock = setupDashboard((monthId) =>
       jsonResponse(dashboard(monthId, monthId === 2 ? "Среднее доступно за 6 месяцев" : null)),
     );
@@ -116,12 +116,18 @@ describe("DashboardPage R03-03 hierarchy", () => {
     const overview = screen.getByRole("region", { name: "Ключевое состояние" });
     expect(within(overview).getAllByRole("article")).toHaveLength(4);
     expect(within(overview).getByText("Изменение за месяц")).toBeInTheDocument();
-    expect(within(overview).getByText("Средний фактический доход")).toBeInTheDocument();
-    expect(within(overview).getByText("Прогноз пассивного дохода")).toBeInTheDocument();
+    expect(within(overview).getByText("Факт · среднее")).toBeInTheDocument();
+    expect(within(overview).getByText("Прогноз")).toBeInTheDocument();
+    expect(within(overview).getByText("Цель")).toBeInTheDocument();
+    expect(within(overview).getByText("6 мес. из 12")).toBeInTheDocument();
     expect(within(overview).getByText("Покрытие расходов")).toBeInTheDocument();
     expect(screen.getByText("main goal 2")).toBeInTheDocument();
 
     expect(screen.queryByText("Среднее доступно за 6 месяцев")).toBeNull();
+    expect(screen.queryByText(/После 12 закрытых месяцев окно станет полным/)).toBeNull();
+    await user.click(within(overview).getByRole("button", { name: "Почему среднее пока неполное" }));
+    expect(screen.getByText(/После 12 закрытых месяцев окно станет полным/)).toBeInTheDocument();
+
     expect(screen.queryByText("Результат по классам и счетам")).toBeNull();
     expect(screen.queryByText("Распределение активов")).toBeNull();
     expect(screen.queryByText("Отчётные месяцы")).toBeNull();
