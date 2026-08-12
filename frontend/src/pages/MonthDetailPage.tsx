@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { formatApiError } from "../api/client";
-import { getMonth, updateMonth } from "../api/months";
+import { getDashboard } from "../api/dashboard";
 import { listIncomes } from "../api/incomes";
+import { closeMonth, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
-import type { IncomeEntry, ReportingMonth } from "../api/types";
-import {
-  Badge,
-  Button,
-  CloneMonthDialog,
-  ErrorState,
-  Field,
-  Input,
-  LoadingState,
-  Panel,
-} from "../components/ui";
+import type { DashboardKpis, IncomeEntry, ReportingMonth } from "../api/types";
 import { MonthAssetsSection } from "../components/MonthAssetsSection";
 import { MonthBudgetSection } from "../components/MonthBudgetSection";
 import { MonthCloseoutSection } from "../components/MonthCloseoutSection";
@@ -23,6 +20,18 @@ import { MonthFlowsSection } from "../components/MonthFlowsSection";
 import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
 import { SalaryTaxRateSummary } from "../components/SalaryTaxRateSummary";
+import {
+  Badge,
+  Button,
+  CloneMonthDialog,
+  ConfirmDialog,
+  ErrorState,
+  Field,
+  Input,
+  LoadingState,
+  Panel,
+  StickySubheader,
+} from "../components/ui";
 import { formatDate, formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
@@ -40,6 +49,20 @@ type EditorForm = {
 type SalaryTaxRatePart = {
   rate_bps: number;
 };
+
+const MONTH_SECTIONS = [
+  { id: "general", label: "Общие данные" },
+  { id: "income", label: "Доходы" },
+  { id: "assets", label: "Активы" },
+  { id: "positions", label: "Позиции" },
+  { id: "flows", label: "Выплаты" },
+  { id: "budget", label: "Бюджет" },
+  { id: "liabilities", label: "Долги" },
+  { id: "review", label: "Проверка" },
+] as const;
+
+type MonthSectionId = (typeof MONTH_SECTIONS)[number]["id"];
+type PendingLifecycle = "close" | "reopen" | null;
 
 function emptyForm(): EditorForm {
   return {
@@ -71,9 +94,16 @@ function sameForm(a: EditorForm, b: EditorForm): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function normalizeSection(value: string | null): MonthSectionId {
+  return MONTH_SECTIONS.some((section) => section.id === value)
+    ? (value as MonthSectionId)
+    : "general";
+}
+
 export function MonthDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const monthId = Number(params.monthId);
 
   const [month, setMonth] = useState<ReportingMonth | null>(null);
@@ -83,15 +113,30 @@ export function MonthDetailPage() {
   const [calcTax, setCalcTax] = useState("");
   const [calcNet, setCalcNet] = useState("");
   const [calcTaxParts, setCalcTaxParts] = useState<SalaryTaxRatePart[]>([]);
+  const [dashboardKpis, setDashboardKpis] = useState<DashboardKpis | null>(null);
+  const [dashboardWarnings, setDashboardWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState<string | null>(null);
   const [cloneOpen, setCloneOpen] = useState(false);
+  const [pendingLifecycle, setPendingLifecycle] = useState<PendingLifecycle>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   const dirty = useMemo(() => !sameForm(form, baseline), [form, baseline]);
+  const generalDirty = form.snapshot_date !== baseline.snapshot_date;
+  const incomeDirty =
+    form.salaryGross !== baseline.salaryGross ||
+    form.salaryActualNet !== baseline.salaryActualNet ||
+    form.bonus !== baseline.bonus ||
+    form.sideIncome !== baseline.sideIncome ||
+    form.cashback !== baseline.cashback;
   const readOnly = month?.status === "closed";
+  const activeSection = normalizeSection(searchParams.get("section"));
+  const activeSectionLabel =
+    MONTH_SECTIONS.find((section) => section.id === activeSection)?.label ?? "Общие данные";
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -104,14 +149,14 @@ export function MonthDetailPage() {
       setError(null);
       setSaveError(null);
       try {
-        const [monthData, incomeData, summary] = await Promise.all([
+        const [monthData, incomeData, summary, dashboard] = await Promise.all([
           getMonth(monthId, signal),
           listIncomes(monthId, signal),
           getMonthSummary(monthId, signal),
+          getDashboard(monthId, signal).catch(() => null),
         ]);
-        if (signal?.aborted) {
-          return;
-        }
+        if (signal?.aborted) return;
+
         setMonth(monthData);
         setIncomes(incomeData);
         const next = formFromData(monthData, incomeData);
@@ -123,15 +168,17 @@ export function MonthDetailPage() {
           parts?: SalaryTaxRatePart[];
         };
         setCalcTaxParts(salaryTax.parts ?? []);
+        setDashboardKpis(dashboard?.kpis ?? null);
+        setDashboardWarnings(dashboard?.warnings ?? []);
       } catch (err) {
         if (!signal?.aborted) {
           setError(formatApiError(err));
           setMonth(null);
+          setDashboardKpis(null);
+          setDashboardWarnings([]);
         }
       } finally {
-        if (!signal?.aborted) {
-          setLoading(false);
-        }
+        if (!signal?.aborted) setLoading(false);
       }
     },
     [monthId],
@@ -145,15 +192,20 @@ export function MonthDetailPage() {
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {
-      if (!dirty) {
-        return;
-      }
+      if (!dirty) return;
       event.preventDefault();
       event.returnValue = "";
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
+
+  function selectSection(sectionId: MonthSectionId) {
+    const next = new URLSearchParams(searchParams);
+    if (sectionId === "general") next.delete("section");
+    else next.set("section", sectionId);
+    setSearchParams(next, { replace: true });
+  }
 
   function patchForm<K extends keyof EditorForm>(key: K, value: EditorForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -162,14 +214,12 @@ export function MonthDetailPage() {
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
-    if (!month || readOnly) {
-      return;
-    }
+    if (!month || readOnly) return;
+
     setSaving(true);
     setSaveError(null);
     setSaveOk(null);
     try {
-      // validate money fields first
       for (const [label, value] of [
         ["Зарплата до вычета налогов", form.salaryGross],
         ["Фактическая зарплата после налогов", form.salaryActualNet],
@@ -213,11 +263,29 @@ export function MonthDetailPage() {
       });
 
       await load();
-      setSaveOk("Сохранено. Расчётный налог и сумма после налогов обновлены по сводке backend.");
+      setSaveOk("Сохранено.");
     } catch (err) {
       setSaveError(formatApiError(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function confirmLifecycle() {
+    if (!month || !pendingLifecycle) return;
+    if (pendingLifecycle === "close" && dirty) return;
+
+    setLifecycleBusy(true);
+    setLifecycleError(null);
+    try {
+      if (pendingLifecycle === "close") await closeMonth(month.id);
+      else await reopenMonth(month.id);
+      setPendingLifecycle(null);
+      await load();
+    } catch (err) {
+      setLifecycleError(formatApiError(err));
+    } finally {
+      setLifecycleBusy(false);
     }
   }
 
@@ -240,39 +308,132 @@ export function MonthDetailPage() {
     );
   }
 
+  const lifecycleButton = readOnly ? (
+    <Button
+      disabled={lifecycleBusy}
+      onClick={() => setPendingLifecycle("reopen")}
+      size="sm"
+      type="button"
+      variant="secondary"
+    >
+      Открыть для редактирования
+    </Button>
+  ) : activeSection === "review" ? (
+    <Button
+      disabled={lifecycleBusy || dirty}
+      onClick={() => setPendingLifecycle("close")}
+      size="sm"
+      title={dirty ? "Сначала сохрани изменения" : undefined}
+      type="button"
+      variant="primary"
+    >
+      Закрыть месяц
+    </Button>
+  ) : (
+    <Button
+      onClick={() => selectSection("review")}
+      size="sm"
+      type="button"
+      variant="primary"
+    >
+      Проверить и закрыть
+    </Button>
+  );
+
   return (
-    <section className="stack-18">
-      <header className="page-header">
-        <p className="eyebrow">Редактор</p>
+    <section className="month-workspace stack-18">
+      <header className="page-header month-workspace__page-header">
+        <p className="eyebrow">Месяц</p>
         <h1>{formatMonth(month.year, month.month)}</h1>
         <p className="page-header__description">
-          Общие сведения, доходы, активы, позиции, выплаты, бюджет, долги/RE, ИИС и комментарии.
-          Финансовые формулы — только backend.
+          Работай по разделам и переходи между ними в любом порядке — изменения не сохраняются
+          автоматически.
         </p>
       </header>
 
-      <div className="toolbar">
-        <Link className="btn" to="/months">
-          ← К списку
+      <StickySubheader
+        actions={
+          <>
+            <Button
+              disabled={readOnly || saving || !dirty}
+              form="month-core-form"
+              size="sm"
+              type="submit"
+              variant="secondary"
+            >
+              {saving ? "Сохраняем…" : "Сохранить"}
+            </Button>
+            {lifecycleButton}
+          </>
+        }
+        className="month-workspace__sticky"
+        meta={
+          <span className="month-workspace__sticky-meta">
+            <Badge tone={month.status === "draft" ? "draft" : "closed"}>
+              {labelOf(MONTH_STATUS_LABELS, month.status)}
+            </Badge>
+            {dirty ? <Badge tone="draft">Не сохранено</Badge> : null}
+            <span>Раздел: {activeSectionLabel}</span>
+          </span>
+        }
+        summary={
+          <MonthStickySummary
+            kpis={dashboardKpis}
+            warningCount={dashboardWarnings.length}
+          />
+        }
+        title={formatMonth(month.year, month.month)}
+      />
+
+      <nav aria-label="Разделы месяца" className="month-section-nav">
+        {MONTH_SECTIONS.map((section) => {
+          const isActive = section.id === activeSection;
+          const hasUnsaved =
+            (section.id === "general" && generalDirty) ||
+            (section.id === "income" && incomeDirty);
+          const warningCount = section.id === "review" ? dashboardWarnings.length : 0;
+          return (
+            <button
+              aria-current={isActive ? "page" : undefined}
+              className={`month-section-nav__item${isActive ? " is-active" : ""}`}
+              key={section.id}
+              onClick={() => selectSection(section.id)}
+              type="button"
+            >
+              <span>{section.label}</span>
+              {hasUnsaved ? (
+                <span
+                  aria-label="Есть несохранённые изменения"
+                  className="month-section-nav__indicator month-section-nav__indicator--dirty"
+                >
+                  •
+                </span>
+              ) : warningCount > 0 ? (
+                <span
+                  aria-label={`${warningCount} предупреждений`}
+                  className="month-section-nav__indicator month-section-nav__indicator--warning"
+                >
+                  {warningCount}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="toolbar month-workspace__secondary-actions">
+        <Link className="btn btn--ghost" to="/months">
+          ← Все месяцы
         </Link>
-        <Button onClick={() => setCloneOpen(true)} type="button">
+        <Button onClick={() => setCloneOpen(true)} type="button" variant="ghost">
           Создать следующий месяц
         </Button>
-        <Badge tone={month.status === "draft" ? "draft" : "closed"}>
-          {labelOf(MONTH_STATUS_LABELS, month.status)}
-        </Badge>
-        {dirty ? <Badge tone="draft">несохранённые изменения</Badge> : null}
       </div>
 
       {dirty ? (
-        <div className="inline-alert inline-alert--warn" role="status">
-          Есть несохранённые изменения. Сохрани перед уходом со страницы.
-        </div>
-      ) : null}
-      {readOnly ? (
-        <div className="inline-alert" role="status">
-          Месяц утверждён — редактирование заблокировано. Для изменений сначала открой его заново
-          ниже.
+        <div className="month-workspace__notice" role="status">
+          Есть несохранённые изменения. Между разделами можно переходить свободно; перед выходом из
+          редактора сохрани их вручную.
         </div>
       ) : null}
       {saveError ? (
@@ -280,158 +441,165 @@ export function MonthDetailPage() {
           {saveError}
         </div>
       ) : null}
+      {lifecycleError ? (
+        <div className="inline-alert inline-alert--error" role="alert">
+          {lifecycleError}
+        </div>
+      ) : null}
       {saveOk ? (
-        <div className="inline-alert inline-alert--ok" role="status">
+        <div className="month-workspace__save-ok" role="status">
           {saveOk}
         </div>
       ) : null}
 
-      <form className="stack-18" onSubmit={handleSave}>
-        <Panel label="Период" title="Общие сведения">
-          <div className="editor-grid">
-            <Field htmlFor="period-label" label="Период">
-              <Input id="period-label" readOnly value={formatMonth(month.year, month.month)} />
-            </Field>
-            <Field htmlFor="status" label="Статус">
-              <Input id="status" readOnly value={labelOf(MONTH_STATUS_LABELS, month.status)} />
-            </Field>
-            <Field htmlFor="snapshot" label="Дата снимка">
-              <Input
-                disabled={readOnly}
-                id="snapshot"
-                onChange={(event) => patchForm("snapshot_date", event.target.value)}
-                required
-                type="date"
-                value={form.snapshot_date}
-              />
-            </Field>
-            <Field htmlFor="source" label="Источник">
-              <Input id="source" readOnly value={labelOf(SOURCE_LABELS, month.source)} />
-            </Field>
-          </div>
-          <p className="muted field-hint">Снимок: {formatDate(form.snapshot_date)}</p>
-        </Panel>
+      <form className="month-workspace__core-form" id="month-core-form" onSubmit={handleSave}>
+        <section hidden={activeSection !== "general"}>
+          <Panel label="Период" title="Общие сведения">
+            <div className="editor-grid">
+              <Field htmlFor="period-label" label="Период">
+                <Input id="period-label" readOnly value={formatMonth(month.year, month.month)} />
+              </Field>
+              <Field htmlFor="status" label="Статус">
+                <Input id="status" readOnly value={labelOf(MONTH_STATUS_LABELS, month.status)} />
+              </Field>
+              <Field htmlFor="snapshot" label="Дата снимка">
+                <Input
+                  disabled={readOnly}
+                  id="snapshot"
+                  onChange={(event) => patchForm("snapshot_date", event.target.value)}
+                  required
+                  type="date"
+                  value={form.snapshot_date}
+                />
+              </Field>
+              <Field htmlFor="source" label="Источник">
+                <Input id="source" readOnly value={labelOf(SOURCE_LABELS, month.source)} />
+              </Field>
+            </div>
+            <p className="muted field-hint">Снимок: {formatDate(form.snapshot_date)}</p>
+          </Panel>
+        </section>
 
-        <Panel label="Доходы" title="Зарплата и прочее">
-          <div className="editor-grid">
-            <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
-              <Input
-                className="input--money"
-                disabled={readOnly}
-                id="salary-gross"
-                inputMode="decimal"
-                onChange={(event) => patchForm("salaryGross", event.target.value)}
-                placeholder="0.00"
-                value={form.salaryGross}
-              />
-            </Field>
-            <Field htmlFor="salary-tax" label="Расчётный налог (backend)">
-              <Input
-                className="input--money input--calc"
-                id="salary-tax"
-                readOnly
-                value={calcTax ? formatMoney(calcTax) : "—"}
-              />
-            </Field>
-            <SalaryTaxRateSummary parts={calcTaxParts} />
-            <Field htmlFor="salary-calc-net" label="Расчётная зарплата после налогов (backend)">
-              <Input
-                className="input--money input--calc"
-                id="salary-calc-net"
-                readOnly
-                value={calcNet ? formatMoney(calcNet) : "—"}
-              />
-            </Field>
-            <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
-              <Input
-                className="input--money"
-                disabled={readOnly}
-                id="salary-actual-net"
-                inputMode="decimal"
-                onChange={(event) => patchForm("salaryActualNet", event.target.value)}
-                placeholder="0.00"
-                value={form.salaryActualNet}
-              />
-            </Field>
-            <Field htmlFor="bonus" label="Премия">
-              <Input
-                className="input--money"
-                disabled={readOnly}
-                id="bonus"
-                inputMode="decimal"
-                onChange={(event) => patchForm("bonus", event.target.value)}
-                placeholder="0.00"
-                value={form.bonus}
-              />
-            </Field>
-            <Field htmlFor="side" label="Дополнительный доход">
-              <Input
-                className="input--money"
-                disabled={readOnly}
-                id="side"
-                inputMode="decimal"
-                onChange={(event) => patchForm("sideIncome", event.target.value)}
-                placeholder="0.00"
-                value={form.sideIncome}
-              />
-            </Field>
-            <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
-              <Input
-                className="input--money"
-                disabled={readOnly}
-                id="cashback"
-                inputMode="decimal"
-                onChange={(event) => patchForm("cashback", event.target.value)}
-                placeholder="0.00"
-                value={form.cashback}
-              />
-            </Field>
-          </div>
-          <p className="muted field-hint">
-            Кэшбэк хранится отдельной строкой income_type=cashback и не входит в пассивный доход.
-            Расчётный налог и применённые ставки приходят из GET /summary после сохранения.
-          </p>
-        </Panel>
-
-        <div className="toolbar">
-          <Button disabled={readOnly || saving || !dirty} type="submit" variant="primary">
-            {saving ? "Сохраняем…" : "Сохранить"}
-          </Button>
-          <Button
-            disabled={saving || !dirty}
-            onClick={() => {
-              setForm(baseline);
-              setSaveOk(null);
-              setSaveError(null);
-            }}
-            type="button"
-          >
-            Сбросить
-          </Button>
-        </div>
+        <section hidden={activeSection !== "income"}>
+          <Panel label="Доходы" title="Зарплата и прочее">
+            <div className="editor-grid">
+              <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
+                <Input
+                  className="input--money"
+                  disabled={readOnly}
+                  id="salary-gross"
+                  inputMode="decimal"
+                  onChange={(event) => patchForm("salaryGross", event.target.value)}
+                  placeholder="0.00"
+                  value={form.salaryGross}
+                />
+              </Field>
+              <Field htmlFor="salary-tax" label="Расчётный налог (backend)">
+                <Input
+                  className="input--money input--calc"
+                  id="salary-tax"
+                  readOnly
+                  value={calcTax ? formatMoney(calcTax) : "—"}
+                />
+              </Field>
+              <SalaryTaxRateSummary parts={calcTaxParts} />
+              <Field htmlFor="salary-calc-net" label="Расчётная зарплата после налогов (backend)">
+                <Input
+                  className="input--money input--calc"
+                  id="salary-calc-net"
+                  readOnly
+                  value={calcNet ? formatMoney(calcNet) : "—"}
+                />
+              </Field>
+              <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
+                <Input
+                  className="input--money"
+                  disabled={readOnly}
+                  id="salary-actual-net"
+                  inputMode="decimal"
+                  onChange={(event) => patchForm("salaryActualNet", event.target.value)}
+                  placeholder="0.00"
+                  value={form.salaryActualNet}
+                />
+              </Field>
+              <Field htmlFor="bonus" label="Премия">
+                <Input
+                  className="input--money"
+                  disabled={readOnly}
+                  id="bonus"
+                  inputMode="decimal"
+                  onChange={(event) => patchForm("bonus", event.target.value)}
+                  placeholder="0.00"
+                  value={form.bonus}
+                />
+              </Field>
+              <Field htmlFor="side" label="Дополнительный доход">
+                <Input
+                  className="input--money"
+                  disabled={readOnly}
+                  id="side"
+                  inputMode="decimal"
+                  onChange={(event) => patchForm("sideIncome", event.target.value)}
+                  placeholder="0.00"
+                  value={form.sideIncome}
+                />
+              </Field>
+              <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
+                <Input
+                  className="input--money"
+                  disabled={readOnly}
+                  id="cashback"
+                  inputMode="decimal"
+                  onChange={(event) => patchForm("cashback", event.target.value)}
+                  placeholder="0.00"
+                  value={form.cashback}
+                />
+              </Field>
+            </div>
+            <p className="muted field-hint">
+              Кэшбэк не входит в пассивный доход. Расчётные значения обновляются после сохранения.
+            </p>
+          </Panel>
+        </section>
       </form>
 
-      <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
+      <section hidden={activeSection !== "assets"}>
+        <MonthAssetsSection monthId={month.id} readOnly={readOnly} />
+      </section>
 
-      <MonthPositionsSection
-        defaultPriceDate={month.snapshot_date}
-        monthId={month.id}
-        readOnly={readOnly}
-      />
+      <section hidden={activeSection !== "positions"}>
+        <MonthPositionsSection
+          defaultPriceDate={month.snapshot_date}
+          monthId={month.id}
+          readOnly={readOnly}
+        />
+      </section>
 
-      <MonthFlowsSection defaultDate={month.snapshot_date} monthId={month.id} readOnly={readOnly} />
+      <section hidden={activeSection !== "flows"}>
+        <MonthFlowsSection
+          defaultDate={month.snapshot_date}
+          monthId={month.id}
+          readOnly={readOnly}
+        />
+      </section>
 
-      <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
+      <section hidden={activeSection !== "budget"}>
+        <MonthBudgetSection monthId={month.id} readOnly={readOnly} />
+      </section>
 
-      <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
+      <section hidden={activeSection !== "liabilities"}>
+        <MonthLiabilitiesSection monthId={month.id} readOnly={readOnly} />
+      </section>
 
-      <MonthCloseoutSection
-        monthId={month.id}
-        onStatusChanged={() => void load()}
-        readOnly={readOnly}
-        status={month.status === "closed" ? "closed" : "draft"}
-        year={month.year}
-      />
+      <section hidden={activeSection !== "review"}>
+        <MonthCloseoutSection
+          monthId={month.id}
+          onStatusChanged={() => void load()}
+          readOnly={readOnly}
+          status={month.status === "closed" ? "closed" : "draft"}
+          year={month.year}
+        />
+      </section>
 
       <CloneMonthDialog
         onCancel={() => setCloneOpen(false)}
@@ -442,6 +610,54 @@ export function MonthDetailPage() {
         open={cloneOpen}
         source={month}
       />
+
+      <ConfirmDialog
+        busy={lifecycleBusy}
+        cancelLabel="Отмена"
+        confirmLabel={pendingLifecycle === "close" ? "Закрыть" : "Открыть"}
+        danger={pendingLifecycle === "close"}
+        description={
+          pendingLifecycle === "close"
+            ? "Закрыть месяц? Данные будут зафиксированы до явного повторного открытия."
+            : "Открыть месяц для редактирования? Данные снова станут изменяемыми."
+        }
+        onCancel={() => setPendingLifecycle(null)}
+        onConfirm={() => void confirmLifecycle()}
+        open={pendingLifecycle !== null}
+        title={pendingLifecycle === "close" ? "Закрыть месяц?" : "Открыть месяц?"}
+      />
     </section>
+  );
+}
+
+function MonthStickySummary({
+  kpis,
+  warningCount,
+}: {
+  kpis: DashboardKpis | null;
+  warningCount: number;
+}) {
+  if (!kpis) {
+    return (
+      <span className="month-workspace__summary-item">
+        {warningCount > 0 ? `${warningCount} предупреждений` : "Показатели загружаются по данным месяца"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="month-workspace__summary">
+      <span className="month-workspace__summary-item">
+        Капитал <strong>{formatMoney(moneyAmount(kpis.liquid_capital_net))}</strong>
+      </span>
+      <span className="month-workspace__summary-item">
+        Пассивный доход <strong>{formatMoney(moneyAmount(kpis.passive_income_average))}</strong>
+      </span>
+      <span
+        className={`month-workspace__summary-item${warningCount > 0 ? " is-warning" : ""}`}
+      >
+        {warningCount > 0 ? `${warningCount} предупреждений` : "Без предупреждений"}
+      </span>
+    </div>
   );
 }
