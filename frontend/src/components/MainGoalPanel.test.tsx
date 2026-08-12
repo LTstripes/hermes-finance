@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -46,7 +47,8 @@ describe("MainGoalPanel", () => {
     vi.clearAllMocks();
   });
 
-  it("renders backend values without leaking implementation identifiers", async () => {
+  it("keeps unavailable forecast detail behind compact help", async () => {
+    const user = userEvent.setup();
     listGoalSummaryMock.mockResolvedValue([mainSummary("not_projectable")]);
     render(
       <MemoryRouter>
@@ -55,18 +57,21 @@ describe("MainGoalPanel", () => {
     );
 
     expect(await screen.findByText("Свобода")).toBeInTheDocument();
-    expect(screen.getByText("12,34%")).toBeInTheDocument();
+    expect(screen.getByText("Прогресс цели")).toBeInTheDocument();
+    expect(screen.getByText("12,3%")).toBeInTheDocument();
     expect(screen.getByText(/999,99\s₽/)).toBeInTheDocument();
-    expect(
-      screen.getByText("Дата достижения: пока нельзя надёжно спрогнозировать"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Прогноз даты недоступен")).toBeInTheDocument();
+    expect(screen.queryByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/)).toBeNull();
+    expect(screen.queryByText("Недостаточно данных для траектории")).toBeNull();
+    expect(screen.queryByText("no_trajectory_model")).toBeNull();
+    expect(screen.queryByText("goal_achievement_v1")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Почему прогноз цели выглядит так" }));
     expect(
       screen.getByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/),
     ).toBeInTheDocument();
-    expect(screen.getByText("Недостаточно данных для траектории")).toBeInTheDocument();
-    expect(screen.queryByText("no_trajectory_model")).toBeNull();
-    expect(screen.queryByText("goal_achievement_v1")).toBeNull();
-    expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
+    expect(screen.getByText(/Недостаточно данных для траектории/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Цели →" })).toHaveAttribute("href", "/goals");
   });
 
   it("shows the backend snapshot date when the goal is already achieved", async () => {
@@ -77,6 +82,6 @@ describe("MainGoalPanel", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Цель достигнута на снимке 30.06.2031")).toBeInTheDocument();
+    expect(await screen.findByText("Достигнута 30.06.2031")).toBeInTheDocument();
   });
 });
