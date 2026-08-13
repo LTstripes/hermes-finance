@@ -121,6 +121,20 @@ For an A/B task insert a `Candidates` subsection before `Selected candidate` and
 - **Known limitation/gate:** MOEX data-usage authorization/terms remain a separate gate before live apply/release; R04-02 itself is read-only and does not claim authorization.
 - **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`
 
+### 0.4.0 / R04-03 — instrument market mapping storage/API
+
+- **Accepted:** 2026-08-13
+- **Implemented by:** Hermes/Grok — Grok 4.6
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Baseline:** `r04` @ `86d2033de5cb0572a2f9086464ab0145a51950f0`
+- **Candidate:** `r04-03-grok` @ `4e35e7328d670466ac7f94fdbef7b928dcdffe9f`
+- **Integrated into:** `r04` @ `4e35e7328d670466ac7f94fdbef7b928dcdffe9f` by fast-forward; this execution-history commit advances the branch afterward without changing R04-03 implementation.
+- **Verification:** reviewer inspected the remote candidate diff, Alembic table/constraints, mapping state machine, API/provider-verification path, historical-snapshot safety tests and exact baseline relationship. Worker-reported verification: targeted mapping/API/migration/startup `35 passed`, full backend `633 passed`, Ruff check/format passed, `git diff --check` clean, migration smoke passed, privacy check passed. GitHub exposed no commit status checks for the candidate, so local test counts remain worker-reported rather than independently rerun.
+- **Iterations/blockers:** none after implementation review.
+- **Decision notes:** accepted a separate 1:1 mapping table with atomic board-aware identity; legacy `Instrument.moex_secid` remains only a discovery hint and is never migrated into accepted truth. `unmapped / mapped / excluded` transitions are explicit and reversible. Default mapping save is local-only explicit owner choice; optional `verify=true` confirms the already chosen identity through R04-02 without performing quote fetch, startup/background network, or automatic candidate selection.
+- **Historical safety:** mapping operations touch only reference mapping storage; tests assert closed-month `PositionSnapshot` price/date/source/value/accrued-interest/update timestamp remain unchanged.
+- **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`
+
 ---
 
 ## Historical backfill
