@@ -114,7 +114,9 @@ export function AccountFormDialog({ open, account, busy, error, onCancel, onSubm
         </h2>
         <p className="dialog__body" id={descriptionId}>
           Тип, статус и параметры учёта помогают правильно показывать счёт в итогах.
-          {account ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений." : ""}
+          {account
+            ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений."
+            : ""}
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="account-name" label="Название">

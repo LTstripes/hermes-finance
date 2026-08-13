@@ -86,8 +86,7 @@ function withForecast(
       estimated_achievement_date: null,
       is_approximate: false,
       warnings: [],
-      passive_income_history_start_month:
-        goal.goal_type === "passive_income" ? "2031-01" : null,
+      passive_income_history_start_month: goal.goal_type === "passive_income" ? "2031-01" : null,
       passive_income_months_used: goal.goal_type === "passive_income" ? ["2031-01"] : [],
       passive_income_months_count: goal.goal_type === "passive_income" ? 1 : 0,
       passive_income_months_complete: false,

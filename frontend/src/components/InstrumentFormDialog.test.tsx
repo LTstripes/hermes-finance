@@ -16,7 +16,9 @@ describe("InstrumentFormDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Денежные значения сохраняются точно, без округления.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Денежные значения сохраняются точно, без округления."),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/на стороне формы/i)).toBeNull();
   });
 });

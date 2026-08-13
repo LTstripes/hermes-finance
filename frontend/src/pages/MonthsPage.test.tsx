@@ -89,8 +89,11 @@ describe("MonthsPage R03-05", () => {
     listMonthsMock.mockResolvedValueOnce([]);
     renderPage();
 
-    expect(await screen.findByText("Пока нет периодов. Создай первый период кнопкой «Создать другой период»."))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Пока нет периодов. Создай первый период кнопкой «Создать другой период».",
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/secondary-действие/i)).toBeNull();
   });
 });

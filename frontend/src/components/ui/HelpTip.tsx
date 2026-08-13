@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type FocusEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, useRef, useState, type FocusEvent, type ReactNode } from "react";
 
 type HelpTipProps = {
   label: string;
@@ -51,11 +44,7 @@ export function HelpTip({ label, children, align = "end" }: HelpTipProps) {
   }
 
   return (
-    <span
-      className={`help-tip help-tip--${align}`}
-      onBlurCapture={handleBlur}
-      ref={rootRef}
-    >
+    <span className={`help-tip help-tip--${align}`} onBlurCapture={handleBlur} ref={rootRef}>
       <button
         aria-controls={contentId}
         aria-expanded={open}

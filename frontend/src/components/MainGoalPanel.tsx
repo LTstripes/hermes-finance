@@ -79,7 +79,12 @@ export function MainGoalPanel({
             progressPct={fallbackProgressPct}
             targetAmount={fallbackTargetAmount}
           />
-          <Button onClick={() => void load(reportingMonthId)} size="sm" type="button" variant="secondary">
+          <Button
+            onClick={() => void load(reportingMonthId)}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
             Повторить
           </Button>
         </div>

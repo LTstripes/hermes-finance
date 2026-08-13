@@ -269,7 +269,6 @@ export function SettingsPage() {
       <div id="diagnostics">
         <DiagnosticsPanel />
       </div>
-
     </section>
   );
 }

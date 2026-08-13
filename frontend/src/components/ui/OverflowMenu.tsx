@@ -78,8 +78,7 @@ export function OverflowMenu({
     if (event.key === "ArrowDown") {
       next = current < 0 ? 0 : (current + 1) % items.length;
     } else if (event.key === "ArrowUp") {
-      next =
-        current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
+      next = current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
     } else if (event.key === "Home") {
       next = 0;
     } else if (event.key === "End") {
@@ -143,11 +142,7 @@ export function OverflowMenuItem({
   type = "button",
   ...rest
 }: OverflowMenuItemProps) {
-  const classes = [
-    "overflow-menu__item",
-    danger ? "overflow-menu__item--danger" : "",
-    className,
-  ]
+  const classes = ["overflow-menu__item", danger ? "overflow-menu__item--danger" : "", className]
     .filter(Boolean)
     .join(" ");
 
@@ -156,7 +151,5 @@ export function OverflowMenuItem({
 
 function menuItems(root: HTMLDivElement | null): HTMLElement[] {
   if (!root) return [];
-  return Array.from(
-    root.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'),
-  );
+  return Array.from(root.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'));
 }

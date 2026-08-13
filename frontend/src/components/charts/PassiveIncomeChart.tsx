@@ -37,10 +37,7 @@ type LegendKind = "fact" | "average" | "forecast" | "goal";
 function legendMarker(kind: LegendKind, label: string, value?: string) {
   return (
     <span className={`chart-legend__item chart-legend__item--${kind}`}>
-      <span
-        aria-hidden="true"
-        className={`chart-legend__marker chart-legend__marker--${kind}`}
-      />
+      <span aria-hidden="true" className={`chart-legend__marker chart-legend__marker--${kind}`} />
       {label}
       {value ? (
         <>
@@ -90,11 +87,7 @@ export function PassiveIncomeChart({
       className="passive-chart passive-chart--v03"
     >
       <ResponsiveContainer height={280} width="100%">
-        <BarChart
-          accessibilityLayer
-          data={data}
-          margin={{ bottom: 4, left: 8, right: 16, top: 8 }}
-        >
+        <BarChart accessibilityLayer data={data} margin={{ bottom: 4, left: 8, right: 16, top: 8 }}>
           <CartesianGrid stroke="#dfe3dc" strokeDasharray="3 3" vertical={false} />
           <XAxis
             axisLine={false}
