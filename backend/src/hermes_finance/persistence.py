@@ -268,6 +268,59 @@ class Instrument(Base):
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
+class InstrumentMarketMapping(Base):
+    """Accepted market-data mapping for one instrument.
+
+    No row means unmapped. A complete identity with excluded=false is mapped.
+    excluded=true always wins for refresh eligibility. Identity fields are
+    all-or-nothing so a partial mapped state cannot be stored.
+    """
+
+    __tablename__ = "instrument_market_mappings"
+    __table_args__ = (
+        CheckConstraint(
+            "("
+            "(provider IS NULL AND engine IS NULL AND market IS NULL "
+            "AND boardid IS NULL AND secid IS NULL) "
+            "OR "
+            "(provider IS NOT NULL AND engine IS NOT NULL AND market IS NOT NULL "
+            "AND boardid IS NOT NULL AND secid IS NOT NULL)"
+            ")",
+            name="ck_instrument_market_mappings_identity_atomic",
+        ),
+        CheckConstraint(
+            "excluded = 1 OR ("
+            "provider IS NOT NULL AND engine IS NOT NULL AND market IS NOT NULL "
+            "AND boardid IS NOT NULL AND secid IS NOT NULL"
+            ")",
+            name="ck_instrument_market_mappings_mapped_complete",
+        ),
+        CheckConstraint(
+            "excluded IN (0, 1)",
+            name="ck_instrument_market_mappings_excluded_bool",
+        ),
+    )
+
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    engine: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    boardid: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    secid: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class PositionSnapshot(Base):
     __tablename__ = "position_snapshots"
     __table_args__ = (

@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0023_passive_income_history_eligibility"
+REVISION = "0024_instrument_market_mappings"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -118,6 +118,18 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_active",
             "manual_price_allowed",
             "notes",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(instrument_market_mappings)")
+        ] == [
+            "instrument_id",
+            "provider",
+            "engine",
+            "market",
+            "boardid",
+            "secid",
+            "excluded",
+            "updated_at",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(position_snapshots)")] == [
             "id",
@@ -448,5 +460,151 @@ def test_passive_history_migration_from_0022_defaults_null_and_preserves_data(
             "SELECT target_value_kopecks, is_main FROM goals WHERE id = 1"
         ).fetchone() == (10_000_000, 1)
         assert revision_rows(database_path) == [REVISION]
+    finally:
+        connection.close()
+
+
+def test_instrument_mapping_migration_does_not_infer_legacy_moex_secid(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy-instrument-mapping.db"
+
+    previous = run_alembic(database_path, "upgrade", "0023_passive_income_history_eligibility")
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2031,
+                4,
+                "2031-04-01",
+                "2031-04-30",
+                "2031-04-30",
+                "closed",
+                "manual",
+                "2031-04-30 00:00:00",
+                "2031-04-30 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts (name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Broker", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO instruments "
+            "(name, instrument_type, isin, ticker, moex_secid, currency, is_active, manual_price_allowed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "Synthetic With Hint",
+                "stock",
+                "RU0009029540",
+                "SBER",
+                "SBER",
+                "RUB",
+                1,
+                1,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO instruments "
+            "(name, instrument_type, isin, ticker, moex_secid, currency, is_active, manual_price_allowed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("Synthetic Without Hint", "bond", None, None, None, "RUB", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO position_snapshots "
+            "(reporting_month_id, account_id, instrument_id, quantity, "
+            "average_cost_per_unit_kopecks, market_price_per_unit_kopecks, "
+            "market_value_kopecks, cost_basis_kopecks, unrealized_result_kopecks, "
+            "price_date, price_source, manual_adjustment, notes, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                1,
+                "3.000000",
+                10_000,
+                25_000,
+                75_000,
+                30_000,
+                45_000,
+                "2031-04-15",
+                "moex",
+                0,
+                "synthetic snapshot",
+                "2031-04-15 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    migrated = run_alembic(database_path, "upgrade", "head")
+    assert migrated.returncode == 0, migrated.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM instrument_market_mappings").fetchone() == (
+            0,
+        )
+        assert connection.execute(
+            "SELECT id, moex_secid FROM instruments ORDER BY id"
+        ).fetchall() == [(1, "SBER"), (2, None)]
+        assert connection.execute(
+            "SELECT market_price_per_unit_kopecks, price_date, price_source, notes "
+            "FROM position_snapshots WHERE id = 1"
+        ).fetchone() == (25_000, "2031-04-15", "moex", "synthetic snapshot")
+
+        connection.execute(
+            "INSERT INTO instrument_market_mappings "
+            "(instrument_id, provider, engine, market, boardid, secid, excluded, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "moex_iss", "stock", "shares", "TQBR", "SBER", 0, "2031-04-16 00:00:00"),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0023_passive_income_history_eligibility")
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert revision_rows(database_path) == ["0023_passive_income_history_eligibility"]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "instrument_market_mappings" not in tables
+        assert connection.execute(
+            "SELECT id, moex_secid FROM instruments ORDER BY id"
+        ).fetchall() == [(1, "SBER"), (2, None)]
+        assert connection.execute(
+            "SELECT market_price_per_unit_kopecks, price_date, price_source "
+            "FROM position_snapshots WHERE id = 1"
+        ).fetchone() == (25_000, "2031-04-15", "moex")
+    finally:
+        connection.close()
+
+    upgraded_again = run_alembic(database_path, "upgrade", "head")
+    assert upgraded_again.returncode == 0, upgraded_again.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute("SELECT COUNT(*) FROM instrument_market_mappings").fetchone() == (
+            0,
+        )
+        assert connection.execute(
+            "SELECT id, moex_secid FROM instruments ORDER BY id"
+        ).fetchall() == [(1, "SBER"), (2, None)]
+        assert connection.execute(
+            "SELECT market_price_per_unit_kopecks, price_date, price_source "
+            "FROM position_snapshots WHERE id = 1"
+        ).fetchone() == (25_000, "2031-04-15", "moex")
     finally:
         connection.close()

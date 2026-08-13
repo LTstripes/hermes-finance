@@ -8,7 +8,7 @@ from hermes_finance.domain.expenses import ExpenseType
 from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
 from hermes_finance.domain.incomes import IncomeType
-from hermes_finance.domain.instruments import InstrumentType
+from hermes_finance.domain.instruments import InstrumentType, MarketMappingState
 from hermes_finance.domain.positions import PriceSource
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
 from hermes_finance.domain.values import (
@@ -29,6 +29,7 @@ __all__ = [
     "InvestmentCashFlowType",
     "IncomeType",
     "InstrumentType",
+    "MarketMappingState",
     "PercentageRate",
     "PriceSource",
     "ReportingMonthSource",

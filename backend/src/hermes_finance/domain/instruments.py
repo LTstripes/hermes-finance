@@ -8,3 +8,9 @@ class InstrumentType(StrEnum):
     CURRENCY = "currency"
     GOLD = "gold"
     OTHER = "other"
+
+
+class MarketMappingState(StrEnum):
+    UNMAPPED = "unmapped"
+    MAPPED = "mapped"
+    EXCLUDED = "excluded"

@@ -17,6 +17,28 @@ FRESH_MAX_DAYS = 7
 
 SUPPORTED_KINDS = frozenset({InstrumentType.STOCK, InstrumentType.FUND, InstrumentType.BOND})
 
+STOCK_FUND_ENGINE = "stock"
+STOCK_FUND_MARKET = "shares"
+BOND_ENGINE = "stock"
+BOND_MARKET = "bonds"
+
+
+def compatible_engine_market(
+    *,
+    instrument_kind: InstrumentType,
+    engine: str,
+    market: str,
+) -> bool:
+    """Whether engine/market is the ADR 0009 family for this instrument type."""
+
+    engine_l = engine.strip().lower()
+    market_l = market.strip().lower()
+    if instrument_kind in {InstrumentType.STOCK, InstrumentType.FUND}:
+        return engine_l == STOCK_FUND_ENGINE and market_l == STOCK_FUND_MARKET
+    if instrument_kind is InstrumentType.BOND:
+        return engine_l == BOND_ENGINE and market_l == BOND_MARKET
+    return False
+
 
 class NormalizeError(ValueError):
     def __init__(self, status: QuoteStatus, message: str) -> None:
