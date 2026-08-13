@@ -62,10 +62,12 @@ describe("PassiveIncomeChart", () => {
     render(<PassiveIncomeChart {...baseProps} complete12m={false} countMonths={3} />);
 
     expect(screen.getByText(/Среднее: 3 месяца из 12/)).toBeInTheDocument();
-    expect(screen.queryByText(/Полное rolling-окно/)).toBeNull();
+    expect(screen.queryByText(/rolling-окно/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Как считается среднее пассивного дохода" }));
-    expect(screen.getByText(/Полное rolling-окно будет доступно после 12 закрытых месяцев/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Среднее рассчитано по закрытым месяцам в окне до 12 месяцев/),
+    ).toBeInTheDocument();
   });
 
   it("uses correct plural forms for the compact month count", () => {

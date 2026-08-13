@@ -16,6 +16,7 @@ import {
   Button,
   ConfirmDialog,
   EmptyState,
+  ErrorState,
   Field,
   Input,
   LoadingState,
@@ -328,7 +329,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
   }
 
   if (error) {
-    return <EmptyState description={error} inline title="Не удалось загрузить активы" />;
+    return <ErrorState description={error} inline title="Не удалось загрузить активы" />;
   }
 
   return (

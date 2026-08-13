@@ -124,9 +124,9 @@ export function CloneMonthDialog({ open, source, onCancel, onCloned }: CloneMont
           Создать следующий месяц
         </h2>
         <p className="dialog__body" id={descriptionId}>
-          Клон из <strong>{formatMonth(source.year, source.month)}</strong>
-          {source.status === "closed" ? " (утверждён — можно)" : " (черновик — можно)"}. Одна
-          транзакция на backend: либо полный черновик, либо ничего.
+          Копируем данные из <strong>{formatMonth(source.year, source.month)}</strong>
+          {source.status === "closed" ? " (месяц закрыт)" : " (черновик)"}. Изменения сохраняются
+          целиком: либо создаётся полный черновик, либо ничего не меняется.
         </p>
 
         <div className="clone-grid">
@@ -221,7 +221,7 @@ export function CloneMonthDialog({ open, source, onCancel, onCloned }: CloneMont
               Отмена
             </Button>
             <Button disabled={busy} type="submit" variant="primary">
-              {busy ? "Клонируем…" : "Клонировать"}
+              {busy ? "Копируем…" : "Копировать данные"}
             </Button>
           </div>
         </form>

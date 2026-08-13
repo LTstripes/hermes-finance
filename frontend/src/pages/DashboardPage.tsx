@@ -116,7 +116,7 @@ export function DashboardPage() {
         <p className="eyebrow">Обзор</p>
         <h1>Дашборд</h1>
         <p className="page-header__description">
-          Капитал, пассивный доход, основная цель и покрытие расходов — без служебного шума.
+          Капитал, пассивный доход, основная цель и покрытие расходов — в одном месте.
         </p>
       </header>
 
@@ -249,13 +249,13 @@ function PassiveIncomeOverviewCard({
       <div className="overview-card__context overview-card__context--with-help">
         {ready ? (
           completeWindow ? (
-            <span>12 закрытых месяцев</span>
+            <span>12 закрытых месяцев из 12</span>
           ) : (
             <>
-              <span>{countMonths} мес. из 12</span>
+              <span>{countMonths} закрытых месяцев из 12</span>
               <HelpTip label="Почему среднее пока неполное" align="start">
-                Среднее фактического пассивного дохода рассчитано только по доступным закрытым
-                месяцам. После 12 закрытых месяцев окно станет полным.
+                Среднее рассчитано по закрытым месяцам в окне до 12 месяцев. По мере закрытия новых
+                месяцев окно обновляется.
               </HelpTip>
             </>
           )

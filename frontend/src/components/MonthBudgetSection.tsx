@@ -9,6 +9,7 @@ import {
   Button,
   ConfirmDialog,
   EmptyState,
+  ErrorState,
   Field,
   Input,
   LoadingState,
@@ -150,7 +151,7 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
   }
 
   if (loading) return <LoadingState description="Загружаем бюджет…" inline />;
-  if (error) return <EmptyState description={error} inline title="Ошибка бюджета" />;
+  if (error) return <ErrorState description={error} inline title="Не удалось загрузить бюджет" />;
 
   return (
     <div className="stack-18">

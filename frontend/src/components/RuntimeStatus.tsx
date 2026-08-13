@@ -44,7 +44,7 @@ export function RuntimeStatusBanner() {
   if (state.kind === "connected") {
     return (
       <span className="sr-only" role="status">
-        Сервер подключён · API v{state.version}
+        Приложение подключено
       </span>
     );
   }
@@ -54,8 +54,8 @@ export function RuntimeStatusBanner() {
       <div className="runtime-alert__inner">
         <span aria-hidden="true" className="runtime-alert__dot" />
         <div>
-          <strong>Сервер недоступен</strong>
-          <span>Проверь запуск Hermes Finance или открой диагностику.</span>
+          <strong>Локальное приложение недоступно</strong>
+          <span>Проверь, что Hermes Finance запущен, или открой диагностику.</span>
         </div>
         <Link className="runtime-alert__link" to="/settings#diagnostics">
           Диагностика →
@@ -94,8 +94,8 @@ export function DiagnosticsPanel() {
       </div>
       <div className="diagnostics-actions">
         <p className="muted">
-          Состояние системы и технические параметры собраны здесь, чтобы не занимать место на
-          основном дашборде.
+          Здесь собраны сведения о подключении и параметры, которые могут помочь при проверке
+          приложения.
         </p>
         <Button onClick={retry} size="sm" type="button" variant="secondary">
           Проверить снова

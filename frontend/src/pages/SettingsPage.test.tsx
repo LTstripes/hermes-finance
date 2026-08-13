@@ -54,6 +54,8 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
     expect(screen.queryByDisplayValue("100000.00")).toBeNull();
     expect(screen.queryByText("v1")).toBeNull();
+    expect(screen.queryByText("Пока недоступно")).toBeNull();
+    expect(screen.getByText("Валюта расчётов")).toBeInTheDocument();
     expect(screen.getByText("Налоговые ступени")).toBeInTheDocument();
   });
 

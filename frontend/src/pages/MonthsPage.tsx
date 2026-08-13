@@ -308,7 +308,7 @@ export function MonthsPage() {
             <ErrorState description={error} inline title="Не удалось загрузить" />
           ) : months.length === 0 ? (
             <EmptyState
-              description="Пока нет периодов. Создай первый произвольный период через secondary-действие выше."
+              description="Пока нет периодов. Создай первый период кнопкой «Создать другой период»."
               inline
               title="Пусто"
             />
@@ -354,7 +354,7 @@ export function MonthsPage() {
                         </Link>
                         <OverflowMenu label={`Действия для ${formatMonth(row.year, row.month)}`}>
                           <OverflowMenuItem onClick={() => setCloneSource(row)}>
-                            Клонировать
+                            Копировать данные
                           </OverflowMenuItem>
                           {row.status === "draft" ? (
                             <OverflowMenuItem danger onClick={() => setPendingDelete(row)}>

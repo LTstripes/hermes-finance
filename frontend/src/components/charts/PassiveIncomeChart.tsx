@@ -150,8 +150,8 @@ export function PassiveIncomeChart({
           <span className="chart-meta-item">
             Среднее: {countMonths} {pluralMonths(countMonths)} из 12
             <HelpTip label="Как считается среднее пассивного дохода" align="start">
-              Среднее рассчитано только по доступным закрытым месяцам. Полное rolling-окно будет
-              доступно после 12 закрытых месяцев.
+              Среднее рассчитано по закрытым месяцам в окне до 12 месяцев. По мере закрытия новых
+              месяцев окно обновляется.
             </HelpTip>
           </span>
         ) : null}

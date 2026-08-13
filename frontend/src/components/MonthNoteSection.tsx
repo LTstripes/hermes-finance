@@ -8,6 +8,7 @@ import {
   Button,
   ConfirmDialog,
   EmptyState,
+  ErrorState,
   Field,
   Input,
   LoadingState,
@@ -101,7 +102,7 @@ export function MonthNoteSection({ monthId, readOnly, onDirtyChange }: Props) {
   }
 
   if (loading) return <LoadingState description="Загружаем заметки…" inline />;
-  if (error) return <EmptyState description={error} inline title="Ошибка заметок" />;
+  if (error) return <ErrorState description={error} inline title="Не удалось загрузить заметки" />;
 
   return (
     <div className="stack-18">

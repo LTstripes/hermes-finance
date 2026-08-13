@@ -36,7 +36,7 @@ const NAV: NavGroup[] = [
   {
     section: "Система",
     items: [
-      { to: "/export", label: "Экспорт и бэкапы", icon: "⇩" },
+      { to: "/export", label: "Экспорт и резервные копии", icon: "⇩" },
       { to: "/settings", label: "Настройки", icon: "⚙" },
     ],
   },

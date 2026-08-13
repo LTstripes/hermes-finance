@@ -66,12 +66,15 @@ describe("InvestmentResultChart", () => {
     ).toHaveLength(2);
   });
 
-  it("shows the exact-return disclaimer note", () => {
+  it("shows a concise result interpretation note without implementation references", () => {
     render(<InvestmentResultChart accounts={[broker]} classes={[bondClass]} />);
-    expect(screen.getByText(/Точная доходность периода появится позже/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Здесь показан денежный результат: полученные купоны, дивиденды и проценты/),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/Погашения облигаций и пополнения не считаются доходом/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/MASTER_SPEC|модифицированному Дитцу/)).toBeNull();
   });
 
   it("renders an empty state without accounts and classes", () => {

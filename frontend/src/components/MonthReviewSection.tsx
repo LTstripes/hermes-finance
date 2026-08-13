@@ -8,7 +8,7 @@ import { closeMonth, reopenMonth } from "../api/months";
 import type { DashboardKpis } from "../api/types";
 import { formatMoney, formatPercent } from "../lib/format";
 import { moneyAmount } from "../lib/money";
-import { Badge, Button, ConfirmDialog, EmptyState, LoadingState, Panel } from "./ui";
+import { Badge, Button, ConfirmDialog, ErrorState, LoadingState, Panel } from "./ui";
 
 type Props = {
   dirty: boolean;
@@ -73,7 +73,7 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
   }
 
   if (loading) return <LoadingState description="Готовим проверку месяца…" inline />;
-  if (error) return <EmptyState description={error} inline title="Ошибка проверки" />;
+  if (error) return <ErrorState description={error} inline title="Не удалось проверить месяц" />;
 
   return (
     <div className="stack-18">
