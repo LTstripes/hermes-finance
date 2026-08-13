@@ -21,10 +21,8 @@ const mapping = {
   state: "mapped",
   identity: {
     provider: "moex_iss",
-    engine: "stock",
-    market: "shares",
-    boardid: "TQBR",
-    secid: "SBER",
+    provider_instrument_id: "SBER",
+    provider_venue_id: "stock/shares/TQBR",
   },
   instrument_isin: "RU0009029540",
   legacy_moex_secid: "SBER",
@@ -52,10 +50,8 @@ describe("instrument mapping API helpers", () => {
     vi.stubGlobal("fetch", fetchMock);
     await putInstrumentMapping(10, {
       provider: "moex_iss",
-      engine: "stock",
-      market: "shares",
-      boardid: "TQBR",
-      secid: "SBER",
+      provider_instrument_id: "SBER",
+      provider_venue_id: "stock/shares/TQBR",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/instruments/10/market-mapping",
@@ -63,10 +59,8 @@ describe("instrument mapping API helpers", () => {
         method: "PUT",
         body: JSON.stringify({
           provider: "moex_iss",
-          engine: "stock",
-          market: "shares",
-          boardid: "TQBR",
-          secid: "SBER",
+          provider_instrument_id: "SBER",
+          provider_venue_id: "stock/shares/TQBR",
         }),
       }),
     );

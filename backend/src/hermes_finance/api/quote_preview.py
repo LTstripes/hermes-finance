@@ -38,10 +38,8 @@ class MarketIdentityRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: str
-    engine: str
-    market: str
-    boardid: str
-    secid: str
+    provider_instrument_id: str
+    provider_venue_id: str | None
 
 
 class QuotePreviewRowResponse(BaseModel):
@@ -91,10 +89,8 @@ def _identity(identity: object | None) -> MarketIdentityRead | None:
         return None
     return MarketIdentityRead(
         provider=identity.provider,
-        engine=identity.engine,
-        market=identity.market,
-        boardid=identity.boardid,
-        secid=identity.secid,
+        provider_instrument_id=identity.provider_instrument_id,
+        provider_venue_id=identity.provider_venue_id,
     )
 
 

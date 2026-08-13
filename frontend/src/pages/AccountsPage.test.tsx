@@ -244,10 +244,8 @@ describe("AccountsPage", () => {
         state: "mapped",
         identity: {
           provider: "moex_iss",
-          engine: "stock",
-          market: "bonds",
-          boardid: "TQOB",
-          secid: "SU26248",
+          provider_instrument_id: "SU26248",
+          provider_venue_id: "stock/bonds/TQOB",
         },
       }),
     );
@@ -263,10 +261,8 @@ describe("AccountsPage", () => {
     const user = userEvent.setup();
     const identity = {
       provider: "moex_iss",
-      engine: "stock",
-      market: "bonds",
-      boardid: "TQOB",
-      secid: "SU26248",
+      provider_instrument_id: "SU26248",
+      provider_venue_id: "stock/bonds/TQOB",
     };
     listInstrumentsMock.mockResolvedValue([instrument]);
     getInstrumentMappingMock.mockResolvedValue(mappingView({ state: "mapped", identity }));

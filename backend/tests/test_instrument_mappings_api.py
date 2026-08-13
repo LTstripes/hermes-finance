@@ -16,6 +16,7 @@ from hermes_finance.market_data.dto import (
     MarketIdentity,
     QuoteStatus,
 )
+from hermes_finance.market_data.moex_identity import market_identity_from_moex
 from hermes_finance.persistence import Base
 
 MAPPING_KEYS = {
@@ -25,13 +26,11 @@ MAPPING_KEYS = {
     "instrument_isin",
     "legacy_moex_secid",
 }
-IDENTITY_KEYS = {"provider", "engine", "market", "boardid", "secid"}
+IDENTITY_KEYS = {"provider", "provider_instrument_id", "provider_venue_id"}
 STOCK_PAYLOAD = {
     "provider": "moex_iss",
-    "engine": "stock",
-    "market": "shares",
-    "boardid": "TQBR",
-    "secid": "SBER",
+    "provider_instrument_id": "SBER",
+    "provider_venue_id": "stock/shares/TQBR",
 }
 
 
@@ -119,17 +118,15 @@ def test_put_complete_identity_maps_instrument(client: TestClient) -> None:
     assert set(body["identity"]) == IDENTITY_KEYS
     assert body["identity"] == {
         "provider": "moex_iss",
-        "engine": "stock",
-        "market": "shares",
-        "boardid": "TQBR",
-        "secid": "SBER",
+        "provider_instrument_id": "SBER",
+        "provider_venue_id": "stock/shares/TQBR",
     }
 
 
 def test_put_partial_identity_is_unprocessable(client: TestClient) -> None:
     created = _create_instrument(client)
     payload = dict(STOCK_PAYLOAD)
-    del payload["boardid"]
+    del payload["provider_instrument_id"]
     response = client.put(f"/api/instruments/{created['id']}/market-mapping", json=payload)
     assert response.status_code == 422
     _assert_error_body(response.json(), "unprocessable")
@@ -157,7 +154,7 @@ def test_exclude_from_unmapped_and_mapped(client: TestClient) -> None:
     assert mapped.json()["state"] == "mapped"
     excluded_again = client.put(f"/api/instruments/{created['id']}/market-mapping/exclusion")
     assert excluded_again.json()["state"] == "excluded"
-    assert excluded_again.json()["identity"]["secid"] == "SBER"
+    assert excluded_again.json()["identity"]["provider_instrument_id"] == "SBER"
 
 
 def test_exclusion_is_reversible(client: TestClient) -> None:
@@ -167,7 +164,7 @@ def test_exclusion_is_reversible(client: TestClient) -> None:
     restored = client.delete(f"/api/instruments/{created['id']}/market-mapping/exclusion")
     assert restored.status_code == 200
     assert restored.json()["state"] == "mapped"
-    assert restored.json()["identity"]["boardid"] == "TQBR"
+    assert restored.json()["identity"]["provider_venue_id"] == "stock/shares/TQBR"
 
 
 def test_isin_mismatch_and_unsupported_type_are_unprocessable(client: TestClient) -> None:
@@ -224,8 +221,7 @@ def test_unknown_instrument_mapping_is_not_found(client: TestClient) -> None:
 def test_verify_true_uses_injected_provider_and_rejects_ambiguity(tmp_path: Path) -> None:
     database = create_database(tmp_path / "mapping_verify.db")
     Base.metadata.create_all(database.engine)
-    other = MarketIdentity(
-        provider="moex_iss",
+    other = market_identity_from_moex(
         engine="stock",
         market="shares",
         boardid="TQTF",
@@ -237,8 +233,7 @@ def test_verify_true_uses_injected_provider_and_rejects_ambiguity(tmp_path: Path
             candidates=(
                 DiscoverCandidate(identity=other, instrument_kind=InstrumentType.STOCK),
                 DiscoverCandidate(
-                    identity=MarketIdentity(
-                        provider="moex_iss",
+                    identity=market_identity_from_moex(
                         engine="stock",
                         market="shares",
                         boardid="FQBR",

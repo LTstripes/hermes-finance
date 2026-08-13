@@ -16,7 +16,9 @@ from hermes_finance.market_data.dto import (
     QuoteStatus,
     QuoteSuccess,
     RawPriceBasis,
+    market_identity_key,
 )
+from hermes_finance.market_data.moex_identity import market_identity_from_moex
 from hermes_finance.market_data.normalize import quote_refresh_target_date
 from hermes_finance.persistence import Base, InstrumentMarketMapping, PositionSnapshot
 from hermes_finance.services.accounts import create_account
@@ -34,22 +36,19 @@ TODAY = date(2026, 8, 13)
 SNAPSHOT_DATE = date(2026, 8, 31)
 FETCHED_AT = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
 
-STOCK_IDENTITY = MarketIdentity(
-    provider="moex_iss",
+STOCK_IDENTITY = market_identity_from_moex(
     engine="stock",
     market="shares",
     boardid="TQBR",
     secid="SBER",
 )
-FUND_IDENTITY = MarketIdentity(
-    provider="moex_iss",
+FUND_IDENTITY = market_identity_from_moex(
     engine="stock",
     market="shares",
     boardid="TQTF",
     secid="FXGD",
 )
-BOND_IDENTITY = MarketIdentity(
-    provider="moex_iss",
+BOND_IDENTITY = market_identity_from_moex(
     engine="stock",
     market="bonds",
     boardid="TQCB",
@@ -58,7 +57,7 @@ BOND_IDENTITY = MarketIdentity(
 
 
 class ScriptedProvider:
-    def __init__(self, quotes: dict[tuple[str, str, str, str, str], QuoteResult]) -> None:
+    def __init__(self, quotes: dict[tuple[str, str, str | None], QuoteResult]) -> None:
         self.quotes = quotes
         self.fetch_calls: list[tuple[MarketIdentity, date]] = []
         self.discover_calls = 0
@@ -69,13 +68,7 @@ class ScriptedProvider:
 
     def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
         self.fetch_calls.append((identity, target_date))
-        key = (
-            identity.provider,
-            identity.engine,
-            identity.market,
-            identity.boardid,
-            identity.secid,
-        )
+        key = market_identity_key(identity)
         if key not in self.quotes:
             raise AssertionError(f"unexpected fetch {key}")
         return self.quotes[key]
@@ -125,13 +118,11 @@ def _success(
     )
 
 
-def _identity_kwargs(identity: MarketIdentity) -> dict[str, str]:
+def _identity_kwargs(identity: MarketIdentity) -> dict[str, str | None]:
     return {
         "provider": identity.provider,
-        "engine": identity.engine,
-        "market": identity.market,
-        "boardid": identity.boardid,
-        "secid": identity.secid,
+        "provider_instrument_id": identity.provider_instrument_id,
+        "provider_venue_id": identity.provider_venue_id,
     }
 
 
@@ -157,10 +148,8 @@ def _fingerprint_mapping(session: Session, instrument_id: int) -> tuple[object, 
         return None
     return (
         row.provider,
-        row.engine,
-        row.market,
-        row.boardid,
-        row.secid,
+        row.provider_instrument_id,
+        row.provider_venue_id,
         row.excluded,
         row.updated_at,
     )
@@ -200,8 +189,7 @@ def test_mapped_stock_fund_and_bond_quotes(tmp_path: Path) -> None:
         set_accepted_mapping(session, stock.id, **_identity_kwargs(STOCK_IDENTITY))
         set_accepted_mapping(session, fund.id, **_identity_kwargs(FUND_IDENTITY))
         set_accepted_mapping(session, bond_f.id, **_identity_kwargs(BOND_IDENTITY))
-        bond_r_identity = MarketIdentity(
-            provider="moex_iss",
+        bond_r_identity = market_identity_from_moex(
             engine="stock",
             market="bonds",
             boardid="TQCB",
@@ -295,16 +283,18 @@ def test_mapped_stock_fund_and_bond_quotes(tmp_path: Path) -> None:
         assert by_id[stock.id].proposed_market_price_kopecks == 31245
         assert by_id[stock.id].apply_allowed is True
         assert by_id[stock.id].identity is not None
-        assert by_id[stock.id].identity.secid == "SBER"
+        assert by_id[stock.id].identity.provider_instrument_id == "SBER"
         assert by_id[fund.id].proposed_market_price_kopecks == 1420
         assert by_id[bond_f.id].proposed_raw_price == "97.25"
         assert by_id[bond_f.id].proposed_raw_price_basis is RawPriceBasis.PERCENT_OF_FACE
         assert by_id[bond_f.id].proposed_market_price_kopecks == 97250
         assert by_id[bond_r.id].proposed_raw_price_basis is RawPriceBasis.CASH_PER_UNIT
         assert by_id[bond_r.id].proposed_market_price_kopecks == 101550
-        fetched_secids = {identity.secid for identity, _target in provider.fetch_calls}
-        assert fetched_secids == {"SBER", "FXGD", "SU26238RMFS4", "RU000A0JX0J2"}
-        assert "WRONG" not in fetched_secids
+        fetched_ids = {
+            identity.provider_instrument_id for identity, _target in provider.fetch_calls
+        }
+        assert fetched_ids == {"SBER", "FXGD", "SU26238RMFS4", "RU000A0JX0J2"}
+        assert "WRONG" not in fetched_ids
         assert all(target == TODAY for _identity, target in provider.fetch_calls)
         assert stock_snap.id and fund_snap.id and bond_f_snap.id and bond_r_snap.id
     finally:
@@ -312,8 +302,8 @@ def test_mapped_stock_fund_and_bond_quotes(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-def _identity_key(identity: MarketIdentity) -> tuple[str, str, str, str, str]:
-    return (identity.provider, identity.engine, identity.market, identity.boardid, identity.secid)
+def _identity_key(identity: MarketIdentity) -> tuple[str, str, str | None]:
+    return market_identity_key(identity)
 
 
 def test_unmapped_excluded_and_unsupported_skip_provider(tmp_path: Path) -> None:
@@ -369,15 +359,13 @@ def test_stale_unavailable_network_malformed_and_ambiguous(tmp_path: Path) -> No
             "stale": STOCK_IDENTITY,
             "unavail": FUND_IDENTITY,
             "net": BOND_IDENTITY,
-            "malformed": MarketIdentity(
-                provider="moex_iss",
+            "malformed": market_identity_from_moex(
                 engine="stock",
                 market="shares",
                 boardid="TQBR",
                 secid="GAZP",
             ),
-            "ambiguous": MarketIdentity(
-                provider="moex_iss",
+            "ambiguous": market_identity_from_moex(
                 engine="stock",
                 market="shares",
                 boardid="TQBR",
@@ -385,7 +373,7 @@ def test_stale_unavailable_network_malformed_and_ambiguous(tmp_path: Path) -> No
             ),
         }
         snaps = {}
-        quotes: dict[tuple[str, str, str, str, str], QuoteResult] = {}
+        quotes: dict[tuple[str, str, str | None], QuoteResult] = {}
         for name, identity in names.items():
             kind = InstrumentType.BOND if name == "net" else InstrumentType.STOCK
             instrument = create_instrument(session, name=f"Synthetic {name}", instrument_type=kind)

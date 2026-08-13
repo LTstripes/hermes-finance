@@ -11,7 +11,18 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import InstrumentType, MarketMappingState
-from hermes_finance.market_data.dto import MOEX_ISS_PROVIDER, MarketIdentity, QuoteStatus
+from hermes_finance.market_data.dto import (
+    MOEX_ISS_PROVIDER,
+    MarketIdentity,
+    QuoteStatus,
+    market_identity_key,
+)
+from hermes_finance.market_data.moex_identity import (
+    InvalidMoexIdentityError,
+    decode_moex_venue,
+    market_identity_from_moex,
+    moex_parts_from_identity,
+)
 from hermes_finance.market_data.normalize import SUPPORTED_KINDS, compatible_engine_market
 from hermes_finance.market_data.protocol import MarketDataProvider
 from hermes_finance.persistence import Instrument, InstrumentMarketMapping
@@ -50,29 +61,37 @@ def _normalize_isin(value: str | None) -> str | None:
 def normalize_accepted_identity(
     *,
     provider: str,
-    engine: str,
-    market: str,
-    boardid: str,
-    secid: str,
+    provider_instrument_id: str,
+    provider_venue_id: str | None = None,
     isin: str | None = None,
 ) -> MarketIdentity:
-    return MarketIdentity(
-        provider=_normalize_token(provider, field="provider", case="lower"),
-        engine=_normalize_token(engine, field="engine", case="lower"),
-        market=_normalize_token(market, field="market", case="lower"),
-        boardid=_normalize_token(boardid, field="boardid", case="upper"),
-        secid=_normalize_token(secid, field="secid", case="upper"),
-        isin=_normalize_isin(isin),
+    provider_n = _normalize_token(provider, field="provider", case="lower")
+    instrument_n = _normalize_token(
+        provider_instrument_id, field="provider_instrument_id", case="plain"
     )
+    venue_n = provider_venue_id.strip() if provider_venue_id is not None else None
+    venue_n = venue_n or None
 
+    if provider_n == MOEX_ISS_PROVIDER:
+        if venue_n is None:
+            raise ValueError("provider_venue_id is required for moex_iss")
+        try:
+            engine, market, boardid = decode_moex_venue(venue_n)
+            return market_identity_from_moex(
+                engine=engine,
+                market=market,
+                boardid=boardid,
+                secid=instrument_n,
+                isin=isin,
+            )
+        except InvalidMoexIdentityError as error:
+            raise ValueError(str(error)) from error
 
-def _identity_key(identity: MarketIdentity) -> tuple[str, str, str, str, str]:
-    return (
-        identity.provider.strip().lower(),
-        identity.engine.strip().lower(),
-        identity.market.strip().lower(),
-        identity.boardid.strip().upper(),
-        identity.secid.strip().upper(),
+    return MarketIdentity(
+        provider=provider_n,
+        provider_instrument_id=instrument_n,
+        provider_venue_id=venue_n,
+        isin=_normalize_isin(isin),
     )
 
 
@@ -87,13 +106,17 @@ def validate_accepted_identity(instrument: Instrument, identity: MarketIdentity)
         raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
     if identity.provider != MOEX_ISS_PROVIDER:
         raise ValueError(f"unsupported market-data provider: {identity.provider}")
+    try:
+        parts = moex_parts_from_identity(identity)
+    except InvalidMoexIdentityError as error:
+        raise ValueError(str(error)) from error
     if not compatible_engine_market(
         instrument_kind=kind,
-        engine=identity.engine,
-        market=identity.market,
+        engine=parts.engine,
+        market=parts.market,
     ):
         raise ValueError(
-            f"engine/market {identity.engine}/{identity.market} is incompatible with {kind.value}"
+            f"engine/market {parts.engine}/{parts.market} is incompatible with {kind.value}"
         )
     instrument_isin = _normalize_isin(instrument.isin)
     if instrument_isin and identity.isin and instrument_isin != identity.isin:
@@ -110,7 +133,7 @@ def verify_identity_with_provider(
     """Confirm an already-chosen identity. Never selects among candidates."""
 
     result = provider.discover_candidates(
-        secid=identity.secid,
+        provider_instrument_id=identity.provider_instrument_id,
         isin=instrument.isin or identity.isin,
     )
     if result.rejected:
@@ -122,8 +145,8 @@ def verify_identity_with_provider(
     if result.status is QuoteStatus.UNSUPPORTED:
         raise ValueError(result.message or "provider reports the identity as unsupported")
 
-    wanted = _identity_key(identity)
-    matches = [item for item in result.candidates if _identity_key(item.identity) == wanted]
+    wanted = market_identity_key(identity)
+    matches = [item for item in result.candidates if market_identity_key(item.identity) == wanted]
     if len(matches) == 1:
         candidate_isin = _normalize_isin(matches[0].identity.isin)
         instrument_isin = _normalize_isin(instrument.isin)
@@ -136,23 +159,18 @@ def verify_identity_with_provider(
 
 
 def _row_has_identity(row: InstrumentMarketMapping) -> bool:
-    return row.provider is not None
+    return row.provider is not None and row.provider_instrument_id is not None
 
 
 def _identity_from_row(row: InstrumentMarketMapping) -> MarketIdentity | None:
     if not _row_has_identity(row):
         return None
     assert row.provider is not None
-    assert row.engine is not None
-    assert row.market is not None
-    assert row.boardid is not None
-    assert row.secid is not None
+    assert row.provider_instrument_id is not None
     return MarketIdentity(
         provider=row.provider,
-        engine=row.engine,
-        market=row.market,
-        boardid=row.boardid,
-        secid=row.secid,
+        provider_instrument_id=row.provider_instrument_id,
+        provider_venue_id=row.provider_venue_id,
     )
 
 
@@ -189,10 +207,8 @@ def set_accepted_mapping(
     instrument_id: int,
     *,
     provider: str,
-    engine: str,
-    market: str,
-    boardid: str,
-    secid: str,
+    provider_instrument_id: str,
+    provider_venue_id: str | None = None,
     isin: str | None = None,
     verify_provider: MarketDataProvider | None = None,
 ) -> InstrumentMappingView:
@@ -201,10 +217,8 @@ def set_accepted_mapping(
         instrument,
         normalize_accepted_identity(
             provider=provider,
-            engine=engine,
-            market=market,
-            boardid=boardid,
-            secid=secid,
+            provider_instrument_id=provider_instrument_id,
+            provider_venue_id=provider_venue_id,
             isin=isin,
         ),
     )
@@ -220,10 +234,8 @@ def set_accepted_mapping(
         row = InstrumentMarketMapping(instrument_id=instrument.id)
         session.add(row)
     row.provider = identity.provider
-    row.engine = identity.engine
-    row.market = identity.market
-    row.boardid = identity.boardid
-    row.secid = identity.secid
+    row.provider_instrument_id = identity.provider_instrument_id
+    row.provider_venue_id = identity.provider_venue_id
     row.excluded = False
     _touch(row)
     session.commit()
@@ -248,10 +260,8 @@ def exclude_instrument_mapping(session: Session, instrument_id: int) -> Instrume
         row = InstrumentMarketMapping(
             instrument_id=instrument.id,
             provider=None,
-            engine=None,
-            market=None,
-            boardid=None,
-            secid=None,
+            provider_instrument_id=None,
+            provider_venue_id=None,
             excluded=True,
         )
         session.add(row)

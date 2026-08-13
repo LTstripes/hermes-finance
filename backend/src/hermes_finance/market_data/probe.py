@@ -11,6 +11,10 @@ import json
 from datetime import date, datetime
 
 from hermes_finance.market_data.dto import QuoteFailure, QuoteSuccess
+from hermes_finance.market_data.moex_identity import (
+    market_identity_from_moex,
+    moex_parts_from_identity,
+)
 from hermes_finance.market_data.moex_iss import MOSCOW_TZ, MoexIssClient
 
 
@@ -39,11 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     target = args.target_date or datetime.now(MOSCOW_TZ).date()
     with MoexIssClient() as client:
         if args.engine and args.market and args.boardid and args.secid:
-            from hermes_finance.market_data.dto import MOEX_ISS_PROVIDER, MarketIdentity
-
             result = client.fetch_quote(
-                MarketIdentity(
-                    provider=MOEX_ISS_PROVIDER,
+                market_identity_from_moex(
                     engine=args.engine,
                     market=args.market,
                     boardid=args.boardid,
@@ -55,16 +56,19 @@ def main(argv: list[str] | None = None) -> int:
             print(_format_quote(result))
             return 0 if isinstance(result, QuoteSuccess) else 1
 
-        discovered = client.discover_candidates(query=args.query, secid=args.secid, isin=args.isin)
+        discovered = client.discover_candidates(
+            query=args.query,
+            provider_instrument_id=args.secid,
+            isin=args.isin,
+        )
         payload = {
             "status": discovered.status.value,
             "message": discovered.message,
             "candidates": [
                 {
-                    "engine": item.identity.engine,
-                    "market": item.identity.market,
-                    "boardid": item.identity.boardid,
-                    "secid": item.identity.secid,
+                    "provider": item.identity.provider,
+                    "provider_instrument_id": item.identity.provider_instrument_id,
+                    "provider_venue_id": item.identity.provider_venue_id,
                     "isin": item.identity.isin,
                     "instrument_kind": item.instrument_kind.value,
                 }
@@ -72,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             ],
             "rejected": [
                 {
-                    "secid": item.secid,
+                    "provider_instrument_id": item.provider_instrument_id,
                     "candidate_isin": item.candidate_isin,
                     "expected_isin": item.expected_isin,
                     "reason": item.reason,
@@ -94,11 +98,17 @@ def _format_quote(result: QuoteSuccess | QuoteFailure) -> str:
             ensure_ascii=False,
             indent=2,
         )
+    parts = moex_parts_from_identity(result.identity)
     return json.dumps(
         {
             "status": result.status.value,
-            "secid": result.identity.secid,
-            "boardid": result.identity.boardid,
+            "provider": result.identity.provider,
+            "provider_instrument_id": result.identity.provider_instrument_id,
+            "provider_venue_id": result.identity.provider_venue_id,
+            "engine": parts.engine,
+            "market": parts.market,
+            "boardid": parts.boardid,
+            "secid": parts.secid,
             "instrument_kind": result.instrument_kind.value,
             "raw_price": result.raw_price,
             "raw_price_basis": result.raw_price_basis.value,

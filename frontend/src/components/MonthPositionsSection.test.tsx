@@ -254,10 +254,8 @@ describe("MonthPositionsSection G03 component contract", () => {
           mapping_state: "mapped",
           identity: {
             provider: "moex_iss",
-            engine: "stock",
-            market: "shares",
-            boardid: "TQBR",
-            secid: "SYNB",
+            provider_instrument_id: "SYNB",
+            provider_venue_id: "stock/shares/TQBR",
           },
           current_market_price_per_unit: { amount: "1100.00", currency: "RUB" },
           current_price_date: "2031-01-31",

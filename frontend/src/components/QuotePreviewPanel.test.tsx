@@ -7,10 +7,8 @@ import { QuotePreviewPanel } from "./QuotePreviewPanel";
 
 const identity = {
   provider: "moex_iss",
-  engine: "stock",
-  market: "shares",
-  boardid: "TQBR",
-  secid: "SBER",
+  provider_instrument_id: "SBER",
+  provider_venue_id: "stock/shares/TQBR",
 };
 
 function row(

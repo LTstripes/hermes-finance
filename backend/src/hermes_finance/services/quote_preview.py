@@ -21,6 +21,7 @@ from hermes_finance.market_data.dto import (
     QuoteResult,
     QuoteStatus,
     RawPriceBasis,
+    market_identity_key,
 )
 from hermes_finance.market_data.normalize import SUPPORTED_KINDS, quote_refresh_target_date
 from hermes_finance.market_data.protocol import MarketDataProvider
@@ -65,16 +66,6 @@ class QuotePreviewResult:
     month_editable: bool
     batch_error: str | None
     rows: tuple[QuotePreviewRow, ...]
-
-
-def _identity_key(identity: MarketIdentity) -> tuple[str, str, str, str, str]:
-    return (
-        identity.provider,
-        identity.engine,
-        identity.market,
-        identity.boardid,
-        identity.secid,
-    )
 
 
 def _require_read_only(session: Session) -> None:
@@ -192,7 +183,7 @@ def _row_from_quote(
 def _fetch_quotes(
     provider: MarketDataProvider,
     items: Sequence[tuple[MarketIdentity, date]],
-) -> dict[tuple[str, str, str, str, str], QuoteResult]:
+) -> dict[tuple[str, str, str | None], QuoteResult]:
     if not items:
         return {}
     fetched = list(provider.fetch_quotes(items))
@@ -201,7 +192,7 @@ def _fetch_quotes(
             "market-data provider returned a result count that does not match the request"
         )
     return {
-        _identity_key(identity): result
+        market_identity_key(identity): result
         for (identity, _target), result in zip(items, fetched, strict=True)
     }
 
@@ -233,7 +224,7 @@ def preview_market_quotes(
     instrument_cache: dict[int, Instrument] = {}
     mapping_cache: dict[int, InstrumentMappingView] = {}
     fetch_items: list[tuple[MarketIdentity, date]] = []
-    fetch_keys: set[tuple[str, str, str, str, str]] = set()
+    fetch_keys: set[tuple[str, str, str | None]] = set()
     plans: list[tuple[PositionSnapshot, Instrument, InstrumentMappingView]] = []
 
     for snapshot in snapshots:
@@ -248,7 +239,7 @@ def preview_market_quotes(
         if mapping.state is MarketMappingState.MAPPED and mapping.identity is not None:
             kind = _coerce_kind(instrument.instrument_type)
             if kind in SUPPORTED_KINDS:
-                key = _identity_key(mapping.identity)
+                key = market_identity_key(mapping.identity)
                 if key not in fetch_keys:
                     fetch_keys.add(key)
                     fetch_items.append((mapping.identity, target_date))
@@ -294,7 +285,7 @@ def preview_market_quotes(
             )
             continue
 
-        result = quotes.get(_identity_key(mapping.identity))
+        result = quotes.get(market_identity_key(mapping.identity))
         if result is None:
             result = QuoteFailure(
                 status=QuoteStatus.UNAVAILABLE,

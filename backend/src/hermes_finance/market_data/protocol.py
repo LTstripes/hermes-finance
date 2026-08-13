@@ -14,7 +14,7 @@ class MarketDataProvider(Protocol):
         self,
         *,
         query: str | None = None,
-        secid: str | None = None,
+        provider_instrument_id: str | None = None,
         isin: str | None = None,
     ) -> DiscoverResult: ...
 

@@ -52,7 +52,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0024_instrument_market_mappings",
+        "revision": "0025_provider_neutral_market_identity",
         "months_status": 200,
     }
 
@@ -82,7 +82,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0024_instrument_market_mappings"}
+    assert observed == {"revision": "0025_provider_neutral_market_identity"}
     assert starts == 2
 
 

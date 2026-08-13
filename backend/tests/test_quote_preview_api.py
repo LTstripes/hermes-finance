@@ -18,20 +18,20 @@ from hermes_finance.market_data.dto import (
     QuoteStatus,
     QuoteSuccess,
     RawPriceBasis,
+    market_identity_key,
 )
+from hermes_finance.market_data.moex_identity import market_identity_from_moex
 from hermes_finance.persistence import Base
 
 TODAY = date(2026, 8, 13)
 FETCHED_AT = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
-STOCK_IDENTITY = MarketIdentity(
-    provider="moex_iss",
+STOCK_IDENTITY = market_identity_from_moex(
     engine="stock",
     market="shares",
     boardid="TQBR",
     secid="SBER",
 )
-FUND_IDENTITY = MarketIdentity(
-    provider="moex_iss",
+FUND_IDENTITY = market_identity_from_moex(
     engine="stock",
     market="shares",
     boardid="TQTF",
@@ -40,7 +40,7 @@ FUND_IDENTITY = MarketIdentity(
 
 
 class ScriptedProvider:
-    def __init__(self, quotes: dict[tuple[str, str, str, str, str], QuoteResult]) -> None:
+    def __init__(self, quotes: dict[tuple[str, str, str | None], QuoteResult]) -> None:
         self.quotes = quotes
         self.fetch_calls: list[tuple[str, date]] = []
         self.started_calls = 0
@@ -49,15 +49,8 @@ class ScriptedProvider:
         raise AssertionError("preview API must not discover candidates")
 
     def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
-        self.fetch_calls.append((identity.secid, target_date))
-        key = (
-            identity.provider,
-            identity.engine,
-            identity.market,
-            identity.boardid,
-            identity.secid,
-        )
-        return self.quotes[key]
+        self.fetch_calls.append((identity.provider_instrument_id, target_date))
+        return self.quotes[market_identity_key(identity)]
 
     def fetch_quotes(self, items: list[tuple[MarketIdentity, date]]) -> list[QuoteResult]:
         return [self.fetch_quote(identity, target_date) for identity, target_date in items]
@@ -90,8 +83,8 @@ def _success(
     )
 
 
-def _identity_key(identity: MarketIdentity) -> tuple[str, str, str, str, str]:
-    return (identity.provider, identity.engine, identity.market, identity.boardid, identity.secid)
+def _identity_key(identity: MarketIdentity) -> tuple[str, str, str | None]:
+    return market_identity_key(identity)
 
 
 @pytest.fixture
@@ -166,10 +159,8 @@ def _map(client: TestClient, instrument_id: int, identity: MarketIdentity) -> No
         f"/api/instruments/{instrument_id}/market-mapping",
         json={
             "provider": identity.provider,
-            "engine": identity.engine,
-            "market": identity.market,
-            "boardid": identity.boardid,
-            "secid": identity.secid,
+            "provider_instrument_id": identity.provider_instrument_id,
+            "provider_venue_id": identity.provider_venue_id,
         },
     )
     assert response.status_code == 200
@@ -261,7 +252,7 @@ def test_mapped_and_failed_rows_and_closed_month(
         "amount": "312.45",
         "currency": "RUB",
     }
-    assert rows[stock["id"]]["identity"]["secid"] == "SBER"
+    assert rows[stock["id"]]["identity"]["provider_instrument_id"] == "SBER"
     assert rows[fund["id"]]["status"] == "network_error"
     assert rows[fund["id"]]["proposed_market_price_per_unit"] is None
     assert rows[fund["id"]]["apply_allowed"] is False

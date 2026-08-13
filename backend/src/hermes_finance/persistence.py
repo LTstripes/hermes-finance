@@ -272,27 +272,24 @@ class InstrumentMarketMapping(Base):
     """Accepted market-data mapping for one instrument.
 
     No row means unmapped. A complete identity with excluded=false is mapped.
-    excluded=true always wins for refresh eligibility. Identity fields are
-    all-or-nothing so a partial mapped state cannot be stored.
+    excluded=true always wins for refresh eligibility. provider and
+    provider_instrument_id are all-or-nothing; provider_venue_id may be null
+    for providers that do not need venue context.
     """
 
     __tablename__ = "instrument_market_mappings"
     __table_args__ = (
         CheckConstraint(
             "("
-            "(provider IS NULL AND engine IS NULL AND market IS NULL "
-            "AND boardid IS NULL AND secid IS NULL) "
+            "(provider IS NULL AND provider_instrument_id IS NULL "
+            "AND provider_venue_id IS NULL) "
             "OR "
-            "(provider IS NOT NULL AND engine IS NOT NULL AND market IS NOT NULL "
-            "AND boardid IS NOT NULL AND secid IS NOT NULL)"
+            "(provider IS NOT NULL AND provider_instrument_id IS NOT NULL)"
             ")",
             name="ck_instrument_market_mappings_identity_atomic",
         ),
         CheckConstraint(
-            "excluded = 1 OR ("
-            "provider IS NOT NULL AND engine IS NOT NULL AND market IS NOT NULL "
-            "AND boardid IS NOT NULL AND secid IS NOT NULL"
-            ")",
+            "excluded = 1 OR (provider IS NOT NULL AND provider_instrument_id IS NOT NULL)",
             name="ck_instrument_market_mappings_mapped_complete",
         ),
         CheckConstraint(
@@ -306,10 +303,8 @@ class InstrumentMarketMapping(Base):
         primary_key=True,
     )
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    engine: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    market: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    boardid: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    secid: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    provider_instrument_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_venue_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     excluded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )

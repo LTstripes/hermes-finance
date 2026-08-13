@@ -344,13 +344,14 @@ export type MarketMappingState = "unmapped" | "mapped" | "excluded";
 
 export type MarketIdentity = {
   provider: string;
-  engine: string;
-  market: string;
-  boardid: string;
-  secid: string;
+  provider_instrument_id: string;
+  provider_venue_id: string | null;
 };
 
-export type MarketIdentityWrite = MarketIdentity & {
+export type MarketIdentityWrite = {
+  provider: string;
+  provider_instrument_id: string;
+  provider_venue_id: string | null;
   isin?: string | null;
 };
 

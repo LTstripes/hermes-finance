@@ -38,11 +38,19 @@ class QuoteKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class MarketIdentity:
     provider: str
-    engine: str
-    market: str
-    boardid: str
-    secid: str
+    provider_instrument_id: str
+    provider_venue_id: str | None
     isin: str | None = None
+
+
+def market_identity_key(identity: MarketIdentity) -> tuple[str, str, str | None]:
+    """Canonical generic identity key. Identities must already be normalized."""
+
+    return (
+        identity.provider,
+        identity.provider_instrument_id,
+        identity.provider_venue_id,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +61,7 @@ class DiscoverCandidate:
 
 @dataclass(frozen=True, slots=True)
 class RejectedCandidate:
-    secid: str
+    provider_instrument_id: str
     candidate_isin: str
     expected_isin: str
     reason: str = "isin_mismatch"

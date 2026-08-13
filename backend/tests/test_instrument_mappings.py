@@ -15,6 +15,7 @@ from hermes_finance.market_data.dto import (
     QuoteStatus,
     RejectedCandidate,
 )
+from hermes_finance.market_data.moex_identity import market_identity_from_moex
 from hermes_finance.persistence import Base, PositionSnapshot
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.instrument_mappings import (
@@ -30,10 +31,8 @@ from hermes_finance.services.reporting_months import close_reporting_month, crea
 
 STOCK_IDENTITY = {
     "provider": "moex_iss",
-    "engine": "stock",
-    "market": "shares",
-    "boardid": "tqbr",
-    "secid": "sber",
+    "provider_instrument_id": "sber",
+    "provider_venue_id": "stock/shares/tqbr",
 }
 
 
@@ -46,10 +45,12 @@ class RecordingProvider:
         self,
         *,
         query: str | None = None,
-        secid: str | None = None,
+        provider_instrument_id: str | None = None,
         isin: str | None = None,
     ) -> DiscoverResult:
-        self.discover_calls.append({"query": query, "secid": secid, "isin": isin})
+        self.discover_calls.append(
+            {"query": query, "provider_instrument_id": provider_instrument_id, "isin": isin}
+        )
         return self.result
 
     def fetch_quote(self, identity: MarketIdentity, target_date: date) -> object:
@@ -98,10 +99,8 @@ def test_explicit_complete_identity_is_mapped(tmp_path: Path) -> None:
         assert view.state is MarketMappingState.MAPPED
         assert view.identity is not None
         assert view.identity.provider == "moex_iss"
-        assert view.identity.engine == "stock"
-        assert view.identity.market == "shares"
-        assert view.identity.boardid == "TQBR"
-        assert view.identity.secid == "SBER"
+        assert view.identity.provider_instrument_id == "SBER"
+        assert view.identity.provider_venue_id == "stock/shares/TQBR"
         assert view.legacy_moex_secid == "SBER"
     finally:
         session.close()
@@ -112,15 +111,13 @@ def test_partial_identity_is_rejected(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         instrument = _stock(session)
-        with pytest.raises(ValueError, match="boardid is required"):
+        with pytest.raises(ValueError, match="provider_venue_id is required"):
             set_accepted_mapping(
                 session,
                 instrument.id,
                 provider="moex_iss",
-                engine="stock",
-                market="shares",
-                boardid="   ",
-                secid="SBER",
+                provider_instrument_id="SBER",
+                provider_venue_id="   ",
             )
         assert get_instrument_mapping(session, instrument.id).state is MarketMappingState.UNMAPPED
     finally:
@@ -165,13 +162,13 @@ def test_mapped_to_excluded_preserves_identity_and_is_reversible(tmp_path: Path)
         excluded = exclude_instrument_mapping(session, instrument.id)
         assert excluded.state is MarketMappingState.EXCLUDED
         assert excluded.identity is not None
-        assert excluded.identity.boardid == "TQBR"
-        assert excluded.identity.secid == "SBER"
+        assert excluded.identity.provider_venue_id == "stock/shares/TQBR"
+        assert excluded.identity.provider_instrument_id == "SBER"
         restored = clear_instrument_mapping_exclusion(session, instrument.id)
         assert restored.state is MarketMappingState.MAPPED
         assert restored.identity is not None
-        assert restored.identity.boardid == "TQBR"
-        assert restored.identity.secid == "SBER"
+        assert restored.identity.provider_venue_id == "stock/shares/TQBR"
+        assert restored.identity.provider_instrument_id == "SBER"
     finally:
         session.close()
         database.engine.dispose()
@@ -238,10 +235,8 @@ def test_unsupported_provider_is_rejected(tmp_path: Path) -> None:
                 session,
                 instrument.id,
                 provider="other_feed",
-                engine="stock",
-                market="shares",
-                boardid="TQBR",
-                secid="SBER",
+                provider_instrument_id="opaque-security-id",
+                provider_venue_id=None,
             )
         assert get_instrument_mapping(session, instrument.id).state is MarketMappingState.UNMAPPED
     finally:
@@ -265,10 +260,8 @@ def test_incompatible_engine_market_is_rejected(tmp_path: Path) -> None:
                 session,
                 fund.id,
                 provider="moex_iss",
-                engine="stock",
-                market="bonds",
-                boardid="TQCB",
-                secid="SU26238RMFS4",
+                provider_instrument_id="SU26238RMFS4",
+                provider_venue_id="stock/bonds/TQCB",
             )
         assert get_instrument_mapping(session, bond.id).state is MarketMappingState.UNMAPPED
     finally:
@@ -280,15 +273,13 @@ def test_provider_verify_rejects_ambiguity_and_never_picks_another(tmp_path: Pat
     session, database = session_for(tmp_path)
     try:
         instrument = _stock(session)
-        first = MarketIdentity(
-            provider="moex_iss",
+        first = market_identity_from_moex(
             engine="stock",
             market="shares",
             boardid="TQBR",
             secid="SBER",
         )
-        other = MarketIdentity(
-            provider="moex_iss",
+        other = market_identity_from_moex(
             engine="stock",
             market="shares",
             boardid="TQTF",
@@ -300,8 +291,7 @@ def test_provider_verify_rejects_ambiguity_and_never_picks_another(tmp_path: Pat
                 candidates=(
                     DiscoverCandidate(identity=other, instrument_kind=InstrumentType.STOCK),
                     DiscoverCandidate(
-                        identity=MarketIdentity(
-                            provider="moex_iss",
+                        identity=market_identity_from_moex(
                             engine="stock",
                             market="shares",
                             boardid="FQBR",
@@ -351,8 +341,9 @@ def test_provider_verify_rejects_ambiguity_and_never_picks_another(tmp_path: Pat
         )
         assert view.state is MarketMappingState.MAPPED
         assert view.identity is not None
-        assert view.identity.boardid == "TQBR"
+        assert view.identity.provider_venue_id == "stock/shares/TQBR"
         assert chosen.discover_calls
+        assert chosen.discover_calls[0]["provider_instrument_id"] == "SBER"
     finally:
         session.close()
         database.engine.dispose()
@@ -367,7 +358,7 @@ def test_provider_verify_rejects_isin_mismatch(tmp_path: Path) -> None:
                 status=QuoteStatus.UNAVAILABLE,
                 rejected=(
                     RejectedCandidate(
-                        secid="SBER",
+                        provider_instrument_id="SBER",
                         candidate_isin="RU0000000000",
                         expected_isin="RU0009029540",
                     ),

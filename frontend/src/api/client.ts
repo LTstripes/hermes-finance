@@ -163,6 +163,8 @@ const FIELD_LABELS: Record<string, string> = {
   market: "Рынок",
   boardid: "Режим торгов",
   secid: "Код бумаги",
+  provider_instrument_id: "Код бумаги",
+  provider_venue_id: "Площадка",
 };
 
 const MONTH_NAMES = [

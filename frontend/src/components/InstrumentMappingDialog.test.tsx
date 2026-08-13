@@ -32,10 +32,8 @@ const mapped: InstrumentMarketMapping = {
   state: "mapped",
   identity: {
     provider: "moex_iss",
-    engine: "stock",
-    market: "shares",
-    boardid: "TQBR",
-    secid: "SBER",
+    provider_instrument_id: "SBER",
+    provider_venue_id: "stock/shares/TQBR",
   },
 };
 
@@ -94,10 +92,8 @@ describe("InstrumentMappingDialog", () => {
     await user.click(screen.getByRole("button", { name: "Сохранить источник" }));
     expect(onSave).toHaveBeenCalledWith({
       provider: "moex_iss",
-      engine: "stock",
-      market: "shares",
-      boardid: "TQBR",
-      secid: "SBER",
+      provider_instrument_id: "SBER",
+      provider_venue_id: "stock/shares/TQBR",
     });
   });
 

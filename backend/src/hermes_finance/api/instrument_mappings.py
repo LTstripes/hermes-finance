@@ -31,10 +31,8 @@ class MarketIdentityWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: str = Field(min_length=1, max_length=32)
-    engine: str = Field(min_length=1, max_length=32)
-    market: str = Field(min_length=1, max_length=32)
-    boardid: str = Field(min_length=1, max_length=32)
-    secid: str = Field(min_length=1, max_length=32)
+    provider_instrument_id: str = Field(min_length=1, max_length=128)
+    provider_venue_id: str | None = Field(default=None, max_length=96)
     isin: str | None = Field(default=None, max_length=12)
 
 
@@ -42,10 +40,8 @@ class MarketIdentityRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: str
-    engine: str
-    market: str
-    boardid: str
-    secid: str
+    provider_instrument_id: str
+    provider_venue_id: str | None
 
 
 class MarketMappingResponse(BaseModel):
@@ -63,10 +59,8 @@ def _response(view: InstrumentMappingView) -> MarketMappingResponse:
     if view.identity is not None:
         identity = MarketIdentityRead(
             provider=view.identity.provider,
-            engine=view.identity.engine,
-            market=view.identity.market,
-            boardid=view.identity.boardid,
-            secid=view.identity.secid,
+            provider_instrument_id=view.identity.provider_instrument_id,
+            provider_venue_id=view.identity.provider_venue_id,
         )
     return MarketMappingResponse(
         instrument_id=view.instrument_id,
@@ -109,10 +103,8 @@ def put_instrument_mapping_endpoint(
             session,
             instrument_id,
             provider=payload.provider,
-            engine=payload.engine,
-            market=payload.market,
-            boardid=payload.boardid,
-            secid=payload.secid,
+            provider_instrument_id=payload.provider_instrument_id,
+            provider_venue_id=payload.provider_venue_id,
             isin=payload.isin,
             verify_provider=provider,
         )

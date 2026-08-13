@@ -9,7 +9,6 @@ import pytest
 
 from hermes_finance.domain import InstrumentType, RubleAmount
 from hermes_finance.market_data import (
-    MOEX_ISS_PROVIDER,
     MarketIdentity,
     MoexIssClient,
     QuoteFailure,
@@ -24,6 +23,11 @@ from hermes_finance.market_data.iss_parse import (
     parse_iss_payload,
     row_text,
 )
+from hermes_finance.market_data.moex_identity import (
+    MoexIdentityParts,
+    market_identity_from_moex,
+    moex_parts_from_identity,
+)
 from hermes_finance.market_data.normalize import (
     convert_to_kopecks,
     current_last_price_date,
@@ -34,38 +38,38 @@ FIXTURES = Path(__file__).parent / "fixtures" / "moex_iss"
 TODAY = date(2026, 8, 13)
 FETCHED_AT = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
 
-STOCK = MarketIdentity(
-    provider=MOEX_ISS_PROVIDER,
+STOCK = market_identity_from_moex(
     engine="stock",
     market="shares",
     boardid="TQBR",
     secid="SYNTHS",
     isin="RU000SYNTH01",
 )
-FUND = MarketIdentity(
-    provider=MOEX_ISS_PROVIDER,
+FUND = market_identity_from_moex(
     engine="stock",
     market="shares",
     boardid="TQTF",
     secid="SYNTHF",
     isin="RU000SYNTH02",
 )
-BOND = MarketIdentity(
-    provider=MOEX_ISS_PROVIDER,
+BOND = market_identity_from_moex(
     engine="stock",
     market="bonds",
     boardid="TQCB",
     secid="SYNTHB",
     isin="RU000SYNTH03",
 )
-BOND_CASH = MarketIdentity(
-    provider=MOEX_ISS_PROVIDER,
+BOND_CASH = market_identity_from_moex(
     engine="stock",
     market="bonds",
     boardid="TQCB",
     secid="SYNTHR",
     isin="RU000SYNTH04",
 )
+
+
+def _parts(identity: MarketIdentity) -> MoexIdentityParts:
+    return moex_parts_from_identity(identity)
 
 
 def _table(columns: list[str], *rows: list[object]) -> dict[str, object]:
@@ -101,13 +105,20 @@ def _market_payload(
     return {
         "securities": _table(
             ["SECID", "BOARDID", "FACEVALUE", "FACEUNIT", "QUOTEBASIS", "CURRENCYID"],
-            [identity.secid, identity.boardid, face_value, face_unit, quote_basis, currency],
+            [
+                _parts(identity).secid,
+                _parts(identity).boardid,
+                face_value,
+                face_unit,
+                quote_basis,
+                currency,
+            ],
         ),
         "marketdata": _table(
             ["SECID", "BOARDID", "LAST", "TIME", "SYSTIME"],
             [
-                identity.secid,
-                identity.boardid,
+                _parts(identity).secid,
+                _parts(identity).boardid,
                 last,
                 "18:39:59",
                 f"{last_date or '2026-08-14'} 00:05:01",
@@ -121,7 +132,7 @@ def _history_payload(identity: MarketIdentity, *rows: tuple[str, object]) -> dic
         "history": _table(
             ["TRADEDATE", "SECID", "BOARDID", "CLOSE", "LASTPRICE", "LEGALCLOSEPRICE"],
             *[
-                [trade_date, identity.secid, identity.boardid, price, price, price]
+                [trade_date, _parts(identity).secid, _parts(identity).boardid, price, price, price]
                 for trade_date, price in rows
             ],
         )
@@ -207,14 +218,15 @@ def _put_identity(
     market: dict[str, object],
     history: dict[str, object] | None = None,
 ) -> None:
-    stub.payloads[f"/iss/securities/{identity.secid}.json"] = details
+    parts = _parts(identity)
+    stub.payloads[f"/iss/securities/{parts.secid}.json"] = details
     stub.payloads[
-        f"/iss/engines/{identity.engine}/markets/{identity.market}"
-        f"/boards/{identity.boardid}/securities/{identity.secid}.json"
+        f"/iss/engines/{parts.engine}/markets/{parts.market}"
+        f"/boards/{parts.boardid}/securities/{parts.secid}.json"
     ] = market
     stub.payloads[
-        f"/iss/history/engines/{identity.engine}/markets/{identity.market}"
-        f"/boards/{identity.boardid}/securities/{identity.secid}.json"
+        f"/iss/history/engines/{parts.engine}/markets/{parts.market}"
+        f"/boards/{parts.boardid}/securities/{parts.secid}.json"
     ] = history or {"history": _table(["TRADEDATE", "CLOSE"])}
 
 
@@ -291,10 +303,10 @@ def test_current_last_uses_documented_shares_marketdata_without_trade_date() -> 
     assert "SYSTIME" in marketdata_columns
 
     stub = IssStub()
-    stub.payloads[f"/iss/securities/{STOCK.secid}.json"] = STOCK_DETAILS
+    stub.payloads[f"/iss/securities/{_parts(STOCK).secid}.json"] = STOCK_DETAILS
     stub.payloads[
-        f"/iss/engines/{STOCK.engine}/markets/{STOCK.market}"
-        f"/boards/{STOCK.boardid}/securities/{STOCK.secid}.json"
+        f"/iss/engines/{_parts(STOCK).engine}/markets/{_parts(STOCK).market}"
+        f"/boards/{_parts(STOCK).boardid}/securities/{_parts(STOCK).secid}.json"
     ] = payload
     with _client(stub) as client:
         result = client.fetch_quote(STOCK, TODAY)
@@ -524,13 +536,15 @@ def test_discover_filters_non_rub_boards_before_ambiguity() -> None:
         ],
     )
     with _client(stub) as client:
-        result = client.discover_candidates(secid="SYNTHS")
+        result = client.discover_candidates(provider_instrument_id="SYNTHS")
 
     assert result.status is QuoteStatus.OK
     assert len(result.candidates) == 1
-    assert result.candidates[0].identity.boardid == "TQBR"
-    assert result.candidates[0].identity.engine == "stock"
-    assert result.candidates[0].identity.market == "shares"
+    assert result.candidates[0].identity.provider_venue_id == "stock/shares/TQBR"
+    assert result.candidates[0].identity.provider_instrument_id == "SYNTHS"
+    assert _parts(result.candidates[0].identity).boardid == "TQBR"
+    assert _parts(result.candidates[0].identity).engine == "stock"
+    assert _parts(result.candidates[0].identity).market == "shares"
 
 
 def test_discover_bond_f_rub_currency_usd_faceunit_is_unsupported() -> None:
@@ -549,7 +563,7 @@ def test_discover_bond_f_rub_currency_usd_faceunit_is_unsupported() -> None:
         ),
     }
     with _client(stub) as client:
-        result = client.discover_candidates(secid="SYNTHB")
+        result = client.discover_candidates(provider_instrument_id="SYNTHB")
 
     assert result.status is QuoteStatus.UNSUPPORTED
     assert result.candidates == ()
@@ -571,11 +585,11 @@ def test_discover_bond_f_filters_incompatible_faceunit_before_ambiguity() -> Non
         ),
     }
     with _client(stub) as client:
-        result = client.discover_candidates(secid="SYNTHB")
+        result = client.discover_candidates(provider_instrument_id="SYNTHB")
 
     assert result.status is QuoteStatus.OK
     assert len(result.candidates) == 1
-    assert result.candidates[0].identity.boardid == "TQCB"
+    assert result.candidates[0].identity.provider_venue_id == "stock/bonds/TQCB"
 
 
 def test_discover_accepts_rur_as_rub_compatible() -> None:
@@ -591,11 +605,11 @@ def test_discover_accepts_rur_as_rub_compatible() -> None:
         boards=[["SYNTHS", "TQBR", "stock", "shares", "RUR"]],
     )
     with _client(stub) as client:
-        result = client.discover_candidates(secid="SYNTHS")
+        result = client.discover_candidates(provider_instrument_id="SYNTHS")
 
     assert result.status is QuoteStatus.OK
     assert len(result.candidates) == 1
-    assert result.candidates[0].identity.boardid == "TQBR"
+    assert result.candidates[0].identity.provider_venue_id == "stock/shares/TQBR"
 
 
 def test_ambiguous_boards_are_not_silently_selected() -> None:
@@ -613,17 +627,16 @@ def test_ambiguous_boards_are_not_silently_selected() -> None:
         ],
     )
     with _client(stub) as client:
-        result = client.discover_candidates(secid="SYNTHS")
+        result = client.discover_candidates(provider_instrument_id="SYNTHS")
 
     assert result.status is QuoteStatus.AMBIGUOUS
-    assert {item.identity.boardid for item in result.candidates} == {"TQBR", "TQTF"}
-    assert all(item.identity.secid == "SYNTHS" for item in result.candidates)
+    assert {_parts(item.identity).boardid for item in result.candidates} == {"TQBR", "TQTF"}
+    assert all(item.identity.provider_instrument_id == "SYNTHS" for item in result.candidates)
 
 
 def test_unsupported_non_rub_semantics() -> None:
     stub = IssStub()
-    usd = MarketIdentity(
-        provider=MOEX_ISS_PROVIDER,
+    usd = market_identity_from_moex(
         engine="stock",
         market="shares",
         boardid="FQBR",
@@ -698,8 +711,8 @@ def test_partial_batch_keeps_successful_rows() -> None:
         _market_payload(FUND, last="8.00", last_date="2026-08-13"),
     )
     stub.errors[
-        f"/iss/engines/{FUND.engine}/markets/{FUND.market}"
-        f"/boards/{FUND.boardid}/securities/{FUND.secid}.json"
+        f"/iss/engines/{_parts(FUND).engine}/markets/{_parts(FUND).market}"
+        f"/boards/{_parts(FUND).boardid}/securities/{_parts(FUND).secid}.json"
     ] = httpx2.ConnectError("offline")
 
     with _client(stub) as client:

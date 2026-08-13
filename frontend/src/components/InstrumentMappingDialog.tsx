@@ -4,9 +4,12 @@ import type { Instrument, InstrumentMarketMapping, MarketIdentityWrite } from ".
 import {
   defaultMappingDraft,
   formatMarketIdentity,
+  identityToMoexDraft,
   MAPPING_STATE_LABELS,
   MAPPING_SUPPORTED_TYPES,
   mappingStateTone,
+  moexDraftToIdentity,
+  type MoexMappingDraft,
 } from "../lib/marketData";
 import { labelOf } from "../lib/labels";
 import { Badge, Button, Field, Input } from "./ui";
@@ -27,9 +30,9 @@ type Props = {
 function draftFromMapping(
   instrument: Instrument,
   mapping: InstrumentMarketMapping | null,
-): MarketIdentityWrite {
+): MoexMappingDraft {
   if (mapping?.identity) {
-    return { ...mapping.identity };
+    return identityToMoexDraft(mapping.identity, instrument.instrument_type);
   }
   return defaultMappingDraft(instrument.instrument_type);
 }
@@ -48,7 +51,7 @@ export function InstrumentMappingDialog({
 }: Props) {
   const titleId = useId();
   const descriptionId = useId();
-  const [draft, setDraft] = useState<MarketIdentityWrite>(defaultMappingDraft("stock"));
+  const [draft, setDraft] = useState<MoexMappingDraft>(defaultMappingDraft("stock"));
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -74,20 +77,20 @@ export function InstrumentMappingDialog({
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
-    const payload: MarketIdentityWrite = {
-      provider: draft.provider.trim(),
-      engine: draft.engine.trim(),
-      market: draft.market.trim(),
-      boardid: draft.boardid.trim(),
-      secid: draft.secid.trim(),
-    };
     if (
-      !payload.provider ||
-      !payload.engine ||
-      !payload.market ||
-      !payload.boardid ||
-      !payload.secid
+      !draft.provider.trim() ||
+      !draft.engine.trim() ||
+      !draft.market.trim() ||
+      !draft.boardid.trim() ||
+      !draft.secid.trim()
     ) {
+      setLocalError("Заполни провайдер, движок, рынок, режим торгов и код бумаги.");
+      return;
+    }
+    let payload: MarketIdentityWrite;
+    try {
+      payload = moexDraftToIdentity(draft);
+    } catch {
       setLocalError("Заполни провайдер, движок, рынок, режим торгов и код бумаги.");
       return;
     }
@@ -95,7 +98,7 @@ export function InstrumentMappingDialog({
     await onSave(payload);
   }
 
-  function updateField(field: keyof MarketIdentityWrite, value: string) {
+  function updateField(field: keyof MoexMappingDraft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
   }
 

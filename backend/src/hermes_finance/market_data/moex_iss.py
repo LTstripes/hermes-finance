@@ -32,6 +32,12 @@ from hermes_finance.market_data.iss_parse import (
     row_get,
     row_text,
 )
+from hermes_finance.market_data.moex_identity import (
+    InvalidMoexIdentityError,
+    MoexIdentityParts,
+    market_identity_from_moex,
+    moex_parts_from_identity,
+)
 from hermes_finance.market_data.normalize import (
     MAX_LOOKBACK_DAYS,
     SUPPORTED_KINDS,
@@ -112,19 +118,19 @@ class MoexIssClient:
         self,
         *,
         query: str | None = None,
-        secid: str | None = None,
+        provider_instrument_id: str | None = None,
         isin: str | None = None,
     ) -> DiscoverResult:
         expected_isin = _normalize_isin(isin)
-        search = (query or secid or isin or "").strip()
+        search = (query or provider_instrument_id or isin or "").strip()
         if not search:
             return DiscoverResult(
                 status=QuoteStatus.UNAVAILABLE,
                 message="discover query is empty",
             )
         try:
-            if secid and not query:
-                details = [self._load_security_details(secid.strip())]
+            if provider_instrument_id and not query:
+                details = [self._load_security_details(provider_instrument_id.strip())]
             else:
                 details = self._search_securities(search)
         except _NetworkFailure as error:
@@ -144,7 +150,7 @@ class MoexIssClient:
             if expected_isin and detail.isin and detail.isin != expected_isin:
                 rejected.append(
                     RejectedCandidate(
-                        secid=detail.secid,
+                        provider_instrument_id=detail.secid,
                         candidate_isin=detail.isin,
                         expected_isin=expected_isin,
                     )
@@ -187,7 +193,8 @@ class MoexIssClient:
                 identity=identity,
             )
         try:
-            detail = self._load_security_details(identity.secid)
+            parts = moex_parts_from_identity(identity)
+            detail = self._load_security_details(parts.secid)
             kind = detail.kind
             if kind not in SUPPORTED_KINDS:
                 return QuoteFailure(
@@ -195,7 +202,7 @@ class MoexIssClient:
                     message="instrument kind is not supported in 0.4",
                     identity=identity,
                 )
-            if not _compatible_board(identity.engine, identity.market, kind):
+            if not _compatible_board(parts.engine, parts.market, kind):
                 return QuoteFailure(
                     status=QuoteStatus.UNSUPPORTED,
                     message="engine/market is not a supported 0.4 family",
@@ -208,13 +215,13 @@ class MoexIssClient:
                     identity=identity,
                 )
 
-            market_tables = self._market_payload(identity)
+            market_tables = self._market_payload(parts)
             securities_rows = market_tables.get("securities", [])
             marketdata_rows = market_tables.get("marketdata", [])
-            security_row = _row_for_identity(securities_rows, identity) or (
+            security_row = _row_for_parts(securities_rows, parts) or (
                 securities_rows[0] if securities_rows else {}
             )
-            market_row = _row_for_identity(marketdata_rows, identity) or (
+            market_row = _row_for_parts(marketdata_rows, parts) or (
                 marketdata_rows[0] if marketdata_rows else {}
             )
             quoted_basis = row_text(security_row, "QUOTEBASIS") or detail.quote_basis
@@ -229,7 +236,7 @@ class MoexIssClient:
             )
             basis = resolve_quote_basis(
                 quoted_basis=quoted_basis,
-                market=identity.market,
+                market=parts.market,
                 instrument_kind=kind,
             )
             shares_default = kind in {InstrumentType.STOCK, InstrumentType.FUND}
@@ -238,7 +245,7 @@ class MoexIssClient:
             if target_date >= self._clock():
                 selected = self._current_last(market_row, target_date)
             if selected is None:
-                selected = self._historical_quote(identity, target_date)
+                selected = self._historical_quote(parts, target_date)
             if selected is None:
                 return QuoteFailure(
                     status=QuoteStatus.UNAVAILABLE,
@@ -274,6 +281,12 @@ class MoexIssClient:
             )
         except NormalizeError as error:
             return QuoteFailure(status=error.status, message=error.message, identity=identity)
+        except InvalidMoexIdentityError as error:
+            return QuoteFailure(
+                status=QuoteStatus.MALFORMED_RESPONSE,
+                message=str(error),
+                identity=identity,
+            )
         except IssParseError as error:
             return QuoteFailure(
                 status=QuoteStatus.MALFORMED_RESPONSE,
@@ -344,8 +357,7 @@ class MoexIssClient:
             ):
                 continue
             boards.append(
-                MarketIdentity(
-                    provider=MOEX_ISS_PROVIDER,
+                market_identity_from_moex(
                     engine=engine,
                     market=market,
                     boardid=boardid,
@@ -363,10 +375,10 @@ class MoexIssClient:
             boards=tuple(boards),
         )
 
-    def _market_payload(self, identity: MarketIdentity) -> dict[str, list[dict[str, object]]]:
+    def _market_payload(self, parts: MoexIdentityParts) -> dict[str, list[dict[str, object]]]:
         path = (
-            f"/iss/engines/{identity.engine}/markets/{identity.market}"
-            f"/boards/{identity.boardid}/securities/{identity.secid}.json"
+            f"/iss/engines/{parts.engine}/markets/{parts.market}"
+            f"/boards/{parts.boardid}/securities/{parts.secid}.json"
         )
         payload = self._get(path, {"iss.meta": "off"})
         return parse_iss_payload(payload)
@@ -386,11 +398,11 @@ class MoexIssClient:
         return raw_price, price_date, QuoteKind.LAST
 
     def _historical_quote(
-        self, identity: MarketIdentity, target_date: date
+        self, parts: MoexIdentityParts, target_date: date
     ) -> tuple[Decimal, date, QuoteKind] | None:
         path = (
-            f"/iss/history/engines/{identity.engine}/markets/{identity.market}"
-            f"/boards/{identity.boardid}/securities/{identity.secid}.json"
+            f"/iss/history/engines/{parts.engine}/markets/{parts.market}"
+            f"/boards/{parts.boardid}/securities/{parts.secid}.json"
         )
         payload = self._get(
             path,
@@ -524,13 +536,13 @@ def _parse_iss_date(value: str) -> date:
         raise IssParseError(f"invalid ISS date: {value}") from error
 
 
-def _row_for_identity(
-    rows: list[dict[str, object]], identity: MarketIdentity
+def _row_for_parts(
+    rows: list[dict[str, object]], parts: MoexIdentityParts
 ) -> dict[str, object] | None:
     for row in rows:
         secid = row_text(row, "SECID")
         boardid = row_text(row, "BOARDID")
-        if secid == identity.secid and (boardid is None or boardid == identity.boardid):
+        if secid == parts.secid and (boardid is None or boardid == parts.boardid):
             return row
     return None
 
