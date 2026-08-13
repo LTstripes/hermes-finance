@@ -34,6 +34,8 @@ Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely
 - Do not implement future features “while here”.
 - If a requirement conflicts with the master specification, stop and ask one concrete question.
 - After an explicitly assigned task passes its required local verification, Hermes may create a normal commit, push the current branch to `origin` and verify CI without separate confirmation.
+- A task implementation worker owns publishing its accepted local commits to its **own task/candidate branch**. Do not ask the owner to act as a routine `git push` courier between the worker and reviewer. Never push `main`, `r04` or another integration branch from a task worker unless the task explicitly assigns integration authority.
+- If a normal task-branch push fails, report the exact attempted command, exit status and stderr/output after safe diagnostic/retry steps. Do not reduce this to “push failed”, and do not ask the owner to push manually until the concrete credential/network/runtime barrier is identified.
 - Separate owner permission is still required for force-push, reset, rebase, amending published commits, merge, branch or tag deletion, opening a PR, creating a release, or changing repository settings.
 - Keep each change small enough for complete independent review.
 
