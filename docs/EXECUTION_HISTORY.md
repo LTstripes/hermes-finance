@@ -135,6 +135,19 @@ For an A/B task insert a `Candidates` subsection before `Selected candidate` and
 - **Historical safety:** mapping operations touch only reference mapping storage; tests assert closed-month `PositionSnapshot` price/date/source/value/accrued-interest/update timestamp remain unchanged.
 - **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`
 
+### 0.4.0 / R04-04 — quote refresh preview API
+
+- **Accepted:** 2026-08-13
+- **Implemented by:** Hermes/Grok — Grok 4.6
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Baseline:** `r04` @ `300e58844ea8f093e5b31a819ac878801e95c899`
+- **Candidate:** `r04-04-grok` @ `e29cf5c0009d4be9febbeb865528d04175a162ba` (initial implementation `2aa54bc4c046d8afd15c981ef2af3432dc9b5930`, reviewer follow-up `e29cf5c0009d4be9febbeb865528d04175a162ba`).
+- **Integrated into:** `r04` via PR #23, merge commit `de47dedf4514ef28816c56a750d985fb1c38ffa5`; exact candidate head was guarded during merge.
+- **Verification:** reviewer inspected the remote implementation and follow-up diffs against ADR 0009, including target-date derivation, stale/closed-month semantics, provider-neutral result handling, partial success, accepted mapping identity use and zero-write preview design. Worker-reported final verification: targeted preview + R04-02/R04-03 `68 passed`, full backend `649 passed`, Ruff check/format passed, `git diff --check` clean and privacy check passed. Candidate-branch GitHub Actions were not available because workflows run on main push/PR only.
+- **Iterations/blockers:** one reviewer blocker: preview originally caught generic provider exceptions and converted unexpected programming/contract failures into `network_error`. Follow-up removed that catch/fallback layer; normalized `QuoteFailure` remains per-row, while unexpected exceptions and wrong batch result counts now surface as server/provider-contract failures.
+- **Decision notes:** accepted explicit owner-triggered read-only preview for a reporting month. `target_date=min(snapshot_date, Moscow today)` is sourced from ADR 0009; stale proposals remain visible but are not apply-eligible by default; closed months may preview but never apply. No snapshot/mapping/provenance writes, UI, background fetch, FX or NKD automation were introduced.
+- **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`, PR #23.
+
 ---
 
 ## Historical backfill
