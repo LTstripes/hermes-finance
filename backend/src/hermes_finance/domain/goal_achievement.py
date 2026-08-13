@@ -27,6 +27,10 @@ class GoalAchievementForecastResult:
     estimated_achievement_date: date | None
     is_approximate: bool
     warnings: tuple[str, ...]
+    configured_start_month: str | None = None
+    months_used: tuple[str, ...] = ()
+    months_count: int = 0
+    months_complete: bool = False
 
 
 def calculate_goal_achievement_forecast(
@@ -39,6 +43,10 @@ def calculate_goal_achievement_forecast(
     source_forecast_version: str | None,
     is_approximate: bool = False,
     warnings: tuple[str, ...] = (),
+    configured_start_month: str | None = None,
+    months_used: tuple[str, ...] = (),
+    months_count: int = 0,
+    months_complete: bool = False,
 ) -> GoalAchievementForecastResult:
     """Evaluate one supported active goal at a reporting snapshot.
 
@@ -68,4 +76,8 @@ def calculate_goal_achievement_forecast(
         estimated_achievement_date=as_of_date if achieved else None,
         is_approximate=is_approximate,
         warnings=warnings,
+        configured_start_month=configured_start_month,
+        months_used=months_used,
+        months_count=months_count,
+        months_complete=months_complete,
     )

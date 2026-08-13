@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0022_goal_main_selection"
+REVISION = "0023_passive_income_history_eligibility"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -54,9 +54,10 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
     connection = sqlite3.connect(database_path)
     try:
         assert connection.execute(
-            "SELECT base_currency, locale, timezone, passive_income_goal_kopecks, formula_version "
+            "SELECT base_currency, locale, timezone, passive_income_goal_kopecks, formula_version, "
+            "passive_income_history_start_month "
             "FROM app_settings WHERE id = 1"
-        ).fetchone() == ("RUB", "ru-RU", "Europe/Moscow", 10_000_000, "v1")
+        ).fetchone() == ("RUB", "ru-RU", "Europe/Moscow", 10_000_000, "v1", None)
         assert [row[1] for row in connection.execute("PRAGMA table_info(reporting_months)")] == [
             "id",
             "year",

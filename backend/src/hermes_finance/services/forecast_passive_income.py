@@ -42,6 +42,10 @@ from hermes_finance.persistence import ReportingMonth
 from hermes_finance.services.expected_cash_flows import list_expected_cash_flows
 from hermes_finance.services.passive_income import passive_income_for_month
 from hermes_finance.services.reporting_months import get_reporting_month
+from hermes_finance.services.settings import (
+    get_or_create_settings,
+    parse_passive_income_history_start_month,
+)
 
 
 def forecast_passive_income(
@@ -107,9 +111,14 @@ def forecast_passive_income(
         )
 
     # 4. Delegate to pure calculator
+    settings = get_or_create_settings(session)
+    history_start_month = parse_passive_income_history_start_month(
+        settings.passive_income_history_start_month
+    )
     return calculate_forecast_passive_income(
         ForecastPassiveIncomeInput(
             expected_flows=tuple(expected_flows),
             dividend_months=tuple(dividend_months),
+            history_start_month=history_start_month,
         )
     )

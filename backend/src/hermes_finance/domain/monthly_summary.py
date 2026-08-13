@@ -68,6 +68,8 @@ class MonthlySummaryResult:
     iis: tuple[IisResult, ...]
     warnings: tuple[str, ...]
     calculation_version: str = CALCULATION_VERSION
+    passive_income_history_start_month: str | None = None
+    passive_income_average_months_used: tuple[str, ...] = ()
 
 
 def assemble_warnings(

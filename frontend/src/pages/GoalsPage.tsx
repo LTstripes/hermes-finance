@@ -4,13 +4,13 @@ import { formatApiError } from "../api/client";
 import {
   createGoal,
   deleteGoal,
-  listGoals,
-  listGoalSummary,
-  updateGoal,
   type Goal,
   type GoalCreatePayload,
   type GoalSummary,
   type GoalUpdatePayload,
+  listGoalSummary,
+  listGoals,
+  updateGoal,
 } from "../api/goals";
 import { listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
@@ -560,6 +560,21 @@ function forecastHelp(forecast: GoalSummary["achievement_forecast"]): string {
   const parts: string[] = [];
   if (forecast.reason_code) parts.push(goalReasonLabel(forecast.reason_code));
   parts.push(...forecast.warnings);
+  if (
+    (forecast.passive_income_months_count ?? 0) > 0 ||
+    forecast.passive_income_history_start_month
+  ) {
+    parts.push(
+      forecast.passive_income_months_complete
+        ? "Учтено полное окно из 12 закрытых месяцев."
+        : `Учтено ${forecast.passive_income_months_count ?? 0} закрытых месяцев из 12.`,
+    );
+    parts.push(
+      forecast.passive_income_history_start_month
+        ? `Учёт с ${forecast.passive_income_history_start_month}.`
+        : "Вся доступная история.",
+    );
+  }
   if (forecast.is_approximate) parts.push("Часть значений является оценочной.");
   if (forecast.as_of_date) parts.push(`Данные на ${formatDate(forecast.as_of_date)}.`);
   return parts.join(" ");

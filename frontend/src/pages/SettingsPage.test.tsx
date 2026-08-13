@@ -22,6 +22,7 @@ const settings = {
   timezone: "Europe/Moscow",
   passive_income_goal: { amount: "100000.00", currency: "RUB" },
   formula_version: "v1",
+  passive_income_history_start_month: null,
 };
 
 const getSettingsMock = vi.mocked(getSettings);
@@ -98,6 +99,33 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText(/от 2 до 32 символов/i)).toBeInTheDocument();
     expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+
+  it("saves and clears the passive-income history boundary explicitly", async () => {
+    const user = userEvent.setup();
+    updateSettingsMock.mockImplementation(async (payload) => ({
+      ...settings,
+      passive_income_history_start_month: payload.passive_income_history_start_month ?? null,
+    }));
+    renderSettings();
+
+    const boundary = await screen.findByLabelText("Учитывать пассивный доход начиная с");
+    await user.type(boundary, "2031-05");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(updateSettingsMock).toHaveBeenCalledWith({
+        passive_income_history_start_month: "2031-05",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Сбросить" }));
+    expect(boundary).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(updateSettingsMock).toHaveBeenLastCalledWith({
+        passive_income_history_start_month: null,
+      }),
+    );
   });
 
   it("localizes D08 field validation errors from the server", async () => {

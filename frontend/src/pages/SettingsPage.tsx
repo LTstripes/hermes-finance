@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import {
-  getSettings,
-  updateSettings,
   type AppSettings,
   type AppSettingsUpdate,
+  getSettings,
+  updateSettings,
 } from "../api/settings";
 import { DiagnosticsPanel } from "../components/RuntimeStatus";
 import { TaxBracketsPanel } from "../components/TaxBracketsPanel";
@@ -16,6 +16,7 @@ export function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [locale, setLocale] = useState("");
   const [timezone, setTimezone] = useState("");
+  const [historyStartMonth, setHistoryStartMonth] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -32,6 +33,7 @@ export function SettingsPage() {
       setSettings(value);
       setLocale(value.locale);
       setTimezone(value.timezone);
+      setHistoryStartMonth(value.passive_income_history_start_month ?? "");
       setSaveError(null);
       setSuccess(null);
       setFieldErrors({});
@@ -55,7 +57,9 @@ export function SettingsPage() {
   const normalizedTimezone = timezone.trim();
   const dirty =
     settings !== null &&
-    (normalizedLocale !== settings.locale || normalizedTimezone !== settings.timezone);
+    (normalizedLocale !== settings.locale ||
+      normalizedTimezone !== settings.timezone ||
+      historyStartMonth !== (settings.passive_income_history_start_month ?? ""));
 
   function validate(): boolean {
     const nextErrors: Record<string, string> = {};
@@ -64,6 +68,9 @@ export function SettingsPage() {
     }
     if (normalizedTimezone.length < 1 || normalizedTimezone.length > 64) {
       nextErrors.timezone = "Часовой пояс должен содержать от 1 до 64 символов.";
+    }
+    if (historyStartMonth !== "" && !/^\d{4}-(0[1-9]|1[0-2])$/.test(historyStartMonth)) {
+      nextErrors.historyStartMonth = "Укажи месяц в формате ГГГГ-ММ.";
     }
     setFieldErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -76,6 +83,9 @@ export function SettingsPage() {
     const payload: AppSettingsUpdate = {};
     if (normalizedLocale !== settings.locale) payload.locale = normalizedLocale;
     if (normalizedTimezone !== settings.timezone) payload.timezone = normalizedTimezone;
+    if (historyStartMonth !== (settings.passive_income_history_start_month ?? "")) {
+      payload.passive_income_history_start_month = historyStartMonth || null;
+    }
 
     setSaving(true);
     setSaveError(null);
@@ -86,6 +96,7 @@ export function SettingsPage() {
       setSettings(saved);
       setLocale(saved.locale);
       setTimezone(saved.timezone);
+      setHistoryStartMonth(saved.passive_income_history_start_month ?? "");
       setSuccess("Настройки сохранены.");
     } catch (error) {
       if (error instanceof ApiClientError && error.details.length > 0) {
@@ -189,6 +200,41 @@ export function SettingsPage() {
             ) : null}
             {fieldErrors.timezone ? (
               <p className="inline-alert inline-alert--error">{fieldErrors.timezone}</p>
+            ) : null}
+            <div className="field-row">
+              <Field
+                htmlFor="settings-history-start-month"
+                label="Учитывать пассивный доход начиная с"
+              >
+                <Input
+                  id="settings-history-start-month"
+                  max="9999-12"
+                  min="0001-01"
+                  onChange={(event) => {
+                    setHistoryStartMonth(event.target.value);
+                    setSuccess(null);
+                  }}
+                  type="month"
+                  value={historyStartMonth}
+                />
+              </Field>
+              <Button
+                disabled={historyStartMonth === "" || saving}
+                onClick={() => {
+                  setHistoryStartMonth("");
+                  setSuccess(null);
+                }}
+                type="button"
+                variant="ghost"
+              >
+                Сбросить
+              </Button>
+            </div>
+            <p className="muted">
+              Пустое значение учитывает всю доступную историю. Граница включается в расчёт.
+            </p>
+            {fieldErrors.historyStartMonth ? (
+              <p className="inline-alert inline-alert--error">{fieldErrors.historyStartMonth}</p>
             ) : null}
             <p className="muted">
               Локаль и часовой пояс сохраняются в приложении, но пока не управляют всем
