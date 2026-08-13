@@ -2,6 +2,25 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.3.0] — 2026-08-13
+
+Release candidate focused on the completed 0.3 product pass and safe local delivery.
+
+### Added
+
+- persisted passive-income history boundary with migration-safe defaults and shared backend eligibility semantics;
+- capital composition analytics history and the completed Dashboard, Analytics, Goals, Accounts, Settings, and month-workspace UI pass;
+- canonical Windows production launcher checks for frontend build, migrations, readiness, and localhost-only serving.
+
+### Changed
+
+- user-facing copy and state presentation now use product language across the main application flows;
+- responsive and accessible action presentation was tightened without changing financial formulas or persisted financial contracts.
+
+### Release status
+
+- This is a release candidate. No tag or GitHub release is created by R03-15.
+
 ## [0.2.0] — 2026-08-11
 
 Первый post-MVP релиз, сфокусированный на финансовых инвариантах, локальной надёжности, полноценных пользовательских разделах и owner-led smoke/backfill.
