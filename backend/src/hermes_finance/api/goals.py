@@ -83,6 +83,10 @@ class GoalAchievementForecastResponse(BaseModel):
     estimated_achievement_date: date | None
     is_approximate: bool
     warnings: list[str]
+    passive_income_history_start_month: str | None
+    passive_income_months_used: list[str]
+    passive_income_months_count: int
+    passive_income_months_complete: bool
 
 
 class GoalSummaryResponse(GoalResponse):
@@ -138,6 +142,10 @@ def _forecast_response(item: GoalAchievementSummaryItem) -> GoalSummaryResponse:
             estimated_achievement_date=forecast.estimated_achievement_date,
             is_approximate=forecast.is_approximate,
             warnings=list(forecast.warnings),
+            passive_income_history_start_month=forecast.configured_start_month,
+            passive_income_months_used=list(forecast.months_used),
+            passive_income_months_count=forecast.months_count,
+            passive_income_months_complete=forecast.months_complete,
         ),
     )
 

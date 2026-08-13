@@ -25,7 +25,9 @@ from hermes_finance.services.passive_income_average import passive_income_averag
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
+    reopen_reporting_month,
 )
+from hermes_finance.services.settings import update_settings
 
 
 def session_for(tmp_path: Path) -> tuple[Session, object]:
@@ -260,6 +262,68 @@ def test_result_months_ordered_by_year_month(tmp_path: Path) -> None:
         ]
         assert result.sum_total == RubleAmount(50_000)
         assert result.average == RubleAmount(10_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_persisted_history_boundary_filters_closed_months_and_clear_restores_history(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        account = create_account(
+            session, name="Synthetic Deposit", account_type=AccountType.DEPOSIT
+        )
+
+        pre_boundary = build_month(session, 2031, 1)
+        add_deposit_interest(session, pre_boundary, account.id, "1000.00")
+        close_reporting_month(session, pre_boundary)
+
+        boundary_zero = build_month(session, 2031, 5)
+        close_reporting_month(session, boundary_zero)
+
+        eligible = build_month(session, 2031, 6)
+        add_deposit_interest(session, eligible, account.id, "300.00")
+        close_reporting_month(session, eligible)
+
+        draft = build_month(session, 2031, 7)
+        add_deposit_interest(session, draft, account.id, "400.00")
+
+        # August is present, while July is draft and April is a missing calendar month.
+        reclose_target = build_month(session, 2031, 8)
+        add_deposit_interest(session, reclose_target, account.id, "500.00")
+        close_reporting_month(session, reclose_target)
+
+        update_settings(session, passive_income_history_start_month="2031-05")
+        filtered = passive_income_average(session)
+        assert filtered.configured_start_month == "2031-05"
+        assert filtered.months_used == ("2031-05", "2031-06", "2031-08")
+        assert filtered.count_months == 3
+        assert filtered.sum_total == RubleAmount(80_000)
+        assert filtered.average == RubleAmount(26_667)
+        assert filtered.is_complete_12m is False
+
+        reopen_reporting_month(session, reclose_target)
+        reopened = passive_income_average(session)
+        assert reopened.months_used == ("2031-05", "2031-06")
+        assert reopened.count_months == 2
+        assert reopened.sum_total == RubleAmount(30_000)
+        assert reopened.average == RubleAmount(15_000)
+
+        close_reporting_month(session, reclose_target)
+        reclosed = passive_income_average(session)
+        assert reclosed.months_used == filtered.months_used
+        assert reclosed.average == filtered.average
+
+        update_settings(session, passive_income_history_start_month=None)
+        all_history = passive_income_average(session)
+        assert all_history.configured_start_month is None
+        assert all_history.months_used == ("2031-01", "2031-05", "2031-06", "2031-08")
+        assert all_history.count_months == 4
+        assert all_history.sum_total == RubleAmount(180_000)
+        assert all_history.average == RubleAmount(45_000)
+        assert all_history.is_complete_12m is False
     finally:
         session.close()
         database.engine.dispose()

@@ -5,9 +5,9 @@ import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
 import type { DashboardKpis, DashboardSlice, ReportingMonth } from "../api/types";
-import { MainGoalPanel } from "../components/MainGoalPanel";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
+import { MainGoalPanel } from "../components/MainGoalPanel";
 import {
   EmptyState,
   ErrorState,
@@ -18,7 +18,7 @@ import {
   Select,
 } from "../components/ui";
 import { formatMoney, formatMoneyDelta, formatMonth, formatPercent } from "../lib/format";
-import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
+import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
 
 function deltaToneFromAmount(amount: string | null | undefined): "up" | "down" | "neutral" {
@@ -221,11 +221,7 @@ function CapitalOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; lo
       <div className={`overview-card__delta overview-card__delta--${tone}`}>
         <span>Изменение за месяц</span>
         <strong>
-          {loading || !kpis
-            ? "…"
-            : kpis.liquid_capital_delta
-              ? formatMoneyDelta(delta)
-              : "—"}
+          {loading || !kpis ? "…" : kpis.liquid_capital_delta ? formatMoneyDelta(delta) : "—"}
         </strong>
       </div>
     </article>
@@ -267,10 +263,22 @@ function PassiveIncomeOverviewCard({
           <span>Фактические закрытые месяцы</span>
         )}
       </div>
+      {ready ? (
+        <p className="overview-card__context muted tiny">
+          {completeWindow
+            ? "Учтено полное окно из 12 месяцев"
+            : `Учтено ${countMonths} закрытых месяцев из 12`}
+          {kpis.passive_income_history_start_month
+            ? ` · учёт с ${kpis.passive_income_history_start_month}`
+            : " · вся доступная история"}
+        </p>
+      ) : null}
       <div className="overview-card__compare">
         <div className="overview-card__compare-item overview-card__compare-item--forecast">
           <span className="semantic-label semantic-label--forecast">Прогноз</span>
-          <strong>{ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}</strong>
+          <strong>
+            {ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}
+          </strong>
         </div>
         <div className="overview-card__compare-item overview-card__compare-item--goal">
           <span className="semantic-label semantic-label--goal">Цель</span>
@@ -281,13 +289,7 @@ function PassiveIncomeOverviewCard({
   );
 }
 
-function CoverageOverviewCard({
-  kpis,
-  loading,
-}: {
-  kpis: DashboardKpis | null;
-  loading: boolean;
-}) {
+function CoverageOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; loading: boolean }) {
   const ready = !loading && kpis != null;
 
   return (

@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import Database, create_database
 from hermes_finance.domain import RubleAmount
 from hermes_finance.services.goals import get_or_create_main_goal
-from hermes_finance.services.settings import get_or_create_settings, update_settings
+from hermes_finance.services.settings import (
+    UPDATE_SETTINGS_UNSET,
+    get_or_create_settings,
+    parse_passive_income_history_start_month,
+    update_settings,
+)
 from hermes_finance.settings import Settings as AppConfig
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -44,6 +49,13 @@ class SettingsUpdate(BaseModel):
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     passive_income_goal: MoneyValue | None = None
     formula_version: str | None = Field(default=None, min_length=1, max_length=32)
+    passive_income_history_start_month: str | None = None
+
+    @field_validator("passive_income_history_start_month")
+    @classmethod
+    def validate_history_start_month(cls, value: str | None) -> str | None:
+        parse_passive_income_history_start_month(value)
+        return value
 
 
 class SettingsResponse(BaseModel):
@@ -54,6 +66,7 @@ class SettingsResponse(BaseModel):
     timezone: str
     passive_income_goal: MoneyValue
     formula_version: str
+    passive_income_history_start_month: str | None
 
 
 def _database_for_request(request: Request) -> Database:
@@ -82,13 +95,12 @@ def _response_from_settings(settings: object, main_goal: object) -> SettingsResp
             currency=model.base_currency,
         ),
         formula_version=model.formula_version,
+        passive_income_history_start_month=model.passive_income_history_start_month,
     )
 
 
 @router.get("", response_model=SettingsResponse)
-def read_settings(
-    session: Session = Depends(session_for_request),
-) -> SettingsResponse:
+def read_settings(session: Session = Depends(session_for_request)) -> SettingsResponse:
     settings = get_or_create_settings(session)
     return _response_from_settings(settings, get_or_create_main_goal(session))
 
@@ -110,6 +122,11 @@ def write_settings(
                 else None
             ),
             formula_version=payload.formula_version,
+            passive_income_history_start_month=(
+                payload.passive_income_history_start_month
+                if "passive_income_history_start_month" in payload.model_fields_set
+                else UPDATE_SETTINGS_UNSET
+            ),
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

@@ -36,6 +36,10 @@ from hermes_finance.domain.passive_income_average import (
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.persistence import ReportingMonth
 from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.settings import (
+    get_or_create_settings,
+    parse_passive_income_history_start_month,
+)
 
 
 def passive_income_average(session: Session) -> PassiveIncomeAverageResult:
@@ -62,4 +66,12 @@ def passive_income_average(session: Session) -> PassiveIncomeAverageResult:
             )
         )
 
-    return calculate_passive_income_average(PassiveIncomeAverageInput(months=tuple(month_items)))
+    settings = get_or_create_settings(session)
+    return calculate_passive_income_average(
+        PassiveIncomeAverageInput(
+            months=tuple(month_items),
+            history_start_month=parse_passive_income_history_start_month(
+                settings.passive_income_history_start_month
+            ),
+        )
+    )

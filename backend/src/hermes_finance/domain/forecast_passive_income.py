@@ -81,6 +81,7 @@ class ForecastPassiveIncomeInput:
 
     expected_flows: tuple[ExpectedFlow, ...] = ()
     dividend_months: tuple[MonthlyPassiveIncome, ...] = ()
+    history_start_month: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +105,8 @@ class ForecastPassiveIncomeResult:
     warnings: tuple[str, ...]
     dividend_average: RubleAmount
     dividend_months_used: tuple[MonthlyPassiveIncome, ...]
+    configured_start_month: str | None = None
+    dividend_month_keys_used: tuple[str, ...] = ()
 
 
 def _coerce_flow_type(flow_type: str) -> ExpectedCashFlowType | None:
@@ -149,7 +152,10 @@ def calculate_forecast_passive_income(
 
     # --- Dividend component: annualise actual average net dividends ---
     avg_result = calculate_passive_income_average(
-        PassiveIncomeAverageInput(months=input_data.dividend_months)
+        PassiveIncomeAverageInput(
+            months=input_data.dividend_months,
+            history_start_month=input_data.history_start_month,
+        )
     )
     dividend_average = avg_result.average
     dividend_months_used = avg_result.months
@@ -190,4 +196,6 @@ def calculate_forecast_passive_income(
         warnings=tuple(warnings),
         dividend_average=dividend_average,
         dividend_months_used=dividend_months_used,
+        configured_start_month=avg_result.configured_start_month,
+        dividend_month_keys_used=avg_result.months_used,
     )

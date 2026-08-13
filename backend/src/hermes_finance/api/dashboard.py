@@ -86,6 +86,8 @@ class ForecastOut(BaseModel):
     is_approximate: bool
     warnings: list[str]
     dividend_average: MoneyValue
+    configured_start_month: str | None
+    dividend_month_keys_used: list[str]
 
 
 class CoverageOut(BaseModel):
@@ -193,6 +195,8 @@ class MonthlySummaryOut(BaseModel):
     passive_income_average: MoneyValue
     passive_income_average_months: int
     passive_income_average_complete: bool
+    passive_income_history_start_month: str | None
+    passive_income_average_months_used: list[str]
     forecast: ForecastOut
     coverage: CoverageOut
     cash_balance: CashBalanceOut
@@ -265,6 +269,8 @@ class KpiOut(BaseModel):
     passive_income_average: MoneyValue
     passive_income_average_months: int
     passive_income_average_complete: bool
+    passive_income_history_start_month: str | None
+    passive_income_average_months_used: list[str]
     goal_progress_pct: str | None
     goal_target: MoneyValue
     mandatory_expenses: MoneyValue
@@ -339,6 +345,8 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
         passive_income_average=_money(summary.passive_income_average),
         passive_income_average_months=summary.passive_income_average_months,
         passive_income_average_complete=summary.passive_income_average_complete,
+        passive_income_history_start_month=summary.passive_income_history_start_month,
+        passive_income_average_months_used=list(summary.passive_income_average_months_used),
         forecast=ForecastOut(
             annual_total=_money(forecast.annual_total),
             monthly_total=_money(forecast.monthly_total),
@@ -353,6 +361,8 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             is_approximate=forecast.is_approximate,
             warnings=list(forecast.warnings),
             dividend_average=_money(forecast.dividend_average),
+            configured_start_month=forecast.configured_start_month,
+            dividend_month_keys_used=list(forecast.dividend_month_keys_used),
         ),
         coverage=CoverageOut(
             forecast_monthly=_money(coverage.forecast_monthly),
@@ -450,6 +460,8 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
             passive_income_average=summary_out.passive_income_average,
             passive_income_average_months=summary_out.passive_income_average_months,
             passive_income_average_complete=summary_out.passive_income_average_complete,
+            passive_income_history_start_month=summary_out.passive_income_history_start_month,
+            passive_income_average_months_used=summary_out.passive_income_average_months_used,
             goal_progress_pct=summary_out.coverage.goal_progress_pct,
             goal_target=summary_out.coverage.goal_target,
             mandatory_expenses=summary_out.coverage.mandatory_expenses,

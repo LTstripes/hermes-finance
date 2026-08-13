@@ -52,6 +52,10 @@ export type GoalAchievementForecast = {
   estimated_achievement_date: string | null;
   is_approximate: boolean;
   warnings: string[];
+  passive_income_history_start_month?: string | null;
+  passive_income_months_used?: string[];
+  passive_income_months_count?: number;
+  passive_income_months_complete?: boolean;
 };
 
 export type GoalSummary = Goal & {

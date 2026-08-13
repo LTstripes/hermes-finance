@@ -157,6 +157,8 @@ export type DashboardKpis = {
   passive_income_average: MoneyValue;
   passive_income_average_months: number;
   passive_income_average_complete: boolean;
+  passive_income_history_start_month?: string | null;
+  passive_income_average_months_used?: string[];
   goal_progress_pct: string | null;
   goal_target: MoneyValue;
   mandatory_expenses: MoneyValue;

@@ -7,6 +7,7 @@ from hermes_finance.domain.passive_income_average import (
     MonthlyPassiveIncome,
     PassiveIncomeAverageInput,
     calculate_passive_income_average,
+    eligible_passive_income_months,
 )
 
 
@@ -241,3 +242,21 @@ def test_result_months_are_the_used_sorted_window(
     result = calculate_passive_income_average(PassiveIncomeAverageInput(months=input_months))
     assert result.count_months == 5
     assert result.months == expected_months
+
+
+def test_history_boundary_is_inclusive_and_keeps_zero_and_negative_months() -> None:
+    months = (
+        mk_month(2031, 4, 99_000),
+        mk_month(2031, 5, 0),
+        mk_month(2031, 6, -10_000),
+    )
+
+    result = eligible_passive_income_months(months, start_month=(2031, 5))
+
+    assert result == months[1:]
+
+
+def test_null_history_boundary_keeps_all_months() -> None:
+    months = (mk_month(2031, 1, 10_000), mk_month(2031, 3, 0))
+
+    assert eligible_passive_income_months(months, start_month=None) == months

@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0022_goal_main_selection"
+REVISION = "0023_passive_income_history_eligibility"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -54,9 +54,10 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
     connection = sqlite3.connect(database_path)
     try:
         assert connection.execute(
-            "SELECT base_currency, locale, timezone, passive_income_goal_kopecks, formula_version "
+            "SELECT base_currency, locale, timezone, passive_income_goal_kopecks, formula_version, "
+            "passive_income_history_start_month "
             "FROM app_settings WHERE id = 1"
-        ).fetchone() == ("RUB", "ru-RU", "Europe/Moscow", 10_000_000, "v1")
+        ).fetchone() == ("RUB", "ru-RU", "Europe/Moscow", 10_000_000, "v1", None)
         assert [row[1] for row in connection.execute("PRAGMA table_info(reporting_months)")] == [
             "id",
             "year",
@@ -392,5 +393,60 @@ def test_goal_main_selection_migration_fails_closed_for_multiple_legacy_goals(
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
             "0021_salary_tax_year_contexts",
         )
+    finally:
+        connection.close()
+
+
+def test_passive_history_migration_from_0022_defaults_null_and_preserves_data(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "passive-history-migration.db"
+
+    previous_head = run_alembic(database_path, "upgrade", "0022_goal_main_selection")
+    assert previous_head.returncode == 0, previous_head.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "UPDATE app_settings SET locale = ?, timezone = ?, passive_income_goal_kopecks = ?, "
+            "formula_version = ? WHERE id = 1",
+            ("en-US", "UTC", 12_345_678, "v2"),
+        )
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2031,
+                5,
+                "2031-05-01",
+                "2031-05-31",
+                "2031-05-31",
+                "closed",
+                "manual",
+                "2031-05-31 00:00:00",
+                "2031-05-31 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    migrated = run_alembic(database_path, "upgrade", "head")
+    assert migrated.returncode == 0, migrated.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute(
+            "SELECT locale, timezone, passive_income_goal_kopecks, formula_version, "
+            "passive_income_history_start_month FROM app_settings WHERE id = 1"
+        ).fetchone() == ("en-US", "UTC", 12_345_678, "v2", None)
+        assert connection.execute(
+            "SELECT year, month, status, source FROM reporting_months"
+        ).fetchone() == (2031, 5, "closed", "manual")
+        assert connection.execute(
+            "SELECT target_value_kopecks, is_main FROM goals WHERE id = 1"
+        ).fetchone() == (10_000_000, 1)
+        assert revision_rows(database_path) == [REVISION]
     finally:
         connection.close()

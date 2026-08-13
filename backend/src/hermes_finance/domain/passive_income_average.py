@@ -1,23 +1,4 @@
-"""Pure domain passive-income average calculator (framework-independent).
-
-Implements MASTER_SPEC §10.5:
-
-    Before 12 months accumulate:
-
-        actual_passive_income_avg =
-            sum(actual_net_passive_income for available months)
-            / count(available months)
-
-    After 12 months: rolling window of the last 12 reporting months.
-
-The UI should show a warning when fewer than 12 months are available:
-
-    "Среднее за доступный период. Учтено N месяцев из 12."
-
-All money values use :class:`~hermes_finance.domain.values.RubleAmount`
-(integer kopecks); binary ``float`` is never used.  Division uses
-:class:`decimal.Decimal` with ``ROUND_HALF_UP`` to round to whole kopecks.
-"""
+"""Pure domain passive-income average calculator (framework-independent)."""
 
 from __future__ import annotations
 
@@ -38,61 +19,64 @@ class MonthlyPassiveIncome:
 
 @dataclass(frozen=True, slots=True)
 class PassiveIncomeAverageInput:
-    """Pure-domain input for the rolling-average calculator.
-
-    Months may arrive in any order; the calculator sorts them ascending
-    by ``(year, month)`` and keeps at most the last 12.
-    """
+    """Pure-domain input for the rolling-average calculator."""
 
     months: tuple[MonthlyPassiveIncome, ...] = ()
+    history_start_month: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class PassiveIncomeAverageResult:
-    """Pure-domain output of the rolling-average calculator.
-
-    ``months`` is the window actually used, sorted ascending by year/month.
-    """
+    """Pure-domain output and backend-derived history metadata."""
 
     sum_total: RubleAmount
     average: RubleAmount
     count_months: int
     is_complete_12m: bool
     months: tuple[MonthlyPassiveIncome, ...]
+    configured_start_month: str | None = None
+    months_used: tuple[str, ...] = ()
+
+
+def eligible_passive_income_months(
+    months: tuple[MonthlyPassiveIncome, ...],
+    *,
+    start_month: tuple[int, int] | None,
+) -> tuple[MonthlyPassiveIncome, ...]:
+    """Keep months on or after the configured inclusive history boundary."""
+    if start_month is None:
+        return months
+    return tuple(month for month in months if (month.year, month.month) >= start_month)
 
 
 def calculate_passive_income_average(
     input_data: PassiveIncomeAverageInput,
 ) -> PassiveIncomeAverageResult:
-    """Calculate the rolling 12-month average of actual net passive income.
-
-    * Sort months ascending by ``(year, month)`` — input order is not
-      guaranteed.
-    * Keep at most the LAST 12 months (the most recent ones).
-    * ``sum_total`` — integer sum of kopecks over the window.
-    * ``average`` — ``Decimal(sum_kopecks) / Decimal(count_months)`` rounded
-      to whole kopecks with ``ROUND_HALF_UP``.  Never divides by 12 blindly;
-      never divides by zero.
-    * Empty input returns all-zero result with ``is_complete_12m=False``.
-    * Negative amounts are allowed (net income can be negative).
-    """
-    if not input_data.months:
+    """Calculate the latest 12 eligible closed-month records."""
+    eligible_months = eligible_passive_income_months(
+        input_data.months,
+        start_month=input_data.history_start_month,
+    )
+    configured_start_month = (
+        None
+        if input_data.history_start_month is None
+        else f"{input_data.history_start_month[0]:04d}-{input_data.history_start_month[1]:02d}"
+    )
+    if not eligible_months:
         return PassiveIncomeAverageResult(
             sum_total=RubleAmount(0),
             average=RubleAmount(0),
             count_months=0,
             is_complete_12m=False,
             months=(),
+            configured_start_month=configured_start_month,
+            months_used=(),
         )
 
-    sorted_months = sorted(input_data.months, key=lambda m: (m.year, m.month))
-
-    # Keep at most the last 12 (most recent) months.
+    sorted_months = sorted(eligible_months, key=lambda item: (item.year, item.month))
     window = sorted_months[-12:]
     count = len(window)
-
-    sum_kopecks = sum(m.amount.kopecks for m in window)
-
+    sum_kopecks = sum(item.amount.kopecks for item in window)
     average_kopecks = (Decimal(sum_kopecks) / Decimal(count)).to_integral_value(
         rounding=FINANCIAL_ROUNDING
     )
@@ -101,6 +85,8 @@ def calculate_passive_income_average(
         sum_total=RubleAmount(sum_kopecks),
         average=RubleAmount(int(average_kopecks)),
         count_months=count,
-        is_complete_12m=(count == 12),
+        is_complete_12m=count == 12,
         months=tuple(window),
+        configured_start_month=configured_start_month,
+        months_used=tuple(f"{item.year:04d}-{item.month:02d}" for item in window),
     )

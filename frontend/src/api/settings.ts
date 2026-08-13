@@ -7,11 +7,13 @@ export type AppSettings = {
   timezone: string;
   passive_income_goal: MoneyValue;
   formula_version: string;
+  passive_income_history_start_month?: string | null;
 };
 
 export type AppSettingsUpdate = {
   locale?: string;
   timezone?: string;
+  passive_income_history_start_month?: string | null;
 };
 
 export function getSettings(signal?: AbortSignal): Promise<AppSettings> {

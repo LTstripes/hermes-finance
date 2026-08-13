@@ -27,6 +27,7 @@ DEFAULT_LOCALE: Final = "ru-RU"
 DEFAULT_TIMEZONE: Final = "Europe/Moscow"
 DEFAULT_PASSIVE_INCOME_GOAL_KOPECKS: Final = 10_000_000
 DEFAULT_FORMULA_VERSION: Final = "v1"
+DEFAULT_PASSIVE_INCOME_HISTORY_START_MONTH: Final = None
 
 
 class Base(DeclarativeBase):
@@ -60,6 +61,9 @@ class AppSettings(Base):
     )
     formula_version: Mapped[str] = mapped_column(
         String(32), nullable=False, default=DEFAULT_FORMULA_VERSION, server_default=text("'v1'")
+    )
+    passive_income_history_start_month: Mapped[str | None] = mapped_column(
+        String(7), nullable=True, default=DEFAULT_PASSIVE_INCOME_HISTORY_START_MONTH
     )
 
 

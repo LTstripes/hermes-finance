@@ -187,6 +187,10 @@ def build_goal_achievement_summary(
                     count_months=passive_average.count_months,
                     is_complete_12m=passive_average.is_complete_12m,
                 ),
+                configured_start_month=getattr(passive_average, "configured_start_month", None),
+                months_used=getattr(passive_average, "months_used", ()),
+                months_count=passive_average.count_months,
+                months_complete=passive_average.is_complete_12m,
             )
         else:
             assert liquid_capital is not None

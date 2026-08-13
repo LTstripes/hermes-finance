@@ -24,6 +24,7 @@ from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
 )
+from hermes_finance.services.settings import update_settings
 
 WARN_NO_DIVIDEND_MONTHS = "Нет закрытых месяцев для оценки дивидендного компонента"
 WARN_NO_EXPECTED_FLOWS = "Нет ожидаемых выплат в календаре прогноза"
@@ -409,6 +410,74 @@ def test_monthly_total_rounds_with_dividend_component(tmp_path: Path) -> None:
         assert result.breakdown.expected_dividend_component == RubleAmount(600_000)
         assert result.annual_total == RubleAmount(610_000)
         assert result.monthly_total == RubleAmount(50_833)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_history_boundary_filters_actual_dividends_only_and_preserves_expected_flows(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        create_flow(session, month_id, account_id, instrument_id)
+        create_flow(
+            session,
+            month_id,
+            account_id,
+            instrument_id,
+            flow_type=ExpectedCashFlowType.INTEREST,
+            gross_amount="200.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="200.00",
+        )
+        create_flow(
+            session,
+            month_id,
+            account_id,
+            instrument_id,
+            flow_type=ExpectedCashFlowType.OTHER,
+            gross_amount="300.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="300.00",
+        )
+
+        pre_boundary = build_month(session, 2030, 1)
+        add_dividend(session, pre_boundary, account_id, 2030, 1, "900.00")
+        close_reporting_month(session, pre_boundary)
+        boundary_zero = build_month(session, 2030, 2)
+        close_reporting_month(session, boundary_zero)
+        eligible = build_month(session, 2030, 3)
+        add_dividend(session, eligible, account_id, 2030, 3, "300.00")
+        close_reporting_month(session, eligible)
+
+        all_history = forecast_passive_income(
+            session, reporting_month_id=month_id, forecast_version=FORECAST_VERSION
+        )
+        assert all_history.breakdown.expected_deposit_interest == RubleAmount(20_000)
+        assert all_history.breakdown.expected_coupon_net == RubleAmount(87_000)
+        assert all_history.breakdown.other_expected_capital_income == RubleAmount(30_000)
+        assert all_history.breakdown.expected_dividend_component == RubleAmount(480_000)
+
+        update_settings(session, passive_income_history_start_month="2030-02")
+        filtered = forecast_passive_income(
+            session, reporting_month_id=month_id, forecast_version=FORECAST_VERSION
+        )
+        assert filtered.configured_start_month == "2030-02"
+        assert filtered.dividend_month_keys_used == ("2030-02", "2030-03")
+        assert filtered.dividend_average == RubleAmount(15_000)
+        assert filtered.breakdown.expected_dividend_component == RubleAmount(180_000)
+        assert (
+            filtered.breakdown.expected_deposit_interest
+            == all_history.breakdown.expected_deposit_interest
+        )
+        assert filtered.breakdown.expected_coupon_net == all_history.breakdown.expected_coupon_net
+        assert (
+            filtered.breakdown.other_expected_capital_income
+            == all_history.breakdown.other_expected_capital_income
+        )
+        assert filtered.annual_total == RubleAmount(317_000)
     finally:
         session.close()
         database.engine.dispose()

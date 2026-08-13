@@ -21,6 +21,7 @@ from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
 )
+from hermes_finance.services.settings import update_settings
 
 
 def test_passive_goal_current_value_uses_actual_closed_month_average_without_expected_calendar(
@@ -128,6 +129,16 @@ def test_passive_goal_current_value_uses_actual_closed_month_average_without_exp
         assert str(result.progress_pct) == "4.50"
         assert result.remaining_amount == RubleAmount(95_500_00)
         assert result.source_forecast_version is None
+        update_settings(session, passive_income_history_start_month="2031-02")
+        filtered_summary = build_goal_achievement_summary(session, february.id)
+        filtered = filtered_summary[0].achievement_forecast
+        assert filtered.current_value == RubleAmount(6_000_00)
+        assert str(filtered.progress_pct) == "6.00"
+        assert filtered.remaining_amount == RubleAmount(94_000_00)
+        assert filtered.configured_start_month == "2031-02"
+        assert filtered.months_used == ("2031-02",)
+        assert filtered.months_count == 1
+        assert filtered.months_complete is False
         assert result.warnings == ("Среднее за доступный период. Учтено 2 месяцев из 12.",)
     finally:
         session.close()
