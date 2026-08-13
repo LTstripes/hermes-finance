@@ -64,7 +64,9 @@ describe("PassiveIncomeChart", () => {
     expect(screen.getByText(/Среднее: 3 месяца из 12/)).toBeInTheDocument();
     expect(screen.queryByText(/rolling-окно/)).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Как считается среднее пассивного дохода" }));
+    await user.click(
+      screen.getByRole("button", { name: "Как считается среднее пассивного дохода" }),
+    );
     expect(
       screen.getByText(/Среднее рассчитано по закрытым месяцам в окне до 12 месяцев/),
     ).toBeInTheDocument();
@@ -86,13 +88,17 @@ describe("PassiveIncomeChart", () => {
   it("omits the incomplete-window indicator when the rolling window is complete", () => {
     render(<PassiveIncomeChart {...baseProps} complete12m countMonths={12} />);
     expect(screen.queryByText(/Среднее: 12 месяцев из 12/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Как считается среднее пассивного дохода" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Как считается среднее пассивного дохода" }),
+    ).toBeNull();
   });
 
   it("labels fact-derived average separately from forecast and goal", () => {
     render(<PassiveIncomeChart {...baseProps} complete12m countMonths={12} />);
     const legendValue = (text: string) =>
-      screen.getByText((_, element) => element?.tagName === "STRONG" && element.textContent === text);
+      screen.getByText(
+        (_, element) => element?.tagName === "STRONG" && element.textContent === text,
+      );
 
     expect(screen.getByText("Факт по месяцам")).toBeInTheDocument();
     expect(screen.getByText(/Среднее факта/)).toBeInTheDocument();
@@ -112,6 +118,8 @@ describe("PassiveIncomeChart", () => {
     expect(screen.queryByText(/не интерполируется/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Как отображаются пропуски в истории" }));
-    expect(screen.getByText(/Значение между соседними месяцами не интерполируется/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Значение между соседними месяцами не интерполируется/),
+    ).toBeInTheDocument();
   });
 });

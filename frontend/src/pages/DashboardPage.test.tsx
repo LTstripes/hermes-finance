@@ -131,7 +131,9 @@ describe("DashboardPage R03-04 semantics", () => {
 
     expect(screen.queryByText("Среднее доступно за 6 месяцев")).toBeNull();
     expect(screen.queryByText(/По мере закрытия новых месяцев окно обновляется/)).toBeNull();
-    await user.click(within(overview).getByRole("button", { name: "Почему среднее пока неполное" }));
+    await user.click(
+      within(overview).getByRole("button", { name: "Почему среднее пока неполное" }),
+    );
     expect(screen.getByText(/По мере закрытия новых месяцев окно обновляется/)).toBeInTheDocument();
 
     expect(screen.queryByText("Результат по классам и счетам")).toBeNull();

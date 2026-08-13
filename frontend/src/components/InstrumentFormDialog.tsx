@@ -135,7 +135,9 @@ export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, 
         </h2>
         <p className="dialog__body" id={descriptionId}>
           Денежные значения сохраняются точно, без округления.
-          {instrument ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений." : ""}
+          {instrument
+            ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений."
+            : ""}
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="instrument-name" label="Название">

@@ -17,12 +17,7 @@ export function DataValue({
   muted = false,
   className = "",
 }: DataValueProps) {
-  const classes = [
-    "data-value",
-    `data-value--${size}`,
-    muted ? "data-value--muted" : "",
-    className,
-  ]
+  const classes = ["data-value", `data-value--${size}`, muted ? "data-value--muted" : "", className]
     .filter(Boolean)
     .join(" ");
 

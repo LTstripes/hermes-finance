@@ -337,8 +337,12 @@ export function AccountsPage() {
                   <strong>{instrument.name}</strong>
                   {instrument.nominal_value ? (
                     <span className="muted tiny">
-                      Номинал: {formatMoney(instrument.nominal_value.amount, {
-                        currency: instrument.nominal_value.currency === "RUB" ? "₽" : instrument.nominal_value.currency,
+                      Номинал:{" "}
+                      {formatMoney(instrument.nominal_value.amount, {
+                        currency:
+                          instrument.nominal_value.currency === "RUB"
+                            ? "₽"
+                            : instrument.nominal_value.currency,
                       })}
                     </span>
                   ) : null}

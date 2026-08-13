@@ -61,7 +61,9 @@ describe("MainGoalPanel", () => {
     expect(screen.getByText("12,3%")).toBeInTheDocument();
     expect(screen.getByText(/999,99\s₽/)).toBeInTheDocument();
     expect(screen.getByText("Прогноз даты недоступен")).toBeInTheDocument();
-    expect(screen.queryByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/)).toBeNull();
+    expect(
+      screen.queryByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/),
+    ).toBeNull();
     expect(screen.queryByText("Недостаточно данных для траектории")).toBeNull();
     expect(screen.queryByText("no_trajectory_model")).toBeNull();
     expect(screen.queryByText("goal_achievement_v1")).toBeNull();

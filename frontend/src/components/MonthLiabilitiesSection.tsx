@@ -169,7 +169,8 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
   }
 
   if (loading) return <LoadingState description="Загружаем долги и недвижимость…" inline />;
-  if (error) return <ErrorState description={error} inline title="Не удалось загрузить обязательства" />;
+  if (error)
+    return <ErrorState description={error} inline title="Не удалось загрузить обязательства" />;
 
   return (
     <div className="stack-18">

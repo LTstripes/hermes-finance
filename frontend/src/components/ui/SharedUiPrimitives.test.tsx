@@ -10,20 +10,14 @@ import { StickySubheader } from "./StickySubheader";
 describe("shared UI primitives", () => {
   it("opens compact help from keyboard-capable button and closes on Escape", async () => {
     const user = userEvent.setup();
-    render(
-      <HelpTip label="Как считается показатель">
-        Берём только закрытые месяцы.
-      </HelpTip>,
-    );
+    render(<HelpTip label="Как считается показатель">Берём только закрытые месяцы.</HelpTip>);
 
     const trigger = screen.getByRole("button", { name: "Как считается показатель" });
     expect(screen.queryByRole("tooltip")).toBeNull();
 
     await user.click(trigger);
 
-    expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Берём только закрытые месяцы.",
-    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Берём только закрытые месяцы.");
     expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     await user.keyboard("{Escape}");

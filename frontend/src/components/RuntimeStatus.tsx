@@ -85,9 +85,7 @@ export function DiagnosticsPanel() {
       <div className="diagnostics-grid">
         <DataValue
           label="Версия"
-          value={
-            state.kind === "connected" ? state.version : state.kind === "checking" ? "…" : "—"
-          }
+          value={state.kind === "connected" ? state.version : state.kind === "checking" ? "…" : "—"}
         />
         <DataValue label="Адрес" value="127.0.0.1:8000" />
         <DataValue label="Режим" value="Только локально" />
