@@ -1,0 +1,112 @@
+# Hermes Finance — execution history
+
+> **Purpose:** durable human-readable history of how Hermes Finance was built: which agent/model/tool implemented each accepted task, who reviewed it, which candidate was selected, what blockers/iterations mattered, and which exact commit entered the integration line.
+>
+> This file is **not** a specification or release backlog. Business semantics remain in `MASTER_SPEC.md` and accepted ADRs; task scope/status remains in active release docs; product-facing changes remain in `CHANGELOG.md`.
+
+## Recording policy
+
+After a task is **accepted and integrated** into its target branch, the accepting reviewer/integrator appends one execution record here.
+
+The implementation worker must provide enough factual data in its canonical completion report, but it does **not** decide its own acceptance record.
+
+For every accepted task record, preserve when applicable:
+
+- release and task ID;
+- calendar date of acceptance/integration;
+- implementation agent/tool and exact model when runtime-confirmed;
+- reviewer / accepting agent;
+- baseline ref/SHA;
+- candidate branch and exact accepted HEAD;
+- target branch and exact integrated HEAD;
+- meaningful verification performed (tests, CI, Windows smoke, migration/runtime checks, etc.);
+- blocker/follow-up iterations that materially changed the result;
+- short rationale for important implementation/architecture choices;
+- deviations or known limitations that matter historically.
+
+### A/B or multi-agent comparison
+
+When two or more agents implement the same task from the same baseline, keep **all candidates** in the record, even though only one is integrated.
+
+Record for each candidate:
+
+- agent/model/tool;
+- branch + exact HEAD;
+- checks/result summary;
+- strongest points;
+- material weaknesses/blockers.
+
+Then record:
+
+- **Selected candidate**;
+- **Selection reason** based on actual diff/verification, not preference or model reputation;
+- whether useful ideas/fixes from a rejected candidate were later adopted separately.
+
+Do not allow candidates to inspect or copy each other's task branches before the comparison is settled unless the owner explicitly ends the blind comparison.
+
+## Evidence rules
+
+- Prefer exact Git refs/SHAs and verified CI/run results over prose claims.
+- Worker completion reports are context, not proof; the reviewer reads the actual diff/state.
+- Never fabricate a model identity. Write the model only when runtime metadata or the execution environment confirms it.
+- If exact model is unknown, record the agent/tool only and mark the model `unknown/not recorded`.
+- Do not put private financial values, DB content, private seed data, credentials, owner screenshots containing personal values, or private payloads here.
+- Keep this file concise enough to read chronologically. Deep technical rationale belongs in ADRs and release task-cards; link/reference them rather than duplicating them.
+
+## Record template
+
+```md
+### <RELEASE> / <TASK-ID> — <short title>
+
+- **Accepted:** YYYY-MM-DD
+- **Implemented by:** <agent/tool> — <model if confirmed>
+- **Reviewer/acceptor:** <agent/person>
+- **Baseline:** `<ref>` @ `<sha>`
+- **Candidate:** `<branch>` @ `<sha>`
+- **Integrated into:** `<target>` @ `<sha>`
+- **Verification:** <short factual list>
+- **Iterations/blockers:** <none or material review loop>
+- **Decision notes:** <why this implementation/contract was accepted>
+- **References:** <ADR/release card/CI run if useful>
+```
+
+For an A/B task insert a `Candidates` subsection before `Selected candidate` and preserve both results.
+
+---
+
+# 0.4.x development
+
+### 0.4.0 / R04-00 — parallel release line + active backlog setup
+
+- **Accepted:** 2026-08-13
+- **Implemented by:** ChatGPT — GPT-5.6 Sol
+- **Reviewer/acceptor:** owner scope approval + ChatGPT repository read-back
+- **Baseline:** `main` @ `b385e8cddfaa8e057dc34dc73a11d0bc839978d1`
+- **Candidate/integration line:** `r04`, initially created from the exact green 0.3 RC baseline
+- **Resulting R04 setup commit:** `fa3a470668f8f2c3e8d0f321d520d0d86aeba955`
+- **Verification:** remote `r04` and `main` refs read back through GitHub; `main` remained unchanged
+- **Iterations/blockers:** none
+- **Decision notes:** established separate `main` maintenance (`0.3.x`) and long-lived `r04` development lines, with forward-port of accepted stable fixes `main -> r04` and owner-feedback triage independent of large-release work.
+- **References:** `docs/releases/0.4.0.md`
+
+### 0.4.0 / R04-01 — MOEX market identity + quote semantics contract
+
+- **Accepted:** 2026-08-13
+- **Implemented by:** ChatGPT — GPT-5.6 Sol
+- **Reviewer/acceptor:** owner-authorized contract work + ChatGPT repository/source verification
+- **Baseline:** `r04` after R04-00
+- **Contract commit:** `d8fcf10231590dedd4fc4f484612ecf20dbb1f9c`
+- **Backlog/unblock commit:** `1c2e2f5b1d757e9697126ce9206a2768a570be2a`
+- **Integrated into:** `r04` @ `1c2e2f5b1d757e9697126ce9206a2768a570be2a`
+- **Verification:** repository read-back of ADR/backlog and exact `r04`; stable `main` stayed at `b385e8cddfaa8e057dc34dc73a11d0bc839978d1`
+- **Iterations/blockers:** MOEX data-usage terms were identified as a release/apply gate rather than silently assumed; technical adapter work remains unblocked.
+- **Decision notes:** fixed board-aware MOEX identity, target-date quote semantics, stale/unavailable rules, exact bond percent-of-face conversion, manual fallback and no-background-refresh contract before implementation.
+- **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`
+
+---
+
+## Historical backfill
+
+Pre-R04 attribution remains available across Git history, `docs/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
+
+Do not invent missing executor/model attribution during backfill. A later documentation-only pass may reconstruct older releases from verifiable records if the owner wants a complete project-history article dataset.
