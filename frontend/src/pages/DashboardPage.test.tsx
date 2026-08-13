@@ -125,14 +125,14 @@ describe("DashboardPage R03-04 semantics", () => {
     expect(within(overview).getByText("Факт · среднее")).toBeInTheDocument();
     expect(within(overview).getByText("Прогноз")).toBeInTheDocument();
     expect(within(overview).getByText("Цель")).toBeInTheDocument();
-    expect(within(overview).getByText("6 мес. из 12")).toBeInTheDocument();
+    expect(within(overview).getByText("6 закрытых месяцев из 12")).toBeInTheDocument();
     expect(within(overview).getByText("Покрытие расходов")).toBeInTheDocument();
     expect(screen.getByText("main goal 2")).toBeInTheDocument();
 
     expect(screen.queryByText("Среднее доступно за 6 месяцев")).toBeNull();
-    expect(screen.queryByText(/После 12 закрытых месяцев окно станет полным/)).toBeNull();
+    expect(screen.queryByText(/По мере закрытия новых месяцев окно обновляется/)).toBeNull();
     await user.click(within(overview).getByRole("button", { name: "Почему среднее пока неполное" }));
-    expect(screen.getByText(/После 12 закрытых месяцев окно станет полным/)).toBeInTheDocument();
+    expect(screen.getByText(/По мере закрытия новых месяцев окно обновляется/)).toBeInTheDocument();
 
     expect(screen.queryByText("Результат по классам и счетам")).toBeNull();
     expect(screen.queryByText("Распределение активов")).toBeNull();

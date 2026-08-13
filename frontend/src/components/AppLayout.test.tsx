@@ -61,7 +61,7 @@ describe("AppLayout", () => {
 
     renderLayout();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Сервер недоступен");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Локальное приложение недоступно");
     expect(screen.getByRole("link", { name: /Диагностика/i })).toHaveAttribute(
       "href",
       "/settings#diagnostics",

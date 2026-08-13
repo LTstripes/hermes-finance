@@ -62,7 +62,7 @@ describe("MonthsPage R03-05", () => {
     expect(within(draftRow).getByRole("link", { name: "Открыть" })).toHaveClass("btn--primary");
 
     await user.click(within(draftRow).getByRole("button", { name: /Действия для Июль/ }));
-    expect(within(draftRow).getByRole("menuitem", { name: "Клонировать" })).toBeVisible();
+    expect(within(draftRow).getByRole("menuitem", { name: "Копировать данные" })).toBeVisible();
     expect(within(draftRow).getByRole("menuitem", { name: "Удалить черновик" })).toBeVisible();
 
     const closedRow = within(table).getByText(/Июнь/).closest("tr");
@@ -83,5 +83,14 @@ describe("MonthsPage R03-05", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Создать месяц" })).toBeNull();
     expect(createMonthMock).not.toHaveBeenCalled();
+  });
+
+  it("explains the first-period empty state without internal action names", async () => {
+    listMonthsMock.mockResolvedValueOnce([]);
+    renderPage();
+
+    expect(await screen.findByText("Пока нет периодов. Создай первый период кнопкой «Создать другой период»."))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/secondary-действие/i)).toBeNull();
   });
 });

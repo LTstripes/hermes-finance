@@ -172,7 +172,7 @@ export function ExportPage() {
         <p className="eyebrow">Система</p>
         <h1>Экспорт</h1>
         <p className="page-header__description">
-          Скачай Markdown-отчёт или машинно-читаемый JSON выбранного отчётного месяца.
+          Скачай отчёт в Markdown или JSON для выбранного отчётного месяца.
         </p>
       </header>
 

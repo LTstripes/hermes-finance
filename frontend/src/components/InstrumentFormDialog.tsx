@@ -134,10 +134,8 @@ export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, 
           {instrument ? "Редактировать инструмент" : "Создать инструмент"}
         </h2>
         <p className="dialog__body" id={descriptionId}>
-          Денежные значения передаются строками; клиент их не пересчитывает.
-          {instrument
-            ? " Очистка уже заполненного optional-поля backend пока не поддерживается."
-            : ""}
+          Денежные значения сохраняются точно, без округления.
+          {instrument ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений." : ""}
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="instrument-name" label="Название">

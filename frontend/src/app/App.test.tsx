@@ -243,7 +243,7 @@ describe("App", () => {
       expect(
         screen
           .getAllByRole("status")
-          .some((element) => element.textContent === "Сервер подключён · API v0.1.0"),
+          .some((element) => element.textContent === "Приложение подключено"),
       ).toBe(true),
     );
   });
@@ -253,7 +253,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Сервер недоступен")).toBeInTheDocument();
+    expect(await screen.findByText("Локальное приложение недоступно")).toBeInTheDocument();
   });
 
   it("lists months, creates a draft, opens editor, and deletes with confirm", async () => {
@@ -405,7 +405,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Создать следующий месяц" }));
     expect(screen.getByRole("dialog", { name: /Создать следующий месяц/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Клонировать" }));
+    await user.click(screen.getByRole("button", { name: "Копировать данные" }));
     expect(await screen.findByRole("heading", { level: 1, name: /Август/ })).toBeInTheDocument();
     await selectMonthSection(user, "Доходы");
     expect(screen.getByLabelText("Зарплата до вычета налогов")).toBeInTheDocument();

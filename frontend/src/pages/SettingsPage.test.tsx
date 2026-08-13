@@ -50,10 +50,13 @@ describe("SettingsPage", () => {
     expect(await screen.findByDisplayValue("ru-RU")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Europe/Moscow")).toBeInTheDocument();
     expect(screen.getByText("100000.00")).toBeInTheDocument();
-    expect(screen.getByText(/основной целью и её параметрами/i)).toBeInTheDocument();
+    expect(screen.getByText(/текущая цель пассивного дохода/i)).toBeInTheDocument();
+    expect(screen.queryByText(/совместим/i)).toBeNull();
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");
     expect(screen.queryByDisplayValue("100000.00")).toBeNull();
     expect(screen.queryByText("v1")).toBeNull();
+    expect(screen.queryByText("Пока недоступно")).toBeNull();
+    expect(screen.getByText("Валюта расчётов")).toBeInTheDocument();
     expect(screen.getByText("Налоговые ступени")).toBeInTheDocument();
   });
 

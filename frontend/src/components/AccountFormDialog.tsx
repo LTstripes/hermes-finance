@@ -113,8 +113,8 @@ export function AccountFormDialog({ open, account, busy, error, onCancel, onSubm
           {account ? "Редактировать счёт" : "Создать счёт"}
         </h2>
         <p className="dialog__body" id={descriptionId}>
-          Тип, статус и флаги используются как есть по backend-контракту.
-          {account ? " Очистка уже заполненного optional-поля backend пока не поддерживается." : ""}
+          Тип, статус и параметры учёта помогают правильно показывать счёт в итогах.
+          {account ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений." : ""}
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="account-name" label="Название">

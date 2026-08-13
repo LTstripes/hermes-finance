@@ -139,7 +139,7 @@ export function SettingsPage() {
         <p className="eyebrow">Система</p>
         <h1>Настройки</h1>
         <p className="page-header__description">
-          Локальные настройки приложения, налоговые правила и техническая диагностика.
+          Основные параметры приложения, налоговые правила и диагностика.
         </p>
       </header>
 
@@ -155,8 +155,7 @@ export function SettingsPage() {
               <Badge tone="info">{settings.passive_income_goal.currency}</Badge>
             </p>
             <p className="muted">
-              Здесь значение показано только для совместимости. Основной целью и её параметрами
-              управляй в разделе «Цели».
+              Здесь показана текущая цель пассивного дохода. Изменить её можно в разделе «Цели».
             </p>
           </div>
         </Panel>
@@ -236,10 +235,6 @@ export function SettingsPage() {
             {fieldErrors.historyStartMonth ? (
               <p className="inline-alert inline-alert--error">{fieldErrors.historyStartMonth}</p>
             ) : null}
-            <p className="muted">
-              Локаль и часовой пояс сохраняются в приложении, но пока не управляют всем
-              форматированием интерфейса.
-            </p>
             <div className="form-row-2">
               <div className="field">
                 <span className="field__label">Базовая валюта</span>
@@ -249,9 +244,9 @@ export function SettingsPage() {
                 <p className="muted tiny">Поддерживается только RUB.</p>
               </div>
               <div className="field">
-                <span className="field__label">Расчётные правила</span>
-                <p>Управляются приложением</p>
-                <p className="muted tiny">Служебная версия меняется вместе с расчётной логикой.</p>
+                <span className="field__label">Валюта расчётов</span>
+                <p>Российский рубль</p>
+                <p className="muted tiny">Все суммы в приложении показываются в RUB.</p>
               </div>
             </div>
             {saveError ? (
@@ -274,11 +269,6 @@ export function SettingsPage() {
         <DiagnosticsPanel />
       </div>
 
-      <Panel empty label="Ограничения" title="Пока недоступно">
-        <p className="muted">
-          Отдельные настройки пути резервных копий и параметров экспорта пока недоступны.
-        </p>
-      </Panel>
     </section>
   );
 }

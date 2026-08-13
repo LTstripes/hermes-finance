@@ -75,6 +75,9 @@ describe("ExportPage", () => {
 
     render(<ExportPage />);
 
+    expect(
+      screen.getByText("Скачай отчёт в Markdown или JSON для выбранного отчётного месяца."),
+    ).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Скачать Markdown" })).toBeEnabled();
     await user.selectOptions(screen.getByLabelText("Месяц отчёта"), "1");
     await user.click(screen.getByRole("button", { name: "Скачать Markdown" }));
