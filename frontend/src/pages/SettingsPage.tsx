@@ -155,8 +155,7 @@ export function SettingsPage() {
               <Badge tone="info">{settings.passive_income_goal.currency}</Badge>
             </p>
             <p className="muted">
-              Здесь значение показано только для совместимости. Основной целью и её параметрами
-              управляй в разделе «Цели».
+              Здесь показана текущая цель пассивного дохода. Изменить её можно в разделе «Цели».
             </p>
           </div>
         </Panel>
