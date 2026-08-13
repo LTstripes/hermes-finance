@@ -533,6 +533,51 @@ def test_discover_filters_non_rub_boards_before_ambiguity() -> None:
     assert result.candidates[0].identity.market == "shares"
 
 
+def test_discover_bond_f_rub_currency_usd_faceunit_is_unsupported() -> None:
+    stub = IssStub()
+    stub.payloads["/iss/securities/SYNTHB.json"] = {
+        "description": _description(
+            ("ISIN", "RU000SYNTH03"),
+            ("TYPE", "exchange_bond"),
+            ("GROUP", "stock_bonds"),
+            ("QUOTEBASIS", "F"),
+            ("FACEUNIT", "USD"),
+        ),
+        "boards": _table(
+            ["secid", "boardid", "engine", "market", "currencyid"],
+            ["SYNTHB", "TQCB", "stock", "bonds", "RUB"],
+        ),
+    }
+    with _client(stub) as client:
+        result = client.discover_candidates(secid="SYNTHB")
+
+    assert result.status is QuoteStatus.UNSUPPORTED
+    assert result.candidates == ()
+
+
+def test_discover_bond_f_filters_incompatible_faceunit_before_ambiguity() -> None:
+    stub = IssStub()
+    stub.payloads["/iss/securities/SYNTHB.json"] = {
+        "description": _description(
+            ("ISIN", "RU000SYNTH03"),
+            ("TYPE", "exchange_bond"),
+            ("GROUP", "stock_bonds"),
+            ("QUOTEBASIS", "F"),
+        ),
+        "boards": _table(
+            ["secid", "boardid", "engine", "market", "currencyid", "faceunit"],
+            ["SYNTHB", "TQCB", "stock", "bonds", "RUB", "RUB"],
+            ["SYNTHB", "TQOD", "stock", "bonds", "RUB", "USD"],
+        ),
+    }
+    with _client(stub) as client:
+        result = client.discover_candidates(secid="SYNTHB")
+
+    assert result.status is QuoteStatus.OK
+    assert len(result.candidates) == 1
+    assert result.candidates[0].identity.boardid == "TQCB"
+
+
 def test_discover_accepts_rur_as_rub_compatible() -> None:
     stub = IssStub()
     stub.payloads["/iss/securities/SYNTHS.json"] = _security_payload(

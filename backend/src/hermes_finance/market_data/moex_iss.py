@@ -39,7 +39,7 @@ from hermes_finance.market_data.normalize import (
     classify_freshness,
     convert_to_kopecks,
     current_last_price_date,
-    is_rub_compatible,
+    discovery_board_is_rub_compatible,
     lookback_start,
     resolve_quote_basis,
 )
@@ -136,7 +136,8 @@ class MoexIssClient:
 
         accepted: list[DiscoverCandidate] = []
         rejected: list[RejectedCandidate] = []
-        unsupported_only = True
+        supported_without_rub_board = False
+        saw_unsupported_kind = False
         for detail in details:
             if detail is None:
                 continue
@@ -150,9 +151,13 @@ class MoexIssClient:
                 )
                 continue
             if detail.kind not in SUPPORTED_KINDS:
+                saw_unsupported_kind = True
                 continue
-            unsupported_only = False
-            accepted.extend(detail.as_candidates())
+            candidates = detail.as_candidates()
+            if candidates:
+                accepted.extend(candidates)
+            else:
+                supported_without_rub_board = True
 
         if accepted:
             status = QuoteStatus.OK if len(accepted) == 1 else QuoteStatus.AMBIGUOUS
@@ -167,7 +172,7 @@ class MoexIssClient:
                 rejected=tuple(rejected),
                 message="ISIN does not match candidate",
             )
-        if unsupported_only and details:
+        if supported_without_rub_board or saw_unsupported_kind:
             return DiscoverResult(
                 status=QuoteStatus.UNSUPPORTED,
                 message="no RUB-compatible stock/fund/bond board",
@@ -331,7 +336,12 @@ class MoexIssClient:
             )
             if board_kind is None or not _compatible_board(engine, market, board_kind):
                 continue
-            if not _board_is_rub_compatible(row, description.get("FACEUNIT")):
+            if not discovery_board_is_rub_compatible(
+                instrument_kind=board_kind,
+                quote_basis=row_text(row, "quotebasis") or description.get("QUOTEBASIS"),
+                board_currency=row_text(row, "currencyid", "currency"),
+                face_unit=row_text(row, "faceunit") or description.get("FACEUNIT"),
+            ):
                 continue
             boards.append(
                 MarketIdentity(
@@ -498,13 +508,6 @@ def _compatible_board(engine: str, market: str, kind: InstrumentType) -> bool:
     if kind is InstrumentType.BOND:
         return market == "bonds"
     return False
-
-
-def _board_is_rub_compatible(row: dict[str, object], face_unit: str | None) -> bool:
-    unit = row_text(row, "currencyid", "currency") or face_unit
-    if unit is None:
-        return True
-    return is_rub_compatible(unit)
 
 
 def _normalize_isin(value: str | None) -> str | None:

@@ -31,6 +31,35 @@ def is_rub_compatible(unit: str | None) -> bool:
     return unit.strip().upper() in RUB_COMPATIBLE_UNITS
 
 
+def _unknown_or_rub_compatible(unit: str | None) -> bool:
+    return unit is None or is_rub_compatible(unit)
+
+
+def discovery_board_is_rub_compatible(
+    *,
+    instrument_kind: InstrumentType,
+    quote_basis: str | None,
+    board_currency: str | None,
+    face_unit: str | None,
+) -> bool:
+    """Whether a discovered board may enter the candidate/ambiguity set.
+
+    Unknown units are not a rejection. Known non-RUB units are.
+    Bond ``F`` must check quote/board currency and FACEUNIT independently.
+    """
+
+    if instrument_kind in {InstrumentType.STOCK, InstrumentType.FUND}:
+        return _unknown_or_rub_compatible(board_currency)
+    if instrument_kind is InstrumentType.BOND:
+        basis = quote_basis.strip().upper() if quote_basis else None
+        if basis == RawPriceBasis.PERCENT_OF_FACE:
+            return _unknown_or_rub_compatible(board_currency) and _unknown_or_rub_compatible(
+                face_unit
+            )
+        return _unknown_or_rub_compatible(board_currency)
+    return False
+
+
 def classify_freshness(target_date: date, price_date: date) -> QuoteStatus:
     if price_date > target_date:
         raise NormalizeError(
