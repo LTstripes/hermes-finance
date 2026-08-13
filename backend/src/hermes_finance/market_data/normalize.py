@@ -82,6 +82,12 @@ def discovery_board_is_rub_compatible(
     return False
 
 
+def quote_refresh_target_date(snapshot_date: date, *, today: date) -> date:
+    """ADR 0009 target date: never newer than the reporting snapshot or Moscow today."""
+
+    return min(snapshot_date, today)
+
+
 def classify_freshness(target_date: date, price_date: date) -> QuoteStatus:
     if price_date > target_date:
         raise NormalizeError(
