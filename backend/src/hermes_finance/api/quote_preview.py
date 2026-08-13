@@ -7,16 +7,19 @@ Never mutates snapshots, mappings, or month status.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal  # datetime kept for QuotePreviewRowResponse fetched_at_utc
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.market_data import (
+    close_owned_provider,
+    moscow_today,
+    resolve_production_provider,
+)
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import RubleAmount
-from hermes_finance.market_data.moex_iss import MOSCOW_TZ, MoexIssClient
-from hermes_finance.market_data.protocol import MarketDataProvider
 from hermes_finance.services.quote_preview import QuotePreviewResult, preview_market_quotes
 
 router = APIRouter(prefix="/api/months", tags=["months"])
@@ -132,35 +135,20 @@ def _response(result: QuotePreviewResult) -> QuotePreviewResponse:
     )
 
 
-def _provider_for_request(request: Request) -> tuple[MarketDataProvider, bool]:
-    existing = getattr(request.app.state, "market_data_provider", None)
-    if existing is not None:
-        return existing, False
-    return MoexIssClient(), True
-
-
-def _today_for_request(request: Request) -> date:
-    clock = getattr(request.app.state, "quote_preview_clock", None)
-    if clock is not None:
-        return clock()
-    return datetime.now(MOSCOW_TZ).date()
-
-
 @router.post("/{month_id}/quote-preview", response_model=QuotePreviewResponse)
 def preview_month_quotes_endpoint(
     month_id: int,
     request: Request,
     session: Session = Depends(session_for_request),
 ) -> QuotePreviewResponse:
-    provider, owned = _provider_for_request(request)
+    provider, owned = resolve_production_provider(request)
     try:
         result = preview_market_quotes(
             session,
             month_id,
             provider=provider,
-            today=_today_for_request(request),
+            today=moscow_today(request),
         )
     finally:
-        if owned and isinstance(provider, MoexIssClient):
-            provider.close()
+        close_owned_provider(provider, owned)
     return _response(result)

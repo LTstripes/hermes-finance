@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   defaultMappingDraft,
+  defaultMappingProvider,
   displayPriceDelta,
   formatMarketIdentity,
   identityToMoexDraft,
   MAPPING_SUPPORTED_TYPES,
   moexDraftToIdentity,
+  tInvestDraftToIdentity,
 } from "./marketData";
 
 describe("marketData helpers", () => {
@@ -35,6 +37,27 @@ describe("marketData helpers", () => {
         provider_venue_id: "stock/shares/TQBR",
       }),
     ).toBe("moex_iss · stock/shares · TQBR · SBER");
+  });
+
+  it("defaults new mappings to T-Invest and formats T-Invest without a venue", () => {
+    expect(defaultMappingProvider(null)).toBe("t_invest");
+    expect(
+      tInvestDraftToIdentity({
+        provider: "t_invest",
+        providerInstrumentId: "11111111-1111-1111-1111-111111111111",
+      }),
+    ).toEqual({
+      provider: "t_invest",
+      provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+      provider_venue_id: null,
+    });
+    expect(
+      formatMarketIdentity({
+        provider: "t_invest",
+        provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+        provider_venue_id: null,
+      }),
+    ).toBe("T-Invest · 11111111-1111-1111-1111-111111111111");
   });
 
   it("formats a generic identity without assuming MOEX venue fields", () => {

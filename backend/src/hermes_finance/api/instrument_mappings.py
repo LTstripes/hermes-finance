@@ -1,7 +1,8 @@
-"""Instrument market-data mapping API (R04-03).
+"""Instrument market-data mapping API (R04-03 / R04-05B).
 
 Nested under ``/api/instruments/{id}/market-mapping``. Mapping is reference
-data: these endpoints never mutate PositionSnapshot or fetch quotes.
+data: these endpoints never mutate PositionSnapshot or fetch quotes except
+the explicit discover action, which also does not persist.
 """
 
 from __future__ import annotations
@@ -12,19 +13,33 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.market_data import close_owned_provider, resolve_verify_provider
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.market_data.moex_iss import MoexIssClient
+from hermes_finance.market_data.dto import T_INVEST_PROVIDER
 from hermes_finance.market_data.protocol import MarketDataProvider
 from hermes_finance.services.instrument_mappings import (
     InstrumentMappingView,
     clear_accepted_mapping,
     clear_instrument_mapping_exclusion,
+    discover_instrument_candidates,
     exclude_instrument_mapping,
     get_instrument_mapping,
     set_accepted_mapping,
 )
 
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
+
+QuotePreviewStatus = Literal[
+    "ok",
+    "stale",
+    "unmapped",
+    "excluded",
+    "unsupported",
+    "ambiguous",
+    "unavailable",
+    "network_error",
+    "malformed_response",
+]
 
 
 class MarketIdentityWrite(BaseModel):
@@ -54,6 +69,41 @@ class MarketMappingResponse(BaseModel):
     legacy_moex_secid: str | None
 
 
+class MarketDiscoverRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(min_length=1, max_length=32)
+    query: str | None = Field(default=None, max_length=128)
+
+
+class MarketDiscoverCandidateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    provider_instrument_id: str
+    provider_venue_id: str | None
+    instrument_kind: str
+    isin: str | None
+
+
+class MarketDiscoverRejectedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_instrument_id: str
+    candidate_isin: str
+    expected_isin: str
+    reason: str
+
+
+class MarketDiscoverResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: QuotePreviewStatus
+    message: str | None
+    candidates: list[MarketDiscoverCandidateResponse]
+    rejected: list[MarketDiscoverRejectedResponse]
+
+
 def _response(view: InstrumentMappingView) -> MarketMappingResponse:
     identity = None
     if view.identity is not None:
@@ -69,13 +119,6 @@ def _response(view: InstrumentMappingView) -> MarketMappingResponse:
         instrument_isin=view.instrument_isin,
         legacy_moex_secid=view.legacy_moex_secid,
     )
-
-
-def _provider_for_verify(request: Request) -> tuple[MarketDataProvider, bool]:
-    existing = getattr(request.app.state, "market_data_provider", None)
-    if existing is not None:
-        return existing, False
-    return MoexIssClient(), True
 
 
 @router.get("/{instrument_id}/market-mapping", response_model=MarketMappingResponse)
@@ -97,7 +140,7 @@ def put_instrument_mapping_endpoint(
     provider: MarketDataProvider | None = None
     owned = False
     if verify:
-        provider, owned = _provider_for_verify(request)
+        provider, owned = resolve_verify_provider(request, payload_provider=payload.provider)
     try:
         view = set_accepted_mapping(
             session,
@@ -109,9 +152,57 @@ def put_instrument_mapping_endpoint(
             verify_provider=provider,
         )
     finally:
-        if owned and isinstance(provider, MoexIssClient):
-            provider.close()
+        close_owned_provider(provider, owned)
     return _response(view)
+
+
+@router.post(
+    "/{instrument_id}/market-mapping/discover",
+    response_model=MarketDiscoverResponse,
+)
+def discover_instrument_mapping_endpoint(
+    instrument_id: int,
+    payload: MarketDiscoverRequest,
+    request: Request,
+    session: Session = Depends(session_for_request),
+) -> MarketDiscoverResponse:
+    provider_name = payload.provider.strip().lower()
+    if provider_name != T_INVEST_PROVIDER:
+        raise ValueError(f"unsupported discovery provider: {provider_name}")
+    provider, owned = resolve_verify_provider(request, payload_provider=provider_name)
+    try:
+        result = discover_instrument_candidates(
+            session,
+            instrument_id,
+            provider=provider_name,
+            query=payload.query,
+            market_provider=provider,
+        )
+    finally:
+        close_owned_provider(provider, owned)
+    return MarketDiscoverResponse(
+        status=result.status.value,
+        message=result.message,
+        candidates=[
+            MarketDiscoverCandidateResponse(
+                provider=item.identity.provider,
+                provider_instrument_id=item.identity.provider_instrument_id,
+                provider_venue_id=item.identity.provider_venue_id,
+                instrument_kind=item.instrument_kind.value,
+                isin=item.identity.isin,
+            )
+            for item in result.candidates
+        ],
+        rejected=[
+            MarketDiscoverRejectedResponse(
+                provider_instrument_id=item.provider_instrument_id,
+                candidate_isin=item.candidate_isin,
+                expected_isin=item.expected_isin,
+                reason=item.reason,
+            )
+            for item in result.rejected
+        ],
+    )
 
 
 @router.delete("/{instrument_id}/market-mapping", response_model=MarketMappingResponse)

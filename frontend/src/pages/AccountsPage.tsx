@@ -12,6 +12,7 @@ import { formatApiError } from "../api/client";
 import {
   deleteInstrumentMapping,
   deleteInstrumentMappingExclusion,
+  discoverInstrumentMapping,
   getInstrumentMapping,
   putInstrumentMapping,
   putInstrumentMappingExclusion,
@@ -28,6 +29,7 @@ import type {
   Account,
   Instrument,
   InstrumentMarketMapping,
+  MarketDiscoverResult,
   MarketIdentityWrite,
 } from "../api/types";
 import { AccountFormDialog } from "../components/AccountFormDialog";
@@ -239,6 +241,17 @@ export function AccountsPage() {
       setMappingError(formatApiError(error));
     } finally {
       setFormBusy(false);
+    }
+  }
+
+  async function handleMappingDiscover(): Promise<MarketDiscoverResult> {
+    if (!mappingInstrument) {
+      throw new Error("Инструмент не выбран.");
+    }
+    try {
+      return await discoverInstrumentMapping(mappingInstrument.id, { provider: "t_invest" });
+    } catch (error) {
+      throw new Error(formatApiError(error));
     }
   }
 
@@ -663,6 +676,7 @@ export function AccountsPage() {
         }}
         onClear={handleMappingClear}
         onClearExclusion={handleMappingClearExclusion}
+        onDiscover={() => handleMappingDiscover()}
         onExclude={handleMappingExclude}
         onSave={handleMappingSave}
         open={mappingInstrument !== null}

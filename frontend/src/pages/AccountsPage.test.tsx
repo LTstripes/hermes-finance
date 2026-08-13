@@ -6,6 +6,7 @@ import { createAccount, deleteAccount, listAccounts, updateAccount } from "../ap
 import {
   deleteInstrumentMapping,
   deleteInstrumentMappingExclusion,
+  discoverInstrumentMapping,
   getInstrumentMapping,
   putInstrumentMapping,
   putInstrumentMappingExclusion,
@@ -40,6 +41,7 @@ vi.mock("../api/instrumentMappings", () => ({
   deleteInstrumentMapping: vi.fn(),
   putInstrumentMappingExclusion: vi.fn(),
   deleteInstrumentMappingExclusion: vi.fn(),
+  discoverInstrumentMapping: vi.fn(),
 }));
 
 const account = {
@@ -98,6 +100,7 @@ const putInstrumentMappingMock = vi.mocked(putInstrumentMapping);
 const deleteInstrumentMappingMock = vi.mocked(deleteInstrumentMapping);
 const putInstrumentMappingExclusionMock = vi.mocked(putInstrumentMappingExclusion);
 const deleteInstrumentMappingExclusionMock = vi.mocked(deleteInstrumentMappingExclusion);
+const discoverInstrumentMappingMock = vi.mocked(discoverInstrumentMapping);
 
 describe("AccountsPage", () => {
   beforeEach(() => {
@@ -115,6 +118,12 @@ describe("AccountsPage", () => {
     deleteInstrumentMappingMock.mockResolvedValue(mappingView());
     putInstrumentMappingExclusionMock.mockResolvedValue(mappingView({ state: "excluded" }));
     deleteInstrumentMappingExclusionMock.mockResolvedValue(mappingView());
+    discoverInstrumentMappingMock.mockResolvedValue({
+      status: "ok",
+      message: null,
+      candidates: [],
+      rejected: [],
+    });
   });
 
   it("renders accounts and separates hidden rows", async () => {
@@ -313,6 +322,8 @@ describe("AccountsPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Инструменты (1)" }));
     await user.click(await screen.findByRole("button", { name: "Настроить источник" }));
+    expect(discoverInstrumentMappingMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "MOEX ISS" }));
     await user.type(screen.getByLabelText("Режим торгов (boardid)"), "TQOB");
     await user.type(screen.getByLabelText("Код бумаги (secid)"), "SU26248");
     await user.click(screen.getByRole("button", { name: "Сохранить источник" }));

@@ -18,6 +18,28 @@ def _upgrade_to(database_path: Path, revision: str) -> None:
     command.upgrade(config, revision)
 
 
+def test_create_app_and_health_do_not_touch_market_providers(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from hermes_finance.main import create_app
+    from hermes_finance.market_data import moex_iss, t_invest
+    from hermes_finance.persistence import Base
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("startup must not construct a market-data client")
+
+    monkeypatch.setattr(moex_iss, "MoexIssClient", boom)
+    monkeypatch.setattr(t_invest, "TInvestClient", boom)
+    database = create_database(tmp_path / "startup_market.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with TestClient(create_app(database)) as client:
+            assert client.get("/api/health").status_code == 200
+            assert client.get("/api/months").status_code == 200
+    finally:
+        database.engine.dispose()
+
+
 def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Instrument, InstrumentMarketMapping } from "../api/types";
+import type { Instrument, InstrumentMarketMapping, MarketDiscoverResult } from "../api/types";
 import { InstrumentMappingDialog } from "./InstrumentMappingDialog";
 
 const instrument: Instrument = {
@@ -27,7 +27,7 @@ const unmapped: InstrumentMarketMapping = {
   legacy_moex_secid: "SBER",
 };
 
-const mapped: InstrumentMarketMapping = {
+const moexMapped: InstrumentMarketMapping = {
   ...unmapped,
   state: "mapped",
   identity: {
@@ -35,6 +35,40 @@ const mapped: InstrumentMarketMapping = {
     provider_instrument_id: "SBER",
     provider_venue_id: "stock/shares/TQBR",
   },
+};
+
+const tInvestUid = "11111111-1111-1111-1111-111111111111";
+
+const tInvestMapped: InstrumentMarketMapping = {
+  ...unmapped,
+  state: "mapped",
+  identity: {
+    provider: "t_invest",
+    provider_instrument_id: tInvestUid,
+    provider_venue_id: null,
+  },
+};
+
+const discoverResult: MarketDiscoverResult = {
+  status: "ok",
+  message: null,
+  candidates: [
+    {
+      provider: "t_invest",
+      provider_instrument_id: tInvestUid,
+      provider_venue_id: null,
+      instrument_kind: "stock",
+      isin: "RU0009029540",
+    },
+    {
+      provider: "t_invest",
+      provider_instrument_id: "22222222-2222-2222-2222-222222222222",
+      provider_venue_id: null,
+      instrument_kind: "stock",
+      isin: "RU0009029540",
+    },
+  ],
+  rejected: [],
 };
 
 function renderDialog(
@@ -45,6 +79,7 @@ function renderDialog(
   const onClear = vi.fn(async () => undefined);
   const onExclude = vi.fn(async () => undefined);
   const onClearExclusion = vi.fn(async () => undefined);
+  const onDiscover = vi.fn(async () => discoverResult);
   render(
     <InstrumentMappingDialog
       busy={false}
@@ -54,16 +89,26 @@ function renderDialog(
       onCancel={vi.fn()}
       onClear={onClear}
       onClearExclusion={onClearExclusion}
+      onDiscover={onDiscover}
       onExclude={onExclude}
       onSave={onSave}
       open
       {...overrides}
     />,
   );
-  return { onSave, onClear, onExclude, onClearExclusion };
+  return { onSave, onClear, onExclude, onClearExclusion, onDiscover };
 }
 
 describe("InstrumentMappingDialog", () => {
+  it("defaults a new mapping to T-Invest and does not discover on open", () => {
+    const { onDiscover } = renderDialog(unmapped);
+    expect(screen.getByRole("button", { name: "T-Invest" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Идентификатор инструмента T-Invest")).toHaveValue("");
+    expect(screen.queryByLabelText("Режим торгов (boardid)")).not.toBeInTheDocument();
+    expect(onDiscover).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("t-invest-candidates")).not.toBeInTheDocument();
+  });
+
   it("shows unmapped state and never treats legacy moex_secid as accepted mapping", () => {
     renderDialog(unmapped);
     expect(screen.getByText("Не настроен")).toBeInTheDocument();
@@ -72,20 +117,72 @@ describe("InstrumentMappingDialog", () => {
     );
     expect(screen.getByTestId("legacy-moex-hint")).toHaveTextContent("SBER");
     expect(screen.getByTestId("legacy-moex-hint")).toHaveTextContent("не принятый источник");
-    expect(screen.getByLabelText("Код бумаги (secid)")).toHaveValue("");
   });
 
-  it("shows a complete accepted identity for a mapped instrument", () => {
-    renderDialog(mapped);
+  it("keeps an existing MOEX mapping readable and editable", () => {
+    renderDialog(moexMapped);
     expect(screen.getByText("Подключён")).toBeInTheDocument();
     expect(screen.getByTestId("accepted-mapping-identity")).toHaveTextContent(
       "moex_iss · stock/shares · TQBR · SBER",
     );
+    expect(screen.getByLabelText("Код бумаги (secid)")).toHaveValue("SBER");
+    expect(screen.getByTestId("moex-production-disabled-note")).toBeInTheDocument();
   });
 
-  it("saves the explicit identity the owner typed", async () => {
+  it("saves a manually entered T-Invest uid without a venue", async () => {
     const user = userEvent.setup();
     const { onSave } = renderDialog(unmapped);
+    await user.type(screen.getByLabelText("Идентификатор инструмента T-Invest"), tInvestUid);
+    await user.click(screen.getByRole("button", { name: "Сохранить источник" }));
+    expect(onSave).toHaveBeenCalledWith({
+      provider: "t_invest",
+      provider_instrument_id: tInvestUid,
+      provider_venue_id: null,
+    });
+  });
+
+  it("finds T-Invest candidates only after an explicit click and does not save on choose", async () => {
+    const user = userEvent.setup();
+    const { onSave, onDiscover } = renderDialog(unmapped);
+    await user.click(screen.getByRole("button", { name: "Найти в T-Invest" }));
+    expect(onDiscover).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent(tInvestUid);
+    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent(
+      "22222222-2222-2222-2222-222222222222",
+    );
+    await user.click(screen.getByRole("button", { name: new RegExp(`Выбрать ${tInvestUid}`) }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Идентификатор инструмента T-Invest")).toHaveValue(tInvestUid);
+    await user.click(screen.getByRole("button", { name: "Сохранить источник" }));
+    expect(onSave).toHaveBeenCalledWith({
+      provider: "t_invest",
+      provider_instrument_id: tInvestUid,
+      provider_venue_id: null,
+    });
+  });
+
+  it("shows a calm token-not-configured message from discovery", async () => {
+    const user = userEvent.setup();
+    renderDialog(unmapped, {
+      onDiscover: vi.fn(
+        async (): Promise<MarketDiscoverResult> => ({
+          status: "unavailable",
+          message: "T-Invest read-only token is not configured or is unavailable",
+          candidates: [],
+          rejected: [],
+        }),
+      ),
+    });
+    await user.click(screen.getByRole("button", { name: "Найти в T-Invest" }));
+    expect(screen.getByTestId("t-invest-discover-message")).toHaveTextContent(
+      "T-Invest read-only token is not configured or is unavailable",
+    );
+  });
+
+  it("saves the explicit MOEX identity the owner typed after switching", async () => {
+    const user = userEvent.setup();
+    const { onSave } = renderDialog(unmapped);
+    await user.click(screen.getByRole("button", { name: "MOEX ISS" }));
     await user.clear(screen.getByLabelText("Режим торгов (boardid)"));
     await user.type(screen.getByLabelText("Режим торгов (boardid)"), "TQBR");
     await user.type(screen.getByLabelText("Код бумаги (secid)"), "SBER");
@@ -99,7 +196,7 @@ describe("InstrumentMappingDialog", () => {
 
   it("clears a mapping and excludes or restores through explicit actions", async () => {
     const user = userEvent.setup();
-    const { onClear, onExclude } = renderDialog(mapped);
+    const { onClear, onExclude } = renderDialog(tInvestMapped);
     await user.click(screen.getByRole("button", { name: "Удалить источник" }));
     await user.click(screen.getByRole("button", { name: "Отключить обновление" }));
     expect(onClear).toHaveBeenCalledTimes(1);
@@ -108,9 +205,9 @@ describe("InstrumentMappingDialog", () => {
 
   it("preserves visible identity while excluded and can clear the exclusion", async () => {
     const user = userEvent.setup();
-    const { onClearExclusion } = renderDialog({ ...mapped, state: "excluded" });
+    const { onClearExclusion } = renderDialog({ ...tInvestMapped, state: "excluded" });
     expect(screen.getByText("Отключён")).toBeInTheDocument();
-    expect(screen.getByTestId("accepted-mapping-identity")).toHaveTextContent("TQBR");
+    expect(screen.getByTestId("accepted-mapping-identity")).toHaveTextContent(tInvestUid);
     await user.click(screen.getByRole("button", { name: "Включить обновление" }));
     expect(onClearExclusion).toHaveBeenCalledTimes(1);
   });

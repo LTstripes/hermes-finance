@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Final
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx2
 
@@ -38,6 +37,7 @@ from hermes_finance.market_data.moex_identity import (
     market_identity_from_moex,
     moex_parts_from_identity,
 )
+from hermes_finance.market_data.moscow import MOSCOW_TZ
 from hermes_finance.market_data.normalize import (
     MAX_LOOKBACK_DAYS,
     SUPPORTED_KINDS,
@@ -53,17 +53,6 @@ from hermes_finance.market_data.normalize import (
 DEFAULT_BASE_URL: Final = "https://iss.moex.com"
 DEFAULT_TIMEOUT: Final = httpx2.Timeout(20.0, connect=5.0, read=10.0, write=10.0, pool=5.0)
 DEFAULT_MAX_DISCOVERY_SECURITIES: Final = 10
-
-
-def _moscow_tz() -> timezone | ZoneInfo:
-    try:
-        return ZoneInfo("Europe/Moscow")
-    except ZoneInfoNotFoundError:
-        # Windows CPython has no IANA database; Moscow has been UTC+3 year-round since 2014.
-        return timezone(timedelta(hours=3))
-
-
-MOSCOW_TZ: Final = _moscow_tz()
 _HISTORY_PRICE_FIELDS: Final = ("LASTPRICE", "LEGALCLOSEPRICE", "CLOSE")
 
 

@@ -3,6 +3,7 @@ import { formatMoneyDelta } from "./format";
 import { fromKopecks, toKopecks } from "./money";
 
 export const MOEX_ISS_PROVIDER = "moex_iss";
+export const T_INVEST_PROVIDER = "t_invest";
 
 export const MAPPING_SUPPORTED_TYPES = new Set(["stock", "bond", "fund"]);
 
@@ -24,12 +25,19 @@ export const QUOTE_PREVIEW_STATUS_LABELS: Record<string, string> = {
   malformed_response: "Данные источника нельзя безопасно использовать",
 };
 
+export type MappingProviderId = typeof T_INVEST_PROVIDER | typeof MOEX_ISS_PROVIDER;
+
 export type MoexMappingDraft = {
   provider: string;
   engine: string;
   market: string;
   boardid: string;
   secid: string;
+};
+
+export type TInvestMappingDraft = {
+  provider: typeof T_INVEST_PROVIDER;
+  providerInstrumentId: string;
 };
 
 export function mappingStateTone(state: string): "ok" | "draft" | "info" | "neutral" {
@@ -125,7 +133,41 @@ export function defaultMappingDraft(instrumentType: string): MoexMappingDraft {
   };
 }
 
+export function defaultTInvestDraft(): TInvestMappingDraft {
+  return { provider: T_INVEST_PROVIDER, providerInstrumentId: "" };
+}
+
+export function defaultMappingProvider(
+  identity: MarketIdentity | null | undefined,
+): MappingProviderId {
+  if (identity?.provider === MOEX_ISS_PROVIDER) return MOEX_ISS_PROVIDER;
+  return T_INVEST_PROVIDER;
+}
+
+export function tInvestDraftToIdentity(draft: TInvestMappingDraft): MarketIdentityWrite {
+  return {
+    provider: T_INVEST_PROVIDER,
+    provider_instrument_id: draft.providerInstrumentId.trim(),
+    provider_venue_id: null,
+  };
+}
+
+export function identityToTInvestDraft(
+  identity: MarketIdentity | null | undefined,
+): TInvestMappingDraft {
+  if (identity?.provider === T_INVEST_PROVIDER) {
+    return {
+      provider: T_INVEST_PROVIDER,
+      providerInstrumentId: identity.provider_instrument_id,
+    };
+  }
+  return defaultTInvestDraft();
+}
+
 export function formatMarketIdentity(identity: MarketIdentity): string {
+  if (identity.provider === T_INVEST_PROVIDER) {
+    return `T-Invest · ${identity.provider_instrument_id}`;
+  }
   if (identity.provider === MOEX_ISS_PROVIDER && identity.provider_venue_id) {
     try {
       const venue = decodeMoexVenue(identity.provider_venue_id);

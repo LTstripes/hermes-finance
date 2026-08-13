@@ -1,5 +1,6 @@
 """API tests for instrument market-data mapping (R04-03)."""
 
+import json
 from collections.abc import Generator
 from datetime import date
 from pathlib import Path
@@ -266,5 +267,155 @@ def test_verify_true_uses_injected_provider_and_rejects_ambiguity(tmp_path: Path
             assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()[
                 "state"
             ] == ("unmapped")
+    finally:
+        database.engine.dispose()
+
+
+T_INVEST_UID = "11111111-1111-1111-1111-111111111111"
+T_INVEST_PAYLOAD = {
+    "provider": "t_invest",
+    "provider_instrument_id": T_INVEST_UID,
+    "provider_venue_id": None,
+}
+
+
+def test_t_invest_identity_save_and_venue_rejected(client: TestClient) -> None:
+    created = _create_instrument(client)
+    rejected = client.put(
+        f"/api/instruments/{created['id']}/market-mapping",
+        json={**T_INVEST_PAYLOAD, "provider_venue_id": "TQBR"},
+    )
+    assert rejected.status_code == 422
+    saved = client.put(f"/api/instruments/{created['id']}/market-mapping", json=T_INVEST_PAYLOAD)
+    assert saved.status_code == 200
+    assert saved.json()["identity"] == {
+        "provider": "t_invest",
+        "provider_instrument_id": T_INVEST_UID,
+        "provider_venue_id": None,
+    }
+
+
+def test_verify_true_accepts_exact_t_invest_uid(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_verify_t.db")
+    Base.metadata.create_all(database.engine)
+    identity = MarketIdentity(
+        provider="t_invest",
+        provider_instrument_id=T_INVEST_UID,
+        provider_venue_id=None,
+        isin="RU0009029540",
+    )
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(identity=identity, instrument_kind=InstrumentType.STOCK),
+            ),
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(client)
+            verified = client.put(
+                f"/api/instruments/{created['id']}/market-mapping",
+                params={"verify": "true"},
+                json=T_INVEST_PAYLOAD,
+            )
+            assert verified.status_code == 200
+            assert verified.json()["identity"]["provider_instrument_id"] == T_INVEST_UID
+            assert provider.discover_calls == 1
+    finally:
+        database.engine.dispose()
+
+
+def test_discover_is_explicit_and_does_not_persist(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_discover.db")
+    Base.metadata.create_all(database.engine)
+    identity = MarketIdentity(
+        provider="t_invest",
+        provider_instrument_id=T_INVEST_UID,
+        provider_venue_id=None,
+        isin="RU0009029540",
+    )
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(identity=identity, instrument_kind=InstrumentType.STOCK),
+            ),
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(client)
+            assert provider.discover_calls == 0
+            mapping_before = client.get(f"/api/instruments/{created['id']}/market-mapping")
+            assert mapping_before.json()["state"] == "unmapped"
+            discovered = client.post(
+                f"/api/instruments/{created['id']}/market-mapping/discover",
+                json={"provider": "t_invest"},
+            )
+            assert discovered.status_code == 200
+            body = discovered.json()
+            assert body["status"] == "ok"
+            assert body["candidates"][0]["provider_instrument_id"] == T_INVEST_UID
+            assert body["candidates"][0]["provider_venue_id"] is None
+            assert body["candidates"][0]["instrument_kind"] == "stock"
+            assert "figi" not in json.dumps(body)
+            assert provider.discover_calls == 1
+            mapping_after = client.get(f"/api/instruments/{created['id']}/market-mapping")
+            assert mapping_after.json()["state"] == "unmapped"
+            assert mapping_after.json()["identity"] is None
+    finally:
+        database.engine.dispose()
+
+
+def test_discover_without_token_is_calm_and_leaks_nothing(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_discover_token.db")
+    Base.metadata.create_all(database.engine)
+    application = create_app(database)
+    try:
+        with TestClient(application) as client:
+            created = _create_instrument(client)
+            discovered = client.post(
+                f"/api/instruments/{created['id']}/market-mapping/discover",
+                json={"provider": "t_invest"},
+            )
+            assert discovered.status_code == 200
+            body = discovered.json()
+            assert body["status"] == "unavailable"
+            assert "token" in (body["message"] or "").lower()
+            assert "Authorization" not in json.dumps(body)
+            assert "t." not in json.dumps(body)
+    finally:
+        database.engine.dispose()
+
+
+def test_production_verify_moex_does_not_construct_moex_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hermes_finance.market_data import moex_iss
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("MoexIssClient must not be constructed in production verify")
+
+    monkeypatch.setattr(moex_iss, "MoexIssClient", boom)
+    database = create_database(tmp_path / "mapping_verify_moex.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with TestClient(create_app(database)) as client:
+            created = _create_instrument(client)
+            verified = client.put(
+                f"/api/instruments/{created['id']}/market-mapping",
+                params={"verify": "true"},
+                json=STOCK_PAYLOAD,
+            )
+            assert verified.status_code == 422
+            assert "production provider disabled" in verified.json()["error"]["message"]
+            local = client.put(
+                f"/api/instruments/{created['id']}/market-mapping",
+                json=STOCK_PAYLOAD,
+            )
+            assert local.status_code == 200
+            assert local.json()["state"] == "mapped"
     finally:
         database.engine.dispose()

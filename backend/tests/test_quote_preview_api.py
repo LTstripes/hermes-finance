@@ -341,3 +341,58 @@ def test_unexpected_provider_raise_is_not_successful_preview(tmp_path: Path) -> 
                 client.post(f"/api/months/{month['id']}/quote-preview")
     finally:
         database.engine.dispose()
+
+
+def test_production_preview_does_not_call_moex_or_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hermes_finance.market_data import moex_iss
+    from hermes_finance.market_data.t_invest import TOKEN_UNAVAILABLE_MESSAGE
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("MoexIssClient must not be constructed in production preview")
+
+    monkeypatch.setattr(moex_iss, "MoexIssClient", boom)
+    database = create_database(tmp_path / "preview_production.db")
+    Base.metadata.create_all(database.engine)
+    application = create_app(database)
+    application.state.quote_preview_clock = lambda: TODAY
+    try:
+        with TestClient(application) as client:
+            month = _create_month(client)
+            account = _create_account(client)
+            moex_instrument = _create_instrument(client, "MOEX Stock")
+            t_instrument = _create_instrument(
+                client, "T Stock", isin="RU000SYNTH01", moex_secid=None
+            )
+            _map(client, moex_instrument["id"], STOCK_IDENTITY)
+            _map(
+                client,
+                t_instrument["id"],
+                MarketIdentity(
+                    provider="t_invest",
+                    provider_instrument_id="11111111-1111-1111-1111-111111111111",
+                    provider_venue_id=None,
+                ),
+            )
+            _position(
+                client,
+                month_id=month["id"],
+                account_id=account["id"],
+                instrument_id=moex_instrument["id"],
+            )
+            _position(
+                client,
+                month_id=month["id"],
+                account_id=account["id"],
+                instrument_id=t_instrument["id"],
+            )
+            preview = client.post(f"/api/months/{month['id']}/quote-preview")
+            assert preview.status_code == 200
+            rows = {row["instrument_id"]: row for row in preview.json()["rows"]}
+            assert rows[moex_instrument["id"]]["status"] == "unsupported"
+            assert "production provider disabled" in (rows[moex_instrument["id"]]["message"] or "")
+            assert rows[t_instrument["id"]]["status"] == "unavailable"
+            assert rows[t_instrument["id"]]["message"] == TOKEN_UNAVAILABLE_MESSAGE
+    finally:
+        database.engine.dispose()

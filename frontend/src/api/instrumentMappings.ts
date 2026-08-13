@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { InstrumentMarketMapping, MarketIdentityWrite } from "./types";
+import type { InstrumentMarketMapping, MarketDiscoverResult, MarketIdentityWrite } from "./types";
 
 export function getInstrumentMapping(
   instrumentId: number,
@@ -50,5 +50,16 @@ export function deleteInstrumentMappingExclusion(
   return apiRequest<InstrumentMarketMapping>(
     `/api/instruments/${instrumentId}/market-mapping/exclusion`,
     { method: "DELETE", signal },
+  );
+}
+
+export function discoverInstrumentMapping(
+  instrumentId: number,
+  payload: { provider: string; query?: string | null },
+  signal?: AbortSignal,
+): Promise<MarketDiscoverResult> {
+  return apiRequest<MarketDiscoverResult>(
+    `/api/instruments/${instrumentId}/market-mapping/discover`,
+    { method: "POST", body: payload, signal },
   );
 }

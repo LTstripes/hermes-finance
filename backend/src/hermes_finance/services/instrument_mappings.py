@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from hermes_finance.domain import InstrumentType, MarketMappingState
 from hermes_finance.market_data.dto import (
     MOEX_ISS_PROVIDER,
+    T_INVEST_PROVIDER,
+    DiscoverResult,
     MarketIdentity,
     QuoteStatus,
     market_identity_key,
@@ -25,6 +27,7 @@ from hermes_finance.market_data.moex_identity import (
 )
 from hermes_finance.market_data.normalize import SUPPORTED_KINDS, compatible_engine_market
 from hermes_finance.market_data.protocol import MarketDataProvider
+from hermes_finance.market_data.t_invest import normalize_t_invest_uid, t_invest_identity
 from hermes_finance.persistence import Instrument, InstrumentMarketMapping
 from hermes_finance.services.instruments import get_instrument
 
@@ -87,6 +90,14 @@ def normalize_accepted_identity(
         except InvalidMoexIdentityError as error:
             raise ValueError(str(error)) from error
 
+    if provider_n == T_INVEST_PROVIDER:
+        if venue_n is not None:
+            raise ValueError("provider_venue_id must be empty for t_invest")
+        try:
+            return t_invest_identity(provider_instrument_id=instrument_n, isin=isin)
+        except ValueError as error:
+            raise ValueError(str(error)) from error
+
     return MarketIdentity(
         provider=provider_n,
         provider_instrument_id=instrument_n,
@@ -104,20 +115,28 @@ def validate_accepted_identity(instrument: Instrument, identity: MarketIdentity)
         ) from error
     if kind not in SUPPORTED_KINDS:
         raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
-    if identity.provider != MOEX_ISS_PROVIDER:
+    if identity.provider == T_INVEST_PROVIDER:
+        if identity.provider_venue_id is not None:
+            raise ValueError("provider_venue_id must be empty for t_invest")
+        try:
+            normalize_t_invest_uid(identity.provider_instrument_id)
+        except ValueError as error:
+            raise ValueError(str(error)) from error
+    elif identity.provider == MOEX_ISS_PROVIDER:
+        try:
+            parts = moex_parts_from_identity(identity)
+        except InvalidMoexIdentityError as error:
+            raise ValueError(str(error)) from error
+        if not compatible_engine_market(
+            instrument_kind=kind,
+            engine=parts.engine,
+            market=parts.market,
+        ):
+            raise ValueError(
+                f"engine/market {parts.engine}/{parts.market} is incompatible with {kind.value}"
+            )
+    else:
         raise ValueError(f"unsupported market-data provider: {identity.provider}")
-    try:
-        parts = moex_parts_from_identity(identity)
-    except InvalidMoexIdentityError as error:
-        raise ValueError(str(error)) from error
-    if not compatible_engine_market(
-        instrument_kind=kind,
-        engine=parts.engine,
-        market=parts.market,
-    ):
-        raise ValueError(
-            f"engine/market {parts.engine}/{parts.market} is incompatible with {kind.value}"
-        )
     instrument_isin = _normalize_isin(instrument.isin)
     if instrument_isin and identity.isin and instrument_isin != identity.isin:
         raise ValueError("isin mismatch between instrument and market identity")
@@ -291,3 +310,32 @@ def clear_instrument_mapping_exclusion(
     session.refresh(row)
     session.refresh(instrument)
     return _view(instrument, row)
+
+
+def discover_instrument_candidates(
+    session: Session,
+    instrument_id: int,
+    *,
+    provider: str,
+    query: str | None,
+    market_provider: MarketDataProvider,
+) -> DiscoverResult:
+    """Owner-triggered discovery. Never persists a candidate."""
+
+    instrument = get_instrument(session, instrument_id)
+    provider_n = _normalize_token(provider, field="provider", case="lower")
+    if provider_n != T_INVEST_PROVIDER:
+        raise ValueError(f"unsupported discovery provider: {provider_n}")
+    try:
+        kind = InstrumentType(instrument.instrument_type)
+    except ValueError as error:
+        raise ValueError(
+            f"unsupported instrument type for market mapping: {instrument.instrument_type!r}"
+        ) from error
+    if kind not in SUPPORTED_KINDS:
+        raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
+    override = query.strip() if query is not None else ""
+    return market_provider.discover_candidates(
+        query=override or instrument.ticker,
+        isin=instrument.isin,
+    )

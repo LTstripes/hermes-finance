@@ -1,15 +1,29 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 
-import type { Instrument, InstrumentMarketMapping, MarketIdentityWrite } from "../api/types";
+import type {
+  Instrument,
+  InstrumentMarketMapping,
+  MarketDiscoverCandidate,
+  MarketDiscoverResult,
+  MarketIdentityWrite,
+} from "../api/types";
 import {
   defaultMappingDraft,
+  defaultMappingProvider,
+  defaultTInvestDraft,
   formatMarketIdentity,
   identityToMoexDraft,
+  identityToTInvestDraft,
   MAPPING_STATE_LABELS,
   MAPPING_SUPPORTED_TYPES,
   mappingStateTone,
+  MOEX_ISS_PROVIDER,
   moexDraftToIdentity,
+  T_INVEST_PROVIDER,
+  tInvestDraftToIdentity,
+  type MappingProviderId,
   type MoexMappingDraft,
+  type TInvestMappingDraft,
 } from "../lib/marketData";
 import { labelOf } from "../lib/labels";
 import { Badge, Button, Field, Input } from "./ui";
@@ -25,17 +39,8 @@ type Props = {
   onClear: () => Promise<void>;
   onExclude: () => Promise<void>;
   onClearExclusion: () => Promise<void>;
+  onDiscover?: (provider: typeof T_INVEST_PROVIDER) => Promise<MarketDiscoverResult>;
 };
-
-function draftFromMapping(
-  instrument: Instrument,
-  mapping: InstrumentMarketMapping | null,
-): MoexMappingDraft {
-  if (mapping?.identity) {
-    return identityToMoexDraft(mapping.identity, instrument.instrument_type);
-  }
-  return defaultMappingDraft(instrument.instrument_type);
-}
 
 export function InstrumentMappingDialog({
   open,
@@ -48,58 +53,104 @@ export function InstrumentMappingDialog({
   onClear,
   onExclude,
   onClearExclusion,
+  onDiscover,
 }: Props) {
   const titleId = useId();
   const descriptionId = useId();
-  const [draft, setDraft] = useState<MoexMappingDraft>(defaultMappingDraft("stock"));
+  const [providerMode, setProviderMode] = useState<MappingProviderId>(T_INVEST_PROVIDER);
+  const [moexDraft, setMoexDraft] = useState<MoexMappingDraft>(defaultMappingDraft("stock"));
+  const [tInvestDraft, setTInvestDraft] = useState<TInvestMappingDraft>(defaultTInvestDraft());
+  const [candidates, setCandidates] = useState<MarketDiscoverCandidate[]>([]);
+  const [discoverMessage, setDiscoverMessage] = useState<string | null>(null);
+  const [discoverBusy, setDiscoverBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !instrument) return;
-    setDraft(draftFromMapping(instrument, mapping));
+    setProviderMode(defaultMappingProvider(mapping?.identity));
+    setMoexDraft(identityToMoexDraft(mapping?.identity, instrument.instrument_type));
+    setTInvestDraft(identityToTInvestDraft(mapping?.identity));
+    setCandidates([]);
+    setDiscoverMessage(null);
     setLocalError(null);
   }, [open, instrument, mapping]);
 
   useEffect(() => {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
+      if (event.key === "Escape" && !busy && !discoverBusy) onCancel();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, busy, onCancel]);
+  }, [open, busy, discoverBusy, onCancel]);
 
   if (!open || !instrument) return null;
 
   const supported = MAPPING_SUPPORTED_TYPES.has(instrument.instrument_type);
   const state = mapping?.state ?? "unmapped";
   const hasIdentity = mapping?.identity != null;
+  const formBusy = busy || discoverBusy;
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
-    if (
-      !draft.provider.trim() ||
-      !draft.engine.trim() ||
-      !draft.market.trim() ||
-      !draft.boardid.trim() ||
-      !draft.secid.trim()
-    ) {
-      setLocalError("Заполни провайдер, движок, рынок, режим торгов и код бумаги.");
-      return;
-    }
     let payload: MarketIdentityWrite;
     try {
-      payload = moexDraftToIdentity(draft);
+      if (providerMode === T_INVEST_PROVIDER) {
+        if (!tInvestDraft.providerInstrumentId.trim()) {
+          setLocalError("Укажи идентификатор инструмента T-Invest или найди его по кнопке.");
+          return;
+        }
+        payload = tInvestDraftToIdentity(tInvestDraft);
+      } else {
+        if (
+          !moexDraft.provider.trim() ||
+          !moexDraft.engine.trim() ||
+          !moexDraft.market.trim() ||
+          !moexDraft.boardid.trim() ||
+          !moexDraft.secid.trim()
+        ) {
+          setLocalError("Заполни провайдер, движок, рынок, режим торгов и код бумаги.");
+          return;
+        }
+        payload = moexDraftToIdentity(moexDraft);
+      }
     } catch {
-      setLocalError("Заполни провайдер, движок, рынок, режим торгов и код бумаги.");
+      setLocalError("Проверь введённые данные источника.");
       return;
     }
     setLocalError(null);
     await onSave(payload);
   }
 
-  function updateField(field: keyof MoexMappingDraft, value: string) {
-    setDraft((current) => ({ ...current, [field]: value }));
+  async function handleDiscover() {
+    if (!onDiscover) return;
+    setDiscoverBusy(true);
+    setLocalError(null);
+    setDiscoverMessage(null);
+    try {
+      const result = await onDiscover(T_INVEST_PROVIDER);
+      setCandidates(result.candidates);
+      setDiscoverMessage(result.message);
+      if (result.candidates.length === 0 && !result.message) {
+        setDiscoverMessage("Подходящих инструментов T-Invest не найдено.");
+      }
+    } catch (caught) {
+      setCandidates([]);
+      setDiscoverMessage(
+        caught instanceof Error ? caught.message : "Не удалось найти инструменты.",
+      );
+    } finally {
+      setDiscoverBusy(false);
+    }
+  }
+
+  function chooseCandidate(candidate: MarketDiscoverCandidate) {
+    setTInvestDraft({
+      provider: T_INVEST_PROVIDER,
+      providerInstrumentId: candidate.provider_instrument_id,
+    });
+    setProviderMode(T_INVEST_PROVIDER);
+    setLocalError(null);
   }
 
   return (
@@ -146,68 +197,153 @@ export function InstrumentMappingDialog({
         {supported ? (
           <form className="form-stack" onSubmit={handleSave}>
             <div className="form-row-2">
-              <Field htmlFor="mapping-provider" label="Провайдер">
-                <Input
-                  id="mapping-provider"
-                  onChange={(event) => updateField("provider", event.target.value)}
-                  value={draft.provider}
-                />
-              </Field>
-              <Field htmlFor="mapping-engine" label="Движок">
-                <Input
-                  id="mapping-engine"
-                  onChange={(event) => updateField("engine", event.target.value)}
-                  value={draft.engine}
-                />
-              </Field>
+              <Button
+                disabled={formBusy}
+                onClick={() => setProviderMode(T_INVEST_PROVIDER)}
+                type="button"
+                variant={providerMode === T_INVEST_PROVIDER ? "primary" : "secondary"}
+              >
+                T-Invest
+              </Button>
+              <Button
+                disabled={formBusy}
+                onClick={() => setProviderMode(MOEX_ISS_PROVIDER)}
+                type="button"
+                variant={providerMode === MOEX_ISS_PROVIDER ? "primary" : "secondary"}
+              >
+                MOEX ISS
+              </Button>
             </div>
-            <div className="form-row-2">
-              <Field htmlFor="mapping-market" label="Рынок">
-                <Input
-                  id="mapping-market"
-                  onChange={(event) => updateField("market", event.target.value)}
-                  value={draft.market}
-                />
-              </Field>
-              <Field htmlFor="mapping-boardid" label="Режим торгов (boardid)">
-                <Input
-                  id="mapping-boardid"
-                  onChange={(event) => updateField("boardid", event.target.value)}
-                  value={draft.boardid}
-                />
-              </Field>
-            </div>
-            <Field htmlFor="mapping-secid" label="Код бумаги (secid)">
-              <Input
-                id="mapping-secid"
-                onChange={(event) => updateField("secid", event.target.value)}
-                value={draft.secid}
-              />
-            </Field>
+
+            {providerMode === T_INVEST_PROVIDER ? (
+              <>
+                <p className="muted tiny">
+                  Production-источник 0.4. Режим торгов не нужен: канонический ключ —
+                  instrument_uid.
+                </p>
+                <Field htmlFor="mapping-t-invest-uid" label="Идентификатор инструмента T-Invest">
+                  <Input
+                    id="mapping-t-invest-uid"
+                    onChange={(event) =>
+                      setTInvestDraft((current) => ({
+                        ...current,
+                        providerInstrumentId: event.target.value,
+                      }))
+                    }
+                    value={tInvestDraft.providerInstrumentId}
+                  />
+                </Field>
+                {onDiscover ? (
+                  <Button disabled={formBusy} onClick={() => void handleDiscover()} type="button">
+                    {discoverBusy ? "Ищем…" : "Найти в T-Invest"}
+                  </Button>
+                ) : null}
+                {discoverMessage ? (
+                  <p className="muted tiny" data-testid="t-invest-discover-message">
+                    {discoverMessage}
+                  </p>
+                ) : null}
+                {candidates.length > 0 ? (
+                  <ul className="stack-8" data-testid="t-invest-candidates">
+                    {candidates.map((candidate) => (
+                      <li key={candidate.provider_instrument_id}>
+                        <Button
+                          disabled={formBusy}
+                          onClick={() => chooseCandidate(candidate)}
+                          type="button"
+                        >
+                          Выбрать {candidate.provider_instrument_id}
+                          {candidate.isin ? ` · ${candidate.isin}` : ""}
+                          {` · ${candidate.instrument_kind}`}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="muted tiny" data-testid="moex-production-disabled-note">
+                  Прямой MOEX ISS в production отключён. Сохранённое сопоставление можно править
+                  вручную, но котировки по нему не запрашиваются, пока источник не сменят на
+                  T-Invest.
+                </p>
+                <div className="form-row-2">
+                  <Field htmlFor="mapping-provider" label="Провайдер">
+                    <Input
+                      id="mapping-provider"
+                      onChange={(event) =>
+                        setMoexDraft((current) => ({ ...current, provider: event.target.value }))
+                      }
+                      value={moexDraft.provider}
+                    />
+                  </Field>
+                  <Field htmlFor="mapping-engine" label="Движок">
+                    <Input
+                      id="mapping-engine"
+                      onChange={(event) =>
+                        setMoexDraft((current) => ({ ...current, engine: event.target.value }))
+                      }
+                      value={moexDraft.engine}
+                    />
+                  </Field>
+                </div>
+                <div className="form-row-2">
+                  <Field htmlFor="mapping-market" label="Рынок">
+                    <Input
+                      id="mapping-market"
+                      onChange={(event) =>
+                        setMoexDraft((current) => ({ ...current, market: event.target.value }))
+                      }
+                      value={moexDraft.market}
+                    />
+                  </Field>
+                  <Field htmlFor="mapping-boardid" label="Режим торгов (boardid)">
+                    <Input
+                      id="mapping-boardid"
+                      onChange={(event) =>
+                        setMoexDraft((current) => ({ ...current, boardid: event.target.value }))
+                      }
+                      value={moexDraft.boardid}
+                    />
+                  </Field>
+                </div>
+                <Field htmlFor="mapping-secid" label="Код бумаги (secid)">
+                  <Input
+                    id="mapping-secid"
+                    onChange={(event) =>
+                      setMoexDraft((current) => ({ ...current, secid: event.target.value }))
+                    }
+                    value={moexDraft.secid}
+                  />
+                </Field>
+              </>
+            )}
+
             {localError || error ? (
               <div className="inline-alert inline-alert--error" role="alert">
                 {localError ?? error}
               </div>
             ) : null}
             <div className="dialog__actions">
-              <Button disabled={busy} onClick={onCancel} type="button">
+              <Button disabled={formBusy} onClick={onCancel} type="button">
                 Закрыть
               </Button>
               {hasIdentity ? (
-                <Button disabled={busy} onClick={() => void onClear()} type="button">
+                <Button disabled={formBusy} onClick={() => void onClear()} type="button">
                   {busy ? "Сохраняем…" : "Удалить источник"}
                 </Button>
               ) : null}
               {state === "excluded" ? (
-                <Button disabled={busy} onClick={() => void onClearExclusion()} type="button">
+                <Button disabled={formBusy} onClick={() => void onClearExclusion()} type="button">
                   {busy ? "Сохраняем…" : "Включить обновление"}
                 </Button>
               ) : (
-                <Button disabled={busy} onClick={() => void onExclude()} type="button">
+                <Button disabled={formBusy} onClick={() => void onExclude()} type="button">
                   {busy ? "Сохраняем…" : "Отключить обновление"}
                 </Button>
               )}
-              <Button disabled={busy} type="submit" variant="primary">
+              <Button disabled={formBusy} type="submit" variant="primary">
                 {busy ? "Сохраняем…" : "Сохранить источник"}
               </Button>
             </div>

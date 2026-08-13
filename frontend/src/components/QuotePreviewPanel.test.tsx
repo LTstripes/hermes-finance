@@ -103,6 +103,34 @@ describe("QuotePreviewPanel", () => {
     expect(table).toHaveTextContent(/\+15,50/);
   });
 
+  it("shows a T-Invest identity and backend message without apply controls", () => {
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 8,
+          instrument_id: 18,
+          instrument_name: "T Stock",
+          status: "unavailable",
+          identity: {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+          },
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+          message: "T-Invest read-only token is not configured or is unavailable",
+        }),
+      ]),
+    );
+    expect(screen.getByText("T Stock")).toBeInTheDocument();
+    expect(screen.getByText(/T-Invest · 11111111-1111-1111-1111-111111111111/)).toBeInTheDocument();
+    expect(
+      screen.getByText("T-Invest read-only token is not configured or is unavailable"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
+  });
+
   it("marks stale rows as old and not default-applicable", () => {
     renderPanel(
       preview([

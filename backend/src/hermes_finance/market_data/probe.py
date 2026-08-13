@@ -15,7 +15,8 @@ from hermes_finance.market_data.moex_identity import (
     market_identity_from_moex,
     moex_parts_from_identity,
 )
-from hermes_finance.market_data.moex_iss import MOSCOW_TZ, MoexIssClient
+from hermes_finance.market_data.moex_iss import MoexIssClient
+from hermes_finance.market_data.moscow import MOSCOW_TZ
 
 
 def main(argv: list[str] | None = None) -> int:

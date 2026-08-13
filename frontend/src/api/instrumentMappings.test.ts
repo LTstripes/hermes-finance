@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteInstrumentMapping,
   deleteInstrumentMappingExclusion,
+  discoverInstrumentMapping,
   getInstrumentMapping,
   putInstrumentMapping,
   putInstrumentMappingExclusion,
@@ -80,5 +81,33 @@ describe("instrument mapping API helpers", () => {
       "PUT /api/instruments/10/market-mapping/exclusion",
       "DELETE /api/instruments/10/market-mapping/exclusion",
     ]);
+  });
+
+  it("posts an explicit T-Invest discovery request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({
+        status: "ok",
+        message: null,
+        candidates: [
+          {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+            instrument_kind: "stock",
+            isin: "RU0009029540",
+          },
+        ],
+        rejected: [],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await discoverInstrumentMapping(10, { provider: "t_invest" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/instruments/10/market-mapping/discover",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ provider: "t_invest" }),
+      }),
+    );
   });
 });

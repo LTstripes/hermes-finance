@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hermes_finance import __version__
@@ -24,3 +24,13 @@ class Settings(BaseSettings):
     reload: bool = False
     database_path: Path = REPOSITORY_ROOT / "data" / "finance.db"
     frontend_dist: Path = REPOSITORY_ROOT / "frontend" / "dist"
+    t_invest_read_only_token: SecretStr | None = None
+
+    @field_validator("t_invest_read_only_token", mode="before")
+    @classmethod
+    def _empty_secret_is_missing(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value

@@ -434,3 +434,66 @@ def test_mapping_update_leaves_position_snapshot_unchanged(tmp_path: Path) -> No
     finally:
         session.close()
         database.engine.dispose()
+
+
+T_INVEST_UID = "11111111-1111-1111-1111-111111111111"
+T_INVEST_IDENTITY = {
+    "provider": "t_invest",
+    "provider_instrument_id": T_INVEST_UID,
+    "provider_venue_id": None,
+}
+
+
+def test_t_invest_mapping_round_trip_requires_null_venue(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        instrument = _stock(session)
+        with pytest.raises(ValueError, match="provider_venue_id must be empty"):
+            set_accepted_mapping(
+                session,
+                instrument.id,
+                provider="t_invest",
+                provider_instrument_id=T_INVEST_UID,
+                provider_venue_id="stock/shares/TQBR",
+            )
+        view = set_accepted_mapping(session, instrument.id, **T_INVEST_IDENTITY)
+        assert view.state is MarketMappingState.MAPPED
+        assert view.identity is not None
+        assert view.identity.provider == "t_invest"
+        assert view.identity.provider_instrument_id == T_INVEST_UID
+        assert view.identity.provider_venue_id is None
+        loaded = get_instrument_mapping(session, instrument.id)
+        assert loaded.identity == view.identity
+        excluded = exclude_instrument_mapping(session, instrument.id)
+        assert excluded.state is MarketMappingState.EXCLUDED
+        assert excluded.identity is not None
+        assert excluded.identity.provider_instrument_id == T_INVEST_UID
+        restored = clear_instrument_mapping_exclusion(session, instrument.id)
+        assert restored.state is MarketMappingState.MAPPED
+        cleared = clear_accepted_mapping(session, instrument.id)
+        assert cleared.state is MarketMappingState.UNMAPPED
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_t_invest_and_moex_mappings_do_not_overwrite_each_other(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        stock = _stock(session)
+        other = create_instrument(
+            session,
+            name="Synthetic Other",
+            instrument_type=InstrumentType.STOCK,
+            isin="RU0000000099",
+        )
+        moex = set_accepted_mapping(session, stock.id, **STOCK_IDENTITY)
+        t_invest = set_accepted_mapping(session, other.id, **T_INVEST_IDENTITY)
+        assert moex.identity is not None
+        assert moex.identity.provider == "moex_iss"
+        assert t_invest.identity is not None
+        assert t_invest.identity.provider == "t_invest"
+        assert get_instrument_mapping(session, stock.id).identity == moex.identity
+    finally:
+        session.close()
+        database.engine.dispose()

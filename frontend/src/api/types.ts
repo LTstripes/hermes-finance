@@ -363,6 +363,28 @@ export type InstrumentMarketMapping = {
   legacy_moex_secid: string | null;
 };
 
+export type MarketDiscoverCandidate = {
+  provider: string;
+  provider_instrument_id: string;
+  provider_venue_id: string | null;
+  instrument_kind: string;
+  isin: string | null;
+};
+
+export type MarketDiscoverRejected = {
+  provider_instrument_id: string;
+  candidate_isin: string;
+  expected_isin: string;
+  reason: string;
+};
+
+export type MarketDiscoverResult = {
+  status: QuotePreviewStatus;
+  message: string | null;
+  candidates: MarketDiscoverCandidate[];
+  rejected: MarketDiscoverRejected[];
+};
+
 export type QuotePreviewStatus =
   | "ok"
   | "stale"

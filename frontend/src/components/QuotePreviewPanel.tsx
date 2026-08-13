@@ -71,6 +71,7 @@ function PreviewRow({ row }: { row: QuotePreviewRow }) {
           row.status === "excluded" ? (
             <span className="muted tiny">Текущая ручная цена остаётся обычным значением.</span>
           ) : null}
+          {row.message ? <span className="muted tiny">{row.message}</span> : null}
         </div>
       </Td>
     </tr>

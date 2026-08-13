@@ -45,6 +45,21 @@ def test_database_path_reads_prefixed_environment(monkeypatch: MonkeyPatch, tmp_
     assert settings.database_path == database_path
 
 
+def test_t_invest_token_is_secret_and_empty_is_missing(monkeypatch: MonkeyPatch) -> None:
+    settings = Settings(_env_file=None)
+    assert settings.t_invest_read_only_token is None
+
+    monkeypatch.setenv("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "test-token")
+    loaded = Settings(_env_file=None)
+    assert loaded.t_invest_read_only_token is not None
+    assert loaded.t_invest_read_only_token.get_secret_value() == "test-token"
+    assert "test-token" not in repr(loaded)
+    assert "test-token" not in str(loaded)
+
+    monkeypatch.setenv("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "   ")
+    assert Settings(_env_file=None).t_invest_read_only_token is None
+
+
 def test_frontend_dist_reads_prefixed_environment(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     frontend_dist = tmp_path / "synthetic-dist"
     monkeypatch.setenv("HERMES_FINANCE_FRONTEND_DIST", str(frontend_dist))

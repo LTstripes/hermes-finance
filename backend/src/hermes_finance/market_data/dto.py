@@ -9,6 +9,7 @@ from enum import StrEnum
 from hermes_finance.domain import InstrumentType
 
 MOEX_ISS_PROVIDER = "moex_iss"
+T_INVEST_PROVIDER = "t_invest"
 
 RUB_COMPATIBLE_UNITS = frozenset({"RUB", "SUR", "RUR"})
 
