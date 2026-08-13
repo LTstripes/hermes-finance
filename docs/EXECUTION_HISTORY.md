@@ -161,6 +161,19 @@ For an A/B task insert a `Candidates` subsection before `Selected candidate` and
 - **Decision notes:** accepted mapping management inside the existing Instruments workflow and an explicit `Обновить котировки` preview in the monthly positions workflow. No discovery endpoint, auto-mapping, apply, snapshot mutation, provenance write, startup/background refresh or broad frontend redesign was introduced. Legacy `moex_secid` remains only a labeled hint, never accepted identity.
 - **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`.
 
+### 0.4.0 / R04-05A — provider-neutral market identity refactor
+
+- **Accepted:** 2026-08-13
+- **Implemented by:** Hermes/Grok — Grok 4.6
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Baseline:** `r04` @ `83ae29a6fab40516378251e40b1d6171aac159eb`
+- **Candidate:** `r04-05a-grok` @ `72d2dd461ae97fb3937de2dca620e7d88b104f96`.
+- **Integrated into:** `r04` @ `72d2dd461ae97fb3937de2dca620e7d88b104f96` by owner-authorized fast-forward performed by Hermes/Grok after the GitHub connector safety layer blocked direct integrator ref/PR mutations.
+- **Verification:** reviewer inspected the remote diff and exact baseline relationship, including the provider-neutral DTO/storage schema, strict MOEX codec, mapping/verify path, preview identity deduplication, frontend mapping conversion and migration safety. Worker-reported verification: full backend `660 passed`, full frontend `209 passed` across 40 files, Ruff check/format, frontend lint, `tsc -b && vite build`, `git diff --check` and privacy check passed. Whole-checkout Biome format remained noisy because the Windows checkout uses CRLF; touched-file content checks were otherwise green.
+- **Iterations/blockers:** no code blocker after implementation review. Integration required a narrow follow-up because GitHub connector mutations were safety-blocked; exact baseline/candidate SHAs were rechecked and a non-force fast-forward completed successfully.
+- **Decision notes:** replaced the MOEX-shaped canonical identity with `provider + provider_instrument_id + optional provider_venue_id`; MOEX-specific `engine/market/boardid/secid` semantics are isolated behind a strict codec. Existing MOEX mappings migrate deterministically to `SECID + engine/market/boardid` venue serialization, excluded states are preserved, and generic identities without venue are structurally supported. T-Invest networking/token handling and R04-06 apply/provenance were intentionally not started.
+- **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/adr/0010-market-and-broker-provider-strategy.md`.
+
 ---
 
 ## Historical backfill
