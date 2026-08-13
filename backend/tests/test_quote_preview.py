@@ -3,6 +3,7 @@
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -81,21 +82,6 @@ class ScriptedProvider:
 
     def fetch_quotes(self, items: list[tuple[MarketIdentity, date]]) -> list[QuoteResult]:
         return [self.fetch_quote(identity, target_date) for identity, target_date in items]
-
-
-class RaisingFetchQuoteProvider:
-    def __init__(self) -> None:
-        self.fetch_calls: list[tuple[MarketIdentity, date]] = []
-
-    def discover_candidates(self, **kwargs: object) -> object:
-        raise AssertionError("preview must not call discover_candidates")
-
-    def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
-        self.fetch_calls.append((identity, target_date))
-        raise RuntimeError("socket exploded")
-
-    def fetch_quotes(self, items: list[tuple[MarketIdentity, date]]) -> list[QuoteResult]:
-        raise RuntimeError("batch transport exploded")
 
 
 class ForbiddenProvider:
@@ -523,11 +509,88 @@ def test_mixed_batch_and_provider_exceptions_are_per_row(tmp_path: Path) -> None
         result = preview_market_quotes(session, month.id, provider=mixed, today=TODAY)
         assert {row.status for row in result.rows} == {QuoteStatus.OK, QuoteStatus.NETWORK_ERROR}
         assert result.batch_error is None
-        exploding = RaisingFetchQuoteProvider()
-        failed = preview_market_quotes(session, month.id, provider=exploding, today=TODAY)
-        assert all(row.status is QuoteStatus.NETWORK_ERROR for row in failed.rows)
-        assert failed.batch_error == "market-data provider network error"
-        assert exploding.fetch_calls
+        ok_row = next(row for row in result.rows if row.status is QuoteStatus.OK)
+        failed_row = next(row for row in result.rows if row.status is QuoteStatus.NETWORK_ERROR)
+        assert ok_row.proposed_market_price_kopecks == 1500
+        assert failed_row.proposed_market_price_kopecks is None
+        assert failed_row.message == "timeout"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("socket exploded"), AssertionError("contract broke")]
+)
+def test_unexpected_provider_raise_is_not_network_error(error: Exception, tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2026, month=8, snapshot_date=SNAPSHOT_DATE)
+        account = create_account(
+            session, name="Synthetic Broker", account_type=AccountType.BROKERAGE
+        )
+        stock = create_instrument(session, name="Stock", instrument_type=InstrumentType.STOCK)
+        set_accepted_mapping(session, stock.id, **_identity_kwargs(STOCK_IDENTITY))
+        create_position_snapshot(
+            session,
+            reporting_month_id=month.id,
+            account_id=account.id,
+            instrument_id=stock.id,
+            quantity=1,
+            average_cost_per_unit="10.00",
+            market_price_per_unit="10.00",
+            price_date=date(2026, 8, 1),
+        )
+
+        class ExplodingProvider:
+            def discover_candidates(self, **kwargs: object) -> object:
+                raise AssertionError("preview must not call discover_candidates")
+
+            def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
+                raise AssertionError("preview must use fetch_quotes")
+
+            def fetch_quotes(self, items: object) -> list[QuoteResult]:
+                raise error
+
+        with pytest.raises(type(error), match=str(error)):
+            preview_market_quotes(session, month.id, provider=ExplodingProvider(), today=TODAY)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_wrong_fetch_quotes_count_is_provider_contract_error(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2026, month=8, snapshot_date=SNAPSHOT_DATE)
+        account = create_account(
+            session, name="Synthetic Broker", account_type=AccountType.BROKERAGE
+        )
+        stock = create_instrument(session, name="Stock", instrument_type=InstrumentType.STOCK)
+        set_accepted_mapping(session, stock.id, **_identity_kwargs(STOCK_IDENTITY))
+        create_position_snapshot(
+            session,
+            reporting_month_id=month.id,
+            account_id=account.id,
+            instrument_id=stock.id,
+            quantity=1,
+            average_cost_per_unit="10.00",
+            market_price_per_unit="10.00",
+            price_date=date(2026, 8, 1),
+        )
+
+        class ShortProvider:
+            def discover_candidates(self, **kwargs: object) -> object:
+                raise AssertionError("preview must not call discover_candidates")
+
+            def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
+                raise AssertionError("preview must use fetch_quotes")
+
+            def fetch_quotes(self, items: object) -> list[QuoteResult]:
+                return []
+
+        with pytest.raises(RuntimeError, match="result count"):
+            preview_market_quotes(session, month.id, provider=ShortProvider(), today=TODAY)
     finally:
         session.close()
         database.engine.dispose()

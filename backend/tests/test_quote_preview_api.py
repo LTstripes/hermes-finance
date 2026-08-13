@@ -316,3 +316,37 @@ def test_startup_and_unmapped_do_not_call_provider(tmp_path: Path) -> None:
             assert preview.json()["rows"][0]["status"] == "unmapped"
     finally:
         database.engine.dispose()
+
+
+def test_unexpected_provider_raise_is_not_successful_preview(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "preview_raise.db")
+    Base.metadata.create_all(database.engine)
+
+    class ExplodingProvider:
+        def discover_candidates(self, **kwargs: object) -> object:
+            raise AssertionError("preview API must not discover candidates")
+
+        def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
+            raise AssertionError("preview API must use fetch_quotes")
+
+        def fetch_quotes(self, items: object) -> list[QuoteResult]:
+            raise RuntimeError("socket exploded")
+
+    application = create_app(database, market_data_provider=ExplodingProvider())
+    application.state.quote_preview_clock = lambda: TODAY
+    try:
+        with TestClient(application) as client:
+            month = _create_month(client)
+            account = _create_account(client)
+            instrument = _create_instrument(client, "Mapped Stock")
+            _map(client, instrument["id"], STOCK_IDENTITY)
+            _position(
+                client,
+                month_id=month["id"],
+                account_id=account["id"],
+                instrument_id=instrument["id"],
+            )
+            with pytest.raises(RuntimeError, match="socket exploded"):
+                client.post(f"/api/months/{month['id']}/quote-preview")
+    finally:
+        database.engine.dispose()

@@ -195,32 +195,15 @@ def _fetch_quotes(
 ) -> dict[tuple[str, str, str, str, str], QuoteResult]:
     if not items:
         return {}
-
-    results: list[QuoteResult] | None
-    try:
-        fetched = provider.fetch_quotes(items)
-        results = list(fetched) if len(fetched) == len(items) else None
-    except Exception:
-        results = None
-
-    if results is None:
-        results = []
-        for identity, target_date in items:
-            try:
-                results.append(provider.fetch_quote(identity, target_date))
-            except Exception:
-                results.append(
-                    QuoteFailure(
-                        status=QuoteStatus.NETWORK_ERROR,
-                        message="market-data provider failed",
-                        identity=identity,
-                    )
-                )
-
-    mapped: dict[tuple[str, str, str, str, str], QuoteResult] = {}
-    for (identity, _target), result in zip(items, results, strict=True):
-        mapped[_identity_key(identity)] = result
-    return mapped
+    fetched = list(provider.fetch_quotes(items))
+    if len(fetched) != len(items):
+        raise RuntimeError(
+            "market-data provider returned a result count that does not match the request"
+        )
+    return {
+        _identity_key(identity): result
+        for (identity, _target), result in zip(items, fetched, strict=True)
+    }
 
 
 def preview_market_quotes(
