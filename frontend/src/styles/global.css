@@ -1451,6 +1451,8 @@ th.num {
 .investment-result__tables {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .investment-result__table {

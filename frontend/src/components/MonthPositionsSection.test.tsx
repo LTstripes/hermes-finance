@@ -75,6 +75,7 @@ function setup(
   overrides: Record<string, (init?: RequestInit) => Promise<Response> | Response> = {},
   positions: unknown[] = [],
   instruments: unknown[] = [instrument],
+  readOnly = false,
 ) {
   const fetchMock = mockFetchRouter({
     "GET /api/accounts": () => jsonResponse([account]),
@@ -83,7 +84,7 @@ function setup(
     ...overrides,
   });
   vi.stubGlobal("fetch", fetchMock);
-  render(<MonthPositionsSection defaultPriceDate="2031-01-31" monthId={7} readOnly={false} />);
+  render(<MonthPositionsSection defaultPriceDate="2031-01-31" monthId={7} readOnly={readOnly} />);
   return fetchMock;
 }
 
@@ -148,7 +149,16 @@ describe("MonthPositionsSection G03 component contract", () => {
     const table = await screen.findByRole("table");
 
     expect(table).not.toHaveTextContent("Оценка на");
-    expect(table).not.toHaveTextContent("Вручную");
+    expect(table).toHaveTextContent("Источник: Вручную");
+  });
+
+  it("keeps same-date manual source visible in read-only presentation", async () => {
+    setup({}, [{ ...position, price_source: "manual" }], [instrument], true);
+    const table = await screen.findByRole("table");
+
+    expect(table).not.toHaveTextContent("Оценка на");
+    expect(table).toHaveTextContent("Источник: Вручную");
+    expect(screen.getByRole("button", { name: "Изменить" })).toBeDisabled();
   });
 
   it("exposes differing price metadata as secondary detail", async () => {

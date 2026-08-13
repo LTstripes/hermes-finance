@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import type { Goal, GoalCreatePayload, GoalUpdatePayload } from "../api/goals";
 import {
@@ -18,11 +18,21 @@ type Props = {
   error: string | null;
   onCancel: () => void;
   onSubmit: (payload: GoalCreatePayload | GoalUpdatePayload) => Promise<void>;
+  restoreFocusRef?: { current: HTMLElement | null };
 };
 
-export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: Props) {
+export function GoalFormDialog({
+  open,
+  goal,
+  busy,
+  error,
+  onCancel,
+  onSubmit,
+  restoreFocusRef,
+}: Props) {
   const titleId = useId();
   const descriptionId = useId();
+  const restoreFocusTargetRef = useRef<HTMLElement | null>(null);
   const [name, setName] = useState("");
   const [goalType, setGoalType] = useState("passive_income");
   const [targetValue, setTargetValue] = useState("");
@@ -46,6 +56,19 @@ export function GoalFormDialog({ open, goal, busy, error, onCancel, onSubmit }: 
     setNotes(goal?.notes ?? "");
     setLocalError(null);
   }, [open, goal]);
+
+  useEffect(() => {
+    if (!open) return;
+    restoreFocusTargetRef.current =
+      restoreFocusRef?.current ??
+      (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    return () => {
+      if (restoreFocusTargetRef.current?.isConnected) {
+        restoreFocusTargetRef.current.focus();
+      }
+      restoreFocusTargetRef.current = null;
+    };
+  }, [open, restoreFocusRef]);
 
   useEffect(() => {
     if (!open) return;

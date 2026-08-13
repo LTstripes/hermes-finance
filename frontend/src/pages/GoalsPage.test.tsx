@@ -241,6 +241,19 @@ describe("GoalsPage R03-09 cards", () => {
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(2, { is_main: true }));
   });
 
+  it("returns focus to the create trigger after Escape closes the goal dialog", async () => {
+    const user = userEvent.setup();
+    render(<GoalsPage />);
+
+    const create = await screen.findByRole("button", { name: "Создать цель" });
+    await user.click(create);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(create).toHaveFocus();
+  });
+
   it("keeps edit visible and destructive actions unavailable for the main goal", async () => {
     const user = userEvent.setup();
     render(<GoalsPage />);

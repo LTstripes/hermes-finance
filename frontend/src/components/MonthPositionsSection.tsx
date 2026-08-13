@@ -546,11 +546,13 @@ export function MonthPositionsSection({
                             }
                           />
                         </div>
-                      ) : row.price_date !== defaultPriceDate ? (
+                      ) : (
                         <>
-                          <div>Оценка на {formatDate(row.price_date)}</div>
+                          {row.price_date !== defaultPriceDate ? (
+                            <div>Оценка на {formatDate(row.price_date)}</div>
+                          ) : null}
                           <div className="muted tiny">
-                            {labelOf(PRICE_SOURCE_LABELS, row.price_source)}
+                            Источник: {labelOf(PRICE_SOURCE_LABELS, row.price_source)}
                           </div>
                           {row.accrued_interest ? (
                             <div className="muted tiny">
@@ -558,12 +560,6 @@ export function MonthPositionsSection({
                             </div>
                           ) : null}
                         </>
-                      ) : row.accrued_interest ? (
-                        <div className="muted tiny">
-                          НКД {formatMoney(moneyAmount(row.accrued_interest))}
-                        </div>
-                      ) : (
-                        <span className="muted tiny">—</span>
                       )}
                     </Td>
                     <Td>
