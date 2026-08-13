@@ -152,6 +152,11 @@
   display: none !important;
 }
 
+.month-workspace .overflow-menu__menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
 @media (max-width: 1180px) {
   .month-section-nav {
     grid-template-columns: repeat(4, minmax(0, 1fr));

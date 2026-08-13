@@ -167,7 +167,7 @@ export function CapitalCompositionChart({
             domain={mode === "share" ? [0, "auto"] : ["auto", "auto"]}
             tickFormatter={
               mode === "amount"
-                ? (value: number) => `${Math.round(value).toLocaleString("ru-RU")} ₽`
+                ? (value: number) => formatMoney(String(Math.round(value)))
                 : axisPercent
             }
             tickLine={false}

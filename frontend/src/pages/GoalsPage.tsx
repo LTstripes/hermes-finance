@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { formatApiError } from "../api/client";
 import {
@@ -60,6 +60,7 @@ export function GoalsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Goal | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const dialogRestoreFocusRef = useRef<HTMLElement | null>(null);
 
   const loadGoals = useCallback(async (signal?: AbortSignal) => {
     setGoalsLoading(true);
@@ -143,13 +144,15 @@ export function GoalsPage() {
     if (selectedMonthId != null) await loadSummary(selectedMonthId);
   }
 
-  function openCreate() {
+  function openCreate(event: MouseEvent<HTMLButtonElement>) {
+    dialogRestoreFocusRef.current = event.currentTarget;
     setEditingGoal(null);
     setFormError(null);
     setDialogOpen(true);
   }
 
-  function openEdit(goal: Goal) {
+  function openEdit(goal: Goal, trigger: HTMLButtonElement) {
+    dialogRestoreFocusRef.current = trigger;
     setEditingGoal(goal);
     setFormError(null);
     setDialogOpen(true);
@@ -343,6 +346,7 @@ export function GoalsPage() {
         }}
         onSubmit={handleSubmit}
         open={dialogOpen}
+        restoreFocusRef={dialogRestoreFocusRef}
       />
 
       <ConfirmDialog
@@ -368,7 +372,7 @@ type GoalCardProps = {
   summary: GoalSummary | undefined;
   summaryLoading: boolean;
   compact?: boolean;
-  onEdit: (goal: Goal) => void;
+  onEdit: (goal: Goal, trigger: HTMLButtonElement) => void;
   onDelete: (goal: Goal) => void;
   onPatch: (goal: Goal, payload: GoalUpdatePayload) => Promise<void>;
 };
@@ -407,7 +411,11 @@ function GoalCard({
         </div>
 
         <div className="goal-card__actions">
-          <Button onClick={() => onEdit(goal)} size="sm" variant="secondary">
+          <Button
+            onClick={(event) => onEdit(goal, event.currentTarget)}
+            size="sm"
+            variant="secondary"
+          >
             Изменить
           </Button>
           {hasOverflowActions ? (

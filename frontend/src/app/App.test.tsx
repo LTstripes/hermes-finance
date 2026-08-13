@@ -630,8 +630,8 @@ describe("App", () => {
     await user.selectOptions(screen.getByLabelText("Инструмент позиции"), "10");
     await user.clear(screen.getByLabelText("Количество"));
     await user.type(screen.getByLabelText("Количество"), "10");
-    await user.clear(screen.getByLabelText("Средняя стоимость"));
-    await user.type(screen.getByLabelText("Средняя стоимость"), "1000");
+    await user.clear(screen.getByLabelText("Средняя цена приобретения"));
+    await user.type(screen.getByLabelText("Средняя цена приобретения"), "1000");
     await user.clear(screen.getByLabelText("Рыночная цена"));
     await user.type(screen.getByLabelText("Рыночная цена"), "1250");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));

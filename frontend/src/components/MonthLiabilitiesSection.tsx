@@ -20,6 +20,8 @@ import {
   Table,
   Td,
   Th,
+  OverflowMenu,
+  OverflowMenuItem,
 } from "./ui";
 import { formatMoney } from "../lib/format";
 import { DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
@@ -185,13 +187,13 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
         {debts.length === 0 ? (
           <EmptyState description="Долгов нет." inline title="Пусто" />
         ) : (
-          <Table>
+          <Table className="month-debts-table">
             <thead>
               <tr>
                 <Th>Название</Th>
                 <Th>Тип</Th>
                 <Th numeric>Баланс</Th>
-                <Th>В ликвидном капитале</Th>
+                <Th>Учёт</Th>
                 <Th>Действия</Th>
               </tr>
             </thead>
@@ -201,17 +203,21 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                   <Td>{row.name}</Td>
                   <Td>{labelOf(DEBT_TYPE_LABELS, row.debt_type)}</Td>
                   <Td numeric>{formatMoney(moneyAmount(row.current_balance))}</Td>
-                  <Td>{row.include_in_liquid_capital ? "да" : "нет"}</Td>
                   <Td>
-                    <Button
-                      disabled={busy || readOnly}
-                      onClick={() => setDelDebt(row)}
-                      size="sm"
-                      type="button"
-                      variant="danger"
-                    >
-                      Удал.
-                    </Button>
+                    <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
+                      {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    <OverflowMenu label={`Действия для долга «${row.name}»`}>
+                      <OverflowMenuItem
+                        danger
+                        disabled={busy || readOnly}
+                        onClick={() => setDelDebt(row)}
+                      >
+                        Удалить
+                      </OverflowMenuItem>
+                    </OverflowMenu>
                   </Td>
                 </tr>
               ))}
@@ -285,7 +291,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
         {properties.length === 0 ? (
           <EmptyState description="Объектов нет." inline title="Пусто" />
         ) : (
-          <Table>
+          <Table className="month-property-table">
             <thead>
               <tr>
                 <Th>Объект</Th>
@@ -303,15 +309,15 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                   <Td numeric>{formatMoney(moneyAmount(row.mortgage_balance))}</Td>
                   <Td numeric>{formatMoney(moneyAmount(row.monthly_payment))}</Td>
                   <Td>
-                    <Button
-                      disabled={busy || readOnly}
-                      onClick={() => setDelProp(row)}
-                      size="sm"
-                      type="button"
-                      variant="danger"
-                    >
-                      Удал.
-                    </Button>
+                    <OverflowMenu label={`Действия для объекта «${row.name}»`}>
+                      <OverflowMenuItem
+                        danger
+                        disabled={busy || readOnly}
+                        onClick={() => setDelProp(row)}
+                      >
+                        Удалить
+                      </OverflowMenuItem>
+                    </OverflowMenu>
                   </Td>
                 </tr>
               ))}

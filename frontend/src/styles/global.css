@@ -943,6 +943,22 @@ a.btn {
   font-size: 0.86rem;
 }
 
+.month-positions-table {
+  min-width: 980px;
+}
+
+.month-debts-table {
+  min-width: 620px;
+}
+
+.month-property-table {
+  min-width: 680px;
+}
+
+.position-details {
+  min-width: 126px;
+}
+
 .table th {
   padding: 0 0 10px;
   border-bottom: 1px solid var(--line);
@@ -1435,6 +1451,8 @@ th.num {
 .investment-result__tables {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .investment-result__table {

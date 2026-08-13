@@ -11,6 +11,7 @@ import {
 import { DiagnosticsPanel } from "../components/RuntimeStatus";
 import { TaxBracketsPanel } from "../components/TaxBracketsPanel";
 import { Badge, Button, ErrorState, Field, Input, LoadingState, Panel } from "../components/ui";
+import { formatMoney } from "../lib/format";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -151,7 +152,7 @@ export function SettingsPage() {
         >
           <div className="stack-8">
             <p>
-              <strong>{settings.passive_income_goal.amount}</strong>{" "}
+              <strong>{formatMoney(settings.passive_income_goal.amount)}</strong>{" "}
               <Badge tone="info">{settings.passive_income_goal.currency}</Badge>
             </p>
             <p className="muted">
