@@ -33,6 +33,7 @@ import {
   Td,
   Th,
 } from "../components/ui";
+import { formatMoney } from "../lib/format";
 import { ACCOUNT_TYPE_LABELS, INSTRUMENT_TYPE_LABELS, labelOf } from "../lib/labels";
 
 const ACCOUNT_STATUS_LABELS: Record<string, string> = {
@@ -336,7 +337,9 @@ export function AccountsPage() {
                   <strong>{instrument.name}</strong>
                   {instrument.nominal_value ? (
                     <span className="muted tiny">
-                      Номинал: {instrument.nominal_value.amount} {instrument.nominal_value.currency}
+                      Номинал: {formatMoney(instrument.nominal_value.amount, {
+                        currency: instrument.nominal_value.currency === "RUB" ? "₽" : instrument.nominal_value.currency,
+                      })}
                     </span>
                   ) : null}
                 </div>

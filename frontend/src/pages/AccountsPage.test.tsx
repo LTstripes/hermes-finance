@@ -139,6 +139,7 @@ describe("AccountsPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Инструменты (1)" }));
     expect(await screen.findByText("ОФЗ 26248")).toBeInTheDocument();
+    expect(screen.getByText(/Номинал: 1\s*000\s*₽/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Деактивировать" }));
 
     await waitFor(() =>

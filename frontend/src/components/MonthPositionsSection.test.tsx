@@ -98,7 +98,7 @@ describe("MonthPositionsSection G03 component contract", () => {
 
     await screen.findByText("Позиции");
     await user.type(screen.getByLabelText("Количество"), "10");
-    await user.type(screen.getByLabelText("Средняя стоимость"), "1000.00");
+    await user.type(screen.getByLabelText("Средняя цена приобретения"), "1000.00");
     await user.type(screen.getByLabelText("Рыночная цена"), "1100.00");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
 
@@ -143,6 +143,31 @@ describe("MonthPositionsSection G03 component contract", () => {
     expect(table).toHaveTextContent(/1\s100\s₽/);
   });
 
+  it("keeps the snapshot date quiet", async () => {
+    setup({}, [position]);
+    const table = await screen.findByRole("table");
+
+    expect(table).not.toHaveTextContent("Оценка на");
+    expect(table).not.toHaveTextContent("Вручную");
+  });
+
+  it("exposes differing price metadata as secondary detail", async () => {
+    setup({}, [{ ...position, price_date: "2031-02-01", price_source: "moex" }]);
+    const table = await screen.findByRole("table");
+    expect(table).toHaveTextContent("Оценка на 01.02.2031");
+    expect(table).toHaveTextContent("Мосбиржа");
+  });
+
+  it("keeps destructive position actions behind a confirmed overflow path", async () => {
+    setup({}, [position]);
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Действия для позиции Synthetic Bond" }));
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Удал." })).toBeNull();
+  });
+
   it("formats whole quantities without persistence precision noise", async () => {
     setup({}, [{ ...position, quantity: "64.000000" }]);
 
@@ -157,7 +182,7 @@ describe("MonthPositionsSection G03 component contract", () => {
 
     await screen.findByText("Позиции");
     await user.type(screen.getByLabelText("Количество"), "0.5");
-    await user.type(screen.getByLabelText("Средняя стоимость"), "1000.00");
+    await user.type(screen.getByLabelText("Средняя цена приобретения"), "1000.00");
     await user.type(screen.getByLabelText("Рыночная цена"), "1100.00");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
 
@@ -180,7 +205,7 @@ describe("MonthPositionsSection G03 component contract", () => {
 
     await screen.findByText("Позиции");
     await user.type(screen.getByLabelText("Количество"), "0.5");
-    await user.type(screen.getByLabelText("Средняя стоимость"), "1000.00");
+    await user.type(screen.getByLabelText("Средняя цена приобретения"), "1000.00");
     await user.type(screen.getByLabelText("Рыночная цена"), "1100.00");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
 

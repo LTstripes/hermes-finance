@@ -49,7 +49,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Настройки")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("ru-RU")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Europe/Moscow")).toBeInTheDocument();
-    expect(screen.getByText("100000.00")).toBeInTheDocument();
+    expect(screen.getByText(/100\s*000\s*₽/)).toBeInTheDocument();
     expect(screen.getByText(/текущая цель пассивного дохода/i)).toBeInTheDocument();
     expect(screen.queryByText(/совместим/i)).toBeNull();
     expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute("href", "/goals");

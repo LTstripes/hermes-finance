@@ -18,6 +18,8 @@ import {
   Table,
   Td,
   Th,
+  OverflowMenu,
+  OverflowMenuItem,
 } from "./ui";
 import { formatDate, formatMoney, formatQuantity } from "../lib/format";
 import {
@@ -437,17 +439,17 @@ export function MonthPositionsSection({
             title="Пусто"
           />
         ) : (
-          <Table>
+          <Table className="month-positions-table">
             <thead>
               <tr>
                 <Th>Счёт</Th>
                 <Th>Инструмент</Th>
                 <Th numeric>Количество</Th>
-                <Th numeric>Средняя стоимость</Th>
+                <Th numeric>Средняя цена приобретения</Th>
                 <Th numeric>Цена</Th>
                 <Th numeric>Рыночная стоимость</Th>
                 <Th numeric>Результат</Th>
-                <Th>Дата и источник цены</Th>
+                <Th>Детали оценки</Th>
                 <Th>Действия</Th>
               </tr>
             </thead>
@@ -544,9 +546,9 @@ export function MonthPositionsSection({
                             }
                           />
                         </div>
-                      ) : (
+                      ) : row.price_date !== defaultPriceDate ? (
                         <>
-                          <div>{formatDate(row.price_date)}</div>
+                          <div>Оценка на {formatDate(row.price_date)}</div>
                           <div className="muted tiny">
                             {labelOf(PRICE_SOURCE_LABELS, row.price_source)}
                           </div>
@@ -556,6 +558,12 @@ export function MonthPositionsSection({
                             </div>
                           ) : null}
                         </>
+                      ) : row.accrued_interest ? (
+                        <div className="muted tiny">
+                          НКД {formatMoney(moneyAmount(row.accrued_interest))}
+                        </div>
+                      ) : (
+                        <span className="muted tiny">—</span>
                       )}
                     </Td>
                     <Td>
@@ -603,17 +611,19 @@ export function MonthPositionsSection({
                               size="sm"
                               type="button"
                             >
-                              Изм.
+                              Изменить
                             </Button>
-                            <Button
-                              disabled={busy || readOnly}
-                              onClick={() => setPendingDelete(row)}
-                              size="sm"
-                              type="button"
-                              variant="danger"
+                            <OverflowMenu
+                              label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
                             >
-                              Удал.
-                            </Button>
+                              <OverflowMenuItem
+                                danger
+                                disabled={busy || readOnly}
+                                onClick={() => setPendingDelete(row)}
+                              >
+                                Удалить
+                              </OverflowMenuItem>
+                            </OverflowMenu>
                           </>
                         )}
                       </div>
@@ -743,7 +753,7 @@ export function MonthPositionsSection({
                     value={draft.quantity}
                   />
                 </Field>
-                <Field htmlFor="pos-avg" label="Средняя стоимость">
+                <Field htmlFor="pos-avg" label="Средняя цена приобретения">
                   <Input
                     className="input--money"
                     id="pos-avg"
