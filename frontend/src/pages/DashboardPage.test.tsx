@@ -43,7 +43,11 @@ const months = [
   },
 ];
 
-function dashboard(monthId: number, warning: string | null = null) {
+function dashboard(
+  monthId: number,
+  warning: string | null = null,
+  historyStartMonth: string | null = null,
+) {
   const month = months.find((row) => row.id === monthId) ?? months[0];
   return {
     month,
@@ -54,6 +58,8 @@ function dashboard(monthId: number, warning: string | null = null) {
       passive_income_average: { amount: "85200.00", currency: "RUB" },
       passive_income_average_months: 6,
       passive_income_average_complete: false,
+      passive_income_history_start_month: historyStartMonth,
+      passive_income_average_months_used: historyStartMonth ? ["2031-05", "2031-06"] : [],
       goal_progress_pct: "68.0",
       goal_target: { amount: "100000.00", currency: "RUB" },
       mandatory_expenses: { amount: "150000.00", currency: "RUB" },
@@ -165,5 +171,15 @@ describe("DashboardPage R03-04 semantics", () => {
     expect(screen.queryByText("Распределение активов")).toBeNull();
     expect(screen.queryByText("Результат по классам и счетам")).toBeNull();
     expect(screen.getAllByText("…").length).toBeGreaterThan(0);
+  });
+
+  it("presents backend-provided passive-income coverage and boundary metadata", async () => {
+    setupDashboard(() => jsonResponse(dashboard(2, null, "2031-05")));
+
+    const overview = await screen.findByRole("region", { name: "Ключевое состояние" });
+    expect(await within(overview).findByText(/2031-05/)).toBeInTheDocument();
+    expect(
+      await within(overview).findByText(/Учтено 6 закрытых месяцев из 12/),
+    ).toBeInTheDocument();
   });
 });
