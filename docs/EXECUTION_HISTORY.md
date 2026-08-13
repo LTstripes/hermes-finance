@@ -148,6 +148,19 @@ For an A/B task insert a `Candidates` subsection before `Selected candidate` and
 - **Decision notes:** accepted explicit owner-triggered read-only preview for a reporting month. `target_date=min(snapshot_date, Moscow today)` is sourced from ADR 0009; stale proposals remain visible but are not apply-eligible by default; closed months may preview but never apply. No snapshot/mapping/provenance writes, UI, background fetch, FX or NKD automation were introduced.
 - **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`, PR #23.
 
+### 0.4.0 / R04-05 — mapping + quote refresh preview UI
+
+- **Accepted:** 2026-08-13
+- **Implemented by:** Hermes/Grok — Grok 4.6
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Baseline:** `r04` @ `52ccad0f378bc5350619282404c68531ceea577e`
+- **Candidate:** `r04-05-grok` @ `75935451dea4d1b3cd0f295f126591d030e776fe` (initial implementation `ed297ad0026172a3eb1cd54d337765b152bfd3b8`, reviewer follow-up `75935451dea4d1b3cd0f295f126591d030e776fe`).
+- **Integrated into:** `r04` @ `75935451dea4d1b3cd0f295f126591d030e776fe` by fast-forward; this execution-history commit advances the branch afterward without changing R04-05 implementation.
+- **Verification:** reviewer inspected the remote implementation and follow-up diffs, including explicit-only quote preview invocation, mapping state/actions, stale/closed/manual presentation, absence of apply behavior and the frontend money/presentation boundary. Worker-reported final verification: targeted AccountsPage tests `10/10`, full frontend suite `207/207`, lint, touched-file format, `tsc -b && vite build`, `git diff --check` and privacy check all passed. Candidate-branch CI did not run because project workflows are PR/main scoped.
+- **Iterations/blockers:** one reviewer blocker: failed mapping GETs were initially swallowed and rendered as `unmapped`, which could misrepresent an existing accepted mapping. Follow-up made mapping load atomic with instrument load; failures now use the existing visible ErrorState/retry path, and the table fallback never exposes mapping actions without a loaded backend state.
+- **Decision notes:** accepted mapping management inside the existing Instruments workflow and an explicit `Обновить котировки` preview in the monthly positions workflow. No discovery endpoint, auto-mapping, apply, snapshot mutation, provenance write, startup/background refresh or broad frontend redesign was introduced. Legacy `moex_secid` remains only a labeled hint, never accepted identity.
+- **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`.
+
 ---
 
 ## Historical backfill
