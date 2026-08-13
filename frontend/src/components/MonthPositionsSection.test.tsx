@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -223,5 +223,142 @@ describe("MonthPositionsSection G03 component contract", () => {
       ([input, init]) => String(input) === "/api/positions" && init?.method === "POST",
     );
     expect(JSON.parse(String(post?.[1]?.body)).quantity).toBe("0.5");
+  });
+
+  it("does not request quote preview until the owner clicks refresh", async () => {
+    const fetchMock = setup({}, [position]);
+    await screen.findByText("Позиции");
+    expect(screen.getByRole("button", { name: "Обновить котировки" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("quote-preview"))).toBe(
+      false,
+    );
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("market-mapping"))).toBe(
+      false,
+    );
+  });
+
+  it("requests preview only on the explicit action and never calls apply or snapshot write APIs", async () => {
+    const previewBody = {
+      reporting_month_id: 7,
+      month_status: "draft",
+      target_date: "2031-01-31",
+      month_editable: true,
+      batch_error: null,
+      rows: [
+        {
+          position_snapshot_id: 31,
+          account_id: 11,
+          instrument_id: 21,
+          instrument_name: "Synthetic Bond",
+          instrument_type: "stock",
+          mapping_state: "mapped",
+          identity: {
+            provider: "moex_iss",
+            engine: "stock",
+            market: "shares",
+            boardid: "TQBR",
+            secid: "SYNB",
+          },
+          current_market_price_per_unit: { amount: "1100.00", currency: "RUB" },
+          current_price_date: "2031-01-31",
+          current_price_source: "manual",
+          proposed_market_price_per_unit: { amount: "1110.00", currency: "RUB" },
+          proposed_price_date: "2031-01-30",
+          proposed_quote_kind: "last",
+          proposed_raw_price: "1110.00",
+          proposed_raw_price_basis: "R",
+          fetched_at_utc: "2031-01-31T12:00:00Z",
+          freshness_status: "ok",
+          status: "ok",
+          message: null,
+          apply_allowed: true,
+        },
+      ],
+    };
+    const fetchMock = setup(
+      {
+        "POST /api/months/7/quote-preview": () => jsonResponse(previewBody),
+      },
+      [position],
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    expect(await screen.findByText("Котировка получена")).toBeInTheDocument();
+    const previewCalls = fetchMock.mock.calls.filter(([input, init]) => {
+      return String(input) === "/api/months/7/quote-preview" && init?.method === "POST";
+    });
+    expect(previewCalls).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => String(input).includes("apply") || init?.method === "PATCH",
+      ),
+    ).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/months/7/quote-preview"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("keeps the closed-month manual edit path disabled but still allows preview", async () => {
+    setup(
+      {
+        "POST /api/months/7/quote-preview": () =>
+          jsonResponse({
+            reporting_month_id: 7,
+            month_status: "closed",
+            target_date: "2031-01-31",
+            month_editable: false,
+            batch_error: null,
+            rows: [],
+          }),
+      },
+      [position],
+      [instrument],
+      true,
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    expect(screen.getByRole("button", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Обновить котировки" })).toBeEnabled();
+    expect(screen.getByText(/нельзя изменить/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    expect(await screen.findByText("Предпросмотр пуст")).toBeInTheDocument();
+  });
+
+  it("blocks a second preview request while the first is in flight", async () => {
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetchMock = setup(
+      {
+        "POST /api/months/7/quote-preview": async () => {
+          await pending;
+          return jsonResponse({
+            reporting_month_id: 7,
+            month_status: "draft",
+            target_date: "2031-01-31",
+            month_editable: true,
+            batch_error: null,
+            rows: [],
+          });
+        },
+      },
+      [position],
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    expect(screen.getByRole("button", { name: "Обновляем…" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Обновляем…" }));
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input) === "/api/months/7/quote-preview"),
+    ).toHaveLength(1);
+    release?.();
+    expect(await screen.findByRole("button", { name: "Обновить котировки" })).toBeEnabled();
   });
 });

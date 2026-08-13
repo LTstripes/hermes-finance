@@ -340,6 +340,71 @@ export type InstrumentCreate = {
   manual_price_allowed?: boolean;
 };
 
+export type MarketMappingState = "unmapped" | "mapped" | "excluded";
+
+export type MarketIdentity = {
+  provider: string;
+  engine: string;
+  market: string;
+  boardid: string;
+  secid: string;
+};
+
+export type MarketIdentityWrite = MarketIdentity & {
+  isin?: string | null;
+};
+
+export type InstrumentMarketMapping = {
+  instrument_id: number;
+  state: MarketMappingState;
+  identity: MarketIdentity | null;
+  instrument_isin: string | null;
+  legacy_moex_secid: string | null;
+};
+
+export type QuotePreviewStatus =
+  | "ok"
+  | "stale"
+  | "unmapped"
+  | "excluded"
+  | "unsupported"
+  | "ambiguous"
+  | "unavailable"
+  | "network_error"
+  | "malformed_response";
+
+export type QuotePreviewRow = {
+  position_snapshot_id: number;
+  account_id: number;
+  instrument_id: number;
+  instrument_name: string;
+  instrument_type: string;
+  mapping_state: MarketMappingState;
+  identity: MarketIdentity | null;
+  current_market_price_per_unit: MoneyValue;
+  current_price_date: string;
+  current_price_source: string;
+  proposed_market_price_per_unit: MoneyValue | null;
+  proposed_price_date: string | null;
+  proposed_quote_kind: "last" | "history" | null;
+  proposed_raw_price: string | null;
+  proposed_raw_price_basis: "R" | "F" | null;
+  fetched_at_utc: string | null;
+  freshness_status: QuotePreviewStatus | null;
+  status: QuotePreviewStatus;
+  message: string | null;
+  apply_allowed: boolean;
+};
+
+export type QuotePreview = {
+  reporting_month_id: number;
+  month_status: ReportingMonthStatus;
+  target_date: string;
+  month_editable: boolean;
+  batch_error: string | null;
+  rows: QuotePreviewRow[];
+};
+
 export type PositionSnapshot = {
   id: number;
   reporting_month_id: number;

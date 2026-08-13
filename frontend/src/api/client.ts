@@ -158,6 +158,11 @@ const FIELD_LABELS: Record<string, string> = {
   target_value: "Целевое значение",
   target_date: "Срок",
   closed_month: "Закрытый месяц",
+  provider: "Провайдер",
+  engine: "Движок",
+  market: "Рынок",
+  boardid: "Режим торгов",
+  secid: "Код бумаги",
 };
 
 const MONTH_NAMES = [

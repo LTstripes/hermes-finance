@@ -4,7 +4,9 @@ import { createAccount, listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
-import type { Account, Instrument, PositionSnapshot } from "../api/types";
+import { previewMonthQuotes } from "../api/quotePreview";
+import type { Account, Instrument, PositionSnapshot, QuotePreview } from "../api/types";
+import { QuotePreviewPanel } from "./QuotePreviewPanel";
 import {
   Badge,
   Button,
@@ -110,6 +112,9 @@ export function MonthPositionsSection({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<PositionDraft | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PositionSnapshot | null>(null);
+  const [quotePreview, setQuotePreview] = useState<QuotePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const localDirty = draftTouched || newInstrumentTouched || editingId !== null;
 
@@ -168,6 +173,9 @@ export function MonthPositionsSection({
   );
 
   useEffect(() => {
+    setQuotePreview(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
@@ -354,6 +362,21 @@ export function MonthPositionsSection({
       setActionError(formatApiError(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleQuotePreview() {
+    if (previewLoading) {
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      setQuotePreview(await previewMonthQuotes(monthId));
+    } catch (err) {
+      setPreviewError(formatApiError(err));
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -821,6 +844,14 @@ export function MonthPositionsSection({
           </>
         ) : null}
       </Panel>
+
+      <QuotePreviewPanel
+        closedMonthHint={readOnly}
+        error={previewError}
+        loading={previewLoading}
+        onRefresh={() => void handleQuotePreview()}
+        preview={quotePreview}
+      />
 
       <ConfirmDialog
         busy={busy}
