@@ -103,6 +103,24 @@ For an A/B task insert a `Candidates` subsection before `Selected candidate` and
 - **Decision notes:** fixed board-aware MOEX identity, target-date quote semantics, stale/unavailable rules, exact bond percent-of-face conversion, manual fallback and no-background-refresh contract before implementation.
 - **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`
 
+### 0.4.0 / R04-02 — read-only MOEX ISS provider client (A/B)
+
+- **Accepted:** 2026-08-13
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Baseline:** `r04` @ `1c2e2f5b1d757e9697126ce9206a2768a570be2a`
+
+#### Candidates
+
+- **Hermes/Grok — Grok 4.6:** `r04-02-grok` @ `073e343ab6ffd5e9d4e24bd6c77dd3c808fe4ce3` (initial implementation `0a566e39e76517f01401289663b14e8ba1cbc0d8`, reviewer follow-ups `ff44f62dcb83e6d60ba83b0320b8210b9a4f268a` and `073e343ab6ffd5e9d4e24bd6c77dd3c808fe4ce3`). Worker-reported final verification: targeted market-data tests `25 passed`, full backend `605 passed`, Ruff check/format passed, `git diff --check` clean. Strongest points: provider-neutral boundary, reuse of project domain/money types, correct ISS query discovery, Decimal-preserving parse, board-aware RUB filtering, documented current-day LAST handling. Review iterations fixed current-session `price_date`, SUR/RUR compatibility, false ambiguity from non-RUB boards and independent bond `F` currency/FACEUNIT checks.
+- **OpenAI Codex — model unknown/not recorded:** `r04-02-codex` @ `acc42add6f6b035d3ca0fd75bf15df801c5ff787`. Worker-reported verification: targeted `13 passed`, full backend `593 passed`, Ruff/diff/privacy checks clean. Strongest points: genuine bounded parallel batch and no added runtime HTTP dependency. Material weaknesses from reviewer diff/source inspection: free-text discovery routed as exact security lookup, overloaded provider-specific identity metadata, possible false ambiguity, literal `RUB` handling rejected MOEX legacy RUB units, and current marketdata date assumptions mismatched documented shares payloads.
+
+- **Selected candidate:** Hermes/Grok — Grok 4.6, final accepted HEAD `073e343ab6ffd5e9d4e24bd6c77dd3c808fe4ce3`.
+- **Integrated into:** `r04` @ `073e343ab6ffd5e9d4e24bd6c77dd3c808fe4ce3` by fast-forward; later documentation-only commits advanced `r04` without changing the R04-02 implementation.
+- **Selection reason:** actual branch comparison favored the Grok implementation for ADR alignment, provider-boundary architecture, project-domain reuse and lower follow-on integration risk. Codex's parallel batch implementation was better in isolation but did not outweigh correctness/contract issues.
+- **Verification:** reviewer inspected both remote candidate diffs and the two Grok correction diffs against ADR 0009 and documented MOEX ISS payload semantics; exact remote candidate/integration refs were read back. Test counts above are worker-reported, not independently rerun by the reviewer.
+- **Known limitation/gate:** MOEX data-usage authorization/terms remain a separate gate before live apply/release; R04-02 itself is read-only and does not claim authorization.
+- **References:** `docs/adr/0009-moex-market-identity-and-quote-semantics.md`, `docs/releases/0.4.0.md`
+
 ---
 
 ## Historical backfill
