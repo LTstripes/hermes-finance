@@ -122,15 +122,13 @@ export function AccountsPage() {
     try {
       const rows = await listInstruments({}, signal);
       if (signal?.aborted) return;
-      setInstruments(rows);
-      const views = await Promise.all(
-        rows.map((row) => getInstrumentMapping(row.id, signal).catch(() => null)),
-      );
+      const views = await Promise.all(rows.map((row) => getInstrumentMapping(row.id, signal)));
       if (signal?.aborted) return;
       const next: Record<number, InstrumentMarketMapping> = {};
       for (const view of views) {
-        if (view) next[view.instrument_id] = view;
+        next[view.instrument_id] = view;
       }
+      setInstruments(rows);
       setMappings(next);
     } catch (error) {
       if (!signal?.aborted) {
@@ -196,6 +194,7 @@ export function AccountsPage() {
   }
 
   function openMapping(instrument: Instrument) {
+    if (!mappings[instrument.id]) return;
     setMappingInstrument(instrument);
     setMappingError(null);
   }
@@ -445,13 +444,19 @@ export function AccountsPage() {
               <Td>
                 {(() => {
                   const mapping = mappings[instrument.id];
-                  const state = mapping?.state ?? "unmapped";
+                  if (!mapping) {
+                    return (
+                      <span className="muted tiny" data-testid={`mapping-unknown-${instrument.id}`}>
+                        Состояние источника не загружено
+                      </span>
+                    );
+                  }
                   return (
                     <div className="stack-8">
-                      <Badge tone={mappingStateTone(state)}>
-                        {labelOf(MAPPING_STATE_LABELS, state)}
+                      <Badge tone={mappingStateTone(mapping.state)}>
+                        {labelOf(MAPPING_STATE_LABELS, mapping.state)}
                       </Badge>
-                      {mapping?.identity ? (
+                      {mapping.identity ? (
                         <span
                           className="muted tiny"
                           data-testid={`mapping-identity-${instrument.id}`}

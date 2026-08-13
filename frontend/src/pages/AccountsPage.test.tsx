@@ -218,6 +218,47 @@ describe("AccountsPage", () => {
     );
   });
 
+  it("does not treat a failed mapping GET as unmapped", async () => {
+    const user = userEvent.setup();
+    listInstrumentsMock.mockResolvedValue([instrument]);
+    getInstrumentMappingMock.mockRejectedValueOnce(
+      new ApiClientError(500, {
+        code: "internal_error",
+        message: "mapping lookup failed",
+        details: [],
+      }),
+    );
+    render(<AccountsPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Инструменты (0)" }));
+    expect(await screen.findByText("Не удалось загрузить инструменты")).toBeInTheDocument();
+    expect(
+      screen.getByText("Внутренняя ошибка приложения. Попробуй обновить данные."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Не настроен")).toBeNull();
+    expect(screen.queryByText("ОФЗ 26248")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Настроить источник" })).toBeNull();
+
+    getInstrumentMappingMock.mockResolvedValueOnce(
+      mappingView({
+        state: "mapped",
+        identity: {
+          provider: "moex_iss",
+          engine: "stock",
+          market: "bonds",
+          boardid: "TQOB",
+          secid: "SU26248",
+        },
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+
+    expect(await screen.findByText("ОФЗ 26248")).toBeInTheDocument();
+    expect(screen.getByText("Подключён")).toBeInTheDocument();
+    expect(screen.getByTestId("mapping-identity-10")).toHaveTextContent("SU26248");
+    expect(screen.queryByText("Не настроен")).toBeNull();
+  });
+
   it("shows a complete mapping and saves, clears, excludes and restores it", async () => {
     const user = userEvent.setup();
     const identity = {
