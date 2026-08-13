@@ -49,6 +49,21 @@ def lookback_start(target_date: date) -> date:
     return target_date - timedelta(days=MAX_LOOKBACK_DAYS)
 
 
+def current_last_price_date(*, session_date: date, target_date: date) -> date | None:
+    """Trading date for a live ISS ``LAST``.
+
+    Documented shares ``marketdata`` carries ``LAST`` / ``TIME`` / ``SYSTIME`` and
+    does not include ``TRADEDATE`` or ``LASTTRADEDATE``. ``TIME`` has no date;
+    ``SYSTIME`` is the ISS server clock, not the trade date. ``LAST`` is the last
+    trade of the current Moscow session, so ``price_date`` is that session date —
+    never SYSTIME and never the local HTTP fetch timestamp.
+    """
+
+    if session_date > target_date:
+        return None
+    return session_date
+
+
 def convert_to_kopecks(
     *,
     raw_price: Decimal,

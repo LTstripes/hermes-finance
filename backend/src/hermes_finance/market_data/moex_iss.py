@@ -38,13 +38,14 @@ from hermes_finance.market_data.normalize import (
     NormalizeError,
     classify_freshness,
     convert_to_kopecks,
+    current_last_price_date,
+    is_rub_compatible,
     lookback_start,
     resolve_quote_basis,
 )
 
 DEFAULT_BASE_URL: Final = "https://iss.moex.com"
 DEFAULT_TIMEOUT: Final = httpx2.Timeout(20.0, connect=5.0, read=10.0, write=10.0, pool=5.0)
-DEFAULT_MAX_CONCURRENCY: Final = 2
 DEFAULT_MAX_DISCOVERY_SECURITIES: Final = 10
 
 
@@ -79,13 +80,10 @@ class MoexIssClient:
         client: httpx2.Client | None = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: httpx2.Timeout = DEFAULT_TIMEOUT,
-        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
         max_discovery_securities: int = DEFAULT_MAX_DISCOVERY_SECURITIES,
         clock: Callable[[], date] | None = None,
         utcnow: Callable[[], datetime] | None = None,
     ) -> None:
-        if max_concurrency < 1:
-            raise ValueError("max_concurrency must be >= 1")
         if client is None:
             self._http = httpx2.Client(
                 base_url=base_url.rstrip("/"),
@@ -96,7 +94,6 @@ class MoexIssClient:
         else:
             self._http = client
             self._owns_client = False
-        self._max_concurrency = max_concurrency
         self._max_discovery_securities = max_discovery_securities
         self._clock = clock or (lambda: datetime.now(MOSCOW_TZ).date())
         self._utcnow = utcnow or (lambda: datetime.now(timezone.utc))
@@ -292,7 +289,7 @@ class MoexIssClient:
         )
 
     def fetch_quotes(self, items: Sequence[tuple[MarketIdentity, date]]) -> list[QuoteResult]:
-        # Sequential on purpose: successes must stay even when later items fail.
+        # Sequential is the bounded request policy: no background retry, no unbounded fan-out.
         return [self.fetch_quote(identity, target_date) for identity, target_date in items]
 
     def _search_securities(self, query: str) -> list[_SecurityDetails]:
@@ -334,6 +331,8 @@ class MoexIssClient:
             )
             if board_kind is None or not _compatible_board(engine, market, board_kind):
                 continue
+            if not _board_is_rub_compatible(row, description.get("FACEUNIT")):
+                continue
             boards.append(
                 MarketIdentity(
                     provider=MOEX_ISS_PROVIDER,
@@ -371,11 +370,8 @@ class MoexIssClient:
         raw_price = decimal_from_external(last_token, name="LAST")
         if raw_price <= 0:
             raise NormalizeError(QuoteStatus.MALFORMED_RESPONSE, "LAST is not a positive amount")
-        date_token = row_text(market_row, "LASTTRADEDATE", "TRADEDATE")
-        if date_token is None:
-            return None
-        price_date = _parse_iss_date(date_token)
-        if price_date > target_date:
+        price_date = current_last_price_date(session_date=self._clock(), target_date=target_date)
+        if price_date is None:
             return None
         return raw_price, price_date, QuoteKind.LAST
 
@@ -502,6 +498,13 @@ def _compatible_board(engine: str, market: str, kind: InstrumentType) -> bool:
     if kind is InstrumentType.BOND:
         return market == "bonds"
     return False
+
+
+def _board_is_rub_compatible(row: dict[str, object], face_unit: str | None) -> bool:
+    unit = row_text(row, "currencyid", "currency") or face_unit
+    if unit is None:
+        return True
+    return is_rub_compatible(unit)
 
 
 def _normalize_isin(value: str | None) -> str | None:

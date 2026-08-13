@@ -24,7 +24,11 @@ from hermes_finance.market_data.iss_parse import (
     parse_iss_payload,
     row_text,
 )
-from hermes_finance.market_data.normalize import convert_to_kopecks
+from hermes_finance.market_data.normalize import (
+    convert_to_kopecks,
+    current_last_price_date,
+    is_rub_compatible,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "moex_iss"
 TODAY = date(2026, 8, 13)
@@ -100,8 +104,14 @@ def _market_payload(
             [identity.secid, identity.boardid, face_value, face_unit, quote_basis, currency],
         ),
         "marketdata": _table(
-            ["SECID", "BOARDID", "LAST", "LASTTRADEDATE"],
-            [identity.secid, identity.boardid, last, last_date],
+            ["SECID", "BOARDID", "LAST", "TIME", "SYSTIME"],
+            [
+                identity.secid,
+                identity.boardid,
+                last,
+                "18:39:59",
+                f"{last_date or '2026-08-14'} 00:05:01",
+            ],
         ),
     }
 
@@ -246,6 +256,56 @@ def test_convert_to_kopecks_rejects_binary_float() -> None:
         )
 
 
+def test_current_last_price_date_is_moscow_session_not_systime() -> None:
+    assert current_last_price_date(session_date=TODAY, target_date=TODAY) == TODAY
+    assert current_last_price_date(session_date=date(2026, 8, 14), target_date=TODAY) is None
+
+
+def test_sur_and_rur_are_accepted_rub_compatible_units() -> None:
+    assert is_rub_compatible("SUR")
+    assert is_rub_compatible("rur")
+    assert is_rub_compatible("RUB")
+    assert not is_rub_compatible("USD")
+    for unit in ("SUR", "RUR"):
+        assert (
+            convert_to_kopecks(
+                raw_price=Decimal("10.00"),
+                basis=RawPriceBasis.CASH_PER_UNIT,
+                face_value=None,
+                currency_unit=unit,
+                shares_schema_cash_default=False,
+            )
+            == 1000
+        )
+
+
+def test_current_last_uses_documented_shares_marketdata_without_trade_date() -> None:
+    payload = load_iss_json(
+        (FIXTURES / "shares_marketdata_current.json").read_text(encoding="utf-8")
+    )
+    marketdata_columns = payload["marketdata"]["columns"]
+    assert "TRADEDATE" not in marketdata_columns
+    assert "LASTTRADEDATE" not in marketdata_columns
+    assert "LAST" in marketdata_columns
+    assert "TIME" in marketdata_columns
+    assert "SYSTIME" in marketdata_columns
+
+    stub = IssStub()
+    stub.payloads[f"/iss/securities/{STOCK.secid}.json"] = STOCK_DETAILS
+    stub.payloads[
+        f"/iss/engines/{STOCK.engine}/markets/{STOCK.market}"
+        f"/boards/{STOCK.boardid}/securities/{STOCK.secid}.json"
+    ] = payload
+    with _client(stub) as client:
+        result = client.fetch_quote(STOCK, TODAY)
+
+    assert isinstance(result, QuoteSuccess)
+    assert result.quote_kind is QuoteKind.LAST
+    assert result.proposed_price_kopecks == 12345
+    assert result.price_date == TODAY
+    assert result.price_date != date(2026, 8, 14)
+
+
 def test_stock_cash_per_unit_quote_to_exact_kopecks() -> None:
     stub = IssStub()
     _put_identity(
@@ -265,6 +325,27 @@ def test_stock_cash_per_unit_quote_to_exact_kopecks() -> None:
     assert result.quote_kind is QuoteKind.LAST
     assert result.freshness_status is QuoteStatus.OK
     assert RubleAmount(result.proposed_price_kopecks).to_api() == "123.45"
+
+
+def test_fetch_quote_accepts_rur_currency_unit() -> None:
+    stub = IssStub()
+    _put_identity(
+        stub,
+        STOCK,
+        STOCK_DETAILS,
+        _market_payload(
+            STOCK,
+            last="11.00",
+            last_date="2026-08-13",
+            face_unit="RUR",
+            currency="RUR",
+        ),
+    )
+    with _client(stub) as client:
+        result = client.fetch_quote(STOCK, TODAY)
+
+    assert isinstance(result, QuoteSuccess)
+    assert result.proposed_price_kopecks == 1100
 
 
 def test_fund_cash_per_unit_quote_to_exact_kopecks() -> None:
@@ -425,6 +506,51 @@ def test_isin_mismatch_hard_rejects_candidate() -> None:
     assert result.rejected[0].candidate_isin == "RU000SYNTH01"
     assert result.rejected[0].expected_isin == "RU000OTHER99"
     assert result.rejected[0].reason == "isin_mismatch"
+
+
+def test_discover_filters_non_rub_boards_before_ambiguity() -> None:
+    stub = IssStub()
+    stub.payloads["/iss/securities/SYNTHS.json"] = _security_payload(
+        secid="SYNTHS",
+        kind_pairs=[
+            ("ISIN", "RU000SYNTH01"),
+            ("TYPE", "common_share"),
+            ("GROUP", "stock_shares"),
+            ("FACEUNIT", "SUR"),
+        ],
+        boards=[
+            ["SYNTHS", "TQBR", "stock", "shares", "SUR"],
+            ["SYNTHS", "FQBR", "stock", "shares", "USD"],
+        ],
+    )
+    with _client(stub) as client:
+        result = client.discover_candidates(secid="SYNTHS")
+
+    assert result.status is QuoteStatus.OK
+    assert len(result.candidates) == 1
+    assert result.candidates[0].identity.boardid == "TQBR"
+    assert result.candidates[0].identity.engine == "stock"
+    assert result.candidates[0].identity.market == "shares"
+
+
+def test_discover_accepts_rur_as_rub_compatible() -> None:
+    stub = IssStub()
+    stub.payloads["/iss/securities/SYNTHS.json"] = _security_payload(
+        secid="SYNTHS",
+        kind_pairs=[
+            ("ISIN", "RU000SYNTH01"),
+            ("TYPE", "common_share"),
+            ("GROUP", "stock_shares"),
+            ("FACEUNIT", "RUR"),
+        ],
+        boards=[["SYNTHS", "TQBR", "stock", "shares", "RUR"]],
+    )
+    with _client(stub) as client:
+        result = client.discover_candidates(secid="SYNTHS")
+
+    assert result.status is QuoteStatus.OK
+    assert len(result.candidates) == 1
+    assert result.candidates[0].identity.boardid == "TQBR"
 
 
 def test_ambiguous_boards_are_not_silently_selected() -> None:
