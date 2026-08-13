@@ -123,7 +123,7 @@ def _candle(
         "close": _quotation(units, nano),
         "time": time,
         "isComplete": complete,
-        "candleSource": source,
+        "candleSourceType": source,
     }
 
 
@@ -427,6 +427,52 @@ def test_historical_candle_weekend_and_future_incomplete_ignored() -> None:
     assert result.freshness_status is QuoteStatus.OK
 
 
+def test_exchange_candle_is_accepted_and_non_exchange_is_ignored() -> None:
+    stub = TInvestStub()
+    _prime_stock(stub)
+    target = date(2026, 8, 9)
+    stub.set(
+        "GetCandles",
+        {
+            "candles": [
+                _candle(
+                    units=10,
+                    nano=0,
+                    time="2026-08-07T00:00:00Z",
+                    source="CANDLE_SOURCE_EXCHANGE",
+                ),
+                _candle(
+                    units=99,
+                    nano=0,
+                    time="2026-08-08T00:00:00Z",
+                    source="CANDLE_SOURCE_DEALER_WEEKEND",
+                ),
+            ]
+        },
+    )
+    accepted = _client(stub, today=date(2026, 8, 13)).fetch_quote(_stock_identity(), target)
+    assert isinstance(accepted, QuoteSuccess)
+    assert accepted.proposed_price_kopecks == 1000
+    assert accepted.price_date == date(2026, 8, 7)
+
+    stub.set(
+        "GetCandles",
+        {
+            "candles": [
+                _candle(
+                    units=99,
+                    nano=0,
+                    time="2026-08-08T00:00:00Z",
+                    source="CANDLE_SOURCE_DEALER_WEEKEND",
+                )
+            ]
+        },
+    )
+    rejected = _client(stub, today=date(2026, 8, 13)).fetch_quote(_stock_identity(), target)
+    assert isinstance(rejected, QuoteFailure)
+    assert rejected.status is QuoteStatus.UNAVAILABLE
+
+
 def test_freshness_stale_and_unavailable() -> None:
     stub = TInvestStub()
     _prime_stock(stub)
@@ -482,7 +528,7 @@ def test_missing_token_is_unavailable_without_network() -> None:
     assert stub.requests == []
 
 
-def test_auth_timeout_429_and_5xx_mapping() -> None:
+def test_auth_timeout_408_429_and_5xx_mapping() -> None:
     stub = TInvestStub()
     _prime_stock(stub)
     stub.status_codes["GetInstrumentBy"] = 401
@@ -499,6 +545,10 @@ def test_auth_timeout_429_and_5xx_mapping() -> None:
     assert _client(stub).fetch_quote(_stock_identity(), TODAY).status is QuoteStatus.NETWORK_ERROR
 
     stub.errors.clear()
+    stub.status_codes["GetInstrumentBy"] = 408
+    timeout_response = _client(stub).fetch_quote(_stock_identity(), TODAY)
+    assert timeout_response.status is QuoteStatus.NETWORK_ERROR
+    assert TEST_TOKEN not in (timeout_response.message or "")
     stub.status_codes["GetInstrumentBy"] = 429
     assert _client(stub).fetch_quote(_stock_identity(), TODAY).status is QuoteStatus.NETWORK_ERROR
     stub.status_codes["GetInstrumentBy"] = 503

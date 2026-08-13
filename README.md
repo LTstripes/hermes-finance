@@ -66,7 +66,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 
 Frontend будет на `127.0.0.1:5173`, `/api` проксируется в локальный backend.
 
-Для 0.4 котировок нужен локальный **read-only** токен T-Invest в `.env` (`HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN=`). Не кладите его в Git. Не выпускайте Full Access / Transfer. Подробности: `docs/t-invest-market-data.md`.
+Для 0.4 котировок нужен локальный **read-only** токен T-Invest в **корневом** `.env` репозитория (`HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN=`), рядом с `.env.example`. Не кладите его в `backend/` и не коммитьте. Не выпускайте Full Access / Transfer. Подробности: `docs/t-invest-market-data.md`.
 
 ### Health
 

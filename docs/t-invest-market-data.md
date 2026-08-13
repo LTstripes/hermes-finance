@@ -22,11 +22,13 @@ You need a T-Invest / T-Bank brokerage account, even an empty one.
 
 1. Open the official token page: <https://developer.tbank.ru/invest/intro/intro/token>
 2. Create a **read-only** token. Do **not** create Full Access. Do **not** create Transfer access.
-3. Put it only in the local ignored `.env` file:
+3. Put it only in the ignored repository-root `.env` file (next to `.env.example`, not in `backend/`):
 
 ```env
 HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN=
 ```
+
+Hermes always reads `<repository-root>/.env`, including when `scripts/start-local.ps1` starts the backend from the `backend/` directory. Process environment variables still override the file.
 
 4. Restart the local Hermes backend after changing the token.
 

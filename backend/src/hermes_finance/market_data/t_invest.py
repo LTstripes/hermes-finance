@@ -602,7 +602,7 @@ class TInvestClient:
                 raise _Malformed("GetCandles row is not an object")
             if _field(row, "isComplete", "is_complete") is not True:
                 continue
-            source = _text(row, "candleSource", "candle_source")
+            source = _text(row, "candleSourceType", "candle_source_type")
             if source and source != _CANDLE_EXCHANGE:
                 continue
             stamped = _parse_timestamp(_field(row, "time"), name="candle time")
@@ -689,7 +689,7 @@ class TInvestClient:
             if method in {_GET_LAST_PRICES, _GET_CANDLES, _FIND_INSTRUMENT}:
                 return {}
             raise _NotFound()
-        if status == 429 or status >= 500:
+        if status in {408, 429} or status >= 500:
             raise _NetworkFailure("T-Invest network error")
         try:
             payload = response.json()

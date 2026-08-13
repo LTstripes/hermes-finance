@@ -16,7 +16,7 @@ uv sync --group dev
 uv run hermes-finance-api
 ```
 
-The default address is `http://127.0.0.1:8000`. Local overrides can be placed in `.env`; use `.env.example` as the safe template.
+The default address is `http://127.0.0.1:8000`. Local overrides belong in the repository-root `.env` (next to `.env.example`), not a working-directory-relative file. The backend loads that absolute path even when started from `backend/`.
 
 For 0.4 quote preview, set `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` to a **read-only** T-Invest token. Never use Full Access or Transfer. See [T-Invest market data](../docs/t-invest-market-data.md).
 

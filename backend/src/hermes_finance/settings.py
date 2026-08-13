@@ -6,12 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from hermes_finance import __version__
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+ENV_FILE = REPOSITORY_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="HERMES_FINANCE_",
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
