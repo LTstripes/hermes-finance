@@ -428,6 +428,30 @@ export type QuotePreview = {
   rows: QuotePreviewRow[];
 };
 
+export type QuoteApplyRowRequest = {
+  position_snapshot_id: number;
+  accept_stale: boolean;
+  expected_market_price_per_unit: MoneyValue;
+  expected_price_date: string;
+  expected_identity: MarketIdentity;
+  expected_quote_kind: "last" | "history" | null;
+};
+
+export type QuoteApplyResult = {
+  reporting_month_id: number;
+  applied_count: number;
+  rows: Array<{
+    position_snapshot_id: number;
+    market_price_per_unit: MoneyValue;
+    market_value: MoneyValue;
+    unrealized_result: MoneyValue;
+    accrued_interest: MoneyValue | null;
+    price_date: string;
+    price_source: string;
+    freshness: string;
+  }>;
+};
+
 export type PositionSnapshot = {
   id: number;
   reporting_month_id: number;

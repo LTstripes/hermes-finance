@@ -281,7 +281,7 @@ def test_mapped_stock_fund_and_bond_quotes(tmp_path: Path) -> None:
         assert by_id[stock.id].status is QuoteStatus.OK
         assert by_id[stock.id].current_market_price_kopecks == 20000
         assert by_id[stock.id].proposed_market_price_kopecks == 31245
-        assert by_id[stock.id].apply_allowed is True
+        assert by_id[stock.id].apply_allowed is False
         assert by_id[stock.id].identity is not None
         assert by_id[stock.id].identity.provider_instrument_id == "SBER"
         assert by_id[fund.id].proposed_market_price_kopecks == 1420

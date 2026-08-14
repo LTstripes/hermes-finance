@@ -7,7 +7,7 @@ transactional failure path (rollback leaves no target month).
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
-from hermes_finance.domain import RubleAmount
+from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     Base,
@@ -28,6 +28,7 @@ from hermes_finance.persistence import (
     IncomeEntry,
     InvestmentCashFlow,
     MonthlyComment,
+    PositionQuoteProvenance,
     PositionSnapshot,
     PropertySnapshot,
     ReportingMonth,
@@ -43,7 +44,7 @@ from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
 from hermes_finance.services.month_clone import clone_reporting_month
-from hermes_finance.services.positions import create_position_snapshot
+from hermes_finance.services.positions import apply_snapshot_market_quote, create_position_snapshot
 from hermes_finance.services.properties import create_property_snapshot
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
@@ -419,3 +420,90 @@ def test_clone_endpoint_happy_path_and_conflict(client: TestClient) -> None:
     )
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "not_found"
+
+
+def test_clone_does_not_fabricate_quote_apply_provenance(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2031, month=1, snapshot_date=date(2031, 1, 31))
+        account = create_account(session, name="Брокер", account_type="brokerage")
+        instrument = create_instrument(session, name="ОФЗ", instrument_type="bond")
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month.id,
+            account_id=account.id,
+            instrument_id=instrument.id,
+            quantity="10",
+            average_cost_per_unit=RubleAmount(100_000),
+            market_price_per_unit=RubleAmount(125_000),
+            price_date=date(2031, 1, 31),
+            price_source="manual",
+        )
+        apply_snapshot_market_quote(
+            session,
+            snapshot,
+            market_price_per_unit_kopecks=130_000,
+            price_date=date(2031, 1, 30),
+            price_source=PriceSource.T_INVEST,
+        )
+        applied_at = datetime(2031, 1, 30, 12, 0, tzinfo=timezone.utc)
+        session.add(
+            PositionQuoteProvenance(
+                position_snapshot_id=snapshot.id,
+                reporting_month_id=month.id,
+                provider="t_invest",
+                provider_instrument_id="11111111-1111-1111-1111-111111111111",
+                provider_venue_id=None,
+                quote_kind="last",
+                raw_price="1300.00",
+                raw_price_basis="R",
+                normalized_price_kopecks=130_000,
+                price_date=date(2031, 1, 30),
+                fetched_at_utc=applied_at,
+                target_date=date(2031, 1, 30),
+                freshness="ok",
+                applied_at_utc=applied_at,
+            )
+        )
+        session.commit()
+        source_row = session.scalar(select(PositionQuoteProvenance))
+        assert source_row is not None
+        source_fields = (
+            source_row.id,
+            source_row.normalized_price_kopecks,
+            source_row.applied_at_utc,
+            source_row.position_snapshot_id,
+        )
+
+        target = clone_reporting_month(
+            session,
+            month.id,
+            target_year=2031,
+            target_month=2,
+            snapshot_date=date(2031, 2, 28),
+        )
+        session.refresh(source_row)
+        assert (
+            source_row.id,
+            source_row.normalized_price_kopecks,
+            source_row.applied_at_utc,
+            source_row.position_snapshot_id,
+        ) == source_fields
+        target_snapshot = session.scalar(
+            select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == target.id)
+        )
+        assert target_snapshot is not None
+        assert target_snapshot.market_price_per_unit_kopecks == 130_000
+        assert target_snapshot.price_source == "t_invest"
+        assert (
+            session.scalars(
+                select(PositionQuoteProvenance).where(
+                    PositionQuoteProvenance.position_snapshot_id == target_snapshot.id
+                )
+            ).all()
+            == []
+        )
+        assert session.scalars(select(PositionQuoteProvenance)).all().__len__() == 1
+    finally:
+        session.close()
+        database.engine.dispose()

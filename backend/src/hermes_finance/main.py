@@ -27,6 +27,7 @@ from hermes_finance.api.investment_flows import router as investment_flows_route
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.positions import router as positions_router
 from hermes_finance.api.properties import router as properties_router
+from hermes_finance.api.quote_apply import router as quote_apply_router
 from hermes_finance.api.quote_preview import router as quote_preview_router
 from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
@@ -71,6 +72,7 @@ def create_app(
     application.include_router(tax_brackets_router)
     application.include_router(months_router)
     application.include_router(quote_preview_router)
+    application.include_router(quote_apply_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
     application.include_router(accounts_router)

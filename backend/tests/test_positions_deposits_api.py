@@ -672,3 +672,38 @@ def test_deposit_unknown_ids_are_404(client: TestClient) -> None:
     )
     assert unknown_snapshot.status_code == 404
     _assert_error_body(unknown_snapshot.json(), "not_found")
+
+
+def test_position_api_rejects_client_fabricated_t_invest(client: TestClient) -> None:
+    month_id = _create_month(client)
+    account = _create_account(client)
+    instrument = _create_instrument(client)
+    created = client.post(
+        "/api/positions",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account["id"],
+            "instrument_id": instrument["id"],
+            "quantity": "1",
+            "average_cost_per_unit": _rub("10.00"),
+            "market_price_per_unit": _rub("10.00"),
+            "price_date": "2031-01-15",
+            "price_source": "t_invest",
+        },
+    )
+    assert created.status_code == 422
+    _assert_error_body(created.json(), "unprocessable")
+
+    manual = _create_position(
+        client,
+        month_id=month_id,
+        account_id=account["id"],
+        instrument_id=instrument["id"],
+    )
+    patched = client.patch(
+        f"/api/positions/{manual['id']}",
+        json={"price_source": "t_invest"},
+        headers={"If-Match": manual["updated_at"]},
+    )
+    assert patched.status_code == 422
+    _assert_error_body(patched.json(), "unprocessable")

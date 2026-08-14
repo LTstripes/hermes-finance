@@ -225,6 +225,8 @@ function localizeApiMessage(error: ApiClientError): string {
       return "Внутренняя ошибка приложения. Попробуй обновить данные.";
     case "not_found":
       return "Запрошенные данные не найдены.";
+    case "preview_changed":
+      return "Котировка изменилась после предпросмотра. Обнови предпросмотр и выбери строки заново.";
     case "conflict":
       return "Операцию нельзя выполнить в текущем состоянии данных.";
     case "unprocessable":

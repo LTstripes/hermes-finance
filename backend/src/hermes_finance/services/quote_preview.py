@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.domain import InstrumentType, MarketMappingState, ReportingMonthStatus
 from hermes_finance.market_data.dto import (
+    T_INVEST_PROVIDER,
     MarketIdentity,
     QuoteFailure,
     QuoteKind,
@@ -113,8 +114,20 @@ def _empty_proposal_row(
     )
 
 
-def _apply_allowed(*, month_editable: bool, status: QuoteStatus, has_proposal: bool) -> bool:
-    return month_editable and has_proposal and status is QuoteStatus.OK
+def _apply_allowed(
+    *,
+    month_editable: bool,
+    status: QuoteStatus,
+    has_proposal: bool,
+    identity: MarketIdentity | None,
+) -> bool:
+    return (
+        month_editable
+        and has_proposal
+        and status is QuoteStatus.OK
+        and identity is not None
+        and identity.provider == T_INVEST_PROVIDER
+    )
 
 
 def _row_from_quote(
@@ -176,6 +189,7 @@ def _row_from_quote(
             month_editable=month_editable,
             status=status,
             has_proposal=True,
+            identity=identity,
         ),
     )
 
