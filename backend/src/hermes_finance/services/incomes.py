@@ -155,7 +155,7 @@ def replace_salary_entry(
     rows = _salary_entries(session, reporting_month_id)
 
     try:
-        if gross_kopecks == 0 and net_kopecks == 0:
+        if gross_kopecks == 0 and tax_kopecks == 0 and net_kopecks == 0:
             for row in rows:
                 session.delete(row)
             session.commit()
