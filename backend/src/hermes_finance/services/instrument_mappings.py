@@ -106,6 +106,19 @@ def normalize_accepted_identity(
     )
 
 
+def t_invest_mapping_requires_provider_verification(
+    *,
+    provider: str,
+    instrument_isin: str | None,
+    candidate_isin: str | None,
+) -> bool:
+    """Manual T-Invest UID cannot skip provider checks when a local ISIN is known."""
+
+    if provider.strip().lower() != T_INVEST_PROVIDER:
+        return False
+    return _normalize_isin(instrument_isin) is not None and _normalize_isin(candidate_isin) is None
+
+
 def validate_accepted_identity(instrument: Instrument, identity: MarketIdentity) -> MarketIdentity:
     try:
         kind = InstrumentType(instrument.instrument_type)
@@ -241,6 +254,18 @@ def set_accepted_mapping(
             isin=isin,
         ),
     )
+    if (
+        t_invest_mapping_requires_provider_verification(
+            provider=identity.provider,
+            instrument_isin=instrument.isin,
+            candidate_isin=identity.isin,
+        )
+        and verify_provider is None
+    ):
+        raise ValueError(
+            "t_invest mapping with a known instrument ISIN requires provider verification "
+            "when candidate ISIN is not provided"
+        )
     if verify_provider is not None:
         verify_identity_with_provider(
             instrument=instrument,

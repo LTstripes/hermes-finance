@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Generator
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,10 @@ from hermes_finance.market_data.dto import (
     DiscoverCandidate,
     DiscoverResult,
     MarketIdentity,
+    QuoteKind,
     QuoteStatus,
+    QuoteSuccess,
+    RawPriceBasis,
 )
 from hermes_finance.market_data.moex_identity import market_identity_from_moex
 from hermes_finance.persistence import Base
@@ -286,7 +289,15 @@ def test_t_invest_identity_save_and_venue_rejected(client: TestClient) -> None:
         json={**T_INVEST_PAYLOAD, "provider_venue_id": "TQBR"},
     )
     assert rejected.status_code == 422
-    saved = client.put(f"/api/instruments/{created['id']}/market-mapping", json=T_INVEST_PAYLOAD)
+    bypass = client.put(f"/api/instruments/{created['id']}/market-mapping", json=T_INVEST_PAYLOAD)
+    assert bypass.status_code == 422
+    _assert_error_body(bypass.json(), "unprocessable")
+    assert "requires provider verification" in bypass.json()["error"]["message"]
+
+    saved = client.put(
+        f"/api/instruments/{created['id']}/market-mapping",
+        json={**T_INVEST_PAYLOAD, "isin": "RU0009029540"},
+    )
     assert saved.status_code == 200
     assert saved.json()["identity"] == {
         "provider": "t_invest",
@@ -417,5 +428,171 @@ def test_production_verify_moex_does_not_construct_moex_client(
             )
             assert local.status_code == 200
             assert local.json()["state"] == "mapped"
+    finally:
+        database.engine.dispose()
+
+
+def test_t_invest_candidate_isin_mismatch_is_unprocessable(client: TestClient) -> None:
+    created = _create_instrument(client)
+    mismatch = client.put(
+        f"/api/instruments/{created['id']}/market-mapping",
+        json={**T_INVEST_PAYLOAD, "isin": "RU0000000000"},
+    )
+    assert mismatch.status_code == 422
+    _assert_error_body(mismatch.json(), "unprocessable")
+    assert "isin mismatch" in mismatch.json()["error"]["message"]
+    assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()["state"] == (
+        "unmapped"
+    )
+
+
+def test_t_invest_verify_rejects_wrong_uid_and_does_not_persist(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_verify_fail.db")
+    Base.metadata.create_all(database.engine)
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.UNAVAILABLE,
+            message="T-Invest instrument was not found",
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(client)
+            rejected = client.put(
+                f"/api/instruments/{created['id']}/market-mapping",
+                params={"verify": "true"},
+                json=T_INVEST_PAYLOAD,
+            )
+            assert rejected.status_code == 422
+            _assert_error_body(rejected.json(), "unprocessable")
+            assert "was not found among provider candidates" in rejected.json()["error"]["message"]
+            assert provider.discover_calls == 1
+            assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()[
+                "state"
+            ] == ("unmapped")
+    finally:
+        database.engine.dispose()
+
+
+class MappingThenPreviewProvider:
+    def __init__(self, identity: MarketIdentity, quote: QuoteSuccess) -> None:
+        self.identity = identity
+        self.quote = quote
+        self.discover_calls = 0
+        self.fetch_calls = 0
+
+    def discover_candidates(self, **kwargs: object) -> DiscoverResult:
+        self.discover_calls += 1
+        return DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(identity=self.identity, instrument_kind=InstrumentType.STOCK),
+            ),
+        )
+
+    def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteSuccess:
+        self.fetch_calls += 1
+        assert identity.provider == "t_invest"
+        assert identity.provider_instrument_id == self.identity.provider_instrument_id
+        assert target_date == date(2026, 8, 13)
+        return self.quote
+
+    def fetch_quotes(self, items: list[tuple[MarketIdentity, date]]) -> list[QuoteSuccess]:
+        return [self.fetch_quote(identity, target_date) for identity, target_date in items]
+
+
+def test_t_invest_mapping_then_quote_preview_happy_path(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_preview_happy.db")
+    Base.metadata.create_all(database.engine)
+    identity = MarketIdentity(
+        provider="t_invest",
+        provider_instrument_id=T_INVEST_UID,
+        provider_venue_id=None,
+        isin="RU0009029540",
+    )
+    quote = QuoteSuccess(
+        identity=identity,
+        instrument_kind=InstrumentType.STOCK,
+        raw_price="15.00",
+        raw_price_basis=RawPriceBasis.CASH_PER_UNIT,
+        proposed_price_kopecks=1500,
+        price_date=date(2026, 8, 13),
+        quote_kind=QuoteKind.LAST,
+        fetched_at_utc=datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+        freshness_status=QuoteStatus.OK,
+    )
+    provider = MappingThenPreviewProvider(identity, quote)
+    application = create_app(database, market_data_provider=provider)
+    application.state.quote_preview_clock = lambda: date(2026, 8, 13)
+    try:
+        with TestClient(application) as client:
+            month = client.post(
+                "/api/months",
+                json={"year": 2026, "month": 8, "snapshot_date": "2026-08-31"},
+            )
+            assert month.status_code == 201
+            account = client.post(
+                "/api/accounts",
+                json={"name": "Synthetic Broker", "account_type": "brokerage"},
+            )
+            assert account.status_code == 201
+            created = _create_instrument(client)
+            discovered = client.post(
+                f"/api/instruments/{created['id']}/market-mapping/discover",
+                json={"provider": "t_invest"},
+            )
+            assert discovered.status_code == 200
+            assert discovered.json()["status"] == "ok"
+            assert discovered.json()["candidates"][0]["isin"] == "RU0009029540"
+            assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()[
+                "state"
+            ] == ("unmapped")
+
+            saved = client.put(
+                f"/api/instruments/{created['id']}/market-mapping",
+                params={"verify": "true"},
+                json={**T_INVEST_PAYLOAD, "isin": "RU0009029540"},
+            )
+            assert saved.status_code == 200
+            assert saved.json()["state"] == "mapped"
+            assert saved.json()["identity"]["provider"] == "t_invest"
+            assert saved.json()["identity"]["provider_instrument_id"] == T_INVEST_UID
+
+            position = client.post(
+                "/api/positions",
+                json={
+                    "reporting_month_id": month.json()["id"],
+                    "account_id": account.json()["id"],
+                    "instrument_id": created["id"],
+                    "quantity": "1",
+                    "average_cost_per_unit": {"amount": "100.00", "currency": "RUB"},
+                    "market_price_per_unit": {"amount": "10.00", "currency": "RUB"},
+                    "price_date": "2026-08-01",
+                    "price_source": "manual",
+                },
+            )
+            assert position.status_code == 201
+            preview = client.post(f"/api/months/{month.json()['id']}/quote-preview")
+            assert preview.status_code == 200
+            rows = preview.json()["rows"]
+            assert len(rows) == 1
+            assert rows[0]["status"] == "ok"
+            assert rows[0]["identity"]["provider"] == "t_invest"
+            assert rows[0]["identity"]["provider_instrument_id"] == T_INVEST_UID
+            assert rows[0]["current_market_price_per_unit"] == {
+                "amount": "10.00",
+                "currency": "RUB",
+            }
+            assert rows[0]["proposed_market_price_per_unit"] == {
+                "amount": "15.00",
+                "currency": "RUB",
+            }
+            listed = client.get(f"/api/positions?month_id={month.json()['id']}")
+            assert listed.status_code == 200
+            frozen = listed.json()[0]
+            assert frozen["market_price_per_unit"] == {"amount": "10.00", "currency": "RUB"}
+            assert frozen["price_source"] == "manual"
+            assert provider.discover_calls >= 2
+            assert provider.fetch_calls == 1
     finally:
         database.engine.dispose()

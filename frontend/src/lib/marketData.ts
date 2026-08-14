@@ -38,6 +38,7 @@ export type MoexMappingDraft = {
 export type TInvestMappingDraft = {
   provider: typeof T_INVEST_PROVIDER;
   providerInstrumentId: string;
+  isin: string | null;
 };
 
 export function mappingStateTone(state: string): "ok" | "draft" | "info" | "neutral" {
@@ -134,7 +135,7 @@ export function defaultMappingDraft(instrumentType: string): MoexMappingDraft {
 }
 
 export function defaultTInvestDraft(): TInvestMappingDraft {
-  return { provider: T_INVEST_PROVIDER, providerInstrumentId: "" };
+  return { provider: T_INVEST_PROVIDER, providerInstrumentId: "", isin: null };
 }
 
 export function defaultMappingProvider(
@@ -145,10 +146,12 @@ export function defaultMappingProvider(
 }
 
 export function tInvestDraftToIdentity(draft: TInvestMappingDraft): MarketIdentityWrite {
+  const isin = draft.isin?.trim().toUpperCase() || null;
   return {
     provider: T_INVEST_PROVIDER,
     provider_instrument_id: draft.providerInstrumentId.trim(),
     provider_venue_id: null,
+    ...(isin ? { isin } : {}),
   };
 }
 
@@ -159,6 +162,7 @@ export function identityToTInvestDraft(
     return {
       provider: T_INVEST_PROVIDER,
       providerInstrumentId: identity.provider_instrument_id,
+      isin: null,
     };
   }
   return defaultTInvestDraft();

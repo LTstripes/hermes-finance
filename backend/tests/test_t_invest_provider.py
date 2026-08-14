@@ -284,6 +284,76 @@ def test_multiple_candidates_are_ambiguous() -> None:
     assert len(result.candidates) == 2
 
 
+def test_malformed_neighbor_does_not_discard_valid_candidates() -> None:
+    stub = TInvestStub()
+    broken = "44444444-4444-4444-4444-444444444444"
+    stub.set(
+        "FindInstrument",
+        {
+            "instruments": [
+                {
+                    "isin": STOCK_ISIN,
+                    "instrumentKind": "INSTRUMENT_TYPE_SHARE",
+                    "instrumentType": "share",
+                    "ticker": "BROKEN",
+                    "name": "Broken",
+                },
+                _short(
+                    STOCK_UID,
+                    kind="INSTRUMENT_TYPE_SHARE",
+                    instrument_type="share",
+                    isin=STOCK_ISIN,
+                ),
+                _short(
+                    broken,
+                    kind="INSTRUMENT_TYPE_SHARE",
+                    instrument_type="share",
+                    isin=STOCK_ISIN,
+                ),
+            ]
+        },
+    )
+    stub.set(
+        f"GetInstrumentBy:{STOCK_UID}",
+        _instrument(
+            STOCK_UID, kind="INSTRUMENT_TYPE_SHARE", instrument_type="share", isin=STOCK_ISIN
+        ),
+    )
+    stub.set(
+        f"GetInstrumentBy:{broken}",
+        _instrument(
+            "55555555-5555-5555-5555-555555555555",
+            kind="INSTRUMENT_TYPE_SHARE",
+            instrument_type="share",
+            isin=STOCK_ISIN,
+        ),
+    )
+    result = _client(stub).discover_candidates(isin=STOCK_ISIN)
+    assert result.status is QuoteStatus.OK
+    assert len(result.candidates) == 1
+    assert result.candidates[0].identity.provider_instrument_id == STOCK_UID
+    assert result.candidates[0].identity.isin == STOCK_ISIN
+
+
+def test_single_malformed_candidate_is_still_malformed() -> None:
+    stub = TInvestStub()
+    stub.set(
+        "FindInstrument",
+        {
+            "instruments": [
+                {
+                    "isin": STOCK_ISIN,
+                    "instrumentKind": "INSTRUMENT_TYPE_SHARE",
+                    "instrumentType": "share",
+                }
+            ]
+        },
+    )
+    result = _client(stub).discover_candidates(isin=STOCK_ISIN)
+    assert result.status is QuoteStatus.MALFORMED_RESPONSE
+    assert result.candidates == ()
+
+
 def test_unsupported_kind_and_non_null_venue() -> None:
     stub = TInvestStub()
     future = "55555555-5555-5555-5555-555555555555"

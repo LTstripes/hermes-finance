@@ -16,7 +16,11 @@ export function putInstrumentMapping(
   payload: MarketIdentityWrite,
   signal?: AbortSignal,
 ): Promise<InstrumentMarketMapping> {
-  return apiRequest<InstrumentMarketMapping>(`/api/instruments/${instrumentId}/market-mapping`, {
+  const verifyTInvest = payload.provider.trim().toLowerCase() === "t_invest";
+  const path = verifyTInvest
+    ? `/api/instruments/${instrumentId}/market-mapping?verify=true`
+    : `/api/instruments/${instrumentId}/market-mapping`;
+  return apiRequest<InstrumentMarketMapping>(path, {
     method: "PUT",
     body: payload,
     signal,

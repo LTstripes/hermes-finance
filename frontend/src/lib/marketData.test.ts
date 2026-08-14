@@ -45,11 +45,24 @@ describe("marketData helpers", () => {
       tInvestDraftToIdentity({
         provider: "t_invest",
         providerInstrumentId: "11111111-1111-1111-1111-111111111111",
+        isin: null,
       }),
     ).toEqual({
       provider: "t_invest",
       provider_instrument_id: "11111111-1111-1111-1111-111111111111",
       provider_venue_id: null,
+    });
+    expect(
+      tInvestDraftToIdentity({
+        provider: "t_invest",
+        providerInstrumentId: "11111111-1111-1111-1111-111111111111",
+        isin: "ru0009029540",
+      }),
+    ).toEqual({
+      provider: "t_invest",
+      provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+      provider_venue_id: null,
+      isin: "RU0009029540",
     });
     expect(
       formatMarketIdentity({

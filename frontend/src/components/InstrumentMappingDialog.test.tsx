@@ -158,6 +158,21 @@ describe("InstrumentMappingDialog", () => {
       provider: "t_invest",
       provider_instrument_id: tInvestUid,
       provider_venue_id: null,
+      isin: "RU0009029540",
+    });
+  });
+
+  it("drops candidate ISIN after the owner edits the UID by hand", async () => {
+    const user = userEvent.setup();
+    const { onSave } = renderDialog(unmapped);
+    await user.click(screen.getByRole("button", { name: "Найти в T-Invest" }));
+    await user.click(screen.getByRole("button", { name: new RegExp(`Выбрать ${tInvestUid}`) }));
+    await user.type(screen.getByLabelText("Идентификатор инструмента T-Invest"), "9");
+    await user.click(screen.getByRole("button", { name: "Сохранить источник" }));
+    expect(onSave).toHaveBeenCalledWith({
+      provider: "t_invest",
+      provider_instrument_id: `${tInvestUid}9`,
+      provider_venue_id: null,
     });
   });
 
