@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 
 import type {
   Instrument,
@@ -7,6 +7,7 @@ import type {
   MarketDiscoverResult,
   MarketIdentityWrite,
 } from "../api/types";
+import { labelOf } from "../lib/labels";
 import {
   defaultMappingDraft,
   defaultMappingProvider,
@@ -16,16 +17,15 @@ import {
   identityToTInvestDraft,
   MAPPING_STATE_LABELS,
   MAPPING_SUPPORTED_TYPES,
-  mappingStateTone,
+  type MappingProviderId,
   MOEX_ISS_PROVIDER,
+  type MoexMappingDraft,
+  mappingStateTone,
   moexDraftToIdentity,
   T_INVEST_PROVIDER,
-  tInvestDraftToIdentity,
-  type MappingProviderId,
-  type MoexMappingDraft,
   type TInvestMappingDraft,
+  tInvestDraftToIdentity,
 } from "../lib/marketData";
-import { labelOf } from "../lib/labels";
 import { Badge, Button, Field, Input } from "./ui";
 
 type Props = {
@@ -148,6 +148,7 @@ export function InstrumentMappingDialog({
     setTInvestDraft({
       provider: T_INVEST_PROVIDER,
       providerInstrumentId: candidate.provider_instrument_id,
+      isin: candidate.isin,
     });
     setProviderMode(T_INVEST_PROVIDER);
     setLocalError(null);
@@ -228,6 +229,7 @@ export function InstrumentMappingDialog({
                       setTInvestDraft((current) => ({
                         ...current,
                         providerInstrumentId: event.target.value,
+                        isin: null,
                       }))
                     }
                     value={tInvestDraft.providerInstrumentId}

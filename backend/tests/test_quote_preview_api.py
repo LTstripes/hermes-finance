@@ -155,13 +155,16 @@ def _create_instrument(
 
 
 def _map(client: TestClient, instrument_id: int, identity: MarketIdentity) -> None:
+    payload: dict[str, object] = {
+        "provider": identity.provider,
+        "provider_instrument_id": identity.provider_instrument_id,
+        "provider_venue_id": identity.provider_venue_id,
+    }
+    if identity.isin:
+        payload["isin"] = identity.isin
     response = client.put(
         f"/api/instruments/{instrument_id}/market-mapping",
-        json={
-            "provider": identity.provider,
-            "provider_instrument_id": identity.provider_instrument_id,
-            "provider_venue_id": identity.provider_venue_id,
-        },
+        json=payload,
     )
     assert response.status_code == 200
 
@@ -373,6 +376,7 @@ def test_production_preview_does_not_call_moex_or_fallback(
                     provider="t_invest",
                     provider_instrument_id="11111111-1111-1111-1111-111111111111",
                     provider_venue_id=None,
+                    isin="RU000SYNTH01",
                 ),
             )
             _position(

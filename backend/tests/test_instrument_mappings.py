@@ -456,7 +456,9 @@ def test_t_invest_mapping_round_trip_requires_null_venue(tmp_path: Path) -> None
                 provider_instrument_id=T_INVEST_UID,
                 provider_venue_id="stock/shares/TQBR",
             )
-        view = set_accepted_mapping(session, instrument.id, **T_INVEST_IDENTITY)
+        view = set_accepted_mapping(
+            session, instrument.id, **T_INVEST_IDENTITY, isin="RU0009029540"
+        )
         assert view.state is MarketMappingState.MAPPED
         assert view.identity is not None
         assert view.identity.provider == "t_invest"
@@ -488,12 +490,126 @@ def test_t_invest_and_moex_mappings_do_not_overwrite_each_other(tmp_path: Path) 
             isin="RU0000000099",
         )
         moex = set_accepted_mapping(session, stock.id, **STOCK_IDENTITY)
-        t_invest = set_accepted_mapping(session, other.id, **T_INVEST_IDENTITY)
+        t_invest = set_accepted_mapping(session, other.id, **T_INVEST_IDENTITY, isin="RU0000000099")
         assert moex.identity is not None
         assert moex.identity.provider == "moex_iss"
         assert t_invest.identity is not None
         assert t_invest.identity.provider == "t_invest"
         assert get_instrument_mapping(session, stock.id).identity == moex.identity
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_t_invest_candidate_isin_mismatch_is_rejected(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        instrument = _stock(session, isin="RU0009029540")
+        with pytest.raises(ValueError, match="isin mismatch"):
+            set_accepted_mapping(
+                session,
+                instrument.id,
+                **T_INVEST_IDENTITY,
+                isin="RU0000000000",
+            )
+        assert get_instrument_mapping(session, instrument.id).state is MarketMappingState.UNMAPPED
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_t_invest_manual_uid_requires_provider_when_local_isin_known(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        instrument = _stock(session, isin="RU0009029540")
+        with pytest.raises(ValueError, match="requires provider verification"):
+            set_accepted_mapping(session, instrument.id, **T_INVEST_IDENTITY)
+        assert get_instrument_mapping(session, instrument.id).state is MarketMappingState.UNMAPPED
+
+        provider = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.OK,
+                candidates=(
+                    DiscoverCandidate(
+                        identity=MarketIdentity(
+                            provider="t_invest",
+                            provider_instrument_id=T_INVEST_UID,
+                            provider_venue_id=None,
+                            isin="RU0009029540",
+                        ),
+                        instrument_kind=InstrumentType.STOCK,
+                    ),
+                ),
+            )
+        )
+        view = set_accepted_mapping(
+            session,
+            instrument.id,
+            **T_INVEST_IDENTITY,
+            verify_provider=provider,
+        )
+        assert view.state is MarketMappingState.MAPPED
+        assert provider.discover_calls
+        assert provider.discover_calls[0]["provider_instrument_id"] == T_INVEST_UID
+        assert provider.discover_calls[0]["isin"] == "RU0009029540"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_t_invest_verify_rejects_wrong_uid_and_provider_isin_mismatch(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        instrument = _stock(session, isin="RU0009029540")
+        missing = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.UNAVAILABLE,
+                message="T-Invest instrument was not found",
+            )
+        )
+        with pytest.raises(ValueError, match="was not found among provider candidates"):
+            set_accepted_mapping(
+                session,
+                instrument.id,
+                **T_INVEST_IDENTITY,
+                verify_provider=missing,
+            )
+
+        mismatched = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.UNAVAILABLE,
+                rejected=(
+                    RejectedCandidate(
+                        provider_instrument_id=T_INVEST_UID,
+                        candidate_isin="RU0000000000",
+                        expected_isin="RU0009029540",
+                    ),
+                ),
+                message="ISIN does not match candidate",
+            )
+        )
+        with pytest.raises(ValueError, match="isin mismatch"):
+            set_accepted_mapping(
+                session,
+                instrument.id,
+                **T_INVEST_IDENTITY,
+                verify_provider=mismatched,
+            )
+
+        failed = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.NETWORK_ERROR,
+                message="T-Invest request timed out",
+            )
+        )
+        with pytest.raises(ValueError, match="network error|timed out"):
+            set_accepted_mapping(
+                session,
+                instrument.id,
+                **T_INVEST_IDENTITY,
+                verify_provider=failed,
+            )
+        assert get_instrument_mapping(session, instrument.id).state is MarketMappingState.UNMAPPED
     finally:
         session.close()
         database.engine.dispose()

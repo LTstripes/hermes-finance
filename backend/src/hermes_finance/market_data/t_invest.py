@@ -296,14 +296,13 @@ class TInvestClient:
         accepted: list[DiscoverCandidate] = []
         rejected: list[RejectedCandidate] = []
         saw_unsupported = False
+        malformed_message: str | None = None
         for short in shorts:
             try:
                 uid = normalize_t_invest_uid(_require_uid(short))
             except (ValueError, _Malformed):
-                return DiscoverResult(
-                    status=QuoteStatus.MALFORMED_RESPONSE,
-                    message="T-Invest instrument is missing instrument_uid",
-                )
+                malformed_message = "T-Invest instrument is missing instrument_uid"
+                continue
             candidate_isin = _normalize_isin(_text(short, "isin"))
             if expected_isin and candidate_isin and candidate_isin != expected_isin:
                 rejected.append(
@@ -353,7 +352,8 @@ class TInvestClient:
             except _NetworkFailure as error:
                 return DiscoverResult(status=QuoteStatus.NETWORK_ERROR, message=error.message)
             except (_Malformed, QuotationError) as error:
-                return DiscoverResult(status=QuoteStatus.MALFORMED_RESPONSE, message=str(error))
+                malformed_message = str(error)
+                continue
             accepted.append(
                 DiscoverCandidate(
                     identity=MarketIdentity(
@@ -383,6 +383,11 @@ class TInvestClient:
             return DiscoverResult(
                 status=QuoteStatus.UNSUPPORTED,
                 message="T-Invest instrument cannot be represented as RUB per unit",
+            )
+        if malformed_message is not None:
+            return DiscoverResult(
+                status=QuoteStatus.MALFORMED_RESPONSE,
+                message=malformed_message,
             )
         return DiscoverResult(status=QuoteStatus.UNAVAILABLE, message="no compatible candidates")
 

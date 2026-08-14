@@ -68,6 +68,38 @@ describe("instrument mapping API helpers", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("verify=");
   });
 
+  it("puts a T-Invest identity with verify=true and candidate ISIN", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({
+        ...mapping,
+        identity: {
+          provider: "t_invest",
+          provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+          provider_venue_id: null,
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await putInstrumentMapping(10, {
+      provider: "t_invest",
+      provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+      provider_venue_id: null,
+      isin: "RU0009029540",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/instruments/10/market-mapping?verify=true",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          provider: "t_invest",
+          provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+          provider_venue_id: null,
+          isin: "RU0009029540",
+        }),
+      }),
+    );
+  });
+
   it("clears mapping and exclusion through the existing endpoints", async () => {
     const fetchMock = vi
       .fn()
