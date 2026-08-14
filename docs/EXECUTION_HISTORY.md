@@ -213,6 +213,34 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Decision notes:** all three stable audit findings are closed on `main` and present in `r04`. R04-06 remains gated only on an exact integrated-`r04` post-merge verification pass before implementation begins.
 - **References:** issues #25, #26, #27, `docs/releases/0.4.0.md`.
 
+### 0.4.0 / R04-06 — explicit selective quote apply + immutable provenance
+
+- **Accepted:** 2026-08-14
+- **Implemented by:** Grok Build — exact model identity not independently runtime-confirmed in the accepted evidence
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Issue:** #30
+- **Baseline:** `r04` @ `e48183b04387452879f6e21e0f281df3da9460b8`
+- **Candidate:** `r04-06-grok` @ `540537385eb05d5793d807c2cb19b05428dfe3b8`; initial reviewed candidate `be692918ad55e294b96b9580d99d508d1c648e82`.
+- **Integrated into:** `r04` via true two-parent merge `40c1e9406f09d541df4281e51fc4473e22a4f997`, using the exact accepted candidate tree and preserving candidate history.
+- **Verification:** accepting reviewer inspected the exact remote branch/ancestry and re-checked the four blocking invariants after follow-up. Confirmed append-only 1:N apply-event provenance per snapshot; generic position CRUD cannot fabricate or silently corrupt `t_invest`; stale selection is T-Invest-only; clone carries valuation state without fabricating target-month apply provenance. Selected-set apply remains atomic, closed-month guard authoritative, backend refetch/normalization authoritative, `preview_changed` writes nothing, NKD is unchanged, and historical provenance survives mapping/manual edits. Worker-reported final checks: backend full `752 passed`, frontend full `224 passed`, Ruff/Biome lint/build/diff/privacy green; no live probe or `.env` access.
+- **Iterations/blockers:** first review returned four blockers: provenance overwrote prior apply history; generic CRUD could fabricate/corrupt `t_invest`; stale MOEX rows were selectable in UI; clone fabricated provenance on the target snapshot. All four were fixed narrowly on the task branch before ACCEPT.
+- **Decision notes:** R04-06 established the mutation boundary for production T-Invest quotes: explicit selected rows only, server-side refetch, optimistic preview consistency guard, one transaction for the selected set, and immutable historical provenance.
+- **References:** issue #30, `docs/releases/0.4.0.md`.
+
+### 0.4.0 / R04-07 — market-data failure/manual fallback UX
+
+- **Accepted:** 2026-08-14
+- **Implemented by:** Grok Build — exact model identity not independently runtime-confirmed in the accepted evidence
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Issue:** #31
+- **Baseline:** `r04` @ `d397c4092e2e01911475726cc3e1246544441632`
+- **Candidate:** `r04-07-grok` @ `7f967be829be5e88283907a02461c4dbee0f7c84`
+- **Integrated into:** `r04` via true two-parent merge `61e6a1503b8b173920b6976ee5f04d4a2aef2f08`.
+- **Verification:** independent inspection of the exact candidate confirmed sanitized provider failure reasons/messages, clear local-Hermes versus external-provider network distinction, mixed-success preview usability, stale T-Invest explicit-only selection, stale MOEX non-applicability, and `preview_changed` invalidation of the old preview/apply state. Worker-reported final checks: backend full `763 passed`, frontend full `230 passed`, Ruff pass, Biome lint pass, build pass, privacy PASS.
+- **Scope discipline:** no live T-Invest probe, no background/retry polling, no auto-apply, no weakening of closed-month or R04-06 provenance/source rules. Missing token/provider failure preserves stored prices and editable-month manual fallback without exposing raw provider diagnostics.
+- **Decision notes:** failure recovery is now owner-safe and explicit: failed rows remain non-applicable, good rows in mixed previews remain usable, and a changed quote requires a fresh preview before a second explicit apply.
+- **References:** issue #31, `docs/releases/0.4.0.md`.
+
 ---
 
 ## Historical backfill
