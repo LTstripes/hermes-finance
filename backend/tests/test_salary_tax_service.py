@@ -47,7 +47,13 @@ def add_salary(session: Session, month_id: int, gross: str, net: str) -> None:
     )
 
 
-def add_legacy_salary(session: Session, month_id: int, *, gross_kopecks: int, net_kopecks: int) -> None:
+def add_legacy_salary(
+    session: Session,
+    month_id: int,
+    *,
+    gross_kopecks: int,
+    net_kopecks: int,
+) -> None:
     """Seed a pre-M03-03 duplicate directly so legacy read compatibility stays covered."""
     session.add(
         IncomeEntry(
