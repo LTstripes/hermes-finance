@@ -82,6 +82,13 @@ def _validate_net(
         )
 
 
+def _validate_signed_flow_type(
+    flow_type: InvestmentCashFlowType, *, net_amount_kopecks: int
+) -> None:
+    if flow_type is InvestmentCashFlowType.REALIZED_LOSS and net_amount_kopecks >= 0:
+        raise ValueError("realized_loss net_amount must be negative")
+
+
 def _validate_interest_is_not_deposit_duplicate(
     account: Account, flow_type: InvestmentCashFlowType
 ) -> None:
@@ -169,6 +176,7 @@ def create_investment_cash_flow(
         commission_amount_kopecks=commission,
         net_amount_kopecks=net,
     )
+    _validate_signed_flow_type(normalized_type, net_amount_kopecks=net)
     flow = InvestmentCashFlow(
         reporting_month_id=reporting_month_id,
         account_id=account_id,
@@ -209,7 +217,8 @@ def update_investment_cash_flow(
     account = _require_account(session, flow.account_id)
     if flow_type is not None:
         flow.flow_type = _coerce_flow_type(flow_type).value
-    _validate_interest_is_not_deposit_duplicate(account, InvestmentCashFlowType(flow.flow_type))
+    normalized_type = InvestmentCashFlowType(flow.flow_type)
+    _validate_interest_is_not_deposit_duplicate(account, normalized_type)
     if event_date is not None:
         flow.event_date = event_date
     if gross_amount is not None:
@@ -239,6 +248,7 @@ def update_investment_cash_flow(
         commission_amount_kopecks=flow.commission_amount_kopecks,
         net_amount_kopecks=flow.net_amount_kopecks,
     )
+    _validate_signed_flow_type(normalized_type, net_amount_kopecks=flow.net_amount_kopecks)
     session.commit()
     session.refresh(flow)
     return flow

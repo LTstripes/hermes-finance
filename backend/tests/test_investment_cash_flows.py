@@ -103,6 +103,62 @@ def test_net_must_equal_gross_minus_tax_and_commission(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_realized_loss_requires_negative_signed_net(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, brokerage_id, _, instrument_id = build_environment(session)
+        with pytest.raises(ValueError, match="realized_loss net_amount must be negative"):
+            create_flow(
+                session,
+                month_id,
+                brokerage_id,
+                instrument_id,
+                flow_type=InvestmentCashFlowType.REALIZED_LOSS,
+                gross_amount="100.00",
+                tax_amount="0.00",
+                commission_amount="0.00",
+                net_amount="100.00",
+            )
+
+        loss = create_flow(
+            session,
+            month_id,
+            brokerage_id,
+            instrument_id,
+            flow_type=InvestmentCashFlowType.REALIZED_LOSS,
+            gross_amount="0.00",
+            tax_amount="0.00",
+            commission_amount="100.00",
+            net_amount="-100.00",
+        )
+        assert loss.net_amount_kopecks == -10_000
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_update_cannot_turn_positive_flow_into_realized_loss(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, brokerage_id, _, instrument_id = build_environment(session)
+        flow = create_flow(session, month_id, brokerage_id, instrument_id)
+
+        with pytest.raises(ValueError, match="realized_loss net_amount must be negative"):
+            update_investment_cash_flow(
+                session,
+                flow.id,
+                flow_type=InvestmentCashFlowType.REALIZED_LOSS,
+            )
+        session.rollback()
+
+        persisted = get_investment_cash_flow(session, flow.id)
+        assert persisted.flow_type == InvestmentCashFlowType.COUPON.value
+        assert persisted.net_amount_kopecks == 86_000
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_tax_and_commission_entries_can_have_negative_net(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
