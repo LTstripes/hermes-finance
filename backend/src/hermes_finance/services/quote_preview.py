@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,6 +27,7 @@ from hermes_finance.market_data.dto import (
 )
 from hermes_finance.market_data.normalize import SUPPORTED_KINDS, quote_refresh_target_date
 from hermes_finance.market_data.protocol import MarketDataProvider
+from hermes_finance.market_data.t_invest import TOKEN_UNAVAILABLE_MESSAGE
 from hermes_finance.persistence import Instrument, PositionSnapshot
 from hermes_finance.services.instrument_mappings import (
     InstrumentMappingView,
@@ -33,6 +35,61 @@ from hermes_finance.services.instrument_mappings import (
 )
 from hermes_finance.services.instruments import get_instrument
 from hermes_finance.services.reporting_months import get_reporting_month
+
+
+class QuoteFailureReason(StrEnum):
+    TOKEN_UNAVAILABLE = "token_unavailable"
+    PROVIDER_NETWORK = "provider_network"
+    QUOTE_UNAVAILABLE = "quote_unavailable"
+    UNSUPPORTED = "unsupported"
+    MALFORMED = "malformed"
+    UNMAPPED = "unmapped"
+    EXCLUDED = "excluded"
+    AMBIGUOUS = "ambiguous"
+
+
+OWNER_SAFE_MESSAGES: dict[QuoteFailureReason, str] = {
+    QuoteFailureReason.TOKEN_UNAVAILABLE: (
+        "Automatic quote refresh is unavailable because the read-only token is not configured."
+    ),
+    QuoteFailureReason.PROVIDER_NETWORK: (
+        "The market-data provider could not be reached. Local Hermes Finance is running."
+    ),
+    QuoteFailureReason.QUOTE_UNAVAILABLE: "No usable quote is available for this instrument.",
+    QuoteFailureReason.UNSUPPORTED: "This instrument is updated manually.",
+    QuoteFailureReason.MALFORMED: "The provider response cannot be used safely.",
+    QuoteFailureReason.UNMAPPED: "An external quote source is not configured.",
+    QuoteFailureReason.EXCLUDED: "Automatic quote refresh is turned off for this instrument.",
+    QuoteFailureReason.AMBIGUOUS: "The quote source cannot be chosen automatically.",
+}
+
+
+def classify_quote_failure(status: QuoteStatus, message: str | None) -> QuoteFailureReason | None:
+    if status in {QuoteStatus.OK, QuoteStatus.STALE}:
+        return None
+    if status is QuoteStatus.UNMAPPED:
+        return QuoteFailureReason.UNMAPPED
+    if status is QuoteStatus.EXCLUDED:
+        return QuoteFailureReason.EXCLUDED
+    if status is QuoteStatus.UNSUPPORTED:
+        return QuoteFailureReason.UNSUPPORTED
+    if status is QuoteStatus.AMBIGUOUS:
+        return QuoteFailureReason.AMBIGUOUS
+    if status is QuoteStatus.NETWORK_ERROR:
+        return QuoteFailureReason.PROVIDER_NETWORK
+    if status is QuoteStatus.MALFORMED_RESPONSE:
+        return QuoteFailureReason.MALFORMED
+    if status is QuoteStatus.UNAVAILABLE:
+        if message == TOKEN_UNAVAILABLE_MESSAGE:
+            return QuoteFailureReason.TOKEN_UNAVAILABLE
+        return QuoteFailureReason.QUOTE_UNAVAILABLE
+    return QuoteFailureReason.QUOTE_UNAVAILABLE
+
+
+def owner_safe_message(reason: QuoteFailureReason | None) -> str | None:
+    if reason is None:
+        return None
+    return OWNER_SAFE_MESSAGES[reason]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +112,7 @@ class QuotePreviewRow:
     fetched_at_utc: datetime | None
     freshness_status: QuoteStatus | None
     status: QuoteStatus
+    failure_reason: QuoteFailureReason | None
     message: str | None
     apply_allowed: bool
 
@@ -66,6 +124,7 @@ class QuotePreviewResult:
     target_date: date
     month_editable: bool
     batch_error: str | None
+    batch_error_reason: QuoteFailureReason | None
     rows: tuple[QuotePreviewRow, ...]
 
 
@@ -90,6 +149,7 @@ def _empty_proposal_row(
     status: QuoteStatus,
     message: str | None,
 ) -> QuotePreviewRow:
+    reason = classify_quote_failure(status, message)
     return QuotePreviewRow(
         position_snapshot_id=snapshot.id,
         account_id=snapshot.account_id,
@@ -109,7 +169,8 @@ def _empty_proposal_row(
         fetched_at_utc=None,
         freshness_status=None,
         status=status,
-        message=message,
+        failure_reason=reason,
+        message=owner_safe_message(reason),
         apply_allowed=False,
     )
 
@@ -184,6 +245,7 @@ def _row_from_quote(
         fetched_at_utc=result.fetched_at_utc,
         freshness_status=status,
         status=status,
+        failure_reason=None,
         message=None,
         apply_allowed=_apply_allowed(
             month_editable=month_editable,
@@ -319,15 +381,17 @@ def preview_market_quotes(
         )
 
     batch_error = None
-    if (
-        fetch_items
-        and quotes
-        and all(
-            isinstance(result, QuoteFailure) and result.status is QuoteStatus.NETWORK_ERROR
-            for result in quotes.values()
-        )
-    ):
-        batch_error = "market-data provider network error"
+    batch_error_reason = None
+    if fetch_items and quotes:
+        failures = [result for result in quotes.values() if isinstance(result, QuoteFailure)]
+        if len(failures) == len(quotes):
+            reasons = {classify_quote_failure(item.status, item.message) for item in failures}
+            if reasons == {QuoteFailureReason.PROVIDER_NETWORK}:
+                batch_error_reason = QuoteFailureReason.PROVIDER_NETWORK
+            elif reasons == {QuoteFailureReason.TOKEN_UNAVAILABLE}:
+                batch_error_reason = QuoteFailureReason.TOKEN_UNAVAILABLE
+            if batch_error_reason is not None:
+                batch_error = owner_safe_message(batch_error_reason)
 
     _require_read_only(session)
     return QuotePreviewResult(
@@ -336,5 +400,6 @@ def preview_market_quotes(
         target_date=target_date,
         month_editable=month_editable,
         batch_error=batch_error,
+        batch_error_reason=batch_error_reason,
         rows=tuple(rows),
     )

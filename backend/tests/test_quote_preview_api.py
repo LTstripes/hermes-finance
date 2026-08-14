@@ -211,6 +211,7 @@ def test_empty_month_returns_empty_rows(client: TestClient) -> None:
     assert body["month_editable"] is True
     assert body["rows"] == []
     assert body["batch_error"] is None
+    assert body["batch_error_reason"] is None
 
 
 def test_mapped_and_failed_rows_and_closed_month(
@@ -257,9 +258,12 @@ def test_mapped_and_failed_rows_and_closed_month(
     }
     assert rows[stock["id"]]["identity"]["provider_instrument_id"] == "SBER"
     assert rows[fund["id"]]["status"] == "network_error"
+    assert rows[fund["id"]]["failure_reason"] == "provider_network"
     assert rows[fund["id"]]["proposed_market_price_per_unit"] is None
     assert rows[fund["id"]]["apply_allowed"] is False
+    assert "timeout" not in (rows[fund["id"]]["message"] or "")
     assert rows[unmapped["id"]]["status"] == "unmapped"
+    assert rows[unmapped["id"]]["failure_reason"] == "unmapped"
     assert rows[unmapped["id"]]["apply_allowed"] is False
     assert {secid for secid, _target in provider.fetch_calls} == {"SBER", "FXGD"}
     assert all(target == TODAY for _secid, target in provider.fetch_calls)
@@ -395,8 +399,12 @@ def test_production_preview_does_not_call_moex_or_fallback(
             assert preview.status_code == 200
             rows = {row["instrument_id"]: row for row in preview.json()["rows"]}
             assert rows[moex_instrument["id"]]["status"] == "unsupported"
-            assert "production provider disabled" in (rows[moex_instrument["id"]]["message"] or "")
+            assert rows[moex_instrument["id"]]["failure_reason"] == "unsupported"
+            assert "production provider disabled" not in (
+                rows[moex_instrument["id"]]["message"] or ""
+            )
             assert rows[t_instrument["id"]]["status"] == "unavailable"
-            assert rows[t_instrument["id"]]["message"] == TOKEN_UNAVAILABLE_MESSAGE
+            assert rows[t_instrument["id"]]["failure_reason"] == "token_unavailable"
+            assert TOKEN_UNAVAILABLE_MESSAGE not in (rows[t_instrument["id"]]["message"] or "")
     finally:
         database.engine.dispose()

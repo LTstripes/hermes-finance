@@ -36,6 +36,17 @@ QuotePreviewStatus = Literal[
     "malformed_response",
 ]
 
+QuoteFailureReason = Literal[
+    "token_unavailable",
+    "provider_network",
+    "quote_unavailable",
+    "unsupported",
+    "malformed",
+    "unmapped",
+    "excluded",
+    "ambiguous",
+]
+
 
 class MarketIdentityRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -66,6 +77,7 @@ class QuotePreviewRowResponse(BaseModel):
     fetched_at_utc: datetime | None
     freshness_status: QuotePreviewStatus | None
     status: QuotePreviewStatus
+    failure_reason: QuoteFailureReason | None
     message: str | None
     apply_allowed: bool
 
@@ -78,6 +90,7 @@ class QuotePreviewResponse(BaseModel):
     target_date: date
     month_editable: bool
     batch_error: str | None
+    batch_error_reason: QuoteFailureReason | None
     rows: list[QuotePreviewRowResponse]
 
 
@@ -120,6 +133,7 @@ def _response(result: QuotePreviewResult) -> QuotePreviewResponse:
             fetched_at_utc=row.fetched_at_utc,
             freshness_status=row.freshness_status.value if row.freshness_status else None,
             status=row.status.value,
+            failure_reason=row.failure_reason.value if row.failure_reason else None,
             message=row.message,
             apply_allowed=row.apply_allowed,
         )
@@ -131,6 +145,7 @@ def _response(result: QuotePreviewResult) -> QuotePreviewResponse:
         target_date=result.target_date,
         month_editable=result.month_editable,
         batch_error=result.batch_error,
+        batch_error_reason=result.batch_error_reason.value if result.batch_error_reason else None,
         rows=rows,
     )
 

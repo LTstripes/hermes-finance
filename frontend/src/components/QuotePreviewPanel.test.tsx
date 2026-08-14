@@ -30,6 +30,7 @@ function row(
     proposed_raw_price_basis: "R",
     fetched_at_utc: "2026-08-13T12:00:00Z",
     freshness_status: overrides.status,
+    failure_reason: null,
     message: null,
     apply_allowed: overrides.status === "ok",
     ...overrides,
@@ -43,6 +44,7 @@ function preview(rows: QuotePreviewRow[], overrides: Partial<QuotePreview> = {})
     target_date: "2026-08-13",
     month_editable: true,
     batch_error: null,
+    batch_error_reason: null,
     rows,
     ...overrides,
   };
@@ -76,7 +78,7 @@ const STATUS_CASES: Array<{ status: QuotePreviewStatus; label: string }> = [
   { status: "excluded", label: "Обновление отключено" },
   { status: "unsupported", label: "Обновляется вручную" },
   { status: "unavailable", label: "Подходящей котировки нет" },
-  { status: "network_error", label: "Источник временно недоступен" },
+  { status: "network_error", label: "Внешний источник временно недоступен" },
   { status: "malformed_response", label: "Данные источника нельзя безопасно использовать" },
 ];
 
@@ -125,15 +127,15 @@ describe("QuotePreviewPanel", () => {
           proposed_market_price_per_unit: null,
           proposed_price_date: null,
           apply_allowed: false,
-          message: "T-Invest read-only token is not configured or is unavailable",
+          failure_reason: "token_unavailable",
         }),
       ]),
     );
     expect(screen.getByText("T Stock")).toBeInTheDocument();
     expect(screen.getByText(/T-Invest · 11111111-1111-1111-1111-111111111111/)).toBeInTheDocument();
-    expect(
-      screen.getByText("T-Invest read-only token is not configured or is unavailable"),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/read-only токен не настроен/)).toBeInTheDocument();
+    expect(screen.getByText(/Можно ввести цену вручную/)).toBeInTheDocument();
+    expect(screen.queryByText(/t\./i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
   });
 
@@ -240,7 +242,7 @@ describe("QuotePreviewPanel", () => {
     expect(screen.getByText("OK Stock")).toBeInTheDocument();
     expect(screen.getByText("Broken Stock")).toBeInTheDocument();
     expect(screen.getByText("Котировка получена")).toBeInTheDocument();
-    expect(screen.getByText("Источник временно недоступен")).toBeInTheDocument();
+    expect(screen.getByText("Внешний источник временно недоступен")).toBeInTheDocument();
   });
 
   it("shows a batch warning without erasing rows", () => {
@@ -255,12 +257,51 @@ describe("QuotePreviewPanel", () => {
           }),
         ],
         {
-          batch_error: "market-data provider network error",
+          batch_error:
+            "The market-data provider could not be reached. Local Hermes Finance is running.",
+          batch_error_reason: "provider_network",
         },
       ),
     );
-    expect(screen.getByText(/Часть запросов к источнику не удалась/)).toBeInTheDocument();
+    expect(screen.getByText(/Внешний источник котировок временно недоступен/)).toBeInTheDocument();
+    expect(screen.queryByText(/Hermes Finance не запущен/)).not.toBeInTheDocument();
     expect(screen.getByText("Kept Stock")).toBeInTheDocument();
+  });
+
+  it("keeps a successful T-Invest row selectable when another row failed", () => {
+    const onApply = vi.fn();
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 1,
+          instrument_id: 11,
+          instrument_name: "Good Stock",
+          status: "ok",
+          apply_allowed: true,
+          identity: {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+          },
+        }),
+        row({
+          position_snapshot_id: 2,
+          instrument_id: 12,
+          instrument_name: "Failed Stock",
+          status: "network_error",
+          apply_allowed: false,
+          failure_reason: "provider_network",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+        }),
+      ]),
+      { onApply },
+    );
+    expect(screen.getByRole("checkbox", { name: "Выбрать Good Stock" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: /Failed Stock/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить выбранные" })).toBeEnabled();
+    expect(screen.getByText(/Локальное приложение Hermes Finance работает/)).toBeInTheDocument();
+    expect(screen.queryByText(/timeout/i)).not.toBeInTheDocument();
   });
 
   it("allows closed-month preview and states that apply is unavailable", () => {

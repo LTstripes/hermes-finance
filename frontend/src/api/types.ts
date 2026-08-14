@@ -396,6 +396,16 @@ export type QuotePreviewStatus =
   | "network_error"
   | "malformed_response";
 
+export type QuoteFailureReason =
+  | "token_unavailable"
+  | "provider_network"
+  | "quote_unavailable"
+  | "unsupported"
+  | "malformed"
+  | "unmapped"
+  | "excluded"
+  | "ambiguous";
+
 export type QuotePreviewRow = {
   position_snapshot_id: number;
   account_id: number;
@@ -415,6 +425,7 @@ export type QuotePreviewRow = {
   fetched_at_utc: string | null;
   freshness_status: QuotePreviewStatus | null;
   status: QuotePreviewStatus;
+  failure_reason: QuoteFailureReason | null;
   message: string | null;
   apply_allowed: boolean;
 };
@@ -425,6 +436,7 @@ export type QuotePreview = {
   target_date: string;
   month_editable: boolean;
   batch_error: string | null;
+  batch_error_reason: QuoteFailureReason | null;
   rows: QuotePreviewRow[];
 };
 

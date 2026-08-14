@@ -202,4 +202,17 @@ describe("formatApiError", () => {
       "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.",
     );
   });
+
+  it("localizes preview_changed without exposing the old fingerprint", () => {
+    const err = new ApiClientError(409, {
+      code: "preview_changed",
+      message: "quote changed since preview; request a new preview",
+      details: [],
+    });
+    expect(formatApiError(err)).toBe(
+      "Котировка изменилась после предпросмотра. Обнови предпросмотр и выбери строки заново.",
+    );
+    expect(formatApiError(err)).not.toContain("fingerprint");
+    expect(formatApiError(err)).not.toContain("quote changed since preview");
+  });
 });
