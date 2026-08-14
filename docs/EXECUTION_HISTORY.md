@@ -184,6 +184,35 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Known limitation:** an API caller that supplies a candidate ISIN matching the local instrument can persist without `verify_provider`; the canonical owner UI still sends `verify=true`, and R04-05D live probe remains required before R04-06 acceptance.
 - **References:** issue #28, ADR 0009, ADR 0010, `docs/releases/0.4.0.md`.
 
+### 0.4.0 / R04-05D — owner live read-only T-Invest probe
+
+- **Accepted:** 2026-08-14
+- **Implemented by:** Grok Build — Grok 4.6 per submitted session report; exact model identity not independently runtime-confirmed by the accepting reviewer
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Issue:** #29
+- **Baseline:** `r04` @ `76d02f10f891102c3f10964a2d7c814e89e06a8a`
+- **Candidate:** `r04-05d-grok` @ `08214f91994ddf3dfe7f91143d0d7fa343a2d711`; initial implementation `4c7ebedb37d9fc2df4724162054b2fd5226d9467`.
+- **Integrated into:** `r04` via true two-parent merge `e2a30e4d696de21e0b30bed46e9ffff78d042af5`; troubleshooting docs followed at `d275b2ee413fa5c6e945de0ab05230b00ed42d97`.
+- **Live verification:** owner-side authenticated read-only probe succeeded against official T-Invest API shape using public/non-personal instruments. Only `FindInstrument`, `GetInstrumentBy`, `BondBy`, `GetLastPrices`, and `GetCandles` were called; no Accounts/Operations/Orders/Sandbox/Transfer methods. Official Quotation `units+nano`, `lastPriceType`, `candleSourceType`, historical `price_date <= target_date`, and bond MoneyValue semantics matched the adapter. No mapping/snapshot mutation occurred.
+- **Deterministic verification:** worker reported probe/provider targeted tests `31 passed`, full backend `715 passed`, Ruff check/format, `git diff --check`, and privacy check (`447 tracked files`) all passed.
+- **Iterations/blockers:** accepting review first caught a fixture-writer schema mismatch; follow-up made `--write-fixture` emit the canonical `{meta, stock, bond}` schema and added write→reload regression coverage. The final live run intentionally did not retain an auto-refreshed fixture because the capture generated repeated sanitized public rows while the existing deterministic fixture already represented the confirmed official fields.
+- **Owner environment note:** on the owner's Windows environment the live API connection succeeded with VPN disabled after failing while VPN was active; a rejected read-only token also required owner-side reissue. These are troubleshooting observations, not application networking/auth contracts. No token value or raw private/account payload is recorded here.
+- **Decision notes:** closes the final external-provider pre-apply gate from R04-AUDIT-01. Issue #29 closed completed.
+- **References:** issue #29, ADR 0010, `docs/t-invest-market-data.md`.
+
+### 0.3.x maintenance wave / M03-01..03 — audit findings closed and forward-ported
+
+- **Accepted/integrated:** 2026-08-14
+- **Reviewer/acceptor/integrator:** ChatGPT — GPT-5.6 Sol, with independent Grok verification/follow-up on all three candidates.
+- **Original stable baseline:** `main` @ `b385e8cddfaa8e057dc34dc73a11d0bc839978d1`.
+- **M03-01 / issue #25:** exact canonical bind invariant `host == 127.0.0.1`; final candidate `m03-01-loopback-bind` @ `55861b588dd7302cc3efc41d96db76dec5a19b95`; integrated main merge `5a42426c224cc77c1204356ecfcec029cfa328b6`. Grok final verification: targeted `24 passed`, full backend `586 passed`, Ruff/diff/privacy clean.
+- **M03-02 / issue #26:** `realized_loss` write invariant requires strictly negative signed net (`net < 0`), without double-negation; final candidate `m03-02-realized-loss-sign` @ `e5a30c0b65db790fcea7fe46ffc59cf9a7f3431b`; integrated main merge `8c52664080a50dd794816712c293351ecc75bf3c`. Grok final verification: targeted `32 passed`, full backend `582 passed`, Ruff/diff/privacy clean.
+- **M03-03 / issue #27:** one canonical SALARY row for valid writes while legacy duplicates remain readable/aggregated; atomic owner salary replace heals duplicates; clone collapses recurring legacy duplicates deterministically; frontend aggregation stays exact integer/bigint. Final candidate `m03-03-salary-cardinality` @ `0813cd63edacb231e0eda20b3fa3452758667c08`; integrated main merge `23f14aca74c5fa05c434cf15b89ec6bc2d687a12`. Grok final candidate verification: backend `589 passed`, frontend `171 passed`, targeted/frontend build/Ruff/Biome lint/diff/privacy clean.
+- **Exact-main gate:** CI #224 exposed only a Biome formatting regression in two M03-03 import lines; format-only commit `1bf28bfdbec2c9c6d495a1de449bce2f541be13e` fixed it. Exact-main CI #225 completed successfully.
+- **Forward-port into 0.4:** current stable main `1bf28bfdbec2c9c6d495a1de449bce2f541be13e` was merged into `r04` via true two-parent merge `4b2d249a6a175bf4009ec1785dbded961a2b2fa9`. The only semantic overlap was Settings: the merge preserves both the R04 repository-root `.env` / T-Invest `SecretStr` contract and M03-01's exact `127.0.0.1` bind invariant. Relative to the preceding `r04`, exactly the 17 maintenance paths changed; market-data implementation remained intact.
+- **Decision notes:** all three stable audit findings are closed on `main` and present in `r04`. R04-06 remains gated only on an exact integrated-`r04` post-merge verification pass before implementation begins.
+- **References:** issues #25, #26, #27, `docs/releases/0.4.0.md`.
+
 ---
 
 ## Historical backfill
