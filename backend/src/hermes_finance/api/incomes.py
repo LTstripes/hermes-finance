@@ -15,6 +15,7 @@ from hermes_finance.services.incomes import (
     delete_income_entry,
     get_income_entry,
     list_income_entries,
+    replace_salary_entry,
     update_income_entry,
 )
 
@@ -50,6 +51,14 @@ class IncomeUpdate(BaseModel):
     include_in_cash_flow: bool | None = None
     include_in_passive_income: bool | None = None
     notes: str | None = Field(default=None, max_length=2000)
+
+
+class SalaryReplace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gross_amount: MoneyValue
+    tax_amount: MoneyValue
+    net_amount: MoneyValue
 
 
 class IncomeResponse(BaseModel):
@@ -134,6 +143,22 @@ def create_income(
         notes=payload.notes,
     )
     return _response(entry)
+
+
+@router.put("/salary/{month_id}", response_model=IncomeResponse | None)
+def replace_salary(
+    month_id: int,
+    payload: SalaryReplace,
+    session: Session = Depends(session_for_request),
+) -> IncomeResponse | None:
+    entry = replace_salary_entry(
+        session,
+        month_id,
+        gross_amount=_amount(payload.gross_amount),
+        tax_amount=_amount(payload.tax_amount),
+        net_amount=_amount(payload.net_amount),
+    )
+    return _response(entry) if entry is not None else None
 
 
 @router.get("/{entry_id}", response_model=IncomeResponse)
