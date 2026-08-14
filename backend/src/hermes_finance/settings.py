@@ -1,4 +1,3 @@
-from ipaddress import ip_address
 from pathlib import Path
 
 from pydantic import Field, field_validator
@@ -28,11 +27,7 @@ class Settings(BaseSettings):
 
     @field_validator("host")
     @classmethod
-    def validate_loopback_host(cls, value: str) -> str:
-        try:
-            address = ip_address(value)
-        except ValueError as exc:
-            raise ValueError("host must be a loopback IP address") from exc
-        if not address.is_loopback:
-            raise ValueError("host must be a loopback IP address")
+    def validate_local_host(cls, value: str) -> str:
+        if value != "127.0.0.1":
+            raise ValueError("host must be exactly 127.0.0.1")
         return value
