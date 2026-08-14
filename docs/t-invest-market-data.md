@@ -39,3 +39,13 @@ Hermes cannot prove that a pasted token is read-only without calling forbidden t
 ## Preview
 
 Quote preview remains an explicit button. A missing token fails calmly and does not fall back to MOEX. An old `moex_iss` mapping stays readable; production does not call MOEX for it. Remapping to T-Invest is an explicit owner action.
+
+## Live probe (developer only)
+
+CI never runs this. From `backend/`:
+
+```text
+uv run python -m hermes_finance.market_data.t_invest_probe --live
+```
+
+The probe reads only `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` from the ignored repository-root `.env`. It calls FindInstrument, GetInstrumentBy, BondBy, GetLastPrices and GetCandles. It does not call Accounts, Operations, Orders, Sandbox or Transfer. It does not write a mapping or a monthly snapshot. Optional `--write-fixture` stores a sanitized public payload under `backend/tests/fixtures/t_invest/`.

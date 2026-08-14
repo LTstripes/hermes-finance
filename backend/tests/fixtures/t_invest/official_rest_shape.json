@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "source": "sanitized official T-Invest REST representative payload",
+    "note": "No token, account, or owner data. Identifiers, names and amounts are synthetic."
+  },
+  "stock": {
+    "FindInstrument": {
+      "instruments": [
+        {
+          "uid": "11111111-1111-1111-1111-111111111111",
+          "figi": "BBGSYNTH00001",
+          "ticker": "SYNTHS",
+          "classCode": "TQBR",
+          "isin": "RU000SYNTH01",
+          "name": "Synthetic Share",
+          "instrumentKind": "INSTRUMENT_TYPE_SHARE",
+          "instrumentType": "share"
+        }
+      ]
+    },
+    "GetInstrumentBy": {
+      "instrument": {
+        "uid": "11111111-1111-1111-1111-111111111111",
+        "figi": "BBGSYNTH00001",
+        "ticker": "SYNTHS",
+        "classCode": "TQBR",
+        "isin": "RU000SYNTH01",
+        "name": "Synthetic Share",
+        "lot": 10,
+        "currency": "rub",
+        "instrumentKind": "INSTRUMENT_TYPE_SHARE",
+        "instrumentType": "share",
+        "realExchange": "REAL_EXCHANGE_MOEX"
+      }
+    },
+    "GetLastPrices": {
+      "lastPrices": [
+        {
+          "figi": "BBGSYNTH00001",
+          "price": { "units": "15", "nano": 250000000 },
+          "time": "2026-08-13T10:00:00Z",
+          "instrumentUid": "11111111-1111-1111-1111-111111111111",
+          "lastPriceType": "LAST_PRICE_EXCHANGE"
+        }
+      ]
+    },
+    "GetCandles": {
+      "candles": [
+        {
+          "open": { "units": "14", "nano": 0 },
+          "high": { "units": "15", "nano": 0 },
+          "low": { "units": "13", "nano": 500000000 },
+          "close": { "units": "14", "nano": 800000000 },
+          "volume": "1000",
+          "time": "2026-08-01T00:00:00Z",
+          "isComplete": true,
+          "candleSourceType": "CANDLE_SOURCE_EXCHANGE"
+        },
+        {
+          "open": { "units": "16", "nano": 0 },
+          "high": { "units": "17", "nano": 0 },
+          "low": { "units": "16", "nano": 0 },
+          "close": { "units": "16", "nano": 500000000 },
+          "volume": "800",
+          "time": "2026-08-20T00:00:00Z",
+          "isComplete": true,
+          "candleSourceType": "CANDLE_SOURCE_EXCHANGE"
+        }
+      ]
+    }
+  },
+  "bond": {
+    "GetInstrumentBy": {
+      "instrument": {
+        "uid": "33333333-3333-3333-3333-333333333333",
+        "figi": "BBGSYNTH00003",
+        "ticker": "SYNTHB",
+        "classCode": "TQOB",
+        "isin": "RU000SYNTH03",
+        "name": "Synthetic Bond",
+        "currency": "rub",
+        "instrumentKind": "INSTRUMENT_TYPE_BOND",
+        "instrumentType": "bond",
+        "realExchange": "REAL_EXCHANGE_MOEX"
+      }
+    },
+    "BondBy": {
+      "instrument": {
+        "uid": "33333333-3333-3333-3333-333333333333",
+        "currency": "rub",
+        "instrumentKind": "INSTRUMENT_TYPE_BOND",
+        "instrumentType": "bond",
+        "nominal": { "currency": "rub", "units": "1000", "nano": 0 }
+      }
+    },
+    "GetLastPrices": {
+      "lastPrices": [
+        {
+          "figi": "BBGSYNTH00003",
+          "price": { "units": "98", "nano": 500000000 },
+          "time": "2026-08-13T10:00:00Z",
+          "instrumentUid": "33333333-3333-3333-3333-333333333333",
+          "lastPriceType": "LAST_PRICE_EXCHANGE"
+        }
+      ]
+    },
+    "GetCandles": {
+      "candles": [
+        {
+          "close": { "units": "97", "nano": 250000000 },
+          "time": "2026-08-10T21:00:00Z",
+          "isComplete": true,
+          "candleSourceType": "CANDLE_SOURCE_EXCHANGE"
+        },
+        {
+          "close": { "units": "99", "nano": 0 },
+          "time": "2026-08-20T00:00:00Z",
+          "isComplete": true,
+          "candleSourceType": "CANDLE_SOURCE_EXCHANGE"
+        }
+      ]
+    }
+  }
+}
