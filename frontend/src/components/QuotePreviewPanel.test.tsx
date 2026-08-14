@@ -50,7 +50,12 @@ function preview(rows: QuotePreviewRow[], overrides: Partial<QuotePreview> = {})
 
 function renderPanel(
   next: QuotePreview | null,
-  extras: { loading?: boolean; error?: string | null; closed?: boolean } = {},
+  extras: {
+    loading?: boolean;
+    error?: string | null;
+    closed?: boolean;
+    onApply?: (rows: unknown[]) => void;
+  } = {},
 ) {
   const onRefresh = vi.fn();
   render(
@@ -58,6 +63,7 @@ function renderPanel(
       closedMonthHint={extras.closed ?? false}
       error={extras.error ?? null}
       loading={extras.loading ?? false}
+      onApply={extras.onApply}
       onRefresh={onRefresh}
       preview={next}
     />,
@@ -149,7 +155,10 @@ describe("QuotePreviewPanel", () => {
     expect(stale).toHaveTextContent("Котировка старая");
     expect(stale).toHaveTextContent("Не обычное обновление");
     expect(stale).toHaveTextContent("01.08.2026");
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    const staleBox = screen.getByRole("checkbox", {
+      name: /Выбрать старую котировку Stale Stock/i,
+    });
+    expect(staleBox).not.toBeChecked();
     expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
   });
 
@@ -258,6 +267,43 @@ describe("QuotePreviewPanel", () => {
     renderPanel(null, { loading: true });
     expect(screen.getByRole("button", { name: "Обновляем…" })).toBeDisabled();
     expect(screen.getByText("Запрашиваем котировки…")).toBeInTheDocument();
+  });
+
+  it("applies the selected preview fingerprint rather than a typed amount", async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 4,
+          instrument_id: 14,
+          instrument_name: "Apply Stock",
+          status: "ok",
+          apply_allowed: true,
+          identity: {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+          },
+        }),
+      ]),
+      { onApply },
+    );
+    await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
+    expect(onApply).toHaveBeenCalledWith([
+      {
+        position_snapshot_id: 4,
+        accept_stale: false,
+        expected_market_price_per_unit: { amount: "215.50", currency: "RUB" },
+        expected_price_date: "2026-08-12",
+        expected_identity: {
+          provider: "t_invest",
+          provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+          provider_venue_id: null,
+        },
+        expected_quote_kind: "last",
+      },
+    ]);
   });
 
   it("shows a total request failure through the existing alert", () => {

@@ -5,3 +5,4 @@ class PriceSource(StrEnum):
     MANUAL = "manual"
     MOEX = "moex"
     ALFA_PDF = "alfa_pdf"
+    T_INVEST = "t_invest"

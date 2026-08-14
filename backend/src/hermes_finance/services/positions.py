@@ -249,6 +249,39 @@ def update_position_snapshot(
     return snapshot
 
 
+def apply_snapshot_market_quote(
+    session: Session,
+    snapshot: PositionSnapshot,
+    *,
+    market_price_per_unit_kopecks: int,
+    price_date: date,
+    price_source: PriceSource,
+) -> PositionSnapshot:
+    """Stage a backend-authoritative quote on a snapshot without committing.
+
+    Accrued interest (NKD) is left unchanged. The caller owns the transaction.
+    """
+    require_editable_child_month(session, snapshot)
+    if market_price_per_unit_kopecks < 0:
+        raise ValueError("market_price_per_unit must not be negative")
+    snapshot.market_price_per_unit_kopecks = market_price_per_unit_kopecks
+    snapshot.price_date = price_date
+    snapshot.price_source = _coerce_price_source(price_source).value
+    snapshot.manual_adjustment = False
+    (
+        snapshot.market_value_kopecks,
+        snapshot.cost_basis_kopecks,
+        snapshot.unrealized_result_kopecks,
+    ) = _compute_metrics(
+        snapshot.quantity,
+        snapshot.average_cost_per_unit_kopecks,
+        snapshot.market_price_per_unit_kopecks,
+        snapshot.accrued_interest_kopecks,
+    )
+    session.flush()
+    return snapshot
+
+
 def delete_position_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_position_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)

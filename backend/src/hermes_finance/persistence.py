@@ -346,7 +346,7 @@ class PositionSnapshot(Base):
             "cost_basis_kopecks >= 0", name="ck_position_snapshots_cost_basis_nonnegative"
         ),
         CheckConstraint(
-            "price_source IN ('manual', 'moex', 'alfa_pdf')",
+            "price_source IN ('manual', 'moex', 'alfa_pdf', 't_invest')",
             name="ck_position_snapshots_price_source",
         ),
     )
@@ -382,6 +382,56 @@ class PositionSnapshot(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class PositionQuoteProvenance(Base):
+    """Immutable snapshot-scoped quote provenance written only by apply."""
+
+    __tablename__ = "position_quote_provenance"
+    __table_args__ = (
+        UniqueConstraint(
+            "position_snapshot_id",
+            name="uq_position_quote_provenance_snapshot",
+        ),
+        CheckConstraint(
+            "normalized_price_kopecks >= 0",
+            name="ck_position_quote_provenance_price_nonnegative",
+        ),
+        CheckConstraint(
+            "freshness IN ('ok', 'stale')",
+            name="ck_position_quote_provenance_freshness",
+        ),
+        CheckConstraint(
+            "quote_kind IN ('last', 'history')",
+            name="ck_position_quote_provenance_quote_kind",
+        ),
+        CheckConstraint(
+            "raw_price_basis IN ('R', 'F')",
+            name="ck_position_quote_provenance_basis",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    position_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("position_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_instrument_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_venue_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    quote_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    raw_price: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_price_basis: Mapped[str] = mapped_column(String(8), nullable=False)
+    normalized_price_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_date: Mapped[date] = mapped_column(Date, nullable=False)
+    fetched_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    freshness: Mapped[str] = mapped_column(String(16), nullable=False)
+    applied_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class DepositSnapshot(Base):

@@ -4,8 +4,8 @@ import { createAccount, listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
-import { previewMonthQuotes } from "../api/quotePreview";
-import type { Account, Instrument, PositionSnapshot, QuotePreview } from "../api/types";
+import { applyMonthQuotes, previewMonthQuotes } from "../api/quotePreview";
+import type { Account, Instrument, PositionSnapshot, QuoteApplyRowRequest, QuotePreview } from "../api/types";
 import { QuotePreviewPanel } from "./QuotePreviewPanel";
 import {
   Badge,
@@ -113,6 +113,7 @@ export function MonthPositionsSection({
   const [editDraft, setEditDraft] = useState<PositionDraft | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PositionSnapshot | null>(null);
   const [quotePreview, setQuotePreview] = useState<QuotePreview | null>(null);
+  const [previewApplying, setPreviewApplying] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -366,7 +367,7 @@ export function MonthPositionsSection({
   }
 
   async function handleQuotePreview() {
-    if (previewLoading) {
+    if (previewLoading || previewApplying) {
       return;
     }
     setPreviewLoading(true);
@@ -377,6 +378,23 @@ export function MonthPositionsSection({
       setPreviewError(formatApiError(err));
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function handleQuoteApply(rows: QuoteApplyRowRequest[]) {
+    if (previewApplying || previewLoading || rows.length === 0) {
+      return;
+    }
+    setPreviewApplying(true);
+    setPreviewError(null);
+    try {
+      await applyMonthQuotes(monthId, rows);
+      await load();
+      setQuotePreview(await previewMonthQuotes(monthId));
+    } catch (err) {
+      setPreviewError(formatApiError(err));
+    } finally {
+      setPreviewApplying(false);
     }
   }
 
@@ -846,9 +864,11 @@ export function MonthPositionsSection({
       </Panel>
 
       <QuotePreviewPanel
+        applying={previewApplying}
         closedMonthHint={readOnly}
         error={previewError}
         loading={previewLoading}
+        onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
         onRefresh={() => void handleQuotePreview()}
         preview={quotePreview}
       />

@@ -246,7 +246,7 @@ def test_mapped_and_failed_rows_and_closed_month(
     body = preview.json()
     rows = {row["instrument_id"]: row for row in body["rows"]}
     assert rows[stock["id"]]["status"] == "ok"
-    assert rows[stock["id"]]["apply_allowed"] is True
+    assert rows[stock["id"]]["apply_allowed"] is False
     assert rows[stock["id"]]["current_market_price_per_unit"] == {
         "amount": "200.00",
         "currency": "RUB",

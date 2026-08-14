@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
 from hermes_finance.services.tax_brackets import TaxBracketYearLockedError
@@ -122,6 +123,16 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(404, "not_found", str(exc))
+
+    @application.exception_handler(PreviewChangedError)
+    async def _preview_changed_handler(request: Request, exc: PreviewChangedError) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(409, exc.code, str(exc))
 
     @application.exception_handler(ClosedReportingMonthError)
     async def _closed_month_handler(

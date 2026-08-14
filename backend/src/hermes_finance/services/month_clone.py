@@ -46,6 +46,7 @@ from hermes_finance.persistence import (
     DepositSnapshot,
     ExpenseEntry,
     IncomeEntry,
+    PositionQuoteProvenance,
     PositionSnapshot,
     PropertySnapshot,
     ReportingMonth,
@@ -94,6 +95,45 @@ def _copy_positions(session: Session, *, source_id: int, target_id: int) -> None
                 price_source=row.price_source,
                 manual_adjustment=row.manual_adjustment,
                 notes=row.notes,
+            )
+        )
+    session.flush()
+    source_rows = list(
+        session.scalars(
+            select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == source_id)
+        )
+    )
+    target_by_key = {
+        (row.account_id, row.instrument_id): row
+        for row in session.scalars(
+            select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == target_id)
+        )
+    }
+    for source in source_rows:
+        provenance = session.scalar(
+            select(PositionQuoteProvenance).where(
+                PositionQuoteProvenance.position_snapshot_id == source.id
+            )
+        )
+        if provenance is None:
+            continue
+        target = target_by_key[(source.account_id, source.instrument_id)]
+        session.add(
+            PositionQuoteProvenance(
+                position_snapshot_id=target.id,
+                reporting_month_id=target_id,
+                provider=provenance.provider,
+                provider_instrument_id=provenance.provider_instrument_id,
+                provider_venue_id=provenance.provider_venue_id,
+                quote_kind=provenance.quote_kind,
+                raw_price=provenance.raw_price,
+                raw_price_basis=provenance.raw_price_basis,
+                normalized_price_kopecks=provenance.normalized_price_kopecks,
+                price_date=provenance.price_date,
+                fetched_at_utc=provenance.fetched_at_utc,
+                target_date=provenance.target_date,
+                freshness=provenance.freshness,
+                applied_at_utc=provenance.applied_at_utc,
             )
         )
 
