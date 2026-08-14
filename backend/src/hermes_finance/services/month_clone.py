@@ -207,7 +207,8 @@ def _copy_salary_settings(session: Session, *, source_id: int, target_id: int) -
 
     Legacy source months may contain duplicate recurring SALARY rows. The target
     month receives their exact aggregate so clone cannot propagate that invalid
-    cardinality. ``received_at`` is cleared because payment dates are actual events.
+    cardinality. The first source row's name is preserved. ``received_at`` is
+    cleared because payment dates are actual events.
     """
     rows = list(
         session.scalars(
@@ -228,7 +229,7 @@ def _copy_salary_settings(session: Session, *, source_id: int, target_id: int) -
         IncomeEntry(
             reporting_month_id=target_id,
             income_type=IncomeType.SALARY.value,
-            name="Зарплата",
+            name=first.name,
             gross_amount_kopecks=sum(row.gross_amount_kopecks for row in rows),
             tax_amount_kopecks=sum(row.tax_amount_kopecks for row in rows),
             net_amount_kopecks=sum(row.net_amount_kopecks for row in rows),

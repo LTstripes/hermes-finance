@@ -241,10 +241,89 @@ def test_clone_aggregates_legacy_recurring_salary_rows(tmp_path: Path) -> None:
         )
 
         assert len(rows) == 1
+        assert rows[0].name == "Legacy A"
         assert rows[0].gross_amount_kopecks == 25_000_000
         assert rows[0].tax_amount_kopecks == 3_250_000
         assert rows[0].net_amount_kopecks == 21_750_000
         assert rows[0].received_at is None
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_clone_preserves_single_recurring_salary_name(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        source_id = _month(session, year=2030, month=5)
+        _legacy_salary(
+            session,
+            source_id,
+            gross=20_000_000,
+            tax=2_600_000,
+            net=17_400_000,
+            name="Custom Salary Name",
+        )
+
+        target = clone_reporting_month(
+            session,
+            source_id,
+            target_year=2030,
+            target_month=6,
+            snapshot_date=date(2030, 6, 15),
+        )
+        rows = list(
+            session.scalars(
+                select(IncomeEntry).where(
+                    IncomeEntry.reporting_month_id == target.id,
+                    IncomeEntry.income_type == IncomeType.SALARY.value,
+                )
+            )
+        )
+
+        assert len(rows) == 1
+        assert rows[0].name == "Custom Salary Name"
+        assert rows[0].gross_amount_kopecks == 20_000_000
+        assert rows[0].tax_amount_kopecks == 2_600_000
+        assert rows[0].net_amount_kopecks == 17_400_000
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_replace_rolls_back_when_commit_fails(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        month_id = _month(session)
+        first = _legacy_salary(session, month_id, gross=100, tax=10, net=90, name="A")
+        second = _legacy_salary(session, month_id, gross=200, tax=20, net=180, name="B")
+
+        def fail_commit() -> None:
+            raise RuntimeError("synthetic commit failure")
+
+        session.commit = fail_commit  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="synthetic commit failure"):
+            replace_salary_entry(
+                session,
+                month_id,
+                gross_amount="250000.00",
+                tax_amount="32500.00",
+                net_amount="217500.00",
+            )
+
+        rows = list(
+            session.scalars(
+                select(IncomeEntry)
+                .where(
+                    IncomeEntry.reporting_month_id == month_id,
+                    IncomeEntry.income_type == IncomeType.SALARY.value,
+                )
+                .order_by(IncomeEntry.id)
+            )
+        )
+        assert [(row.id, row.name, row.gross_amount_kopecks) for row in rows] == [
+            (first.id, "A", 100),
+            (second.id, "B", 200),
+        ]
     finally:
         session.close()
         database.engine.dispose()
@@ -289,7 +368,11 @@ def test_salary_replace_api_keeps_one_visible_salary_row(tmp_path: Path) -> None
                     "net_amount": rub("43500.00"),
                 },
             )
-            assert duplicate.status_code == 400
+            assert duplicate.status_code == 422
+            error = duplicate.json()["error"]
+            assert error["code"] == "unprocessable"
+            assert "already has a salary" in error["message"]
+            assert error["details"] == []
 
             replaced = client.put(
                 f"/api/incomes/salary/{month_id}",
@@ -305,5 +388,61 @@ def test_salary_replace_api_keeps_one_visible_salary_row(tmp_path: Path) -> None
             listing = client.get(f"/api/incomes?month_id={month_id}")
             salary_rows = [row for row in listing.json() if row["income_type"] == "salary"]
             assert len(salary_rows) == 1
+    finally:
+        database.engine.dispose()
+
+
+def test_salary_replace_api_rejects_closed_month(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "salary-cardinality-closed.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with TestClient(create_app(database)) as client:
+            month = client.post(
+                "/api/months",
+                json={"year": 2030, "month": 5, "snapshot_date": "2030-05-15"},
+            )
+            assert month.status_code == 201
+            month_id = month.json()["id"]
+
+            def rub(amount: str) -> dict[str, str]:
+                return {"amount": amount, "currency": "RUB"}
+
+            created = client.post(
+                "/api/incomes",
+                json={
+                    "reporting_month_id": month_id,
+                    "income_type": "salary",
+                    "name": "Зарплата",
+                    "gross_amount": rub("200000.00"),
+                    "tax_amount": rub("26000.00"),
+                    "net_amount": rub("174000.00"),
+                },
+            )
+            assert created.status_code == 201
+            original = created.json()
+
+            closed = client.post(f"/api/months/{month_id}/close")
+            assert closed.status_code == 200
+
+            replaced = client.put(
+                f"/api/incomes/salary/{month_id}",
+                json={
+                    "gross_amount": rub("250000.00"),
+                    "tax_amount": rub("32500.00"),
+                    "net_amount": rub("217500.00"),
+                },
+            )
+            assert replaced.status_code == 409
+            error = replaced.json()["error"]
+            assert error["code"] == "conflict"
+            assert "reopened" in error["message"]
+            assert error["details"] == []
+
+            listing = client.get(f"/api/incomes?month_id={month_id}")
+            salary_rows = [row for row in listing.json() if row["income_type"] == "salary"]
+            assert len(salary_rows) == 1
+            assert salary_rows[0]["id"] == original["id"]
+            assert salary_rows[0]["gross_amount"] == original["gross_amount"]
+            assert salary_rows[0]["net_amount"] == original["net_amount"]
     finally:
         database.engine.dispose()
