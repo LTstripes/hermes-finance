@@ -46,6 +46,8 @@ FORBIDDEN_METHOD_MARKERS: Final = frozenset(
 DEFAULT_FIXTURE_PATH: Final = (
     REPOSITORY_ROOT / "backend" / "tests" / "fixtures" / "t_invest" / "official_rest_shape.json"
 )
+STOCK_SYNTH_UID: Final = "11111111-1111-1111-1111-111111111111"
+BOND_SYNTH_UID: Final = "33333333-3333-3333-3333-333333333333"
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -228,6 +230,87 @@ def load_official_fixture(path: Path | None = None) -> dict[str, object]:
     return json.loads(fixture_path.read_text(encoding="utf-8"))
 
 
+def _short_method(method: str) -> str:
+    return method.rsplit("/", 1)[-1]
+
+
+def _section_for_payload(default: str, method: str, payload: dict[str, object]) -> str:
+    if _short_method(method) == "BondBy":
+        return "bond"
+    instrument = payload.get("instrument")
+    if isinstance(instrument, dict):
+        kind = str(
+            instrument.get("instrumentKind")
+            or instrument.get("instrument_kind")
+            or instrument.get("instrumentType")
+            or instrument.get("instrument_type")
+            or ""
+        )
+        if "BOND" in kind.upper() or kind.lower() == "bond":
+            return "bond"
+    return default
+
+
+def _rewrite_identifiers(value: object, *, kind: str) -> object:
+    uid = BOND_SYNTH_UID if kind == "bond" else STOCK_SYNTH_UID
+    figi = "BBGSYNTH00003" if kind == "bond" else "BBGSYNTH00001"
+    ticker = "SYNTHB" if kind == "bond" else "SYNTHS"
+    isin = "RU000SYNTH03" if kind == "bond" else "RU000SYNTH01"
+    name = "Synthetic Bond" if kind == "bond" else "Synthetic Share"
+    class_code = "TQOB" if kind == "bond" else "TQBR"
+
+    def walk(item: object, *, key: str | None = None) -> object:
+        if isinstance(item, dict):
+            return {
+                str(raw_key): walk(raw_value, key=str(raw_key))
+                for raw_key, raw_value in item.items()
+            }
+        if isinstance(item, list):
+            return [walk(entry, key=key) for entry in item]
+        if isinstance(item, str):
+            lowered = (key or "").lower()
+            if _UUID_RE.match(item):
+                return uid
+            if lowered == "figi":
+                return figi
+            if lowered in {"ticker"}:
+                return ticker
+            if lowered in {"classcode", "class_code"}:
+                return class_code
+            if lowered == "isin":
+                return isin
+            if lowered == "name":
+                return name
+        return item
+
+    return walk(value)
+
+
+def assemble_canonical_fixture(
+    captured: dict[str, dict[str, dict[str, object]]],
+) -> dict[str, object]:
+    """Build the deterministic {meta, stock, bond} schema tests reload."""
+
+    stock = _rewrite_identifiers(captured.get("stock") or {}, kind="stock")
+    bond = _rewrite_identifiers(captured.get("bond") or {}, kind="bond")
+    if not isinstance(stock, dict) or not isinstance(bond, dict):
+        raise TypeError("canonical fixture sections must be objects")
+    return {
+        "meta": {
+            "source": "sanitized official T-Invest REST representative payload",
+            "note": "No token, account, or owner data. Identifiers are synthetic.",
+        },
+        "stock": stock,
+        "bond": bond,
+    }
+
+
+def write_canonical_fixture(path: Path, captured: dict[str, dict[str, dict[str, object]]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = assemble_canonical_fixture(captured)
+    path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -279,12 +362,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     today = datetime.now(MOSCOW_TZ).date()
     historical_target = args.target_date or (today - timedelta(days=10))
-    captured: dict[str, dict[str, object]] = {}
+    captured: dict[str, dict[str, dict[str, object]]] = {"stock": {}, "bond": {}}
+    section_holder = {"name": "stock"}
 
     def capture(method: str, payload: dict[str, object]) -> None:
         sanitized = sanitize_official_payload(project_official_shape(method, payload))
-        if isinstance(sanitized, dict):
-            captured[method] = sanitized
+        if not isinstance(sanitized, dict):
+            return
+        section = _section_for_payload(section_holder["name"], method, payload)
+        captured.setdefault(section, {})[_short_method(method)] = sanitized
 
     try:
         with TInvestClient(token=token, client=http, clock=lambda: today) as client:
@@ -304,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
                 bond_query=args.bond_query,
                 today=today,
                 historical_target=historical_target,
-                methods_called=list(transport.methods),
+                section_holder=section_holder,
             )
     finally:
         http.close()
@@ -312,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
     summary["methods_called"] = list(dict.fromkeys(transport.methods))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if summary.get("ok") and args.write_fixture:
-        _write_fixture(Path(args.write_fixture), captured, historical_target)
+        write_canonical_fixture(Path(args.write_fixture), captured)
     return 0 if summary.get("ok") else 1
 
 
@@ -323,9 +409,9 @@ def _run_live_checks(
     bond_query: str,
     today: date,
     historical_target: date,
-    methods_called: list[str],
+    section_holder: dict[str, str],
 ) -> dict[str, object]:
-    del methods_called
+    section_holder["name"] = "stock"
     discovered = client.discover_candidates(query=query)
     if not discovered.candidates:
         return {
@@ -340,6 +426,7 @@ def _run_live_checks(
         isinstance(historical, QuoteSuccess) and historical.price_date <= historical_target
     )
     current_ok = isinstance(current, QuoteSuccess)
+    section_holder["name"] = "bond"
     bond = client.discover_candidates(query=bond_query)
     bond_checked = False
     bond_nominal_shape = False
@@ -381,22 +468,6 @@ def _run_live_checks(
         "mapping_persisted": False,
         "forbidden_methods_called": [],
     }
-
-
-def _write_fixture(
-    path: Path, captured: dict[str, dict[str, object]], historical_target: date
-) -> None:
-    del historical_target
-    path.parent.mkdir(parents=True, exist_ok=True)
-    document = {
-        "meta": {
-            "source": "sanitized official T-Invest REST representative payload",
-            "note": "No token, account, or owner data. Identifiers are synthetic.",
-        },
-        "captured_methods": sorted(captured),
-        "payloads": captured,
-    }
-    path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

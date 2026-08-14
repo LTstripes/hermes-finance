@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 import httpx2
 import pytest
@@ -12,20 +13,23 @@ from hermes_finance.market_data.dto import QuoteStatus, QuoteSuccess
 from hermes_finance.market_data.t_invest import TInvestClient, t_invest_identity
 from hermes_finance.market_data.t_invest_probe import (
     ALLOWED_METHODS,
+    BOND_SYNTH_UID,
     DEFAULT_FIXTURE_PATH,
     FORBIDDEN_METHOD_MARKERS,
+    STOCK_SYNTH_UID,
     ForbiddenTInvestMethod,
     RecordingAllowlistTransport,
     load_official_fixture,
     main,
     project_official_shape,
     sanitize_official_payload,
+    write_canonical_fixture,
 )
 
 TODAY = date(2026, 8, 13)
 FETCHED_AT = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
-STOCK_UID = "11111111-1111-1111-1111-111111111111"
-BOND_UID = "33333333-3333-3333-3333-333333333333"
+STOCK_UID = STOCK_SYNTH_UID
+BOND_UID = BOND_SYNTH_UID
 
 
 class FixtureTransport:
@@ -147,8 +151,7 @@ def test_official_fixture_has_no_token_or_account_payload() -> None:
     }
 
 
-def test_official_fixture_stock_quote_and_historical_as_of() -> None:
-    fixture = load_official_fixture()
+def _exercise_stock_historical(fixture: dict[str, object]) -> None:
     client, stub = _client(fixture)
     discovered = client.discover_candidates(query="SYNTHS")
     assert discovered.status is QuoteStatus.OK
@@ -179,8 +182,11 @@ def test_official_fixture_stock_quote_and_historical_as_of() -> None:
     assert "Transfer" not in joined
 
 
-def test_official_fixture_bond_money_value_and_future_candle_ignored() -> None:
-    fixture = load_official_fixture()
+def test_official_fixture_stock_quote_and_historical_as_of() -> None:
+    _exercise_stock_historical(load_official_fixture())
+
+
+def _exercise_bond_money_value(fixture: dict[str, object]) -> None:
     client, stub = _client(fixture)
     identity = t_invest_identity(provider_instrument_id=BOND_UID, isin="RU000SYNTH03")
     result = client.fetch_quote(identity, date(2026, 8, 11))
@@ -189,6 +195,165 @@ def test_official_fixture_bond_money_value_and_future_candle_ignored() -> None:
     assert result.price_date <= date(2026, 8, 11)
     assert result.proposed_price_kopecks == 97_250
     assert any("BondBy" in path for path in stub.paths)
+
+
+def test_official_fixture_bond_money_value_and_future_candle_ignored() -> None:
+    _exercise_bond_money_value(load_official_fixture())
+
+
+def _sanitize_captured(method: str, payload: dict[str, object]) -> dict[str, object]:
+    cleaned = sanitize_official_payload(project_official_shape(method, payload))
+    assert isinstance(cleaned, dict)
+    return cleaned
+
+
+def test_write_fixture_round_trip_uses_canonical_schema(tmp_path: Path) -> None:
+    live_stock_uid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    live_bond_uid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    captured = {
+        "stock": {
+            "FindInstrument": _sanitize_captured(
+                "InstrumentsService/FindInstrument",
+                {
+                    "instruments": [
+                        {
+                            "uid": live_stock_uid,
+                            "figi": "BBGLIVE00001",
+                            "ticker": "SBER",
+                            "classCode": "TQBR",
+                            "isin": "RU0009029540",
+                            "name": "Live Share",
+                            "instrumentKind": "INSTRUMENT_TYPE_SHARE",
+                            "instrumentType": "share",
+                            "accountId": "drop-me",
+                        }
+                    ]
+                },
+            ),
+            "GetInstrumentBy": _sanitize_captured(
+                "InstrumentsService/GetInstrumentBy",
+                {
+                    "instrument": {
+                        "uid": live_stock_uid,
+                        "figi": "BBGLIVE00001",
+                        "ticker": "SBER",
+                        "classCode": "TQBR",
+                        "isin": "RU0009029540",
+                        "name": "Live Share",
+                        "lot": 10,
+                        "currency": "rub",
+                        "instrumentKind": "INSTRUMENT_TYPE_SHARE",
+                        "instrumentType": "share",
+                        "realExchange": "REAL_EXCHANGE_MOEX",
+                    }
+                },
+            ),
+            "GetLastPrices": _sanitize_captured(
+                "MarketDataService/GetLastPrices",
+                {
+                    "lastPrices": [
+                        {
+                            "figi": "BBGLIVE00001",
+                            "price": {"units": "15", "nano": 250000000, "extra": True},
+                            "time": "2026-08-13T10:00:00Z",
+                            "instrumentUid": live_stock_uid,
+                            "lastPriceType": "LAST_PRICE_EXCHANGE",
+                            "accountId": "drop-me",
+                        }
+                    ]
+                },
+            ),
+            "GetCandles": _sanitize_captured(
+                "MarketDataService/GetCandles",
+                {
+                    "candles": [
+                        {
+                            "open": {"units": "14", "nano": 0},
+                            "high": {"units": "15", "nano": 0},
+                            "low": {"units": "13", "nano": 500000000},
+                            "close": {"units": "14", "nano": 800000000},
+                            "volume": "1000",
+                            "time": "2026-08-01T00:00:00Z",
+                            "isComplete": True,
+                            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                        },
+                        {
+                            "close": {"units": "16", "nano": 500000000},
+                            "time": "2026-08-20T00:00:00Z",
+                            "isComplete": True,
+                            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                        },
+                    ]
+                },
+            ),
+        },
+        "bond": {
+            "GetInstrumentBy": _sanitize_captured(
+                "InstrumentsService/GetInstrumentBy",
+                {
+                    "instrument": {
+                        "uid": live_bond_uid,
+                        "figi": "BBGLIVE00003",
+                        "ticker": "SU26238",
+                        "classCode": "TQOB",
+                        "isin": "RU000A0JX0J2",
+                        "name": "Live Bond",
+                        "currency": "rub",
+                        "instrumentKind": "INSTRUMENT_TYPE_BOND",
+                        "instrumentType": "bond",
+                        "realExchange": "REAL_EXCHANGE_MOEX",
+                    }
+                },
+            ),
+            "BondBy": _sanitize_captured(
+                "InstrumentsService/BondBy",
+                {
+                    "instrument": {
+                        "uid": live_bond_uid,
+                        "currency": "rub",
+                        "instrumentKind": "INSTRUMENT_TYPE_BOND",
+                        "instrumentType": "bond",
+                        "nominal": {"currency": "rub", "units": "1000", "nano": 0},
+                    }
+                },
+            ),
+            "GetCandles": _sanitize_captured(
+                "MarketDataService/GetCandles",
+                {
+                    "candles": [
+                        {
+                            "close": {"units": "97", "nano": 250000000},
+                            "time": "2026-08-10T21:00:00Z",
+                            "isComplete": True,
+                            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                        },
+                        {
+                            "close": {"units": "99", "nano": 0},
+                            "time": "2026-08-20T00:00:00Z",
+                            "isComplete": True,
+                            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                        },
+                    ]
+                },
+            ),
+        },
+    }
+    written = tmp_path / "official_rest_shape.json"
+    write_canonical_fixture(written, captured)
+    reloaded = load_official_fixture(written)
+    assert set(reloaded) == {"meta", "stock", "bond"}
+    assert "captured_methods" not in reloaded
+    assert "payloads" not in reloaded
+    dumped = json.dumps(reloaded)
+    assert "SBER" not in dumped
+    assert "SU26238" not in dumped
+    assert live_stock_uid not in dumped
+    assert live_bond_uid not in dumped
+    assert "accountId" not in dumped
+    assert reloaded["stock"]["GetInstrumentBy"]["instrument"]["uid"] == STOCK_UID
+    assert reloaded["bond"]["BondBy"]["instrument"]["uid"] == BOND_UID
+    _exercise_stock_historical(reloaded)
+    _exercise_bond_money_value(reloaded)
 
 
 def test_project_official_shape_keeps_adapter_fields_only() -> None:
