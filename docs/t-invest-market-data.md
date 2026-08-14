@@ -49,3 +49,11 @@ uv run python -m hermes_finance.market_data.t_invest_probe --live
 ```
 
 The probe reads only `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` from the ignored repository-root `.env`. It calls FindInstrument, GetInstrumentBy, BondBy, GetLastPrices and GetCandles. It does not call Accounts, Operations, Orders, Sandbox or Transfer. It does not write a mapping or a monthly snapshot. Optional `--write-fixture` stores a sanitized public payload under `backend/tests/fixtures/t_invest/`.
+
+## Troubleshooting the live probe
+
+On the owner's Windows environment, the official T-Invest API was unreachable while a VPN was active and the same probe succeeded after the VPN was disabled. If the live probe has a network/connection failure, retry once with the VPN disabled before diagnosing the adapter. This is troubleshooting guidance for the observed environment, not an application networking requirement.
+
+If authentication is rejected, verify that the token is a current **read-only** T-Invest token. The owner-side acceptance probe succeeded after an invalid/rejected token was reissued. Never print or paste the token into logs, reports, GitHub issues, or chat.
+
+`--write-fixture` is optional and is not needed for a routine owner acceptance probe. Use it only when intentionally refreshing the sanitized deterministic fixture after an official API shape change; review the generated public fixture before committing it.
