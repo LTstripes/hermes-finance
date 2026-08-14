@@ -296,7 +296,7 @@ def test_excluded_flow_types_not_counted(tmp_path: Path) -> None:
             (InvestmentCashFlowType.COMMISSION, "0.00", "0.00", "5.00", "-5.00"),
             (InvestmentCashFlowType.TAX, "0.00", "13.00", "0.00", "-13.00"),
             (InvestmentCashFlowType.REALIZED_PROFIT, "1000.00", "0.00", "0.00", "1000.00"),
-            (InvestmentCashFlowType.REALIZED_LOSS, "0.00", "0.00", "0.00", "0.00"),
+            (InvestmentCashFlowType.REALIZED_LOSS, "0.00", "0.00", "1.00", "-1.00"),
         ]
         for i, (ftype, gross, tax, comm, net) in enumerate(excluded_types):
             day = 10 + i
