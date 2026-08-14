@@ -136,7 +136,11 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("position_snapshot_id", name="uq_position_quote_provenance_snapshot"),
+    )
+    op.create_index(
+        "ix_position_quote_provenance_snapshot_id",
+        "position_quote_provenance",
+        ["position_snapshot_id"],
     )
 
 
@@ -147,6 +151,10 @@ def downgrade() -> None:
     ).scalar_one()
     if t_invest_count:
         raise ValueError("cannot downgrade while t_invest price_source rows exist")
+    op.drop_index(
+        "ix_position_quote_provenance_snapshot_id",
+        table_name="position_quote_provenance",
+    )
     op.drop_table("position_quote_provenance")
     op.create_table(
         "position_snapshots_old",

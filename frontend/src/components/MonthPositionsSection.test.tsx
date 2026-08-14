@@ -161,6 +161,34 @@ describe("MonthPositionsSection G03 component contract", () => {
     expect(screen.getByRole("button", { name: "Изменить" })).toBeDisabled();
   });
 
+  it("does not keep t_invest when the owner manually changes price", async () => {
+    const tInvestPosition = { ...position, price_source: "t_invest" };
+    const fetchMock = setup(
+      {
+        "PATCH /api/positions/31": () =>
+          jsonResponse({ ...tInvestPosition, price_source: "manual" }),
+      },
+      [tInvestPosition],
+    );
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Изменить" }));
+    const priceInput = screen.getByDisplayValue("1100.00");
+    await user.clear(priceInput);
+    await user.type(priceInput, "1200");
+    await user.click(screen.getByRole("button", { name: "OK" }));
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([input, init]) => String(input) === "/api/positions/31" && init?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch?.[1]?.body))).toMatchObject({
+        market_price_per_unit: { amount: "1200.00", currency: "RUB" },
+        price_source: "manual",
+      });
+    });
+  });
+
   it("exposes differing price metadata as secondary detail", async () => {
     setup({}, [{ ...position, price_date: "2031-02-01", price_source: "moex" }]);
     const table = await screen.findByRole("table");

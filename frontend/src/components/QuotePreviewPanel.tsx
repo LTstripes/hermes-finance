@@ -36,7 +36,10 @@ function canSelect(row: QuotePreviewRow, monthEditable: boolean): boolean {
   if (!monthEditable || row.proposed_market_price_per_unit == null || row.identity == null) {
     return false;
   }
-  return row.apply_allowed || row.status === "stale";
+  if (row.apply_allowed) {
+    return true;
+  }
+  return row.status === "stale" && row.identity.provider === "t_invest";
 }
 
 function toApplyRequest(row: QuotePreviewRow, acceptStale: boolean): QuoteApplyRowRequest | null {

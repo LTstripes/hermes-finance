@@ -180,3 +180,65 @@ def test_apply_closed_month_is_conflict(client: TestClient) -> None:
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "conflict"
+
+
+def test_generic_position_api_rejects_fake_t_invest(client: TestClient) -> None:
+    month, position = _setup_position(client)
+    extra = client.post(
+        "/api/instruments", json={"name": "Other Stock", "instrument_type": "stock"}
+    )
+    assert extra.status_code == 201
+    created = client.post(
+        "/api/positions",
+        json={
+            "reporting_month_id": month["id"],
+            "account_id": position["account_id"],
+            "instrument_id": extra.json()["id"],
+            "quantity": "1",
+            "average_cost_per_unit": _rub("10.00"),
+            "market_price_per_unit": _rub("10.00"),
+            "price_date": "2026-08-01",
+            "price_source": "t_invest",
+        },
+    )
+    assert created.status_code == 422
+    patched = client.patch(
+        f"/api/positions/{position['id']}",
+        json={"price_source": "t_invest"},
+        headers={"If-Match": position["updated_at"]},
+    )
+    assert patched.status_code == 422
+
+
+def test_generic_patch_on_applied_t_invest_snapshot(client: TestClient) -> None:
+    month, position = _setup_position(client)
+    applied = client.post(
+        f"/api/months/{month['id']}/quote-apply", json=_apply_body(position["id"])
+    )
+    assert applied.status_code == 200
+    listed = client.get(f"/api/positions?month_id={month['id']}")
+    current = listed.json()[0]
+    qty = client.patch(
+        f"/api/positions/{current['id']}",
+        json={"quantity": "11"},
+        headers={"If-Match": current["updated_at"]},
+    )
+    assert qty.status_code == 200
+    assert qty.json()["price_source"] == "t_invest"
+    assert qty.json()["market_price_per_unit"] == _rub("215.50")
+
+    keep_t_invest = client.patch(
+        f"/api/positions/{current['id']}",
+        json={"market_price_per_unit": _rub("250.00"), "price_source": "t_invest"},
+        headers={"If-Match": qty.json()["updated_at"]},
+    )
+    assert keep_t_invest.status_code == 422
+
+    manual = client.patch(
+        f"/api/positions/{current['id']}",
+        json={"market_price_per_unit": _rub("250.00"), "price_source": "manual"},
+        headers={"If-Match": qty.json()["updated_at"]},
+    )
+    assert manual.status_code == 200
+    assert manual.json()["price_source"] == "manual"
+    assert manual.json()["market_price_per_unit"] == _rub("250.00")

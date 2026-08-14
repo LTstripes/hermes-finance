@@ -527,6 +527,128 @@ def test_provenance_survives_mapping_edit(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def _provenance_fields(row: PositionQuoteProvenance) -> tuple[object, ...]:
+    return (
+        row.id,
+        row.position_snapshot_id,
+        row.reporting_month_id,
+        row.provider,
+        row.provider_instrument_id,
+        row.provider_venue_id,
+        row.quote_kind,
+        row.raw_price,
+        row.raw_price_basis,
+        row.normalized_price_kopecks,
+        row.price_date,
+        row.fetched_at_utc,
+        row.target_date,
+        row.freshness,
+        row.applied_at_utc,
+    )
+
+
+def test_repeat_apply_appends_provenance_and_preserves_first_row(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account, stock, _fund = _seed(session)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.id,
+            instrument_id=stock.id,
+            quantity="1",
+            average_cost_per_unit="100.00",
+            market_price_per_unit="100.00",
+            price_date=date(2026, 8, 1),
+        )
+        first_at = datetime(2026, 8, 13, 12, 5, tzinfo=timezone.utc)
+        second_at = datetime(2026, 8, 14, 9, 0, tzinfo=timezone.utc)
+        first_quote = _success(STOCK_IDENTITY, kopecks=21550)
+        second_quote = _success(STOCK_IDENTITY, kopecks=22000)
+        apply_market_quotes(
+            session,
+            month_id,
+            [_selection(snapshot.id, kopecks=21550)],
+            provider=ScriptedProvider({market_identity_key(STOCK_IDENTITY): first_quote}),
+            today=TODAY,
+            clock=first_at,
+        )
+        first_row = session.scalar(
+            select(PositionQuoteProvenance).order_by(PositionQuoteProvenance.id)
+        )
+        assert first_row is not None
+        first_fields = _provenance_fields(first_row)
+
+        apply_market_quotes(
+            session,
+            month_id,
+            [_selection(snapshot.id, kopecks=22000)],
+            provider=ScriptedProvider({market_identity_key(STOCK_IDENTITY): second_quote}),
+            today=TODAY,
+            clock=second_at,
+        )
+        session.refresh(snapshot)
+        rows = list(
+            session.scalars(select(PositionQuoteProvenance).order_by(PositionQuoteProvenance.id))
+        )
+        assert snapshot.market_price_per_unit_kopecks == 22000
+        assert len(rows) == 2
+        assert _provenance_fields(rows[0]) == first_fields
+        assert rows[1].normalized_price_kopecks == 22000
+        assert rows[1].applied_at_utc.replace(tzinfo=timezone.utc) == second_at
+        assert rows[1].id != rows[0].id
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_failed_second_apply_does_not_touch_provenance(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account, stock, _fund = _seed(session)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.id,
+            instrument_id=stock.id,
+            quantity="1",
+            average_cost_per_unit="100.00",
+            market_price_per_unit="100.00",
+            price_date=date(2026, 8, 1),
+        )
+        apply_market_quotes(
+            session,
+            month_id,
+            [_selection(snapshot.id, kopecks=21550)],
+            provider=ScriptedProvider(
+                {market_identity_key(STOCK_IDENTITY): _success(STOCK_IDENTITY, kopecks=21550)}
+            ),
+            today=TODAY,
+            clock=APPLIED_AT,
+        )
+        first_row = session.scalar(select(PositionQuoteProvenance))
+        assert first_row is not None
+        first_fields = _provenance_fields(first_row)
+        with pytest.raises(PreviewChangedError):
+            apply_market_quotes(
+                session,
+                month_id,
+                [_selection(snapshot.id, kopecks=20000)],
+                provider=ScriptedProvider(
+                    {market_identity_key(STOCK_IDENTITY): _success(STOCK_IDENTITY, kopecks=22000)}
+                ),
+                today=TODAY,
+            )
+        rows = list(session.scalars(select(PositionQuoteProvenance)))
+        assert len(rows) == 1
+        assert _provenance_fields(rows[0]) == first_fields
+        session.refresh(snapshot)
+        assert snapshot.market_price_per_unit_kopecks == 21550
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_apply_does_not_run_on_import(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:

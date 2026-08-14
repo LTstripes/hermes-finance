@@ -147,6 +147,11 @@ describe("QuotePreviewPanel", () => {
           status: "stale",
           apply_allowed: false,
           proposed_price_date: "2026-08-01",
+          identity: {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+          },
         }),
       ]),
     );
@@ -159,6 +164,32 @@ describe("QuotePreviewPanel", () => {
       name: /Выбрать старую котировку Stale Stock/i,
     });
     expect(staleBox).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
+  });
+
+  it("does not offer apply selection for a stale MOEX reference row", () => {
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 9,
+          instrument_id: 19,
+          instrument_name: "MOEX Stale",
+          status: "stale",
+          apply_allowed: false,
+          proposed_price_date: "2026-08-01",
+          identity: {
+            provider: "moex_iss",
+            provider_instrument_id: "SBER",
+            provider_venue_id: "stock/shares/TQBR",
+          },
+        }),
+      ]),
+      {
+        onApply: vi.fn(),
+      },
+    );
+    expect(screen.getByText("MOEX Stale")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
   });
 

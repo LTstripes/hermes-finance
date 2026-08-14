@@ -5,7 +5,13 @@ import { formatApiError } from "../api/client";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
 import { applyMonthQuotes, previewMonthQuotes } from "../api/quotePreview";
-import type { Account, Instrument, PositionSnapshot, QuoteApplyRowRequest, QuotePreview } from "../api/types";
+import type {
+  Account,
+  Instrument,
+  PositionSnapshot,
+  QuoteApplyRowRequest,
+  QuotePreview,
+} from "../api/types";
 import { QuotePreviewPanel } from "./QuotePreviewPanel";
 import {
   Badge,
@@ -343,16 +349,28 @@ export function MonthPositionsSection({
       if (!qty) {
         throw new Error(quantityError(instrumentType));
       }
+      const nextPrice = rub(editDraft.market_price);
+      const quoteChanged =
+        nextPrice.amount !== moneyAmount(current.market_price_per_unit) ||
+        editDraft.price_date !== current.price_date;
+      const nextSource =
+        current.price_source === "t_invest" && quoteChanged && editDraft.price_source === "t_invest"
+          ? "manual"
+          : editDraft.price_source;
       await updatePosition(
         editingId,
         {
           quantity: qty,
           average_cost_per_unit: rub(editDraft.average_cost),
-          market_price_per_unit: rub(editDraft.market_price),
           accrued_interest:
             editDraft.accrued_interest.trim() === "" ? null : rub(editDraft.accrued_interest),
-          price_source: editDraft.price_source,
-          price_date: editDraft.price_date,
+          ...(quoteChanged
+            ? {
+                market_price_per_unit: nextPrice,
+                price_date: editDraft.price_date,
+                price_source: nextSource === "t_invest" ? "manual" : nextSource,
+              }
+            : {}),
         },
         current.updated_at,
       );
@@ -641,7 +659,8 @@ export function MonthPositionsSection({
                                   average_cost: moneyAmount(row.average_cost_per_unit),
                                   market_price: moneyAmount(row.market_price_per_unit),
                                   accrued_interest: moneyAmount(row.accrued_interest),
-                                  price_source: row.price_source,
+                                  price_source:
+                                    row.price_source === "t_invest" ? "manual" : row.price_source,
                                   price_date: row.price_date,
                                 });
                               }}

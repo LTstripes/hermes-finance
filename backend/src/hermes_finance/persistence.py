@@ -389,10 +389,7 @@ class PositionQuoteProvenance(Base):
 
     __tablename__ = "position_quote_provenance"
     __table_args__ = (
-        UniqueConstraint(
-            "position_snapshot_id",
-            name="uq_position_quote_provenance_snapshot",
-        ),
+        Index("ix_position_quote_provenance_snapshot_id", "position_snapshot_id"),
         CheckConstraint(
             "normalized_price_kopecks >= 0",
             name="ck_position_quote_provenance_price_nonnegative",

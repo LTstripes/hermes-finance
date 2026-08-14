@@ -1,17 +1,19 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType, PriceSource
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, PositionQuoteProvenance
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import (
     PositionSnapshotNotFoundError,
+    apply_snapshot_market_quote,
     create_position_snapshot,
     delete_position_snapshot,
     get_position_snapshot,
@@ -222,6 +224,109 @@ def test_stock_quantity_must_be_positive_whole_number(tmp_path: Path) -> None:
                 market_price_per_unit="10.00",
                 price_date=date(2030, 5, 12),
             )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_generic_create_rejects_t_invest_source(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        with pytest.raises(ValueError, match="quote apply"):
+            create_position_snapshot(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+                quantity=1,
+                average_cost_per_unit="10.00",
+                market_price_per_unit="10.00",
+                price_source=PriceSource.T_INVEST,
+                price_date=date(2030, 5, 12),
+            )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_generic_update_cannot_fabricate_or_corrupt_t_invest(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=2,
+            average_cost_per_unit="100.00",
+            market_price_per_unit="110.00",
+            price_date=date(2030, 5, 12),
+        )
+        with pytest.raises(ValueError, match="quote apply"):
+            update_position_snapshot(session, snapshot.id, price_source=PriceSource.T_INVEST)
+
+        apply_snapshot_market_quote(
+            session,
+            snapshot,
+            market_price_per_unit_kopecks=21550,
+            price_date=date(2030, 5, 13),
+            price_source=PriceSource.T_INVEST,
+        )
+        applied_at = datetime(2030, 5, 13, 12, 0, tzinfo=timezone.utc)
+        session.add(
+            PositionQuoteProvenance(
+                position_snapshot_id=snapshot.id,
+                reporting_month_id=month_id,
+                provider="t_invest",
+                provider_instrument_id="11111111-1111-1111-1111-111111111111",
+                provider_venue_id=None,
+                quote_kind="last",
+                raw_price="215.50",
+                raw_price_basis="R",
+                normalized_price_kopecks=21550,
+                price_date=date(2030, 5, 13),
+                fetched_at_utc=applied_at,
+                target_date=date(2030, 5, 13),
+                freshness="ok",
+                applied_at_utc=applied_at,
+            )
+        )
+        session.commit()
+        first = session.scalar(select(PositionQuoteProvenance))
+        assert first is not None
+        first_id = first.id
+        first_price = first.normalized_price_kopecks
+
+        updated = update_position_snapshot(session, snapshot.id, quantity=3)
+        assert updated.price_source == PriceSource.T_INVEST.value
+        assert updated.market_price_per_unit_kopecks == 21550
+        assert updated.quantity == Decimal("3")
+
+        with pytest.raises(ValueError, match="keeping t_invest"):
+            update_position_snapshot(
+                session,
+                snapshot.id,
+                market_price_per_unit="250.00",
+                price_source=PriceSource.T_INVEST,
+            )
+        with pytest.raises(ValueError, match="keeping t_invest"):
+            update_position_snapshot(session, snapshot.id, market_price_per_unit="250.00")
+
+        manual = update_position_snapshot(
+            session,
+            snapshot.id,
+            market_price_per_unit="250.00",
+            price_source=PriceSource.MANUAL,
+        )
+        assert manual.price_source == PriceSource.MANUAL.value
+        assert manual.market_price_per_unit_kopecks == 25000
+        leftover = session.scalar(select(PositionQuoteProvenance))
+        assert leftover is not None
+        assert leftover.id == first_id
+        assert leftover.normalized_price_kopecks == first_price
+        assert leftover.provider_instrument_id == "11111111-1111-1111-1111-111111111111"
     finally:
         session.close()
         database.engine.dispose()

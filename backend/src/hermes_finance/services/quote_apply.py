@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import PriceSource
@@ -96,7 +95,7 @@ def _eligible_preview_row(row: QuotePreviewRow, selection: QuoteApplySelection) 
     raise ValueError("quote status cannot be applied")
 
 
-def _upsert_provenance(
+def _append_provenance(
     session: Session,
     *,
     snapshot: PositionSnapshot,
@@ -111,27 +110,24 @@ def _upsert_provenance(
     assert row.proposed_raw_price is not None
     assert row.proposed_raw_price_basis is not None
     assert row.fetched_at_utc is not None
-    existing = session.scalar(
-        select(PositionQuoteProvenance).where(
-            PositionQuoteProvenance.position_snapshot_id == snapshot.id
+    session.add(
+        PositionQuoteProvenance(
+            position_snapshot_id=snapshot.id,
+            reporting_month_id=snapshot.reporting_month_id,
+            provider=row.identity.provider,
+            provider_instrument_id=row.identity.provider_instrument_id,
+            provider_venue_id=row.identity.provider_venue_id,
+            quote_kind=row.proposed_quote_kind.value,
+            raw_price=row.proposed_raw_price,
+            raw_price_basis=row.proposed_raw_price_basis.value,
+            normalized_price_kopecks=row.proposed_market_price_kopecks,
+            price_date=row.proposed_price_date,
+            fetched_at_utc=row.fetched_at_utc,
+            target_date=target_date,
+            freshness=row.status.value,
+            applied_at_utc=applied_at,
         )
     )
-    if existing is None:
-        existing = PositionQuoteProvenance(position_snapshot_id=snapshot.id)
-        session.add(existing)
-    existing.reporting_month_id = snapshot.reporting_month_id
-    existing.provider = row.identity.provider
-    existing.provider_instrument_id = row.identity.provider_instrument_id
-    existing.provider_venue_id = row.identity.provider_venue_id
-    existing.quote_kind = row.proposed_quote_kind.value
-    existing.raw_price = row.proposed_raw_price
-    existing.raw_price_basis = row.proposed_raw_price_basis.value
-    existing.normalized_price_kopecks = row.proposed_market_price_kopecks
-    existing.price_date = row.proposed_price_date
-    existing.fetched_at_utc = row.fetched_at_utc
-    existing.target_date = target_date
-    existing.freshness = row.status.value
-    existing.applied_at_utc = applied_at
 
 
 def apply_market_quotes(
@@ -185,7 +181,7 @@ def apply_market_quotes(
                 price_date=row.proposed_price_date or preview.target_date,
                 price_source=PriceSource.T_INVEST,
             )
-            _upsert_provenance(
+            _append_provenance(
                 session,
                 snapshot=snapshot,
                 row=row,
