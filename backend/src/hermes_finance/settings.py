@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hermes_finance import __version__
@@ -24,3 +24,10 @@ class Settings(BaseSettings):
     reload: bool = False
     database_path: Path = REPOSITORY_ROOT / "data" / "finance.db"
     frontend_dist: Path = REPOSITORY_ROOT / "frontend" / "dist"
+
+    @field_validator("host")
+    @classmethod
+    def validate_local_host(cls, value: str) -> str:
+        if value != "127.0.0.1":
+            raise ValueError("host must be exactly 127.0.0.1")
+        return value

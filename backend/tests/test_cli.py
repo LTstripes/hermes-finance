@@ -1,7 +1,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import uvicorn
+from pydantic import ValidationError
 from pytest import MonkeyPatch
 
 from hermes_finance import cli
@@ -21,7 +23,7 @@ def test_cli_uses_environment_for_server(monkeypatch: MonkeyPatch, tmp_path: Pat
     def capture_run(app: str, *, host: str, port: int, reload: bool) -> None:
         call.update(app=app, host=host, port=port, reload=reload)
 
-    monkeypatch.setenv("HERMES_FINANCE_HOST", "0.0.0.0")
+    monkeypatch.setenv("HERMES_FINANCE_HOST", "127.0.0.1")
     monkeypatch.setenv("HERMES_FINANCE_PORT", "9001")
     monkeypatch.setenv("HERMES_FINANCE_RELOAD", "true")
     monkeypatch.setenv("HERMES_FINANCE_DATABASE_PATH", str(tmp_path / "server.db"))
@@ -36,10 +38,18 @@ def test_cli_uses_environment_for_server(monkeypatch: MonkeyPatch, tmp_path: Pat
 
     assert call == {
         "app": "hermes_finance.main:app",
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 9001,
         "reload": True,
     }
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "localhost", "::1"])
+def test_cli_rejects_noncanonical_host(monkeypatch: MonkeyPatch, host: str) -> None:
+    monkeypatch.setenv("HERMES_FINANCE_HOST", host)
+
+    with pytest.raises(ValidationError, match="host must be exactly 127.0.0.1"):
+        cli.main()
 
 
 def test_cli_initializes_configured_database(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
