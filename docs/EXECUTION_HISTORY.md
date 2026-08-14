@@ -169,6 +169,21 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Documentation impact:** stale 0.4 backlog was synchronized to actual T-Invest/provider-neutral state immediately after review.
 - **References:** `docs/reviews/2026-08-14-r04-pre-apply-audit.md`, `docs/releases/0.4.0.md`, ADR 0010.
 
+### 0.4.0 / R04-05C — T-Invest mapping integrity hardening
+
+- **Accepted:** 2026-08-14
+- **Implemented by:** Grok Build — Grok 4.6 per submitted session report; model identity not independently runtime-confirmed by the accepting reviewer
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Issue:** #28
+- **Baseline:** `r04` @ `182e7000c077cb760cadbf6c3bc3272f07851ac0`
+- **Candidate:** `r04-05c-grok` @ `9c8b4bba2f58e79d6b5f012e5cade99393dbacae`
+- **Integrated into:** `r04` via true two-parent merge commit `169079b7c1bebe95bf8cee3f12a2a58d36d3c1a4`; later documentation commits advance the branch.
+- **Verification:** accepting reviewer verified exact one-commit ancestry from the expected baseline and inspected the complete candidate diff plus final backend/API/frontend paths. Confirmed candidate ISIN preservation, hard ISIN mismatch rejection, required provider verification for manual T-Invest UID with known local ISIN, UI `verify=true` T-Invest saves, clearing candidate ISIN after owner UID edits, and valid-candidate preservation when a neighboring discovery payload is malformed. Worker-reported checks: targeted backend `68 passed`, full backend `706 passed`, targeted frontend mapping tests `50 passed`, full frontend `218 passed`, `tsc -b && vite build`, Ruff check/format, touched-file Biome, `git diff --check`, and privacy check (`444 tracked files`) all passed. GitHub Actions did not run on the task branch because CI triggers on `main` push / pull request.
+- **Scope discipline:** no apply/provenance/live probe, no background/startup network, no MOEX production fallback and no trading/account APIs were added.
+- **Decision notes:** closes the R04-AUDIT-01 pre-apply mapping-integrity finding. T-Invest candidate saves are deliberately stricter in the UI: all T-Invest saves request provider verification, while backend also prevents a manual UID from bypassing verification when local ISIN is known and candidate ISIN is absent.
+- **Known limitation:** an API caller that supplies a candidate ISIN matching the local instrument can persist without `verify_provider`; the canonical owner UI still sends `verify=true`, and R04-05D live probe remains required before R04-06 acceptance.
+- **References:** issue #28, ADR 0009, ADR 0010, `docs/releases/0.4.0.md`.
+
 ---
 
 ## Historical backfill
