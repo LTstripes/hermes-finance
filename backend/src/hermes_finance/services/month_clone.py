@@ -203,34 +203,43 @@ def _copy_properties(session: Session, *, source_id: int, target_id: int) -> Non
 
 
 def _copy_salary_settings(session: Session, *, source_id: int, target_id: int) -> None:
-    """Copy recurring salary rows as salary-settings templates.
+    """Copy recurring salary settings as one canonical target row.
 
-    Bonus/cashback/non-recurring incomes are actual events and stay behind.
-    ``received_at`` is cleared so the new month does not inherit payment dates.
+    Legacy source months may contain duplicate recurring SALARY rows. The target
+    month receives their exact aggregate so clone cannot propagate that invalid
+    cardinality. The first source row's name is preserved. ``received_at`` is
+    cleared because payment dates are actual events.
     """
-    rows = session.scalars(
-        select(IncomeEntry).where(
-            IncomeEntry.reporting_month_id == source_id,
-            IncomeEntry.income_type == IncomeType.SALARY.value,
-            IncomeEntry.is_recurring.is_(True),
+    rows = list(
+        session.scalars(
+            select(IncomeEntry)
+            .where(
+                IncomeEntry.reporting_month_id == source_id,
+                IncomeEntry.income_type == IncomeType.SALARY.value,
+                IncomeEntry.is_recurring.is_(True),
+            )
+            .order_by(IncomeEntry.id)
         )
     )
-    for row in rows:
-        session.add(
-            IncomeEntry(
-                reporting_month_id=target_id,
-                income_type=row.income_type,
-                name=row.name,
-                gross_amount_kopecks=row.gross_amount_kopecks,
-                tax_amount_kopecks=row.tax_amount_kopecks,
-                net_amount_kopecks=row.net_amount_kopecks,
-                received_at=None,
-                is_recurring=True,
-                include_in_cash_flow=row.include_in_cash_flow,
-                include_in_passive_income=False,
-                notes=row.notes,
-            )
+    if not rows:
+        return
+
+    first = rows[0]
+    session.add(
+        IncomeEntry(
+            reporting_month_id=target_id,
+            income_type=IncomeType.SALARY.value,
+            name=first.name,
+            gross_amount_kopecks=sum(row.gross_amount_kopecks for row in rows),
+            tax_amount_kopecks=sum(row.tax_amount_kopecks for row in rows),
+            net_amount_kopecks=sum(row.net_amount_kopecks for row in rows),
+            received_at=None,
+            is_recurring=True,
+            include_in_cash_flow=any(row.include_in_cash_flow for row in rows),
+            include_in_passive_income=False,
+            notes=first.notes,
         )
+    )
 
 
 def clone_reporting_month(

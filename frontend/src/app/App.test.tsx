@@ -414,6 +414,7 @@ describe("App", () => {
   it("edits salary fields, shows dirty state, and saves incomes", async () => {
     const user = userEvent.setup();
     const posts: unknown[] = [];
+    const salaryPuts: unknown[] = [];
     const month = sampleMonths[0];
 
     vi.stubGlobal(
@@ -422,6 +423,22 @@ describe("App", () => {
         "GET /api/health": () => jsonResponse({ status: "ok", version: "0.1.0" }),
         "GET /api/months": () => jsonResponse([month]),
         ...monthEditorHandlers(month),
+        [`PUT /api/incomes/salary/${month.id}`]: async (init) => {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          salaryPuts.push(body);
+          return jsonResponse({
+            id: 11,
+            reporting_month_id: month.id,
+            income_type: "salary",
+            name: "Зарплата",
+            received_at: null,
+            is_recurring: true,
+            include_in_cash_flow: true,
+            include_in_passive_income: false,
+            notes: null,
+            ...body,
+          });
+        },
         "POST /api/incomes": async (init) => {
           const body = JSON.parse(String(init?.body ?? "{}"));
           posts.push(body);
@@ -460,7 +477,14 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
 
     expect(await screen.findByText(/Сохранено/i)).toBeInTheDocument();
-    expect(posts.some((p) => (p as { income_type: string }).income_type === "salary")).toBe(true);
+    expect(salaryPuts).toEqual([
+      {
+        gross_amount: { amount: "200000.00", currency: "RUB" },
+        tax_amount: { amount: "26000.00", currency: "RUB" },
+        net_amount: { amount: "170000.00", currency: "RUB" },
+      },
+    ]);
+    expect(posts.some((p) => (p as { income_type: string }).income_type === "salary")).toBe(false);
     expect(posts.some((p) => (p as { income_type: string }).income_type === "cashback")).toBe(true);
   });
 

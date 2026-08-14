@@ -231,6 +231,7 @@ def test_clone_copies_permanent_state_and_zeros_actuals(tmp_path: Path) -> None:
         )
         assert salary is not None
         assert salary.income_type == "salary"
+        assert salary.name == "Зарплата"
         assert salary.is_recurring is True
         assert salary.received_at is None
         assert salary.net_amount_kopecks == 174_000_00

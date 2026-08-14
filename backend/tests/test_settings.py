@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from pydantic_settings import SettingsConfigDict
 from pytest import MonkeyPatch
 
@@ -14,13 +15,21 @@ def test_server_defaults_to_loopback() -> None:
 
 
 def test_settings_read_prefixed_environment(monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setenv("HERMES_FINANCE_HOST", "0.0.0.0")
+    monkeypatch.setenv("HERMES_FINANCE_HOST", "127.0.0.1")
     monkeypatch.setenv("HERMES_FINANCE_PORT", "9001")
 
     settings = Settings(_env_file=None)
 
-    assert settings.host == "0.0.0.0"
+    assert settings.host == "127.0.0.1"
     assert settings.port == 9001
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "localhost", "::1"])
+def test_settings_rejects_noncanonical_host(monkeypatch: MonkeyPatch, host: str) -> None:
+    monkeypatch.setenv("HERMES_FINANCE_HOST", host)
+
+    with pytest.raises(ValueError, match="host must be exactly 127.0.0.1"):
+        Settings(_env_file=None)
 
 
 def test_database_defaults_to_repository_data_directory() -> None:

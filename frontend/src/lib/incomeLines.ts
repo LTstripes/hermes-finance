@@ -1,9 +1,29 @@
 import type { IncomeCreate, IncomeEntry, IncomeType, MoneyValue } from "../api/types";
-import { createIncome, deleteIncome, updateIncome } from "../api/incomes";
-import { isBlankMoney, rub } from "../lib/money";
+import { createIncome, deleteIncome, replaceSalaryIncome, updateIncome } from "../api/incomes";
+import { isBlankMoney, rub, sumMoneyAmounts } from "../lib/money";
 
 export function findIncome(entries: IncomeEntry[], type: IncomeType): IncomeEntry | undefined {
-  return entries.find((entry) => entry.income_type === type);
+  const matches = entries.filter((entry) => entry.income_type === type);
+  if (matches.length === 0) return undefined;
+  if (type !== "salary" || matches.length === 1) return matches[0];
+
+  const first = matches[0];
+  return {
+    ...first,
+    name: "Зарплата",
+    gross_amount: {
+      amount: sumMoneyAmounts(matches.map((entry) => entry.gross_amount.amount)),
+      currency: "RUB",
+    },
+    tax_amount: {
+      amount: sumMoneyAmounts(matches.map((entry) => entry.tax_amount.amount)),
+      currency: "RUB",
+    },
+    net_amount: {
+      amount: sumMoneyAmounts(matches.map((entry) => entry.net_amount.amount)),
+      currency: "RUB",
+    },
+  };
 }
 
 type SimpleLine = {
@@ -58,42 +78,26 @@ type SalaryLine = {
 };
 
 export async function upsertSalaryLine(monthId: number, line: SalaryLine): Promise<void> {
-  const existing = line.existing;
+  const zero: MoneyValue = { amount: "0.00", currency: "RUB" };
   if (isBlankMoney(line.gross) && isBlankMoney(line.actualNet)) {
-    if (existing) {
-      await deleteIncome(existing.id);
-    }
+    await replaceSalaryIncome(monthId, {
+      gross_amount: zero,
+      tax_amount: zero,
+      net_amount: zero,
+    });
     return;
   }
+
   const gross = rub(isBlankMoney(line.gross) ? "0" : line.gross);
   const net = rub(isBlankMoney(line.actualNet) ? "0" : line.actualNet);
   const tax =
     line.calculatedTax && !isBlankMoney(line.calculatedTax)
       ? rub(line.calculatedTax)
-      : (existing?.tax_amount ?? { amount: "0.00", currency: "RUB" });
+      : (line.existing?.tax_amount ?? zero);
 
-  if (existing) {
-    await updateIncome(existing.id, {
-      income_type: "salary",
-      name: "Зарплата",
-      gross_amount: gross,
-      tax_amount: tax,
-      net_amount: net,
-      is_recurring: true,
-      include_in_cash_flow: true,
-      include_in_passive_income: false,
-    });
-    return;
-  }
-  await createIncome({
-    reporting_month_id: monthId,
-    income_type: "salary",
-    name: "Зарплата",
+  await replaceSalaryIncome(monthId, {
     gross_amount: gross,
     tax_amount: tax,
     net_amount: net,
-    is_recurring: true,
-    include_in_cash_flow: true,
-    include_in_passive_income: false,
   });
 }

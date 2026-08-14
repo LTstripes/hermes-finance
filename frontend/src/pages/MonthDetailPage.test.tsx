@@ -9,7 +9,7 @@ import { getDashboard } from "../api/dashboard";
 import { listGoalSummary } from "../api/goals";
 import { getCashTotal, listCashBalances } from "../api/cash";
 import { listDeposits } from "../api/deposits";
-import { listIncomes } from "../api/incomes";
+import { listIncomes, replaceSalaryIncome } from "../api/incomes";
 import { closeMonth, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
 import type { ReportingMonth } from "../api/types";
@@ -23,7 +23,13 @@ vi.mock("../api/cash", () => ({
   listCashBalances: vi.fn(),
 }));
 vi.mock("../api/deposits", () => ({ listDeposits: vi.fn() }));
-vi.mock("../api/incomes", () => ({ listIncomes: vi.fn() }));
+vi.mock("../api/incomes", () => ({
+  listIncomes: vi.fn(),
+  replaceSalaryIncome: vi.fn(),
+  createIncome: vi.fn(),
+  updateIncome: vi.fn(),
+  deleteIncome: vi.fn(),
+}));
 vi.mock("../api/months", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/months")>();
   return {
@@ -94,6 +100,7 @@ const nextMonth: ReportingMonth = { ...draftMonth, id: 2, month: 3 };
 
 const getMonthMock = vi.mocked(getMonth);
 const listIncomesMock = vi.mocked(listIncomes);
+const replaceSalaryIncomeMock = vi.mocked(replaceSalaryIncome);
 const listAccountsMock = vi.mocked(listAccounts);
 const listCashBalancesMock = vi.mocked(listCashBalances);
 const getCashTotalMock = vi.mocked(getCashTotal);
@@ -187,6 +194,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
       total_in_capital: { amount: "0.00", currency: "RUB" },
     });
     listDepositsMock.mockResolvedValue([]);
+    replaceSalaryIncomeMock.mockResolvedValue(null);
     updateMonthMock.mockResolvedValue(draftMonth);
     closeMonthMock.mockResolvedValue(closedMonth);
     reopenMonthMock.mockResolvedValue(draftMonth);
@@ -285,6 +293,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
     await waitFor(() =>
       expect(updateMonthMock).toHaveBeenCalledWith(1, { snapshot_date: "2031-03-01" }),
     );
+    await waitFor(() => expect(replaceSalaryIncomeMock).toHaveBeenCalled());
 
     await user.click(screen.getByRole("button", { name: "Проверить и закрыть" }));
     await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
