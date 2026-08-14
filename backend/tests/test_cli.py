@@ -44,10 +44,11 @@ def test_cli_uses_environment_for_server(monkeypatch: MonkeyPatch, tmp_path: Pat
     }
 
 
-def test_cli_rejects_non_loopback_host(monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setenv("HERMES_FINANCE_HOST", "0.0.0.0")
+@pytest.mark.parametrize("host", ["0.0.0.0", "localhost", "::1"])
+def test_cli_rejects_noncanonical_host(monkeypatch: MonkeyPatch, host: str) -> None:
+    monkeypatch.setenv("HERMES_FINANCE_HOST", host)
 
-    with pytest.raises(ValidationError, match="loopback IP address"):
+    with pytest.raises(ValidationError, match="host must be exactly 127.0.0.1"):
         cli.main()
 
 
