@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { QuoteApplyRowRequest, QuotePreview, QuotePreviewRow } from "../api/types";
 import { formatDate, formatMoney } from "../lib/format";
-import { INSTRUMENT_TYPE_LABELS, PRICE_SOURCE_LABELS, labelOf } from "../lib/labels";
+import { INSTRUMENT_TYPE_LABELS, labelOf, PRICE_SOURCE_LABELS } from "../lib/labels";
 import {
   displayPriceDelta,
   formatMarketIdentity,
   QUOTE_PREVIEW_STATUS_LABELS,
+  quoteFailureGuidance,
   quoteStatusTone,
 } from "../lib/marketData";
 import { moneyAmount } from "../lib/money";
@@ -129,7 +130,9 @@ function PreviewRow({
           row.status === "excluded" ? (
             <span className="muted tiny">Текущая ручная цена остаётся обычным значением.</span>
           ) : null}
-          {row.message ? <span className="muted tiny">{row.message}</span> : null}
+          {quoteFailureGuidance(row.failure_reason) ? (
+            <span className="muted tiny">{quoteFailureGuidance(row.failure_reason)}</span>
+          ) : null}
         </div>
       </Td>
     </tr>
@@ -222,9 +225,10 @@ export function QuotePreviewPanel({
           {error}
         </div>
       ) : null}
-      {preview?.batch_error ? (
+      {preview?.batch_error_reason || preview?.batch_error ? (
         <div className="inline-alert inline-alert--warn" role="status">
-          Часть запросов к источнику не удалась. Строки ниже сохранены.
+          {quoteFailureGuidance(preview.batch_error_reason) ??
+            "Часть запросов к внешнему источнику не удалась. Удачные строки ниже можно применить."}
         </div>
       ) : null}
       {loading && !preview ? <LoadingState description="Запрашиваем котировки…" inline /> : null}

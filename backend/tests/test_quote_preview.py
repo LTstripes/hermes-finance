@@ -340,8 +340,13 @@ def test_unmapped_excluded_and_unsupported_skip_provider(tmp_path: Path) -> None
         assert statuses[unmapped.id] is QuoteStatus.UNMAPPED
         assert statuses[excluded.id] is QuoteStatus.EXCLUDED
         assert statuses[gold.id] is QuoteStatus.UNSUPPORTED
+        reasons = {row.instrument_id: row.failure_reason.value for row in result.rows}
+        assert reasons[unmapped.id] == "unmapped"
+        assert reasons[excluded.id] == "excluded"
+        assert reasons[gold.id] == "unsupported"
         assert all(row.apply_allowed is False for row in result.rows)
         assert all(row.proposed_market_price_kopecks is None for row in result.rows)
+        assert all("timeout" not in (row.message or "") for row in result.rows)
         assert get_instrument_mapping(session, excluded.id).state is MarketMappingState.EXCLUDED
     finally:
         session.close()
@@ -497,11 +502,18 @@ def test_mixed_batch_and_provider_exceptions_are_per_row(tmp_path: Path) -> None
         result = preview_market_quotes(session, month.id, provider=mixed, today=TODAY)
         assert {row.status for row in result.rows} == {QuoteStatus.OK, QuoteStatus.NETWORK_ERROR}
         assert result.batch_error is None
+        assert result.batch_error_reason is None
         ok_row = next(row for row in result.rows if row.status is QuoteStatus.OK)
         failed_row = next(row for row in result.rows if row.status is QuoteStatus.NETWORK_ERROR)
         assert ok_row.proposed_market_price_kopecks == 1500
+        assert ok_row.apply_allowed is False
         assert failed_row.proposed_market_price_kopecks is None
-        assert failed_row.message == "timeout"
+        assert failed_row.apply_allowed is False
+        assert failed_row.failure_reason is not None
+        assert failed_row.failure_reason.value == "provider_network"
+        assert failed_row.message is not None
+        assert "timeout" not in failed_row.message
+        assert "Hermes Finance" in failed_row.message
     finally:
         session.close()
         database.engine.dispose()

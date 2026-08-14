@@ -296,6 +296,7 @@ describe("MonthPositionsSection G03 component contract", () => {
           fetched_at_utc: "2031-01-31T12:00:00Z",
           freshness_status: "ok",
           status: "ok",
+          failure_reason: null,
           message: null,
           apply_allowed: true,
         },
@@ -386,5 +387,156 @@ describe("MonthPositionsSection G03 component contract", () => {
     ).toHaveLength(1);
     release?.();
     expect(await screen.findByRole("button", { name: "Обновить котировки" })).toBeEnabled();
+  });
+
+  it("invalidates the old preview after preview_changed and requires a fresh refresh", async () => {
+    const previewBody = {
+      reporting_month_id: 7,
+      month_status: "draft",
+      target_date: "2031-01-31",
+      month_editable: true,
+      batch_error: null,
+      batch_error_reason: null,
+      rows: [
+        {
+          position_snapshot_id: 31,
+          account_id: 11,
+          instrument_id: 21,
+          instrument_name: "T Stock",
+          instrument_type: "stock",
+          mapping_state: "mapped",
+          identity: {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+          },
+          current_market_price_per_unit: { amount: "1100.00", currency: "RUB" },
+          current_price_date: "2031-01-31",
+          current_price_source: "manual",
+          proposed_market_price_per_unit: { amount: "1110.00", currency: "RUB" },
+          proposed_price_date: "2031-01-30",
+          proposed_quote_kind: "last",
+          proposed_raw_price: "1110.00",
+          proposed_raw_price_basis: "R",
+          fetched_at_utc: "2031-01-31T12:00:00Z",
+          freshness_status: "ok",
+          status: "ok",
+          failure_reason: null,
+          message: null,
+          apply_allowed: true,
+        },
+      ],
+    };
+    const fetchMock = setup(
+      {
+        "POST /api/months/7/quote-preview": () => jsonResponse(previewBody),
+        "POST /api/months/7/quote-apply": () =>
+          jsonResponse(
+            {
+              error: {
+                code: "preview_changed",
+                message: "quote changed since preview; request a new preview",
+                details: [],
+              },
+            },
+            409,
+          ),
+      },
+      [position],
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    expect(await screen.findByText("Котировка получена")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
+    expect(await screen.findByText(/Котировка изменилась после предпросмотра/)).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Предпросмотр котировок" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Применить выбранные" })).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input) === "/api/months/7/quote-apply"),
+    ).toHaveLength(1);
+  });
+
+  it("shows local Hermes-down when the preview request cannot reach the app", async () => {
+    setup({
+      "POST /api/months/7/quote-preview": () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    expect(await screen.findByText(/Проверь, что Hermes Finance запущен/)).toBeInTheDocument();
+    expect(screen.queryByText(/Внешний источник котировок/)).not.toBeInTheDocument();
+  });
+
+  it("keeps manual edit available after a provider preview failure", async () => {
+    const fetchMock = setup(
+      {
+        "POST /api/months/7/quote-preview": () =>
+          jsonResponse({
+            reporting_month_id: 7,
+            month_status: "draft",
+            target_date: "2031-01-31",
+            month_editable: true,
+            batch_error:
+              "Automatic quote refresh is unavailable because the read-only token is not configured.",
+            batch_error_reason: "token_unavailable",
+            rows: [
+              {
+                position_snapshot_id: 31,
+                account_id: 11,
+                instrument_id: 21,
+                instrument_name: "T Stock",
+                instrument_type: "stock",
+                mapping_state: "mapped",
+                identity: {
+                  provider: "t_invest",
+                  provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+                  provider_venue_id: null,
+                },
+                current_market_price_per_unit: { amount: "1100.00", currency: "RUB" },
+                current_price_date: "2031-01-31",
+                current_price_source: "manual",
+                proposed_market_price_per_unit: null,
+                proposed_price_date: null,
+                proposed_quote_kind: null,
+                proposed_raw_price: null,
+                proposed_raw_price_basis: null,
+                fetched_at_utc: null,
+                freshness_status: null,
+                status: "unavailable",
+                failure_reason: "token_unavailable",
+                message:
+                  "Automatic quote refresh is unavailable because the read-only token is not configured.",
+                apply_allowed: false,
+              },
+            ],
+          }),
+        "PATCH /api/positions/31": () =>
+          jsonResponse({
+            ...position,
+            market_price_per_unit: { amount: "1200.00", currency: "RUB" },
+            price_source: "manual",
+          }),
+      },
+      [position],
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    expect((await screen.findAllByText(/read-only токен не настроен/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/вставь токен/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Изменить" }));
+    const priceInput = screen.getAllByDisplayValue("1100.00")[0];
+    await user.clear(priceInput);
+    await user.type(priceInput, "1200.00");
+    await user.click(screen.getByRole("button", { name: "OK" }));
+    const patch = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/positions/31" && init?.method === "PATCH",
+    );
+    expect(patch).toBeDefined();
+    const body = JSON.parse(String(patch?.[1]?.body));
+    expect(body.price_source).toBe("manual");
+    expect(body.market_price_per_unit).toEqual({ amount: "1200.00", currency: "RUB" });
   });
 });

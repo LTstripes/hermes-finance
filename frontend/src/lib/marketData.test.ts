@@ -8,10 +8,22 @@ import {
   identityToMoexDraft,
   MAPPING_SUPPORTED_TYPES,
   moexDraftToIdentity,
+  quoteFailureGuidance,
   tInvestDraftToIdentity,
 } from "./marketData";
 
 describe("marketData helpers", () => {
+  it("keeps local Hermes-down text distinct from T-Invest network failure", () => {
+    const localDown =
+      "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.";
+    const providerDown = quoteFailureGuidance("provider_network");
+    expect(providerDown).toContain("Внешний источник");
+    expect(providerDown).not.toContain("не запущен");
+    expect(providerDown).not.toBe(localDown);
+    expect(quoteFailureGuidance("token_unavailable")).toContain("токен не настроен");
+    expect(quoteFailureGuidance("token_unavailable")).not.toMatch(/t\.[A-Za-z0-9]/);
+  });
+
   it("defaults bond drafts to the bonds market and others to shares", () => {
     expect(defaultMappingDraft("bond")).toMatchObject({
       provider: "moex_iss",

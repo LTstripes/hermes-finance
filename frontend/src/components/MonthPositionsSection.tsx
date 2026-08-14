@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { createAccount, listAccounts } from "../api/accounts";
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
 import { applyMonthQuotes, previewMonthQuotes } from "../api/quotePreview";
@@ -12,6 +12,14 @@ import type {
   QuoteApplyRowRequest,
   QuotePreview,
 } from "../api/types";
+import { formatDate, formatMoney, formatQuantity } from "../lib/format";
+import {
+  ACCOUNT_TYPE_LABELS,
+  INSTRUMENT_TYPE_LABELS,
+  labelOf,
+  PRICE_SOURCE_LABELS,
+} from "../lib/labels";
+import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 import { QuotePreviewPanel } from "./QuotePreviewPanel";
 import {
   Badge,
@@ -21,22 +29,14 @@ import {
   Field,
   Input,
   LoadingState,
+  OverflowMenu,
+  OverflowMenuItem,
   Panel,
   Select,
   Table,
   Td,
   Th,
-  OverflowMenu,
-  OverflowMenuItem,
 } from "./ui";
-import { formatDate, formatMoney, formatQuantity } from "../lib/format";
-import {
-  ACCOUNT_TYPE_LABELS,
-  INSTRUMENT_TYPE_LABELS,
-  PRICE_SOURCE_LABELS,
-  labelOf,
-} from "../lib/labels";
-import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type MonthPositionsSectionProps = {
   monthId: number;
@@ -410,6 +410,9 @@ export function MonthPositionsSection({
       await load();
       setQuotePreview(await previewMonthQuotes(monthId));
     } catch (err) {
+      if (err instanceof ApiClientError && err.code === "preview_changed") {
+        setQuotePreview(null);
+      }
       setPreviewError(formatApiError(err));
     } finally {
       setPreviewApplying(false);

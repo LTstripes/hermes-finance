@@ -21,9 +21,29 @@ export const QUOTE_PREVIEW_STATUS_LABELS: Record<string, string> = {
   unsupported: "Обновляется вручную",
   ambiguous: "Нельзя выбрать источник автоматически",
   unavailable: "Подходящей котировки нет",
-  network_error: "Источник временно недоступен",
+  network_error: "Внешний источник временно недоступен",
   malformed_response: "Данные источника нельзя безопасно использовать",
 };
+
+export const QUOTE_FAILURE_REASON_GUIDANCE: Record<string, string> = {
+  token_unavailable:
+    "Автообновление котировок недоступно: read-only токен не настроен. Текущая цена не меняется. Можно ввести цену вручную в таблице позиций.",
+  provider_network:
+    "Внешний источник котировок временно недоступен. Локальное приложение Hermes Finance работает.",
+  quote_unavailable: "Подходящей котировки нет. Текущая сохранённая цена не меняется.",
+  unsupported: "Этот инструмент обновляется вручную. Текущая цена остаётся как есть.",
+  malformed: "Ответ источника нельзя безопасно использовать. Текущая цена не меняется.",
+  unmapped: "Внешний источник для этой позиции не настроен. Можно ввести цену вручную.",
+  excluded: "Автообновление для этой позиции отключено. Можно ввести цену вручную.",
+  ambiguous: "Нельзя автоматически выбрать источник. Текущая цена не меняется.",
+};
+
+export function quoteFailureGuidance(reason: string | null | undefined): string | null {
+  if (!reason) {
+    return null;
+  }
+  return QUOTE_FAILURE_REASON_GUIDANCE[reason] ?? null;
+}
 
 export type MappingProviderId = typeof T_INVEST_PROVIDER | typeof MOEX_ISS_PROVIDER;
 
