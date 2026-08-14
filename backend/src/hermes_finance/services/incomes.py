@@ -15,6 +15,10 @@ class IncomeEntryNotFoundError(LookupError):
     pass
 
 
+class SalaryCardinalityError(ValueError):
+    pass
+
+
 def _normalize_name(name: str) -> str:
     normalized = name.strip()
     if not normalized:
@@ -46,6 +50,39 @@ def _passive_income_flag(
     if include_in_passive_income is True and income_type is not IncomeType.OTHER:
         raise ValueError("only other income may be included in passive income")
     return income_type is IncomeType.OTHER and bool(include_in_passive_income)
+
+
+def _salary_entries(
+    session: Session,
+    reporting_month_id: int,
+    *,
+    exclude_entry_id: int | None = None,
+) -> list[IncomeEntry]:
+    statement = (
+        select(IncomeEntry)
+        .where(
+            IncomeEntry.reporting_month_id == reporting_month_id,
+            IncomeEntry.income_type == IncomeType.SALARY.value,
+        )
+        .order_by(IncomeEntry.id)
+    )
+    if exclude_entry_id is not None:
+        statement = statement.where(IncomeEntry.id != exclude_entry_id)
+    return list(session.scalars(statement))
+
+
+def _require_salary_slot(
+    session: Session,
+    reporting_month_id: int,
+    *,
+    exclude_entry_id: int | None = None,
+) -> None:
+    if _salary_entries(
+        session,
+        reporting_month_id,
+        exclude_entry_id=exclude_entry_id,
+    ):
+        raise SalaryCardinalityError("reporting month already has a salary income entry")
 
 
 def list_income_entries(session: Session) -> list[IncomeEntry]:
@@ -80,6 +117,8 @@ def create_income_entry(
 ) -> IncomeEntry:
     require_editable_reporting_month(session, reporting_month_id)
     normalized_type = _coerce_income_type(income_type)
+    if normalized_type is IncomeType.SALARY:
+        _require_salary_slot(session, reporting_month_id)
     entry = IncomeEntry(
         reporting_month_id=reporting_month_id,
         income_type=normalized_type.value,
@@ -97,6 +136,67 @@ def create_income_entry(
     session.commit()
     session.refresh(entry)
     return entry
+
+
+def replace_salary_entry(
+    session: Session,
+    reporting_month_id: int,
+    *,
+    gross_amount: RubleAmount | str,
+    tax_amount: RubleAmount | str,
+    net_amount: RubleAmount | str,
+) -> IncomeEntry | None:
+    """Replace the month salary aggregate atomically and collapse legacy duplicates."""
+
+    require_editable_reporting_month(session, reporting_month_id)
+    gross_kopecks = _normalize_amount(gross_amount, field="gross_amount")
+    tax_kopecks = _normalize_amount(tax_amount, field="tax_amount")
+    net_kopecks = _normalize_amount(net_amount, field="net_amount")
+    rows = _salary_entries(session, reporting_month_id)
+
+    try:
+        if gross_kopecks == 0 and tax_kopecks == 0 and net_kopecks == 0:
+            for row in rows:
+                session.delete(row)
+            session.commit()
+            return None
+
+        if rows:
+            canonical = rows[0]
+        else:
+            canonical = IncomeEntry(
+                reporting_month_id=reporting_month_id,
+                income_type=IncomeType.SALARY.value,
+                name="Зарплата",
+                gross_amount_kopecks=0,
+                tax_amount_kopecks=0,
+                net_amount_kopecks=0,
+                received_at=None,
+                is_recurring=True,
+                include_in_cash_flow=True,
+                include_in_passive_income=False,
+                notes=None,
+            )
+            session.add(canonical)
+
+        canonical.income_type = IncomeType.SALARY.value
+        canonical.name = "Зарплата"
+        canonical.gross_amount_kopecks = gross_kopecks
+        canonical.tax_amount_kopecks = tax_kopecks
+        canonical.net_amount_kopecks = net_kopecks
+        canonical.is_recurring = True
+        canonical.include_in_cash_flow = True
+        canonical.include_in_passive_income = False
+
+        for duplicate in rows[1:]:
+            session.delete(duplicate)
+
+        session.commit()
+        session.refresh(canonical)
+        return canonical
+    except Exception:
+        session.rollback()
+        raise
 
 
 def update_income_entry(
@@ -121,6 +221,12 @@ def update_income_entry(
         if income_type is not None
         else IncomeType(entry.income_type)
     )
+    if final_type is IncomeType.SALARY:
+        _require_salary_slot(
+            session,
+            entry.reporting_month_id,
+            exclude_entry_id=entry.id,
+        )
     if final_type is not IncomeType.OTHER and include_in_passive_income is True:
         _passive_income_flag(final_type, include_in_passive_income)
     if name is not None:

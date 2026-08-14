@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import IncomeType, RubleAmount
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, IncomeEntry
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.salary import actual_net_for_month, calculate_salary_tax
@@ -45,6 +45,32 @@ def add_salary(session: Session, month_id: int, gross: str, net: str) -> None:
         tax_amount="0.00",
         net_amount=net,
     )
+
+
+def add_legacy_salary(
+    session: Session,
+    month_id: int,
+    *,
+    gross_kopecks: int,
+    net_kopecks: int,
+) -> None:
+    """Seed a pre-M03-03 duplicate directly so legacy read compatibility stays covered."""
+    session.add(
+        IncomeEntry(
+            reporting_month_id=month_id,
+            income_type=IncomeType.SALARY.value,
+            name="Legacy Synthetic Salary",
+            gross_amount_kopecks=gross_kopecks,
+            tax_amount_kopecks=0,
+            net_amount_kopecks=net_kopecks,
+            received_at=None,
+            is_recurring=True,
+            include_in_cash_flow=True,
+            include_in_passive_income=False,
+            notes=None,
+        )
+    )
+    session.commit()
 
 
 # --- YTD accumulation across months of the same year ---
@@ -97,17 +123,17 @@ def test_month_without_salary_returns_zeros(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-# --- multiple salary entries in one month sum into payment_gross ---
+# --- legacy duplicate salary entries still sum safely on read ---
 
 
-def test_two_salary_entries_sum_into_payment_gross(tmp_path: Path) -> None:
+def test_legacy_duplicate_salary_entries_sum_into_payment_gross(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id = build_month(session, 2031, 1)
-        add_salary(session, month_id, "250000.00", "217500.00")
-        add_salary(session, month_id, "250000.00", "217500.00")
+        add_legacy_salary(session, month_id, gross_kopecks=25_000_000, net_kopecks=21_750_000)
+        add_legacy_salary(session, month_id, gross_kopecks=25_000_000, net_kopecks=21_750_000)
 
-        # payment = 500_000.00 RUB in January -> 13% flat
+        # Legacy payment = 500_000.00 RUB in January -> 13% flat.
         result = calculate_salary_tax(session, month_id)
         assert len(result.parts) == 1
         assert result.parts[0].rate_bps == 1300
