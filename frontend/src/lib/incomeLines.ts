@@ -1,10 +1,5 @@
 import type { IncomeCreate, IncomeEntry, IncomeType, MoneyValue } from "../api/types";
-import {
-  createIncome,
-  deleteIncome,
-  replaceSalaryIncome,
-  updateIncome,
-} from "../api/incomes";
+import { createIncome, deleteIncome, replaceSalaryIncome, updateIncome } from "../api/incomes";
 import { isBlankMoney, rub, sumMoneyAmounts } from "../lib/money";
 
 export function findIncome(entries: IncomeEntry[], type: IncomeType): IncomeEntry | undefined {

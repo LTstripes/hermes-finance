@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createIncome,
-  deleteIncome,
-  replaceSalaryIncome,
-  updateIncome,
-} from "../api/incomes";
+import { createIncome, deleteIncome, replaceSalaryIncome, updateIncome } from "../api/incomes";
 import type { IncomeEntry } from "../api/types";
 import { findIncome, upsertSalaryLine } from "./incomeLines";
 
