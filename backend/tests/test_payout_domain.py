@@ -14,7 +14,7 @@ from hermes_finance.market_data.payout import (
     PayoutEventStatus,
     PayoutIdentity,
     RUB_COMPATIBLE_UNITS,
-    coverage_proves_event_absence,
+    coverage_covers_event,
     normalize_exact_decimal,
     normalize_payout_date,
     provider_event_fingerprint,
@@ -82,6 +82,16 @@ def test_coupon_identity_uses_period_only_when_explicitly_proven_unique() -> Non
     assert ambiguous.status is PayoutEventStatus.AMBIGUOUS_IDENTITY
     assert ambiguous.identity_key is None
     assert unique.identity_key == "p:2026-06-03:2026-12-02"
+
+
+def test_coupon_period_rejects_reversed_dates() -> None:
+    with pytest.raises(PayoutDomainError, match="coupon_start_date"):
+        resolve_coupon_identity(
+            coupon_number=None,
+            coupon_start_date=date(2026, 12, 2),
+            coupon_end_date=date(2026, 6, 3),
+            period_is_unique=True,
+        )
 
 
 @pytest.mark.parametrize("bad_number", [True, "1.5", "+1", "x", 1.2])
@@ -193,6 +203,7 @@ def test_non_rub_event_must_be_explicitly_unsupported() -> None:
         _coupon_event(currency="usd")
     unsupported = _coupon_event(status=PayoutEventStatus.UNSUPPORTED, currency="usd")
     assert unsupported.currency == "USD"
+    assert _coupon_event(currency="rur").currency == "RUB"
 
 
 def test_binary_float_is_rejected_even_for_unsupported_event() -> None:
@@ -231,24 +242,24 @@ def test_coverage_requires_success_structural_validity_exact_method_basis_uid_an
         successful=True,
         structurally_valid=True,
     )
-    assert coverage_proves_event_absence(event, coverage)
-    assert not coverage_proves_event_absence(
+    assert coverage_covers_event(event, coverage)
+    assert not coverage_covers_event(
         event, replace(coverage, successful=False, structurally_valid=False)
     )
-    assert not coverage_proves_event_absence(event, replace(coverage, structurally_valid=False))
+    assert not coverage_covers_event(event, replace(coverage, structurally_valid=False))
     with pytest.raises(PayoutDomainError, match="successful fetch"):
         replace(coverage, successful=False, structurally_valid=True)
-    assert not coverage_proves_event_absence(event, replace(coverage, method="GetBondEvents"))
-    assert not coverage_proves_event_absence(
+    assert not coverage_covers_event(event, replace(coverage, method="GetBondEvents"))
+    assert not coverage_covers_event(
         event, replace(coverage, event_kind=PayoutEventKind.REDEMPTION)
     )
-    assert not coverage_proves_event_absence(
+    assert not coverage_covers_event(
         event, replace(coverage, provider_filter_basis="record_date")
     )
-    assert not coverage_proves_event_absence(
+    assert not coverage_covers_event(
         event, replace(coverage, instrument_uid="11111111-1111-1111-1111-111111111111")
     )
-    assert not coverage_proves_event_absence(
+    assert not coverage_covers_event(
         event, replace(coverage, requested_to=date(2026, 12, 1))
     )
 
@@ -279,7 +290,7 @@ def test_dividend_coverage_uses_record_date_not_payment_date() -> None:
         structurally_valid=True,
     )
     assert dividend.payment_date == date(2026, 5, 19)
-    assert coverage_proves_event_absence(dividend, coverage)
+    assert coverage_covers_event(dividend, coverage)
 
 
 def test_missing_inference_is_false_without_provider_filter_metadata() -> None:
@@ -295,7 +306,7 @@ def test_missing_inference_is_false_without_provider_filter_metadata() -> None:
         successful=True,
         structurally_valid=True,
     )
-    assert not coverage_proves_event_absence(event, coverage)
+    assert not coverage_covers_event(event, coverage)
 
 
 def test_fingerprint_uses_only_material_normalized_provider_fields() -> None:

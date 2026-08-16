@@ -157,8 +157,8 @@ class PayoutEvent:
                 raise PayoutDomainError("ok payout event requires payment_date")
             if self.per_unit_amount is None:
                 raise PayoutDomainError("ok payout event requires per_unit_amount")
-            if self.currency not in RUB_COMPATIBLE_UNITS:
-                raise PayoutDomainError("ok payout event requires RUB-compatible currency")
+            if self.currency != "RUB":
+                raise PayoutDomainError("ok payout event requires RUB currency")
         if self.status is PayoutEventStatus.AMBIGUOUS_IDENTITY and self.identity_key is not None:
             raise PayoutDomainError("ambiguous payout event must not expose identity_key")
         if (self.provider_filter_basis is None) != (self.provider_filter_date is None):
@@ -270,7 +270,8 @@ def normalize_exact_decimal(value: Decimal | int | str | None) -> Decimal | None
 def normalize_currency(value: str | None) -> str | None:
     if value is None:
         return None
-    return _require_text(value, name="currency").upper()
+    normalized = _require_text(value, name="currency").upper()
+    return "RUB" if normalized in RUB_COMPATIBLE_UNITS else normalized
 
 
 def resolve_coupon_identity(
@@ -285,6 +286,8 @@ def resolve_coupon_identity(
         return IdentityResolution(f"n:{number}", PayoutEventStatus.OK)
     start = normalize_payout_date(coupon_start_date)
     end = normalize_payout_date(coupon_end_date)
+    if start is not None and end is not None and start > end:
+        raise PayoutDomainError("coupon_start_date must not be after coupon_end_date")
     if start is not None and end is not None and period_is_unique:
         return IdentityResolution(
             f"p:{start.isoformat()}:{end.isoformat()}",
@@ -338,8 +341,11 @@ def resolve_redemption_identity(
     )
 
 
-def coverage_proves_event_absence(event: PayoutEvent, coverage: PayoutCoverage) -> bool:
-    """True only when this exact successful provider window could prove omission."""
+def coverage_covers_event(event: PayoutEvent, coverage: PayoutCoverage) -> bool:
+    """Whether a valid response covered this event's provider comparison key.
+
+    Coverage alone does not mean the event was absent, cancelled, or safe to delete.
+    """
 
     if not coverage.successful or not coverage.structurally_valid:
         return False
