@@ -75,6 +75,11 @@ def _coerce_price_source(price_source: PriceSource | str) -> PriceSource:
         raise ValueError(f"unsupported price source: {price_source!r}") from error
 
 
+def _reject_generic_t_invest_source(price_source: PriceSource) -> None:
+    if price_source is PriceSource.T_INVEST:
+        raise ValueError("t_invest price_source can only be set by quote apply")
+
+
 def _compute_metrics(
     quantity: Decimal,
     average_cost_per_unit_kopecks: int,
@@ -159,6 +164,8 @@ def create_position_snapshot(
         if accrued_interest is not None
         else None
     )
+    source = _coerce_price_source(price_source)
+    _reject_generic_t_invest_source(source)
     market_value, cost_basis, unrealized = _compute_metrics(
         quantity, average_cost, market_price, accrued
     )
@@ -174,7 +181,7 @@ def create_position_snapshot(
         cost_basis_kopecks=cost_basis,
         unrealized_result_kopecks=unrealized,
         price_date=price_date,
-        price_source=_coerce_price_source(price_source).value,
+        price_source=source.value,
         manual_adjustment=manual_adjustment,
         notes=notes,
     )
@@ -209,6 +216,24 @@ def update_position_snapshot(
     instrument = _require_instrument(session, snapshot.instrument_id)
     if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
         raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
+    current_source = _coerce_price_source(snapshot.price_source)
+    requested_source = (
+        _coerce_price_source(price_source) if price_source is not None else current_source
+    )
+    next_price = snapshot.market_price_per_unit_kopecks
+    if market_price_per_unit is not None:
+        next_price = _normalize_per_unit_kopecks(
+            market_price_per_unit, field="market_price_per_unit"
+        )
+    next_date = price_date if price_date is not None else snapshot.price_date
+    quote_changed = (
+        next_price != snapshot.market_price_per_unit_kopecks or next_date != snapshot.price_date
+    )
+    if requested_source is PriceSource.T_INVEST:
+        if current_source is not PriceSource.T_INVEST:
+            _reject_generic_t_invest_source(requested_source)
+        if quote_changed:
+            raise ValueError("cannot change a T-Invest quote while keeping t_invest price_source")
     if quantity is not None:
         snapshot.quantity = _normalize_quantity(
             quantity, instrument_type=instrument.instrument_type
@@ -218,17 +243,15 @@ def update_position_snapshot(
             average_cost_per_unit, field="average_cost_per_unit"
         )
     if market_price_per_unit is not None:
-        snapshot.market_price_per_unit_kopecks = _normalize_per_unit_kopecks(
-            market_price_per_unit, field="market_price_per_unit"
-        )
+        snapshot.market_price_per_unit_kopecks = next_price
     if accrued_interest is not None:
         snapshot.accrued_interest_kopecks = _normalize_per_unit_kopecks(
             accrued_interest, field="accrued_interest"
         )
     if price_date is not None:
-        snapshot.price_date = price_date
+        snapshot.price_date = next_date
     if price_source is not None:
-        snapshot.price_source = _coerce_price_source(price_source).value
+        snapshot.price_source = requested_source.value
     if manual_adjustment is not None:
         snapshot.manual_adjustment = manual_adjustment
     if notes is not None:
@@ -246,6 +269,39 @@ def update_position_snapshot(
     )
     session.commit()
     session.refresh(snapshot)
+    return snapshot
+
+
+def apply_snapshot_market_quote(
+    session: Session,
+    snapshot: PositionSnapshot,
+    *,
+    market_price_per_unit_kopecks: int,
+    price_date: date,
+    price_source: PriceSource,
+) -> PositionSnapshot:
+    """Stage a backend-authoritative quote on a snapshot without committing.
+
+    Accrued interest (NKD) is left unchanged. The caller owns the transaction.
+    """
+    require_editable_child_month(session, snapshot)
+    if market_price_per_unit_kopecks < 0:
+        raise ValueError("market_price_per_unit must not be negative")
+    snapshot.market_price_per_unit_kopecks = market_price_per_unit_kopecks
+    snapshot.price_date = price_date
+    snapshot.price_source = _coerce_price_source(price_source).value
+    snapshot.manual_adjustment = False
+    (
+        snapshot.market_value_kopecks,
+        snapshot.cost_basis_kopecks,
+        snapshot.unrealized_result_kopecks,
+    ) = _compute_metrics(
+        snapshot.quantity,
+        snapshot.average_cost_per_unit_kopecks,
+        snapshot.market_price_per_unit_kopecks,
+        snapshot.accrued_interest_kopecks,
+    )
+    session.flush()
     return snapshot
 
 

@@ -10,6 +10,14 @@ import {
 } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import {
+  deleteInstrumentMapping,
+  deleteInstrumentMappingExclusion,
+  discoverInstrumentMapping,
+  getInstrumentMapping,
+  putInstrumentMapping,
+  putInstrumentMappingExclusion,
+} from "../api/instrumentMappings";
+import {
   createInstrument,
   deleteInstrument,
   listInstruments,
@@ -17,9 +25,16 @@ import {
   type InstrumentCreatePayload,
   type InstrumentUpdatePayload,
 } from "../api/instruments";
-import type { Account, Instrument } from "../api/types";
+import type {
+  Account,
+  Instrument,
+  InstrumentMarketMapping,
+  MarketDiscoverResult,
+  MarketIdentityWrite,
+} from "../api/types";
 import { AccountFormDialog } from "../components/AccountFormDialog";
 import { InstrumentFormDialog } from "../components/InstrumentFormDialog";
+import { InstrumentMappingDialog } from "../components/InstrumentMappingDialog";
 import { IisAccountSection } from "../components/IisAccountSection";
 import {
   Badge,
@@ -35,6 +50,7 @@ import {
 } from "../components/ui";
 import { formatMoney } from "../lib/format";
 import { ACCOUNT_TYPE_LABELS, INSTRUMENT_TYPE_LABELS, labelOf } from "../lib/labels";
+import { formatMarketIdentity, MAPPING_STATE_LABELS, mappingStateTone } from "../lib/marketData";
 
 const ACCOUNT_STATUS_LABELS: Record<string, string> = {
   active: "Активен",
@@ -78,8 +94,11 @@ export function AccountsPage() {
   const [instrumentDialogOpen, setInstrumentDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [editingInstrument, setEditingInstrument] = useState<Instrument | null>(null);
+  const [mappingInstrument, setMappingInstrument] = useState<Instrument | null>(null);
+  const [mappings, setMappings] = useState<Record<number, InstrumentMarketMapping>>({});
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [mappingError, setMappingError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -104,10 +123,19 @@ export function AccountsPage() {
     setInstrumentsError(null);
     try {
       const rows = await listInstruments({}, signal);
-      if (!signal?.aborted) setInstruments(rows);
+      if (signal?.aborted) return;
+      const views = await Promise.all(rows.map((row) => getInstrumentMapping(row.id, signal)));
+      if (signal?.aborted) return;
+      const next: Record<number, InstrumentMarketMapping> = {};
+      for (const view of views) {
+        next[view.instrument_id] = view;
+      }
+      setInstruments(rows);
+      setMappings(next);
     } catch (error) {
       if (!signal?.aborted) {
         setInstruments([]);
+        setMappings({});
         setInstrumentsError(formatApiError(error));
       }
     } finally {
@@ -165,6 +193,79 @@ export function AccountsPage() {
     setEditingInstrument(instrument);
     setFormError(null);
     setInstrumentDialogOpen(true);
+  }
+
+  function openMapping(instrument: Instrument) {
+    if (!mappings[instrument.id]) return;
+    setMappingInstrument(instrument);
+    setMappingError(null);
+  }
+
+  function rememberMapping(view: InstrumentMarketMapping) {
+    setMappings((current) => ({ ...current, [view.instrument_id]: view }));
+  }
+
+  async function handleMappingSave(payload: MarketIdentityWrite) {
+    if (!mappingInstrument) return;
+    setFormBusy(true);
+    setMappingError(null);
+    try {
+      rememberMapping(await putInstrumentMapping(mappingInstrument.id, payload));
+    } catch (error) {
+      setMappingError(formatApiError(error));
+    } finally {
+      setFormBusy(false);
+    }
+  }
+
+  async function handleMappingClear() {
+    if (!mappingInstrument) return;
+    setFormBusy(true);
+    setMappingError(null);
+    try {
+      rememberMapping(await deleteInstrumentMapping(mappingInstrument.id));
+    } catch (error) {
+      setMappingError(formatApiError(error));
+    } finally {
+      setFormBusy(false);
+    }
+  }
+
+  async function handleMappingExclude() {
+    if (!mappingInstrument) return;
+    setFormBusy(true);
+    setMappingError(null);
+    try {
+      rememberMapping(await putInstrumentMappingExclusion(mappingInstrument.id));
+    } catch (error) {
+      setMappingError(formatApiError(error));
+    } finally {
+      setFormBusy(false);
+    }
+  }
+
+  async function handleMappingDiscover(): Promise<MarketDiscoverResult> {
+    if (!mappingInstrument) {
+      throw new Error("Инструмент не выбран.");
+    }
+    try {
+      return await discoverInstrumentMapping(mappingInstrument.id, { provider: "t_invest" });
+    } catch (error) {
+      throw new Error(formatApiError(error));
+    }
+  }
+
+  async function handleMappingClearExclusion() {
+    if (!mappingInstrument) return;
+    setFormBusy(true);
+    setMappingError(null);
+    try {
+      rememberMapping(await deleteInstrumentMappingExclusion(mappingInstrument.id));
+    } catch (error) {
+      setMappingError(formatApiError(error));
+    } finally {
+      setFormBusy(false);
+    }
   }
 
   async function handleAccountSubmit(payload: AccountCreatePayload | AccountUpdatePayload) {
@@ -324,6 +425,7 @@ export function AccountsPage() {
             <Th>Название</Th>
             <Th>Тип</Th>
             <Th>Идентификатор</Th>
+            <Th>Источник котировки</Th>
             <Th>Валюта</Th>
             <Th>Статус</Th>
             <Th>Действия</Th>
@@ -350,9 +452,37 @@ export function AccountsPage() {
               </Td>
               <Td>{labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)}</Td>
               <Td>
-                <span className="muted">
-                  {instrument.isin ?? instrument.ticker ?? instrument.moex_secid ?? "—"}
-                </span>
+                <span className="muted">{instrument.isin ?? instrument.ticker ?? "—"}</span>
+              </Td>
+              <Td>
+                {(() => {
+                  const mapping = mappings[instrument.id];
+                  if (!mapping) {
+                    return (
+                      <span className="muted tiny" data-testid={`mapping-unknown-${instrument.id}`}>
+                        Состояние источника не загружено
+                      </span>
+                    );
+                  }
+                  return (
+                    <div className="stack-8">
+                      <Badge tone={mappingStateTone(mapping.state)}>
+                        {labelOf(MAPPING_STATE_LABELS, mapping.state)}
+                      </Badge>
+                      {mapping.identity ? (
+                        <span
+                          className="muted tiny"
+                          data-testid={`mapping-identity-${instrument.id}`}
+                        >
+                          {formatMarketIdentity(mapping.identity)}
+                        </span>
+                      ) : null}
+                      <Button onClick={() => openMapping(instrument)} size="sm">
+                        Настроить источник
+                      </Button>
+                    </div>
+                  );
+                })()}
               </Td>
               <Td>{instrument.currency}</Td>
               <Td>
@@ -532,6 +662,24 @@ export function AccountsPage() {
         }}
         onSubmit={handleInstrumentSubmit}
         open={instrumentDialogOpen}
+      />
+      <InstrumentMappingDialog
+        busy={formBusy}
+        error={mappingError}
+        instrument={mappingInstrument}
+        mapping={mappingInstrument ? (mappings[mappingInstrument.id] ?? null) : null}
+        onCancel={() => {
+          if (!formBusy) {
+            setMappingInstrument(null);
+            setMappingError(null);
+          }
+        }}
+        onClear={handleMappingClear}
+        onClearExclusion={handleMappingClearExclusion}
+        onDiscover={() => handleMappingDiscover()}
+        onExclude={handleMappingExclude}
+        onSave={handleMappingSave}
+        open={mappingInstrument !== null}
       />
       <ConfirmDialog
         busy={deleting}

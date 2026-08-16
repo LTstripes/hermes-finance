@@ -16,7 +16,9 @@ uv sync --group dev
 uv run hermes-finance-api
 ```
 
-The default address is `http://127.0.0.1:8000`. Local overrides can be placed in `.env`; use `.env.example` as the safe template.
+The default address is `http://127.0.0.1:8000`. Local overrides belong in the repository-root `.env` (next to `.env.example`), not a working-directory-relative file. The backend loads that absolute path even when started from `backend/`.
+
+For 0.4 quote preview, set `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` to a **read-only** T-Invest token. Never use Full Access or Transfer. See [T-Invest market data](../docs/t-invest-market-data.md).
 
 The default SQLite path is the repository-root `data/finance.db`. Starting the local CLI creates its parent directory, configures a SQLAlchemy 2 engine and session factory, and enables SQLite foreign keys for every connection. Override the path with `HERMES_FINANCE_DATABASE_PATH`; tests must always point it at temporary synthetic data and never open the production path.
 

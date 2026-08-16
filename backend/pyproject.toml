@@ -1,12 +1,13 @@
 [project]
 name = "hermes-finance-backend"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local FastAPI backend for Hermes Finance"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "alembic>=1.14,<2.0",
     "fastapi>=0.116,<1.0",
+    "httpx2>=2.9.1",
     "openpyxl>=3.1,<4.0",
     "pydantic-settings>=2.10,<3.0",
     "sqlalchemy>=2.0,<3.0",

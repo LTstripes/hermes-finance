@@ -54,6 +54,7 @@ export const PRICE_SOURCE_LABELS: Record<string, string> = {
   manual: "Вручную",
   moex: "Мосбиржа",
   alfa_pdf: "Выписка Альфа-Банка",
+  t_invest: "T-Invest",
 };
 
 export const IIS_TYPE_LABELS: Record<string, string> = {

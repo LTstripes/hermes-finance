@@ -21,11 +21,14 @@ from hermes_finance.api.exports import router as exports_router
 from hermes_finance.api.goals import router as goals_router
 from hermes_finance.api.iis import router as iis_router
 from hermes_finance.api.incomes import router as incomes_router
+from hermes_finance.api.instrument_mappings import router as instrument_mappings_router
 from hermes_finance.api.instruments import router as instruments_router
 from hermes_finance.api.investment_flows import router as investment_flows_router
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.positions import router as positions_router
 from hermes_finance.api.properties import router as properties_router
+from hermes_finance.api.quote_apply import router as quote_apply_router
+from hermes_finance.api.quote_preview import router as quote_preview_router
 from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
@@ -56,20 +59,26 @@ def _frontend_response(static_dir: Path, path: str) -> FileResponse:
 def create_app(
     database: Database | None = None,
     static_dir: Path | None = None,
+    market_data_provider: object | None = None,
 ) -> FastAPI:
     application = FastAPI(title="Hermes Finance API", version=__version__)
     application.add_middleware(LocalhostSecurityMiddleware)
     if database is not None:
         application.state.database = database
+    if market_data_provider is not None:
+        application.state.market_data_provider = market_data_provider
     register_error_handlers(application)
     application.include_router(settings_router)
     application.include_router(tax_brackets_router)
     application.include_router(months_router)
+    application.include_router(quote_preview_router)
+    application.include_router(quote_apply_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
     application.include_router(accounts_router)
     application.include_router(backups_router)
     application.include_router(instruments_router)
+    application.include_router(instrument_mappings_router)
     application.include_router(iis_router)
     application.include_router(positions_router)
     application.include_router(deposits_router)

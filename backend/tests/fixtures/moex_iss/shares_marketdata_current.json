@@ -1,0 +1,96 @@
+{
+  "securities": {
+    "metadata": {},
+    "columns": [
+      "SECID",
+      "BOARDID",
+      "SHORTNAME",
+      "PREVPRICE",
+      "LOTSIZE",
+      "FACEVALUE",
+      "STATUS",
+      "DECIMALS",
+      "MINSTEP",
+      "PREVWAPRICE",
+      "FACEUNIT",
+      "PREVDATE",
+      "ISIN",
+      "CURRENCYID",
+      "SETTLEDATE"
+    ],
+    "data": [
+      [
+        "SYNTHS",
+        "TQBR",
+        "SYNTH S",
+        "120.00",
+        "10",
+        "1",
+        "A",
+        "2",
+        "0.01",
+        "120.10",
+        "SUR",
+        "2026-08-12",
+        "RU000SYNTH01",
+        "SUR",
+        "2026-08-15"
+      ]
+    ]
+  },
+  "marketdata": {
+    "metadata": {},
+    "columns": [
+      "SECID",
+      "BOARDID",
+      "BID",
+      "OFFER",
+      "SPREAD",
+      "OPEN",
+      "LOW",
+      "HIGH",
+      "LAST",
+      "LASTCHANGE",
+      "QTY",
+      "VALUE",
+      "WAPRICE",
+      "NUMTRADES",
+      "VOLTODAY",
+      "VALTODAY",
+      "TRADINGSTATUS",
+      "UPDATETIME",
+      "TIME",
+      "SEQNUM",
+      "SYSTIME",
+      "VALTODAY_RUR",
+      "TRADINGSESSION"
+    ],
+    "data": [
+      [
+        "SYNTHS",
+        "TQBR",
+        "123.40",
+        "123.50",
+        "0.10",
+        "121.00",
+        "120.00",
+        "124.00",
+        "123.45",
+        "0.45",
+        "10",
+        "12345",
+        "122.80",
+        "50",
+        "10000",
+        "1234500",
+        "T",
+        "18:40:00",
+        "18:39:59",
+        "123456",
+        "2026-08-14 00:05:01",
+        "1234500",
+        "1"
+      ]
+    ]
+  }
+}

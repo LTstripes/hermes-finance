@@ -1,10 +1,26 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { createAccount, listAccounts } from "../api/accounts";
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
-import type { Account, Instrument, PositionSnapshot } from "../api/types";
+import { applyMonthQuotes, previewMonthQuotes } from "../api/quotePreview";
+import type {
+  Account,
+  Instrument,
+  PositionSnapshot,
+  QuoteApplyRowRequest,
+  QuotePreview,
+} from "../api/types";
+import { formatDate, formatMoney, formatQuantity } from "../lib/format";
+import {
+  ACCOUNT_TYPE_LABELS,
+  INSTRUMENT_TYPE_LABELS,
+  labelOf,
+  PRICE_SOURCE_LABELS,
+} from "../lib/labels";
+import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
+import { QuotePreviewPanel } from "./QuotePreviewPanel";
 import {
   Badge,
   Button,
@@ -13,22 +29,14 @@ import {
   Field,
   Input,
   LoadingState,
+  OverflowMenu,
+  OverflowMenuItem,
   Panel,
   Select,
   Table,
   Td,
   Th,
-  OverflowMenu,
-  OverflowMenuItem,
 } from "./ui";
-import { formatDate, formatMoney, formatQuantity } from "../lib/format";
-import {
-  ACCOUNT_TYPE_LABELS,
-  INSTRUMENT_TYPE_LABELS,
-  PRICE_SOURCE_LABELS,
-  labelOf,
-} from "../lib/labels";
-import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type MonthPositionsSectionProps = {
   monthId: number;
@@ -110,6 +118,10 @@ export function MonthPositionsSection({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<PositionDraft | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PositionSnapshot | null>(null);
+  const [quotePreview, setQuotePreview] = useState<QuotePreview | null>(null);
+  const [previewApplying, setPreviewApplying] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const localDirty = draftTouched || newInstrumentTouched || editingId !== null;
 
@@ -168,6 +180,9 @@ export function MonthPositionsSection({
   );
 
   useEffect(() => {
+    setQuotePreview(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
@@ -334,16 +349,28 @@ export function MonthPositionsSection({
       if (!qty) {
         throw new Error(quantityError(instrumentType));
       }
+      const nextPrice = rub(editDraft.market_price);
+      const quoteChanged =
+        nextPrice.amount !== moneyAmount(current.market_price_per_unit) ||
+        editDraft.price_date !== current.price_date;
+      const nextSource =
+        current.price_source === "t_invest" && quoteChanged && editDraft.price_source === "t_invest"
+          ? "manual"
+          : editDraft.price_source;
       await updatePosition(
         editingId,
         {
           quantity: qty,
           average_cost_per_unit: rub(editDraft.average_cost),
-          market_price_per_unit: rub(editDraft.market_price),
           accrued_interest:
             editDraft.accrued_interest.trim() === "" ? null : rub(editDraft.accrued_interest),
-          price_source: editDraft.price_source,
-          price_date: editDraft.price_date,
+          ...(quoteChanged
+            ? {
+                market_price_per_unit: nextPrice,
+                price_date: editDraft.price_date,
+                price_source: nextSource === "t_invest" ? "manual" : nextSource,
+              }
+            : {}),
         },
         current.updated_at,
       );
@@ -354,6 +381,41 @@ export function MonthPositionsSection({
       setActionError(formatApiError(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleQuotePreview() {
+    if (previewLoading || previewApplying) {
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      setQuotePreview(await previewMonthQuotes(monthId));
+    } catch (err) {
+      setPreviewError(formatApiError(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleQuoteApply(rows: QuoteApplyRowRequest[]) {
+    if (previewApplying || previewLoading || rows.length === 0) {
+      return;
+    }
+    setPreviewApplying(true);
+    setPreviewError(null);
+    try {
+      await applyMonthQuotes(monthId, rows);
+      await load();
+      setQuotePreview(await previewMonthQuotes(monthId));
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === "preview_changed") {
+        setQuotePreview(null);
+      }
+      setPreviewError(formatApiError(err));
+    } finally {
+      setPreviewApplying(false);
     }
   }
 
@@ -600,7 +662,8 @@ export function MonthPositionsSection({
                                   average_cost: moneyAmount(row.average_cost_per_unit),
                                   market_price: moneyAmount(row.market_price_per_unit),
                                   accrued_interest: moneyAmount(row.accrued_interest),
-                                  price_source: row.price_source,
+                                  price_source:
+                                    row.price_source === "t_invest" ? "manual" : row.price_source,
                                   price_date: row.price_date,
                                 });
                               }}
@@ -821,6 +884,16 @@ export function MonthPositionsSection({
           </>
         ) : null}
       </Panel>
+
+      <QuotePreviewPanel
+        applying={previewApplying}
+        closedMonthHint={readOnly}
+        error={previewError}
+        loading={previewLoading}
+        onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
+        onRefresh={() => void handleQuotePreview()}
+        preview={quotePreview}
+      />
 
       <ConfirmDialog
         busy={busy}

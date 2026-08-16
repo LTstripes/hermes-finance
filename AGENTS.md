@@ -34,6 +34,8 @@ Read `private/PRIVATE_SEED_NOT_FOR_GIT.md` only when the assigned task genuinely
 - Do not implement future features “while here”.
 - If a requirement conflicts with the master specification, stop and ask one concrete question.
 - After an explicitly assigned task passes its required local verification, Hermes may create a normal commit, push the current branch to `origin` and verify CI without separate confirmation.
+- A task implementation worker owns publishing its accepted local commits to its **own task/candidate branch**. Do not ask the owner to act as a routine `git push` courier between the worker and reviewer. Never push `main`, `r04` or another integration branch from a task worker unless the task explicitly assigns integration authority.
+- If a normal task-branch push fails, report the exact attempted command, exit status and stderr/output after safe diagnostic/retry steps. Do not reduce this to “push failed”, and do not ask the owner to push manually until the concrete credential/network/runtime barrier is identified.
 - Separate owner permission is still required for force-push, reset, rebase, amending published commits, merge, branch or tag deletion, opening a PR, creating a release, or changing repository settings.
 - Keep each change small enough for complete independent review.
 
@@ -123,3 +125,16 @@ Report:
 - exact checks and outcomes;
 - limitations or questions;
 - next backlog task, explicitly marked as not started.
+
+## Execution history and attribution
+
+`docs/EXECUTION_HISTORY.md` is the durable human-readable attribution journal for the project.
+
+- After a task is **accepted and integrated**, the accepting reviewer/integrator owns appending its execution record; the implementation worker does not self-accept or write the final historical verdict.
+- Record the factual implementation agent/tool and exact model only when runtime-confirmed, reviewer/acceptor, baseline, candidate branch + accepted HEAD, target branch + integrated HEAD, meaningful verification, material blockers/iterations and important decision notes.
+- For A/B or multi-agent implementations, preserve **all candidates**, their exact branches/HEADs, strengths/weaknesses and checks; then record the selected candidate and evidence-based selection reason.
+- Rejected candidates remain part of project history. Do not erase them merely because another implementation was integrated.
+- Worker reports are supporting context, not evidence. Attribution records must agree with actual Git refs/diff/CI read-back.
+- Never put private financial data, credentials, DB/seed/export contents or owner screenshots containing personal values into the execution history.
+- Keep deep technical rationale in ADRs/task-cards and product-facing release notes in `CHANGELOG.md`; execution history should capture **who/how/why selected**, not duplicate specifications.
+- Do not fabricate historical executor/model details when backfilling older work; mark unknowns explicitly.

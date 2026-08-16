@@ -119,11 +119,12 @@ wheels = [
 
 [[package]]
 name = "hermes-finance-backend"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx2" },
     { name = "openpyxl" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
@@ -141,6 +142,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14,<2.0" },
     { name = "fastapi", specifier = ">=0.116,<1.0" },
+    { name = "httpx2", specifier = ">=2.9.1" },
     { name = "openpyxl", specifier = ">=3.1,<4.0" },
     { name = "pydantic-settings", specifier = ">=2.10,<3.0" },
     { name = "sqlalchemy", specifier = ">=2.0,<3.0" },

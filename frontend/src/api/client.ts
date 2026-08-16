@@ -158,6 +158,13 @@ const FIELD_LABELS: Record<string, string> = {
   target_value: "Целевое значение",
   target_date: "Срок",
   closed_month: "Закрытый месяц",
+  provider: "Провайдер",
+  engine: "Движок",
+  market: "Рынок",
+  boardid: "Режим торгов",
+  secid: "Код бумаги",
+  provider_instrument_id: "Код бумаги",
+  provider_venue_id: "Площадка",
 };
 
 const MONTH_NAMES = [
@@ -218,6 +225,8 @@ function localizeApiMessage(error: ApiClientError): string {
       return "Внутренняя ошибка приложения. Попробуй обновить данные.";
     case "not_found":
       return "Запрошенные данные не найдены.";
+    case "preview_changed":
+      return "Котировка изменилась после предпросмотра. Обнови предпросмотр и выбери строки заново.";
     case "conflict":
       return "Операцию нельзя выполнить в текущем состоянии данных.";
     case "unprocessable":

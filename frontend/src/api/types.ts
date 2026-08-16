@@ -340,6 +340,130 @@ export type InstrumentCreate = {
   manual_price_allowed?: boolean;
 };
 
+export type MarketMappingState = "unmapped" | "mapped" | "excluded";
+
+export type MarketIdentity = {
+  provider: string;
+  provider_instrument_id: string;
+  provider_venue_id: string | null;
+};
+
+export type MarketIdentityWrite = {
+  provider: string;
+  provider_instrument_id: string;
+  provider_venue_id: string | null;
+  isin?: string | null;
+};
+
+export type InstrumentMarketMapping = {
+  instrument_id: number;
+  state: MarketMappingState;
+  identity: MarketIdentity | null;
+  instrument_isin: string | null;
+  legacy_moex_secid: string | null;
+};
+
+export type MarketDiscoverCandidate = {
+  provider: string;
+  provider_instrument_id: string;
+  provider_venue_id: string | null;
+  instrument_kind: string;
+  isin: string | null;
+};
+
+export type MarketDiscoverRejected = {
+  provider_instrument_id: string;
+  candidate_isin: string;
+  expected_isin: string;
+  reason: string;
+};
+
+export type MarketDiscoverResult = {
+  status: QuotePreviewStatus;
+  message: string | null;
+  candidates: MarketDiscoverCandidate[];
+  rejected: MarketDiscoverRejected[];
+};
+
+export type QuotePreviewStatus =
+  | "ok"
+  | "stale"
+  | "unmapped"
+  | "excluded"
+  | "unsupported"
+  | "ambiguous"
+  | "unavailable"
+  | "network_error"
+  | "malformed_response";
+
+export type QuoteFailureReason =
+  | "token_unavailable"
+  | "provider_network"
+  | "quote_unavailable"
+  | "unsupported"
+  | "malformed"
+  | "unmapped"
+  | "excluded"
+  | "ambiguous";
+
+export type QuotePreviewRow = {
+  position_snapshot_id: number;
+  account_id: number;
+  instrument_id: number;
+  instrument_name: string;
+  instrument_type: string;
+  mapping_state: MarketMappingState;
+  identity: MarketIdentity | null;
+  current_market_price_per_unit: MoneyValue;
+  current_price_date: string;
+  current_price_source: string;
+  proposed_market_price_per_unit: MoneyValue | null;
+  proposed_price_date: string | null;
+  proposed_quote_kind: "last" | "history" | null;
+  proposed_raw_price: string | null;
+  proposed_raw_price_basis: "R" | "F" | null;
+  fetched_at_utc: string | null;
+  freshness_status: QuotePreviewStatus | null;
+  status: QuotePreviewStatus;
+  failure_reason: QuoteFailureReason | null;
+  message: string | null;
+  apply_allowed: boolean;
+};
+
+export type QuotePreview = {
+  reporting_month_id: number;
+  month_status: ReportingMonthStatus;
+  target_date: string;
+  month_editable: boolean;
+  batch_error: string | null;
+  batch_error_reason: QuoteFailureReason | null;
+  rows: QuotePreviewRow[];
+};
+
+export type QuoteApplyRowRequest = {
+  position_snapshot_id: number;
+  accept_stale: boolean;
+  expected_market_price_per_unit: MoneyValue;
+  expected_price_date: string;
+  expected_identity: MarketIdentity;
+  expected_quote_kind: "last" | "history" | null;
+};
+
+export type QuoteApplyResult = {
+  reporting_month_id: number;
+  applied_count: number;
+  rows: Array<{
+    position_snapshot_id: number;
+    market_price_per_unit: MoneyValue;
+    market_value: MoneyValue;
+    unrealized_result: MoneyValue;
+    accrued_interest: MoneyValue | null;
+    price_date: string;
+    price_source: string;
+    freshness: string;
+  }>;
+};
+
 export type PositionSnapshot = {
   id: number;
   reporting_month_id: number;

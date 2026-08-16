@@ -188,3 +188,25 @@
     width: 100%;
   }
 }
+
+.mapping-identity {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.quote-preview-row--stale td {
+  background: var(--amber-soft);
+}
+
+.quote-preview-stale-note {
+  color: #7a5214;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

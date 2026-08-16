@@ -1,14 +1,16 @@
-import type { ReactNode, TdHTMLAttributes, ThHTMLAttributes } from "react";
+import type { ReactNode, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
 
 type TableProps = {
   children: ReactNode;
   className?: string;
-};
+} & Omit<TableHTMLAttributes<HTMLTableElement>, "className" | "children">;
 
-export function Table({ children, className = "" }: TableProps) {
+export function Table({ children, className = "", ...rest }: TableProps) {
   return (
     <div className="table-wrap">
-      <table className={`table ${className}`.trim()}>{children}</table>
+      <table className={`table ${className}`.trim()} {...rest}>
+        {children}
+      </table>
     </div>
   );
 }

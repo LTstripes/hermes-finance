@@ -1,0 +1,7 @@
+{
+  "securities": {
+    "metadata": {},
+    "columns": ["FACEUNIT", "SECID", "QUOTEBASIS", "BOARDID", "FACEVALUE"],
+    "data": [["SUR", "SYNTHS", "R", "TQBR", "1"]]
+  }
+}
