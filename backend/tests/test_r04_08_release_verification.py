@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import httpx2
@@ -15,6 +18,9 @@ from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.settings import Settings
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+STARTUP_GUARD_SCRIPT = Path(__file__).resolve().parent / "startup_network_guard.py"
 
 STABLE_REVISION = "0023_passive_income_history_eligibility"
 STOCK_UID = "11111111-1111-1111-1111-111111111111"
@@ -320,33 +326,165 @@ def test_t_invest_downgrade_fails_closed_and_keeps_head(tmp_path: Path) -> None:
         connection.close()
 
 
-def test_import_and_page_load_do_not_construct_market_clients(
-    monkeypatch: MonkeyPatch, tmp_path: Path
+def test_manual_snapshot_with_existing_provenance_downgrade_fails_closed(
+    tmp_path: Path,
 ) -> None:
-    from hermes_finance.market_data import moex_iss, t_invest
+    database_path = tmp_path / "manual-with-provenance.db"
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
 
-    def boom(*args: object, **kwargs: object) -> None:
-        raise AssertionError("startup must not construct a market-data client")
-
-    monkeypatch.setattr(moex_iss, "MoexIssClient", boom)
-    monkeypatch.setattr(t_invest, "TInvestClient", boom)
-    database = create_database(tmp_path / "r04-08-startup.db")
-    Base.metadata.create_all(database.engine)
+    connection = sqlite3.connect(database_path)
     try:
-        application = create_app(database)
-        assert application.router.on_startup == []
-        with TestClient(application) as client:
-            health = client.get("/api/health")
-            months = client.get("/api/months")
-            root = client.get("/")
-            assert health.status_code == 200
-            assert health.json()["status"] == "ok"
-            assert "token" not in health.text.lower()
-            assert months.status_code == 200
-            assert months.json() == []
-            assert root.status_code in {200, 404}
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2031,
+                6,
+                "2031-06-01",
+                "2031-06-30",
+                "2031-06-30",
+                "draft",
+                "manual",
+                "2031-06-30 00:00:00",
+                "2031-06-30 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts "
+            "(name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Broker", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO instruments "
+            "(name, instrument_type, currency, is_active, manual_price_allowed) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Applied Then Manual", "stock", "RUB", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO position_snapshots "
+            "(reporting_month_id, account_id, instrument_id, quantity, "
+            "average_cost_per_unit_kopecks, market_price_per_unit_kopecks, "
+            "market_value_kopecks, cost_basis_kopecks, unrealized_result_kopecks, "
+            "price_date, price_source, manual_adjustment, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                1,
+                "1.000000",
+                10_000,
+                13_000,
+                13_000,
+                10_000,
+                3_000,
+                "2031-06-20",
+                "manual",
+                0,
+                "2031-06-20 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO position_quote_provenance ("
+            "position_snapshot_id, reporting_month_id, provider, "
+            "provider_instrument_id, provider_venue_id, quote_kind, raw_price, "
+            "raw_price_basis, normalized_price_kopecks, price_date, fetched_at_utc, "
+            "target_date, freshness, applied_at_utc"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "t_invest",
+                STOCK_UID,
+                None,
+                "last",
+                "12.00",
+                "R",
+                12_000,
+                "2031-06-15",
+                "2031-06-15 10:00:00",
+                "2031-06-15",
+                "ok",
+                "2031-06-15 10:05:00",
+            ),
+        )
+        connection.commit()
+        before_snapshot = connection.execute(
+            "SELECT id, price_source, market_price_per_unit_kopecks FROM position_snapshots"
+        ).fetchall()
+        before_provenance = connection.execute(
+            "SELECT id, position_snapshot_id, provider, provider_instrument_id, "
+            "normalized_price_kopecks, price_date, freshness FROM position_quote_provenance"
+        ).fetchall()
     finally:
-        database.engine.dispose()
+        connection.close()
+
+    assert before_snapshot == [(1, "manual", 13_000)]
+    assert before_provenance == [(1, 1, "t_invest", STOCK_UID, 12_000, "2031-06-15", "ok")]
+
+    downgraded = run_alembic(database_path, "downgrade", "-1")
+    assert downgraded.returncode != 0
+    assert "quote provenance" in downgraded.stderr.lower()
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        assert (
+            connection.execute(
+                "SELECT id, price_source, market_price_per_unit_kopecks FROM position_snapshots"
+            ).fetchall()
+            == before_snapshot
+        )
+        assert (
+            connection.execute(
+                "SELECT id, position_snapshot_id, provider, provider_instrument_id, "
+                "normalized_price_kopecks, price_date, freshness FROM position_quote_provenance"
+            ).fetchall()
+            == before_provenance
+        )
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "position_quote_provenance" in tables
+        assert (
+            connection.execute("SELECT COUNT(*) FROM position_quote_provenance").fetchone()[0] == 1
+        )
+    finally:
+        connection.close()
+
+
+def _run_isolated_startup_script(*arguments: str) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    environment["PYTHONIOENCODING"] = "utf-8"
+    environment.pop("PYTHONPATH", None)
+    environment.pop("PYTHONHOME", None)
+    environment.pop("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", None)
+    return subprocess.run(
+        [sys.executable, "-I", str(STARTUP_GUARD_SCRIPT), *arguments],
+        cwd=BACKEND_ROOT,
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def test_import_and_page_load_do_not_construct_market_clients(tmp_path: Path) -> None:
+    database_path = tmp_path / "r04-08-startup.db"
+    probed = _run_isolated_startup_script("probe", str(database_path))
+    assert probed.returncode == 0, probed.stdout + probed.stderr
+    assert "ok" in probed.stdout
+
+
+def test_startup_network_guard_fails_closed_on_external_attempt() -> None:
+    proved = _run_isolated_startup_script("prove-guard")
+    assert proved.returncode == 0, proved.stdout + proved.stderr
+    assert "guard-ok" in proved.stdout
 
 
 def test_missing_token_production_preview_makes_no_http_call(
