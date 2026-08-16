@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $launcher = Join-Path $repoRoot "scripts\start-local.ps1"
+. (Join-Path $PSScriptRoot "windows-powershell-file.ps1")
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("hermes-r04-08-" + [guid]::NewGuid().ToString("N"))
 $databasePath = Join-Path $tempRoot "finance.db"
 $launcherProcess = $null
@@ -161,18 +162,9 @@ try {
     $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
 
     Write-Host "R04-08 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
-    $launcherProcess = Start-Process `
-        -FilePath "powershell.exe" `
-        -ArgumentList @(
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            $launcher
-        ) `
-        -WorkingDirectory $repoRoot `
-        -NoNewWindow `
-        -PassThru
+    $launcherProcess = Start-WindowsPowerShellFile `
+        -FilePath $launcher `
+        -WorkingDirectory $repoRoot
 
     Wait-ForProductionStack -Process $launcherProcess
     if (-not (Test-Path $databasePath -PathType Leaf)) {
