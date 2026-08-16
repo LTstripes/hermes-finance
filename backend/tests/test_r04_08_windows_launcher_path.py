@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,10 +19,19 @@ WINDOWS_POWERSHELL = Path(
     "v1.0",
     "powershell.exe",
 )
+# Windows PowerShell 5.1 reads source as ANSI unless a UTF-8 BOM is present.
+PS1_ENCODING = "utf-8-sig"
+# 5.1 Set-Content -Encoding UTF8 writes UTF-8 with BOM.
+OUTPUT_ENCODING = "utf-8-sig"
+CYRILLIC_SPACED_DIR = "Рабочий стол Directory With Spaces"
 
 
 def _ps_single_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _write_ps1(path: Path, content: str) -> None:
+    path.write_text(content, encoding=PS1_ENCODING, newline="\n")
 
 
 def _run_windows_powershell_file(script_path: Path) -> subprocess.CompletedProcess[str]:
@@ -43,17 +53,26 @@ def _run_windows_powershell_file(script_path: Path) -> subprocess.CompletedProce
     )
 
 
+def _cyrillic_spaced_root(tmp_path: Path) -> Path:
+    directory = tmp_path / CYRILLIC_SPACED_DIR
+    directory.mkdir()
+    rendered = str(directory)
+    assert " " in rendered
+    assert "Рабочий стол" in rendered
+    assert any(ord(character) > 127 for character in rendered)
+    return directory
+
+
 def _write_probe(directory: Path, output_path: Path) -> Path:
     probe = directory / "start-local.ps1"
-    probe.write_text(
+    _write_ps1(
+        probe,
         (
             "Set-StrictMode -Version 2.0\n"
             f"Set-Content -LiteralPath {_ps_single_quote(str(output_path))} "
-            "-Value $PSCommandPath\n"
+            "-Encoding UTF8 -Value $PSCommandPath\n"
             "exit 0\n"
         ),
-        encoding="utf-8",
-        newline="\n",
     )
     return probe
 
@@ -65,14 +84,15 @@ def test_unquoted_start_process_argumentlist_splits_path_with_spaces(tmp_path: P
     if not WINDOWS_POWERSHELL.is_file():
         pytest.skip("Windows PowerShell 5.1 is not installed")
 
-    spaced = tmp_path / "Directory With Spaces"
-    spaced.mkdir()
+    spaced = _cyrillic_spaced_root(tmp_path)
     observed = tmp_path / "unquoted-observed.txt"
     probe = _write_probe(spaced, observed)
     assert " " in str(probe)
+    assert "Рабочий стол" in str(probe)
 
     driver = tmp_path / "unquoted-driver.ps1"
-    driver.write_text(
+    _write_ps1(
+        driver,
         (
             "Set-StrictMode -Version 2.0\n"
             "$ErrorActionPreference = 'Stop'\n"
@@ -91,8 +111,6 @@ def test_unquoted_start_process_argumentlist_splits_path_with_spaces(tmp_path: P
             "}\n"
             "exit $process.ExitCode\n"
         ),
-        encoding="utf-8",
-        newline="\n",
     )
 
     completed = _run_windows_powershell_file(driver)
@@ -106,18 +124,22 @@ def test_canonical_launcher_path_with_spaces_reaches_powershell_file(tmp_path: P
         pytest.skip("Windows PowerShell 5.1 is not installed")
     assert HELPER.is_file()
 
-    spaced = tmp_path / "Directory With Spaces"
-    spaced.mkdir()
+    spaced = _cyrillic_spaced_root(tmp_path)
     observed = tmp_path / "quoted-observed.txt"
     probe = _write_probe(spaced, observed)
+    local_helper = spaced / HELPER.name
+    shutil.copy2(HELPER, local_helper)
     assert " " in str(probe)
+    assert "Рабочий стол" in str(probe)
+    assert "Рабочий стол" in str(local_helper)
 
     driver = tmp_path / "quoted-driver.ps1"
-    driver.write_text(
+    _write_ps1(
+        driver,
         (
             "Set-StrictMode -Version 2.0\n"
             "$ErrorActionPreference = 'Stop'\n"
-            f". {_ps_single_quote(str(HELPER))}\n"
+            f". {_ps_single_quote(str(local_helper))}\n"
             f"$probe = {_ps_single_quote(str(probe))}\n"
             f"$working = {_ps_single_quote(str(spaced))}\n"
             "$process = Start-WindowsPowerShellFile -FilePath $probe "
@@ -130,14 +152,14 @@ def test_canonical_launcher_path_with_spaces_reaches_powershell_file(tmp_path: P
             "    throw 'quoted launcher exited with a non-zero status'\n"
             "}\n"
         ),
-        encoding="utf-8",
-        newline="\n",
     )
 
     completed = _run_windows_powershell_file(driver)
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert observed.is_file(), completed.stdout + completed.stderr
-    reported = Path(observed.read_text(encoding="utf-8").strip())
+    reported = Path(observed.read_text(encoding=OUTPUT_ENCODING).strip())
     assert Path(os.path.normcase(reported)) == Path(os.path.normcase(probe.resolve()))
+    assert "Рабочий стол" in str(reported)
     assert "Directory With Spaces" in str(reported)
+    assert " " in str(reported)
     assert reported.name == "start-local.ps1"
