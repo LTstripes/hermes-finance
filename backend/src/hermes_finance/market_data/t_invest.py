@@ -47,6 +47,17 @@ _FIND_INSTRUMENT = "FindInstrument"
 _BOND_BY = "BondBy"
 _GET_LAST_PRICES = "GetLastPrices"
 _GET_CANDLES = "GetCandles"
+_GET_BOND_COUPONS = "GetBondCoupons"
+_GET_BOND_EVENTS = "GetBondEvents"
+_GET_DIVIDENDS = "GetDividends"
+
+PAYOUT_PROBE_METHODS: Final = frozenset(
+    {
+        _GET_BOND_COUPONS,
+        _GET_BOND_EVENTS,
+        _GET_DIVIDENDS,
+    }
+)
 
 _ID_TYPE_UID: Final = "INSTRUMENT_ID_TYPE_UID"
 _LAST_PRICE_EXCHANGE: Final = "LAST_PRICE_EXCHANGE"
@@ -656,6 +667,15 @@ class TInvestClient:
         body = _require_object(instrument, name="BondBy instrument")
         self._bond_cache[uid] = body
         return body
+
+    def request_payout_method(
+        self, method: str, body: dict[str, object]
+    ) -> dict[str, object]:
+        """Developer-probe only. Not part of production quote routing."""
+
+        if method not in PAYOUT_PROBE_METHODS:
+            raise ValueError(f"payout probe does not allow InstrumentsService/{method}")
+        return self._post(_INSTRUMENTS, method, body)
 
     def _find_instruments(self, query: str) -> list[dict[str, object]]:
         payload = self._post(_INSTRUMENTS, _FIND_INSTRUMENT, {"query": query})

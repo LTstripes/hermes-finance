@@ -1,0 +1,223 @@
+{
+  "meta": {
+    "source": "sanitized official T-Invest REST payout representative payload",
+    "note": "No token, account, or owner data. Identifiers are synthetic."
+  },
+  "stock": {
+    "FindInstrument": {
+      "instruments": [
+        {
+          "uid": "11111111-1111-1111-1111-111111111111",
+          "ticker": "SYNTHS"
+        }
+      ]
+    },
+    "GetDividends": {
+      "dividends": [
+        {
+          "paymentDate": "2026-05-19T00:00:00Z",
+          "declaredDate": "2026-04-29T00:00:00Z",
+          "lastBuyDate": "2026-04-30T00:00:00Z",
+          "dividendType": "",
+          "recordDate": "2026-05-04T00:00:00Z",
+          "regularity": "Annual",
+          "createdAt": "2026-05-18T23:42:42.655834Z",
+          "dividendNet": {
+            "units": "278",
+            "nano": 0,
+            "currency": "rub"
+          }
+        },
+        {
+          "paymentDate": "2026-01-22T00:00:00Z",
+          "declaredDate": "2026-01-10T00:00:00Z",
+          "lastBuyDate": "2026-01-09T00:00:00Z",
+          "dividendType": "",
+          "recordDate": "2026-01-12T00:00:00Z",
+          "regularity": "",
+          "createdAt": "2026-01-12T23:51:20.097600Z",
+          "dividendNet": {
+            "units": "397",
+            "nano": 0,
+            "currency": "rub"
+          }
+        },
+        {
+          "paymentDate": "2025-06-18T00:00:00Z",
+          "declaredDate": "2025-06-01T00:00:00Z",
+          "lastBuyDate": "2025-06-02T00:00:00Z",
+          "dividendType": "",
+          "recordDate": "2025-06-03T00:00:00Z",
+          "regularity": "Annual",
+          "createdAt": "2025-06-03T23:48:53.302875Z",
+          "dividendNet": {
+            "units": "541",
+            "nano": 0,
+            "currency": "rub"
+          }
+        },
+        {
+          "paymentDate": "2024-12-31T00:00:00Z",
+          "declaredDate": "2024-12-15T00:00:00Z",
+          "lastBuyDate": "2024-12-16T00:00:00Z",
+          "dividendType": "",
+          "recordDate": "2024-12-17T00:00:00Z",
+          "regularity": "",
+          "createdAt": "2024-12-17T23:47:32.974292Z",
+          "dividendNet": {
+            "units": "514",
+            "nano": 0,
+            "currency": "rub"
+          }
+        }
+      ]
+    }
+  },
+  "ordinary_bond": {
+    "BondBy": {
+      "instrument": {
+        "uid": "33333333-3333-3333-3333-333333333333",
+        "figi": "BBGSYNTH00003",
+        "ticker": "SYNTHB",
+        "classCode": "TQOB",
+        "isin": "RU000SYNTH03",
+        "name": "Synthetic Bond",
+        "currency": "rub",
+        "lot": 1,
+        "realExchange": "REAL_EXCHANGE_MOEX",
+        "maturityDate": "2041-05-15T00:00:00Z",
+        "floatingCouponFlag": false,
+        "perpetualFlag": false,
+        "amortizationFlag": false,
+        "couponQuantityPerYear": 2,
+        "nominal": {
+          "units": "1000",
+          "nano": 0,
+          "currency": "rub"
+        },
+        "initialNominal": {
+          "units": "1000",
+          "nano": 0,
+          "currency": "rub"
+        }
+      }
+    },
+    "GetBondCoupons": {
+      "events": [
+        {
+          "figi": "BBGSYNTH00003",
+          "couponDate": "2026-12-02T00:00:00Z",
+          "couponNumber": "11",
+          "fixDate": "2026-12-01T00:00:00Z",
+          "couponType": "COUPON_TYPE_FIX",
+          "couponStartDate": "2026-06-03T00:00:00Z",
+          "couponEndDate": "2026-12-02T00:00:00Z",
+          "couponPeriod": 182,
+          "payOneBond": {
+            "units": "35",
+            "nano": 400000000,
+            "currency": "rub"
+          }
+        },
+        {
+          "figi": "BBGSYNTH00003",
+          "couponDate": "2027-06-02T00:00:00Z",
+          "couponNumber": "12",
+          "fixDate": "2027-06-01T00:00:00Z",
+          "couponType": "COUPON_TYPE_FIX",
+          "couponStartDate": "2026-12-02T00:00:00Z",
+          "couponEndDate": "2027-06-02T00:00:00Z",
+          "couponPeriod": 182,
+          "payOneBond": {
+            "units": "35",
+            "nano": 400000000,
+            "currency": "rub"
+          }
+        }
+      ]
+    },
+    "GetBondEvents": {
+      "events": [
+        {
+          "instrumentId": "33333333-3333-3333-3333-333333333333",
+          "eventNumber": 11,
+          "eventDate": "2026-12-02T00:00:00Z",
+          "eventType": "EVENT_TYPE_CPN",
+          "fixDate": "2026-12-01T00:00:00Z",
+          "payDate": "2026-12-02T00:00:00Z",
+          "execution": "E",
+          "operationType": "Фиксированный",
+          "note": "",
+          "couponStartDate": "2026-06-03T00:00:00Z",
+          "couponEndDate": "2026-12-02T00:00:00Z",
+          "couponPeriod": 182,
+          "payOneBond": {
+            "units": "35",
+            "nano": 400000000,
+            "currency": "rub"
+          },
+          "value": {
+            "units": "7",
+            "nano": 100000000
+          }
+        },
+        {
+          "instrumentId": "33333333-3333-3333-3333-333333333333",
+          "eventNumber": 12,
+          "eventDate": "2027-06-02T00:00:00Z",
+          "eventType": "EVENT_TYPE_CPN",
+          "fixDate": "2027-06-01T00:00:00Z",
+          "payDate": "2027-06-02T00:00:00Z",
+          "execution": "E",
+          "operationType": "Фиксированный",
+          "note": "",
+          "couponStartDate": "2026-12-02T00:00:00Z",
+          "couponEndDate": "2027-06-02T00:00:00Z",
+          "couponPeriod": 182,
+          "payOneBond": {
+            "units": "35",
+            "nano": 400000000,
+            "currency": "rub"
+          },
+          "value": {
+            "units": "7",
+            "nano": 100000000
+          }
+        }
+      ]
+    },
+    "GetBondEventsMty": {
+      "events": [
+        {
+          "instrumentId": "33333333-3333-3333-3333-333333333333",
+          "eventNumber": 1,
+          "eventDate": "2041-05-15T00:00:00Z",
+          "eventType": "EVENT_TYPE_MTY",
+          "fixDate": "2041-05-13T00:00:00Z",
+          "payDate": "2041-05-15T00:00:00Z",
+          "execution": "E",
+          "operationType": "OM",
+          "note": "",
+          "couponPeriod": 0,
+          "payOneBond": {
+            "units": "1000",
+            "nano": 0,
+            "currency": "rub"
+          },
+          "value": {
+            "units": "100",
+            "nano": 0
+          }
+        }
+      ]
+    }
+  },
+  "empty": {
+    "GetDividends": {
+      "dividends": []
+    },
+    "GetBondCoupons": {
+      "events": []
+    }
+  }
+}

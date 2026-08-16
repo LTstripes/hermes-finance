@@ -48,7 +48,15 @@ CI never runs this. From `backend/`:
 uv run python -m hermes_finance.market_data.t_invest_probe --live
 ```
 
-The probe reads only `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` from the ignored repository-root `.env`. It calls FindInstrument, GetInstrumentBy, BondBy, GetLastPrices and GetCandles. It does not call Accounts, Operations, Orders, Sandbox or Transfer. It does not write a mapping or a monthly snapshot. Optional `--write-fixture` stores a sanitized public payload under `backend/tests/fixtures/t_invest/`.
+The quote probe reads only `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` from the ignored repository-root `.env`. It calls FindInstrument, GetInstrumentBy, BondBy, GetLastPrices and GetCandles. It does not call Accounts, Operations, Orders, Sandbox or Transfer. It does not write a mapping or a monthly snapshot. Optional `--write-fixture` stores a sanitized public payload under `backend/tests/fixtures/t_invest/`.
+
+Payout-event evidence (R05-01) is a separate developer-only probe:
+
+```text
+uv run python -m hermes_finance.market_data.t_invest_payout_probe --live
+```
+
+It may call only `FindInstrument`, `GetInstrumentBy`, `BondBy`, `GetBondCoupons`, `GetBondEvents` and `GetDividends`. It does not implement the payout calendar, apply events, or call account/portfolio/trading APIs. Optional `--write-fixture` writes `backend/tests/fixtures/t_invest/official_payout_shape.json`.
 
 ## Troubleshooting the live probe
 
