@@ -241,6 +241,21 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Decision notes:** failure recovery is now owner-safe and explicit: failed rows remain non-applicable, good rows in mixed previews remain usable, and a changed quote requires a fresh preview before a second explicit apply.
 - **References:** issue #31, `docs/releases/0.4.0.md`.
 
+### 0.4.0 / R04-08 — regression matrix + Windows/network smoke (multi-model review benchmark)
+
+- **Accepted:** 2026-08-16
+- **Implemented by:** Grok Build / Grok 4.6 as selected by the owner-run implementation session
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Independent reviewers:** OpenAI Codex — GPT-5.6 Sol High; DeepSeek V4 Flash (initial blind pass); DeepSeek V4 Pro (later blind re-review passes)
+- **Issue:** #32
+- **Baseline:** `r04` @ `92b09628dc73646dde5d0855562431c0dd9872fd`
+- **Candidate trail:** initial `07dc2e12502196e9e5f4e7a64234b6d010d45e12` → follow-up `0da5980447947ef5dac69b28e2b581bc876d2026` → follow-up `c68ca82b877e2085dbc57bdf7ce27ac845ec3601` → final accepted `ec9f56b1870402201ae863d80fd08cea758a4ac4`.
+- **Integrated into:** `r04` via true two-parent merge `5a7d0add14d1699e72993af522d2e61f47a27144`; later documentation commits advance the branch.
+- **Final verification:** Grok reported backend `771 passed`, frontend `230 passed / 40 files`, Ruff/Biome/build/diff/privacy green and Windows smoke green from a Cyrillic + spaced path. Final exact candidate then received independent ACCEPT from both Codex GPT-5.6 Sol High and DeepSeek V4 Pro; ChatGPT independently read back the live candidate/ref/ancestry and inspected the final fixes before integration.
+- **Material review iterations:** Codex's first blind review found three real blockers: 0026 downgrade could delete append-only provenance after a manual override; Windows smoke did not prove the actual live listener was exactly `127.0.0.1`; and the cold-import/startup network test used an ineffective constructor patch. DeepSeek V4 Flash accepted that initial candidate and therefore missed the release-engineering significance of those gaps. After Grok fixed them, Codex and DeepSeek V4 Pro independently found the same Windows PowerShell 5.1 spaced-path `Start-Process -ArgumentList` regression. After the next fix Codex accepted, but DeepSeek V4 Pro found a further Cyrillic/UTF-8-BOM regression in the generated PowerShell verification script. Grok fixed source/output encoding narrowly; the final candidate then received dual ACCEPT.
+- **Decision notes:** this task became a useful real-project model benchmark. Grok remained a strong scope-disciplined implementer/follow-up executor; Codex was the strongest initial adversarial reviewer; DeepSeek V4 Pro materially outperformed Flash and later caught a Windows/environment edge case after Codex had already accepted. The most effective workflow was one implementer plus independent reviewers trying to falsify the verification evidence rather than trusting green test counts.
+- **References:** issue #32, `docs/releases/0.4.0.md`, `docs/reviews/2026-08-16-r04-08-model-benchmark.md`.
+
 ---
 
 ## Historical backfill
