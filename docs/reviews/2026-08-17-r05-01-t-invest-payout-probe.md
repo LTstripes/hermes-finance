@@ -4,7 +4,7 @@
 - **Task:** issue #39 — R05-01 live read-only T-Invest payout probe + sanitized fixtures
 - **Canonical baseline:** `r05 = b4ddea026a79a305bc61c9fe726712ef3065c8be`
 - **Worker branch:** `r05-01-grok`
-- **Candidate SHA:** `b04ceb4f8a8f2379c10f3246fe53c8b507bde79d`
+- **Candidate SHA:** `e9afaa3ec865190d701618ab650ed63dcc1883d1`
 - **Contract:** `docs/adr/0011-automatic-investment-payout-calendar.md`
 - **Mode:** evidence gathering only. No payout calendar, schema, preview/apply or dashboard implementation.
 
