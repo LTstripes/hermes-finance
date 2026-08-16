@@ -2,6 +2,28 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.4.0] — 2026-08-16
+
+Release candidate for owner-triggered T-Invest market quotes with preview, selective apply and append-only provenance.
+
+### Added
+
+- provider-neutral market identity (`provider` + `provider_instrument_id` + optional `provider_venue_id`);
+- T-Invest read-only production market-data path: instrument mapping, quote preview and selective apply;
+- explicit owner-triggered quote preview with no startup or background refresh;
+- selective explicit apply, atomic selected-set semantics and a `preview_changed` guard;
+- append-only immutable snapshot-scoped quote provenance that survives later manual or mapping edits;
+- sanitized provider-failure and manual-fallback UX for editable months.
+
+### Changed
+
+- production runtime remains loopback-only (`127.0.0.1`); external market network happens only after an explicit owner action;
+- T-Invest is the only production quote source for 0.4; MOEX ISS stays a reference adapter and is not a silent fallback.
+
+### Release status
+
+- This is a release candidate. No tag or GitHub release is created by R04-09.
+
 ## [0.3.0] — 2026-08-13
 
 Release candidate focused on the completed 0.3 product pass and safe local delivery.
