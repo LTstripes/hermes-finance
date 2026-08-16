@@ -503,19 +503,20 @@ function Get-HermesRemoteTagInfo {
         [string]$Tag
     )
 
-    $remote = [string]$Context.PushUrl
-    if ([string]::IsNullOrWhiteSpace($remote)) {
-        throw "Internal error: publication URL was not resolved before reading remote tags."
+    if ([string]::IsNullOrWhiteSpace([string]$Context.PushUrl)) {
+        throw "Internal error: publication destination was not resolved before reading remote tags."
     }
 
+    # Use the named remote so Git keeps the inspected pushurl / pushInsteadOf
+    # semantics. Replaying the effective URL as a literal can apply pushInsteadOf again.
     $plain = Invoke-HermesTool `
         -Context $Context `
         -Name "git" `
-        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", $remote, "refs/tags/$Tag")
+        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", "origin", "refs/tags/$Tag")
     $peeled = Invoke-HermesTool `
         -Context $Context `
         -Name "git" `
-        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", $remote, "refs/tags/$Tag^{}")
+        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", "origin", "refs/tags/$Tag^{}")
 
     $tagObjectSha = Get-HermesLsRemoteSha -Stdout $plain.Stdout
     $commitSha = Get-HermesLsRemoteSha -Stdout $peeled.Stdout
@@ -793,7 +794,7 @@ function Invoke-HermesRelease {
     $null = Invoke-HermesTool `
         -Context $context `
         -Name "git" `
-        -ArgumentList @("-C", $RepoRoot, "fetch", $context.FetchUrl, "refs/heads/main:refs/remotes/origin/main")
+        -ArgumentList @("-C", $RepoRoot, "fetch", "origin", "refs/heads/main:refs/remotes/origin/main")
 
     $originMain = Invoke-HermesTool `
         -Context $context `
@@ -849,7 +850,7 @@ function Invoke-HermesRelease {
             $null = Invoke-HermesTool `
                 -Context $context `
                 -Name "git" `
-                -ArgumentList @("-C", $RepoRoot, "push", "--no-follow-tags", $context.PushUrl, "refs/tags/${tag}:refs/tags/$tag")
+                -ArgumentList @("-C", $RepoRoot, "push", "--no-follow-tags", "origin", "refs/tags/${tag}:refs/tags/$tag")
             $tagPushed = $true
             $remotePublished = $true
         }

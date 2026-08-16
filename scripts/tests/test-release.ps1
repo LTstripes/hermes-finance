@@ -135,6 +135,8 @@ function New-HermesFakeWorld {
         [int]$GhAuthExit = 0,
         [int]$LsRemoteExit = 0,
         [string]$ReleaseApiFailure = "",
+        [string]$PushInsteadOfFrom = "",
+        [string]$PushInsteadOfTo = "",
         [switch]$FailReleaseCreate,
         [switch]$FailPush
     )
@@ -161,6 +163,8 @@ function New-HermesFakeWorld {
         GhAuthExit        = $GhAuthExit
         LsRemoteExit      = [int]$LsRemoteExit
         ReleaseApiFailure = [string]$ReleaseApiFailure
+        PushInsteadOfFrom = [string]$PushInsteadOfFrom
+        PushInsteadOfTo   = [string]$PushInsteadOfTo
         FailReleaseCreate = [bool]$FailReleaseCreate
         FailPush          = [bool]$FailPush
         Calls             = New-Object System.Collections.ArrayList
@@ -196,6 +200,37 @@ function New-HermesFakeWorld {
     }
 }
 
+function Test-FakeLiteralGitUrl {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+    return [bool]($Value -match "^(?i)(https://|http://|ssh://|git://)")
+}
+
+function Get-FakeRewrittenPushUrl {
+    param($State, [string]$Url)
+
+    if (
+        -not [string]::IsNullOrWhiteSpace([string]$State.PushInsteadOfFrom) -and
+        -not [string]::IsNullOrWhiteSpace([string]$State.PushInsteadOfTo) -and
+        [string]$Url -eq [string]$State.PushInsteadOfFrom
+    ) {
+        return [string]$State.PushInsteadOfTo
+    }
+
+    return $Url
+}
+
+function Get-FakeEffectivePushUrls {
+    param($State, [string[]]$Urls)
+
+    foreach ($url in @($Urls)) {
+        Get-FakeRewrittenPushUrl -State $State -Url $url
+    }
+}
+
 function Invoke-FakeGitCommand {
     param($State, [string[]]$Arguments)
 
@@ -212,8 +247,13 @@ function Invoke-FakeGitCommand {
     if ($verb -eq "remote" -and $gitArgs.Count -ge 3 -and $gitArgs[1] -eq "get-url") {
         $wantPush = $gitArgs -contains "--push"
         $urls = @($State.FetchUrls)
-        if ($wantPush -and $null -ne $State.PushUrls) {
-            $urls = @($State.PushUrls)
+        if ($wantPush) {
+            if ($null -ne $State.PushUrls) {
+                $urls = @($State.PushUrls)
+            }
+            else {
+                $urls = @(Get-FakeEffectivePushUrls -State $State -Urls $urls)
+            }
         }
         return New-HermesCommandResult -Stdout ([string]::Join("`n", $urls))
     }
@@ -282,12 +322,8 @@ function Invoke-FakeGitCommand {
         if ($gitArgs.Count -ge 3) {
             $remote = [string]$gitArgs[$gitArgs.Count - 2]
         }
-        $allowedRemotes = @($State.FetchUrls)
-        if ($null -ne $State.PushUrls) {
-            $allowedRemotes = @($State.PushUrls)
-        }
-        if (@($allowedRemotes) -notcontains $remote) {
-            throw "ls-remote must use the verified publication URL, got '$remote'."
+        if ($remote -ne "origin") {
+            throw "ls-remote must use named remote origin so pushInsteadOf is not applied to a literal URL. Got '$remote'."
         }
         $wanted = $gitArgs[$gitArgs.Count - 1]
         if ($null -eq $State.RemoteTag) {
@@ -337,14 +373,13 @@ function Invoke-FakeGitCommand {
         if (-not ($gitArgs -contains "--no-follow-tags")) {
             throw "git push must pass --no-follow-tags. Args: $([string]::Join(' ', $gitArgs))"
         }
-        $expectedPushUrls = @($State.FetchUrls)
-        if ($null -ne $State.PushUrls) {
-            $expectedPushUrls = @($State.PushUrls)
+        foreach ($arg in $gitArgs) {
+            if (Test-FakeLiteralGitUrl -Value $arg) {
+                $rewritten = Get-FakeRewrittenPushUrl -State $State -Url $arg
+                throw "git push must use named remote origin, not literal URL '$arg' (pushInsteadOf would send it to '$rewritten')."
+            }
         }
-        if ($expectedPushUrls.Count -ne 1) {
-            throw "Fake push reached with multiple configured push URLs."
-        }
-        $expectedArgv = @("push", "--no-follow-tags", [string]$expectedPushUrls[0], "refs/tags/v0.5.0:refs/tags/v0.5.0")
+        $expectedArgv = @("push", "--no-follow-tags", "origin", "refs/tags/v0.5.0:refs/tags/v0.5.0")
         if ($gitArgs.Count -ne $expectedArgv.Count) {
             throw "Unexpected git push arguments: $([string]::Join(' ', $gitArgs))"
         }
@@ -353,7 +388,6 @@ function Invoke-FakeGitCommand {
                 throw "Unexpected git push arguments: $([string]::Join(' ', $gitArgs))"
             }
         }
-        $refspec = [string]$gitArgs[$gitArgs.Count - 1]
         if ([bool]$State.FailPush) {
             return New-HermesCommandResult -ExitCode 1 -Stderr "simulated tag push failure"
         }
@@ -861,11 +895,22 @@ Invoke-HermesCase "successful publish uses fetch-then-tag-then-tag-push-then-rel
     Assert-Equal -Expected 4 -Actual $pushArgs.Count -Label "git push argc"
     Assert-Equal -Expected "push" -Actual $pushArgs[0] -Label "push verb"
     Assert-Equal -Expected "--no-follow-tags" -Actual $pushArgs[1] -Label "push follow-tags override"
-    Assert-Equal -Expected $script:CanonicalUrl -Actual $pushArgs[2] -Label "push destination URL"
+    Assert-Equal -Expected "origin" -Actual $pushArgs[2] -Label "push named remote"
     Assert-Equal -Expected "refs/tags/v0.5.0:refs/tags/v0.5.0" -Actual $pushArgs[3] -Label "push refspec"
-    Assert-True -Condition ($pushArgs -notcontains "origin") -Message "Publication push must use the verified URL, not the remote name."
+    foreach ($pushArg in $pushArgs) {
+        Assert-True -Condition (-not (Test-FakeLiteralGitUrl -Value $pushArg)) -Message "Publication push must not replay a literal URL: $pushArg"
+    }
     Assert-True -Condition ($pushArgs -notcontains "--mirror") -Message "Push must not use --mirror."
     Assert-True -Condition ($pushArgs -notcontains "--tags") -Message "Push must not use --tags."
+
+    $lsRemotes = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("ls-remote"))
+    foreach ($lsCall in $lsRemotes) {
+        $lsArgs = @(Get-HermesGitArgsWithoutC -Arguments $lsCall.Arguments)
+        Assert-True -Condition ($lsArgs -contains "origin") -Message "ls-remote must use named remote origin."
+        foreach ($lsArg in $lsArgs) {
+            Assert-True -Condition (-not (Test-FakeLiteralGitUrl -Value $lsArg)) -Message "ls-remote must not use a literal URL: $lsArg"
+        }
+    }
 
     $runLists = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("run", "list"))
     Assert-Equal -Expected 1 -Actual $runLists.Count -Label "gh run list count"
@@ -924,7 +969,10 @@ Invoke-HermesCase "successful publish never pushes a branch or unrelated ref" {
             Assert-True -Condition ($gitArgs -notcontains "HEAD") -Message "Push must not mention HEAD."
             Assert-True -Condition ($gitArgs -notcontains "--tags") -Message "Push must not use --tags."
             Assert-True -Condition ($gitArgs -notcontains "--mirror") -Message "Push must not use --mirror."
-            Assert-True -Condition ($gitArgs -notcontains "origin") -Message "Push must not blindly use the remote name."
+            Assert-True -Condition ($gitArgs -contains "origin") -Message "Push must use named remote origin after URL validation."
+            foreach ($pushArg in $gitArgs) {
+                Assert-True -Condition (-not (Test-FakeLiteralGitUrl -Value $pushArg)) -Message "Push must not replay a literal URL: $pushArg"
+            }
         }
     }
 }
@@ -1055,7 +1103,53 @@ Invoke-HermesCase "one canonical effective push destination is allowed" {
     $pushes = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("push"))
     Assert-Equal -Expected 1 -Actual $pushes.Count -Label "push count"
     $pushArgs = @(Get-HermesGitArgsWithoutC -Arguments $pushes[0].Arguments)
-    Assert-Equal -Expected $pushUrl -Actual $pushArgs[2] -Label "verified push URL"
+    Assert-Equal -Expected "origin" -Actual $pushArgs[2] -Label "named remote after validating $pushUrl"
+}
+
+Invoke-HermesCase "explicit pushurl plus pushInsteadOf still publishes through origin" {
+    $workspace = New-HermesTestWorkspace
+    $evilUrl = "https://github.com/example/not-hermes.git"
+    $world = New-HermesFakeWorld `
+        -RepoRoot $workspace.RepoRoot `
+        -FetchUrls @($script:CanonicalUrl) `
+        -PushUrls @($script:CanonicalUrl) `
+        -PushInsteadOfFrom $script:CanonicalUrl `
+        -PushInsteadOfTo $evilUrl
+
+    $result = Invoke-GuardedRelease -Workspace $workspace -World $world
+    Assert-True -Condition ([bool]$result.TagPushed) -Message "Validated explicit pushurl must still publish."
+    Assert-True -Condition ([bool]$result.ReleaseCreated) -Message "Release must still be created."
+
+    $pushInspect = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("remote", "get-url", "--push", "--all"))
+    Assert-True -Condition ($pushInspect.Count -ge 1) -Message "Must inspect effective origin push URLs."
+
+    $pushes = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("push"))
+    Assert-Equal -Expected 1 -Actual $pushes.Count -Label "push count"
+    $pushArgs = @(Get-HermesGitArgsWithoutC -Arguments $pushes[0].Arguments)
+    Assert-Equal `
+        -Expected "push --no-follow-tags origin refs/tags/v0.5.0:refs/tags/v0.5.0" `
+        -Actual ([string]::Join(" ", $pushArgs)) `
+        -Label "exact safe push argv"
+    Assert-True -Condition ($pushArgs -notcontains $script:CanonicalUrl) -Message "Must not replay the canonical URL as a literal push destination."
+    Assert-True -Condition ($pushArgs -notcontains $evilUrl) -Message "Must not push to the pushInsteadOf rewrite target."
+    Assert-True -Condition ($pushArgs -notcontains "--tags") -Message "Push must not use --tags."
+    Assert-True -Condition ($pushArgs -notcontains "--mirror") -Message "Push must not use --mirror."
+    Assert-True -Condition ($pushArgs -notcontains "--force") -Message "Push must not force."
+    Assert-True -Condition ($pushArgs -notcontains "--delete") -Message "Push must not delete."
+}
+
+Invoke-HermesCase "pushInsteadOf rewritten origin without pushurl fails closed" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld `
+        -RepoRoot $workspace.RepoRoot `
+        -FetchUrls @($script:CanonicalUrl) `
+        -PushInsteadOfFrom $script:CanonicalUrl `
+        -PushInsteadOfTo "https://github.com/example/not-hermes.git"
+
+    Invoke-ExpectFailure -Pattern "does not point to LTstripes/hermes-finance" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "pushInsteadOf rewrite without explicit pushurl"
 }
 
 Invoke-HermesCase "remote.origin.mirror true performs zero publication" {
