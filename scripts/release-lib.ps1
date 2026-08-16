@@ -149,6 +149,110 @@ function Test-HermesExpectedGitHubRemote {
     }
 }
 
+function Convert-HermesMultilineUrls {
+    param(
+        [AllowEmptyString()]
+        [string]$Stdout
+    )
+
+    $urls = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($Stdout)) {
+        foreach ($line in @($Stdout -split "\r?\n")) {
+            $item = $line.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($item)) {
+                [void]$urls.Add($item)
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        Urls = [string[]]$urls.ToArray()
+    }
+}
+
+function Test-HermesGhHttpNotFound {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Result
+    )
+
+    $text = ([string]$Result.Stderr) + "`n" + ([string]$Result.Stdout)
+    if ($text -match "\(HTTP 404\)") {
+        return $true
+    }
+    if ($text -match "(?m)^HTTP/\d+(?:\.\d+)?\s+404\b") {
+        return $true
+    }
+
+    return $false
+}
+
+function Resolve-HermesOriginPublicationTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Context
+    )
+
+    $fetchResult = Invoke-HermesTool `
+        -Context $Context `
+        -Name "git" `
+        -ArgumentList @("-C", $Context.RepoRoot, "remote", "get-url", "--all", "origin")
+    $pushResult = Invoke-HermesTool `
+        -Context $Context `
+        -Name "git" `
+        -ArgumentList @("-C", $Context.RepoRoot, "remote", "get-url", "--push", "--all", "origin")
+
+    $fetchParsed = Convert-HermesMultilineUrls -Stdout $fetchResult.Stdout
+    $pushParsed = Convert-HermesMultilineUrls -Stdout $pushResult.Stdout
+    $fetchUrls = @($fetchParsed.Urls)
+    $pushUrls = @($pushParsed.Urls)
+
+    if ($fetchUrls.Count -eq 0) {
+        throw "origin has no fetch URLs. Refusing to publish."
+    }
+    foreach ($url in $fetchUrls) {
+        Test-HermesExpectedGitHubRemote -Url $url
+    }
+
+    if ($pushUrls.Count -eq 0) {
+        throw "origin has no effective push destinations. Refusing to publish."
+    }
+    if ($pushUrls.Count -ne 1) {
+        throw "origin has multiple effective push destinations. Refusing to publish: $([string]::Join(', ', $pushUrls))"
+    }
+    Test-HermesExpectedGitHubRemote -Url $pushUrls[0]
+
+    return [pscustomobject]@{
+        FetchUrl = [string]$fetchUrls[0]
+        PushUrl  = [string]$pushUrls[0]
+    }
+}
+
+function Assert-HermesOriginNotMirror {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Context
+    )
+
+    $result = Invoke-HermesTool `
+        -Context $Context `
+        -Name "git" `
+        -ArgumentList @("-C", $Context.RepoRoot, "config", "--bool", "--get", "remote.origin.mirror") `
+        -AllowFailure
+
+    if ([int]$result.ExitCode -eq 0) {
+        $value = ([string]$result.Stdout).Trim().ToLowerInvariant()
+        if ($value -eq "true") {
+            throw "remote.origin.mirror is true. Refusing to publish because a mirror push can move or delete unrelated refs."
+        }
+        return
+    }
+
+    if ([int]$result.ExitCode -ne 1) {
+        throw "Unable to read remote.origin.mirror (exit $($result.ExitCode)). Refusing to publish."
+    }
+}
+
 function Resolve-HermesReleaseNotesPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -399,20 +503,26 @@ function Get-HermesRemoteTagInfo {
         [string]$Tag
     )
 
+    $remote = [string]$Context.PushUrl
+    if ([string]::IsNullOrWhiteSpace($remote)) {
+        throw "Internal error: publication URL was not resolved before reading remote tags."
+    }
+
     $plain = Invoke-HermesTool `
         -Context $Context `
         -Name "git" `
-        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", "origin", "refs/tags/$Tag") `
-        -AllowFailure
+        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", $remote, "refs/tags/$Tag")
     $peeled = Invoke-HermesTool `
         -Context $Context `
         -Name "git" `
-        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", "origin", "refs/tags/$Tag^{}") `
-        -AllowFailure
+        -ArgumentList @("-C", $Context.RepoRoot, "ls-remote", "--tags", $remote, "refs/tags/$Tag^{}")
 
     $tagObjectSha = Get-HermesLsRemoteSha -Stdout $plain.Stdout
     $commitSha = Get-HermesLsRemoteSha -Stdout $peeled.Stdout
     if ($null -eq $tagObjectSha -and $null -eq $commitSha) {
+        if ((-not [string]::IsNullOrWhiteSpace([string]$plain.Stdout)) -or (-not [string]::IsNullOrWhiteSpace([string]$peeled.Stdout))) {
+            throw "ls-remote returned a malformed tag listing for $Tag. Refusing to treat it as absent."
+        }
         return [pscustomobject]@{
             Exists    = $false
             Annotated = $false
@@ -501,17 +611,36 @@ function Get-HermesReleaseView {
         [string]$Tag
     )
 
+    $apiPath = "repos/$($script:HermesReleaseSlug)/releases/tags/$Tag"
     $result = Invoke-HermesTool `
         -Context $Context `
         -Name "gh" `
-        -ArgumentList @(
-            "release", "view", $Tag,
-            "--repo", $script:HermesReleaseSlug,
-            "--json", "tagName,name,isDraft,isPrerelease,url"
-        ) `
+        -ArgumentList @("api", "--method", "GET", $apiPath) `
         -AllowFailure
 
-    if ([int]$result.ExitCode -ne 0) {
+    if ([int]$result.ExitCode -eq 0) {
+        if ([string]::IsNullOrWhiteSpace([string]$result.Stdout)) {
+            throw "GitHub Release probe for $Tag returned empty JSON. Refusing to treat it as missing."
+        }
+        try {
+            $view = $result.Stdout | ConvertFrom-Json
+        }
+        catch {
+            throw "GitHub Release probe for $Tag returned malformed JSON. Refusing to treat it as missing."
+        }
+        if ($null -eq $view -or [string]::IsNullOrWhiteSpace([string]$view.tag_name)) {
+            throw "GitHub Release probe for $Tag returned JSON without tag_name. Refusing to treat it as missing."
+        }
+        return [pscustomobject]@{
+            Exists       = $true
+            TagName      = [string]$view.tag_name
+            IsDraft      = [bool]$view.draft
+            IsPrerelease = [bool]$view.prerelease
+            Url          = [string]$view.html_url
+        }
+    }
+
+    if (Test-HermesGhHttpNotFound -Result $result) {
         return [pscustomobject]@{
             Exists       = $false
             TagName      = $null
@@ -521,14 +650,11 @@ function Get-HermesReleaseView {
         }
     }
 
-    $view = $result.Stdout | ConvertFrom-Json
-    return [pscustomobject]@{
-        Exists       = $true
-        TagName      = [string]$view.tagName
-        IsDraft      = [bool]$view.isDraft
-        IsPrerelease = [bool]$view.isPrerelease
-        Url          = [string]$view.url
+    $detail = [string]$result.Stderr
+    if ([string]::IsNullOrWhiteSpace($detail)) {
+        $detail = [string]$result.Stdout
     }
+    throw "GitHub Release probe for $Tag failed (exit $($result.ExitCode)). Not treating the failure as a missing release.`n$detail"
 }
 
 function Assert-HermesExactMainCiSuccess {
@@ -632,6 +758,8 @@ function Invoke-HermesRelease {
         CommandRunner  = $CommandRunner
         GitPath        = $gitPath
         GhPath         = $ghPath
+        FetchUrl       = $null
+        PushUrl        = $null
     }
 
     Write-HermesReleaseStep "Resolving LTstripes/hermes-finance checkout"
@@ -645,11 +773,11 @@ function Invoke-HermesRelease {
         throw "Git toplevel '$resolvedTop' does not match release helper root '$resolvedRoot'."
     }
 
-    $origin = Invoke-HermesTool `
-        -Context $context `
-        -Name "git" `
-        -ArgumentList @("-C", $RepoRoot, "remote", "get-url", "origin")
-    Test-HermesExpectedGitHubRemote -Url $origin.Stdout.Trim()
+    Write-HermesReleaseStep "Validating all origin fetch and push URLs"
+    $targets = Resolve-HermesOriginPublicationTarget -Context $context
+    $context.FetchUrl = $targets.FetchUrl
+    $context.PushUrl = $targets.PushUrl
+    Assert-HermesOriginNotMirror -Context $context
 
     Write-HermesReleaseStep "Checking GitHub CLI authentication"
     $auth = Invoke-HermesTool `
@@ -665,7 +793,7 @@ function Invoke-HermesRelease {
     $null = Invoke-HermesTool `
         -Context $context `
         -Name "git" `
-        -ArgumentList @("-C", $RepoRoot, "fetch", "origin", "refs/heads/main:refs/remotes/origin/main")
+        -ArgumentList @("-C", $RepoRoot, "fetch", $context.FetchUrl, "refs/heads/main:refs/remotes/origin/main")
 
     $originMain = Invoke-HermesTool `
         -Context $context `
@@ -683,6 +811,20 @@ function Invoke-HermesRelease {
 
     Write-HermesReleaseStep "Checking exact-main GitHub Actions CI"
     Assert-HermesExactMainCiSuccess -Context $context -ExpectedSha $expected
+
+    Write-HermesReleaseStep "Checking GitHub Release $tag"
+    $releaseView = Get-HermesReleaseView -Context $context -Tag $tag
+    if ([bool]$releaseView.Exists) {
+        if ([bool]$releaseView.IsDraft) {
+            throw "GitHub Release $tag already exists as a draft. Refusing to auto-publish or rewrite it."
+        }
+        if ([bool]$releaseView.IsPrerelease) {
+            throw "GitHub Release $tag already exists as a prerelease. Refusing to rewrite it."
+        }
+        if ([string]$releaseView.TagName -ne $tag) {
+            throw "GitHub Release tag '$($releaseView.TagName)' does not match $tag."
+        }
+    }
 
     $tagCreated = $false
     $tagPushed = $false
@@ -707,7 +849,7 @@ function Invoke-HermesRelease {
             $null = Invoke-HermesTool `
                 -Context $context `
                 -Name "git" `
-                -ArgumentList @("-C", $RepoRoot, "push", "origin", "refs/tags/${tag}:refs/tags/$tag")
+                -ArgumentList @("-C", $RepoRoot, "push", "--no-follow-tags", $context.PushUrl, "refs/tags/${tag}:refs/tags/$tag")
             $tagPushed = $true
             $remotePublished = $true
         }
@@ -729,20 +871,7 @@ function Invoke-HermesRelease {
     }
     $remotePublished = $true
 
-    Write-HermesReleaseStep "Checking GitHub Release $tag"
-    $releaseView = Get-HermesReleaseView -Context $context -Tag $tag
-    if ([bool]$releaseView.Exists) {
-        if ([bool]$releaseView.IsDraft) {
-            throw "GitHub Release $tag already exists as a draft. Refusing to auto-publish or rewrite it."
-        }
-        if ([bool]$releaseView.IsPrerelease) {
-            throw "GitHub Release $tag already exists as a prerelease. Refusing to rewrite it."
-        }
-        if ([string]$releaseView.TagName -ne $tag) {
-            throw "GitHub Release tag '$($releaseView.TagName)' does not match $tag."
-        }
-    }
-    else {
+    if (-not [bool]$releaseView.Exists) {
         Write-HermesReleaseStep "Creating published GitHub Release from existing tag $tag"
         try {
             $null = Invoke-HermesTool `

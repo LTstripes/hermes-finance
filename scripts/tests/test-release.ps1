@@ -19,6 +19,7 @@ $script:TempRoots = New-Object System.Collections.ArrayList
 $script:ExpectedSha = "0123456789abcdef0123456789abcdef01234567"
 $script:OtherSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 $script:TagName = "v0.5.0"
+$script:CanonicalUrl = "https://github.com/LTstripes/hermes-finance.git"
 
 function New-CyrillicToken {
     param([Parameter(Mandatory = $true)][string]$Which)
@@ -123,12 +124,17 @@ function New-HermesFakeWorld {
         [string]$RepoRoot,
         [string]$ExpectedSha = $script:ExpectedSha,
         [string]$OriginMain = $script:ExpectedSha,
-        [string]$OriginUrl = "https://github.com/LTstripes/hermes-finance.git",
+        [string]$OriginUrl = $script:CanonicalUrl,
+        $FetchUrls = $null,
+        $PushUrls = $null,
+        $Mirror = $null,
         $LocalTag = $null,
         $RemoteTag = $null,
         $Release = $null,
         $CiRuns = $null,
         [int]$GhAuthExit = 0,
+        [int]$LsRemoteExit = 0,
+        [string]$ReleaseApiFailure = "",
         [switch]$FailReleaseCreate,
         [switch]$FailPush
     )
@@ -136,18 +142,25 @@ function New-HermesFakeWorld {
     if ($null -eq $CiRuns) {
         $CiRuns = @(New-SuccessfulCiRun -Sha $ExpectedSha)
     }
+    if ($null -eq $FetchUrls) {
+        $FetchUrls = @($OriginUrl)
+    }
 
     $state = @{
         RepoRoot          = $RepoRoot
         ExpectedSha       = $ExpectedSha
         OriginMain        = $OriginMain
-        OriginUrl         = $OriginUrl
+        FetchUrls         = @($FetchUrls)
+        PushUrls          = $PushUrls
+        Mirror            = $Mirror
         Fetched           = $false
         LocalTag          = $LocalTag
         RemoteTag         = $RemoteTag
         Release           = $Release
         CiRuns            = @($CiRuns)
         GhAuthExit        = $GhAuthExit
+        LsRemoteExit      = [int]$LsRemoteExit
+        ReleaseApiFailure = [string]$ReleaseApiFailure
         FailReleaseCreate = [bool]$FailReleaseCreate
         FailPush          = [bool]$FailPush
         Calls             = New-Object System.Collections.ArrayList
@@ -197,7 +210,27 @@ function Invoke-FakeGitCommand {
     }
 
     if ($verb -eq "remote" -and $gitArgs.Count -ge 3 -and $gitArgs[1] -eq "get-url") {
-        return New-HermesCommandResult -Stdout $State.OriginUrl
+        $wantPush = $gitArgs -contains "--push"
+        $urls = @($State.FetchUrls)
+        if ($wantPush -and $null -ne $State.PushUrls) {
+            $urls = @($State.PushUrls)
+        }
+        return New-HermesCommandResult -Stdout ([string]::Join("`n", $urls))
+    }
+
+    if ($verb -eq "config") {
+        $key = $gitArgs[$gitArgs.Count - 1]
+        if ($key -eq "remote.origin.mirror" -and ($gitArgs -contains "--get")) {
+            if ($null -eq $State.Mirror) {
+                return New-HermesCommandResult -ExitCode 1
+            }
+            $mirrorText = "false"
+            if ([bool]$State.Mirror) {
+                $mirrorText = "true"
+            }
+            return New-HermesCommandResult -Stdout $mirrorText
+        }
+        throw "Unexpected git config command: $([string]::Join(' ', $gitArgs))"
     }
 
     if ($verb -eq "fetch") {
@@ -242,6 +275,20 @@ function Invoke-FakeGitCommand {
     }
 
     if ($verb -eq "ls-remote") {
+        if ([int]$State.LsRemoteExit -ne 0) {
+            return New-HermesCommandResult -ExitCode ([int]$State.LsRemoteExit) -Stderr "simulated ls-remote network failure"
+        }
+        $remote = $null
+        if ($gitArgs.Count -ge 3) {
+            $remote = [string]$gitArgs[$gitArgs.Count - 2]
+        }
+        $allowedRemotes = @($State.FetchUrls)
+        if ($null -ne $State.PushUrls) {
+            $allowedRemotes = @($State.PushUrls)
+        }
+        if (@($allowedRemotes) -notcontains $remote) {
+            throw "ls-remote must use the verified publication URL, got '$remote'."
+        }
         $wanted = $gitArgs[$gitArgs.Count - 1]
         if ($null -eq $State.RemoteTag) {
             return New-HermesCommandResult
@@ -284,16 +331,29 @@ function Invoke-FakeGitCommand {
     }
 
     if ($verb -eq "push") {
-        if ($gitArgs -contains "--force" -or $gitArgs -contains "-f" -or $gitArgs -contains "--delete" -or $gitArgs -contains "--tags") {
+        if ($gitArgs -contains "--force" -or $gitArgs -contains "-f" -or $gitArgs -contains "--delete" -or $gitArgs -contains "--tags" -or $gitArgs -contains "--mirror" -or $gitArgs -contains "--all") {
             throw "Forbidden git push flag: $([string]::Join(' ', $gitArgs))"
         }
-        if ($gitArgs.Count -ne 3 -or $gitArgs[1] -ne "origin") {
+        if (-not ($gitArgs -contains "--no-follow-tags")) {
+            throw "git push must pass --no-follow-tags. Args: $([string]::Join(' ', $gitArgs))"
+        }
+        $expectedPushUrls = @($State.FetchUrls)
+        if ($null -ne $State.PushUrls) {
+            $expectedPushUrls = @($State.PushUrls)
+        }
+        if ($expectedPushUrls.Count -ne 1) {
+            throw "Fake push reached with multiple configured push URLs."
+        }
+        $expectedArgv = @("push", "--no-follow-tags", [string]$expectedPushUrls[0], "refs/tags/v0.5.0:refs/tags/v0.5.0")
+        if ($gitArgs.Count -ne $expectedArgv.Count) {
             throw "Unexpected git push arguments: $([string]::Join(' ', $gitArgs))"
         }
-        $refspec = [string]$gitArgs[2]
-        if ($refspec -notmatch "^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+:refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$") {
-            throw "Refusing unexpected push refspec '$refspec'."
+        for ($i = 0; $i -lt $expectedArgv.Count; $i++) {
+            if ([string]$gitArgs[$i] -ne [string]$expectedArgv[$i]) {
+                throw "Unexpected git push arguments: $([string]::Join(' ', $gitArgs))"
+            }
         }
+        $refspec = [string]$gitArgs[$gitArgs.Count - 1]
         if ([bool]$State.FailPush) {
             return New-HermesCommandResult -ExitCode 1 -Stderr "simulated tag push failure"
         }
@@ -324,7 +384,11 @@ function Invoke-FakeGhCommand {
     }
 
     if ($ghArgs[0] -eq "run" -and $ghArgs[1] -eq "list") {
+        $workflow = Get-RequestFlagValue -Arguments $ghArgs -Flag "--workflow"
         $commit = Get-RequestFlagValue -Arguments $ghArgs -Flag "--commit"
+        if ($workflow -ne "ci.yml") {
+            return New-HermesCommandResult -Stdout "[]"
+        }
         $filtered = @()
         foreach ($run in @($State.CiRuns)) {
             if ([string]::IsNullOrWhiteSpace($commit) -or [string]$run.headSha -eq $commit) {
@@ -334,16 +398,35 @@ function Invoke-FakeGhCommand {
         return New-HermesCommandResult -Stdout (New-HermesTestJson -Object $filtered)
     }
 
-    if ($ghArgs[0] -eq "release" -and $ghArgs[1] -eq "view") {
+    if ($ghArgs[0] -eq "api") {
+        $apiPath = $null
+        foreach ($arg in $ghArgs) {
+            if ($arg -like "repos/LTstripes/hermes-finance/releases/tags/*") {
+                $apiPath = $arg
+                break
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($apiPath)) {
+            throw "Unexpected gh api path: $([string]::Join(' ', $ghArgs))"
+        }
+        if ([string]$State.ReleaseApiFailure -eq "auth") {
+            return New-HermesCommandResult -ExitCode 1 -Stderr "gh: HTTP 401 Unauthorized"
+        }
+        if ([string]$State.ReleaseApiFailure -eq "network") {
+            return New-HermesCommandResult -ExitCode 1 -Stderr "dial tcp: simulated network failure"
+        }
+        if ([string]$State.ReleaseApiFailure -eq "500") {
+            return New-HermesCommandResult -ExitCode 1 -Stderr "gh: Internal Server Error (HTTP 500)"
+        }
         if ($null -eq $State.Release) {
-            return New-HermesCommandResult -ExitCode 1 -Stderr "release not found"
+            return New-HermesCommandResult -ExitCode 1 -Stderr "gh: Not Found (HTTP 404)"
         }
         $payload = @{
-            tagName      = $State.Release.tagName
-            name         = $State.Release.name
-            isDraft      = [bool]$State.Release.isDraft
-            isPrerelease = [bool]$State.Release.isPrerelease
-            url          = $State.Release.url
+            tag_name   = $State.Release.tagName
+            name       = $State.Release.name
+            draft      = [bool]$State.Release.isDraft
+            prerelease = [bool]$State.Release.isPrerelease
+            html_url   = $State.Release.url
         }
         return New-HermesCommandResult -Stdout ($payload | ConvertTo-Json -Compress)
     }
@@ -572,8 +655,9 @@ Invoke-HermesCase "ExpectedMainSha must be a full 40-character SHA" {
 
 Invoke-HermesCase "origin URL must resolve to LTstripes/hermes-finance" {
     Test-HermesExpectedGitHubRemote -Url "https://github.com/LTstripes/hermes-finance.git"
-    Test-HermesExpectedGitHubRemote -Url "git@github.com:LTstripes/hermes-finance.git"
-    Test-HermesExpectedGitHubRemote -Url "ssh://git@github.com/LTstripes/hermes-finance.git"
+    $at = [string][char]64
+    Test-HermesExpectedGitHubRemote -Url ("git" + $at + "github.com:LTstripes/hermes-finance.git")
+    Test-HermesExpectedGitHubRemote -Url ("ssh://git" + $at + "github.com/LTstripes/hermes-finance.git")
     Invoke-ExpectFailure -Pattern "does not point" -Script {
         Test-HermesExpectedGitHubRemote -Url "https://github.com/other/hermes-finance.git"
     } | Out-Null
@@ -774,9 +858,26 @@ Invoke-HermesCase "successful publish uses fetch-then-tag-then-tag-push-then-rel
     $pushes = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("push"))
     Assert-Equal -Expected 1 -Actual $pushes.Count -Label "git push count"
     $pushArgs = @(Get-HermesGitArgsWithoutC -Arguments $pushes[0].Arguments)
+    Assert-Equal -Expected 4 -Actual $pushArgs.Count -Label "git push argc"
     Assert-Equal -Expected "push" -Actual $pushArgs[0] -Label "push verb"
-    Assert-Equal -Expected "origin" -Actual $pushArgs[1] -Label "push remote"
-    Assert-Equal -Expected "refs/tags/v0.5.0:refs/tags/v0.5.0" -Actual $pushArgs[2] -Label "push refspec"
+    Assert-Equal -Expected "--no-follow-tags" -Actual $pushArgs[1] -Label "push follow-tags override"
+    Assert-Equal -Expected $script:CanonicalUrl -Actual $pushArgs[2] -Label "push destination URL"
+    Assert-Equal -Expected "refs/tags/v0.5.0:refs/tags/v0.5.0" -Actual $pushArgs[3] -Label "push refspec"
+    Assert-True -Condition ($pushArgs -notcontains "origin") -Message "Publication push must use the verified URL, not the remote name."
+    Assert-True -Condition ($pushArgs -notcontains "--mirror") -Message "Push must not use --mirror."
+    Assert-True -Condition ($pushArgs -notcontains "--tags") -Message "Push must not use --tags."
+
+    $runLists = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("run", "list"))
+    Assert-Equal -Expected 1 -Actual $runLists.Count -Label "gh run list count"
+    Assert-Equal -Expected "ci.yml" -Actual (Get-RequestFlagValue -Arguments $runLists[0].Arguments -Flag "--workflow") -Label "CI workflow"
+    Assert-Equal -Expected $script:ExpectedSha -Actual (Get-RequestFlagValue -Arguments $runLists[0].Arguments -Flag "--commit") -Label "CI commit"
+
+    $urlInspect = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("remote", "get-url", "--all"))
+    $pushInspect = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("remote", "get-url", "--push", "--all"))
+    $mirrorInspect = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("config", "--bool", "--get", "remote.origin.mirror"))
+    Assert-True -Condition ($urlInspect.Count -ge 1) -Message "Must inspect all origin fetch URLs."
+    Assert-True -Condition ($pushInspect.Count -ge 1) -Message "Must inspect all origin push URLs."
+    Assert-True -Condition ($mirrorInspect.Count -ge 1) -Message "Must read remote.origin.mirror before publishing."
 
     $creates = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("release", "create"))
     Assert-Equal -Expected 1 -Actual $creates.Count -Label "release create count"
@@ -784,6 +885,19 @@ Invoke-HermesCase "successful publish uses fetch-then-tag-then-tag-push-then-rel
     Assert-True -Condition (-not (@($creates[0].Arguments) -contains "--target")) -Message "release create must not use --target."
     Assert-True -Condition (-not (@($creates[0].Arguments) -contains "--draft")) -Message "release create must not be a draft."
     Assert-True -Condition (-not (@($creates[0].Arguments) -contains "--prerelease")) -Message "release create must not be a prerelease."
+
+    $apiCalls = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("api"))
+    Assert-True -Condition ($apiCalls.Count -ge 2) -Message "Release probe must run before create and again for final read-back."
+    $lsRemote = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("ls-remote"))
+    Assert-True -Condition ($lsRemote.Count -ge 4) -Message "Remote tag must be read before publish and again after push/final read-back."
+    $createNameAt = [array]::IndexOf($names, "gh:release:create")
+    $apiAfterCreate = 0
+    for ($i = $createNameAt + 1; $i -lt $names.Count; $i++) {
+        if ($names[$i] -eq "gh:api:--method") {
+            $apiAfterCreate += 1
+        }
+    }
+    Assert-True -Condition ($apiAfterCreate -ge 1) -Message "Final read-back must probe the GitHub Release after create."
 }
 
 Invoke-HermesCase "successful publish never pushes a branch or unrelated ref" {
@@ -802,11 +916,15 @@ Invoke-HermesCase "successful publish never pushes a branch or unrelated ref" {
         }
         Assert-True -Condition (@("commit", "checkout", "switch", "merge", "rebase", "branch") -notcontains $gitArgs[0]) -Message "Forbidden git verb $($gitArgs[0])."
         if ($gitArgs[0] -eq "push") {
-            Assert-True -Condition ($gitArgs[2] -match "^refs/tags/") -Message "Push must target a tag ref, got $($gitArgs[2])."
-            Assert-True -Condition ($gitArgs[2] -notmatch "refs/heads/") -Message "Push must not include a branch ref."
+            $refspec = [string]$gitArgs[$gitArgs.Count - 1]
+            Assert-True -Condition ($gitArgs -contains "--no-follow-tags") -Message "Push must disable followTags."
+            Assert-True -Condition ($refspec -match "^refs/tags/") -Message "Push must target a tag ref, got $refspec."
+            Assert-True -Condition ($refspec -notmatch "refs/heads/") -Message "Push must not include a branch ref."
             Assert-True -Condition ($gitArgs -notcontains "main") -Message "Push must not mention main."
             Assert-True -Condition ($gitArgs -notcontains "HEAD") -Message "Push must not mention HEAD."
             Assert-True -Condition ($gitArgs -notcontains "--tags") -Message "Push must not use --tags."
+            Assert-True -Condition ($gitArgs -notcontains "--mirror") -Message "Push must not use --mirror."
+            Assert-True -Condition ($gitArgs -notcontains "origin") -Message "Push must not blindly use the remote name."
         }
     }
 }
@@ -888,6 +1006,120 @@ Invoke-HermesCase "wrong origin remote fails before publication" {
         Invoke-GuardedRelease -Workspace $workspace -World $world
     } | Out-Null
     Assert-NoPublication -Calls $world.State.Calls -Label "wrong origin"
+}
+
+Invoke-HermesCase "canonical fetch URL plus wrong pushurl performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld `
+        -RepoRoot $workspace.RepoRoot `
+        -FetchUrls @($script:CanonicalUrl) `
+        -PushUrls @("https://github.com/example/not-hermes.git")
+    Invoke-ExpectFailure -Pattern "does not point to LTstripes/hermes-finance" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "wrong pushurl"
+}
+
+Invoke-HermesCase "canonical fetch URL plus multiple pushurls performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld `
+        -RepoRoot $workspace.RepoRoot `
+        -FetchUrls @($script:CanonicalUrl) `
+        -PushUrls @($script:CanonicalUrl, "https://www.github.com/LTstripes/hermes-finance.git")
+    Invoke-ExpectFailure -Pattern "multiple effective push destinations" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "multiple pushurls"
+}
+
+Invoke-HermesCase "multiple ordinary URLs with no pushurl fail closed" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld `
+        -RepoRoot $workspace.RepoRoot `
+        -FetchUrls @($script:CanonicalUrl, "https://www.github.com/LTstripes/hermes-finance.git")
+    Invoke-ExpectFailure -Pattern "multiple effective push destinations" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "multiple ordinary URLs"
+}
+
+Invoke-HermesCase "one canonical effective push destination is allowed" {
+    $workspace = New-HermesTestWorkspace
+    $pushUrl = "https://www.github.com/LTstripes/hermes-finance.git"
+    $world = New-HermesFakeWorld `
+        -RepoRoot $workspace.RepoRoot `
+        -FetchUrls @($script:CanonicalUrl) `
+        -PushUrls @($pushUrl)
+    $result = Invoke-GuardedRelease -Workspace $workspace -World $world
+    Assert-True -Condition ([bool]$result.ReleaseCreated) -Message "Single canonical push destination must be allowed."
+    $pushes = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "git" -Prefix @("push"))
+    Assert-Equal -Expected 1 -Actual $pushes.Count -Label "push count"
+    $pushArgs = @(Get-HermesGitArgsWithoutC -Arguments $pushes[0].Arguments)
+    Assert-Equal -Expected $pushUrl -Actual $pushArgs[2] -Label "verified push URL"
+}
+
+Invoke-HermesCase "remote.origin.mirror true performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot -Mirror $true
+    Invoke-ExpectFailure -Pattern "remote\.origin\.mirror is true" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "mirror mode"
+}
+
+Invoke-HermesCase "ls-remote network failure performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot -LsRemoteExit 128
+    Invoke-ExpectFailure -Pattern "Command failed \(exit 128\)|simulated ls-remote" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "ls-remote failure"
+}
+
+Invoke-HermesCase "release probe auth failure performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot -ReleaseApiFailure "auth"
+    Invoke-ExpectFailure -Pattern "Not treating the failure as a missing release|HTTP 401" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "release auth failure"
+    Assert-Equal -Expected 0 -Actual @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("release", "create")).Count -Label "release create count"
+}
+
+Invoke-HermesCase "release probe network failure performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot -ReleaseApiFailure "network"
+    Invoke-ExpectFailure -Pattern "Not treating the failure as a missing release|simulated network failure" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "release network failure"
+    Assert-Equal -Expected 0 -Actual @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("release", "create")).Count -Label "release create count"
+}
+
+Invoke-HermesCase "PR success plus failed exact-main CI performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $pr = New-SuccessfulCiRun
+    $pr.event = "pull_request"
+    $failedMain = New-SuccessfulCiRun
+    $failedMain.conclusion = "failure"
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot -CiRuns @($pr, $failedMain)
+    Invoke-ExpectFailure -Pattern "not completed/success" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "PR success with failed main CI"
+}
+
+Invoke-HermesCase "feature-branch success plus failed main CI performs zero publication" {
+    $workspace = New-HermesTestWorkspace
+    $feature = New-SuccessfulCiRun
+    $feature.headBranch = "m04-01-release-helper"
+    $failedMain = New-SuccessfulCiRun
+    $failedMain.conclusion = "failure"
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot -CiRuns @($feature, $failedMain)
+    Invoke-ExpectFailure -Pattern "not completed/success" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world
+    } | Out-Null
+    Assert-NoPublication -Calls $world.State.Calls -Label "feature-branch success with failed main CI"
 }
 
 try {
