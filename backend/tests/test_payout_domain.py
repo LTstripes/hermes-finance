@@ -224,6 +224,7 @@ def test_coverage_requires_success_structural_validity_exact_method_basis_uid_an
         provider="t_invest",
         method="GetBondCoupons",
         instrument_uid=event.instrument_uid,
+        event_kind=PayoutEventKind.COUPON,
         requested_from=date(2026, 7, 18),
         requested_to=date(2027, 9, 21),
         provider_filter_basis="coupon_date",
@@ -238,6 +239,9 @@ def test_coverage_requires_success_structural_validity_exact_method_basis_uid_an
     with pytest.raises(PayoutDomainError, match="successful fetch"):
         replace(coverage, successful=False, structurally_valid=True)
     assert not coverage_proves_event_absence(event, replace(coverage, method="GetBondEvents"))
+    assert not coverage_proves_event_absence(
+        event, replace(coverage, event_kind=PayoutEventKind.REDEMPTION)
+    )
     assert not coverage_proves_event_absence(
         event, replace(coverage, provider_filter_basis="record_date")
     )
@@ -267,6 +271,7 @@ def test_dividend_coverage_uses_record_date_not_payment_date() -> None:
         provider="t_invest",
         method="GetDividends",
         instrument_uid=dividend.instrument_uid,
+        event_kind=PayoutEventKind.DIVIDEND,
         requested_from=date(2026, 5, 1),
         requested_to=date(2026, 5, 10),
         provider_filter_basis="record_date",
@@ -283,6 +288,7 @@ def test_missing_inference_is_false_without_provider_filter_metadata() -> None:
         provider="t_invest",
         method="GetBondCoupons",
         instrument_uid=event.instrument_uid,
+        event_kind=PayoutEventKind.COUPON,
         requested_from=date(2026, 1, 1),
         requested_to=date(2027, 1, 1),
         provider_filter_basis="coupon_date",
@@ -347,6 +353,7 @@ def test_fetch_result_rejects_cross_provider_or_cross_instrument_payloads() -> N
         provider="t_invest",
         method="GetBondCoupons",
         instrument_uid=event.instrument_uid,
+        event_kind=PayoutEventKind.COUPON,
         requested_from=date(2026, 7, 18),
         requested_to=date(2027, 9, 21),
         provider_filter_basis="coupon_date",

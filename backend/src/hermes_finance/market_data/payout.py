@@ -183,6 +183,7 @@ class PayoutCoverage:
     provider: str
     method: str
     instrument_uid: str
+    event_kind: PayoutEventKind
     requested_from: date
     requested_to: date
     provider_filter_basis: str
@@ -190,6 +191,11 @@ class PayoutCoverage:
     structurally_valid: bool
 
     def __post_init__(self) -> None:
+        try:
+            normalized_kind = PayoutEventKind(self.event_kind)
+        except (TypeError, ValueError) as error:
+            raise PayoutDomainError("unknown coverage event kind") from error
+        object.__setattr__(self, "event_kind", normalized_kind)
         object.__setattr__(self, "provider", _require_text(self.provider, name="provider"))
         object.__setattr__(self, "method", _require_text(self.method, name="method"))
         object.__setattr__(
@@ -340,6 +346,8 @@ def coverage_proves_event_absence(event: PayoutEvent, coverage: PayoutCoverage) 
     if coverage.provider != event.provider:
         return False
     if coverage.instrument_uid != event.instrument_uid:
+        return False
+    if coverage.event_kind is not event.event_kind:
         return False
     if event.source_method is None or coverage.method != event.source_method:
         return False
