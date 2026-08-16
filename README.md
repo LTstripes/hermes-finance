@@ -254,7 +254,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\lint.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\format-check.ps1
 python .\scripts\privacy_check.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
 ```
+
+Публикация релиза — только после явного решения владельца и только с exact `origin/main` SHA:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
+  -Version 0.5.0 `
+  -ExpectedMainSha <полный-40-символьный-sha> `
+  -ReleaseNotes .\path\to\notes.md
+```
+
+Хелпер не двигает ветки, не делает force-update тега, не создаёт коммиты и не читает `.env`.
 
 Verification policy: [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md).
 
