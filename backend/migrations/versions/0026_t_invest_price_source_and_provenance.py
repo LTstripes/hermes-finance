@@ -146,6 +146,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
+    provenance_count = connection.execute(
+        sa.text("SELECT COUNT(*) FROM position_quote_provenance")
+    ).scalar_one()
+    if provenance_count:
+        raise ValueError("cannot downgrade while quote provenance rows exist")
     t_invest_count = connection.execute(
         sa.text("SELECT COUNT(*) FROM position_snapshots WHERE price_source = 't_invest'")
     ).scalar_one()
