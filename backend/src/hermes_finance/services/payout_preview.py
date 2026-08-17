@@ -663,6 +663,20 @@ def _preview_fingerprint(
         "provider_status": event.provider_status,
         "applied_payout_id": applied.id if applied is not None else None,
         "applied_lifecycle": applied.lifecycle if applied is not None else None,
+        "applied_state": (
+            {
+                "source_position_snapshot_id": applied.source_position_snapshot_id,
+                "payment_date": applied.payment_date.isoformat(),
+                "quantity": _canonical_decimal(applied.quantity),
+                "per_unit_amount": _canonical_decimal(_decimal_from_text(applied.per_unit_amount)),
+                "total_amount_kopecks": applied.total_amount_kopecks,
+                "currency": applied.currency,
+                "provider_status": applied.provider_status,
+                "lifecycle": applied.lifecycle,
+            }
+            if applied is not None
+            else None
+        ),
         "manual_candidate_ids": list(manual_candidate_ids),
         "reconciliation": (
             {
