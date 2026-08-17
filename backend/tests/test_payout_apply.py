@@ -997,7 +997,11 @@ def test_non_ok_provider_status_is_not_applyable(
     try:
         month_id, account_id, instrument_id, snapshot_id = build_environment(session)
         currency = "USD" if status is PayoutEventStatus.UNSUPPORTED else "RUB"
-        amount = Decimal("35.4") if status in {PayoutEventStatus.TENTATIVE, PayoutEventStatus.UNSUPPORTED} else None
+        amount = (
+            Decimal("35.4")
+            if status in {PayoutEventStatus.TENTATIVE, PayoutEventStatus.UNSUPPORTED}
+            else None
+        )
         current = fetch_result(event(status=status, amount=amount, currency=currency))
         row = preview_row(
             session,
