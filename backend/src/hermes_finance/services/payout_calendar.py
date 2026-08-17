@@ -85,9 +85,7 @@ def merged_payout_calendar(
     with session.no_autoflush:
         month = session.get(ReportingMonth, reporting_month_id)
         if month is None:
-            raise ReportingMonthNotFoundError(
-                f"reporting month {reporting_month_id} was not found"
-            )
+            raise ReportingMonthNotFoundError(f"reporting month {reporting_month_id} was not found")
         start = from_date or month.snapshot_date
         end_exclusive = _one_year_after(start)
 
@@ -134,8 +132,7 @@ def merged_payout_calendar(
                 select(AppliedPayoutReconciliation)
                 .join(
                     AppliedProviderPayout,
-                    AppliedPayoutReconciliation.applied_payout_id
-                    == AppliedProviderPayout.id,
+                    AppliedPayoutReconciliation.applied_payout_id == AppliedProviderPayout.id,
                 )
                 .where(AppliedProviderPayout.reporting_month_id == reporting_month_id)
                 .order_by(AppliedPayoutReconciliation.id)
@@ -240,9 +237,7 @@ def merged_payout_calendar(
                 provider_identity_key=payout.identity_key,
                 provider_lifecycle=payout.lifecycle,
                 reconciliation_id=(
-                    effective_reconciliation.id
-                    if effective_reconciliation is not None
-                    else None
+                    effective_reconciliation.id if effective_reconciliation is not None else None
                 ),
                 counting_decision=(
                     effective_reconciliation.counting_decision
