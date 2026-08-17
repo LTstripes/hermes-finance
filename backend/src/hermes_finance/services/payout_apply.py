@@ -164,6 +164,21 @@ def apply_payout_preview(
             PayoutApplyFailureCode.VALIDATION_ERROR,
             "selected payout identities must be unique",
         )
+    if any(selection.instrument_uid != provider_request.instrument_uid for selection in selections):
+        return _failure(
+            selected_count,
+            PayoutApplyFailureCode.VALIDATION_ERROR,
+            "selected payout instrument does not match provider request",
+        )
+    try:
+        fetched_timestamp = _timestamp(fetched_at)
+        applied_timestamp = _timestamp(applied_at)
+    except TypeError:
+        return _failure(
+            selected_count,
+            PayoutApplyFailureCode.VALIDATION_ERROR,
+            "payout apply timestamps must be datetime values",
+        )
 
     try:
         with session.no_autoflush:
@@ -190,12 +205,11 @@ def apply_payout_preview(
             "payout provider refresh failed",
         )
 
-    if fetch_result.failures:
-        failure = fetch_result.failures[0]
+    if fetch_result.instrument_uid != provider_request.instrument_uid or fetch_result.failures:
         return _failure(
             selected_count,
             PayoutApplyFailureCode.PROVIDER_ERROR,
-            failure.message,
+            "payout provider refresh failed",
         )
 
     try:
@@ -216,10 +230,7 @@ def apply_payout_preview(
         return plan_result
     plans = plan_result
 
-    fetched_timestamp = _timestamp(fetched_at)
-    applied_timestamp = _timestamp(applied_at)
     item_results: list[PayoutApplyItemResult] = []
-
     try:
         for plan in plans:
             row = plan.row
@@ -300,9 +311,7 @@ def apply_payout_preview(
                     lifecycle=payout.lifecycle,
                     total_amount_kopecks=payout.total_amount_kopecks,
                     reconciliation_id=link.id if link is not None else None,
-                    counting_decision=(
-                        link.counting_decision if link is not None else None
-                    ),
+                    counting_decision=(link.counting_decision if link is not None else None),
                     expected_cash_flow_id=(
                         link.expected_cash_flow_id if link is not None else None
                     ),
