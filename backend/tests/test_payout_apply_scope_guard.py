@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from hermes_finance.market_data.payout_protocol import PayoutFetchRequest
-from hermes_finance.services.payout_apply import PayoutApplyFailureCode, apply_payout_preview
-
 from test_payout_apply import (
     APPLIED_AT,
     FETCHED_AT,
@@ -16,6 +13,9 @@ from test_payout_apply import (
     selection_from_row,
     session_for,
 )
+
+from hermes_finance.market_data.payout_protocol import PayoutFetchRequest
+from hermes_finance.services.payout_apply import PayoutApplyFailureCode, apply_payout_preview
 
 
 def test_selection_instrument_must_match_provider_request_before_fetch(tmp_path) -> None:
