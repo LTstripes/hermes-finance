@@ -352,9 +352,7 @@ def project_official_shape(method: str, payload: dict[str, object]) -> dict[str,
         rows = _field(payload, "dividends")
         if not isinstance(rows, list):
             return {"dividends": []}
-        return {
-            "dividends": [_project_dividend(row) for row in rows if isinstance(row, dict)]
-        }
+        return {"dividends": [_project_dividend(row) for row in rows if isinstance(row, dict)]}
     return {}
 
 
@@ -516,9 +514,7 @@ def _window(start: date, end: date) -> dict[str, object]:
     }
 
 
-def _safe_payout(
-    client: TInvestClient, method: str, body: dict[str, object]
-) -> dict[str, object]:
+def _safe_payout(client: TInvestClient, method: str, body: dict[str, object]) -> dict[str, object]:
     try:
         payload = client.request_payout_method(method, body)
     except _AuthUnavailable:
@@ -642,9 +638,7 @@ def _bond_flags(bond: dict[str, object] | None) -> dict[str, object]:
         "floating_coupon_flag": _truthy_flag(
             _field(bond, "floatingCouponFlag", "floating_coupon_flag")
         ),
-        "amortization_flag": _truthy_flag(
-            _field(bond, "amortizationFlag", "amortization_flag")
-        ),
+        "amortization_flag": _truthy_flag(_field(bond, "amortizationFlag", "amortization_flag")),
         "perpetual_flag": _truthy_flag(_field(bond, "perpetualFlag", "perpetual_flag")),
         "maturity_date": _timestamp_observation(_field(bond, "maturityDate", "maturity_date")),
         "nominal": _money_shape(_field(bond, "nominal")),
@@ -654,9 +648,7 @@ def _bond_flags(bond: dict[str, object] | None) -> dict[str, object]:
     }
 
 
-def _analyze_coupons(
-    rows: list[object], *, today: date
-) -> dict[str, object]:
+def _analyze_coupons(rows: list[object], *, today: date) -> dict[str, object]:
     numbers: list[object] = []
     missing_number = 0
     zero_number = 0
@@ -725,9 +717,7 @@ def _analyze_bond_events(rows: list[object]) -> dict[str, object]:
             mty.append(
                 {
                     "event_number": _field(row, "eventNumber", "event_number"),
-                    "event_date": _timestamp_observation(
-                        _field(row, "eventDate", "event_date")
-                    ),
+                    "event_date": _timestamp_observation(_field(row, "eventDate", "event_date")),
                     "pay_date": _timestamp_observation(_field(row, "payDate", "pay_date")),
                     "real_pay_date": _timestamp_observation(
                         _field(row, "realPayDate", "real_pay_date")
@@ -811,12 +801,8 @@ def _analyze_dividends(rows: list[object], *, today: date) -> dict[str, object]:
         },
         "date_samples": [
             {
-                "record_date": _timestamp_observation(
-                    _field(row, "recordDate", "record_date")
-                ),
-                "payment_date": _timestamp_observation(
-                    _field(row, "paymentDate", "payment_date")
-                ),
+                "record_date": _timestamp_observation(_field(row, "recordDate", "record_date")),
+                "payment_date": _timestamp_observation(_field(row, "paymentDate", "payment_date")),
                 "declared_date": _timestamp_observation(
                     _field(row, "declaredDate", "declared_date")
                 ),
@@ -839,7 +825,9 @@ def _public_instrument_view(resolved: dict[str, object]) -> dict[str, object]:
         "ticker_query": resolved.get("ticker"),
         "has_instrument_uid": bool(resolved.get("uid")),
         "has_isin": bool(resolved.get("isin")),
-        "flags": _bond_flags(resolved.get("bond") if isinstance(resolved.get("bond"), dict) else None),
+        "flags": _bond_flags(
+            resolved.get("bond") if isinstance(resolved.get("bond"), dict) else None
+        ),
         "inspected": resolved.get("inspected"),
     }
 
@@ -967,7 +955,9 @@ def _run_live_checks(
             ),
             "floating_bond": _public_instrument_view(floating) if floating else None,
             "amort_bond": _public_instrument_view(amort) if amort else None,
-            "first_stock_query": first_stock_attempt.get("query") if first_stock_attempt else stock_query,
+            "first_stock_query": first_stock_attempt.get("query")
+            if first_stock_attempt
+            else stock_query,
             "first_stock_resolved": bool(first_stock_attempt and first_stock_attempt.get("uid")),
             "first_stock_inspected": (
                 first_stock_attempt.get("inspected") if first_stock_attempt else None
@@ -1009,7 +999,9 @@ def _run_live_checks(
         )
     ordinary_bond = ordinary.get("bond")
     if isinstance(ordinary_bond, dict):
-        _capture(captured, "ordinary_bond", "InstrumentsService/BondBy", {"instrument": ordinary_bond})
+        _capture(
+            captured, "ordinary_bond", "InstrumentsService/BondBy", {"instrument": ordinary_bond}
+        )
 
     coupon_body = {"instrumentId": ordinary_uid, **near}
     first = _safe_payout(client, "GetBondCoupons", coupon_body)
@@ -1038,13 +1030,13 @@ def _run_live_checks(
         "GetBondEvents",
         {"instrumentId": ordinary_uid, "type": _EVENT_TYPE_MTY, **_maturity_window(ordinary)},
     )
-    unspecified_rows = _as_list(
-        unspecified.get("payload") if unspecified["ok"] else None, "events"
-    )
+    unspecified_rows = _as_list(unspecified.get("payload") if unspecified["ok"] else None, "events")
     cpn_rows = _as_list(cpn.get("payload") if cpn["ok"] else None, "events")
     mty_rows = _as_list(mty.get("payload") if mty["ok"] else None, "events")
     if unspecified["ok"] and isinstance(unspecified.get("payload"), dict):
-        _capture(captured, "ordinary_bond", "InstrumentsService/GetBondEvents", unspecified["payload"])
+        _capture(
+            captured, "ordinary_bond", "InstrumentsService/GetBondEvents", unspecified["payload"]
+        )
     if mty["ok"] and isinstance(mty.get("payload"), dict):
         captured.setdefault("ordinary_bond", {})["GetBondEventsMty"] = sanitize_official_payload(
             project_official_shape("InstrumentsService/GetBondEvents", mty["payload"])
@@ -1126,8 +1118,12 @@ def _run_live_checks(
         stock_div_history = skipped
         stock_coupons = skipped
     bond_div = _dividends(ordinary_uid, wide)
-    near_rows = _as_list(stock_div_near.get("payload") if stock_div_near["ok"] else None, "dividends")
-    wide_rows = _as_list(stock_div_wide.get("payload") if stock_div_wide["ok"] else None, "dividends")
+    near_rows = _as_list(
+        stock_div_near.get("payload") if stock_div_near["ok"] else None, "dividends"
+    )
+    wide_rows = _as_list(
+        stock_div_wide.get("payload") if stock_div_wide["ok"] else None, "dividends"
+    )
     empty_rows = _as_list(
         stock_div_empty.get("payload") if stock_div_empty["ok"] else None, "dividends"
     )
@@ -1146,7 +1142,9 @@ def _run_live_checks(
                 extra_dividend_queries.append(extra_query + ":unresolved")
                 continue
             extra_div = _dividends(str(extra_stock["uid"]), history_window)
-            extra_rows = _as_list(extra_div.get("payload") if extra_div["ok"] else None, "dividends")
+            extra_rows = _as_list(
+                extra_div.get("payload") if extra_div["ok"] else None, "dividends"
+            )
             extra_dividend_queries.append(
                 f"{extra_query}:ok={extra_div['ok']}:count={len(extra_rows)}"
             )
@@ -1161,7 +1159,11 @@ def _run_live_checks(
     stock_coupon_rows = _as_list(
         stock_coupons.get("payload") if stock_coupons["ok"] else None, "events"
     )
-    if history_rows and stock_div_history["ok"] and isinstance(stock_div_history.get("payload"), dict):
+    if (
+        history_rows
+        and stock_div_history["ok"]
+        and isinstance(stock_div_history.get("payload"), dict)
+    ):
         _capture(captured, "stock", "InstrumentsService/GetDividends", stock_div_history["payload"])
     elif stock_div_wide["ok"] and isinstance(stock_div_wide.get("payload"), dict):
         _capture(captured, "stock", "InstrumentsService/GetDividends", stock_div_wide["payload"])
@@ -1249,7 +1251,9 @@ def _run_live_checks(
         floater_uid = str(floating["uid"])
         floater_bond = floating.get("bond")
         if isinstance(floater_bond, dict):
-            _capture(captured, "floating_bond", "InstrumentsService/BondBy", {"instrument": floater_bond})
+            _capture(
+                captured, "floating_bond", "InstrumentsService/BondBy", {"instrument": floater_bond}
+            )
         floater_coupons = _safe_payout(
             client, "GetBondCoupons", {"instrumentId": floater_uid, **near}
         )
@@ -1275,18 +1279,16 @@ def _run_live_checks(
     elif floating is ordinary:
         observations["coupon"]["floating_bond"] = {
             "same_as_ordinary_bond": True,
-            **{
-                key: value
-                for key, value in coupon_analysis.items()
-                if key != "identity_tuples"
-            },
+            **{key: value for key, value in coupon_analysis.items() if key != "identity_tuples"},
         }
 
     if amort is not None:
         amort_uid = str(amort["uid"])
         amort_bond = amort.get("bond")
         if isinstance(amort_bond, dict) and amort is not ordinary:
-            _capture(captured, "amort_bond", "InstrumentsService/BondBy", {"instrument": amort_bond})
+            _capture(
+                captured, "amort_bond", "InstrumentsService/BondBy", {"instrument": amort_bond}
+            )
         amort_mty = _safe_payout(
             client,
             "GetBondEvents",
