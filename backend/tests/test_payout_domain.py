@@ -7,13 +7,13 @@ from decimal import Decimal
 import pytest
 
 from hermes_finance.market_data.payout import (
+    RUB_COMPATIBLE_UNITS,
     PayoutCoverage,
     PayoutDomainError,
     PayoutEvent,
     PayoutEventKind,
     PayoutEventStatus,
     PayoutIdentity,
-    RUB_COMPATIBLE_UNITS,
     coverage_covers_event,
     normalize_exact_decimal,
     normalize_payout_date,
