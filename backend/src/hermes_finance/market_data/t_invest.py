@@ -671,10 +671,10 @@ class TInvestClient:
     def request_payout_method(
         self, method: str, body: dict[str, object]
     ) -> dict[str, object]:
-        """Read-only payout surface shared by the probe and R05 production adapter."""
+        """Developer-probe only. Not part of production quote routing."""
 
         if method not in PAYOUT_PROBE_METHODS:
-            raise ValueError(f"payout client does not allow InstrumentsService/{method}")
+            raise ValueError(f"payout probe does not allow InstrumentsService/{method}")
         return self._post(_INSTRUMENTS, method, body)
 
     def _find_instruments(self, query: str) -> list[dict[str, object]]:
