@@ -110,9 +110,7 @@ def merged_payout_calendar(
                 .where(
                     ExpectedCashFlow.reporting_month_id == reporting_month_id,
                     ExpectedCashFlow.forecast_version == version,
-                    ExpectedCashFlow.flow_type.in_(
-                        ("coupon", "dividend", "redemption")
-                    ),
+                    ExpectedCashFlow.flow_type.in_(("coupon", "dividend", "redemption")),
                 )
                 .order_by(ExpectedCashFlow.expected_date, ExpectedCashFlow.id)
             )
@@ -131,23 +129,22 @@ def merged_payout_calendar(
             .order_by(AppliedProviderPayout.payment_date, AppliedProviderPayout.id)
         ).all()
 
-        payout_ids = [payout.id for payout, _, _ in provider_rows]
-        reconciliations = (
-            list(
-                session.scalars(
-                    select(AppliedPayoutReconciliation)
-                    .where(AppliedPayoutReconciliation.applied_payout_id.in_(payout_ids))
-                    .order_by(AppliedPayoutReconciliation.id)
+        reconciliations = list(
+            session.scalars(
+                select(AppliedPayoutReconciliation)
+                .join(
+                    AppliedProviderPayout,
+                    AppliedPayoutReconciliation.applied_payout_id
+                    == AppliedProviderPayout.id,
                 )
+                .where(AppliedProviderPayout.reporting_month_id == reporting_month_id)
+                .order_by(AppliedPayoutReconciliation.id)
             )
-            if payout_ids
-            else []
         )
 
     manual_by_id = {flow.id: flow for flow, _, _ in manual_rows}
-    reconciliation_by_payout = {
-        item.applied_payout_id: item for item in reconciliations
-    }
+    manual_version_by_id = {flow.id: flow for flow in manual_duplicate_pool}
+    reconciliation_by_payout = {item.applied_payout_id: item for item in reconciliations}
     reconciliation_by_manual = {
         item.expected_cash_flow_id: item
         for item in reconciliations
@@ -163,9 +160,7 @@ def merged_payout_calendar(
 
     duplicate_pool_by_scope: dict[tuple[int, int], list[ExpectedCashFlow]] = {}
     for flow in manual_duplicate_pool:
-        duplicate_pool_by_scope.setdefault(
-            (flow.account_id, flow.instrument_id), []
-        ).append(flow)
+        duplicate_pool_by_scope.setdefault((flow.account_id, flow.instrument_id), []).append(flow)
 
     items: list[MergedPayoutCalendarItem] = []
     for flow, account_name, instrument_name in manual_rows:
@@ -201,7 +196,7 @@ def merged_payout_calendar(
         effective_reconciliation = (
             reconciliation
             if reconciliation is not None
-            and reconciliation.expected_cash_flow_id in manual_by_id
+            and reconciliation.expected_cash_flow_id in manual_version_by_id
             else None
         )
         if (
@@ -221,7 +216,7 @@ def merged_payout_calendar(
             else None
         )
         if any(candidate_id != resolved_manual_id for candidate_id in candidate_ids):
-            # A newly appearing/manual extra candidate is unresolved. The ADR safe
+            # A newly appearing extra candidate is unresolved. The ADR safe
             # default is manual-only counting until the owner explicitly resolves it.
             continue
         if effective_reconciliation is None and candidate_ids:
