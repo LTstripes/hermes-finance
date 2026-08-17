@@ -668,9 +668,7 @@ class TInvestClient:
         self._bond_cache[uid] = body
         return body
 
-    def request_payout_method(
-        self, method: str, body: dict[str, object]
-    ) -> dict[str, object]:
+    def request_payout_method(self, method: str, body: dict[str, object]) -> dict[str, object]:
         """Developer-probe only. Not part of production quote routing."""
 
         if method not in PAYOUT_PROBE_METHODS:
