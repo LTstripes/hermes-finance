@@ -251,7 +251,6 @@ def merged_payout_calendar(
     items.sort(
         key=lambda item: (
             item.expected_date,
-            item.flow_type,
             item.source_kind.value,
             item.source_id,
         )
