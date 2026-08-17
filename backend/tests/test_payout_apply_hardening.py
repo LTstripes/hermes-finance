@@ -7,11 +7,6 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from hermes_finance.market_data.payout import PayoutEvent, PayoutEventKind, PayoutEventStatus
-from hermes_finance.market_data.payout_protocol import PayoutFailure
-from hermes_finance.persistence import AppliedPayoutRevision, AppliedProviderPayout
-from hermes_finance.services.payout_apply import PayoutApplyFailureCode
-
 from test_payout_apply import (
     FakeProvider,
     apply,
@@ -22,6 +17,11 @@ from test_payout_apply import (
     selection_from_row,
     session_for,
 )
+
+from hermes_finance.market_data.payout import PayoutEvent, PayoutEventKind, PayoutEventStatus
+from hermes_finance.market_data.payout_protocol import PayoutFailure
+from hermes_finance.persistence import AppliedPayoutRevision, AppliedProviderPayout
+from hermes_finance.services.payout_apply import PayoutApplyFailureCode
 
 
 def test_ambiguous_fresh_identity_rejects_old_selection(tmp_path) -> None:
