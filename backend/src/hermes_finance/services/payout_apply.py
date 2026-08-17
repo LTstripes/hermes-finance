@@ -20,6 +20,7 @@ from hermes_finance.services.applied_payouts import (
     PayoutCountingDecision,
     append_applied_payout_revision,
     create_applied_payout,
+    get_applied_payout,
     list_applied_payout_revisions,
     set_applied_payout_reconciliation,
 )
@@ -267,7 +268,15 @@ def apply_payout_preview(
                     provider_status=row.provider_status,
                     lifecycle=AppliedPayoutLifecycle.ACTIVE,
                 )
-                payout = revision.payout
+                payout = get_applied_payout(session, row.applied_payout_id)
+                if row.provider_status is None and payout.provider_status is not None:
+                    # R05-04's optional argument uses None as "preserve". For a freshly
+                    # created revision in this transaction, clear both rows so R05-06 can
+                    # represent a real provider-status transition to null without mutating
+                    # any historical revision.
+                    payout.provider_status = None
+                    revision.provider_status = None
+                    session.flush()
 
             link = None
             decision = plan.duplicate_decision
