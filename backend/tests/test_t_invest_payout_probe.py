@@ -35,9 +35,7 @@ def test_probe_without_token_does_not_call_network(monkeypatch: pytest.MonkeyPat
     class BoomSettings:
         t_invest_read_only_token = None
 
-    monkeypatch.setattr(
-        "hermes_finance.market_data.t_invest_payout_probe.Settings", BoomSettings
-    )
+    monkeypatch.setattr("hermes_finance.market_data.t_invest_payout_probe.Settings", BoomSettings)
     code = main(["--live"])
     assert code == 2
 
