@@ -75,9 +75,7 @@ class _FakeClient:
         assert uid == _BOND_UID
         return copy.deepcopy(self.bond_flags)
 
-    def request_payout_method(
-        self, method: str, body: dict[str, object]
-    ) -> dict[str, object]:
+    def request_payout_method(self, method: str, body: dict[str, object]) -> dict[str, object]:
         self.calls.append((method, copy.deepcopy(body)))
         value = self.payloads[method]
         if isinstance(value, Exception):
