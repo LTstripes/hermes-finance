@@ -214,9 +214,7 @@ class TInvestPayoutProvider:
                 floating_coupon=_truthy_flag(
                     _field(bond, "floatingCouponFlag", "floating_coupon_flag")
                 ),
-                amortizing=_truthy_flag(
-                    _field(bond, "amortizationFlag", "amortization_flag")
-                ),
+                amortizing=_truthy_flag(_field(bond, "amortizationFlag", "amortization_flag")),
                 perpetual=_truthy_flag(_field(bond, "perpetualFlag", "perpetual_flag")),
             ),
             None,
@@ -274,57 +272,81 @@ class TInvestPayoutProvider:
         try:
             payload = self._client.request_payout_method(window.method, window.body)
         except _AuthUnavailable:
-            return [], _coverage(uid, window, successful=False, structurally_valid=False), [
-                PayoutFailure(
-                    PayoutEventStatus.UNAVAILABLE,
-                    "T-Invest read-only token is unavailable",
-                    method=window.method,
-                )
-            ]
+            return (
+                [],
+                _coverage(uid, window, successful=False, structurally_valid=False),
+                [
+                    PayoutFailure(
+                        PayoutEventStatus.UNAVAILABLE,
+                        "T-Invest read-only token is unavailable",
+                        method=window.method,
+                    )
+                ],
+            )
         except _NetworkFailure:
-            return [], _coverage(uid, window, successful=False, structurally_valid=False), [
-                PayoutFailure(
-                    PayoutEventStatus.ERROR,
-                    "T-Invest payout request failed due to a network error",
-                    method=window.method,
-                )
-            ]
+            return (
+                [],
+                _coverage(uid, window, successful=False, structurally_valid=False),
+                [
+                    PayoutFailure(
+                        PayoutEventStatus.ERROR,
+                        "T-Invest payout request failed due to a network error",
+                        method=window.method,
+                    )
+                ],
+            )
         except _NotFound:
-            return [], _coverage(uid, window, successful=False, structurally_valid=False), [
-                PayoutFailure(
-                    PayoutEventStatus.UNAVAILABLE,
-                    "T-Invest payout instrument or method result was not found",
-                    method=window.method,
-                )
-            ]
+            return (
+                [],
+                _coverage(uid, window, successful=False, structurally_valid=False),
+                [
+                    PayoutFailure(
+                        PayoutEventStatus.UNAVAILABLE,
+                        "T-Invest payout instrument or method result was not found",
+                        method=window.method,
+                    )
+                ],
+            )
         except (_Malformed, ValueError):
-            return [], _coverage(uid, window, successful=False, structurally_valid=False), [
-                PayoutFailure(
-                    PayoutEventStatus.ERROR,
-                    "T-Invest payout request returned an invalid response",
-                    method=window.method,
-                )
-            ]
+            return (
+                [],
+                _coverage(uid, window, successful=False, structurally_valid=False),
+                [
+                    PayoutFailure(
+                        PayoutEventStatus.ERROR,
+                        "T-Invest payout request returned an invalid response",
+                        method=window.method,
+                    )
+                ],
+            )
 
         if not isinstance(payload, dict):
-            return [], _coverage(uid, window, successful=True, structurally_valid=False), [
-                PayoutFailure(
-                    PayoutEventStatus.ERROR,
-                    "T-Invest payout response is not an object",
-                    method=window.method,
-                )
-            ]
+            return (
+                [],
+                _coverage(uid, window, successful=True, structurally_valid=False),
+                [
+                    PayoutFailure(
+                        PayoutEventStatus.ERROR,
+                        "T-Invest payout response is not an object",
+                        method=window.method,
+                    )
+                ],
+            )
 
         rows_name = "dividends" if window.method == _GET_DIVIDENDS else "events"
         rows = _field(payload, rows_name)
         if not isinstance(rows, list):
-            return [], _coverage(uid, window, successful=True, structurally_valid=False), [
-                PayoutFailure(
-                    PayoutEventStatus.ERROR,
-                    f"T-Invest {window.method} {rows_name} is not a list",
-                    method=window.method,
-                )
-            ]
+            return (
+                [],
+                _coverage(uid, window, successful=True, structurally_valid=False),
+                [
+                    PayoutFailure(
+                        PayoutEventStatus.ERROR,
+                        f"T-Invest {window.method} {rows_name} is not a list",
+                        method=window.method,
+                    )
+                ],
+            )
 
         if window.method == _GET_BOND_COUPONS:
             conservative = bond_flags is None or not bond_flags.known or bond_flags.floating_coupon
@@ -599,9 +621,7 @@ def _parse_redemptions(
                 payment_date=item.payment_date,
                 amount=amount,
                 currency=currency,
-                extra_tentative=(
-                    amount_tentative or force_tentative or multiple_mty_unresolved
-                ),
+                extra_tentative=(amount_tentative or force_tentative or multiple_mty_unresolved),
             )
             events.append(
                 PayoutEvent(
@@ -671,9 +691,7 @@ def _optional_money(value: object) -> tuple[Decimal | None, str | None, bool]:
 
 def _mark_identity_collisions(events: list[PayoutEvent]) -> list[PayoutEvent]:
     counts = Counter(
-        (event.event_kind, event.identity_key)
-        for event in events
-        if event.identity_key is not None
+        (event.event_kind, event.identity_key) for event in events if event.identity_key is not None
     )
     result: list[PayoutEvent] = []
     for event in events:
