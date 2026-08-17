@@ -383,9 +383,9 @@ def test_unresolved_duplicate_defaults_to_manual_only_without_writes(tmp_path: P
         )
         assert item_ids((june,)) == [(PayoutCalendarSource.MANUAL, manual.id)]
         assert counts(session) == before
-        assert session.new == set()
-        assert session.dirty == set()
-        assert session.deleted == set()
+        assert not session.new
+        assert not session.dirty
+        assert not session.deleted
     finally:
         session.close()
         database.engine.dispose()
@@ -646,9 +646,9 @@ def test_closed_month_reads_are_repeatable_and_write_nothing(tmp_path: Path) -> 
         )
         assert first == second
         assert counts(session) == before
-        assert session.new == set()
-        assert session.dirty == set()
-        assert session.deleted == set()
+        assert not session.new
+        assert not session.dirty
+        assert not session.deleted
     finally:
         session.close()
         database.engine.dispose()
