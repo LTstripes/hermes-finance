@@ -6,7 +6,8 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0026_t_invest_price_source_and_provenance"
+REVISION = "0027_applied_provider_payouts"
+PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 
 
 def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -296,6 +297,62 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "opening_taxable_gross_kopecks",
             "created_at",
             "updated_at",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(applied_provider_payouts)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            "source_position_snapshot_id",
+            "provider",
+            "provider_instrument_uid",
+            "event_kind",
+            "identity_key",
+            "lifecycle",
+            "payment_date",
+            "quantity",
+            "per_unit_amount",
+            "total_amount_kopecks",
+            "currency",
+            "amount_basis",
+            "is_approximate",
+            "provider_status",
+            "first_applied_at",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(applied_payout_revisions)")
+        ] == [
+            "id",
+            "applied_payout_id",
+            "revision_kind",
+            "source_position_snapshot_id",
+            "provider",
+            "provider_instrument_uid",
+            "event_kind",
+            "identity_key",
+            "lifecycle",
+            "payment_date",
+            "quantity",
+            "per_unit_amount",
+            "total_amount_kopecks",
+            "currency",
+            "amount_basis",
+            "is_approximate",
+            "provider_status",
+            "fetched_at",
+            "applied_at",
+        ]
+        assert [
+            row[1]
+            for row in connection.execute("PRAGMA table_info(applied_payout_reconciliations)")
+        ] == [
+            "id",
+            "applied_payout_id",
+            "expected_cash_flow_id",
+            "counting_decision",
+            "created_at",
         ]
     finally:
         connection.close()
@@ -856,3 +913,200 @@ def test_provider_neutral_downgrade_rejects_identity_without_venue(tmp_path: Pat
     assert downgraded.returncode != 0
     assert "provider_venue_id" in downgraded.stderr
     assert revision_rows(database_path) == ["0025_provider_neutral_market_identity"]
+
+
+def test_applied_payout_migration_is_additive_and_preserves_manual_rows(tmp_path: Path) -> None:
+    database_path = tmp_path / "applied-payout-migration.db"
+
+    previous = run_alembic(database_path, "upgrade", PREVIOUS_REVISION)
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2031,
+                5,
+                "2031-05-01",
+                "2031-05-31",
+                "2031-05-31",
+                "draft",
+                "manual",
+                "2031-05-31 00:00:00",
+                "2031-05-31 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts (name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Broker", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO instruments "
+            "(name, instrument_type, isin, ticker, moex_secid, currency, is_active, manual_price_allowed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("Synthetic Bond", "bond", None, None, None, "RUB", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO position_snapshots "
+            "(reporting_month_id, account_id, instrument_id, quantity, "
+            "average_cost_per_unit_kopecks, market_price_per_unit_kopecks, "
+            "market_value_kopecks, cost_basis_kopecks, unrealized_result_kopecks, "
+            "price_date, price_source, manual_adjustment, notes, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                1,
+                "3.125000",
+                10_000,
+                25_000,
+                78_125,
+                31_250,
+                46_875,
+                "2031-05-15",
+                "manual",
+                0,
+                "synthetic snapshot",
+                "2031-05-15 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO expected_cash_flows "
+            "(reporting_month_id, account_id, instrument_id, flow_type, expected_date, "
+            "gross_amount_kopecks, expected_tax_amount_kopecks, expected_net_amount_kopecks, "
+            "currency, source, source_as_of_date, forecast_version, is_confirmed, "
+            "is_approximate, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                1,
+                "coupon",
+                "2031-06-15",
+                110_000,
+                13_000,
+                97_000,
+                "RUB",
+                "synthetic calendar",
+                "2031-05-31",
+                "v1",
+                0,
+                0,
+                "owner entered",
+            ),
+        )
+        connection.commit()
+        month_before = connection.execute(
+            "SELECT year, month, status, snapshot_date FROM reporting_months WHERE id = 1"
+        ).fetchone()
+        snapshot_before = connection.execute(
+            "SELECT quantity, market_price_per_unit_kopecks, notes FROM position_snapshots WHERE id = 1"
+        ).fetchone()
+        flow_before = connection.execute(
+            "SELECT flow_type, expected_date, gross_amount_kopecks, expected_tax_amount_kopecks, "
+            "expected_net_amount_kopecks, source, notes FROM expected_cash_flows WHERE id = 1"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    migrated = run_alembic(database_path, "upgrade", "head")
+    assert migrated.returncode == 0, migrated.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "applied_provider_payouts" in tables
+        assert "applied_payout_revisions" in tables
+        assert "applied_payout_reconciliations" in tables
+        assert connection.execute("SELECT COUNT(*) FROM applied_provider_payouts").fetchone() == (
+            0,
+        )
+        assert connection.execute("SELECT COUNT(*) FROM applied_payout_revisions").fetchone() == (
+            0,
+        )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM applied_payout_reconciliations"
+        ).fetchone() == (0,)
+        assert (
+            connection.execute(
+                "SELECT year, month, status, snapshot_date FROM reporting_months WHERE id = 1"
+            ).fetchone()
+            == month_before
+        )
+        assert (
+            connection.execute(
+                "SELECT quantity, market_price_per_unit_kopecks, notes FROM position_snapshots WHERE id = 1"
+            ).fetchone()
+            == snapshot_before
+        )
+        assert (
+            connection.execute(
+                "SELECT flow_type, expected_date, gross_amount_kopecks, expected_tax_amount_kopecks, "
+                "expected_net_amount_kopecks, source, notes FROM expected_cash_flows WHERE id = 1"
+            ).fetchone()
+            == flow_before
+        )
+        payout_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'applied_provider_payouts'"
+        ).fetchone()[0]
+        revision_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'applied_payout_revisions'"
+        ).fetchone()[0]
+        for blob in (payout_sql, revision_sql):
+            assert "raw_payload" not in blob
+            assert "token" not in blob
+            assert "response_body" not in blob
+        indexes = list(connection.execute("PRAGMA index_list(applied_provider_payouts)"))
+        index_names = {row[1] for row in indexes}
+        assert "ix_applied_provider_payouts_month" in index_names
+        assert any(row[2] for row in indexes)
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", PREVIOUS_REVISION)
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert revision_rows(database_path) == [PREVIOUS_REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "applied_provider_payouts" not in tables
+        assert "applied_payout_revisions" not in tables
+        assert "applied_payout_reconciliations" not in tables
+        assert (
+            connection.execute(
+                "SELECT flow_type, expected_date, gross_amount_kopecks, expected_tax_amount_kopecks, "
+                "expected_net_amount_kopecks, source, notes FROM expected_cash_flows WHERE id = 1"
+            ).fetchone()
+            == flow_before
+        )
+        assert (
+            connection.execute(
+                "SELECT quantity, market_price_per_unit_kopecks, notes FROM position_snapshots WHERE id = 1"
+            ).fetchone()
+            == snapshot_before
+        )
+    finally:
+        connection.close()
+
+
+def test_applied_payout_migration_module_has_no_network_imports() -> None:
+    source = (
+        BACKEND_ROOT / "migrations" / "versions" / "0027_applied_provider_payouts.py"
+    ).read_text(encoding="utf-8")
+    assert "httpx" not in source
+    assert "urllib" not in source
+    assert "socket" not in source
+    assert "TInvestClient" not in source
+    assert "fetch_payouts" not in source

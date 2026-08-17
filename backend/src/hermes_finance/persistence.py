@@ -631,6 +631,177 @@ class ExpectedCashFlow(Base):
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
+class AppliedProviderPayout(Base):
+    """Current owner-accepted provider payout for one month/account/instrument identity."""
+
+    __tablename__ = "applied_provider_payouts"
+    __table_args__ = (
+        UniqueConstraint(
+            "reporting_month_id",
+            "account_id",
+            "instrument_id",
+            "provider",
+            "provider_instrument_uid",
+            "event_kind",
+            "identity_key",
+            name="uq_applied_provider_payouts_identity",
+        ),
+        Index("ix_applied_provider_payouts_month", "reporting_month_id"),
+        CheckConstraint(
+            "event_kind IN ('coupon', 'dividend', 'redemption')",
+            name="ck_applied_provider_payouts_event_kind",
+        ),
+        CheckConstraint(
+            "lifecycle IN ('active', 'cancelled', 'dismissed')",
+            name="ck_applied_provider_payouts_lifecycle",
+        ),
+        CheckConstraint("currency = 'RUB'", name="ck_applied_provider_payouts_currency_rub"),
+        CheckConstraint(
+            "amount_basis IN ('provider_announced')",
+            name="ck_applied_provider_payouts_amount_basis",
+        ),
+        CheckConstraint("quantity >= 0", name="ck_applied_provider_payouts_quantity_nonnegative"),
+        CheckConstraint(
+            "total_amount_kopecks >= 0",
+            name="ck_applied_provider_payouts_total_nonnegative",
+        ),
+        CheckConstraint(
+            "length(per_unit_amount) > 0",
+            name="ck_applied_provider_payouts_per_unit_present",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_position_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("position_snapshots.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_instrument_uid: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    identity_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    lifecycle: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default=text("'active'")
+    )
+    payment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    per_unit_amount: Mapped[str] = mapped_column(String(64), nullable=False)
+    total_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    amount_basis: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="provider_announced",
+        server_default=text("'provider_announced'"),
+    )
+    is_approximate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    provider_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    first_applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AppliedPayoutRevision(Base):
+    """Append-only audit of one successful apply/revise/cancel/dismiss."""
+
+    __tablename__ = "applied_payout_revisions"
+    __table_args__ = (
+        Index("ix_applied_payout_revisions_payout_id", "applied_payout_id"),
+        CheckConstraint(
+            "revision_kind IN ('apply', 'revise', 'cancel', 'dismiss')",
+            name="ck_applied_payout_revisions_kind",
+        ),
+        CheckConstraint(
+            "event_kind IN ('coupon', 'dividend', 'redemption')",
+            name="ck_applied_payout_revisions_event_kind",
+        ),
+        CheckConstraint(
+            "lifecycle IN ('active', 'cancelled', 'dismissed')",
+            name="ck_applied_payout_revisions_lifecycle",
+        ),
+        CheckConstraint("currency = 'RUB'", name="ck_applied_payout_revisions_currency_rub"),
+        CheckConstraint(
+            "amount_basis IN ('provider_announced')",
+            name="ck_applied_payout_revisions_amount_basis",
+        ),
+        CheckConstraint("quantity >= 0", name="ck_applied_payout_revisions_quantity_nonnegative"),
+        CheckConstraint(
+            "total_amount_kopecks >= 0",
+            name="ck_applied_payout_revisions_total_nonnegative",
+        ),
+        CheckConstraint(
+            "length(per_unit_amount) > 0",
+            name="ck_applied_payout_revisions_per_unit_present",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    applied_payout_id: Mapped[int] = mapped_column(
+        ForeignKey("applied_provider_payouts.id", ondelete="CASCADE"), nullable=False
+    )
+    revision_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_position_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("position_snapshots.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_instrument_uid: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    identity_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(16), nullable=False)
+    payment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    per_unit_amount: Mapped[str] = mapped_column(String(64), nullable=False)
+    total_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    amount_basis: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_approximate: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    provider_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AppliedPayoutReconciliation(Base):
+    """Explicit 1:1 link from an applied provider payout to one manual expected flow."""
+
+    __tablename__ = "applied_payout_reconciliations"
+    __table_args__ = (
+        UniqueConstraint(
+            "applied_payout_id",
+            name="uq_applied_payout_reconciliations_payout",
+        ),
+        UniqueConstraint(
+            "expected_cash_flow_id",
+            name="uq_applied_payout_reconciliations_manual_flow",
+        ),
+        CheckConstraint(
+            "counting_decision IN ('keep_both', 'count_manual', 'count_provider')",
+            name="ck_applied_payout_reconciliations_decision",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    applied_payout_id: Mapped[int] = mapped_column(
+        ForeignKey("applied_provider_payouts.id", ondelete="CASCADE"), nullable=False
+    )
+    expected_cash_flow_id: Mapped[int] = mapped_column(
+        ForeignKey("expected_cash_flows.id", ondelete="RESTRICT"), nullable=False
+    )
+    counting_decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class ExpenseEntry(Base):
     __tablename__ = "expense_entries"
     __table_args__ = (
