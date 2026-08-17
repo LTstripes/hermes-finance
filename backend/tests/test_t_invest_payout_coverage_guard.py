@@ -41,9 +41,7 @@ class _Client:
             ),
         )
 
-    def request_payout_method(
-        self, method: str, body: dict[str, object]
-    ) -> dict[str, object]:
+    def request_payout_method(self, method: str, body: dict[str, object]) -> dict[str, object]:
         assert method == "GetDividends"
         assert body["instrumentId"] == _STOCK_UID
         return {
