@@ -747,7 +747,7 @@ class AppliedPayoutRevision(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     applied_payout_id: Mapped[int] = mapped_column(
-        ForeignKey("applied_provider_payouts.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("applied_provider_payouts.id", ondelete="RESTRICT"), nullable=False
     )
     revision_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     source_position_snapshot_id: Mapped[int] = mapped_column(
@@ -794,7 +794,7 @@ class AppliedPayoutReconciliation(Base):
         ForeignKey("applied_provider_payouts.id", ondelete="CASCADE"), nullable=False
     )
     expected_cash_flow_id: Mapped[int] = mapped_column(
-        ForeignKey("expected_cash_flows.id", ondelete="RESTRICT"), nullable=False
+        ForeignKey("expected_cash_flows.id", ondelete="CASCADE"), nullable=False
     )
     counting_decision: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

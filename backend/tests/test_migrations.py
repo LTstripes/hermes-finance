@@ -1068,6 +1068,16 @@ def test_applied_payout_migration_is_additive_and_preserves_manual_rows(tmp_path
         index_names = {row[1] for row in indexes}
         assert "ix_applied_provider_payouts_month" in index_names
         assert any(row[2] for row in indexes)
+        revision_fk_actions = {
+            row[3]: row[6]
+            for row in connection.execute("PRAGMA foreign_key_list(applied_payout_revisions)")
+        }
+        assert revision_fk_actions["applied_payout_id"] == "RESTRICT"
+        reconciliation_fk_actions = {
+            row[3]: row[6]
+            for row in connection.execute("PRAGMA foreign_key_list(applied_payout_reconciliations)")
+        }
+        assert reconciliation_fk_actions["expected_cash_flow_id"] == "CASCADE"
     finally:
         connection.close()
 

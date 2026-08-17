@@ -43,6 +43,7 @@ from hermes_finance.services.applied_payouts import (
 )
 from hermes_finance.services.expected_cash_flows import (
     create_expected_cash_flow,
+    delete_expected_cash_flow,
     update_expected_cash_flow,
 )
 from hermes_finance.services.instruments import create_instrument
@@ -336,6 +337,80 @@ def test_reconciliation_does_not_mutate_manual_expected_flow(tmp_path: Path) -> 
         assert manual.notes == "still owner data"
         assert session.scalar(select(func.count()).select_from(ExpectedCashFlow)) == 1
         assert session.scalar(select(func.count()).select_from(AppliedPayoutReconciliation)) == 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_delete_expected_cash_flow_drops_only_reconciliation_link(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, _second, instrument_id, snapshot_id = build_environment(session)
+        payout = create_payout(session, month_id, account_id, instrument_id, snapshot_id)
+        manual = create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2030, 6, 14),
+            gross_amount="1100.00",
+            expected_tax_amount="130.00",
+            expected_net_amount="970.00",
+            source="synthetic calendar",
+            source_as_of_date=date(2030, 5, 12),
+            forecast_version="v1",
+            notes="owner entered",
+        )
+        set_applied_payout_reconciliation(
+            session,
+            payout.id,
+            expected_cash_flow_id=manual.id,
+            counting_decision=PayoutCountingDecision.COUNT_MANUAL,
+        )
+        session.commit()
+        payout_id = payout.id
+        frozen_total = payout.total_amount_kopecks
+        revision_ids = [row.id for row in list_applied_payout_revisions(session, payout_id)]
+        delete_expected_cash_flow(session, manual.id)
+        session.expire_all()
+        remaining = session.get(AppliedProviderPayout, payout_id)
+        assert remaining is not None
+        assert remaining.identity_key == "n:11"
+        assert remaining.lifecycle == "active"
+        assert remaining.total_amount_kopecks == frozen_total
+        assert [row.id for row in list_applied_payout_revisions(session, payout_id)] == revision_ids
+        assert get_applied_payout_reconciliation(session, payout_id) is None
+        assert session.scalar(select(func.count()).select_from(ExpectedCashFlow)) == 0
+        assert session.scalar(select(func.count()).select_from(AppliedPayoutReconciliation)) == 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_deleting_applied_payout_cannot_erase_revisions(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, _second, instrument_id, snapshot_id = build_environment(session)
+        payout = create_payout(session, month_id, account_id, instrument_id, snapshot_id)
+        session.commit()
+        payout_id = payout.id
+        before = [
+            (row.id, row.revision_kind, row.per_unit_amount, row.total_amount_kopecks)
+            for row in list_applied_payout_revisions(session, payout_id)
+        ]
+        session.delete(payout)
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
+        surviving = session.get(AppliedProviderPayout, payout_id)
+        assert surviving is not None
+        assert surviving.lifecycle == "active"
+        after = [
+            (row.id, row.revision_kind, row.per_unit_amount, row.total_amount_kopecks)
+            for row in list_applied_payout_revisions(session, payout_id)
+        ]
+        assert after == before
     finally:
         session.close()
         database.engine.dispose()

@@ -149,7 +149,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["applied_payout_id"],
             ["applied_provider_payouts.id"],
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["source_position_snapshot_id"],
@@ -183,7 +183,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["expected_cash_flow_id"],
             ["expected_cash_flows.id"],
-            ondelete="RESTRICT",
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
