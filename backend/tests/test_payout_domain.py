@@ -253,15 +253,11 @@ def test_coverage_requires_success_structural_validity_exact_method_basis_uid_an
     assert not coverage_covers_event(
         event, replace(coverage, event_kind=PayoutEventKind.REDEMPTION)
     )
-    assert not coverage_covers_event(
-        event, replace(coverage, provider_filter_basis="record_date")
-    )
+    assert not coverage_covers_event(event, replace(coverage, provider_filter_basis="record_date"))
     assert not coverage_covers_event(
         event, replace(coverage, instrument_uid="11111111-1111-1111-1111-111111111111")
     )
-    assert not coverage_covers_event(
-        event, replace(coverage, requested_to=date(2026, 12, 1))
-    )
+    assert not coverage_covers_event(event, replace(coverage, requested_to=date(2026, 12, 1)))
 
 
 def test_dividend_coverage_uses_record_date_not_payment_date() -> None:
