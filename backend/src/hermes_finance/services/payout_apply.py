@@ -196,6 +196,12 @@ def apply_payout_preview(
             "reporting month was not found",
         )
 
+    # The caller may reuse the Session that produced the original preview. End
+    # any clean read transaction and expire its identity map before network I/O,
+    # so the fresh preview below must load current local snapshot/manual/applied
+    # state from SQLite rather than reusing cached ORM attributes.
+    session.rollback()
+
     try:
         fetch_result = provider.fetch_payouts(provider_request)
     except Exception:
