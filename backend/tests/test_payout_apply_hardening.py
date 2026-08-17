@@ -6,7 +6,6 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
-
 from test_payout_apply import (
     FakeProvider,
     apply,
