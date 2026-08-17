@@ -176,9 +176,7 @@ def build_payout_preview(
         if item.provider == fetch_result.provider
         and item.provider_instrument_uid == fetch_result.instrument_uid
     }
-    reconciliation_by_payout = {
-        item.applied_payout_id: item for item in reconciliation
-    }
+    reconciliation_by_payout = {item.applied_payout_id: item for item in reconciliation}
 
     rows: list[PayoutPreviewRow] = []
     seen_identity: set[tuple[str, str, PayoutEventKind, str]] = set()
@@ -441,8 +439,7 @@ def _manual_candidates(
         row.id
         for row in manual
         if row.flow_type == event.event_kind.value
-        and abs((row.expected_date - event.payment_date).days)
-        <= MANUAL_DUPLICATE_DATE_WINDOW_DAYS
+        and abs((row.expected_date - event.payment_date).days) <= MANUAL_DUPLICATE_DATE_WINDOW_DAYS
     )
 
 
@@ -555,9 +552,7 @@ def _applied_warning_row(
     try:
         kind = PayoutEventKind(item.event_kind)
     except ValueError as error:
-        raise PayoutPreviewError(
-            f"applied payout {item.id} has unsupported event kind"
-        ) from error
+        raise PayoutPreviewError(f"applied payout {item.id} has unsupported event kind") from error
     return PayoutPreviewRow(
         status=status,
         reporting_month_id=reporting_month_id,

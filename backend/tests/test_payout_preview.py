@@ -727,9 +727,7 @@ def test_ambiguous_row_on_same_filter_date_blocks_false_missing(tmp_path: Path) 
                 ),
             ),
         )
-        assert [row.status for row in result.rows] == [
-            PayoutPreviewStatus.AMBIGUOUS_IDENTITY
-        ]
+        assert [row.status for row in result.rows] == [PayoutPreviewStatus.AMBIGUOUS_IDENTITY]
     finally:
         session.close()
         database.engine.dispose()
