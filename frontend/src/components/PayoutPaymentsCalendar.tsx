@@ -25,6 +25,10 @@ function flowChip(flowType: string, amount: string) {
   );
 }
 
+function isNonZeroMoney(value: string): boolean {
+  return !/^[+-]?0+(?:\.0+)?$/.test(value.trim());
+}
+
 function monthChips(month: PayoutCalendarMonth) {
   const chips = [
     [month.coupon, "coupon"],
@@ -34,7 +38,7 @@ function monthChips(month: PayoutCalendarMonth) {
     [month.other, "other"],
   ] as const;
   return chips
-    .filter(([value]) => Number(moneyAmount(value)) > 0)
+    .filter(([value]) => isNonZeroMoney(moneyAmount(value)))
     .map(([value, flowType]) => flowChip(flowType, moneyAmount(value)));
 }
 
