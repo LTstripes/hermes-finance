@@ -1,17 +1,22 @@
 [CmdletBinding()]
 param()
 
-# R04-08 canonical Windows production smoke.
-# Isolated temp DB, no token read, no live T-Invest probe.
-# Proves the live production listener is exactly 127.0.0.1:8000.
+# R05-11 canonical Windows production smoke.
+# Isolated temp DB. Hits only local health/months/frontend.
+# Does not invoke quote/payout preview or apply, so it does not
+# make a live T-Invest/provider request. Settings may still load
+# the ignored repository-root .env; this script does not prove
+# the token file was unread. It must not print or expose a token.
+# Proves the production listener is exactly 127.0.0.1:8000
+# and /api/health reports version 0.5.0.
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $launcher = Join-Path $repoRoot "scripts\start-local.ps1"
-. (Join-Path $PSScriptRoot "windows-powershell-file.ps1")
-$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("hermes-r04-08-" + [guid]::NewGuid().ToString("N"))
+. (Join-Path $repoRoot "scripts\windows-powershell-file.ps1")
+$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("hermes-r05-11-" + [guid]::NewGuid().ToString("N"))
 $databasePath = Join-Path $tempRoot "finance.db"
 $launcherProcess = $null
 $listenPort = 8000
@@ -55,6 +60,28 @@ function Assert-ExactLoopbackListener {
     }
     if ($addresses -notcontains "127.0.0.1") {
         throw "Port $Port is not bound to 127.0.0.1."
+    }
+}
+
+function Assert-NoSecretMaterial {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    $lower = $Content.ToLowerInvariant()
+    $forbidden = @(
+        "authorization",
+        "bearer ",
+        "hermes_finance_t_invest_read_only_token"
+    )
+    foreach ($item in $forbidden) {
+        if ($lower.Contains($item)) {
+            throw "$Label contains forbidden token/Authorization material."
+        }
     }
 }
 
@@ -108,7 +135,10 @@ function Wait-ForProductionStack {
                 $frontend.StatusCode -eq 200 -and
                 $frontend.Content -match "Hermes Finance"
             ) {
-                return
+                Assert-NoSecretMaterial -Label "/api/health" -Content ([string]$health.Content)
+                Assert-NoSecretMaterial -Label "/api/months" -Content ([string]$months.Content)
+                Assert-NoSecretMaterial -Label "frontend HTML" -Content ([string]$frontend.Content)
+                return $health
             }
         }
         catch {
@@ -157,23 +187,30 @@ $savedDatabase = [Environment]::GetEnvironmentVariable(
 )
 
 try {
-    # Unset without reading. The smoke must not print or copy the token value.
+    # Do not print or copy a token value. Clearing a process override does not
+    # stop Settings from loading the ignored repository-root .env.
     Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
     $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
 
-    Write-Host "R04-08 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
+    Write-Host "R05-11 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
     $launcherProcess = Start-WindowsPowerShellFile `
         -FilePath $launcher `
         -WorkingDirectory $repoRoot
 
-    Wait-ForProductionStack -Process $launcherProcess
+    $healthResponse = Wait-ForProductionStack -Process $launcherProcess
     if (-not (Test-Path $databasePath -PathType Leaf)) {
         throw "Canonical launcher did not create the isolated SQLite database."
     }
 
-    Write-Host "R04-08 Windows smoke: production stack is live; inspecting TCP listener." -ForegroundColor Cyan
+    $healthBody = $healthResponse.Content | ConvertFrom-Json
+    if ($healthBody.status -ne "ok" -or $healthBody.version -ne "0.5.0") {
+        throw "Expected health {status=ok, version=0.5.0}, got '$($healthResponse.Content)'."
+    }
+    Write-Host "R05-11 Windows smoke: /api/health reports 0.5.0." -ForegroundColor Green
+
+    Write-Host "R05-11 Windows smoke: production stack is live; inspecting TCP listener." -ForegroundColor Cyan
     Assert-ExactLoopbackListener -Port $listenPort
-    Write-Host "R04-08 Windows smoke: port $listenPort is bound only to 127.0.0.1." -ForegroundColor Green
+    Write-Host "R05-11 Windows smoke: port $listenPort is bound only to 127.0.0.1." -ForegroundColor Green
 }
 finally {
     Stop-ProcessTree -Process $launcherProcess -Name "canonical launcher"
@@ -187,7 +224,7 @@ finally {
 
 try {
     Assert-NoListener -Port $listenPort
-    Write-Host "R04-08 Windows smoke: listener on port $listenPort is gone after shutdown." -ForegroundColor Green
+    Write-Host "R05-11 Windows smoke: listener on port $listenPort is gone after shutdown." -ForegroundColor Green
 }
 finally {
     if (Test-Path $tempRoot) {

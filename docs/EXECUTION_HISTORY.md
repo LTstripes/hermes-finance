@@ -69,7 +69,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 #### Candidates
 
 - **Hermes/Grok — Grok 4.6:** `r04-02-grok` @ `073e343ab6ffd5e9d4e24bd6c77dd3c808fe4ce3`; initial `0a566e39e76517f01401289663b14e8ba1cbc0d8`, follow-ups `ff44f62dcb83e6d60ba83b0320b8210b9a4f268a` and `073e343...`. Worker-reported final verification: targeted market-data `25 passed`, full backend `605 passed`, Ruff check/format and `git diff --check` clean. Strong points: provider boundary, project money/domain reuse, discovery, Decimal-preserving parsing, board-aware filtering, current-day/historical semantics. Follow-ups fixed current-session `price_date`, SUR/RUR compatibility, false ambiguity and bond currency/FACEUNIT checks.
-- **OpenAI Codex — model unknown/not recorded:** `r04-02-codex` @ `acc42add6f6b035d3ca0fd75bf15df801c5ff787`. Worker-reported targeted `13 passed`, full backend `593 passed`, Ruff/diff/privacy clean. Strong point: bounded parallel batch and no added runtime HTTP dependency. Reviewer found weaker ADR alignment: exact-security lookup for free-text discovery, provider-specific identity overloading, false-ambiguity risk, legacy RUB-unit rejection and documented shares payload/date mismatch risk.
+- **OpenAI Codex — model unknown/not recorded:** preserved as `archive/r04-02-codex` @ `acc42add6f6b035d3ca0fd75bf15df801c5ff787` (historical branch name `r04-02-codex`). Worker-reported targeted `13 passed`, full backend `593 passed`, Ruff/diff/privacy clean. Strong point: bounded parallel batch and no added runtime HTTP dependency. Reviewer found weaker ADR alignment: exact-security lookup for free-text discovery, provider-specific identity overloading, false-ambiguity risk, legacy RUB-unit rejection and documented shares payload/date mismatch risk.
 
 - **Selected candidate:** Hermes/Grok — Grok 4.6 @ `073e343ab6ffd5e9d4e24bd6c77dd3c808fe4ce3`.
 - **Integrated into:** `r04` @ the same accepted HEAD by fast-forward; later commits advanced the integration line.
@@ -258,6 +258,21 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.4.0 tagged closure
+
+### 0.4.0 — tagged historical release
+
+- **Tagged identity:** `v0.4.0` @ `5a29afb9870304faffb9c5911d4c23bcb2563349`
+- **Commit:** `merge: release Hermes Finance 0.4.0`
+- **Status:** historical tagged release; `r04` closed
+- **GitHub Release object:** not independently verified in this record
+- **Publication note:** `main` / `r04` equality at publication is historical; later `main` may advance
+- **R04-02 rejected Codex candidate:** preserved as `archive/r04-02-codex` @ `acc42add6f6b035d3ca0fd75bf15df801c5ff787`
+- **Implemented/reviewed by:** not reconstructed here; do not invent executor, model, CI or live-smoke facts
+- **References:** `docs/releases/0.4.0.md`, `CHANGELOG.md`
+
+---
+
 # 0.5.0 publication
 
 ### 0.5.0 — published stable release
@@ -290,6 +305,6 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ## Historical backfill
 
-Pre-R04 attribution remains available across Git history, `docs/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
+Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
 
 Do not invent missing executor/model attribution during backfill. A later documentation-only pass may reconstruct older releases from verifiable records if the owner wants a complete project-history article dataset.

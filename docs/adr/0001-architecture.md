@@ -2,7 +2,7 @@
 
 - **Статус:** принято
 - **Дата:** 2026-08-04
-- **Связанные документы:** [MASTER_SPEC](../MASTER_SPEC.md), [backlog](../HERMES_TASKS.md)
+- **Связанные документы:** [MASTER_SPEC](../MASTER_SPEC.md), [historical MVP backlog](../history/HERMES_TASKS.md)
 
 ## Контекст
 

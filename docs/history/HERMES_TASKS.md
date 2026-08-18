@@ -1,5 +1,8 @@
 # Hermes/Codex — последовательный backlog
 
+> **ARCHIVED.** This file is frozen MVP construction history, not the current backlog.
+> It is not a source of new post-MVP work. Active task scope comes from the assigned task or current release contract.
+>
 > **Статус:** MVP `0.1.0` завершён; этот пошаговый backlog **заморожен как исторический план строительства MVP**.
 > Новые post-MVP задачи ведутся в одном активном release-файле на версию под `docs/releases/`; завершённые файлы в этой папке считаются историческим архивом.
 > Legacy-разделы H/I/J/K ниже сохраняются как roadmap/reference и **не являются активным scope релиза автоматически**: задача из них сначала должна быть явно перенесена в соответствующий release backlog как task-card.
@@ -1615,4 +1618,4 @@
 
 # Рабочая команда Hermes
 
-Использовать `docs/HERMES_START_PROMPT.md` и выполнять только задачу, явно названную владельцем в текущей итерации. Статус выполненных задач фиксируется в `docs/PROJECT_WIKI.md`.
+Использовать `docs/history/HERMES_START_PROMPT.md` и выполнять только задачу, явно названную владельцем в текущей итерации. Статус выполненных задач фиксируется в `docs/PROJECT_WIKI.md`.

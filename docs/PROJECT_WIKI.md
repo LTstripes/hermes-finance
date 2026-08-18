@@ -28,7 +28,7 @@ Hermes Finance — локальное однопользовательское W
 4. `docs/VERIFICATION_POLICY.md` — стратегия targeted/full-suite/CI проверок.
 5. `docs/MODEL_ROUTING.md` — роли, класс риска и эскалация.
 6. Этот wiki — долговременный контекст.
-7. Исторические документы (`docs/HERMES_TASKS.md`, `docs/HERMES_START_PROMPT.md`, `docs/IDEA.md`, старые release-файлы) — только как исторический контекст.
+7. Исторические документы (`docs/history/HERMES_TASKS.md`, `docs/history/HERMES_START_PROMPT.md`, `docs/IDEA.md`, старые release-файлы) — только как исторический контекст.
 
 Операционный протокол агентов — `AGENTS.md`. Адаптеры клиентов — `docs/agents/`.
 
@@ -224,6 +224,6 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 ## 14. История
 
-Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/HERMES_TASKS.md` и Git history. Релизы 0.2–0.5 зафиксированы в `docs/releases/`, `CHANGELOG.md` и `docs/EXECUTION_HISTORY.md`. Wiki не дублирует позадачную историю.
+Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/history/HERMES_TASKS.md` и Git history. Релизы 0.2–0.5 зафиксированы в `docs/releases/`, `CHANGELOG.md` и `docs/EXECUTION_HISTORY.md`. Wiki не дублирует позадачную историю.
 
 `docs/IDEA.md` намеренно сохранён как исходная концепция.

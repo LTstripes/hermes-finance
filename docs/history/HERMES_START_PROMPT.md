@@ -1,3 +1,15 @@
+> **HISTORICAL — DO NOT USE AS ACTIVE AGENT INSTRUCTIONS.**
+>
+> This file is archived process text. It is not current project policy.
+>
+> Superseded by:
+> - [`AGENTS.md`](../../AGENTS.md)
+> - [`docs/agents/hermes.md`](../agents/hermes.md)
+> - [`docs/MODEL_ROUTING.md`](../MODEL_ROUTING.md)
+> - [`docs/VERIFICATION_POLICY.md`](../VERIFICATION_POLICY.md)
+>
+> Old mentions of local `private/` or runtime data do **not** override current runtime-isolation rules in `AGENTS.md` and ADR 0012. Development agents must not access production runtime data.
+
 # Стартовый промпт для Hermes
 
 Скопируй текст ниже в новый рабочий диалог Hermes после добавления документов проекта в репозиторий.
@@ -10,7 +22,7 @@
 
 1. `docs/MASTER_SPEC.md`
 2. активный release backlog, если он существует. Для новых версий используй один файл `docs/releases/<version>.md`; завершённые release-файлы в этой папке считаются историческим архивом, а не активным scope
-3. `docs/HERMES_TASKS.md` как исторический MVP backlog/reference
+3. `docs/history/HERMES_TASKS.md` как исторический MVP backlog/reference
 4. `docs/MODEL_ROUTING.md`
 5. `docs/VERIFICATION_POLICY.md`
 6. `docs/PROJECT_WIKI.md`
@@ -20,7 +32,7 @@
 Правила работы:
 
 - Выполняй только одну task-card из активного release backlog за итерацию. Префикс ID должен соответствовать активной версии (`R03-*`, `R04-*` и т.д.); task-cards завершённых релизов не считай активным scope.
-- Legacy-задачи из `docs/HERMES_TASKS.md` выполняй только если владелец явно назначил их ID; не считай старые будущие фазы активным release scope автоматически.
+- Legacy-задачи из `docs/history/HERMES_TASKS.md` выполняй только если владелец явно назначил их ID; не считай старые будущие фазы активным release scope автоматически.
 - Выполняй только задачу, которую владелец явно назвал в текущем сообщении; не определяй её по старому примеру из документа.
 - Не переходи к следующей задаче без моего явного сообщения.
 - Перед кодом дай план из 3–7 коротких пунктов.

@@ -12,7 +12,7 @@ When documents disagree, use this order:
 4. [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md) — how to verify.
 5. [`docs/MODEL_ROUTING.md`](docs/MODEL_ROUTING.md) — roles, risk class, escalation.
 6. [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — durable project context.
-7. Historical documents (`docs/HERMES_TASKS.md`, `docs/HERMES_START_PROMPT.md`, `docs/IDEA.md`, old release files) — historical context only.
+7. Historical documents (`docs/history/HERMES_TASKS.md`, `docs/history/HERMES_START_PROMPT.md`, `docs/IDEA.md`, old release files) — historical context only.
 
 Do not treat old release-execution notes as current standing orders.
 

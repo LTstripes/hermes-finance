@@ -43,7 +43,7 @@ Owner-controlled future investment payout calendar on top of locally stored Herm
 
 ## [0.4.0] — 2026-08-16
 
-Release candidate for owner-triggered T-Invest market quotes with preview, selective apply and append-only provenance.
+Owner-triggered T-Invest market quotes with preview, selective apply and append-only provenance.
 
 ### Added
 
@@ -61,7 +61,10 @@ Release candidate for owner-triggered T-Invest market quotes with preview, selec
 
 ### Release status
 
-- This is a release candidate. No tag or GitHub release is created by R04-09.
+- Tagged as `v0.4.0` @ `5a29afb9870304faffb9c5911d4c23bcb2563349`.
+- The Git tag is the verified immutable identity of 0.4.0.
+- `r04` is a closed historical development lineage.
+- After publication, canonical `main` may advance; it need not equal `v0.4.0`.
 
 ## [0.3.0] — 2026-08-13
 

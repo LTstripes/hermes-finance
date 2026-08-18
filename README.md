@@ -284,20 +284,23 @@ Verification policy: [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md
 
 ## Документы проекта
 
+Active:
+
 - [`AGENTS.md`](AGENTS.md) — конституция репозитория для агентов;
-- [`docs/agents/`](docs/agents/) — адаптеры конкретных клиентов (Codex, Hermes, Grok, Gemini);
+- [`docs/agents/`](docs/agents/) — адаптеры клиентов (Codex, Hermes, Grok, Gemini);
 - [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) — бизнес-инварианты и границы продукта;
-- [`docs/releases/0.5.0.md`](docs/releases/0.5.0.md) — историческая запись released 0.5.0;
-- [`docs/release-notes-0.5.0.md`](docs/release-notes-0.5.0.md) — публичные notes релиза 0.5.0;
-- [`docs/releases/0.4.0.md`](docs/releases/0.4.0.md) — historical release 0.4 archive;
-- [`docs/releases/0.3.0.md`](docs/releases/0.3.0.md) — historical release 0.3 archive;
-- [`docs/releases/0.2.0.md`](docs/releases/0.2.0.md) — historical release 0.2 archive;
 - [`docs/MODEL_ROUTING.md`](docs/MODEL_ROUTING.md) — роли, класс риска и эскалация;
-- [`docs/adr/0012-runtime-and-agent-workspace-isolation.md`](docs/adr/0012-runtime-and-agent-workspace-isolation.md) — изоляция runtime и agent clones;
-- [`docs/HERMES_START_PROMPT.md`](docs/HERMES_START_PROMPT.md) — исторический рабочий протокол;
-- [`docs/HERMES_TASKS.md`](docs/HERMES_TASKS.md) — исторический backlog MVP 0.1;
+- [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md) — стратегия проверок;
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
+- [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — журнал исполнения;
 - [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения.
+
+Historical:
+
+- [`docs/history/`](docs/history/) — архив старых Hermes process/backlog документов;
+- [`docs/releases/`](docs/releases/) — исторические release records, включая [`0.5.0`](docs/releases/0.5.0.md) и [`0.4.0`](docs/releases/0.4.0.md);
+- [`docs/reviews/`](docs/reviews/) — исторические review notes;
+- [`sketches/`](sketches/) — исторические UI-эскизы, не source of truth.
 
 ## Приватность
 
