@@ -25,6 +25,7 @@ from hermes_finance.api.instrument_mappings import router as instrument_mappings
 from hermes_finance.api.instruments import router as instruments_router
 from hermes_finance.api.investment_flows import router as investment_flows_router
 from hermes_finance.api.months import router as months_router
+from hermes_finance.api.payouts import router as payouts_router
 from hermes_finance.api.positions import router as positions_router
 from hermes_finance.api.properties import router as properties_router
 from hermes_finance.api.quote_apply import router as quote_apply_router
@@ -60,6 +61,7 @@ def create_app(
     database: Database | None = None,
     static_dir: Path | None = None,
     market_data_provider: object | None = None,
+    payout_provider: object | None = None,
 ) -> FastAPI:
     application = FastAPI(title="Hermes Finance API", version=__version__)
     application.add_middleware(LocalhostSecurityMiddleware)
@@ -67,12 +69,15 @@ def create_app(
         application.state.database = database
     if market_data_provider is not None:
         application.state.market_data_provider = market_data_provider
+    if payout_provider is not None:
+        application.state.payout_provider = payout_provider
     register_error_handlers(application)
     application.include_router(settings_router)
     application.include_router(tax_brackets_router)
     application.include_router(months_router)
     application.include_router(quote_preview_router)
     application.include_router(quote_apply_router)
+    application.include_router(payouts_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
     application.include_router(accounts_router)
