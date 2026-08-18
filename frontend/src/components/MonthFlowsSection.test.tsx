@@ -36,7 +36,45 @@ const instrument = {
   notes: null,
 };
 
-function setup() {
+const mergedCalendar = [
+  {
+    year: 2031,
+    month: 6,
+    coupon: { amount: "0.00", currency: "RUB" },
+    dividend: { amount: "0.00", currency: "RUB" },
+    interest: { amount: "0.00", currency: "RUB" },
+    redemption: { amount: "10000.00", currency: "RUB" },
+    other: { amount: "0.00", currency: "RUB" },
+    passive_net: { amount: "0.00", currency: "RUB" },
+    total_net: { amount: "10000.00", currency: "RUB" },
+    items: [
+      {
+        source_kind: "provider",
+        source_id: 90,
+        expected_date: "2031-06-15",
+        flow_type: "redemption",
+        account_id: 11,
+        account_name: "Synthetic Broker",
+        instrument_id: 21,
+        instrument_name: "Synthetic Bond",
+        expected_net_amount: { amount: "10000.00", currency: "RUB" },
+        is_confirmed: null,
+        is_approximate: false,
+        manual_source: null,
+        provider: "t_invest",
+        provider_instrument_uid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        provider_identity_key: "mty:1",
+        provider_lifecycle: "active",
+        reconciliation_id: null,
+        counting_decision: null,
+        linked_manual_id: null,
+        linked_provider_payout_id: 90,
+      },
+    ],
+  },
+];
+
+function setup(calendar: unknown[] = []) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -48,8 +86,8 @@ function setup() {
     if (method === "GET" && url === "/api/expected-flows?month_id=7&forecast_version=v1") {
       return jsonResponse([]);
     }
-    if (method === "GET" && url === "/api/expected-flows/calendar?month_id=7&forecast_version=v1") {
-      return jsonResponse([]);
+    if (method === "GET" && url === "/api/payouts/calendar?month_id=7&forecast_version=v1") {
+      return jsonResponse(calendar);
     }
     if (method === "POST" && url === "/api/investment-flows") {
       return jsonResponse({ id: 31 }, 201);
@@ -95,5 +133,21 @@ describe("MonthFlowsSection actual-flow instrument", () => {
       instrument_id: 21,
       flow_type: "coupon",
     });
+  });
+
+  it("uses the merged payout calendar and exposes provider provenance", async () => {
+    const fetchMock = setup(mergedCalendar);
+
+    expect(await screen.findByText("T-Invest")).toBeInTheDocument();
+    expect(screen.getByText("возврат капитала, не доход")).toBeInTheDocument();
+    expect(screen.getByText(/весь денежный поток/)).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === "/api/payouts/calendar?month_id=7&forecast_version=v1",
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).includes("/api/expected-flows/calendar")),
+    ).toBe(false);
   });
 });
