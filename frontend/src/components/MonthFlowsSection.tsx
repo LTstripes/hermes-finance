@@ -2,25 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
-import {
-  createExpectedFlow,
-  deleteExpectedFlow,
-  listExpectedFlows,
-  listExpectedFlowsCalendar,
-} from "../api/expectedFlows";
+import { createExpectedFlow, deleteExpectedFlow, listExpectedFlows } from "../api/expectedFlows";
 import {
   createInvestmentFlow,
   deleteInvestmentFlow,
   listInvestmentFlows,
 } from "../api/investmentFlows";
 import { listInstruments } from "../api/instruments";
-import type {
-  Account,
-  ExpectedCalendarMonth,
-  ExpectedFlow,
-  Instrument,
-  InvestmentFlow,
-} from "../api/types";
+import { listPayoutCalendar, type PayoutCalendarMonth } from "../api/payouts";
+import type { Account, ExpectedFlow, Instrument, InvestmentFlow } from "../api/types";
 import {
   Badge,
   Button,
@@ -35,7 +25,7 @@ import {
   Td,
   Th,
 } from "./ui";
-import { ExpectedPaymentsCalendar } from "./ExpectedPaymentsCalendar";
+import { PayoutPaymentsCalendar } from "./PayoutPaymentsCalendar";
 import { formatDate, formatMoney } from "../lib/format";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import {
@@ -114,7 +104,7 @@ export function MonthFlowsSection({
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [actual, setActual] = useState<InvestmentFlow[]>([]);
   const [expected, setExpected] = useState<ExpectedFlow[]>([]);
-  const [calendar, setCalendar] = useState<ExpectedCalendarMonth[]>([]);
+  const [calendar, setCalendar] = useState<PayoutCalendarMonth[]>([]);
   const [forecastVersion, setForecastVersion] = useState("v1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +135,7 @@ export function MonthFlowsSection({
           listInstruments({ active: true }, signal),
           listInvestmentFlows(monthId, undefined, signal),
           listExpectedFlows(monthId, forecastVersion, signal),
-          listExpectedFlowsCalendar(monthId, forecastVersion, signal),
+          listPayoutCalendar(monthId, forecastVersion, signal),
         ]);
         if (signal?.aborted) {
           return;
@@ -788,8 +778,12 @@ export function MonthFlowsSection({
         ) : null}
       </Panel>
 
-      <Panel action={<Badge>12 месяцев вперёд</Badge>} label="Прогноз" title="Календарь выплат">
-        <ExpectedPaymentsCalendar months={calendar} />
+      <Panel
+        action={<Badge>12 месяцев · manual + T-Invest</Badge>}
+        label="Прогноз"
+        title="Календарь выплат"
+      >
+        <PayoutPaymentsCalendar months={calendar} />
       </Panel>
 
       <ConfirmDialog
