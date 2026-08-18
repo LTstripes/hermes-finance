@@ -92,6 +92,19 @@ function instrumentLabel(instrument: Instrument): string {
   return `${instrument.name}${ticker} · ${labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)}`;
 }
 
+function editDraftFromPosition(row: PositionSnapshot): PositionDraft {
+  return {
+    account_id: String(row.account_id),
+    instrument_id: String(row.instrument_id),
+    quantity: formatQuantity(row.quantity),
+    average_cost: moneyAmount(row.average_cost_per_unit),
+    market_price: moneyAmount(row.market_price_per_unit),
+    accrued_interest: moneyAmount(row.accrued_interest),
+    price_source: row.price_source === "t_invest" ? "manual" : row.price_source,
+    price_date: row.price_date,
+  };
+}
+
 export function MonthPositionsSection({
   monthId,
   readOnly,
@@ -511,8 +524,8 @@ export function MonthPositionsSection({
                 <Th numeric>Цена</Th>
                 <Th numeric>Рыночная стоимость</Th>
                 <Th numeric>Результат</Th>
-                <Th>Детали оценки</Th>
-                <Th>Действия</Th>
+                <Th className="position-details">Детали оценки</Th>
+                <Th className="month-positions-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
@@ -576,7 +589,7 @@ export function MonthPositionsSection({
                         {formatMoney(moneyAmount(row.unrealized_result))}
                       </span>
                     </Td>
-                    <Td>
+                    <Td className="position-details">
                       {editing ? (
                         <div className="stack-8">
                           <Input
@@ -624,7 +637,7 @@ export function MonthPositionsSection({
                         </>
                       )}
                     </Td>
-                    <Td>
+                    <Td className="month-positions-table__actions">
                       <div className="row-actions">
                         {editing ? (
                           <>
@@ -650,40 +663,26 @@ export function MonthPositionsSection({
                             </Button>
                           </>
                         ) : (
-                          <>
-                            <Button
+                          <OverflowMenu
+                            label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                          >
+                            <OverflowMenuItem
                               disabled={busy || readOnly}
                               onClick={() => {
                                 setEditingId(row.id);
-                                setEditDraft({
-                                  account_id: String(row.account_id),
-                                  instrument_id: String(row.instrument_id),
-                                  quantity: row.quantity,
-                                  average_cost: moneyAmount(row.average_cost_per_unit),
-                                  market_price: moneyAmount(row.market_price_per_unit),
-                                  accrued_interest: moneyAmount(row.accrued_interest),
-                                  price_source:
-                                    row.price_source === "t_invest" ? "manual" : row.price_source,
-                                  price_date: row.price_date,
-                                });
+                                setEditDraft(editDraftFromPosition(row));
                               }}
-                              size="sm"
-                              type="button"
                             >
                               Изменить
-                            </Button>
-                            <OverflowMenu
-                              label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setPendingDelete(row)}
                             >
-                              <OverflowMenuItem
-                                danger
-                                disabled={busy || readOnly}
-                                onClick={() => setPendingDelete(row)}
-                              >
-                                Удалить
-                              </OverflowMenuItem>
-                            </OverflowMenu>
-                          </>
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
                         )}
                       </div>
                     </Td>

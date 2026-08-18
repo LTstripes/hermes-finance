@@ -986,6 +986,21 @@ a.btn {
 
 .month-positions-table {
   min-width: 980px;
+  /* Default input/select min-content was expanding the table past .content. */
+  table-layout: fixed;
+}
+
+.month-positions-table td {
+  overflow-wrap: anywhere;
+}
+
+.month-positions-table .row-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.month-positions-table__actions {
+  width: 148px;
 }
 
 .month-debts-table {
@@ -997,6 +1012,7 @@ a.btn {
 }
 
 .position-details {
+  width: 148px;
   min-width: 126px;
 }
 
@@ -1072,6 +1088,13 @@ th.num {
   transition:
     border-color 150ms var(--ease-out),
     box-shadow 150ms var(--ease-out);
+}
+
+.month-positions-table .input,
+.month-positions-table .select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .input::placeholder {

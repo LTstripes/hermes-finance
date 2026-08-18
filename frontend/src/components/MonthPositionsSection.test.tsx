@@ -88,6 +88,21 @@ function setup(
   return fetchMock;
 }
 
+async function openPositionMenu(
+  user: ReturnType<typeof userEvent.setup>,
+  instrumentName = "Synthetic Bond",
+) {
+  await user.click(screen.getByRole("button", { name: `Действия для позиции ${instrumentName}` }));
+}
+
+async function startPositionEdit(
+  user: ReturnType<typeof userEvent.setup>,
+  instrumentName = "Synthetic Bond",
+) {
+  await openPositionMenu(user, instrumentName);
+  await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -154,11 +169,15 @@ describe("MonthPositionsSection G03 component contract", () => {
 
   it("keeps same-date manual source visible in read-only presentation", async () => {
     setup({}, [{ ...position, price_source: "manual" }], [instrument], true);
+    const user = userEvent.setup();
     const table = await screen.findByRole("table");
 
     expect(table).not.toHaveTextContent("Оценка на");
     expect(table).toHaveTextContent("Источник: Вручную");
-    expect(screen.getByRole("button", { name: "Изменить" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Изменить" })).toBeNull();
+    await openPositionMenu(user);
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
   });
 
   it("does not keep t_invest when the owner manually changes price", async () => {
@@ -172,7 +191,7 @@ describe("MonthPositionsSection G03 component contract", () => {
     );
     const user = userEvent.setup();
     await screen.findByRole("table");
-    await user.click(screen.getByRole("button", { name: "Изменить" }));
+    await startPositionEdit(user);
     const priceInput = screen.getByDisplayValue("1100.00");
     await user.clear(priceInput);
     await user.type(priceInput, "1200");
@@ -201,9 +220,47 @@ describe("MonthPositionsSection G03 component contract", () => {
     const user = userEvent.setup();
 
     await screen.findByRole("table");
-    await user.click(screen.getByRole("button", { name: "Действия для позиции Synthetic Bond" }));
-    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Изменить" })).toBeNull();
+    await openPositionMenu(user);
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Удал." })).toBeNull();
+  });
+
+  it("opens edit from the overflow menu for the chosen row", async () => {
+    const otherInstrument = { ...instrument, id: 22, name: "Other Stock", ticker: "OTH" };
+    const otherPosition = {
+      ...position,
+      id: 32,
+      instrument_id: 22,
+      quantity: "8.000000",
+    };
+    setup({}, [position, otherPosition], [instrument, otherInstrument]);
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+    await startPositionEdit(user, "Other Stock");
+
+    expect(screen.getByDisplayValue("8")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("8.000000")).toBeNull();
+    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Действия для позиции Synthetic Bond" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Действия для позиции Other Stock" })).toBeNull();
+  });
+
+  it("keeps delete on the overflow menu and still confirms it", async () => {
+    setup({}, [position]);
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+    await openPositionMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
+
+    expect(screen.getByRole("alertdialog", { name: "Удалить позицию?" })).toHaveTextContent(
+      "Synthetic Bond",
+    );
   });
 
   it("formats whole quantities without persistence precision noise", async () => {
@@ -212,6 +269,30 @@ describe("MonthPositionsSection G03 component contract", () => {
     const table = await screen.findByRole("table");
     expect(table).toHaveTextContent("64");
     expect(table).not.toHaveTextContent("64.000000");
+  });
+
+  it("opens edit mode with an owner-facing quantity, not persistence scale", async () => {
+    const fund = { ...instrument, id: 22, name: "Synthetic Fund", instrument_type: "fund" };
+    setup({}, [{ ...position, instrument_id: 22, quantity: "62.000000" }], [fund]);
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+    await startPositionEdit(user, "Synthetic Fund");
+
+    expect(screen.getByDisplayValue("62")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("62.000000")).toBeNull();
+  });
+
+  it("keeps meaningful fractional quantity in edit without trailing zeroes", async () => {
+    const fund = { ...instrument, id: 22, name: "Synthetic Fund", instrument_type: "fund" };
+    setup({}, [{ ...position, instrument_id: 22, quantity: "12.340000" }], [fund]);
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+    await startPositionEdit(user, "Synthetic Fund");
+
+    expect(screen.getByDisplayValue("12,34")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("12.340000")).toBeNull();
   });
 
   it("rejects fractional stock quantities before posting", async () => {
@@ -349,7 +430,10 @@ describe("MonthPositionsSection G03 component contract", () => {
     );
     const user = userEvent.setup();
     await screen.findByText("Позиции");
-    expect(screen.getByRole("button", { name: "Изменить" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Изменить" })).toBeNull();
+    await openPositionMenu(user);
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Обновить котировки" })).toBeEnabled();
     expect(screen.getByText(/нельзя изменить/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
@@ -526,7 +610,7 @@ describe("MonthPositionsSection G03 component contract", () => {
     expect((await screen.findAllByText(/read-only токен не настроен/)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/вставь токен/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Изменить" }));
+    await startPositionEdit(user);
     const priceInput = screen.getAllByDisplayValue("1100.00")[0];
     await user.clear(priceInput);
     await user.type(priceInput, "1200.00");
