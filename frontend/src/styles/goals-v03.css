@@ -16,6 +16,10 @@
   list-style: none;
 }
 
+.goal-card-grid:not(.goal-card-grid--archive) > .goal-card:only-child {
+  grid-column: 1 / -1;
+}
+
 .goal-card {
   min-width: 0;
   padding: var(--space-5);
