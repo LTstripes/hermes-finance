@@ -244,12 +244,16 @@ export function AccountsPage() {
     }
   }
 
-  async function handleMappingDiscover(): Promise<MarketDiscoverResult> {
+  async function handleMappingDiscover(query?: string | null): Promise<MarketDiscoverResult> {
     if (!mappingInstrument) {
       throw new Error("Инструмент не выбран.");
     }
     try {
-      return await discoverInstrumentMapping(mappingInstrument.id, { provider: "t_invest" });
+      const normalizedQuery = query?.trim();
+      return await discoverInstrumentMapping(mappingInstrument.id, {
+        provider: "t_invest",
+        ...(normalizedQuery ? { query: normalizedQuery } : {}),
+      });
     } catch (error) {
       throw new Error(formatApiError(error));
     }
@@ -676,7 +680,7 @@ export function AccountsPage() {
         }}
         onClear={handleMappingClear}
         onClearExclusion={handleMappingClearExclusion}
-        onDiscover={() => handleMappingDiscover()}
+        onDiscover={(_provider, query) => handleMappingDiscover(query)}
         onExclude={handleMappingExclude}
         onSave={handleMappingSave}
         open={mappingInstrument !== null}
