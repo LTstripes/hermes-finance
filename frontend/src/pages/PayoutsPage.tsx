@@ -194,13 +194,9 @@ export function PayoutsPage() {
         );
         return;
       }
+      setCalendar(await listPayoutCalendar(monthId, forecastVersion.trim()));
+      setPreview(null);
       setSuccess(`Применено выплат: ${result.selected_count}. Календарь обновлён.`);
-      const [nextCalendar, nextPreview] = await Promise.all([
-        listPayoutCalendar(monthId, forecastVersion.trim()),
-        previewPayouts(monthId, payload),
-      ]);
-      setCalendar(nextCalendar);
-      setPreview(nextPreview);
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
