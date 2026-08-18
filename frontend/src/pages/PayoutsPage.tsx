@@ -18,7 +18,7 @@ import type { Account, Instrument, PositionSnapshot, ReportingMonth } from "../a
 import { PayoutPaymentsCalendar } from "../components/PayoutPaymentsCalendar";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import { Badge, EmptyState, Field, LoadingState, Panel, Select } from "../components/ui";
-import { formatMonth } from "../lib/format";
+import { formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 
 function newestMonth(months: ReportingMonth[]): ReportingMonth | undefined {
@@ -290,7 +290,7 @@ export function PayoutsPage() {
                     {account?.name ?? `#${position.account_id}`} ·{" "}
                     {instrument?.name ?? `#${position.instrument_id}`}
                     {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} ·{" "}
-                    {position.quantity} шт.
+                    {formatQuantity(position.quantity)} шт.
                   </option>
                 );
               })}
