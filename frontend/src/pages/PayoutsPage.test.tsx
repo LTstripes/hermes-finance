@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listAccounts } from "../api/accounts";
+import { ApiClientError } from "../api/client";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import {
@@ -266,6 +267,24 @@ describe("PayoutsPage", () => {
     expect(screen.getByRole("checkbox", { name: "Выбрать выплату redemption" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Применить выбранные (1)" })).toBeEnabled();
     expect(screen.queryByText(providerUid)).not.toBeInTheDocument();
+  });
+
+  it("explains a missing accepted T-Invest mapping instead of a generic validation phrase", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewPayouts).mockRejectedValue(
+      new ApiClientError(422, {
+        code: "payout_mapping_required",
+        message: "instrument has no accepted payout provider mapping",
+        details: [],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("option", { name: /ОФЗ 26248/ });
+    await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+    expect(await screen.findByText(/принятого источника T-Invest/)).toBeInTheDocument();
+    expect(screen.getByText(/сопоставление/)).toBeInTheDocument();
+    expect(screen.queryByText("Проверь введённые данные.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/instrument has no accepted/)).not.toBeInTheDocument();
   });
 
   it("requires an explicit duplicate decision and manual target without auto-picking multiple candidates", async () => {

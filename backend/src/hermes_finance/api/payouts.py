@@ -35,6 +35,7 @@ from hermes_finance.services.payout_apply import (
 )
 from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.payout_preview import (
+    PayoutMappingRequiredError,
     PayoutPreviewResult,
     build_payout_preview,
 )
@@ -252,10 +253,12 @@ def _resolve_context(
         mapping = get_instrument_mapping(session, instrument_id)
         if mapping.state is not MarketMappingState.MAPPED or mapping.identity is None:
             if mapping.state is MarketMappingState.EXCLUDED:
-                raise ValueError("instrument is excluded from provider payout refresh")
-            raise ValueError("instrument has no accepted payout provider mapping")
+                raise PayoutMappingRequiredError(
+                    "instrument is excluded from provider payout refresh"
+                )
+            raise PayoutMappingRequiredError("instrument has no accepted payout provider mapping")
         if mapping.identity.provider != T_INVEST_PROVIDER:
-            raise ValueError("R05 payout refresh requires an accepted t_invest mapping")
+            raise PayoutMappingRequiredError("payout refresh requires an accepted t_invest mapping")
 
         start = month.snapshot_date
         end_exclusive = _one_year_after(start)

@@ -205,7 +205,9 @@ def test_invalid_local_mapping_fails_before_provider_call(
                 json=context_payload(account_id, instrument_id, snapshot_id),
             )
         assert response.status_code == 422
-        assert message in response.json()["error"]["message"]
+        body = response.json()["error"]
+        assert body["code"] == "payout_mapping_required"
+        assert message in body["message"]
         assert provider.requests == []
     finally:
         database.engine.dispose()

@@ -20,6 +20,12 @@ Release candidate for an owner-controlled future investment payout calendar on t
 - successful apply freezes quantity/total from the local `PositionSnapshot` and never edits manual expected-flow rows;
 - unresolved plausible duplicates stay manual-only until the owner chooses `keep_both`, `count_manual` or `count_provider`.
 
+### Fixed
+
+- T-Invest mapping discovery now shows name, ticker, class code, venue and API-trade availability so the owner can choose among several valid candidates;
+- a long mapping dialog stays inside the viewport and scrolls without moving the Accounts page behind it;
+- payout preview without an accepted T-Invest mapping explains that a saved source is required instead of a generic validation phrase.
+
 ### Not changed
 
 - provider dividends stay calendar-visible and do not replace or supplement C04's historical dividend component;

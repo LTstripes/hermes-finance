@@ -4,6 +4,8 @@ import {
   defaultMappingDraft,
   defaultMappingProvider,
   displayPriceDelta,
+  formatDiscoverCandidateMeta,
+  formatDiscoverCandidateTrade,
   formatMarketIdentity,
   identityToMoexDraft,
   MAPPING_SUPPORTED_TYPES,
@@ -49,6 +51,49 @@ describe("marketData helpers", () => {
         provider_venue_id: "stock/shares/TQBR",
       }),
     ).toBe("moex_iss · stock/shares · TQBR · SBER");
+  });
+
+  it("formats T-Invest candidate disambiguation without inventing missing fields", () => {
+    expect(
+      formatDiscoverCandidateMeta({
+        provider: "t_invest",
+        provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+        provider_venue_id: null,
+        instrument_kind: "bond",
+        isin: "RU000SYNTH76",
+        ticker: "SU26248",
+        class_code: "TQOB",
+        exchange: "MOEX",
+      }),
+    ).toBe("SU26248 · TQOB · bond · MOEX");
+    expect(
+      formatDiscoverCandidateMeta({
+        provider: "t_invest",
+        provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+        provider_venue_id: null,
+        instrument_kind: "bond",
+        isin: "RU000SYNTH76",
+      }),
+    ).toBe("bond");
+    expect(
+      formatDiscoverCandidateTrade({
+        provider: "t_invest",
+        provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+        provider_venue_id: null,
+        instrument_kind: "bond",
+        isin: null,
+        api_trade_available: false,
+      }),
+    ).toBe("API-торговля недоступна");
+    expect(
+      formatDiscoverCandidateTrade({
+        provider: "t_invest",
+        provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+        provider_venue_id: null,
+        instrument_kind: "bond",
+        isin: null,
+      }),
+    ).toBeNull();
   });
 
   it("defaults new mappings to T-Invest and formats T-Invest without a venue", () => {

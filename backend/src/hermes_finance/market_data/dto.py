@@ -58,6 +58,12 @@ def market_identity_key(identity: MarketIdentity) -> tuple[str, str, str | None]
 class DiscoverCandidate:
     identity: MarketIdentity
     instrument_kind: InstrumentType
+    name: str | None = None
+    ticker: str | None = None
+    class_code: str | None = None
+    exchange: str | None = None
+    api_trade_available: bool | None = None
+    position_uid: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

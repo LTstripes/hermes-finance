@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Final
@@ -365,6 +366,7 @@ class TInvestClient:
             except (_Malformed, QuotationError) as error:
                 malformed_message = str(error)
                 continue
+            display = _candidate_display(short, detail)
             accepted.append(
                 DiscoverCandidate(
                     identity=MarketIdentity(
@@ -374,6 +376,12 @@ class TInvestClient:
                         isin=candidate_isin or expected_isin,
                     ),
                     instrument_kind=kind,
+                    name=display.name,
+                    ticker=display.ticker,
+                    class_code=display.class_code,
+                    exchange=display.exchange,
+                    api_trade_available=display.api_trade_available,
+                    position_uid=display.position_uid,
                 )
             )
 
@@ -729,6 +737,71 @@ class TInvestClient:
         if _looks_like_auth_error(payload):
             raise _AuthUnavailable()
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateDisplay:
+    name: str | None
+    ticker: str | None
+    class_code: str | None
+    exchange: str | None
+    api_trade_available: bool | None
+    position_uid: str | None
+
+
+def _first_optional_bool(primary: object, secondary: object, *names: str) -> bool | None:
+    first = _optional_bool(primary, *names)
+    if first is not None:
+        return first
+    return _optional_bool(secondary, *names)
+
+
+def _optional_bool(payload: object, *names: str) -> bool | None:
+    value = _field(payload, *names)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            return True
+        if lowered in {"false", "0", "no"}:
+            return False
+    return None
+
+
+def _display_exchange(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    prefix = "REAL_EXCHANGE_"
+    if raw.upper().startswith(prefix):
+        cleaned = raw[len(prefix) :].replace("_", " ").strip()
+        return cleaned or None
+    return raw
+
+
+def _candidate_display(short: dict[str, object], detail: dict[str, object]) -> _CandidateDisplay:
+    return _CandidateDisplay(
+        name=_text(detail, "name") or _text(short, "name"),
+        ticker=_text(detail, "ticker") or _text(short, "ticker"),
+        class_code=_text(detail, "classCode", "class_code")
+        or _text(short, "classCode", "class_code"),
+        exchange=_display_exchange(
+            _text(detail, "realExchange", "real_exchange")
+            or _text(short, "realExchange", "real_exchange")
+        ),
+        api_trade_available=_first_optional_bool(
+            detail,
+            short,
+            "apiTradeAvailableFlag",
+            "api_trade_available_flag",
+        ),
+        position_uid=_text(detail, "positionUid", "position_uid")
+        or _text(short, "positionUid", "position_uid"),
+    )
 
 
 def _require_uid(payload: dict[str, object]) -> str:

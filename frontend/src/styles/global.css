@@ -658,6 +658,47 @@ a.btn {
   width: min(640px, 100%);
 }
 
+.dialog--scroll {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mapping-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mapping-candidate {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.mapping-candidate__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mapping-candidate__body strong {
+  overflow-wrap: anywhere;
+}
+
+.mapping-candidate__body p {
+  margin: 0;
+}
+
 .clone-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

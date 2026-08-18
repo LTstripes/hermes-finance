@@ -1,4 +1,9 @@
-import type { MarketIdentity, MarketIdentityWrite, MoneyValue } from "../api/types";
+import type {
+  MarketDiscoverCandidate,
+  MarketIdentity,
+  MarketIdentityWrite,
+  MoneyValue,
+} from "../api/types";
 import { formatMoneyDelta } from "./format";
 import { fromKopecks, toKopecks } from "./money";
 
@@ -156,6 +161,18 @@ export function defaultMappingDraft(instrumentType: string): MoexMappingDraft {
 
 export function defaultTInvestDraft(): TInvestMappingDraft {
   return { provider: T_INVEST_PROVIDER, providerInstrumentId: "", isin: null };
+}
+
+export function formatDiscoverCandidateMeta(candidate: MarketDiscoverCandidate): string {
+  return [candidate.ticker, candidate.class_code, candidate.instrument_kind, candidate.exchange]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
+export function formatDiscoverCandidateTrade(candidate: MarketDiscoverCandidate): string | null {
+  if (candidate.api_trade_available == null) return null;
+  return candidate.api_trade_available ? "API-торговля доступна" : "API-торговля недоступна";
 }
 
 export function defaultMappingProvider(

@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
@@ -196,6 +197,18 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(SalaryTaxHistoryIncompleteError)
     async def _salary_tax_history_incomplete_handler(
         request: Request, exc: SalaryTaxHistoryIncompleteError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=422 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(422, exc.code, str(exc))
+
+    @application.exception_handler(PayoutMappingRequiredError)
+    async def _payout_mapping_required_handler(
+        request: Request, exc: PayoutMappingRequiredError
     ) -> JSONResponse:
         logger.info(
             "%s path=%s status=422 code=%s",

@@ -369,6 +369,12 @@ export type MarketDiscoverCandidate = {
   provider_venue_id: string | null;
   instrument_kind: string;
   isin: string | null;
+  name?: string | null;
+  ticker?: string | null;
+  class_code?: string | null;
+  exchange?: string | null;
+  api_trade_available?: boolean | null;
+  position_uid?: string | null;
 };
 
 export type MarketDiscoverRejected = {

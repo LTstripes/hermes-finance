@@ -176,6 +176,20 @@ describe("formatApiError", () => {
     );
   });
 
+  it("localizes a missing T-Invest payout mapping without a generic validation phrase", () => {
+    const err = new ApiClientError(422, {
+      code: "payout_mapping_required",
+      message: "instrument has no accepted payout provider mapping",
+      details: [],
+    });
+    const message = formatApiError(err);
+    expect(message).toContain("принятого источника T-Invest");
+    expect(message).toContain("сопоставление");
+    expect(message).not.toBe("Проверь введённые данные.");
+    expect(message).not.toContain("instrument has no accepted");
+    expect(message).not.toContain("payout_mapping_required");
+  });
+
   it("localizes salary-tax incomplete history and keeps actionable months", () => {
     const err = new ApiClientError(422, {
       code: "salary_tax_history_incomplete",

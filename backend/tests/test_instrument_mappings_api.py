@@ -380,6 +380,84 @@ def test_discover_is_explicit_and_does_not_persist(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_discover_projects_disambiguation_metadata_without_auto_select(
+    tmp_path: Path,
+) -> None:
+    database = create_database(tmp_path / "mapping_discover_meta.db")
+    Base.metadata.create_all(database.engine)
+    first_uid = "aaaa1111-1111-4111-8111-111111111111"
+    second_uid = "aaaa2222-2222-4222-8222-222222222222"
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.AMBIGUOUS,
+            candidates=(
+                DiscoverCandidate(
+                    identity=MarketIdentity(
+                        provider="t_invest",
+                        provider_instrument_id=first_uid,
+                        provider_venue_id=None,
+                        isin="RU000SYNTH76",
+                    ),
+                    instrument_kind=InstrumentType.BOND,
+                    name="ОФЗ 26248 основной",
+                    ticker="SU26248",
+                    class_code="TQOB",
+                    exchange="MOEX",
+                    api_trade_available=True,
+                    position_uid="bbbb1111-1111-4111-8111-111111111111",
+                ),
+                DiscoverCandidate(
+                    identity=MarketIdentity(
+                        provider="t_invest",
+                        provider_instrument_id=second_uid,
+                        provider_venue_id=None,
+                        isin="RU000SYNTH76",
+                    ),
+                    instrument_kind=InstrumentType.BOND,
+                    name="ОФЗ 26248 внебиржевой контур",
+                    ticker="SU26248OTC",
+                    class_code="PSAU",
+                    exchange="MOEX",
+                    api_trade_available=False,
+                    position_uid="bbbb2222-2222-4222-8222-222222222222",
+                ),
+            ),
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(
+                client,
+                name="Synthetic Bond",
+                instrument_type="bond",
+                isin="RU000SYNTH76",
+            )
+            discovered = client.post(
+                f"/api/instruments/{created['id']}/market-mapping/discover",
+                json={"provider": "t_invest"},
+            )
+            assert discovered.status_code == 200
+            body = discovered.json()
+            assert body["status"] == "ambiguous"
+            assert len(body["candidates"]) == 2
+            first = body["candidates"][0]
+            assert first["provider_instrument_id"] == first_uid
+            assert first["name"] == "ОФЗ 26248 основной"
+            assert first["ticker"] == "SU26248"
+            assert first["class_code"] == "TQOB"
+            assert first["exchange"] == "MOEX"
+            assert first["api_trade_available"] is True
+            assert first["position_uid"] == "bbbb1111-1111-4111-8111-111111111111"
+            dumped = json.dumps(body)
+            assert "figi" not in dumped
+            assert "Authorization" not in dumped
+            mapping_after = client.get(f"/api/instruments/{created['id']}/market-mapping")
+            assert mapping_after.json()["state"] == "unmapped"
+            assert mapping_after.json()["identity"] is None
+    finally:
+        database.engine.dispose()
+
+
 def test_discover_without_token_is_calm_and_leaks_nothing(tmp_path: Path) -> None:
     database = create_database(tmp_path / "mapping_discover_token.db")
     Base.metadata.create_all(database.engine)

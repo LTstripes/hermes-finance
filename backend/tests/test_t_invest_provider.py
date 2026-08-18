@@ -80,15 +80,23 @@ def _short(
     instrument_type: str,
     isin: str | None,
     ticker: str = "SYNTH",
+    name: str = "Synthetic",
+    class_code: str | None = None,
+    extra: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    body: dict[str, object] = {
         "uid": uid,
         "isin": isin,
         "instrumentKind": kind,
         "instrumentType": instrument_type,
         "ticker": ticker,
-        "name": "Synthetic",
+        "name": name,
     }
+    if class_code is not None:
+        body["classCode"] = class_code
+    if extra:
+        body.update(extra)
+    return body
 
 
 def _last_price(
@@ -282,6 +290,131 @@ def test_multiple_candidates_are_ambiguous() -> None:
     result = _client(stub).discover_candidates(isin=STOCK_ISIN)
     assert result.status is QuoteStatus.AMBIGUOUS
     assert len(result.candidates) == 2
+
+
+def test_ambiguous_bond_candidates_keep_disambiguation_metadata() -> None:
+    stub = TInvestStub()
+    bond_isin = "RU000SYNTH76"
+    rows = [
+        (
+            "aaaa1111-1111-4111-8111-111111111111",
+            "ОФЗ 26248 основной",
+            "SU26248",
+            "TQOB",
+            True,
+        ),
+        (
+            "aaaa2222-2222-4222-8222-222222222222",
+            "ОФЗ 26248 внебиржевой контур",
+            "SU26248OTC",
+            "PSAU",
+            False,
+        ),
+        (
+            "aaaa3333-3333-4333-8333-333333333333",
+            "ОФЗ 26248 РЕПО",
+            "SU26248RP",
+            "TQIR",
+            True,
+        ),
+        (
+            "aaaa4444-4444-4444-8444-444444444444",
+            "ОФЗ 26248 квалифицированный",
+            "SU26248QI",
+            "TQCB",
+            False,
+        ),
+        (
+            "aaaa5555-5555-4555-8555-555555555555",
+            "ОФЗ 26248 юань",
+            "SU26248CN",
+            "TQOD",
+            True,
+        ),
+        (
+            "aaaa6666-6666-4666-8666-666666666666",
+            "ОФЗ 26248 лот 10",
+            "SU26248L10",
+            "TQOB",
+            True,
+        ),
+        (
+            "aaaa7777-7777-4777-8777-777777777777",
+            "ОФЗ 26248 лот 1",
+            "SU26248L1",
+            "TQOB",
+            True,
+        ),
+    ]
+    stub.set(
+        "FindInstrument",
+        {
+            "instruments": [
+                _short(
+                    uid,
+                    kind="INSTRUMENT_TYPE_BOND",
+                    instrument_type="bond",
+                    isin=bond_isin,
+                    ticker=ticker,
+                    name=name,
+                    class_code=class_code,
+                    extra={
+                        "positionUid": f"bbbb{uid[4:]}",
+                        "apiTradeAvailableFlag": api_trade,
+                    },
+                )
+                for uid, name, ticker, class_code, api_trade in rows
+            ]
+        },
+    )
+    for uid, name, ticker, class_code, api_trade in rows:
+        stub.set(
+            f"GetInstrumentBy:{uid}",
+            _instrument(
+                uid,
+                kind="INSTRUMENT_TYPE_BOND",
+                instrument_type="bond",
+                isin=bond_isin,
+                extra={
+                    "name": name,
+                    "ticker": ticker,
+                    "classCode": class_code,
+                    "positionUid": f"bbbb{uid[4:]}",
+                    "apiTradeAvailableFlag": api_trade,
+                    "nominal": _money("1000"),
+                },
+            ),
+        )
+        stub.set(
+            f"BondBy:{uid}",
+            {
+                "instrument": {
+                    "uid": uid,
+                    "currency": "rub",
+                    "nominal": _money("1000"),
+                }
+            },
+        )
+
+    result = _client(stub).discover_candidates(isin=bond_isin)
+    assert result.status is QuoteStatus.AMBIGUOUS
+    assert len(result.candidates) == 7
+    assert {item.identity.provider_instrument_id for item in result.candidates} == {
+        uid for uid, *_ in rows
+    }
+    by_uid = {item.identity.provider_instrument_id: item for item in result.candidates}
+    first = by_uid["aaaa1111-1111-4111-8111-111111111111"]
+    assert first.identity.provider_instrument_id == "aaaa1111-1111-4111-8111-111111111111"
+    assert first.name == "ОФЗ 26248 основной"
+    assert first.ticker == "SU26248"
+    assert first.class_code == "TQOB"
+    assert first.exchange == "MOEX"
+    assert first.api_trade_available is True
+    assert first.position_uid == "bbbb1111-1111-4111-8111-111111111111"
+    second = by_uid["aaaa2222-2222-4222-8222-222222222222"]
+    assert second.api_trade_available is False
+    assert second.class_code == "PSAU"
+    assert all(item.identity.isin == bond_isin for item in result.candidates)
 
 
 def test_malformed_neighbor_does_not_discard_valid_candidates() -> None:

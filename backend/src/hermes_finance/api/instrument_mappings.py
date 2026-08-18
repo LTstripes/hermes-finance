@@ -84,6 +84,12 @@ class MarketDiscoverCandidateResponse(BaseModel):
     provider_venue_id: str | None
     instrument_kind: str
     isin: str | None
+    name: str | None = None
+    ticker: str | None = None
+    class_code: str | None = None
+    exchange: str | None = None
+    api_trade_available: bool | None = None
+    position_uid: str | None = None
 
 
 class MarketDiscoverRejectedResponse(BaseModel):
@@ -190,6 +196,12 @@ def discover_instrument_mapping_endpoint(
                 provider_venue_id=item.identity.provider_venue_id,
                 instrument_kind=item.instrument_kind.value,
                 isin=item.identity.isin,
+                name=item.name,
+                ticker=item.ticker,
+                class_code=item.class_code,
+                exchange=item.exchange,
+                api_trade_available=item.api_trade_available,
+                position_uid=item.position_uid,
             )
             for item in result.candidates
         ],

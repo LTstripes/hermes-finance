@@ -32,6 +32,16 @@ from hermes_finance.services.applied_payouts import compute_applied_total_kopeck
 
 MANUAL_DUPLICATE_DATE_WINDOW_DAYS = 3
 
+
+class PayoutMappingRequiredError(Exception):
+    """Automatic payout preview requires an accepted T-Invest mapping."""
+
+    code = "payout_mapping_required"
+
+    def __init__(self, message: str = "instrument has no accepted T-Invest mapping") -> None:
+        super().__init__(message)
+
+
 _COVERAGE_METHOD = {
     PayoutEventKind.COUPON: "GetBondCoupons",
     PayoutEventKind.DIVIDEND: "GetDividends",

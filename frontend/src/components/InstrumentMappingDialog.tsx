@@ -12,6 +12,8 @@ import {
   defaultMappingDraft,
   defaultMappingProvider,
   defaultTInvestDraft,
+  formatDiscoverCandidateMeta,
+  formatDiscoverCandidateTrade,
   formatMarketIdentity,
   identityToMoexDraft,
   identityToTInvestDraft,
@@ -83,6 +85,15 @@ export function InstrumentMappingDialog({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, busy, discoverBusy, onCancel]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   if (!open || !instrument) return null;
 
@@ -160,7 +171,7 @@ export function InstrumentMappingDialog({
         aria-describedby={descriptionId}
         aria-labelledby={titleId}
         aria-modal="true"
-        className="dialog dialog--wide"
+        className="dialog dialog--wide dialog--scroll"
         role="dialog"
       >
         <h2 className="dialog__title" id={titleId}>
@@ -246,20 +257,39 @@ export function InstrumentMappingDialog({
                   </p>
                 ) : null}
                 {candidates.length > 0 ? (
-                  <ul className="stack-8" data-testid="t-invest-candidates">
-                    {candidates.map((candidate) => (
-                      <li key={candidate.provider_instrument_id}>
-                        <Button
-                          disabled={formBusy}
-                          onClick={() => chooseCandidate(candidate)}
-                          type="button"
-                        >
-                          Выбрать {candidate.provider_instrument_id}
-                          {candidate.isin ? ` · ${candidate.isin}` : ""}
-                          {` · ${candidate.instrument_kind}`}
-                        </Button>
-                      </li>
-                    ))}
+                  <ul className="mapping-candidates" data-testid="t-invest-candidates">
+                    {candidates.map((candidate) => {
+                      const meta = formatDiscoverCandidateMeta(candidate);
+                      const trade = formatDiscoverCandidateTrade(candidate);
+                      return (
+                        <li className="mapping-candidate" key={candidate.provider_instrument_id}>
+                          <div className="mapping-candidate__body">
+                            <strong>
+                              {candidate.name?.trim() ||
+                                candidate.ticker?.trim() ||
+                                candidate.provider_instrument_id}
+                            </strong>
+                            {meta ? <p className="muted tiny">{meta}</p> : null}
+                            <p className="muted tiny">
+                              {candidate.isin ? `${candidate.isin} · ` : ""}
+                              {candidate.provider_instrument_id}
+                              {candidate.position_uid
+                                ? ` · position ${candidate.position_uid}`
+                                : ""}
+                            </p>
+                            {trade ? <p className="muted tiny">{trade}</p> : null}
+                          </div>
+                          <Button
+                            aria-label={`Выбрать ${candidate.provider_instrument_id}`}
+                            disabled={formBusy}
+                            onClick={() => chooseCandidate(candidate)}
+                            type="button"
+                          >
+                            Выбрать
+                          </Button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : null}
               </>

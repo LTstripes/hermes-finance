@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Instrument, InstrumentMarketMapping, MarketDiscoverResult } from "../api/types";
 import { InstrumentMappingDialog } from "./InstrumentMappingDialog";
@@ -59,6 +59,11 @@ const discoverResult: MarketDiscoverResult = {
       provider_venue_id: null,
       instrument_kind: "stock",
       isin: "RU0009029540",
+      name: "Synthetic Share",
+      ticker: "SBER",
+      class_code: "TQBR",
+      exchange: "MOEX",
+      api_trade_available: true,
     },
     {
       provider: "t_invest",
@@ -66,8 +71,32 @@ const discoverResult: MarketDiscoverResult = {
       provider_venue_id: null,
       instrument_kind: "stock",
       isin: "RU0009029540",
+      name: "Synthetic Share alternate",
+      ticker: "SBERP",
+      class_code: "TQBR",
+      exchange: "MOEX",
+      api_trade_available: false,
     },
   ],
+  rejected: [],
+};
+
+const sevenBondCandidates: MarketDiscoverResult = {
+  status: "ambiguous",
+  message: null,
+  candidates: Array.from({ length: 7 }, (_, index) => ({
+    provider: "t_invest" as const,
+    provider_instrument_id: `aaaa${String(index + 1).repeat(4)}-${String(index + 1).repeat(4)}-4${String(index + 1).repeat(3)}-8${String(index + 1).repeat(3)}-${String(index + 1).repeat(12)}`,
+    provider_venue_id: null,
+    instrument_kind: "bond",
+    isin: "RU000SYNTH76",
+    name: `Синтетическая ОФЗ контур ${index + 1}`,
+    ticker: `SU2624${index}`,
+    class_code: ["TQOB", "PSAU", "TQIR", "TQCB", "TQOD", "TQOB", "TQOB"][index],
+    exchange: "MOEX",
+    api_trade_available: index % 2 === 0,
+    position_uid: `bbbb${String(index + 1).repeat(4)}-${String(index + 1).repeat(4)}-4${String(index + 1).repeat(3)}-8${String(index + 1).repeat(3)}-${String(index + 1).repeat(12)}`,
+  })),
   rejected: [],
 };
 
@@ -100,6 +129,10 @@ function renderDialog(
 }
 
 describe("InstrumentMappingDialog", () => {
+  afterEach(() => {
+    document.body.style.overflow = "";
+  });
+
   it("defaults a new mapping to T-Invest and does not discover on open", () => {
     const { onDiscover } = renderDialog(unmapped);
     expect(screen.getByRole("button", { name: "T-Invest" })).toBeInTheDocument();
@@ -150,6 +183,11 @@ describe("InstrumentMappingDialog", () => {
     expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent(
       "22222222-2222-2222-2222-222222222222",
     );
+    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent("Synthetic Share");
+    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent(
+      "SBER · TQBR · stock · MOEX",
+    );
+    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent("API-торговля доступна");
     await user.click(screen.getByRole("button", { name: new RegExp(`Выбрать ${tInvestUid}`) }));
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Идентификатор инструмента T-Invest")).toHaveValue(tInvestUid);
@@ -160,6 +198,26 @@ describe("InstrumentMappingDialog", () => {
       provider_venue_id: null,
       isin: "RU0009029540",
     });
+  });
+
+  it("keeps a long T-Invest list ambiguous and scrollable inside the dialog", async () => {
+    const user = userEvent.setup();
+    const { onSave } = renderDialog(unmapped, {
+      onDiscover: vi.fn(async () => sevenBondCandidates),
+    });
+    expect(document.body.style.overflow).toBe("hidden");
+    await user.click(screen.getByRole("button", { name: "Найти в T-Invest" }));
+    const list = screen.getByTestId("t-invest-candidates");
+    expect(list.querySelectorAll(".mapping-candidate")).toHaveLength(7);
+    expect(list).toHaveTextContent("Синтетическая ОФЗ контур 1");
+    expect(list).toHaveTextContent("SU26240 · TQOB · bond · MOEX");
+    expect(list).toHaveTextContent("Синтетическая ОФЗ контур 7");
+    expect(list).toHaveTextContent("API-торговля недоступна");
+    expect(screen.getByLabelText("Идентификатор инструмента T-Invest")).toHaveValue("");
+    expect(onSave).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toContain("dialog--scroll");
+    expect(screen.getByTestId("t-invest-candidates").closest(".dialog")).toBe(dialog);
   });
 
   it("drops candidate ISIN after the owner edits the UID by hand", async () => {
