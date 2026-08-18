@@ -147,7 +147,9 @@ describe("MonthFlowsSection actual-flow instrument", () => {
       ),
     ).toBe(true);
     expect(
-      fetchMock.mock.calls.some(([input]) => String(input).includes("/api/expected-flows/calendar")),
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/api/expected-flows/calendar"),
+      ),
     ).toBe(false);
   });
 });
