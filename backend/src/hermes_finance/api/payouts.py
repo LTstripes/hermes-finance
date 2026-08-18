@@ -233,9 +233,7 @@ def _resolve_context(
     with session.no_autoflush:
         month = session.get(ReportingMonth, reporting_month_id)
         if month is None:
-            raise ReportingMonthNotFoundError(
-                f"reporting month {reporting_month_id} was not found"
-            )
+            raise ReportingMonthNotFoundError(f"reporting month {reporting_month_id} was not found")
 
         snapshot = session.get(PositionSnapshot, position_snapshot_id)
         if snapshot is None:
