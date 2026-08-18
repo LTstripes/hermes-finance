@@ -6,7 +6,7 @@ This file is a Codex client adapter. It does not replace [`AGENTS.md`](../../AGE
 
 Repository docs define project constraints and expected outcomes.
 
-Internal Codex orchestration and role assignment are controlled by the owner's local Codex Project/settings. Codex should use those local settings for:
+Internal Codex orchestration and role assignment are controlled by the owner's local Codex Project/settings. At the start of a task, before choosing internal roles or delegation, Codex should load and apply those local Project settings for:
 
 - primary;
 - workers / subagents;

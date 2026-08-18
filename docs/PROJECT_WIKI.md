@@ -36,13 +36,16 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущий стабильный релиз — **0.5.0**.
+Текущая стабильная released-версия — **0.5.0**.
 
-- `main` = `r05` = `v0.5.0` = `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`
-- GitHub Release `0.5.0` опубликован как Latest
-- финальный exact-main CI `32140936658` зелёный
-- owner live smoke, включая T-Invest, пройден
-- линия R05 закрыта; новых R05-задач нет
+- released artifact: `v0.5.0` @ `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`;
+- на публикации `main`, `r05` и `v0.5.0` указывали на этот exact SHA;
+- после публикации канонический development `main` может уходить вперёд post-release docs, maintenance и будущей работой;
+- тег и released SHA остаются неизменяемой идентичностью 0.5.0;
+- GitHub Release `0.5.0` опубликован как Latest;
+- финальный exact-main CI `32140936658` зелёный;
+- owner live smoke, включая T-Invest, пройден;
+- линия R05 закрыта; новых R05-задач нет.
 
 В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle.
 

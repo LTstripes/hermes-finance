@@ -6,6 +6,8 @@ This file is a Hermes client adapter. It does not replace [`AGENTS.md`](../../AG
 
 The repository defines role requirements and risk/escalation expectations. It does **not** permanently select a Hermes provider, model or reasoning level.
 
+Primary, optional worker, reviewer, and provider/model/reasoning are resolved at task launch when needed. Do not assume them from a permanent repository route.
+
 For a concrete task, the owner or task launch may specify or approve:
 
 - primary;

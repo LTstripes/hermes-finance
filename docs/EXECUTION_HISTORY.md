@@ -265,7 +265,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Published:** 2026-08-18
 - **Status:** RELEASED; R05 closed
 - **Exact released SHA:** `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`
-- **Lineage:** `main` = `r05` = `v0.5.0`
+- **Publication lineage:** `main` = `r05` = `v0.5.0` at released SHA `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`
 - **GitHub Release:** `0.5.0` published as Latest
 - **Final exact-main CI:** `32140936658` green
 - **Owner verification:** live smoke including T-Invest passed
