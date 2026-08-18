@@ -9,12 +9,15 @@ from fastapi import Request
 
 from hermes_finance.market_data.dto import T_INVEST_PROVIDER
 from hermes_finance.market_data.moscow import MOSCOW_TZ
+from hermes_finance.market_data.payout_protocol import PayoutProvider
 from hermes_finance.market_data.protocol import MarketDataProvider
 from hermes_finance.market_data.routing import (
     DisabledMoexVerificationProvider,
     production_market_data_provider,
     read_t_invest_token,
 )
+from hermes_finance.market_data.t_invest import TInvestClient
+from hermes_finance.market_data.t_invest_payout import TInvestPayoutProvider
 from hermes_finance.settings import Settings
 
 
@@ -45,6 +48,25 @@ def resolve_production_provider(request: Request) -> tuple[MarketDataProvider, b
     )
 
 
+def resolve_payout_provider(request: Request) -> tuple[PayoutProvider, object | None]:
+    """Resolve owner-triggered payout provider without doing network work on import/startup."""
+
+    existing = getattr(request.app.state, "payout_provider", None)
+    if existing is not None:
+        return existing, None
+
+    http = getattr(request.app.state, "t_invest_http_client", None)
+    clock = getattr(request.app.state, "quote_preview_clock", None)
+    utcnow = getattr(request.app.state, "t_invest_utcnow", None)
+    client = TInvestClient(
+        token=read_t_invest_token(_runtime_settings(request)),
+        client=http,
+        clock=clock,
+        utcnow=utcnow,
+    )
+    return TInvestPayoutProvider(client), client
+
+
 def resolve_verify_provider(
     request: Request, *, payload_provider: str
 ) -> tuple[MarketDataProvider, bool]:
@@ -61,6 +83,14 @@ def close_owned_provider(provider: object, owned: bool) -> None:
         closer = getattr(provider, "close", None)
         if callable(closer):
             closer()
+
+
+def close_owned_payout_resource(resource: object | None) -> None:
+    if resource is None:
+        return
+    closer = getattr(resource, "close", None)
+    if callable(closer):
+        closer()
 
 
 def moscow_today(request: Request) -> date:
