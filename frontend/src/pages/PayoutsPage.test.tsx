@@ -70,7 +70,7 @@ const position = {
   reporting_month_id: 7,
   account_id: 11,
   instrument_id: 21,
-  quantity: "10",
+  quantity: "62.000000",
   average_cost_per_unit: rub("900.00"),
   market_price_per_unit: rub("950.00"),
   market_value: rub("9500.00"),
@@ -239,7 +239,9 @@ describe("PayoutsPage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Автовыплаты" })).toBeInTheDocument();
-    await screen.findByRole("option", { name: /ОФЗ 26248/ });
+    const positionOption = await screen.findByRole("option", { name: /ОФЗ 26248/ });
+    expect(positionOption).toHaveTextContent("62 шт.");
+    expect(positionOption).not.toHaveTextContent("62.000000");
 
     expect(previewPayouts).not.toHaveBeenCalled();
     expect(applyPayouts).not.toHaveBeenCalled();
