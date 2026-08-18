@@ -60,7 +60,8 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
             <span className="payments-calendar__chips">{monthChips(month)}</span>
             <span className="payments-calendar__passive">
               Пассивный доход: <strong>{formatMoney(moneyAmount(month.passive_net))}</strong>
-              {" · "}весь денежный поток: <strong>{formatMoney(moneyAmount(month.total_net))}</strong>
+              {" · "}весь денежный поток:{" "}
+              <strong>{formatMoney(moneyAmount(month.total_net))}</strong>
             </span>
           </summary>
           <Table aria-label={`Выплаты ${formatMonth(month.year, month.month)}`}>
@@ -86,7 +87,9 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
                       <span className={`flow-chip flow-chip--${item.flow_type}`}>
                         {labelOf(FLOW_TYPE_LABELS, item.flow_type)}
                       </span>
-                      {redemption ? <div className="muted tiny">возврат капитала, не доход</div> : null}
+                      {redemption ? (
+                        <div className="muted tiny">возврат капитала, не доход</div>
+                      ) : null}
                     </Td>
                     <Td>
                       <div>{item.account_name}</div>

@@ -9,7 +9,19 @@ import type {
 import { formatDate, formatMoney } from "../lib/format";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
-import { Badge, Button, EmptyState, Field, Input, LoadingState, Panel, Select, Table, Td, Th } from "./ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  LoadingState,
+  Panel,
+  Select,
+  Table,
+  Td,
+  Th,
+} from "./ui";
 
 type Props = {
   preview: PayoutPreview | null;
@@ -71,7 +83,11 @@ function statusTone(status: string): BadgeTone {
 }
 
 function rowKey(row: PayoutPreviewRow, index: number): string {
-  return [row.event_kind ?? "event", row.identity_key ?? "no-identity", row.fingerprint ?? index].join(":");
+  return [
+    row.event_kind ?? "event",
+    row.identity_key ?? "no-identity",
+    row.fingerprint ?? index,
+  ].join(":");
 }
 
 function selectionFor(
@@ -142,14 +158,21 @@ export function PayoutPreviewPanel({
     .map(({ row, key }) => selectionFor(row, duplicateDrafts[key]))
     .filter((row): row is PayoutApplySelection => row !== null);
   const duplicateIncomplete = selectedRows.some(
-    ({ row, key }) => row.status === "possible_manual_duplicate" && selectionFor(row, duplicateDrafts[key]) === null,
+    ({ row, key }) =>
+      row.status === "possible_manual_duplicate" &&
+      selectionFor(row, duplicateDrafts[key]) === null,
   );
 
   return (
     <Panel
       action={
         <div className="inline-actions">
-          <Button disabled={loading || applying || !positionLabel} onClick={onRefresh} type="button" variant="primary">
+          <Button
+            disabled={loading || applying || !positionLabel}
+            onClick={onRefresh}
+            type="button"
+            variant="primary"
+          >
             {loading ? "Запрашиваем…" : preview ? "Обновить preview" : "Проверить выплаты T-Invest"}
           </Button>
           {preview && !readOnly ? (
@@ -188,7 +211,8 @@ export function PayoutPreviewPanel({
 
       {readOnly ? (
         <div className="inline-alert inline-alert--warn" role="status">
-          Месяц закрыт. Предпросмотр доступен, но применять изменения нельзя до повторного открытия месяца.
+          Месяц закрыт. Предпросмотр доступен, но применять изменения нельзя до повторного открытия
+          месяца.
         </div>
       ) : null}
       {error ? (
@@ -201,7 +225,9 @@ export function PayoutPreviewPanel({
           Для выбранного возможного дубля укажи и способ учёта, и конкретную ручную запись.
         </div>
       ) : null}
-      {loading && !preview ? <LoadingState description="Получаем данные о выплатах…" inline /> : null}
+      {loading && !preview ? (
+        <LoadingState description="Получаем данные о выплатах…" inline />
+      ) : null}
       {preview && preview.rows.length === 0 ? (
         <EmptyState
           description="Провайдер не вернул событий для этой позиции в горизонте календаря."
@@ -249,7 +275,9 @@ export function PayoutPreviewPanel({
                   </Td>
                   <Td>
                     <div className="stack-8">
-                      <strong>{row.event_kind ? labelOf(FLOW_TYPE_LABELS, row.event_kind) : "Событие"}</strong>
+                      <strong>
+                        {row.event_kind ? labelOf(FLOW_TYPE_LABELS, row.event_kind) : "Событие"}
+                      </strong>
                       <span className="muted tiny">
                         количество {row.quantity ?? "—"}
                         {row.source_method ? ` · ${row.source_method}` : ""}
@@ -269,7 +297,9 @@ export function PayoutPreviewPanel({
                       <Badge tone={statusTone(row.status)}>
                         {STATUS_LABELS[row.status] ?? row.status}
                       </Badge>
-                      {row.provider_status ? <span className="muted tiny">{row.provider_status}</span> : null}
+                      {row.provider_status ? (
+                        <span className="muted tiny">{row.provider_status}</span>
+                      ) : null}
                       {row.applied_lifecycle ? (
                         <span className="muted tiny">применено: {row.applied_lifecycle}</span>
                       ) : null}
@@ -294,11 +324,13 @@ export function PayoutPreviewPanel({
                           value={duplicateDraft.decision}
                         >
                           <option value="">— способ учёта —</option>
-                          {(Object.keys(DECISION_LABELS) as PayoutCountingDecision[]).map((decision) => (
-                            <option key={decision} value={decision}>
-                              {DECISION_LABELS[decision]}
-                            </option>
-                          ))}
+                          {(Object.keys(DECISION_LABELS) as PayoutCountingDecision[]).map(
+                            (decision) => (
+                              <option key={decision} value={decision}>
+                                {DECISION_LABELS[decision]}
+                              </option>
+                            ),
+                          )}
                         </Select>
                         <Select
                           aria-label={`Ручная запись для дубля ${index + 1}`}
@@ -320,7 +352,8 @@ export function PayoutPreviewPanel({
                         </Select>
                         {row.reconciliation ? (
                           <span className="muted tiny">
-                            Сейчас связано с #{row.reconciliation.expected_cash_flow_id} · {DECISION_LABELS[row.reconciliation.counting_decision]}
+                            Сейчас связано с #{row.reconciliation.expected_cash_flow_id} ·{" "}
+                            {DECISION_LABELS[row.reconciliation.counting_decision]}
                           </span>
                         ) : null}
                       </div>

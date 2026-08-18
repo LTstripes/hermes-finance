@@ -222,8 +222,8 @@ export function PayoutsPage() {
         <p className="eyebrow">Планирование</p>
         <h1>Автовыплаты</h1>
         <p className="page-header__description">
-          Купоны, дивиденды и погашения из T-Invest — только после явного запроса и явного применения.
-          Позиции и ручные ожидаемые выплаты остаются локальными данными Hermes.
+          Купоны, дивиденды и погашения из T-Invest — только после явного запроса и явного
+          применения. Позиции и ручные ожидаемые выплаты остаются локальными данными Hermes.
         </p>
       </header>
 
@@ -264,7 +264,8 @@ export function PayoutsPage() {
                 .sort((a, b) => b.year - a.year || b.month - a.month)
                 .map((month) => (
                   <option key={month.id} value={month.id}>
-                    {formatMonth(month.year, month.month)} · {labelOf(MONTH_STATUS_LABELS, month.status)}
+                    {formatMonth(month.year, month.month)} ·{" "}
+                    {labelOf(MONTH_STATUS_LABELS, month.status)}
                   </option>
                 ))}
             </Select>
@@ -290,8 +291,10 @@ export function PayoutsPage() {
                   : "инструмент";
                 return (
                   <option key={position.id} value={position.id}>
-                    {account?.name ?? `#${position.account_id}`} · {instrument?.name ?? `#${position.instrument_id}`}
-                    {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} · {position.quantity} шт.
+                    {account?.name ?? `#${position.account_id}`} ·{" "}
+                    {instrument?.name ?? `#${position.instrument_id}`}
+                    {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} ·{" "}
+                    {position.quantity} шт.
                   </option>
                 );
               })}

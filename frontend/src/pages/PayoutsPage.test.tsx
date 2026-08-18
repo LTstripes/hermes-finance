@@ -6,7 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listAccounts } from "../api/accounts";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
-import { applyPayouts, listPayoutCalendar, previewPayouts, type PayoutPreview } from "../api/payouts";
+import {
+  applyPayouts,
+  listPayoutCalendar,
+  previewPayouts,
+  type PayoutPreview,
+} from "../api/payouts";
 import { listPositions } from "../api/positions";
 import { rub } from "../lib/money";
 import { PayoutsPage } from "./PayoutsPage";
@@ -235,7 +240,9 @@ describe("PayoutsPage", () => {
 
     expect(previewPayouts).not.toHaveBeenCalled();
     expect(applyPayouts).not.toHaveBeenCalled();
-    await waitFor(() => expect(listPayoutCalendar).toHaveBeenCalledWith(7, "v1", expect.anything()));
+    await waitFor(() =>
+      expect(listPayoutCalendar).toHaveBeenCalledWith(7, "v1", expect.anything()),
+    );
   });
 
   it("previews the exact selected local position and respects backend default_selected", async () => {
@@ -245,15 +252,12 @@ describe("PayoutsPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
     await waitFor(() =>
-      expect(previewPayouts).toHaveBeenCalledWith(
-        7,
-        {
-          account_id: 11,
-          instrument_id: 21,
-          position_snapshot_id: 44,
-          forecast_version: "v1",
-        },
-      ),
+      expect(previewPayouts).toHaveBeenCalledWith(7, {
+        account_id: 11,
+        instrument_id: 21,
+        position_snapshot_id: 44,
+        forecast_version: "v1",
+      }),
     );
 
     expect(screen.getByRole("checkbox", { name: "Выбрать выплату coupon" })).toBeChecked();
