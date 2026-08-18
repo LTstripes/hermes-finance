@@ -2,9 +2,11 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Версия этого release candidate — **0.5.0**.
+Текущий стабильный релиз — **0.5.0**. Тег `v0.5.0` и GitHub Release `0.5.0` опубликованы как Latest.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
+
+Продакшен запускается из **runtime-checkout**: в нём лежат локальные ignored-данные (`.env`, SQLite, backup, private files). Разработка и работа агентов идут в **отдельном чистом clone**. Не копируйте и не пробрасывайте runtime-данные в dev-clone через copy, symlink, junction, hardlink или любой другой filesystem indirection.
 
 ## Требования
 
@@ -234,6 +236,8 @@ Set-Location ..
 
 ## Для разработчика
 
+Перед новой задачей в чистом development clone синхронизируйтесь с каноническим `main` так, как описано в [`AGENTS.md`](AGENTS.md). Не делайте `switch`/`reset`/`pull` поверх незаконченной task-работы.
+
 Backend:
 
 ```powershell
@@ -280,14 +284,17 @@ Verification policy: [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md
 
 ## Документы проекта
 
+- [`AGENTS.md`](AGENTS.md) — конституция репозитория для агентов;
+- [`docs/agents/`](docs/agents/) — адаптеры конкретных клиентов (Codex, Hermes, Grok, Gemini);
 - [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) — бизнес-инварианты и границы продукта;
-- [`docs/releases/0.5.0.md`](docs/releases/0.5.0.md) — current 0.5 release candidate;
-- [`docs/release-notes-0.5.0.md`](docs/release-notes-0.5.0.md) — public notes for the later guarded release helper;
+- [`docs/releases/0.5.0.md`](docs/releases/0.5.0.md) — историческая запись released 0.5.0;
+- [`docs/release-notes-0.5.0.md`](docs/release-notes-0.5.0.md) — публичные notes релиза 0.5.0;
 - [`docs/releases/0.4.0.md`](docs/releases/0.4.0.md) — historical release 0.4 archive;
 - [`docs/releases/0.3.0.md`](docs/releases/0.3.0.md) — historical release 0.3 archive;
 - [`docs/releases/0.2.0.md`](docs/releases/0.2.0.md) — historical release 0.2 archive;
-- [`docs/MODEL_ROUTING.md`](docs/MODEL_ROUTING.md) — модельный routing;
-- [`docs/HERMES_START_PROMPT.md`](docs/HERMES_START_PROMPT.md) — рабочий протокол;
+- [`docs/MODEL_ROUTING.md`](docs/MODEL_ROUTING.md) — роли, класс риска и эскалация;
+- [`docs/adr/0012-runtime-and-agent-workspace-isolation.md`](docs/adr/0012-runtime-and-agent-workspace-isolation.md) — изоляция runtime и agent clones;
+- [`docs/HERMES_START_PROMPT.md`](docs/HERMES_START_PROMPT.md) — исторический рабочий протокол;
 - [`docs/HERMES_TASKS.md`](docs/HERMES_TASKS.md) — исторический backlog MVP 0.1;
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
 - [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения.

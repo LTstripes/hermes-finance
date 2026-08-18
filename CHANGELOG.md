@@ -4,7 +4,7 @@
 
 ## [0.5.0] — 2026-08-18
 
-Release candidate for an owner-controlled future investment payout calendar on top of locally stored Hermes positions.
+Owner-controlled future investment payout calendar on top of locally stored Hermes positions.
 
 ### Added
 
@@ -35,7 +35,11 @@ Release candidate for an owner-controlled future investment payout calendar on t
 
 ### Release status
 
-- This is a release candidate. No tag or GitHub release is created by R05-11.
+- Released 2026-08-18 as `v0.5.0`.
+- GitHub Release `0.5.0` published as Latest.
+- Exact released commit: `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`.
+- Final exact-main CI `32140936658` passed.
+- Owner live T-Invest smoke passed.
 
 ## [0.4.0] — 2026-08-16
 

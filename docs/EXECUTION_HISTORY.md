@@ -258,6 +258,36 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.5.0 publication
+
+### 0.5.0 — published stable release
+
+- **Published:** 2026-08-18
+- **Status:** RELEASED; R05 closed
+- **Exact released SHA:** `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`
+- **Lineage:** `main` = `r05` = `v0.5.0`
+- **GitHub Release:** `0.5.0` published as Latest
+- **Final exact-main CI:** `32140936658` green
+- **Owner verification:** live smoke including T-Invest passed
+- **Implemented/reviewed by:** not independently reconstructed in this record; do not invent executor or model attribution
+- **Decision notes:** 0.5.0 is the current stable product line. It adds the owner-controlled T-Invest payout calendar on top of locally stored positions. No new R05 development.
+- **References:** `docs/releases/0.5.0.md`, `CHANGELOG.md`, `docs/release-notes-0.5.0.md`
+
+# Workspace hygiene migration
+
+### HYG — runtime / agent workspace isolation
+
+- **Recorded:** 2026-08-18
+- **Kind:** architectural / process migration after 0.5.0 publication
+- **Reason:** the original checkout had become both production runtime and a shared Git directory for 33 linked worktrees. Real `.env`, the live finance database, backups and private assets sat in the same tree that agents used. Development and owner runtime were insufficiently isolated.
+- **Outcome:** production runtime and agent development environments were separated. Independent agent clones were created with their own Git directories. All 33 linked worktrees of the old shared checkout were retired. A clean runtime clone received the verified migration of ignored runtime data. The legacy shared checkout was retired.
+- **Migration sequence:** inventory-only audit → preservation triage → Preservation Seal → preservation of unique dirty Codex work, a special Grok/T-Invest research artifact and the R04-02 benchmark source/tests → classification of dangling commits → independent agent clones → retirement of 33 linked worktrees → clean runtime clone → verified runtime-data migration → local loopback runtime smoke → retirement of the old shared checkout.
+- **Normative follow-up:** ADR 0012; `AGENTS.md` runtime-isolation invariant.
+- **Not recorded here:** secret values, database contents, private filenames, or machine-specific paths as repository requirements.
+- **Attribution:** owner-driven workspace migration; executor/model details not independently reconstructed.
+
+---
+
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.

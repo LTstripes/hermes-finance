@@ -13,7 +13,8 @@ Hermes Finance — локальное однопользовательское W
 - покрытие обязательных расходов;
 - инвестиционный результат отдельно от денежных потоков;
 - ИИС и полученную/планируемую налоговую выгоду;
-- справочную недвижимость и покрытие ипотеки.
+- справочную недвижимость и покрытие ипотеки;
+- рыночные котировки и календарь инвестиционных выплат по явному действию владельца.
 
 Приложение не является бухгалтерской, налоговой или торговой системой.
 
@@ -22,17 +23,34 @@ Hermes Finance — локальное однопользовательское W
 При конфликте документов использовать такой порядок:
 
 1. `docs/MASTER_SPEC.md` — бизнес-инварианты, формулы и границы продукта.
-2. Принятые ADR в `docs/adr/` — более конкретные нормативные решения по отдельным контрактам.
-3. Активный release backlog (`docs/releases/0.2.0.md` для 0.2) — текущие task-cards, статусы и release gate.
-4. `docs/MODEL_ROUTING.md` — текущий routing/settling protocol.
-5. `docs/VERIFICATION_POLICY.md` — обязательная стратегия targeted/full-suite/CI проверок.
-6. `docs/HERMES_START_PROMPT.md` и `AGENTS.md` — рабочий протокол агентов.
-7. Этот wiki — долговременный контекст и краткая карта принятых решений.
-8. `docs/HERMES_TASKS.md` — исторический backlog строительства MVP 0.1, не источник новых post-MVP задач.
+2. Принятые ADR в `docs/adr/` — более конкретные нормативные решения.
+3. Активный release или task-документ, если он есть.
+4. `docs/VERIFICATION_POLICY.md` — стратегия targeted/full-suite/CI проверок.
+5. `docs/MODEL_ROUTING.md` — роли, класс риска и эскалация.
+6. Этот wiki — долговременный контекст.
+7. Исторические документы (`docs/HERMES_TASKS.md`, `docs/HERMES_START_PROMPT.md`, `docs/IDEA.md`, старые release-файлы) — только как исторический контекст.
+
+Операционный протокол агентов — `AGENTS.md`. Адаптеры клиентов — `docs/agents/`.
 
 Private seed, SQLite DB, exports, backups и реальные финансовые значения остаются локальными и Git-ignored.
 
-## 3. Продуктовые границы
+## 3. Текущее стабильное состояние
+
+Текущий стабильный релиз — **0.5.0**.
+
+- `main` = `r05` = `v0.5.0` = `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`
+- GitHub Release `0.5.0` опубликован как Latest
+- финальный exact-main CI `32140936658` зелёный
+- owner live smoke, включая T-Invest, пройден
+- линия R05 закрыта; новых R05-задач нет
+
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle.
+
+Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
+
+Канонический общий источник — GitHub-репозиторий. Development-агенты работают в независимых clone и синхронизируются с каноническим `main`. Продакшен живёт в отдельном runtime-checkout. См. ADR 0012.
+
+## 4. Продуктовые границы
 
 ### Входит в текущий локальный продукт
 
@@ -42,7 +60,9 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - месячный draft/closed lifecycle, reopen и клонирование;
 - счета, инструменты, позиции, депозиты, cash и другие ликвидные активы;
 - зарплата/доходы, прогрессивный НДФЛ, расходы, savings, долги, недвижимость, ипотека и ИИС;
-- фактические/ожидаемые investment cash flows;
+- фактические инвестиционные выплаты и ручные ожидаемые потоки;
+- T-Invest котировки по явной кнопке владельца;
+- T-Invest календарь выплат (preview/apply) поверх локальных позиций Hermes;
 - Goals и основная цель;
 - Dashboard и графики;
 - Markdown/JSON export;
@@ -53,14 +73,15 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 - торговые операции;
 - автоматические банковские транзакции;
+- импорт брокерского портфеля, счетов или операций;
 - cloud/VPS/multi-user/auth;
 - фоновая телеметрия;
-- автоматические котировки в текущем 0.2;
-- автоматическое формирование календаря купонов/дивидендов/погашений в 0.2;
+- фоновое обновление котировок или выплат;
+- production fallback на MOEX;
 - универсальный импорт любого Excel/PDF;
 - точная доходность с датированными внешними потоками до отдельного контракта.
 
-## 4. Технический контур 0.2
+## 5. Технический контур
 
 - Backend: Python 3.13, FastAPI, SQLAlchemy 2, Alembic, Pydantic.
 - Storage: SQLite с foreign keys.
@@ -71,7 +92,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - Dev frontend работает на `127.0.0.1:5173` и проксирует `/api` в локальный backend.
 - Финансовые формулы живут на backend. Frontend получает exact API values и занимается presentation/UI validation, но не дублирует денежные формулы.
 
-## 5. Неприкосновенные инварианты
+## 6. Неприкосновенные инварианты
 
 Без явного решения владельца нельзя:
 
@@ -84,11 +105,12 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - доверять рассчитанным финансовым значениям от frontend;
 - молча изменять данные закрытого месяца;
 - коммитить private DB/seed/export/backup/реальные финансовые payload;
-- добавлять cloud/auth/telemetry/trading capabilities в локальный продукт без отдельного scope decision.
+- добавлять cloud/auth/telemetry/trading capabilities в локальный продукт без отдельного scope decision;
+- давать development-агенту доступ к production runtime data.
 
 Деньги в persistence/domain используют integer minor units/`Decimal` и `ROUND_HALF_UP`. API передаёт деньги как decimal string + ISO currency.
 
-## 6. Ключевые финансовые контракты
+## 7. Ключевые финансовые контракты
 
 ### Пассивный доход
 
@@ -128,7 +150,7 @@ Month editor показывает ставки из backend `salary_tax.parts`; 
 
 Основная passive-income цель использует rolling average фактического net passive income по `closed` reporting months (C03, максимум последние 12) как `current_value` и источник `progress_pct`. C04 forecast остаётся отдельной прогнозной метрикой и не подменяет фактический прогресс. Прогноз даты достижения по-прежнему не придумывает future growth: если траектории нет, статус остаётся `not_projectable`/локализованным пользовательским сообщением. Это уточнение R02-27 сознательно supersede'ит только выбор source metric из R02-12, не меняя exact progress/gap formula.
 
-## 7. Месяцы и защита истории
+## 8. Месяцы и защита истории
 
 - один reporting month на `year + month`;
 - draft редактируем;
@@ -137,19 +159,31 @@ Month editor показывает ставки из backend `salary_tax.parts`; 
 - DB `ON DELETE RESTRICT` остаётся общей защитой вне sanctioned service path;
 - clone переносит permanent state/snapshots, но не копирует фактические выплаты/комментарии как новые события.
 
-## 8. Позиции и количества
+## 9. Позиции и количества
 
-Persistence допускает точность `Numeric(18,6)` для типов, где дробное количество легитимно. В 0.2 введён более строгий invariant для `stock`: количество должно быть положительным целым (`>= 1`) на API/backend boundary. UI скрывает бессмысленные trailing zeroes и форматирует user-facing quantity без перевода финансовых денег в JS float.
+Persistence допускает точность `Numeric(18,6)` для типов, где дробное количество легитимно. Для `stock` количество должно быть положительным целым (`>= 1`) на API/backend boundary. UI скрывает бессмысленные trailing zeroes и форматирует user-facing quantity без перевода финансовых денег в JS float.
 
 Market value/cost basis/unrealized result пересчитываются backend и не принимаются от frontend как source of truth.
 
-## 9. Expected payments
+Котировки T-Invest применяются только после явного preview/apply. Историческая provenance неизменяема. Количество позиции остаётся локальными данными Hermes, не брокерским портфелем.
 
-`expected_cash_flows` привязаны к reporting month + `forecast_version` и одному `source_as_of_date` внутри версии. Redemption отображается, но не входит в passive-income forecast.
+## 10. Ожидаемые выплаты и календарь провайдера
 
-В 0.2 expected payment calendar **ручной**: пользователь создаёт persisted expected flows. Автогенерация из позиций/MOEX отложена; до реализации нужно определить source provenance, refresh/version semantics, reconciliation и запрет неоднозначных дублей manual/generated rows.
+Ручные `expected_cash_flows` привязаны к reporting month + `forecast_version` и одному `source_as_of_date` внутри версии. Они остаются first-class owner data.
 
-## 10. Backup, SQLite и локальная безопасность
+С 0.5 календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest:
+
+- lifecycle: Fetch → Normalize → Preview → owner selection → Apply;
+- количество для провайдерской выплаты берётся из локального `PositionSnapshot`;
+- apply не редактирует и не удаляет ручные строки;
+- неразрешённый дубль считается только вручную, пока владелец явно не выберет `keep_both`, `count_manual` или `count_provider`;
+- применённые купоны провайдера могут кормить C04; объявленные дивиденды видны в календаре и не заменяют исторический dividend component;
+- погашение — денежный поток, не пассивный доход;
+- наступление даты события не создаёт фактическую инвестиционную выплату.
+
+Нормативный контракт: `docs/adr/0011-automatic-investment-payout-calendar.md`.
+
+## 11. Backup, SQLite и локальная безопасность
 
 - startup применяет Alembic migrations до readiness;
 - backup/restore защищены process-local maintenance guard;
@@ -158,7 +192,7 @@ Market value/cost basis/unrealized result пересчитываются backend
 - production unsafe requests ограничены localhost Host/Origin contract;
 - приложение по умолчанию слушает только `127.0.0.1:8000`.
 
-## 11. Verification policy
+## 12. Verification policy
 
 `docs/VERIFICATION_POLICY.md` — нормативный процесс проверок.
 
@@ -173,25 +207,20 @@ Market value/cost basis/unrealized result пересчитываются backend
 
 GitHub Actions включает backend, frontend, privacy guard и Windows production smoke.
 
-## 12. Release 0.2
+## 13. Workspace и агенты
 
-К 2026-08-11 выполнены основные R02-01…R02-24 изменения, включая owner-led smoke hotfixes. Диагностика R02-25 закрыта без code fix: заявленные дивиденды были заведены владельцем как `coupon`, поэтому нулевой dividend component соответствовал данным и расчётная цепочка не теряла ненулевое значение.
+Репозиторий — канонический общий source. После 0.5.0 runtime и development разведены:
 
-R02-26 (автоматическое наполнение expected-payments calendar) сознательно переносится как non-blocking follow-up; для 0.2 нормативен ручной workflow.
+- один production runtime clone с локальными ignored runtime-данными;
+- независимый clone на каждого development-агента, со своим Git directory;
+- агент не видит и не линкует production `.env`, DB, backups, `private/` или owner payloads.
 
-R02-21 синхронизирует version/docs. Tag `v0.2.0` создаётся только после release gate и blocker-level review exact candidate HEAD.
+Перед новой задачей чистый clone синхронизируется с каноническим `main`. Несколько писателей в одном scope не работают. Machine-specific абсолютные пути — локальная конфигурация, не архитектура репозитория.
 
-## 13. Работа агентов
-
-- одна write-задача имеет одного primary/owner;
-- параллельная работа допустима только по независимым файлам/контрактам;
-- explicit `начинаем <ID>`/`запускай <ID>` авторизует конкретную task-card;
-- worker report не заменяет diff/tests review primary;
-- приватные данные не передаются внешним workers;
-- после side effects/CI выполняется final state read-back и один canonical итог.
-
-Операционный routing находится в `docs/MODEL_ROUTING.md`.
+Подробности: ADR 0012, `AGENTS.md`, `docs/agents/`, `docs/MODEL_ROUTING.md`.
 
 ## 14. История
 
-Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/HERMES_TASKS.md` и Git history. Изменения 0.2 фиксируются в `docs/releases/0.2.0.md`, smoke/follow-up logs и `CHANGELOG.md`; wiki намеренно не дублирует сотни завершённых шагов.
+Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/HERMES_TASKS.md` и Git history. Релизы 0.2–0.5 зафиксированы в `docs/releases/`, `CHANGELOG.md` и `docs/EXECUTION_HISTORY.md`. Wiki не дублирует позадачную историю.
+
+`docs/IDEA.md` намеренно сохранён как исходная концепция.
