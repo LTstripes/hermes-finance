@@ -74,7 +74,7 @@ const mergedCalendar = [
   },
 ];
 
-function setup(calendar: unknown[] = []) {
+function setup(calendar: unknown[] | null = []) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -87,7 +87,12 @@ function setup(calendar: unknown[] = []) {
       return jsonResponse([]);
     }
     if (method === "GET" && url === "/api/payouts/calendar?month_id=7&forecast_version=v1") {
-      return jsonResponse(calendar);
+      return calendar === null
+        ? jsonResponse(
+            { error: { code: "calendar_error", message: "calendar unavailable", details: [] } },
+            503,
+          )
+        : jsonResponse(calendar);
     }
     if (method === "POST" && url === "/api/investment-flows") {
       return jsonResponse({ id: 31 }, 201);
@@ -151,5 +156,14 @@ describe("MonthFlowsSection actual-flow instrument", () => {
         String(input).includes("/api/expected-flows/calendar"),
       ),
     ).toBe(false);
+  });
+
+  it("keeps manual flow CRUD usable when only the merged calendar read fails", async () => {
+    setup(null);
+
+    expect(await screen.findByText("Фактические потоки")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Добавить выплату" })).toBeInTheDocument();
+    expect(screen.getByText(/Календарь временно недоступен/)).toBeInTheDocument();
+    expect(screen.getByText(/calendar unavailable/)).toBeInTheDocument();
   });
 });
