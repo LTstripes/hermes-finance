@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType
@@ -18,7 +19,6 @@ from hermes_finance.market_data.payout import PayoutEvent, PayoutEventKind, Payo
 from hermes_finance.market_data.payout_protocol import PayoutFetchRequest, PayoutFetchResult
 from hermes_finance.persistence import AppliedPayoutRevision, AppliedProviderPayout, Base
 from hermes_finance.services.accounts import create_account
-from hermes_finance.services.instrument_mappings import set_accepted_mapping
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
@@ -90,12 +90,7 @@ def _environment(session: Session, *, closed: bool = False) -> tuple[int, int, i
         market_price_per_unit="101.00",
         price_date=date(2030, 5, 12),
     )
-    set_accepted_mapping(
-        session,
-        instrument.id,
-        provider=T_INVEST_PROVIDER,
-        provider_instrument_id=UID,
-    )
+    accept_t_invest_mapping(session, instrument.id, UID, kind=InstrumentType.BOND)
     if closed:
         close_reporting_month(session, month.id)
     return month.id, account.id, instrument.id, snapshot.id

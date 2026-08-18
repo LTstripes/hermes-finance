@@ -462,8 +462,28 @@ def test_t_invest_mapping_round_trip_requires_null_venue(tmp_path: Path) -> None
                 provider_instrument_id=T_INVEST_UID,
                 provider_venue_id="stock/shares/TQBR",
             )
+        verified = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.OK,
+                candidates=(
+                    DiscoverCandidate(
+                        identity=MarketIdentity(
+                            provider="t_invest",
+                            provider_instrument_id=T_INVEST_UID,
+                            provider_venue_id=None,
+                            isin="RU0009029540",
+                        ),
+                        instrument_kind=InstrumentType.STOCK,
+                    ),
+                ),
+            )
+        )
         view = set_accepted_mapping(
-            session, instrument.id, **T_INVEST_IDENTITY, isin="RU0009029540"
+            session,
+            instrument.id,
+            **T_INVEST_IDENTITY,
+            isin="RU0009029540",
+            verify_provider=verified,
         )
         assert view.state is MarketMappingState.MAPPED
         assert view.identity is not None
@@ -496,7 +516,29 @@ def test_t_invest_and_moex_mappings_do_not_overwrite_each_other(tmp_path: Path) 
             isin="RU0000000099",
         )
         moex = set_accepted_mapping(session, stock.id, **STOCK_IDENTITY)
-        t_invest = set_accepted_mapping(session, other.id, **T_INVEST_IDENTITY, isin="RU0000000099")
+        verified = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.OK,
+                candidates=(
+                    DiscoverCandidate(
+                        identity=MarketIdentity(
+                            provider="t_invest",
+                            provider_instrument_id=T_INVEST_UID,
+                            provider_venue_id=None,
+                            isin="RU0000000099",
+                        ),
+                        instrument_kind=InstrumentType.STOCK,
+                    ),
+                ),
+            )
+        )
+        t_invest = set_accepted_mapping(
+            session,
+            other.id,
+            **T_INVEST_IDENTITY,
+            isin="RU0000000099",
+            verify_provider=verified,
+        )
         assert moex.identity is not None
         assert moex.identity.provider == "moex_iss"
         assert t_invest.identity is not None

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType, PriceSource
@@ -143,18 +144,8 @@ def _seed(session: Session) -> tuple[int, object, object, object]:
     account = create_account(session, name="Broker", account_type=AccountType.BROKERAGE)
     stock = create_instrument(session, name="Synthetic Stock", instrument_type=InstrumentType.STOCK)
     fund = create_instrument(session, name="Synthetic Fund", instrument_type=InstrumentType.FUND)
-    set_accepted_mapping(
-        session,
-        stock.id,
-        provider=T_INVEST_PROVIDER,
-        provider_instrument_id=STOCK_UID,
-    )
-    set_accepted_mapping(
-        session,
-        fund.id,
-        provider=T_INVEST_PROVIDER,
-        provider_instrument_id=FUND_UID,
-    )
+    accept_t_invest_mapping(session, stock.id, STOCK_UID, kind=InstrumentType.STOCK)
+    accept_t_invest_mapping(session, fund.id, FUND_UID, kind=InstrumentType.FUND)
     return month.id, account, stock, fund
 
 
@@ -502,12 +493,7 @@ def test_provenance_survives_mapping_edit(tmp_path: Path) -> None:
             today=TODAY,
         )
         new_uid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-        set_accepted_mapping(
-            session,
-            stock.id,
-            provider=T_INVEST_PROVIDER,
-            provider_instrument_id=new_uid,
-        )
+        accept_t_invest_mapping(session, stock.id, new_uid, kind=InstrumentType.STOCK)
         session.refresh(snapshot)
         provenance = session.scalar(
             select(PositionQuoteProvenance).where(

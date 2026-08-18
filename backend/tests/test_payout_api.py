@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, ExpectedCashFlowType, InstrumentType
@@ -107,12 +108,7 @@ def build_environment(
         price_date=date(2030, 5, 12),
     )
     if mapping == "t_invest":
-        set_accepted_mapping(
-            session,
-            instrument.id,
-            provider=T_INVEST_PROVIDER,
-            provider_instrument_id=UID,
-        )
+        accept_t_invest_mapping(session, instrument.id, UID, kind=instrument_type)
     elif mapping == "excluded":
         exclude_instrument_mapping(session, instrument.id)
     elif mapping == "moex":

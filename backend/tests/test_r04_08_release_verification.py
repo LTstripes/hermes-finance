@@ -12,9 +12,11 @@ from pathlib import Path
 import httpx2
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 from test_migrations import REVISION, revision_rows, run_alembic
 
 from hermes_finance.database import create_database
+from hermes_finance.domain import InstrumentType
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.settings import Settings
@@ -513,15 +515,13 @@ def test_missing_token_production_preview_makes_no_http_call(
                 json={"name": "Synthetic T Stock", "instrument_type": "stock"},
             )
             assert instrument.status_code == 201
-            mapped = client.put(
-                f"/api/instruments/{instrument.json()['id']}/market-mapping",
-                json={
-                    "provider": "t_invest",
-                    "provider_instrument_id": STOCK_UID,
-                    "provider_venue_id": None,
-                },
-            )
-            assert mapped.status_code == 200
+            with database.session_factory() as session:
+                accept_t_invest_mapping(
+                    session,
+                    instrument.json()["id"],
+                    STOCK_UID,
+                    kind=InstrumentType.STOCK,
+                )
             position = client.post(
                 "/api/positions",
                 json={

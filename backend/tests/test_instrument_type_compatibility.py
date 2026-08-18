@@ -590,6 +590,48 @@ def test_manual_uid_cannot_bypass_type_check(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_unverified_bond_uid_on_stock_without_isin_is_rejected(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        instrument = create_instrument(
+            session,
+            name="Сбербанк",
+            instrument_type=InstrumentType.STOCK,
+            ticker="SBER",
+        )
+        assert instrument.isin is None
+        with pytest.raises(ValueError, match="requires provider verification"):
+            set_accepted_mapping(
+                session,
+                instrument.id,
+                provider="t_invest",
+                provider_instrument_id=BOND_UID,
+                provider_venue_id=None,
+            )
+        assert get_instrument_mapping(session, instrument.id).state.value == "unmapped"
+
+        verified = RecordingProvider(
+            DiscoverResult(
+                status=QuoteStatus.OK,
+                candidates=(_candidate(SHARE_UID, InstrumentType.STOCK, ticker="SBER"),),
+            )
+        )
+        view = set_accepted_mapping(
+            session,
+            instrument.id,
+            provider="t_invest",
+            provider_instrument_id=SHARE_UID,
+            provider_venue_id=None,
+            verify_provider=verified,
+        )
+        assert view.state.value == "mapped"
+        assert view.identity is not None
+        assert view.identity.provider_instrument_id == SHARE_UID
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_manual_uid_isin_mismatch_still_rejected_before_kind(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:

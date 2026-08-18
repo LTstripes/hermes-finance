@@ -298,12 +298,12 @@ def test_t_invest_identity_save_and_venue_rejected(client: TestClient) -> None:
         f"/api/instruments/{created['id']}/market-mapping",
         json={**T_INVEST_PAYLOAD, "isin": "RU0009029540"},
     )
-    assert saved.status_code == 200
-    assert saved.json()["identity"] == {
-        "provider": "t_invest",
-        "provider_instrument_id": T_INVEST_UID,
-        "provider_venue_id": None,
-    }
+    assert saved.status_code == 422
+    _assert_error_body(saved.json(), "unprocessable")
+    assert "requires provider verification" in saved.json()["error"]["message"]
+    assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()["state"] == (
+        "unmapped"
+    )
 
 
 def test_verify_true_accepts_exact_t_invest_uid(tmp_path: Path) -> None:
@@ -761,6 +761,42 @@ def test_discover_api_only_incompatible_candidates_is_sanitized(tmp_path: Path) 
             assert "discover query is empty" not in (body["message"] or "")
     finally:
         database.engine.dispose()
+
+
+def test_put_without_verify_rejects_bond_uid_on_stock_without_isin(client: TestClient) -> None:
+    created = _create_instrument(client, ticker="SBER", isin=None, moex_secid=None)
+    assert created["isin"] is None
+    bond_uid = "33333333-3333-3333-3333-333333333333"
+    omitted = client.put(
+        f"/api/instruments/{created['id']}/market-mapping",
+        json={
+            "provider": "t_invest",
+            "provider_instrument_id": bond_uid,
+            "provider_venue_id": None,
+        },
+    )
+    assert omitted.status_code == 422
+    _assert_error_body(omitted.json(), "unprocessable")
+    assert "requires provider verification" in omitted.json()["error"]["message"]
+    assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()["state"] == (
+        "unmapped"
+    )
+
+    explicit_false = client.put(
+        f"/api/instruments/{created['id']}/market-mapping",
+        params={"verify": "false"},
+        json={
+            "provider": "t_invest",
+            "provider_instrument_id": bond_uid,
+            "provider_venue_id": None,
+        },
+    )
+    assert explicit_false.status_code == 422
+    _assert_error_body(explicit_false.json(), "unprocessable")
+    assert "requires provider verification" in explicit_false.json()["error"]["message"]
+    assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()["state"] == (
+        "unmapped"
+    )
 
 
 def test_verify_rejects_incompatible_manual_t_invest_uid(tmp_path: Path) -> None:

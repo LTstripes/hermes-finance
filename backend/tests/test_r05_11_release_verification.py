@@ -11,6 +11,7 @@ import httpx2
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from sqlalchemy import func, select
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 from test_migrations import PREVIOUS_REVISION, REVISION, revision_rows, run_alembic
 from test_r04_08_release_verification import STARTUP_GUARD_SCRIPT, _run_isolated_startup_script
 
@@ -30,7 +31,6 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
-from hermes_finance.services.instrument_mappings import set_accepted_mapping
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import create_reporting_month
@@ -259,12 +259,7 @@ def test_missing_token_preview_is_sanitized_and_offline(
                 market_price_per_unit="101.00",
                 price_date=date(2030, 5, 12),
             )
-            set_accepted_mapping(
-                session,
-                instrument.id,
-                provider=T_INVEST_PROVIDER,
-                provider_instrument_id=UID,
-            )
+            accept_t_invest_mapping(session, instrument.id, UID, kind=InstrumentType.BOND)
             month_id = month.id
             payload = {
                 "account_id": account.id,
@@ -314,12 +309,7 @@ def test_preview_is_first_network_and_reads_stay_local_after_apply(tmp_path: Pat
                 market_price_per_unit="101.00",
                 price_date=date(2030, 5, 12),
             )
-            set_accepted_mapping(
-                session,
-                instrument.id,
-                provider=T_INVEST_PROVIDER,
-                provider_instrument_id=UID,
-            )
+            accept_t_invest_mapping(session, instrument.id, UID, kind=InstrumentType.BOND)
             manual = create_expected_cash_flow(
                 session,
                 reporting_month_id=month.id,

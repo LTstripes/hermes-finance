@@ -7,12 +7,15 @@ import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType
 from hermes_finance.main import create_app
 from hermes_finance.market_data.dto import (
     T_INVEST_PROVIDER,
+    DiscoverCandidate,
+    DiscoverResult,
     MarketIdentity,
     QuoteFailure,
     QuoteKind,
@@ -25,7 +28,6 @@ from hermes_finance.market_data.dto import (
 from hermes_finance.market_data.t_invest import TOKEN_UNAVAILABLE_MESSAGE, TInvestClient
 from hermes_finance.persistence import Base, PositionQuoteProvenance
 from hermes_finance.services.accounts import create_account
-from hermes_finance.services.instrument_mappings import set_accepted_mapping
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import create_position_snapshot, update_position_snapshot
 from hermes_finance.services.quote_apply import QuoteApplySelection, apply_market_quotes
@@ -53,8 +55,13 @@ class ScriptedProvider:
         self.quotes = quotes
         self.fetch_calls: list[tuple[MarketIdentity, date]] = []
 
-    def discover_candidates(self, **kwargs: object) -> object:
-        raise AssertionError("preview must not discover")
+    def discover_candidates(self, **kwargs: object) -> DiscoverResult:
+        return DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(identity=STOCK_IDENTITY, instrument_kind=InstrumentType.STOCK),
+            ),
+        )
 
     def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
         self.fetch_calls.append((identity, target_date))
@@ -88,12 +95,7 @@ def _mapped_stock(session):
     month = create_reporting_month(session, year=2026, month=8, snapshot_date=SNAPSHOT_DATE)
     account = create_account(session, name="Broker", account_type=AccountType.BROKERAGE)
     stock = create_instrument(session, name="T Stock", instrument_type=InstrumentType.STOCK)
-    set_accepted_mapping(
-        session,
-        stock.id,
-        provider=T_INVEST_PROVIDER,
-        provider_instrument_id=STOCK_UID,
-    )
+    accept_t_invest_mapping(session, stock.id, STOCK_UID, kind=InstrumentType.STOCK)
     snapshot = create_position_snapshot(
         session,
         reporting_month_id=month.id,
@@ -210,14 +212,16 @@ def test_preview_api_does_not_leak_raw_provider_text(tmp_path: Path) -> None:
             instrument = client.post(
                 "/api/instruments", json={"name": "T Stock", "instrument_type": "stock"}
             )
-            client.put(
+            mapped = client.put(
                 f"/api/instruments/{instrument.json()['id']}/market-mapping",
+                params={"verify": "true"},
                 json={
                     "provider": T_INVEST_PROVIDER,
                     "provider_instrument_id": STOCK_UID,
                     "provider_venue_id": None,
                 },
             )
+            assert mapped.status_code == 200
             client.post(
                 "/api/positions",
                 json={
@@ -261,12 +265,7 @@ def test_t_invest_mixed_success_keeps_good_row_applicable(tmp_path: Path) -> Non
             provider_instrument_id=failed_uid,
             provider_venue_id=None,
         )
-        set_accepted_mapping(
-            session,
-            failed.id,
-            provider=T_INVEST_PROVIDER,
-            provider_instrument_id=failed_uid,
-        )
+        accept_t_invest_mapping(session, failed.id, failed_uid, kind=InstrumentType.STOCK)
         create_position_snapshot(
             session,
             reporting_month_id=month.id,

@@ -12,6 +12,8 @@ from hermes_finance.domain import InstrumentType
 from hermes_finance.main import create_app
 from hermes_finance.market_data.dto import (
     T_INVEST_PROVIDER,
+    DiscoverCandidate,
+    DiscoverResult,
     MarketIdentity,
     QuoteKind,
     QuoteResult,
@@ -36,8 +38,13 @@ class ScriptedProvider:
     def __init__(self, quotes: dict[tuple[str, str, str | None], QuoteResult]) -> None:
         self.quotes = quotes
 
-    def discover_candidates(self, **kwargs: object) -> object:
-        raise AssertionError("apply API must not discover candidates")
+    def discover_candidates(self, **kwargs: object) -> DiscoverResult:
+        return DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(identity=STOCK_IDENTITY, instrument_kind=InstrumentType.STOCK),
+            ),
+        )
 
     def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:
         return self.quotes[market_identity_key(identity)]
@@ -100,6 +107,7 @@ def _setup_position(client: TestClient) -> tuple[dict, dict]:
     assert instrument.status_code == 201
     mapped = client.put(
         f"/api/instruments/{instrument.json()['id']}/market-mapping",
+        params={"verify": "true"},
         json={
             "provider": T_INVEST_PROVIDER,
             "provider_instrument_id": STOCK_UID,

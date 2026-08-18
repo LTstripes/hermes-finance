@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from t_invest_mapping_fixtures import accept_t_invest_mapping
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import InstrumentType
@@ -373,16 +374,14 @@ def test_production_preview_does_not_call_moex_or_fallback(
                 client, "T Stock", isin="RU000SYNTH01", moex_secid=None
             )
             _map(client, moex_instrument["id"], STOCK_IDENTITY)
-            _map(
-                client,
-                t_instrument["id"],
-                MarketIdentity(
-                    provider="t_invest",
-                    provider_instrument_id="11111111-1111-1111-1111-111111111111",
-                    provider_venue_id=None,
+            with database.session_factory() as session:
+                accept_t_invest_mapping(
+                    session,
+                    t_instrument["id"],
+                    "11111111-1111-1111-1111-111111111111",
+                    kind=InstrumentType.STOCK,
                     isin="RU000SYNTH01",
-                ),
-            )
+                )
             _position(
                 client,
                 month_id=month["id"],
