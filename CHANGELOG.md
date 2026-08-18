@@ -2,6 +2,35 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.5.0] — 2026-08-18
+
+Release candidate for an owner-controlled future investment payout calendar on top of locally stored Hermes positions.
+
+### Added
+
+- explicit Fetch → Normalize → Preview → owner selection → Apply workflow for T-Invest coupons, dividends and redemptions;
+- provider-neutral payout domain, deterministic T-Invest payout adapter and additive applied-payout / revision / reconciliation persistence;
+- merged 12-month payout calendar that keeps manual expected flows first-class and records append-only provider provenance;
+- dedicated payout preview/apply UI and Month → Payments calendar that distinguishes manual vs provider rows;
+- countable applied provider coupons feed the existing C04 forecast through the merged read model.
+
+### Changed
+
+- payout fetch remains read-only and happens only after an explicit owner action; startup, dashboard and month reads stay local;
+- successful apply freezes quantity/total from the local `PositionSnapshot` and never edits manual expected-flow rows;
+- unresolved plausible duplicates stay manual-only until the owner chooses `keep_both`, `count_manual` or `count_provider`.
+
+### Not changed
+
+- provider dividends stay calendar-visible and do not replace or supplement C04's historical dividend component;
+- principal redemption remains future cash flow and is never passive income;
+- reaching an expected event date does not create a realized investment cash flow;
+- local runtime remains loopback-only (`127.0.0.1:8000`); no auth, cloud, VPS, telemetry or trading workflow.
+
+### Release status
+
+- This is a release candidate. No tag or GitHub release is created by R05-11.
+
 ## [0.4.0] — 2026-08-16
 
 Release candidate for owner-triggered T-Invest market quotes with preview, selective apply and append-only provenance.

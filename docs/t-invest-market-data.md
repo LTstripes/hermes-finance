@@ -1,6 +1,6 @@
-# T-Invest market data (0.4)
+# T-Invest market data (0.4) and payouts (0.5)
 
-Hermes Finance uses **T-Invest** as the production market-data source for owner-triggered quote preview. Direct MOEX ISS stays in the repository as a reference adapter and is not called in production.
+Hermes Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS stays in the repository as a reference adapter and is not called in production.
 
 Alfa PRO / broker portfolio import is future work and is not implemented here.
 
@@ -39,6 +39,10 @@ Hermes cannot prove that a pasted token is read-only without calling forbidden t
 ## Preview
 
 Quote preview remains an explicit button. A missing token fails calmly and does not fall back to MOEX. An old `moex_iss` mapping stays readable; production does not call MOEX for it. Remapping to T-Invest is an explicit owner action.
+
+## Payouts (0.5)
+
+Future coupons, dividends and redemptions are fetched only after an explicit owner preview. Hermes positions remain local: there is no broker portfolio/account import. Apply freezes the quantity from the local `PositionSnapshot` and never edits manual expected-flow rows. Unresolved duplicates stay manual-only. Provider coupons may feed C04; provider dividends stay calendar-visible and do not change the historical C04 dividend component; redemption is cash flow, never passive income. Reaching an event date does not create a realized investment cash flow. Startup, dashboard and month reads do not call T-Invest.
 
 ## Live probe (developer only)
 
