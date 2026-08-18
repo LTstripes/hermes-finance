@@ -31,7 +31,10 @@ const NAV: NavGroup[] = [
   },
   {
     section: "Планирование",
-    items: [{ to: "/goals", label: "Цели", icon: "◎" }],
+    items: [
+      { to: "/payouts", label: "Автовыплаты", icon: "◌" },
+      { to: "/goals", label: "Цели", icon: "◎" },
+    ],
   },
   {
     section: "Система",
