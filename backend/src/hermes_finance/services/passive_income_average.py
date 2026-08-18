@@ -34,12 +34,9 @@ from hermes_finance.domain.passive_income_average import (
     calculate_passive_income_average,
 )
 from hermes_finance.domain.reporting import ReportingMonthStatus
-from hermes_finance.persistence import ReportingMonth
+from hermes_finance.persistence import APP_SETTINGS_ID, AppSettings, ReportingMonth
 from hermes_finance.services.passive_income import passive_income_for_month
-from hermes_finance.services.settings import (
-    get_or_create_settings,
-    parse_passive_income_history_start_month,
-)
+from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 
 def passive_income_average(session: Session) -> PassiveIncomeAverageResult:
@@ -66,12 +63,14 @@ def passive_income_average(session: Session) -> PassiveIncomeAverageResult:
             )
         )
 
-    settings = get_or_create_settings(session)
+    # This is a read-model service. Missing optional settings use the same
+    # default as the seeded row without creating or committing that row.
+    settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
     return calculate_passive_income_average(
         PassiveIncomeAverageInput(
             months=tuple(month_items),
             history_start_month=parse_passive_income_history_start_month(
-                settings.passive_income_history_start_month
+                settings.passive_income_history_start_month if settings is not None else None
             ),
         )
     )

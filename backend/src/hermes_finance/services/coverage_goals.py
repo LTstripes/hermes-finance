@@ -28,17 +28,25 @@ Key facts:
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.domain import GoalType
 from hermes_finance.domain.coverage_goals import (
     CoverageGoalsInput,
     CoverageGoalsResult,
     calculate_coverage_goals,
 )
 from hermes_finance.domain.values import RubleAmount
+from hermes_finance.persistence import (
+    APP_SETTINGS_ID,
+    DEFAULT_PASSIVE_INCOME_GOAL_KOPECKS,
+    AppSettings,
+    Goal,
+)
 from hermes_finance.services.expenses import total_mandatory_expenses
 from hermes_finance.services.forecast_passive_income import forecast_passive_income
-from hermes_finance.services.goals import get_or_create_main_goal
+from hermes_finance.services.goals import MainGoalSelectionError
 from hermes_finance.services.passive_income_average import passive_income_average
 
 
@@ -59,14 +67,41 @@ def coverage_and_goals(
     forecast = forecast_passive_income(session, reporting_month_id, forecast_version)
     actual_average = passive_income_average(session).average
     mandatory = total_mandatory_expenses(session, reporting_month_id)
-    goal = get_or_create_main_goal(session)
+    # Coverage is a dashboard read path. Resolve the persisted main goal (or
+    # one unambiguous active passive-income goal) without seeding rows. A
+    # fresh database keeps the same default target in-memory only.
+    main_target = session.scalar(select(Goal.target_value_kopecks).where(Goal.is_main.is_(True)))
+    if main_target is None:
+        candidates = list(
+            session.scalars(
+                select(Goal.target_value_kopecks).where(
+                    Goal.goal_type == GoalType.PASSIVE_INCOME.value,
+                    Goal.is_active.is_(True),
+                )
+            )
+        )
+        if len(candidates) > 1:
+            raise MainGoalSelectionError(
+                "multiple active passive-income goals exist without a persisted main selection; "
+                "choose exactly one main goal"
+            )
+        if candidates:
+            main_target = candidates[0]
+        else:
+            main_target = session.scalar(
+                select(AppSettings.passive_income_goal_kopecks).where(
+                    AppSettings.id == APP_SETTINGS_ID
+                )
+            )
+            if main_target is None:
+                main_target = DEFAULT_PASSIVE_INCOME_GOAL_KOPECKS
 
     return calculate_coverage_goals(
         CoverageGoalsInput(
             forecast_monthly=forecast.monthly_total,
             actual_average=actual_average,
             mandatory_expenses=mandatory,
-            goal_target=RubleAmount(goal.target_value_kopecks),
+            goal_target=RubleAmount(main_target),
             is_approximate=forecast.is_approximate,
             forecast_warnings=forecast.warnings,
         )

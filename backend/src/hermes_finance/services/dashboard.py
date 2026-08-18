@@ -26,10 +26,10 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.asset_allocation import AssetClassSlice, asset_allocation_for_month
-from hermes_finance.services.expected_cash_flows import list_expected_cash_flows
 from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
 from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.properties import mortgage_coverage, total_mortgage_balance
 from hermes_finance.services.reporting_months import get_reporting_month
 
@@ -76,13 +76,22 @@ class ExpectedPaymentItem:
     flow_type: str
     account_id: int
     instrument_id: int
-    gross_amount: RubleAmount
+    gross_amount: RubleAmount | None
     expected_tax_amount: RubleAmount | None
     expected_net_amount: RubleAmount
-    is_confirmed: bool
+    is_confirmed: bool | None
     is_approximate: bool
     source: str
     forecast_version: str
+    source_kind: str = "manual"
+    provider: str | None = None
+    provider_instrument_uid: str | None = None
+    provider_identity_key: str | None = None
+    provider_lifecycle: str | None = None
+    reconciliation_id: int | None = None
+    counting_decision: str | None = None
+    linked_manual_id: int | None = None
+    linked_provider_payout_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,31 +256,37 @@ def _expected_payments(
     reporting_month_id: int,
     forecast_version: str,
 ) -> tuple[ExpectedPaymentItem, ...]:
-    flows = list_expected_cash_flows(
+    calendar = merged_payout_calendar(
         session,
         reporting_month_id=reporting_month_id,
         forecast_version=forecast_version,
     )
     return tuple(
         ExpectedPaymentItem(
-            id=flow.id,
-            expected_date=flow.expected_date,
-            flow_type=flow.flow_type,
-            account_id=flow.account_id,
-            instrument_id=flow.instrument_id,
-            gross_amount=RubleAmount(flow.gross_amount_kopecks),
-            expected_tax_amount=(
-                RubleAmount(flow.expected_tax_amount_kopecks)
-                if flow.expected_tax_amount_kopecks is not None
-                else None
-            ),
-            expected_net_amount=RubleAmount(flow.expected_net_amount_kopecks),
-            is_confirmed=flow.is_confirmed,
-            is_approximate=flow.is_approximate,
-            source=flow.source,
-            forecast_version=flow.forecast_version,
+            id=item.source_id,
+            expected_date=item.expected_date,
+            flow_type=item.flow_type,
+            account_id=item.account_id,
+            instrument_id=item.instrument_id,
+            gross_amount=item.gross_amount,
+            expected_tax_amount=item.expected_tax_amount,
+            expected_net_amount=item.expected_net_amount,
+            is_confirmed=item.is_confirmed,
+            is_approximate=item.is_approximate,
+            source=(item.manual_source or item.provider or item.source_kind.value),
+            forecast_version=forecast_version,
+            source_kind=item.source_kind.value,
+            provider=item.provider,
+            provider_instrument_uid=item.provider_instrument_uid,
+            provider_identity_key=item.provider_identity_key,
+            provider_lifecycle=item.provider_lifecycle,
+            reconciliation_id=item.reconciliation_id,
+            counting_decision=item.counting_decision,
+            linked_manual_id=item.linked_manual_id,
+            linked_provider_payout_id=item.linked_provider_payout_id,
         )
-        for flow in flows
+        for month in calendar
+        for item in month.items
     )
 
 

@@ -53,6 +53,11 @@ class MergedPayoutCalendarItem:
     counting_decision: str | None = None
     linked_manual_id: int | None = None
     linked_provider_payout_id: int | None = None
+    # Manual rows retain their owner-entered gross/tax values for additive
+    # projections. Provider rows intentionally leave both values unknown: the
+    # applied provider contract exposes only its frozen announced total.
+    gross_amount: RubleAmount | None = None
+    expected_tax_amount: RubleAmount | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +189,12 @@ def merged_payout_calendar(
                 ),
                 linked_provider_payout_id=(
                     reconciliation.applied_payout_id if reconciliation is not None else None
+                ),
+                gross_amount=RubleAmount(flow.gross_amount_kopecks),
+                expected_tax_amount=(
+                    RubleAmount(flow.expected_tax_amount_kopecks)
+                    if flow.expected_tax_amount_kopecks is not None
+                    else None
                 ),
             )
         )

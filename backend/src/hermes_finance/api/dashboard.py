@@ -243,13 +243,22 @@ class ExpectedPaymentOut(BaseModel):
     flow_type: str
     account_id: int
     instrument_id: int
-    gross_amount: MoneyValue
+    gross_amount: MoneyValue | None
     expected_tax_amount: MoneyValue | None
     expected_net_amount: MoneyValue
-    is_confirmed: bool
+    is_confirmed: bool | None
     is_approximate: bool
     source: str
     forecast_version: str
+    source_kind: str
+    provider: str | None
+    provider_instrument_uid: str | None
+    provider_identity_key: str | None
+    provider_lifecycle: str | None
+    reconciliation_id: int | None
+    counting_decision: str | None
+    linked_manual_id: int | None
+    linked_provider_payout_id: int | None
 
 
 class MortgageOut(BaseModel):
@@ -511,13 +520,22 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
                 flow_type=item.flow_type,
                 account_id=item.account_id,
                 instrument_id=item.instrument_id,
-                gross_amount=_money(item.gross_amount),
+                gross_amount=_money_opt(item.gross_amount),
                 expected_tax_amount=_money_opt(item.expected_tax_amount),
                 expected_net_amount=_money(item.expected_net_amount),
                 is_confirmed=item.is_confirmed,
                 is_approximate=item.is_approximate,
                 source=item.source,
                 forecast_version=item.forecast_version,
+                source_kind=item.source_kind,
+                provider=item.provider,
+                provider_instrument_uid=item.provider_instrument_uid,
+                provider_identity_key=item.provider_identity_key,
+                provider_lifecycle=item.provider_lifecycle,
+                reconciliation_id=item.reconciliation_id,
+                counting_decision=item.counting_decision,
+                linked_manual_id=item.linked_manual_id,
+                linked_provider_payout_id=item.linked_provider_payout_id,
             )
             for item in dashboard.expected_payments
         ],

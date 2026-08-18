@@ -38,14 +38,11 @@ from hermes_finance.domain.forecast_passive_income import (
 )
 from hermes_finance.domain.passive_income_average import MonthlyPassiveIncome
 from hermes_finance.domain.reporting import ReportingMonthStatus
-from hermes_finance.persistence import ReportingMonth
-from hermes_finance.services.expected_cash_flows import list_expected_cash_flows
+from hermes_finance.persistence import APP_SETTINGS_ID, AppSettings, ReportingMonth
 from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.reporting_months import get_reporting_month
-from hermes_finance.services.settings import (
-    get_or_create_settings,
-    parse_passive_income_history_start_month,
-)
+from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 
 def forecast_passive_income(
@@ -57,11 +54,12 @@ def forecast_passive_income(
 
     1. Resolve the reporting month to obtain the snapshot date for the
        12-month calendar window.
-    2. Load expected cash flows via ``list_expected_cash_flows`` (window
-       ``[snapshot_date, snapshot_date + 1 year)``).  Map each row to an
-       :class:`ExpectedFlow`.  Redemption rows are skipped early to keep
-       the list small; dividend rows are kept so the pure calculator's
-       ignore-branch is exercised by tests (defense in depth).
+    2. Load the canonical merged manual/provider payout calendar via
+       ``merged_payout_calendar`` (window ``[snapshot_date, snapshot_date +
+       1 year)``). Map each merged item to an :class:`ExpectedFlow`; the
+       calendar owns reconciliation and lifecycle filtering. Redemption rows
+       are skipped early to keep the list small; dividend rows are kept so
+       the pure calculator's ignore-branch remains defense in depth.
     3. Load actual net dividends from all closed reporting months ordered
        by year/month.  For each closed month, call the C02 per-month
        calculator and take ``breakdown.dividends`` (NOT total) to build
@@ -71,26 +69,27 @@ def forecast_passive_income(
     # 1. Resolve reporting month
     get_reporting_month(session, reporting_month_id)
 
-    # 2. Expected cash flows from the 12-month calendar window
-    expected_flows_orm = list_expected_cash_flows(
+    # 2. Countable expected flows from the canonical merged calendar
+    merged_months = merged_payout_calendar(
         session,
         reporting_month_id=reporting_month_id,
         forecast_version=forecast_version,
     )
 
     expected_flows: list[ExpectedFlow] = []
-    for flow in expected_flows_orm:
-        # Skip redemption early — it must never increase passive income.
-        # Keep dividend rows so the calculator's ignore-branch is tested.
-        if ExpectedCashFlowType(flow.flow_type) is ExpectedCashFlowType.REDEMPTION:
-            continue
-        expected_flows.append(
-            ExpectedFlow(
-                flow_type=flow.flow_type,
-                net_amount_kopecks=flow.expected_net_amount_kopecks,
-                is_approximate=flow.is_approximate,
+    for calendar_month in merged_months:
+        for flow in calendar_month.items:
+            # Skip redemption early — it must never increase passive income.
+            # Keep dividend rows so the calculator's ignore-branch is tested.
+            if ExpectedCashFlowType(flow.flow_type) is ExpectedCashFlowType.REDEMPTION:
+                continue
+            expected_flows.append(
+                ExpectedFlow(
+                    flow_type=flow.flow_type,
+                    net_amount_kopecks=flow.expected_net_amount.kopecks,
+                    is_approximate=flow.is_approximate,
+                )
             )
-        )
 
     # 3. Actual net dividends from closed reporting months
     closed_months = session.execute(
@@ -111,9 +110,12 @@ def forecast_passive_income(
         )
 
     # 4. Delegate to pure calculator
-    settings = get_or_create_settings(session)
+    # Settings are optional for this read path. Do not call
+    # ``get_or_create_settings`` here: its first-read seed commits a row and
+    # would violate the C04/monthly-summary/dashboard no-writes contract.
+    settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
     history_start_month = parse_passive_income_history_start_month(
-        settings.passive_income_history_start_month
+        settings.passive_income_history_start_month if settings is not None else None
     )
     return calculate_forecast_passive_income(
         ForecastPassiveIncomeInput(
