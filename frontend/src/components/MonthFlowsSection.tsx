@@ -105,6 +105,7 @@ export function MonthFlowsSection({
   const [actual, setActual] = useState<InvestmentFlow[]>([]);
   const [expected, setExpected] = useState<ExpectedFlow[]>([]);
   const [calendar, setCalendar] = useState<PayoutCalendarMonth[]>([]);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   const [forecastVersion, setForecastVersion] = useState("v1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,13 +130,17 @@ export function MonthFlowsSection({
     async (signal?: AbortSignal) => {
       setLoading(true);
       setError(null);
+      setCalendarError(null);
       try {
+        const calendarRequest = listPayoutCalendar(monthId, forecastVersion, signal)
+          .then((rows) => ({ rows, error: null as string | null }))
+          .catch((err) => ({ rows: [] as PayoutCalendarMonth[], error: formatApiError(err) }));
         const [accs, instrs, flows, exp, cal] = await Promise.all([
           listAccounts(signal),
           listInstruments({ active: true }, signal),
           listInvestmentFlows(monthId, undefined, signal),
           listExpectedFlows(monthId, forecastVersion, signal),
-          listPayoutCalendar(monthId, forecastVersion, signal),
+          calendarRequest,
         ]);
         if (signal?.aborted) {
           return;
@@ -144,7 +149,8 @@ export function MonthFlowsSection({
         setInstruments(instrs);
         setActual(flows);
         setExpected(exp);
-        setCalendar(cal);
+        setCalendar(cal.rows);
+        setCalendarError(cal.error);
 
         const firstAccount = accs.find((a) => a.status === "active");
         const firstInstrument = instrs[0];
@@ -783,7 +789,13 @@ export function MonthFlowsSection({
         label="Прогноз"
         title="Календарь выплат"
       >
-        <PayoutPaymentsCalendar months={calendar} />
+        {calendarError ? (
+          <div className="inline-alert inline-alert--warn" role="status">
+            Календарь временно недоступен: {calendarError}
+          </div>
+        ) : (
+          <PayoutPaymentsCalendar months={calendar} />
+        )}
       </Panel>
 
       <ConfirmDialog
