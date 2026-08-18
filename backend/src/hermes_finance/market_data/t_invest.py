@@ -76,6 +76,12 @@ _KIND_MAP: Final = {
     "bond": InstrumentType.BOND,
 }
 
+_KIND_TO_T_INVEST: Final = {
+    InstrumentType.STOCK: "INSTRUMENT_TYPE_SHARE",
+    InstrumentType.FUND: "INSTRUMENT_TYPE_ETF",
+    InstrumentType.BOND: "INSTRUMENT_TYPE_BOND",
+}
+
 _DEALER_EXCHANGES: Final = frozenset({"REAL_EXCHANGE_DEALER", "REAL_EXCHANGE_OTC", "dealer", "otc"})
 
 
@@ -276,13 +282,15 @@ class TInvestClient:
         query: str | None = None,
         provider_instrument_id: str | None = None,
         isin: str | None = None,
+        instrument_kind: InstrumentType | None = None,
     ) -> DiscoverResult:
         expected_isin = _normalize_isin(isin)
+        wanted_kind = instrument_kind if instrument_kind in SUPPORTED_KINDS else None
         try:
             if provider_instrument_id and provider_instrument_id.strip():
                 shorts = [self._instrument_by_uid(provider_instrument_id)]
             elif expected_isin:
-                shorts = self._find_instruments(expected_isin)
+                shorts = self._find_instruments(expected_isin, instrument_kind=wanted_kind)
             else:
                 search = (query or "").strip()
                 if not search:
@@ -290,7 +298,7 @@ class TInvestClient:
                         status=QuoteStatus.UNAVAILABLE,
                         message="discover query is empty",
                     )
-                shorts = self._find_instruments(search)
+                shorts = self._find_instruments(search, instrument_kind=wanted_kind)
         except ValueError as error:
             return DiscoverResult(status=QuoteStatus.MALFORMED_RESPONSE, message=str(error))
         except _AuthUnavailable as error:
@@ -335,6 +343,8 @@ class TInvestClient:
                 )
                 if kind not in SUPPORTED_KINDS:
                     saw_unsupported = True
+                    continue
+                if wanted_kind is not None and kind is not wanted_kind:
                     continue
                 _reject_non_exchange(detail)
                 currency = _text(detail, "currency")
@@ -683,8 +693,15 @@ class TInvestClient:
             raise ValueError(f"payout probe does not allow InstrumentsService/{method}")
         return self._post(_INSTRUMENTS, method, body)
 
-    def _find_instruments(self, query: str) -> list[dict[str, object]]:
-        payload = self._post(_INSTRUMENTS, _FIND_INSTRUMENT, {"query": query})
+    def _find_instruments(
+        self, query: str, *, instrument_kind: InstrumentType | None = None
+    ) -> list[dict[str, object]]:
+        body: dict[str, object] = {"query": query}
+        if instrument_kind is not None:
+            mapped = _KIND_TO_T_INVEST.get(instrument_kind)
+            if mapped is not None:
+                body["instrumentKind"] = mapped
+        payload = self._post(_INSTRUMENTS, _FIND_INSTRUMENT, body)
         rows = _field(payload, "instruments")
         if rows is None:
             return []
@@ -694,6 +711,13 @@ class TInvestClient:
         for row in rows:
             if not isinstance(row, dict):
                 raise _Malformed("FindInstrument row is not an object")
+            if instrument_kind is not None:
+                row_kind = _map_kind(
+                    _text(row, "instrumentKind", "instrument_kind"),
+                    _text(row, "instrumentType", "instrument_type"),
+                )
+                if row_kind is not None and row_kind is not instrument_kind:
+                    continue
             found.append(row)
             if len(found) >= self._max_discovery:
                 break

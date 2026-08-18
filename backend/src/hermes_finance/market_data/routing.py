@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 import httpx2
 
+from hermes_finance.domain import InstrumentType
 from hermes_finance.market_data.dto import (
     MOEX_ISS_PROVIDER,
     T_INVEST_PROVIDER,
@@ -36,11 +37,13 @@ class ProductionMarketDataProvider:
         query: str | None = None,
         provider_instrument_id: str | None = None,
         isin: str | None = None,
+        instrument_kind: InstrumentType | None = None,
     ) -> DiscoverResult:
         return self._t_invest.discover_candidates(
             query=query,
             provider_instrument_id=provider_instrument_id,
             isin=isin,
+            instrument_kind=instrument_kind,
         )
 
     def fetch_quote(self, identity: MarketIdentity, target_date: date) -> QuoteResult:

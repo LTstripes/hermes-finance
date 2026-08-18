@@ -39,7 +39,7 @@ STOCK_IDENTITY = {
 class RecordingProvider:
     def __init__(self, result: DiscoverResult) -> None:
         self.result = result
-        self.discover_calls: list[dict[str, str | None]] = []
+        self.discover_calls: list[dict[str, object]] = []
 
     def discover_candidates(
         self,
@@ -47,9 +47,15 @@ class RecordingProvider:
         query: str | None = None,
         provider_instrument_id: str | None = None,
         isin: str | None = None,
+        instrument_kind: InstrumentType | None = None,
     ) -> DiscoverResult:
         self.discover_calls.append(
-            {"query": query, "provider_instrument_id": provider_instrument_id, "isin": isin}
+            {
+                "query": query,
+                "provider_instrument_id": provider_instrument_id,
+                "isin": isin,
+                "instrument_kind": instrument_kind,
+            }
         )
         return self.result
 

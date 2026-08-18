@@ -27,9 +27,25 @@ from hermes_finance.market_data.moex_identity import (
 )
 from hermes_finance.market_data.normalize import SUPPORTED_KINDS, compatible_engine_market
 from hermes_finance.market_data.protocol import MarketDataProvider
-from hermes_finance.market_data.t_invest import normalize_t_invest_uid, t_invest_identity
+from hermes_finance.market_data.t_invest import (
+    TOKEN_UNAVAILABLE_MESSAGE,
+    normalize_t_invest_uid,
+    t_invest_identity,
+)
 from hermes_finance.persistence import Instrument, InstrumentMarketMapping
 from hermes_finance.services.instruments import get_instrument
+
+_OWNER_TYPE_NOUN = {
+    InstrumentType.STOCK: "Акция",
+    InstrumentType.BOND: "Облигация",
+    InstrumentType.FUND: "Фонд",
+}
+_REWRITE_DISCOVER_MESSAGES = frozenset(
+    {
+        "discover query is empty",
+        "no compatible candidates",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +119,76 @@ def normalize_accepted_identity(
         provider_instrument_id=instrument_n,
         provider_venue_id=venue_n,
         isin=_normalize_isin(isin),
+    )
+
+
+def _owner_type_noun(kind: InstrumentType) -> str:
+    return _OWNER_TYPE_NOUN.get(kind, kind.value)
+
+
+def incompatible_discovery_message(kind: InstrumentType) -> str:
+    return (
+        f"T-Invest не нашёл совместимый инструмент типа «{_owner_type_noun(kind)}». "
+        "Проверь тикер/ISIN или уточни поиск."
+    )
+
+
+def incompatible_mapping_message(kind: InstrumentType) -> str:
+    return f"T-Invest инструмент не совместим с типом «{_owner_type_noun(kind)}»."
+
+
+def _mapping_instrument_kind(instrument: Instrument) -> InstrumentType:
+    try:
+        kind = InstrumentType(instrument.instrument_type)
+    except ValueError as error:
+        raise ValueError(
+            f"unsupported instrument type for market mapping: {instrument.instrument_type!r}"
+        ) from error
+    if kind not in SUPPORTED_KINDS:
+        raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
+    return kind
+
+
+def apply_local_instrument_kind(result: DiscoverResult, kind: InstrumentType) -> DiscoverResult:
+    """Keep only candidates matching the local Hermes instrument type."""
+
+    if result.status in {QuoteStatus.NETWORK_ERROR, QuoteStatus.MALFORMED_RESPONSE}:
+        return result
+    if result.status is QuoteStatus.UNAVAILABLE and result.message == TOKEN_UNAVAILABLE_MESSAGE:
+        return result
+
+    compatible = tuple(item for item in result.candidates if item.instrument_kind is kind)
+    if compatible:
+        status = QuoteStatus.OK if len(compatible) == 1 else QuoteStatus.AMBIGUOUS
+        return DiscoverResult(
+            status=status,
+            candidates=compatible,
+            rejected=result.rejected,
+        )
+    if result.rejected:
+        return DiscoverResult(
+            status=QuoteStatus.UNAVAILABLE,
+            candidates=(),
+            rejected=result.rejected,
+            message=result.message or "ISIN does not match candidate",
+        )
+    if (
+        result.status is QuoteStatus.UNAVAILABLE
+        and result.message
+        and result.message not in _REWRITE_DISCOVER_MESSAGES
+        and result.message != TOKEN_UNAVAILABLE_MESSAGE
+    ):
+        return DiscoverResult(
+            status=result.status,
+            candidates=(),
+            rejected=result.rejected,
+            message=result.message,
+        )
+    return DiscoverResult(
+        status=QuoteStatus.UNAVAILABLE,
+        candidates=(),
+        rejected=(),
+        message=incompatible_discovery_message(kind),
     )
 
 
@@ -184,6 +270,9 @@ def verify_identity_with_provider(
         instrument_isin = _normalize_isin(instrument.isin)
         if candidate_isin and instrument_isin and candidate_isin != instrument_isin:
             raise ValueError("isin mismatch between instrument and provider candidate")
+        local_kind = _mapping_instrument_kind(instrument)
+        if matches[0].instrument_kind is not local_kind:
+            raise ValueError(incompatible_mapping_message(local_kind))
         return
     if result.status is QuoteStatus.AMBIGUOUS or len(result.candidates) > 1:
         raise ValueError("ambiguous market-data candidates cannot be accepted automatically")
@@ -351,16 +440,11 @@ def discover_instrument_candidates(
     provider_n = _normalize_token(provider, field="provider", case="lower")
     if provider_n != T_INVEST_PROVIDER:
         raise ValueError(f"unsupported discovery provider: {provider_n}")
-    try:
-        kind = InstrumentType(instrument.instrument_type)
-    except ValueError as error:
-        raise ValueError(
-            f"unsupported instrument type for market mapping: {instrument.instrument_type!r}"
-        ) from error
-    if kind not in SUPPORTED_KINDS:
-        raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
+    kind = _mapping_instrument_kind(instrument)
     override = query.strip() if query is not None else ""
-    return market_provider.discover_candidates(
+    result = market_provider.discover_candidates(
         query=override or instrument.ticker,
         isin=instrument.isin,
+        instrument_kind=kind,
     )
+    return apply_local_instrument_kind(result, kind)

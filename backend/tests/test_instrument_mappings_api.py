@@ -674,3 +674,134 @@ def test_t_invest_mapping_then_quote_preview_happy_path(tmp_path: Path) -> None:
             assert provider.fetch_calls == 1
     finally:
         database.engine.dispose()
+
+
+def test_discover_api_filters_incompatible_t_invest_candidates(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_discover_kind.db")
+    Base.metadata.create_all(database.engine)
+    share_uid = "11111111-1111-1111-1111-111111111111"
+    bond_uid = "33333333-3333-3333-3333-333333333333"
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.AMBIGUOUS,
+            candidates=(
+                DiscoverCandidate(
+                    identity=MarketIdentity(
+                        provider="t_invest",
+                        provider_instrument_id=bond_uid,
+                        provider_venue_id=None,
+                        isin="RU000A0JX0J2",
+                    ),
+                    instrument_kind=InstrumentType.BOND,
+                    ticker="SBER-001P",
+                    name="Сбербанк БО",
+                ),
+                DiscoverCandidate(
+                    identity=MarketIdentity(
+                        provider="t_invest",
+                        provider_instrument_id=share_uid,
+                        provider_venue_id=None,
+                        isin="RU0009029540",
+                    ),
+                    instrument_kind=InstrumentType.STOCK,
+                    ticker="SBER",
+                    name="Сбербанк",
+                ),
+            ),
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(client, ticker="SBER")
+            discovered = client.post(
+                f"/api/instruments/{created['id']}/market-mapping/discover",
+                json={"provider": "t_invest", "query": "SBER"},
+            )
+            assert discovered.status_code == 200
+            body = discovered.json()
+            assert body["status"] == "ok"
+            assert [item["provider_instrument_id"] for item in body["candidates"]] == [share_uid]
+            assert body["candidates"][0]["instrument_kind"] == "stock"
+            assert body["candidates"][0]["ticker"] == "SBER"
+    finally:
+        database.engine.dispose()
+
+
+def test_discover_api_only_incompatible_candidates_is_sanitized(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_discover_incompat.db")
+    Base.metadata.create_all(database.engine)
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(
+                    identity=MarketIdentity(
+                        provider="t_invest",
+                        provider_instrument_id="33333333-3333-3333-3333-333333333333",
+                        provider_venue_id=None,
+                    ),
+                    instrument_kind=InstrumentType.BOND,
+                    ticker="SBER-001P",
+                ),
+            ),
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(client, ticker="SBER")
+            discovered = client.post(
+                f"/api/instruments/{created['id']}/market-mapping/discover",
+                json={"provider": "t_invest", "query": "SBER"},
+            )
+            assert discovered.status_code == 200
+            body = discovered.json()
+            assert body["status"] == "unavailable"
+            assert body["candidates"] == []
+            assert "Акция" in (body["message"] or "")
+            assert "discover query is empty" not in (body["message"] or "")
+    finally:
+        database.engine.dispose()
+
+
+def test_verify_rejects_incompatible_manual_t_invest_uid(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "mapping_verify_kind.db")
+    Base.metadata.create_all(database.engine)
+    bond_uid = "33333333-3333-3333-3333-333333333333"
+    provider = RecordingProvider(
+        DiscoverResult(
+            status=QuoteStatus.OK,
+            candidates=(
+                DiscoverCandidate(
+                    identity=MarketIdentity(
+                        provider="t_invest",
+                        provider_instrument_id=bond_uid,
+                        provider_venue_id=None,
+                        isin="RU0009029540",
+                    ),
+                    instrument_kind=InstrumentType.BOND,
+                ),
+            ),
+        )
+    )
+    try:
+        with TestClient(create_app(database, market_data_provider=provider)) as client:
+            created = _create_instrument(client, ticker="SBER")
+            rejected = client.put(
+                f"/api/instruments/{created['id']}/market-mapping",
+                params={"verify": "true"},
+                json={
+                    "provider": "t_invest",
+                    "provider_instrument_id": bond_uid,
+                    "provider_venue_id": None,
+                    "isin": "RU0009029540",
+                },
+            )
+            assert rejected.status_code == 422
+            _assert_error_body(rejected.json(), "unprocessable")
+            message = rejected.json()["error"]["message"]
+            assert "не совместим" in message or "Акция" in message
+            assert client.get(f"/api/instruments/{created['id']}/market-mapping").json()[
+                "state"
+            ] == ("unmapped")
+    finally:
+        database.engine.dispose()

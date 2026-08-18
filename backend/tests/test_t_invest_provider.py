@@ -851,3 +851,116 @@ def test_uid_is_canonical_uuid_text() -> None:
     identity = t_invest_identity(provider_instrument_id=STOCK_UID.upper())
     assert identity.provider_instrument_id == str(UUID(STOCK_UID))
     assert identity.provider_venue_id is None
+
+
+def test_sber_share_is_not_displaced_by_bond_limit() -> None:
+    stub = TInvestStub()
+    bond_uids = [f"33333333-3333-3333-3333-3333333333{index:02d}" for index in range(12)]
+    instruments = [
+        _short(
+            uid,
+            kind="INSTRUMENT_TYPE_BOND",
+            instrument_type="bond",
+            isin=f"RU000A0JX{index:03d}",
+            ticker=f"SBER-{index:03d}P",
+            name=f"Сбербанк БО-{index:03d}P",
+        )
+        for index, uid in enumerate(bond_uids)
+    ]
+    instruments.append(
+        _short(
+            STOCK_UID,
+            kind="INSTRUMENT_TYPE_SHARE",
+            instrument_type="share",
+            isin=STOCK_ISIN,
+            ticker="SBER",
+            name="Сбербанк",
+        )
+    )
+    stub.set("FindInstrument", {"instruments": instruments})
+    stub.set(
+        f"GetInstrumentBy:{STOCK_UID}",
+        _instrument(
+            STOCK_UID,
+            kind="INSTRUMENT_TYPE_SHARE",
+            instrument_type="share",
+            isin=STOCK_ISIN,
+            extra={"ticker": "SBER", "name": "Сбербанк"},
+        ),
+    )
+    result = _client(stub).discover_candidates(query="SBER", instrument_kind=InstrumentType.STOCK)
+    assert [item.ticker for item in result.candidates] == ["SBER"]
+    assert result.candidates[0].identity.provider_instrument_id == STOCK_UID
+    assert result.status is QuoteStatus.OK
+    bodies = [json.loads(req.content) for req in stub.requests if "FindInstrument" in req.url.path]
+    assert bodies[0]["query"] == "SBER"
+    assert bodies[0]["instrumentKind"] == "INSTRUMENT_TYPE_SHARE"
+    assert not any("BondBy" in req.url.path for req in stub.requests)
+
+
+def test_discover_filters_mixed_kinds_before_accepting() -> None:
+    stub = TInvestStub()
+    stub.set(
+        "FindInstrument",
+        {
+            "instruments": [
+                _short(
+                    BOND_UID,
+                    kind="INSTRUMENT_TYPE_BOND",
+                    instrument_type="bond",
+                    isin=BOND_ISIN,
+                    ticker="SBER-001P",
+                ),
+                _short(
+                    STOCK_UID,
+                    kind="INSTRUMENT_TYPE_SHARE",
+                    instrument_type="share",
+                    isin=STOCK_ISIN,
+                    ticker="SBER",
+                ),
+                _short(
+                    FUND_UID,
+                    kind="INSTRUMENT_TYPE_ETF",
+                    instrument_type="etf",
+                    isin="RU000SYNTH02",
+                    ticker="SBERF",
+                ),
+            ]
+        },
+    )
+    stub.set(
+        f"GetInstrumentBy:{STOCK_UID}",
+        _instrument(
+            STOCK_UID, kind="INSTRUMENT_TYPE_SHARE", instrument_type="share", isin=STOCK_ISIN
+        ),
+    )
+    result = _client(stub).discover_candidates(query="SBER", instrument_kind=InstrumentType.STOCK)
+    assert result.status is QuoteStatus.OK
+    assert len(result.candidates) == 1
+    assert result.candidates[0].instrument_kind is InstrumentType.STOCK
+    assert result.candidates[0].identity.provider_instrument_id == STOCK_UID
+
+
+def test_discover_kind_filter_preserves_isin_mismatch() -> None:
+    stub = TInvestStub()
+    stub.set(
+        "FindInstrument",
+        {
+            "instruments": [
+                _short(
+                    STOCK_UID,
+                    kind="INSTRUMENT_TYPE_SHARE",
+                    instrument_type="share",
+                    isin="RU0000000000",
+                    ticker="SBER",
+                )
+            ]
+        },
+    )
+    result = _client(stub).discover_candidates(
+        isin=STOCK_ISIN, instrument_kind=InstrumentType.STOCK
+    )
+    assert result.rejected
+    assert result.rejected[0].candidate_isin == "RU0000000000"
+    assert result.status is QuoteStatus.UNAVAILABLE
+    assert result.candidates == ()

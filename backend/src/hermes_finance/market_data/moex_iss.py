@@ -109,6 +109,7 @@ class MoexIssClient:
         query: str | None = None,
         provider_instrument_id: str | None = None,
         isin: str | None = None,
+        instrument_kind: InstrumentType | None = None,
     ) -> DiscoverResult:
         expected_isin = _normalize_isin(isin)
         search = (query or provider_instrument_id or isin or "").strip()
