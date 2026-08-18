@@ -82,6 +82,8 @@ const position = {
   updated_at: "2032-03-31T12:00:00Z",
 };
 
+const providerUid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
 const newAndRevisedPreview: PayoutPreview = {
   reporting_month_id: 7,
   account_id: 11,
@@ -89,7 +91,7 @@ const newAndRevisedPreview: PayoutPreview = {
   position_snapshot_id: 44,
   quantity: "10",
   provider: "t_invest",
-  instrument_uid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  instrument_uid: providerUid,
   rows: [
     {
       status: "new",
@@ -99,7 +101,7 @@ const newAndRevisedPreview: PayoutPreview = {
       position_snapshot_id: 44,
       quantity: "10",
       provider: "t_invest",
-      instrument_uid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      instrument_uid: providerUid,
       event_kind: "coupon",
       identity_key: "n:3",
       payment_date: "2032-06-15",
@@ -125,7 +127,7 @@ const newAndRevisedPreview: PayoutPreview = {
       position_snapshot_id: 44,
       quantity: "10",
       provider: "t_invest",
-      instrument_uid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      instrument_uid: providerUid,
       event_kind: "redemption",
       identity_key: "mty:1",
       payment_date: "2033-01-20",
@@ -194,7 +196,7 @@ const mergedCalendar = [
         is_approximate: true,
         manual_source: null,
         provider: "t_invest",
-        provider_instrument_uid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        provider_instrument_uid: providerUid,
         provider_identity_key: "mty:1",
         provider_lifecycle: "active",
         reconciliation_id: null,
@@ -263,6 +265,7 @@ describe("PayoutsPage", () => {
     expect(screen.getByRole("checkbox", { name: "Выбрать выплату coupon" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Выбрать выплату redemption" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Применить выбранные (1)" })).toBeEnabled();
+    expect(screen.queryByText(providerUid)).not.toBeInTheDocument();
   });
 
   it("requires an explicit duplicate decision and manual target without auto-picking multiple candidates", async () => {
@@ -316,6 +319,9 @@ describe("PayoutsPage", () => {
         ],
       }),
     );
+    await waitFor(() => expect(listPayoutCalendar).toHaveBeenCalledTimes(2));
+    expect(previewPayouts).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/Применено выплат: 1/)).toBeInTheDocument();
   });
 
   it("allows closed-month preview but exposes no apply control", async () => {
