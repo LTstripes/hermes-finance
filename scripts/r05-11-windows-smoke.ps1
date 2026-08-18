@@ -2,8 +2,12 @@
 param()
 
 # R05-11 canonical Windows production smoke.
-# Isolated temp DB, no token read, no live T-Invest probe.
-# Proves the live production listener is exactly 127.0.0.1:8000
+# Isolated temp DB. Hits only local health/months/frontend.
+# Does not invoke quote/payout preview or apply, so it does not
+# make a live T-Invest/provider request. Settings may still load
+# the ignored repository-root .env; this script does not prove
+# the token file was unread. It must not print or expose a token.
+# Proves the production listener is exactly 127.0.0.1:8000
 # and /api/health reports version 0.5.0.
 
 Set-StrictMode -Version 2.0
@@ -59,6 +63,28 @@ function Assert-ExactLoopbackListener {
     }
 }
 
+function Assert-NoSecretMaterial {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    $lower = $Content.ToLowerInvariant()
+    $forbidden = @(
+        "authorization",
+        "bearer ",
+        "hermes_finance_t_invest_read_only_token"
+    )
+    foreach ($item in $forbidden) {
+        if ($lower.Contains($item)) {
+            throw "$Label contains forbidden token/Authorization material."
+        }
+    }
+}
+
 function Assert-NoListener {
     param(
         [Parameter(Mandatory = $true)]
@@ -109,6 +135,9 @@ function Wait-ForProductionStack {
                 $frontend.StatusCode -eq 200 -and
                 $frontend.Content -match "Hermes Finance"
             ) {
+                Assert-NoSecretMaterial -Label "/api/health" -Content ([string]$health.Content)
+                Assert-NoSecretMaterial -Label "/api/months" -Content ([string]$months.Content)
+                Assert-NoSecretMaterial -Label "frontend HTML" -Content ([string]$frontend.Content)
                 return $health
             }
         }
@@ -158,7 +187,8 @@ $savedDatabase = [Environment]::GetEnvironmentVariable(
 )
 
 try {
-    # Unset without reading. The smoke must not print or copy the token value.
+    # Do not print or copy a token value. Clearing a process override does not
+    # stop Settings from loading the ignored repository-root .env.
     Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
     $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
 
