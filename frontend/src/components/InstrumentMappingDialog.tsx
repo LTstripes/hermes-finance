@@ -41,7 +41,10 @@ type Props = {
   onClear: () => Promise<void>;
   onExclude: () => Promise<void>;
   onClearExclusion: () => Promise<void>;
-  onDiscover?: (provider: typeof T_INVEST_PROVIDER) => Promise<MarketDiscoverResult>;
+  onDiscover?: (
+    provider: typeof T_INVEST_PROVIDER,
+    query?: string | null,
+  ) => Promise<MarketDiscoverResult>;
 };
 
 export function InstrumentMappingDialog({
@@ -62,6 +65,7 @@ export function InstrumentMappingDialog({
   const [providerMode, setProviderMode] = useState<MappingProviderId>(T_INVEST_PROVIDER);
   const [moexDraft, setMoexDraft] = useState<MoexMappingDraft>(defaultMappingDraft("stock"));
   const [tInvestDraft, setTInvestDraft] = useState<TInvestMappingDraft>(defaultTInvestDraft());
+  const [discoverQuery, setDiscoverQuery] = useState("");
   const [candidates, setCandidates] = useState<MarketDiscoverCandidate[]>([]);
   const [discoverMessage, setDiscoverMessage] = useState<string | null>(null);
   const [discoverBusy, setDiscoverBusy] = useState(false);
@@ -72,6 +76,7 @@ export function InstrumentMappingDialog({
     setProviderMode(defaultMappingProvider(mapping?.identity));
     setMoexDraft(identityToMoexDraft(mapping?.identity, instrument.instrument_type));
     setTInvestDraft(identityToTInvestDraft(mapping?.identity));
+    setDiscoverQuery("");
     setCandidates([]);
     setDiscoverMessage(null);
     setLocalError(null);
@@ -139,7 +144,8 @@ export function InstrumentMappingDialog({
     setLocalError(null);
     setDiscoverMessage(null);
     try {
-      const result = await onDiscover(T_INVEST_PROVIDER);
+      const query = discoverQuery.trim();
+      const result = await onDiscover(T_INVEST_PROVIDER, query || null);
       setCandidates(result.candidates);
       setDiscoverMessage(result.message);
       if (result.candidates.length === 0 && !result.message) {
@@ -233,6 +239,23 @@ export function InstrumentMappingDialog({
                   Production-источник 0.4. Режим торгов не нужен: канонический ключ —
                   instrument_uid.
                 </p>
+                {onDiscover ? (
+                  <>
+                    <Field htmlFor="mapping-t-invest-query" label="Название, тикер или ISIN">
+                      <Input
+                        id="mapping-t-invest-query"
+                        onChange={(event) => {
+                          setDiscoverQuery(event.target.value);
+                          setCandidates([]);
+                          setDiscoverMessage(null);
+                        }}
+                        placeholder="Например: SBER или RU0009029540"
+                        value={discoverQuery}
+                      />
+                    </Field>
+                    <p className="muted tiny">Поиск выполняется только после нажатия кнопки.</p>
+                  </>
+                ) : null}
                 <Field htmlFor="mapping-t-invest-uid" label="Идентификатор инструмента T-Invest">
                   <Input
                     id="mapping-t-invest-uid"
