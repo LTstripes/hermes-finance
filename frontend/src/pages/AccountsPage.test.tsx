@@ -179,7 +179,7 @@ describe("AccountsPage", () => {
     );
   });
 
-  it("deactivates an instrument through PATCH", async () => {
+  it("deactivates an instrument through the row overflow menu", async () => {
     const user = userEvent.setup();
     listInstrumentsMock.mockResolvedValue([instrument]);
     render(<AccountsPage />);
@@ -187,11 +187,39 @@ describe("AccountsPage", () => {
     await user.click(await screen.findByRole("button", { name: "Инструменты (1)" }));
     expect(await screen.findByText("ОФЗ 26248")).toBeInTheDocument();
     expect(screen.getByText(/Номинал: 1\s*000\s*₽/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Деактивировать" }));
+    expect(screen.queryByRole("button", { name: "Деактивировать" })).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Действия для инструмента «ОФЗ 26248»" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Деактивировать" }));
 
     await waitFor(() =>
       expect(updateInstrumentMock).toHaveBeenCalledWith(instrument.id, { is_active: false }),
     );
+  });
+
+  it("keeps edit and delete actions in the instrument overflow menu", async () => {
+    const user = userEvent.setup();
+    listInstrumentsMock.mockResolvedValue([instrument]);
+    render(<AccountsPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Инструменты (1)" }));
+    await screen.findByText("ОФЗ 26248");
+    expect(screen.queryByRole("button", { name: "Изменить" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Удалить" })).toBeNull();
+
+    const trigger = screen.getByRole("button", {
+      name: "Действия для инструмента «ОФЗ 26248»",
+    });
+    await user.click(trigger);
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
+    expect(screen.getByText("Удалить запись?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Удалить" }));
+    await waitFor(() => expect(deleteInstrumentMock).toHaveBeenCalledWith(instrument.id));
   });
 
   it("renders account load error and retries only that list", async () => {
