@@ -26,6 +26,7 @@ from hermes_finance.alfa_pro_probe.protocol import (
 )
 from hermes_finance.alfa_pro_probe.reader import (
     AlfaProReadonlyReader,
+    run_connection_state_bus_session,
     run_readonly_session,
 )
 from hermes_finance.alfa_pro_probe.report import build_report
@@ -775,3 +776,105 @@ def test_connection_state_error_code_is_not_translated() -> None:
         "auth failed",
     ):
         assert banned not in text
+
+
+class IdleThenBusTransport:
+    def __init__(self, payload: object, *, idle_before_event: int) -> None:
+        self.payload = payload
+        self.idle_before_event = idle_before_event
+        self.sent: list[str] = []
+        self.recv_calls = 0
+        self.closed = False
+        self._emitted = False
+
+    def send_text(self, message: str) -> None:
+        self.sent.append(message)
+
+    def recv_text(self, timeout: float) -> str:
+        self.recv_calls += 1
+        if not self._emitted and self.recv_calls > self.idle_before_event:
+            self._emitted = True
+            return encode_router_message(
+                "broadcast",
+                "#ConnectionState.Bus",
+                payload=self.payload,
+            )
+        time.sleep(timeout)
+        raise TimeoutError
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _assert_bus_only_sends(sent: list[str]) -> None:
+    commands = [str(json.loads(item).get("Command") or "") for item in sent]
+    channels = [str(json.loads(item).get("Channel") or "") for item in sent]
+    assert "request" not in commands
+    assert "#Data.Query" not in channels
+    assert all(channel == "#ConnectionState.Bus" for channel in channels)
+    assert "listen" in commands
+
+
+def test_bus_only_silence_across_read_timeouts_is_unresolved() -> None:
+    transport = IdleThenBusTransport({}, idle_before_event=1000)
+    reader = AlfaProReadonlyReader(transport, read_timeout=0.04)
+    state = run_connection_state_bus_session(reader, deadline=time.monotonic() + 0.22)
+    report = build_report(state, connection="pass")
+    assert transport.recv_calls >= 3
+    assert report.connection == "pass"
+    assert report.authenticated_read == "unresolved"
+    assert report.auth_status == "unresolved"
+    assert report.auth_status_source == "unresolved"
+    assert report.ready_to_sign_observed == "unresolved"
+    assert report.probe_mode == "connection-state-bus-only"
+    assert report.accounts_count == 0
+    _assert_bus_only_sends(transport.sent)
+
+
+def test_bus_only_delayed_event_after_read_timeouts() -> None:
+    fixture = load_fixture()
+    transport = IdleThenBusTransport(fixture["connection_state"], idle_before_event=2)
+    reader = AlfaProReadonlyReader(transport, read_timeout=0.04)
+    state = run_connection_state_bus_session(reader, deadline=time.monotonic() + 0.25)
+    report = build_report(state, connection="pass")
+    text = report.to_text()
+    assert transport.recv_calls >= 3
+    assert report.auth_status == "2"
+    assert report.auth_status_source == "bus"
+    assert report.ready_to_sign_observed == "true"
+    assert report.authenticated_read == "unresolved"
+    assert report.probe_mode == "connection-state-bus-only"
+    assert report.accounts_count == 0
+    assert "synth.user" not in text
+    assert "Synthetic Owner" not in text
+    _assert_bus_only_sends(transport.sent)
+    payloads = _request_payloads(transport.sent)
+    assert payloads == []
+
+
+def test_bus_only_cli_rejects_handshake_combination() -> None:
+    code = main(
+        [
+            "--live",
+            "--connection-state-bus-only",
+            "--origin-handshake-only",
+        ]
+    )
+    assert code == 2
+
+
+def test_bus_only_cli_uses_bus_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_live(config: object) -> object:
+        captured["config"] = config
+        from hermes_finance.alfa_pro_probe.report import ProbeReport
+
+        return ProbeReport(connection="pass", probe_mode="connection-state-bus-only")
+
+    monkeypatch.setattr("hermes_finance.alfa_pro_probe.live.run_live", fake_run_live)
+    code = main(["--live", "--connection-state-bus-only"])
+    assert code == 0
+    config = captured["config"]
+    assert getattr(config, "connection_state_bus_only") is True
+    assert getattr(config, "origin_handshake_only") is False

@@ -45,6 +45,14 @@ def main(argv: list[str] | None = None) -> int:
         help="connection handshake only; no client-data or trading commands",
     )
     parser.add_argument(
+        "--connection-state-bus-only",
+        action="store_true",
+        help=(
+            "listen on #ConnectionState.Bus for the overall deadline; "
+            "no #Data.Query and no client-data queries"
+        ),
+    )
+    parser.add_argument(
         "--origin",
         default=DEFAULT_HANDSHAKE_ORIGIN,
         help="handshake Origin; must be a non-loopback http(s) web origin",
@@ -59,6 +67,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.live:
         print("refusing to run without --live")
+        return 2
+    if args.origin_handshake_only and args.connection_state_bus_only:
+        print(
+            ProbeReport(
+                connection="fail",
+                authenticated_read="unresolved",
+                error="incompatible probe modes",
+            ).to_text(),
+            end="",
+        )
         return 2
     try:
         endpoint = validate_endpoint(args.endpoint)
@@ -95,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             read_timeout=_clamp(args.read_timeout, 0.1, _MAX_READ_TIMEOUT),
             total_deadline=_clamp(args.deadline, 1.0, _MAX_DEADLINE),
             origin_handshake_only=args.origin_handshake_only,
+            connection_state_bus_only=args.connection_state_bus_only,
             origin=origin,
             id_compare_store=store,
         )

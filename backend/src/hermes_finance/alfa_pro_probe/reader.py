@@ -62,6 +62,7 @@ class CollectedState:
     auth_status: int | None = None
     auth_status_source: str | None = None
     ready_to_sign: bool | None = None
+    bus_only: bool = False
     entities: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     query_status: dict[str, str] = field(default_factory=dict)
     error_codes: dict[str, int] = field(default_factory=dict)
@@ -138,7 +139,7 @@ class AlfaProReadonlyReader:
             except ForbiddenAlfaChannel:
                 continue
 
-    def drain(self, deadline: float) -> None:
+    def drain(self, deadline: float, *, continue_on_idle: bool = False) -> None:
         while time.monotonic() < deadline and self.state.messages_seen < self._max_messages:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -147,6 +148,8 @@ class AlfaProReadonlyReader:
             try:
                 raw = self._transport.recv_text(timeout)
             except TimeoutError:
+                if continue_on_idle:
+                    continue
                 break
             except OSError:
                 break
@@ -260,6 +263,18 @@ class AlfaProReadonlyReader:
         if entity_type == "ClientOperationEntity":
             return self._max_operation_rows
         return self._max_rows
+
+
+def run_connection_state_bus_session(
+    reader: AlfaProReadonlyReader, *, deadline: float
+) -> CollectedState:
+    """Listen on #ConnectionState.Bus only. No #Data.Query and no client-data queries."""
+
+    reader.state.bus_only = True
+    reader.listen_connection_state()
+    reader.drain(deadline, continue_on_idle=True)
+    reader.unlisten_all()
+    return reader.state
 
 
 def run_readonly_session(reader: AlfaProReadonlyReader, *, deadline: float) -> CollectedState:

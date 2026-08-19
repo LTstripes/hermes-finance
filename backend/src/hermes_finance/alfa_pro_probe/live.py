@@ -15,6 +15,7 @@ from hermes_finance.alfa_pro_probe.reader import (
     READ_TIMEOUT_S,
     TOTAL_DEADLINE_S,
     AlfaProReadonlyReader,
+    run_connection_state_bus_session,
     run_readonly_session,
 )
 from hermes_finance.alfa_pro_probe.report import ProbeReport, build_report, sanitize_error
@@ -29,6 +30,7 @@ class LiveConfig:
     read_timeout: float = READ_TIMEOUT_S
     total_deadline: float = TOTAL_DEADLINE_S
     origin_handshake_only: bool = False
+    connection_state_bus_only: bool = False
     origin: str = HANDSHAKE_ORIGIN
     id_compare_store: Path | None = None
 
@@ -64,6 +66,8 @@ def open_websocket(endpoint: str, *, origin: str | None, open_timeout: float) ->
 def run_live(config: LiveConfig) -> ProbeReport:
     if config.origin_handshake_only:
         return _run_origin_handshake(config)
+    if config.connection_state_bus_only:
+        return _run_connection_state_bus(config)
     return _run_readonly_live(config)
 
 
@@ -91,6 +95,30 @@ def _run_origin_handshake(config: LiveConfig) -> ProbeReport:
         if socket is not None:
             socket.close()
     return report
+
+
+def _run_connection_state_bus(config: LiveConfig) -> ProbeReport:
+    socket: WebsocketTransport | None = None
+    reader: AlfaProReadonlyReader | None = None
+    try:
+        socket = open_websocket(config.endpoint, origin=None, open_timeout=config.connect_timeout)
+        reader = AlfaProReadonlyReader(socket, read_timeout=config.read_timeout)
+        deadline = time.monotonic() + config.total_deadline
+        state = run_connection_state_bus_session(reader, deadline=deadline)
+        return build_report(state, connection="pass")
+    except Exception as exc:
+        report = ProbeReport(
+            connection="fail",
+            authenticated_read="unresolved",
+            probe_mode="connection-state-bus-only",
+        )
+        report.error = sanitize_error(exc)
+        return report
+    finally:
+        if reader is not None:
+            reader.close()
+        elif socket is not None:
+            socket.close()
 
 
 def _run_readonly_live(config: LiveConfig) -> ProbeReport:

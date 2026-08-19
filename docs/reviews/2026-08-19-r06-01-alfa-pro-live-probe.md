@@ -24,7 +24,15 @@ Do this only after independent review of the exact candidate SHA.
 uv run --locked python -m hermes_finance.alfa_pro_probe --live
 ```
 
-6. Handshake-only check (no client-data queries). Default Origin is the unrelated web origin `https://example.invalid`:
+6. Bounded `#ConnectionState.Bus` observer. No `#Data.Query`, no client account/position/history queries. Overall window is `--deadline` (default 30s). `--read-timeout` only bounds one idle recv; it does not end the run:
+
+```text
+uv run --locked python -m hermes_finance.alfa_pro_probe --live --connection-state-bus-only
+```
+
+If a bus broadcast carries `AuthStatus`, stdout has `auth_status`, `auth_status_source: bus`, and `ready_to_sign_observed`. If the overall deadline elapses with no AuthStatus, those fields stay `unresolved` (not `fail`).
+
+7. Handshake-only check (no client-data queries). Default Origin is the unrelated web origin `https://example.invalid`:
 
 ```text
 uv run --locked python -m hermes_finance.alfa_pro_probe --live --origin-handshake-only
@@ -32,7 +40,7 @@ uv run --locked python -m hermes_finance.alfa_pro_probe --live --origin-handshak
 
 Do not use a loopback Origin for this check. `--origin` may override only to another non-loopback http(s) web origin.
 
-7. Optional second `--live` run after a clean PRO restart, with an owner-only compare file **outside** the repository/workspace:
+8. Optional second `--live` run after a clean PRO restart, with an owner-only compare file **outside** the repository/workspace:
 
 ```text
 uv run --locked python -m hermes_finance.alfa_pro_probe --live --id-compare-store <outside-repo-file>
@@ -40,8 +48,8 @@ uv run --locked python -m hermes_finance.alfa_pro_probe --live --id-compare-stor
 
 Run the same command twice (before and after restart). Stdout emits only `stable|changed|mixed|unresolved`. Do not paste, commit, or copy the compare file back to an agent clone.
 
-8. If PRO can naturally sit at `ReadyToSign=false` without changing account permissions or sending trading commands, run `--live` in that state too. If not, leave `read_with_ready_to_sign_false: unresolved`.
-9. Paste only the printed sanitized block into this file. Do not keep raw frames, logs, payloads, or ID-compare store contents.
+9. If PRO can naturally sit at `ReadyToSign=false` without changing account permissions or sending trading commands, run `--live` in that state too. If not, leave `read_with_ready_to_sign_false: unresolved`.
+10. Paste only the printed sanitized block into this file. Do not keep raw frames, logs, payloads, or ID-compare store contents.
 
 CI must not pass `--live`. The probe writes nothing to the Hermes database, backups, exports, or repository files.
 
@@ -49,13 +57,11 @@ Missing PRO should fail calmly with `connection: fail`. Observed `AuthStatus` ot
 
 If a query errors or operation history hits the personal cap (2000 rows; other entities 500), history-depth dates stay `unresolved` and `collection_truncated` / `entity_query` say so.
 
-ConnectionState acquisition (read-only, before any client-data query):
+ConnectionState acquisition:
 
-1. `listen` `#ConnectionState.Bus`.
-2. Documented API v2.1 §4 request: `#Data.Query` payload `{Init: true, Subscribe: true}` (no `Type`). Keep this request as evidence even if it errors.
-3. Bounded drain; bus broadcasts may supply `AuthStatus` without proving the Init query succeeded.
-4. Only if `AuthStatus` is still missing: one compatibility `#Data.Query` using official SubscribeRequest fields (API v2.1 §3.3) with `Type: ConnectionState` plus `Init`/`Subscribe`. This is not a translation of any error code.
-5. Client account/position/history queries remain blocked until `AuthStatus=2` is actually observed.
+Default `--live` still sends the documented API v2.1 §4 `#Data.Query` `{Init: true, Subscribe: true}` and, only if AuthStatus is missing, the §3.3-shaped `Type: ConnectionState` fallback. Current terminal 5.26.5.572 returned undocumented SubscribeResponse code `6` for both; do not add more request shapes.
+
+`--connection-state-bus-only` is the next owner evidence path: `listen` `#ConnectionState.Bus` only, wait the overall deadline, treat per-recv timeout as idle, and never send `#Data.Query` or client-data queries. Client account/position/history queries remain blocked until `AuthStatus=2` is actually observed.
 
 ## Channels the probe may send
 
@@ -135,18 +141,29 @@ Record `FACT` only from the owner live run. Otherwise leave `UNRESOLVED`. Do not
 
 ## Previous owner live SHA (not this candidate)
 
-Reviewed live SHA `2f7b75da4e864c3f63f0a69190e444128e81d504` on Alfa PRO **5.26.5.572**, owner UI session with live market data and portfolio visible:
+Alfa PRO **5.26.5.572**, owner UI session with live market data and portfolio visible.
+
+`2f7b75da4e864c3f63f0a69190e444128e81d504`:
 
 - `connection: pass`
-- documented ConnectionState `#Data.Query` `{Init:true, Subscribe:true}`: `ConnectionState=error`, provider code `6`
+- documented typeless ConnectionState `#Data.Query`: error code `6`
 - `AuthStatus` not observed
 - `authenticated_read: fail` on that SHA must not be read as “user is unauthenticated”
 - no client account/position/history rows were read
+
+`d6025849cf5d908e992f5b3c4818eda8c46abbe2`:
+
+- `connection: pass`
+- `authenticated_read: unresolved`
+- `auth_status: unresolved`
+- documented typeless ConnectionState `#Data.Query`: error code `6`
+- typed `Type=ConnectionState` fallback: error code `6`
+- no `AuthStatus` from `#ConnectionState.Bus` during that bounded run
+- no client account/position/history queries
 - `routing_error: no`
-- foreign Origin handshake: `accepted`
 - trading methods invoked: `NO`
 
-Do not run restart-ID comparison until provider IDs have actually been collected. Do not change ReadyToSign or trading/signing settings for this investigation.
+Do not infer unauthenticated state from code `6`. Do not run restart-ID comparison until provider IDs have actually been collected. Do not change ReadyToSign or trading/signing settings for this investigation.
 
 ## Live questions (issue #71)
 

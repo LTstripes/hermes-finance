@@ -50,6 +50,7 @@ class ProbeReport:
     authenticated_read: str = "unresolved"
     auth_status: str = "unresolved"
     auth_status_source: str = "unresolved"
+    probe_mode: str = ""
     ready_to_sign_observed: str = "unresolved"
     accounts_count: int = 0
     subaccounts_count: int = 0
@@ -97,51 +98,57 @@ class ProbeReport:
         lines = [
             f"alfa_pro_version: {self.alfa_pro_version}",
             f"api_doc_version: {self.api_doc_version}",
-            f"connection: {self.connection}",
-            f"authenticated_read: {self.authenticated_read}",
-            f"auth_status: {self.auth_status}",
-            f"auth_status_source: {self.auth_status_source}",
-            f"ready_to_sign_observed: {self.ready_to_sign_observed}",
-            f"collection_truncated: {self.collection_truncated}",
-            f"routing_error: {self.routing_error}",
-            f"routing_error_code: {self.routing_error_code}",
-            "",
-            f"accounts_count: {self.accounts_count}",
-            f"subaccounts_count: {self.subaccounts_count}",
-            f"razdels_count: {self.razdels_count}",
-            f"iis_explicitly_classifiable: {self.iis_explicitly_classifiable}",
-            f"subaccounts_with_account_ref: {self.subaccounts_with_account_ref}",
-            f"razdels_with_account_ref: {self.razdels_with_account_ref}",
-            f"razdels_with_subaccount_ref: {self.razdels_with_subaccount_ref}",
-            "",
-            f"positions_count: {self.positions_count}",
-            f"positions_with_isin: {self.positions_with_isin}",
-            f"positions_with_account_ref: {self.positions_with_account_ref}",
-            f"positions_with_subaccount_ref: {self.positions_with_subaccount_ref}",
-            f"positions_with_razdel_ref: {self.positions_with_razdel_ref}",
-            f"positions_with_object_ref: {self.positions_with_object_ref}",
-            f"cash_balance_entities_count: {self.cash_balance_entities_count}",
-            f"snapshot_fields: [{snapshot}]",
-            "",
-            f"operations_count: {self.operations_count}",
-            f"oldest_operation_date: {self.oldest_operation_date}",
-            f"newest_operation_date: {self.newest_operation_date}",
-            f"observed_operation_types: [{types}]",
-            f"non_trade_ledger_events_observed: {self.non_trade_ledger_events_observed}",
-            "",
-            "ids_after_restart:",
-            f"  accounts: {self.ids_after_restart_accounts}",
-            f"  subaccounts: {self.ids_after_restart_subaccounts}",
-            f"  instruments: {self.ids_after_restart_instruments}",
-            f"  operations: {self.ids_after_restart_operations}",
-            "",
-            f"read_with_ready_to_sign_false: {self.read_with_ready_to_sign_false}",
-            f"foreign_origin_websocket_handshake: {self.foreign_origin_websocket_handshake}",
-            "",
-            f"raw_payload_saved: {self.raw_payload_saved}",
-            f"private_values_printed: {self.private_values_printed}",
-            f"trading_methods_invoked: {self.trading_methods_invoked}",
         ]
+        if self.probe_mode:
+            lines.append(f"probe_mode: {self.probe_mode}")
+        lines.extend(
+            [
+                f"connection: {self.connection}",
+                f"authenticated_read: {self.authenticated_read}",
+                f"auth_status: {self.auth_status}",
+                f"auth_status_source: {self.auth_status_source}",
+                f"ready_to_sign_observed: {self.ready_to_sign_observed}",
+                f"collection_truncated: {self.collection_truncated}",
+                f"routing_error: {self.routing_error}",
+                f"routing_error_code: {self.routing_error_code}",
+                "",
+                f"accounts_count: {self.accounts_count}",
+                f"subaccounts_count: {self.subaccounts_count}",
+                f"razdels_count: {self.razdels_count}",
+                f"iis_explicitly_classifiable: {self.iis_explicitly_classifiable}",
+                f"subaccounts_with_account_ref: {self.subaccounts_with_account_ref}",
+                f"razdels_with_account_ref: {self.razdels_with_account_ref}",
+                f"razdels_with_subaccount_ref: {self.razdels_with_subaccount_ref}",
+                "",
+                f"positions_count: {self.positions_count}",
+                f"positions_with_isin: {self.positions_with_isin}",
+                f"positions_with_account_ref: {self.positions_with_account_ref}",
+                f"positions_with_subaccount_ref: {self.positions_with_subaccount_ref}",
+                f"positions_with_razdel_ref: {self.positions_with_razdel_ref}",
+                f"positions_with_object_ref: {self.positions_with_object_ref}",
+                f"cash_balance_entities_count: {self.cash_balance_entities_count}",
+                f"snapshot_fields: [{snapshot}]",
+                "",
+                f"operations_count: {self.operations_count}",
+                f"oldest_operation_date: {self.oldest_operation_date}",
+                f"newest_operation_date: {self.newest_operation_date}",
+                f"observed_operation_types: [{types}]",
+                f"non_trade_ledger_events_observed: {self.non_trade_ledger_events_observed}",
+                "",
+                "ids_after_restart:",
+                f"  accounts: {self.ids_after_restart_accounts}",
+                f"  subaccounts: {self.ids_after_restart_subaccounts}",
+                f"  instruments: {self.ids_after_restart_instruments}",
+                f"  operations: {self.ids_after_restart_operations}",
+                "",
+                f"read_with_ready_to_sign_false: {self.read_with_ready_to_sign_false}",
+                f"foreign_origin_websocket_handshake: {self.foreign_origin_websocket_handshake}",
+                "",
+                f"raw_payload_saved: {self.raw_payload_saved}",
+                f"private_values_printed: {self.private_values_printed}",
+                f"trading_methods_invoked: {self.trading_methods_invoked}",
+            ]
+        )
         if self.entity_query:
             lines.append("entity_query: [" + ", ".join(self.entity_query) + "]")
         if self.entity_truncated:
@@ -182,6 +189,7 @@ def build_report(
         authenticated_read=_authenticated_read(state, connection),
         auth_status=_auth_status_label(state.auth_status),
         auth_status_source=state.auth_status_source or "unresolved",
+        probe_mode="connection-state-bus-only" if state.bus_only else "",
         ready_to_sign_observed=_ready_label(state.ready_to_sign),
         collection_truncated=_yes_no(state.truncated or any(state.entity_truncated.values())),
         routing_error=_yes_no(state.routing_error),
@@ -317,6 +325,8 @@ def _id_sets(
 def _authenticated_read(state: CollectedState, connection: str) -> str:
     if connection != "pass":
         return "fail"
+    if state.bus_only:
+        return "unresolved"
     if state.auth_status is None:
         return "unresolved"
     if state.auth_status != 2:
