@@ -252,9 +252,7 @@ def _bond_initial_nominal(bond: dict[str, object]) -> tuple[Decimal, str]:
     return initial, currency
 
 
-def _bond_nominal_for_discovery(
-    bond: dict[str, object], *, today: date
-) -> tuple[Decimal, str]:
+def _bond_nominal_for_discovery(bond: dict[str, object], *, today: date) -> tuple[Decimal, str]:
     nominal, currency = _money_value(_field(bond, "nominal"), name="nominal")
     if nominal > 0:
         return nominal, currency
