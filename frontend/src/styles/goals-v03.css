@@ -16,7 +16,10 @@
   list-style: none;
 }
 
-.goal-card-grid:not(.goal-card-grid--archive) > .goal-card:only-child {
+.goal-card-grid:not(.goal-card-grid--archive) > .goal-card:only-child,
+.goal-card-grid:not(.goal-card-grid--archive)
+  > .goal-card--main:first-child
+  + .goal-card:last-child {
   grid-column: 1 / -1;
 }
 
