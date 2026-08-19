@@ -58,6 +58,14 @@ The production runtime clone is never an agent development workspace.
 
 Do not put machine-specific absolute local paths into tracked repository docs.
 
+## Workspace root discipline
+
+- A development agent may write only inside its explicitly assigned clone or task workspace.
+- Agents MUST NOT create, clone, move, rename or delete sibling directories under the canonical local workspace root unless the owner/integrator explicitly assigns that filesystem operation.
+- Temporary repositories or workspaces outside the assigned agent clone require explicit owner/integrator instruction.
+- Owner-only live/probe workspaces use the designated local `owner-probes/` root and are never agent workspaces. Development agents must not access, inspect or reuse them while they contain owner/live data.
+- Machine-specific workspace-root paths and local placement remain untracked local configuration.
+
 ## Product and privacy invariants
 
 Keep these permanent. Detailed financial semantics live in `MASTER_SPEC.md` and accepted ADRs; do not re-derive them here.
