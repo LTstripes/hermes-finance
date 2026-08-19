@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from hermes_finance.alfa_pro_probe.channels import DEFAULT_ENDPOINT
-from hermes_finance.alfa_pro_probe.protocol import AlfaProbeEndpointError, validate_endpoint
+from hermes_finance.alfa_pro_probe.protocol import (
+    DEFAULT_HANDSHAKE_ORIGIN,
+    AlfaProbeEndpointError,
+    validate_endpoint,
+    validate_handshake_origin,
+)
 from hermes_finance.alfa_pro_probe.reader import CONNECT_TIMEOUT_S, READ_TIMEOUT_S, TOTAL_DEADLINE_S
 from hermes_finance.alfa_pro_probe.report import ProbeReport
 
@@ -36,7 +42,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--origin-handshake-only",
         action="store_true",
-        help="connection handshake with a benign local Origin; no client-data queries",
+        help="connection handshake only; no client-data or trading commands",
+    )
+    parser.add_argument(
+        "--origin",
+        default=DEFAULT_HANDSHAKE_ORIGIN,
+        help="handshake Origin; must be a non-loopback http(s) web origin",
+    )
+    parser.add_argument(
+        "--id-compare-store",
+        help="owner-only keyed ID comparison file; must be outside the repository",
     )
     parser.add_argument("--connect-timeout", type=float, default=CONNECT_TIMEOUT_S)
     parser.add_argument("--read-timeout", type=float, default=READ_TIMEOUT_S)
@@ -55,6 +70,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"endpoint_rejected: {type(exc).__name__}", file=sys.stderr)
         return 2
+    origin = DEFAULT_HANDSHAKE_ORIGIN
+    if args.origin_handshake_only:
+        try:
+            origin = validate_handshake_origin(args.origin)
+        except AlfaProbeEndpointError:
+            print(
+                ProbeReport(
+                    connection="fail",
+                    foreign_origin_websocket_handshake="unresolved",
+                    error="AlfaProbeEndpointError: invalid endpoint or origin",
+                ).to_text(),
+                end="",
+            )
+            return 2
+    store = Path(args.id_compare_store) if args.id_compare_store else None
 
     from hermes_finance.alfa_pro_probe.live import LiveConfig, run_live
 
@@ -65,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
             read_timeout=_clamp(args.read_timeout, 0.1, _MAX_READ_TIMEOUT),
             total_deadline=_clamp(args.deadline, 1.0, _MAX_DEADLINE),
             origin_handshake_only=args.origin_handshake_only,
+            origin=origin,
+            id_compare_store=store,
         )
     )
     print(report.to_text(), end="")

@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from hermes_finance.alfa_pro_probe.channels import DEFAULT_ENDPOINT
 
 MAX_PAYLOAD_CHARS: Final = 512_000
+DEFAULT_HANDSHAKE_ORIGIN: Final = "https://example.invalid"
 
 
 class AlfaProbeEndpointError(ValueError):
@@ -38,6 +39,23 @@ def validate_endpoint(endpoint: str) -> str:
 
 def default_endpoint() -> str:
     return validate_endpoint(DEFAULT_ENDPOINT)
+
+
+def validate_handshake_origin(origin: str) -> str:
+    """Handshake-only Origin must be a non-loopback http(s) web origin."""
+
+    raw = origin.strip()
+    if not raw:
+        raise AlfaProbeEndpointError("handshake origin is required")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
+        raise AlfaProbeEndpointError("handshake origin must be an http(s) web origin")
+    host = (parsed.hostname or "").strip()
+    if not host or _is_loopback_host(host):
+        raise AlfaProbeEndpointError("handshake origin must not be loopback")
+    if parsed.username or parsed.password:
+        raise AlfaProbeEndpointError("handshake origin must not include credentials")
+    return raw
 
 
 def encode_router_message(

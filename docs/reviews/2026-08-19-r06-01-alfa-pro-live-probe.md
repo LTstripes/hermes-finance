@@ -18,25 +18,34 @@ Do this only after independent review of the exact candidate SHA.
 2. Keep that workspace outside every agent development clone and outside the production runtime clone.
 3. Do not copy `.env`, `finance.db`, backups, exports, or private files into an agent clone.
 4. Start Alfa PRO, log in, leave the terminal running. Hermes does not supply credentials.
-5. From the workspace `backend/` directory:
+5. From the workspace `backend/` directory, using the frozen lockfile:
 
 ```text
-uv run python -m hermes_finance.alfa_pro_probe --live
+uv run --locked python -m hermes_finance.alfa_pro_probe --live
 ```
 
-6. Handshake-only check (no client-data queries). Uses Origin `http://127.0.0.1:9`:
+6. Handshake-only check (no client-data queries). Default Origin is the unrelated web origin `https://example.invalid`:
 
 ```text
-uv run python -m hermes_finance.alfa_pro_probe --live --origin-handshake-only
+uv run --locked python -m hermes_finance.alfa_pro_probe --live --origin-handshake-only
 ```
 
-7. Optional second `--live` run after a clean PRO restart, to compare `id_fingerprints` only.
+Do not use a loopback Origin for this check. `--origin` may override only to another non-loopback http(s) web origin.
+
+7. Optional second `--live` run after a clean PRO restart, with an owner-only compare file **outside** the repository/workspace:
+
+```text
+uv run --locked python -m hermes_finance.alfa_pro_probe --live --id-compare-store <outside-repo-file>
+```
+
+Run the same command twice (before and after restart). Stdout emits only `stable|changed|mixed|unresolved`. Do not paste, commit, or copy the compare file back to an agent clone.
+
 8. If PRO can naturally sit at `ReadyToSign=false` without changing account permissions or sending trading commands, run `--live` in that state too. If not, leave `read_with_ready_to_sign_false: unresolved`.
-9. Paste only the printed sanitized block into this file. Do not keep raw frames, logs, or payloads.
+9. Paste only the printed sanitized block into this file. Do not keep raw frames, logs, payloads, or ID-compare store contents.
 
 CI must not pass `--live`. The probe writes nothing to the Hermes database, backups, exports, or repository files.
 
-Missing or unauthenticated PRO should fail calmly with `connection: fail` or `authenticated_read: fail`.
+Missing or unauthenticated PRO should fail calmly with `connection: fail` or `authenticated_read: fail`. If a query errors or operation history hits the personal cap (2000 rows; other entities 500), history-depth dates stay `unresolved` and `collection_truncated` / `entity_query` say so.
 
 ## Channels the probe may send
 
@@ -52,7 +61,7 @@ Allowlisted entities:
 - `SubAccountRazdelEntity`
 - `ClientPositionEntity`
 - `ClientBalanceEntity`
-- `ClientOperationEntity`
+- `ClientOperationEntity` (personal-history cap 2000)
 - `AssetInfoEntity` (position `IdObject` keys only, bounded)
 
 Hard-denied at send time: every channel whose name starts with `#Order.`, including the documented trading channels. There is no public generic `send(channel, payload)`.
@@ -69,13 +78,22 @@ api_doc_version: 2.1
 connection: unresolved
 authenticated_read: unresolved
 ready_to_sign_observed: unresolved
+collection_truncated: unresolved
 
 accounts_count: unresolved
 subaccounts_count: unresolved
+razdels_count: unresolved
 iis_explicitly_classifiable: unresolved
+subaccounts_with_account_ref: unresolved
+razdels_with_account_ref: unresolved
+razdels_with_subaccount_ref: unresolved
 
 positions_count: unresolved
 positions_with_isin: unresolved
+positions_with_account_ref: unresolved
+positions_with_subaccount_ref: unresolved
+positions_with_razdel_ref: unresolved
+positions_with_object_ref: unresolved
 cash_balance_entities_count: unresolved
 snapshot_fields: []
 
@@ -99,7 +117,7 @@ private_values_printed: no
 trading_methods_invoked: no
 ```
 
-Record `FACT` only from the owner live run. Otherwise leave `UNRESOLVED`. Do not guess IIS from account numbers or names. Do not copy raw IDs, holdings, quantities, balances, prices, or JSON.
+Record `FACT` only from the owner live run. Otherwise leave `UNRESOLVED`. Do not guess IIS from account numbers, names, or field-name substrings. Do not copy raw IDs, holdings, quantities, balances, prices, JSON, or ID digests.
 
 ## Live questions (issue #71)
 
@@ -109,5 +127,5 @@ A–H remain unanswered until Phase B. Phase A does not observe Alfa PRO.
 
 - No real Alfa credentials, account IDs, or owner portfolio data in this repository.
 - Synthetic fixture: `backend/tests/fixtures/alfa_pro/synthetic_read_only.json`.
-- Live stdout must stay counts/dates/field names/state labels/id fingerprints only.
-- Do not commit live transcripts.
+- Default live stdout is counts, dates, field names, relationship coverage, query status, and state labels only.
+- Do not commit live transcripts or `--id-compare-store` files.

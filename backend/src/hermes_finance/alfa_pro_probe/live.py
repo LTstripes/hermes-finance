@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
+from hermes_finance.alfa_pro_probe.protocol import (
+    DEFAULT_HANDSHAKE_ORIGIN,
+    validate_handshake_origin,
+)
 from hermes_finance.alfa_pro_probe.reader import (
     CONNECT_TIMEOUT_S,
     READ_TIMEOUT_S,
@@ -14,7 +19,7 @@ from hermes_finance.alfa_pro_probe.reader import (
 )
 from hermes_finance.alfa_pro_probe.report import ProbeReport, build_report, sanitize_error
 
-HANDSHAKE_ORIGIN = "http://127.0.0.1:9"
+HANDSHAKE_ORIGIN = DEFAULT_HANDSHAKE_ORIGIN
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,7 @@ class LiveConfig:
     total_deadline: float = TOTAL_DEADLINE_S
     origin_handshake_only: bool = False
     origin: str = HANDSHAKE_ORIGIN
+    id_compare_store: Path | None = None
 
 
 class WebsocketTransport:
@@ -65,9 +71,10 @@ def _run_origin_handshake(config: LiveConfig) -> ProbeReport:
     report = ProbeReport(connection="fail", foreign_origin_websocket_handshake="unresolved")
     socket: WebsocketTransport | None = None
     try:
+        origin = validate_handshake_origin(config.origin)
         socket = open_websocket(
             config.endpoint,
-            origin=config.origin,
+            origin=origin,
             open_timeout=config.connect_timeout,
         )
         report.connection = "pass"
@@ -94,7 +101,7 @@ def _run_readonly_live(config: LiveConfig) -> ProbeReport:
         reader = AlfaProReadonlyReader(socket, read_timeout=config.read_timeout)
         deadline = time.monotonic() + config.total_deadline
         state = run_readonly_session(reader, deadline=deadline)
-        return build_report(state, connection="pass")
+        return build_report(state, connection="pass", id_compare_store=config.id_compare_store)
     except Exception as exc:
         report = ProbeReport(connection="fail", authenticated_read="fail")
         report.error = sanitize_error(exc)

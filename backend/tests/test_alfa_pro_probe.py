@@ -72,6 +72,20 @@ class ScriptedTransport:
             return
         entity = payload.get("Type") if isinstance(payload, dict) else None
         if isinstance(entity, str):
+            errors = self.fixture.get("errors")
+            if isinstance(errors, dict) and entity in errors:
+                self._queue.append(
+                    encode_router_message(
+                        "response",
+                        "#Data.Query",
+                        payload={
+                            "Type": entity,
+                            "Error": {"Code": errors[entity], "Message": "secret provider fail"},
+                        },
+                        request_id=str(request_id) if request_id else None,
+                    )
+                )
+                return
             rows = self.fixture.get(entity, [])
             self._queue.append(
                 encode_router_message(
@@ -239,10 +253,20 @@ def test_synthetic_account_position_operation_parsing() -> None:
     assert report.ready_to_sign_observed == "true"
     assert report.accounts_count == 1
     assert report.subaccounts_count == 2
+    assert report.razdels_count == 1
     assert report.iis_explicitly_classifiable == "unresolved"
+    assert report.subaccounts_with_account_ref == "2/2"
+    assert report.razdels_with_account_ref == "1/1"
+    assert report.razdels_with_subaccount_ref == "1/1"
     assert report.positions_count == 2
     assert report.positions_with_isin == "1/2"
+    assert report.positions_with_account_ref == "2/2"
+    assert report.positions_with_subaccount_ref == "2/2"
+    assert report.positions_with_razdel_ref == "2/2"
+    assert report.positions_with_object_ref == "2/2"
     assert report.cash_balance_entities_count == 1
+    assert report.collection_truncated == "no"
+    assert "ClientOperationEntity=ok" in report.entity_query
     assert report.snapshot_fields == [
         "quantity",
         "valuation",
@@ -271,7 +295,9 @@ def test_synthetic_account_position_operation_parsing() -> None:
     assert "RU000SYNTH01" not in text
     assert "250.5" not in text
     assert "1500" not in text
-    assert "IdAccount" not in text
+    assert "id_fingerprints" not in text
+    assert "secret provider fail" not in text
+    assert any(item.startswith("ClientAccountEntity={") for item in report.observed_fields)
 
 
 def test_iis_is_not_inferred_from_name_or_code() -> None:
@@ -282,6 +308,7 @@ def test_iis_is_not_inferred_from_name_or_code() -> None:
     razdels = fixture["SubAccountRazdelEntity"]
     assert isinstance(razdels, list)
     razdels[0]["RCode"] = "IIS"
+    accounts[0]["IsIis"] = True
     transport = ScriptedTransport(fixture)
     reader = AlfaProReadonlyReader(transport)
     state = run_readonly_session(reader, deadline=time.monotonic() + 2)
@@ -352,7 +379,8 @@ def test_origin_handshake_sends_no_client_queries(monkeypatch: pytest.MonkeyPatc
             return None
 
     def fake_open(endpoint: str, *, origin: str | None, open_timeout: float) -> object:
-        assert origin == "http://127.0.0.1:9"
+        assert origin == "https://example.invalid"
+        assert "127.0.0.1" not in origin
         assert endpoint.startswith("ws://127.0.0.1:")
         from hermes_finance.alfa_pro_probe.live import WebsocketTransport
 
@@ -380,3 +408,107 @@ def test_official_fixture_has_no_owner_payload() -> None:
     assert fixture["meta"]["source"].startswith("synthetic")
     account = fixture["ClientAccountEntity"][0]
     assert account == {"IdAccount": 101}
+
+
+def test_provider_error_does_not_look_like_empty_complete_history() -> None:
+    fixture = load_fixture()
+    fixture["errors"] = {"ClientOperationEntity": 5}
+    transport = ScriptedTransport(fixture)
+    reader = AlfaProReadonlyReader(transport)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    report = build_report(state, connection="pass")
+    text = report.to_text()
+    assert report.operations_count == 0
+    assert "ClientOperationEntity=error" in report.entity_query
+    assert "ClientOperationEntity=5" in report.entity_error_codes
+    assert report.oldest_operation_date == "unresolved"
+    assert report.newest_operation_date == "unresolved"
+    assert report.observed_operation_types == []
+    assert report.non_trade_ledger_events_observed == "unresolved"
+    assert "secret provider fail" not in text
+    assert "Message" not in text
+
+
+def test_truncated_operations_mark_history_unresolved() -> None:
+    fixture = load_fixture()
+    fixture["ClientOperationEntity"] = [
+        {
+            "IdOperation": 800 + index,
+            "TimeOperation": "2023-01-01T00:00:00Z",
+            "IdOperationType": "TRD",
+            "IdObject": 501,
+            "Quantity": 1,
+            "IdAccount": 101,
+        }
+        for index in range(6)
+    ]
+    transport = ScriptedTransport(fixture)
+    reader = AlfaProReadonlyReader(transport, max_operation_rows=2)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    report = build_report(state, connection="pass")
+    assert report.collection_truncated == "yes"
+    assert "ClientOperationEntity" in report.entity_truncated
+    assert report.operations_count == 2
+    assert report.oldest_operation_date == "unresolved"
+    assert report.newest_operation_date == "unresolved"
+    assert report.non_trade_ledger_events_observed == "unresolved"
+    assert "2023-01-01" not in report.to_text()
+
+
+def test_default_stdout_has_no_raw_ids_or_id_digests() -> None:
+    import hashlib
+
+    transport = ScriptedTransport(load_fixture())
+    reader = AlfaProReadonlyReader(transport)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    text = build_report(state, connection="pass").to_text()
+    digest = hashlib.sha256(b"101").hexdigest()
+    assert "id_fingerprints" not in text
+    assert digest not in text
+    assert digest[:16] not in text
+    assert "\n101\n" not in text
+    assert "IdAccount=101" not in text
+
+
+def test_handshake_rejects_loopback_origin() -> None:
+    from hermes_finance.alfa_pro_probe.protocol import validate_handshake_origin
+
+    with pytest.raises(AlfaProbeEndpointError):
+        validate_handshake_origin("http://127.0.0.1:9")
+    with pytest.raises(AlfaProbeEndpointError):
+        validate_handshake_origin("http://localhost:9")
+    assert validate_handshake_origin("https://example.invalid") == "https://example.invalid"
+    code = main(["--live", "--origin-handshake-only", "--origin", "http://127.0.0.1:9"])
+    assert code == 2
+
+
+def test_owner_id_compare_store_emits_labels_only(tmp_path: Path) -> None:
+    from hermes_finance.alfa_pro_probe.report import compare_id_sets
+    from hermes_finance.settings import REPOSITORY_ROOT
+
+    store = tmp_path / "id-compare.json"
+    transport = ScriptedTransport(load_fixture())
+    reader = AlfaProReadonlyReader(transport)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    first = build_report(state, connection="pass", id_compare_store=store)
+    assert first.ids_after_restart_accounts == "unresolved"
+    assert "id_fingerprints" not in first.to_text()
+    stored = store.read_text(encoding="utf-8")
+    assert '"101"' not in stored
+    second = build_report(state, connection="pass", id_compare_store=store)
+    assert second.ids_after_restart_accounts == "stable"
+    state.entities["ClientAccountEntity"]["999"] = {"IdAccount": 999}
+    mixed = build_report(state, connection="pass", id_compare_store=store)
+    assert mixed.ids_after_restart_accounts == "mixed"
+    leaked = REPOSITORY_ROOT / "backend" / "r06-01-id-store.json"
+    with pytest.raises(ValueError, match="outside the repository"):
+        compare_id_sets(
+            leaked,
+            {
+                "accounts": ["1"],
+                "subaccounts": [],
+                "instruments": [],
+                "operations": [],
+            },
+        )
+    assert not leaked.exists()

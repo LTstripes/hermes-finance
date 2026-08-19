@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
-import re
+import hmac
+import json
+import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 
-from hermes_finance.alfa_pro_probe.channels import API_DOC_VERSION
+from hermes_finance.alfa_pro_probe.channels import API_DOC_VERSION, CLIENT_ENTITY_TYPES
 from hermes_finance.alfa_pro_probe.reader import CollectedState
+from hermes_finance.settings import REPOSITORY_ROOT
 
-_IIS_KEY_RE = re.compile(r"iis", re.IGNORECASE)
 _SNAPSHOT_FIELDS = (
     ("quantity", ("TorgPos",)),
     ("valuation", ("Price", "PortfolioCost")),
@@ -31,6 +33,12 @@ _SHAPE_FIELDS = (
     "Balance",
     "Quantity",
 )
+_ID_CLASSES = ("accounts", "subaccounts", "instruments", "operations")
+_STATUS_ORDER = (
+    "ConnectionState",
+    *CLIENT_ENTITY_TYPES,
+    "AssetInfoEntity",
+)
 
 
 @dataclass
@@ -42,9 +50,17 @@ class ProbeReport:
     ready_to_sign_observed: str = "unresolved"
     accounts_count: int = 0
     subaccounts_count: int = 0
+    razdels_count: int = 0
     iis_explicitly_classifiable: str = "unresolved"
+    subaccounts_with_account_ref: str = "0/0"
+    razdels_with_account_ref: str = "0/0"
+    razdels_with_subaccount_ref: str = "0/0"
     positions_count: int = 0
     positions_with_isin: str = "0/0"
+    positions_with_account_ref: str = "0/0"
+    positions_with_subaccount_ref: str = "0/0"
+    positions_with_razdel_ref: str = "0/0"
+    positions_with_object_ref: str = "0/0"
     cash_balance_entities_count: int = 0
     snapshot_fields: list[str] = field(default_factory=list)
     operations_count: int = 0
@@ -61,10 +77,11 @@ class ProbeReport:
     raw_payload_saved: str = "no"
     private_values_printed: str = "no"
     trading_methods_invoked: str = "no"
-    accounts_id_fingerprint: str = "unresolved"
-    subaccounts_id_fingerprint: str = "unresolved"
-    instruments_id_fingerprint: str = "unresolved"
-    operations_id_fingerprint: str = "unresolved"
+    collection_truncated: str = "no"
+    entity_query: list[str] = field(default_factory=list)
+    entity_truncated: list[str] = field(default_factory=list)
+    entity_error_codes: list[str] = field(default_factory=list)
+    observed_fields: list[str] = field(default_factory=list)
     value_encodings: list[str] = field(default_factory=list)
     channels_invoked: list[str] = field(default_factory=list)
     error: str = ""
@@ -78,13 +95,22 @@ class ProbeReport:
             f"connection: {self.connection}",
             f"authenticated_read: {self.authenticated_read}",
             f"ready_to_sign_observed: {self.ready_to_sign_observed}",
+            f"collection_truncated: {self.collection_truncated}",
             "",
             f"accounts_count: {self.accounts_count}",
             f"subaccounts_count: {self.subaccounts_count}",
+            f"razdels_count: {self.razdels_count}",
             f"iis_explicitly_classifiable: {self.iis_explicitly_classifiable}",
+            f"subaccounts_with_account_ref: {self.subaccounts_with_account_ref}",
+            f"razdels_with_account_ref: {self.razdels_with_account_ref}",
+            f"razdels_with_subaccount_ref: {self.razdels_with_subaccount_ref}",
             "",
             f"positions_count: {self.positions_count}",
             f"positions_with_isin: {self.positions_with_isin}",
+            f"positions_with_account_ref: {self.positions_with_account_ref}",
+            f"positions_with_subaccount_ref: {self.positions_with_subaccount_ref}",
+            f"positions_with_razdel_ref: {self.positions_with_razdel_ref}",
+            f"positions_with_object_ref: {self.positions_with_object_ref}",
             f"cash_balance_entities_count: {self.cash_balance_entities_count}",
             f"snapshot_fields: [{snapshot}]",
             "",
@@ -107,17 +133,14 @@ class ProbeReport:
             f"private_values_printed: {self.private_values_printed}",
             f"trading_methods_invoked: {self.trading_methods_invoked}",
         ]
-        if self.accounts_id_fingerprint != "unresolved":
-            lines.extend(
-                [
-                    "",
-                    "id_fingerprints:",
-                    f"  accounts: {self.accounts_id_fingerprint}",
-                    f"  subaccounts: {self.subaccounts_id_fingerprint}",
-                    f"  instruments: {self.instruments_id_fingerprint}",
-                    f"  operations: {self.operations_id_fingerprint}",
-                ]
-            )
+        if self.entity_query:
+            lines.append("entity_query: [" + ", ".join(self.entity_query) + "]")
+        if self.entity_truncated:
+            lines.append("entity_truncated: [" + ", ".join(self.entity_truncated) + "]")
+        if self.entity_error_codes:
+            lines.append("entity_error_codes: [" + ", ".join(self.entity_error_codes) + "]")
+        if self.observed_fields:
+            lines.append("observed_fields: [" + ", ".join(self.observed_fields) + "]")
         if self.value_encodings:
             lines.append("value_encodings: [" + ", ".join(self.value_encodings) + "]")
         if self.channels_invoked:
@@ -127,7 +150,12 @@ class ProbeReport:
         return "\n".join(lines) + "\n"
 
 
-def build_report(state: CollectedState, *, connection: str) -> ProbeReport:
+def build_report(
+    state: CollectedState,
+    *,
+    connection: str,
+    id_compare_store: Path | None = None,
+) -> ProbeReport:
     accounts = state.entities.get("ClientAccountEntity", {})
     subaccounts = state.entities.get("ClientSubAccountEntity", {})
     razdels = state.entities.get("SubAccountRazdelEntity", {})
@@ -136,38 +164,44 @@ def build_report(state: CollectedState, *, connection: str) -> ProbeReport:
     operations = state.entities.get("ClientOperationEntity", {})
     assets = state.entities.get("AssetInfoEntity", {})
 
-    isin_by_object = _isin_presence(assets)
-    with_isin = 0
-    for row in positions.values():
-        object_id = row.get("IdObject")
-        if str(object_id) in isin_by_object:
-            with_isin += 1
-
+    history_incomplete = _history_incomplete(state)
     types = _operation_types(operations)
-    dates = _operation_dates(operations)
-    encodings = _value_encodings(positions, balances, operations)
+    dates = [] if history_incomplete else _operation_dates(operations)
 
     report = ProbeReport(
         connection=connection,
         authenticated_read=_authenticated_read(state, connection),
         ready_to_sign_observed=_ready_label(state.ready_to_sign),
+        collection_truncated=_yes_no(state.truncated or any(state.entity_truncated.values())),
         accounts_count=len(accounts),
         subaccounts_count=len(subaccounts),
-        iis_explicitly_classifiable=_iis_classifiable(accounts, subaccounts, razdels),
+        razdels_count=len(razdels),
+        iis_explicitly_classifiable="unresolved",
+        subaccounts_with_account_ref=_ref_count(subaccounts, "IdAccount"),
+        razdels_with_account_ref=_ref_count(razdels, "IdAccount"),
+        razdels_with_subaccount_ref=_ref_count(razdels, "IdSubAccount"),
         positions_count=len(positions),
-        positions_with_isin=f"{with_isin}/{len(positions)}",
+        positions_with_isin=_isin_count(positions, assets),
+        positions_with_account_ref=_ref_count(positions, "IdAccount"),
+        positions_with_subaccount_ref=_ref_count(positions, "IdSubAccount"),
+        positions_with_razdel_ref=_ref_count(positions, "IdRazdel"),
+        positions_with_object_ref=_ref_count(positions, "IdObject"),
         cash_balance_entities_count=len(balances),
         snapshot_fields=_snapshot_fields(positions, balances),
         operations_count=len(operations),
         oldest_operation_date=dates[0] if dates else "unresolved",
         newest_operation_date=dates[-1] if dates else "unresolved",
-        observed_operation_types=types,
-        non_trade_ledger_events_observed=_non_trade(types, operations),
-        accounts_id_fingerprint=_fingerprint(accounts),
-        subaccounts_id_fingerprint=_fingerprint(subaccounts),
-        instruments_id_fingerprint=_fingerprint(_instrument_ids(positions, assets)),
-        operations_id_fingerprint=_fingerprint(operations),
-        value_encodings=encodings,
+        observed_operation_types=[] if history_incomplete else types,
+        non_trade_ledger_events_observed=_non_trade(types, operations, history_incomplete),
+        entity_query=_status_list(state),
+        entity_truncated=sorted(name for name, flag in state.entity_truncated.items() if flag),
+        entity_error_codes=[
+            f"{name}={state.error_codes[name]}"
+            for name in _STATUS_ORDER
+            if name in state.error_codes
+        ],
+        observed_fields=_observed_fields(state),
+        value_encodings=_value_encodings(positions, balances, operations),
         channels_invoked=list(state.channels_invoked),
         raw_payload_saved="no",
         private_values_printed="no",
@@ -175,6 +209,14 @@ def build_report(state: CollectedState, *, connection: str) -> ProbeReport:
     )
     if state.ready_to_sign is False and report.authenticated_read == "pass":
         report.read_with_ready_to_sign_false = "pass"
+    if id_compare_store is not None:
+        labels = compare_id_sets(
+            id_compare_store, _id_sets(accounts, subaccounts, positions, assets, operations)
+        )
+        report.ids_after_restart_accounts = labels["accounts"]
+        report.ids_after_restart_subaccounts = labels["subaccounts"]
+        report.ids_after_restart_instruments = labels["instruments"]
+        report.ids_after_restart_operations = labels["operations"]
     return report
 
 
@@ -188,7 +230,73 @@ def sanitize_error(exc: BaseException) -> str:
         return f"{name}: connection failed"
     if name in {"InvalidHandshake", "InvalidStatus", "InvalidStatusCode", "InvalidHeader"}:
         return f"{name}: websocket handshake rejected"
+    if name == "AlfaProbeEndpointError":
+        return f"{name}: invalid endpoint or origin"
     return f"{name}: probe failed"
+
+
+def compare_id_sets(store_path: Path, sets: dict[str, list[str]]) -> dict[str, str]:
+    """Owner-only keyed comparison. Never prints the key or per-id digests."""
+
+    path = store_path.expanduser().resolve()
+    if _is_inside_repository(path):
+        raise ValueError("id-compare store must be outside the repository")
+    if path.exists():
+        document = json.loads(path.read_text(encoding="utf-8"))
+        key = bytes.fromhex(str(document["key"]))
+        labels: dict[str, str] = {}
+        for name in _ID_CLASSES:
+            previous = set(document.get(name, []))
+            current = set(_hmac_ids(key, sets.get(name, [])))
+            labels[name] = _compare_label(previous, current)
+        return labels
+    key = os.urandom(32)
+    document: dict[str, object] = {"key": key.hex()}
+    for name in _ID_CLASSES:
+        document[name] = _hmac_ids(key, sets.get(name, []))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return {name: "unresolved" for name in _ID_CLASSES}
+
+
+def _is_inside_repository(path: Path) -> bool:
+    try:
+        path.resolve().relative_to(REPOSITORY_ROOT.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _hmac_ids(key: bytes, ids: list[str]) -> list[str]:
+    return sorted(hmac.new(key, item.encode("utf-8"), "sha256").hexdigest() for item in ids)
+
+
+def _compare_label(previous: set[str], current: set[str]) -> str:
+    if previous == current:
+        return "stable"
+    if previous & current:
+        return "mixed"
+    return "changed"
+
+
+def _id_sets(
+    accounts: dict[str, dict[str, object]],
+    subaccounts: dict[str, dict[str, object]],
+    positions: dict[str, dict[str, object]],
+    assets: dict[str, dict[str, object]],
+    operations: dict[str, dict[str, object]],
+) -> dict[str, list[str]]:
+    instruments = set(positions) | set(assets)
+    for row in positions.values():
+        object_id = row.get("IdObject")
+        if object_id is not None and not isinstance(object_id, bool):
+            instruments.add(str(object_id))
+    return {
+        "accounts": sorted(accounts),
+        "subaccounts": sorted(subaccounts),
+        "instruments": sorted(instruments),
+        "operations": sorted(operations),
+    }
 
 
 def _authenticated_read(state: CollectedState, connection: str) -> str:
@@ -196,6 +304,17 @@ def _authenticated_read(state: CollectedState, connection: str) -> str:
         return "fail"
     if state.auth_status != 2:
         return "fail"
+    client_ok = any(
+        state.query_status.get(name) == "ok"
+        for name in (
+            "ClientAccountEntity",
+            "ClientPositionEntity",
+            "ClientBalanceEntity",
+            "ClientOperationEntity",
+        )
+    )
+    if client_ok:
+        return "pass"
     has_client = any(
         state.entities.get(name)
         for name in (
@@ -216,13 +335,27 @@ def _ready_label(value: bool | None) -> str:
     return "unresolved"
 
 
-def _iis_classifiable(*groups: dict[str, dict[str, object]]) -> str:
-    for group in groups:
-        for row in group.values():
-            for key in row:
-                if _IIS_KEY_RE.search(str(key)):
-                    return "yes"
-    return "unresolved"
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _history_incomplete(state: CollectedState) -> bool:
+    status = state.query_status.get("ClientOperationEntity", "unresolved")
+    if status != "ok":
+        return True
+    return bool(state.entity_truncated.get("ClientOperationEntity"))
+
+
+def _isin_count(
+    positions: dict[str, dict[str, object]],
+    assets: dict[str, dict[str, object]],
+) -> str:
+    present = _isin_presence(assets)
+    with_isin = 0
+    for row in positions.values():
+        if str(row.get("IdObject")) in present:
+            with_isin += 1
+    return f"{with_isin}/{len(positions)}"
 
 
 def _isin_presence(assets: dict[str, dict[str, object]]) -> set[str]:
@@ -235,6 +368,24 @@ def _isin_presence(assets: dict[str, dict[str, object]]) -> set[str]:
         if isinstance(isin, str) and isin.strip():
             found.add(str(object_id))
     return found
+
+
+def _ref_count(rows: dict[str, dict[str, object]], key: str) -> str:
+    if not rows:
+        return "0/0"
+    matched = sum(1 for row in rows.values() if _has_ref(row, key))
+    return f"{matched}/{len(rows)}"
+
+
+def _has_ref(row: dict[str, object], key: str) -> bool:
+    if key not in row:
+        return False
+    value = row[key]
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, str) and not value.strip():
+        return False
+    return True
 
 
 def _snapshot_fields(
@@ -285,12 +436,37 @@ def _parse_date(value: object) -> date | None:
             return None
 
 
-def _non_trade(types: list[str], operations: dict[str, dict[str, object]]) -> str:
+def _non_trade(types: list[str], operations: dict[str, dict[str, object]], incomplete: bool) -> str:
+    if not operations and incomplete:
+        return "unresolved"
     if not operations:
         return "unresolved"
     if any(item.casefold() != "trd" for item in types):
         return "yes"
+    if incomplete:
+        return "unresolved"
     return "no"
+
+
+def _status_list(state: CollectedState) -> list[str]:
+    names = list(_STATUS_ORDER)
+    for name in state.query_status:
+        if name not in names:
+            names.append(name)
+    return [f"{name}={state.query_status[name]}" for name in names if name in state.query_status]
+
+
+def _observed_fields(state: CollectedState) -> list[str]:
+    listed: list[str] = []
+    for name in _STATUS_ORDER:
+        rows = state.entities.get(name, {})
+        if not rows:
+            continue
+        keys: set[str] = set()
+        for row in rows.values():
+            keys.update(str(key) for key in row)
+        listed.append(f"{name}={{{', '.join(sorted(keys))}}}")
+    return listed
 
 
 def _value_encodings(
@@ -317,25 +493,3 @@ def _json_shape(value: object) -> str:
     if isinstance(value, str):
         return "json_string"
     return "json_other"
-
-
-def _instrument_ids(
-    positions: dict[str, dict[str, object]],
-    assets: dict[str, dict[str, object]],
-) -> dict[str, dict[str, object]]:
-    ids: dict[str, dict[str, object]] = {}
-    for row in positions.values():
-        object_id = row.get("IdObject")
-        if object_id is not None and not isinstance(object_id, bool):
-            ids[str(object_id)] = {"id": object_id}
-        fi = row.get("IdFiBalance")
-        if fi is not None and not isinstance(fi, bool):
-            ids[f"fi:{fi}"] = {"id": fi}
-    for key, row in assets.items():
-        ids.setdefault(key, row)
-    return ids
-
-
-def _fingerprint(rows: dict[str, object]) -> str:
-    material = "\n".join(sorted(rows)).encode("utf-8")
-    return hashlib.sha256(material).hexdigest()[:16]

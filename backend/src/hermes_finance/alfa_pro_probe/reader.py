@@ -18,6 +18,7 @@ from hermes_finance.alfa_pro_probe.channels import (
     is_order_channel,
 )
 from hermes_finance.alfa_pro_probe.protocol import (
+    MAX_PAYLOAD_CHARS,
     decode_payload,
     decode_router_message,
     encode_router_message,
@@ -25,6 +26,7 @@ from hermes_finance.alfa_pro_probe.protocol import (
 
 MAX_MESSAGES: int = 400
 MAX_ROWS_PER_ENTITY: int = 500
+MAX_OPERATION_ROWS: int = 2000
 MAX_ASSET_KEYS: int = 100
 CONNECT_TIMEOUT_S: float = 5.0
 READ_TIMEOUT_S: float = 3.0
@@ -44,6 +46,9 @@ class CollectedState:
     auth_status: int | None = None
     ready_to_sign: bool | None = None
     entities: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
+    query_status: dict[str, str] = field(default_factory=dict)
+    error_codes: dict[str, int] = field(default_factory=dict)
+    entity_truncated: dict[str, bool] = field(default_factory=dict)
     truncated: bool = False
     messages_seen: int = 0
     channels_invoked: list[str] = field(default_factory=list)
@@ -60,11 +65,13 @@ class AlfaProReadonlyReader:
         read_timeout: float = READ_TIMEOUT_S,
         max_messages: int = MAX_MESSAGES,
         max_rows: int = MAX_ROWS_PER_ENTITY,
+        max_operation_rows: int = MAX_OPERATION_ROWS,
     ) -> None:
         self._transport = transport
         self._read_timeout = read_timeout
         self._max_messages = max_messages
         self._max_rows = max_rows
+        self._max_operation_rows = max_operation_rows
         self.state = CollectedState()
         self._pending: dict[str, str] = {}
 
@@ -72,6 +79,7 @@ class AlfaProReadonlyReader:
         self._listen("#ConnectionState.Bus")
 
     def subscribe_connection_state(self) -> None:
+        self.state.query_status.setdefault("ConnectionState", "unresolved")
         self._request("#Data.Query", {"Init": True, "Subscribe": True}, pending="ConnectionState")
 
     def listen_entity(self, entity_type: str) -> None:
@@ -86,6 +94,7 @@ class AlfaProReadonlyReader:
     ) -> None:
         if entity_type not in ALLOWED_ENTITY_TYPES:
             raise ForbiddenAlfaChannel(f"refusing unlisted Alfa entity type: {entity_type}")
+        self.state.query_status.setdefault(entity_type, "unresolved")
         payload: dict[str, object] = {"Type": entity_type, "Init": init, "Subscribe": True}
         if keys is not None:
             payload["Keys"] = keys[:MAX_ASSET_KEYS]
@@ -111,9 +120,15 @@ class AlfaProReadonlyReader:
             except OSError:
                 break
             self.state.messages_seen += 1
+            if self.state.messages_seen >= self._max_messages:
+                self.state.truncated = True
             try:
                 self._ingest(raw)
             except (ValueError, TypeError, json.JSONDecodeError):
+                if len(raw) > MAX_PAYLOAD_CHARS:
+                    self.state.truncated = True
+                    for name in self._pending.values():
+                        self.state.entity_truncated[name] = True
                 continue
 
     def close(self) -> None:
@@ -149,11 +164,21 @@ class AlfaProReadonlyReader:
         channel = str(message.get("Channel") or "")
         if channel and is_order_channel(channel):
             return
-        payload = decode_payload(message.get("Payload"))
         request_id = str(message.get("Id") or "")
         pending = self._pending.pop(request_id, None) if request_id else None
+        top_error = _top_level_error_code(message)
+        if pending and top_error is not None:
+            self._mark_error(pending, top_error)
+            return
+        payload = decode_payload(message.get("Payload"))
         if channel == "#ConnectionState.Bus" or pending == "ConnectionState":
+            error_code = _payload_error_code(payload)
+            if error_code is not None:
+                self._mark_error("ConnectionState", error_code)
+                return
             _ingest_connection_state(self.state, payload)
+            if self.state.query_status.get("ConnectionState") != "error":
+                self.state.query_status["ConnectionState"] = "ok"
             return
         entity_type = pending
         if entity_type is None:
@@ -164,7 +189,27 @@ class AlfaProReadonlyReader:
                 entity_type = declared
         if entity_type is None:
             return
-        _ingest_entity_payload(self.state, entity_type, payload, max_rows=self._max_rows)
+        error_code = _payload_error_code(payload)
+        if error_code is not None:
+            self._mark_error(entity_type, error_code)
+            return
+        _ingest_entity_payload(
+            self.state,
+            entity_type,
+            payload,
+            max_rows=self._max_for(entity_type),
+        )
+        if self.state.query_status.get(entity_type) != "error":
+            self.state.query_status[entity_type] = "ok"
+
+    def _mark_error(self, name: str, code: int) -> None:
+        self.state.query_status[name] = "error"
+        self.state.error_codes[name] = code
+
+    def _max_for(self, entity_type: str) -> int:
+        if entity_type == "ClientOperationEntity":
+            return self._max_operation_rows
+        return self._max_rows
 
 
 def run_readonly_session(reader: AlfaProReadonlyReader, *, deadline: float) -> CollectedState:
@@ -284,6 +329,7 @@ def _ingest_entity_payload(
             continue
         if key not in store and len(store) >= max_rows:
             state.truncated = True
+            state.entity_truncated[entity_type] = True
             continue
         store[key] = item
 
@@ -295,3 +341,28 @@ def _row_key(row: dict[str, object], key_name: str) -> str | None:
     if isinstance(value, (int, str)):
         return str(value)
     return None
+
+
+def _payload_error_code(payload: object) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    error = payload.get("Error")
+    if not isinstance(error, dict):
+        return None
+    code = error.get("Code")
+    if isinstance(code, bool) or not isinstance(code, int):
+        return None
+    if code == 0:
+        return None
+    return code
+
+
+def _top_level_error_code(message: dict[str, object]) -> int | None:
+    if message.get("Command") or message.get("Channel"):
+        return None
+    code = message.get("Code")
+    if isinstance(code, bool) or not isinstance(code, int):
+        return None
+    if code == 0:
+        return None
+    return code

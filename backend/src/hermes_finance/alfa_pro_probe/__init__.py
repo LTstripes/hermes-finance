@@ -9,7 +9,12 @@ from hermes_finance.alfa_pro_probe.channels import (
     ForbiddenAlfaChannel,
     assert_router_send_allowed,
 )
-from hermes_finance.alfa_pro_probe.protocol import AlfaProbeEndpointError, validate_endpoint
+from hermes_finance.alfa_pro_probe.protocol import (
+    DEFAULT_HANDSHAKE_ORIGIN,
+    AlfaProbeEndpointError,
+    validate_endpoint,
+    validate_handshake_origin,
+)
 from hermes_finance.alfa_pro_probe.reader import AlfaProReadonlyReader, CollectedState
 from hermes_finance.alfa_pro_probe.report import ProbeReport, build_report
 
@@ -19,6 +24,7 @@ __all__ = [
     "ALLOWED_REQUEST_CHANNELS",
     "API_DOC_VERSION",
     "DEFAULT_ENDPOINT",
+    "DEFAULT_HANDSHAKE_ORIGIN",
     "AlfaProbeEndpointError",
     "AlfaProReadonlyReader",
     "CollectedState",
@@ -27,4 +33,5 @@ __all__ = [
     "assert_router_send_allowed",
     "build_report",
     "validate_endpoint",
+    "validate_handshake_origin",
 ]
