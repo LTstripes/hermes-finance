@@ -43,6 +43,8 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OverflowMenu,
+  OverflowMenuItem,
   Panel,
   Table,
   Td,
@@ -495,24 +497,22 @@ export function AccountsPage() {
                 </Badge>
               </Td>
               <Td>
-                <div className="row-actions">
-                  <Button onClick={() => openEditInstrument(instrument)} size="sm">
+                <OverflowMenu label={`Действия для инструмента «${instrument.name}»`}>
+                  <OverflowMenuItem onClick={() => openEditInstrument(instrument)}>
                     Изменить
-                  </Button>
-                  <Button
+                  </OverflowMenuItem>
+                  <OverflowMenuItem
                     onClick={() => void setInstrumentActive(instrument, !instrument.is_active)}
-                    size="sm"
                   >
                     {instrument.is_active ? "Деактивировать" : "Активировать"}
-                  </Button>
-                  <Button
+                  </OverflowMenuItem>
+                  <OverflowMenuItem
+                    danger
                     onClick={() => setPendingDelete({ kind: "instrument", item: instrument })}
-                    size="sm"
-                    variant="danger"
                   >
                     Удалить
-                  </Button>
-                </div>
+                  </OverflowMenuItem>
+                </OverflowMenu>
               </Td>
             </tr>
           ))}
