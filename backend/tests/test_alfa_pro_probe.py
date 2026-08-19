@@ -61,16 +61,41 @@ class ScriptedTransport:
         raw_payload = parsed.get("Payload")
         payload = json.loads(raw_payload) if isinstance(raw_payload, str) else {}
         if command == "listen" and channel == "#ConnectionState.Bus":
-            self._queue.append(
-                encode_router_message(
-                    "broadcast",
-                    "#ConnectionState.Bus",
-                    payload=self.fixture["connection_state"],
+            if self.fixture.get("emit_connection_state_bus", True):
+                self._queue.append(
+                    encode_router_message(
+                        "broadcast",
+                        "#ConnectionState.Bus",
+                        payload=self.fixture["connection_state"],
+                    )
                 )
-            )
         if command != "request":
             return
         entity = payload.get("Type") if isinstance(payload, dict) else None
+        if entity == "ConnectionState":
+            typed_error = self.fixture.get("typed_connection_state_error")
+            if isinstance(typed_error, int):
+                self._queue.append(
+                    encode_router_message(
+                        "response",
+                        "#Data.Query",
+                        payload={
+                            "Type": "ConnectionState",
+                            "Error": {"Code": typed_error, "Message": "secret provider fail"},
+                        },
+                        request_id=str(request_id) if request_id else None,
+                    )
+                )
+                return
+            self._queue.append(
+                encode_router_message(
+                    "response",
+                    "#Data.Query",
+                    payload=self.fixture["connection_state"],
+                    request_id=str(request_id) if request_id else None,
+                )
+            )
+            return
         if isinstance(entity, str):
             errors = self.fixture.get("errors")
             if isinstance(errors, dict) and entity in errors:
@@ -92,6 +117,19 @@ class ScriptedTransport:
                     "response",
                     "#Data.Query",
                     payload={"Type": entity, "Data": rows},
+                    request_id=str(request_id) if request_id else None,
+                )
+            )
+            return
+        documented_error = self.fixture.get("connection_state_error")
+        if isinstance(documented_error, int):
+            self._queue.append(
+                encode_router_message(
+                    "response",
+                    "#Data.Query",
+                    payload={
+                        "Error": {"Code": documented_error, "Message": "secret provider fail"},
+                    },
                     request_id=str(request_id) if request_id else None,
                 )
             )
@@ -250,7 +288,13 @@ def test_synthetic_account_position_operation_parsing() -> None:
 
     assert report.connection == "pass"
     assert report.authenticated_read == "pass"
+    assert report.auth_status == "2"
+    assert report.auth_status_source in {"query", "bus"}
     assert report.ready_to_sign_observed == "true"
+    request_payloads = _request_payloads(transport.sent)
+    assert request_payloads
+    assert request_payloads[0] == {"Init": True, "Subscribe": True}
+    assert all(item.get("Type") != "ConnectionState" for item in request_payloads)
     assert report.accounts_count == 1
     assert report.subaccounts_count == 2
     assert report.razdels_count == 1
@@ -352,10 +396,12 @@ def test_unauthenticated_state_skips_client_queries() -> None:
     state = run_readonly_session(reader, deadline=time.monotonic() + 2)
     report = build_report(state, connection="pass")
     assert report.authenticated_read == "fail"
+    assert report.auth_status == "1"
     assert report.accounts_count == 0
     joined = " ".join(transport.sent)
     assert "ClientAccountEntity" not in joined
     assert "ClientPositionEntity" not in joined
+    assert all(item.get("Type") != "ConnectionState" for item in _request_payloads(transport.sent))
 
 
 def test_no_broker_portfolio_provider_module() -> None:
@@ -626,3 +672,106 @@ def test_bus_then_routing_error_keeps_history_unresolved() -> None:
     assert "secret router fail" not in text
     assert "2024-01-15" not in text
     assert "2025-06-01" not in text
+
+
+def _request_payloads(sent: list[str]) -> list[dict[str, object]]:
+    payloads: list[dict[str, object]] = []
+    for item in sent:
+        parsed = json.loads(item)
+        if parsed.get("Command") != "request":
+            continue
+        raw = parsed.get("Payload")
+        payload = json.loads(raw) if isinstance(raw, str) else {}
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def test_documented_connection_state_error_without_auth_is_unresolved() -> None:
+    fixture = load_fixture()
+    fixture["emit_connection_state_bus"] = False
+    fixture["connection_state_error"] = 6
+    fixture["typed_connection_state_error"] = 6
+    transport = ScriptedTransport(fixture)
+    reader = AlfaProReadonlyReader(transport)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    report = build_report(state, connection="pass")
+    text = report.to_text()
+    assert report.connection == "pass"
+    assert report.authenticated_read == "unresolved"
+    assert report.auth_status == "unresolved"
+    assert report.auth_status_source == "unresolved"
+    assert report.accounts_count == 0
+    assert "ConnectionState=error" in report.entity_query
+    assert "ConnectionStateTyped=error" in report.entity_query
+    assert "ConnectionState=6" in report.entity_error_codes
+    assert "ConnectionStateTyped=6" in report.entity_error_codes
+    assert "secret provider fail" not in text
+    assert "Message" not in text
+    joined = " ".join(transport.sent)
+    assert "ClientAccountEntity" not in joined
+    assert "ClientPositionEntity" not in joined
+    assert "ClientOperationEntity" not in joined
+    payloads = _request_payloads(transport.sent)
+    assert payloads[0] == {"Init": True, "Subscribe": True}
+    assert payloads[1] == {"Type": "ConnectionState", "Init": True, "Subscribe": True}
+
+
+def test_connection_state_query_error_still_accepts_bus_authstatus() -> None:
+    fixture = load_fixture()
+    fixture["connection_state_error"] = 6
+    transport = ScriptedTransport(fixture)
+    reader = AlfaProReadonlyReader(transport)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    report = build_report(state, connection="pass")
+    assert report.authenticated_read == "pass"
+    assert report.auth_status == "2"
+    assert report.auth_status_source == "bus"
+    assert report.accounts_count == 1
+    assert "ConnectionState=error" in report.entity_query
+    assert "ConnectionState=6" in report.entity_error_codes
+    assert all(item.get("Type") != "ConnectionState" for item in _request_payloads(transport.sent))
+
+
+def test_typed_connection_state_fallback_after_documented_error() -> None:
+    fixture = load_fixture()
+    fixture["emit_connection_state_bus"] = False
+    fixture["connection_state_error"] = 6
+    transport = ScriptedTransport(fixture)
+    reader = AlfaProReadonlyReader(transport)
+    state = run_readonly_session(reader, deadline=time.monotonic() + 2)
+    report = build_report(state, connection="pass")
+    assert report.authenticated_read == "pass"
+    assert report.auth_status == "2"
+    assert report.auth_status_source == "query"
+    assert report.accounts_count == 1
+    assert "ConnectionState=error" in report.entity_query
+    assert "ConnectionStateTyped=ok" in report.entity_query
+    assert "ConnectionState=6" in report.entity_error_codes
+    payloads = _request_payloads(transport.sent)
+    assert payloads[0] == {"Init": True, "Subscribe": True}
+    assert payloads[1] == {"Type": "ConnectionState", "Init": True, "Subscribe": True}
+    assert any(item.get("Type") == "ClientAccountEntity" for item in payloads)
+
+
+def test_connection_state_error_code_is_not_translated() -> None:
+    fixture = load_fixture()
+    fixture["emit_connection_state_bus"] = False
+    fixture["connection_state_error"] = 6
+    fixture["typed_connection_state_error"] = 6
+    transport = ScriptedTransport(fixture)
+    report = build_report(
+        run_readonly_session(AlfaProReadonlyReader(transport), deadline=time.monotonic() + 2),
+        connection="pass",
+    )
+    text = report.to_text().casefold()
+    assert "connectionstate=6" in text.replace(" ", "")
+    for banned in (
+        "invalid type",
+        "not authenticated",
+        "unauthenticated",
+        "unauthorized",
+        "permission denied",
+        "auth failed",
+    ):
+        assert banned not in text

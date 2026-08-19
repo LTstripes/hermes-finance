@@ -36,6 +36,7 @@ _SHAPE_FIELDS = (
 _ID_CLASSES = ("accounts", "subaccounts", "instruments", "operations")
 _STATUS_ORDER = (
     "ConnectionState",
+    "ConnectionStateTyped",
     *CLIENT_ENTITY_TYPES,
     "AssetInfoEntity",
 )
@@ -47,6 +48,8 @@ class ProbeReport:
     api_doc_version: str = API_DOC_VERSION
     connection: str = "unresolved"
     authenticated_read: str = "unresolved"
+    auth_status: str = "unresolved"
+    auth_status_source: str = "unresolved"
     ready_to_sign_observed: str = "unresolved"
     accounts_count: int = 0
     subaccounts_count: int = 0
@@ -96,6 +99,8 @@ class ProbeReport:
             f"api_doc_version: {self.api_doc_version}",
             f"connection: {self.connection}",
             f"authenticated_read: {self.authenticated_read}",
+            f"auth_status: {self.auth_status}",
+            f"auth_status_source: {self.auth_status_source}",
             f"ready_to_sign_observed: {self.ready_to_sign_observed}",
             f"collection_truncated: {self.collection_truncated}",
             f"routing_error: {self.routing_error}",
@@ -175,6 +180,8 @@ def build_report(
     report = ProbeReport(
         connection=connection,
         authenticated_read=_authenticated_read(state, connection),
+        auth_status=_auth_status_label(state.auth_status),
+        auth_status_source=state.auth_status_source or "unresolved",
         ready_to_sign_observed=_ready_label(state.ready_to_sign),
         collection_truncated=_yes_no(state.truncated or any(state.entity_truncated.values())),
         routing_error=_yes_no(state.routing_error),
@@ -310,6 +317,8 @@ def _id_sets(
 def _authenticated_read(state: CollectedState, connection: str) -> str:
     if connection != "pass":
         return "fail"
+    if state.auth_status is None:
+        return "unresolved"
     if state.auth_status != 2:
         return "fail"
     client_ok = any(
@@ -333,6 +342,12 @@ def _authenticated_read(state: CollectedState, connection: str) -> str:
         )
     )
     return "pass" if has_client else "fail"
+
+
+def _auth_status_label(value: int | None) -> str:
+    if value is None:
+        return "unresolved"
+    return str(value)
 
 
 def _ready_label(value: bool | None) -> str:

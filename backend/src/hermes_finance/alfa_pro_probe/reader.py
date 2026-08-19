@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Final, Protocol
 
 from hermes_finance.alfa_pro_probe.channels import (
     ALLOWED_ENTITY_TYPES,
@@ -32,6 +32,22 @@ CONNECT_TIMEOUT_S: float = 5.0
 READ_TIMEOUT_S: float = 3.0
 TOTAL_DEADLINE_S: float = 30.0
 
+# Official API v2.1 §4 example for the ConnectionState snapshot request.
+DOCUMENTED_CONNECTION_STATE_QUERY: Final[dict[str, object]] = {
+    "Init": True,
+    "Subscribe": True,
+}
+# Official API v2.1 §3.3 SubscribeRequest requires Type; §4 names the monitor
+# ConnectionState and publishes on #ConnectionState.Bus. Used only if the
+# documented typeless §4 request did not yield AuthStatus. Not a translation of
+# any SubscribeResponse error code.
+TYPED_CONNECTION_STATE_QUERY: Final[dict[str, object]] = {
+    "Type": "ConnectionState",
+    "Init": True,
+    "Subscribe": True,
+}
+_CONNECTION_STATE_PENDING: Final = frozenset({"ConnectionState", "ConnectionStateTyped"})
+
 
 class MessageTransport(Protocol):
     def send_text(self, message: str) -> None: ...
@@ -44,6 +60,7 @@ class MessageTransport(Protocol):
 @dataclass
 class CollectedState:
     auth_status: int | None = None
+    auth_status_source: str | None = None
     ready_to_sign: bool | None = None
     entities: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     query_status: dict[str, str] = field(default_factory=dict)
@@ -82,7 +99,19 @@ class AlfaProReadonlyReader:
 
     def subscribe_connection_state(self) -> None:
         self.state.query_status.setdefault("ConnectionState", "unresolved")
-        self._request("#Data.Query", {"Init": True, "Subscribe": True}, pending="ConnectionState")
+        self._request(
+            "#Data.Query",
+            dict(DOCUMENTED_CONNECTION_STATE_QUERY),
+            pending="ConnectionState",
+        )
+
+    def subscribe_connection_state_typed(self) -> None:
+        self.state.query_status.setdefault("ConnectionStateTyped", "unresolved")
+        self._request(
+            "#Data.Query",
+            dict(TYPED_CONNECTION_STATE_QUERY),
+            pending="ConnectionStateTyped",
+        )
 
     def listen_entity(self, entity_type: str) -> None:
         self._listen(bus_channel_for_entity(entity_type))
@@ -180,16 +209,16 @@ class AlfaProReadonlyReader:
         correlated = (
             pending is not None and command == "response" and channel in {"#Data.Query", ""}
         )
-        if pending == "ConnectionState" or channel == "#ConnectionState.Bus":
-            if correlated:
+        if pending in _CONNECTION_STATE_PENDING or channel == "#ConnectionState.Bus":
+            if correlated and pending is not None:
                 error_code = _payload_error_code(payload)
                 if error_code is not None:
-                    self._mark_error("ConnectionState", error_code)
+                    self._mark_error(pending, error_code)
                     return
-                _ingest_connection_state(self.state, payload)
-                self.state.query_status["ConnectionState"] = "ok"
+                _ingest_connection_state(self.state, payload, source="query")
+                self.state.query_status[pending] = "ok"
                 return
-            _ingest_connection_state(self.state, payload)
+            _ingest_connection_state(self.state, payload, source="bus")
             return
         if correlated:
             error_code = _payload_error_code(payload)
@@ -239,6 +268,9 @@ def run_readonly_session(reader: AlfaProReadonlyReader, *, deadline: float) -> C
     reader.listen_connection_state()
     reader.subscribe_connection_state()
     reader.drain(deadline)
+    if reader.state.auth_status is None and time.monotonic() < deadline:
+        reader.subscribe_connection_state_typed()
+        reader.drain(deadline)
     if reader.state.auth_status != 2:
         return reader.state
 
@@ -297,7 +329,12 @@ def _entity_type_from_channel(channel: str) -> str | None:
     return None
 
 
-def _ingest_connection_state(state: CollectedState, payload: object) -> None:
+def _ingest_connection_state(
+    state: CollectedState,
+    payload: object,
+    *,
+    source: str,
+) -> None:
     if not isinstance(payload, dict):
         return
     states = payload.get("States")
@@ -308,6 +345,8 @@ def _ingest_connection_state(state: CollectedState, payload: object) -> None:
     if isinstance(user, dict):
         status = _as_int(user.get("AuthStatus"))
         if status is not None:
+            if state.auth_status is None:
+                state.auth_status_source = source
             state.auth_status = status
     sign = root.get("SignService")
     if isinstance(sign, dict):

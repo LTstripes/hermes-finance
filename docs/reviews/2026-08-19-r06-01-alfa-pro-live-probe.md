@@ -45,7 +45,17 @@ Run the same command twice (before and after restart). Stdout emits only `stable
 
 CI must not pass `--live`. The probe writes nothing to the Hermes database, backups, exports, or repository files.
 
-Missing or unauthenticated PRO should fail calmly with `connection: fail` or `authenticated_read: fail`. If a query errors or operation history hits the personal cap (2000 rows; other entities 500), history-depth dates stay `unresolved` and `collection_truncated` / `entity_query` say so.
+Missing PRO should fail calmly with `connection: fail`. Observed `AuthStatus` other than `2` is `authenticated_read: fail`, and client account/position/history queries are not sent. If the WebSocket connected but `AuthStatus` was never observed, `authenticated_read` and `auth_status` stay `unresolved`; that is not proof the terminal user session is unauthenticated. SubscribeResponse error codes are printed numerically only; official API v2.1 documents router codes 0 and 5, not SubscribeResponse codes, so do not translate them.
+
+If a query errors or operation history hits the personal cap (2000 rows; other entities 500), history-depth dates stay `unresolved` and `collection_truncated` / `entity_query` say so.
+
+ConnectionState acquisition (read-only, before any client-data query):
+
+1. `listen` `#ConnectionState.Bus`.
+2. Documented API v2.1 §4 request: `#Data.Query` payload `{Init: true, Subscribe: true}` (no `Type`). Keep this request as evidence even if it errors.
+3. Bounded drain; bus broadcasts may supply `AuthStatus` without proving the Init query succeeded.
+4. Only if `AuthStatus` is still missing: one compatibility `#Data.Query` using official SubscribeRequest fields (API v2.1 §3.3) with `Type: ConnectionState` plus `Init`/`Subscribe`. This is not a translation of any error code.
+5. Client account/position/history queries remain blocked until `AuthStatus=2` is actually observed.
 
 ## Channels the probe may send
 
@@ -77,6 +87,8 @@ alfa_pro_version: unresolved
 api_doc_version: 2.1
 connection: unresolved
 authenticated_read: unresolved
+auth_status: unresolved
+auth_status_source: unresolved
 ready_to_sign_observed: unresolved
 collection_truncated: unresolved
 routing_error: unresolved
@@ -119,11 +131,26 @@ private_values_printed: no
 trading_methods_invoked: no
 ```
 
-Record `FACT` only from the owner live run. Otherwise leave `UNRESOLVED`. Do not guess IIS from account numbers, names, or field-name substrings. Do not copy raw IDs, holdings, quantities, balances, prices, JSON, or ID digests.
+Record `FACT` only from the owner live run. Otherwise leave `UNRESOLVED`. Do not guess IIS from account numbers, names, or field-name substrings. Do not copy raw IDs, holdings, quantities, balances, prices, JSON, or ID digests. Do not guess SubscribeResponse error-code meanings.
+
+## Previous owner live SHA (not this candidate)
+
+Reviewed live SHA `2f7b75da4e864c3f63f0a69190e444128e81d504` on Alfa PRO **5.26.5.572**, owner UI session with live market data and portfolio visible:
+
+- `connection: pass`
+- documented ConnectionState `#Data.Query` `{Init:true, Subscribe:true}`: `ConnectionState=error`, provider code `6`
+- `AuthStatus` not observed
+- `authenticated_read: fail` on that SHA must not be read as “user is unauthenticated”
+- no client account/position/history rows were read
+- `routing_error: no`
+- foreign Origin handshake: `accepted`
+- trading methods invoked: `NO`
+
+Do not run restart-ID comparison until provider IDs have actually been collected. Do not change ReadyToSign or trading/signing settings for this investigation.
 
 ## Live questions (issue #71)
 
-A–H remain unanswered until Phase B. Phase A does not observe Alfa PRO.
+A–H remain unanswered until a new independent review ACCEPT and a new owner live run of this candidate. Phase A does not observe Alfa PRO.
 
 ## Privacy
 
