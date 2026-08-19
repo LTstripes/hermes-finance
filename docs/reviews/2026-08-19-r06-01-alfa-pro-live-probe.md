@@ -32,7 +32,15 @@ uv run --locked python -m hermes_finance.alfa_pro_probe --live --connection-stat
 
 If a bus broadcast carries `AuthStatus`, stdout has `auth_status`, `auth_status_source: bus`, and `ready_to_sign_observed`. If the overall deadline elapses with no AuthStatus, those fields stay `unresolved` (not `fail`).
 
-7. Handshake-only check (no client-data queries). Default Origin is the unrelated web origin `https://example.invalid`:
+7. Bus-gated client read. Waits for `AuthStatus=2` from `#ConnectionState.Bus` (idle read timeouts do not end that wait). Only then sends the existing allowlisted client entity `#Data.Query` reads. No ConnectionState `#Data.Query`. ReadyToSign is observed only.
+
+```text
+uv run --locked python -m hermes_finance.alfa_pro_probe --live --bus-gated-client-read
+```
+
+If AuthStatus is missing or not `2` by the overall deadline, no account/position/history queries are sent.
+
+8. Handshake-only check (no client-data queries). Default Origin is the unrelated web origin `https://example.invalid`:
 
 ```text
 uv run --locked python -m hermes_finance.alfa_pro_probe --live --origin-handshake-only
@@ -40,16 +48,16 @@ uv run --locked python -m hermes_finance.alfa_pro_probe --live --origin-handshak
 
 Do not use a loopback Origin for this check. `--origin` may override only to another non-loopback http(s) web origin.
 
-8. Optional second `--live` run after a clean PRO restart, with an owner-only compare file **outside** the repository/workspace:
+9. Optional second `--live --bus-gated-client-read` run after a clean PRO restart, with an owner-only compare file **outside** the repository/workspace:
 
 ```text
-uv run --locked python -m hermes_finance.alfa_pro_probe --live --id-compare-store <outside-repo-file>
+uv run --locked python -m hermes_finance.alfa_pro_probe --live --bus-gated-client-read --id-compare-store <outside-repo-file>
 ```
 
 Run the same command twice (before and after restart). Stdout emits only `stable|changed|mixed|unresolved`. Do not paste, commit, or copy the compare file back to an agent clone.
 
-9. If PRO can naturally sit at `ReadyToSign=false` without changing account permissions or sending trading commands, run `--live` in that state too. If not, leave `read_with_ready_to_sign_false: unresolved`.
-10. Paste only the printed sanitized block into this file. Do not keep raw frames, logs, payloads, or ID-compare store contents.
+10. If PRO can naturally sit at `ReadyToSign=false` without changing account permissions or sending trading commands, run `--bus-gated-client-read` in that state too. If not, leave `read_with_ready_to_sign_false: unresolved`.
+11. Paste only the printed sanitized block into this file. Do not keep raw frames, logs, payloads, or ID-compare store contents.
 
 CI must not pass `--live`. The probe writes nothing to the Hermes database, backups, exports, or repository files.
 
@@ -59,9 +67,9 @@ If a query errors or operation history hits the personal cap (2000 rows; other e
 
 ConnectionState acquisition:
 
-Default `--live` still sends the documented API v2.1 §4 `#Data.Query` `{Init: true, Subscribe: true}` and, only if AuthStatus is missing, the §3.3-shaped `Type: ConnectionState` fallback. Current terminal 5.26.5.572 returned undocumented SubscribeResponse code `6` for both; do not add more request shapes.
+On Alfa PRO 5.26.5.572, `#ConnectionState.Bus` observed `AuthStatus=2` in the bus-only owner run. Both ConnectionState `#Data.Query` shapes returned undocumented code `6`; do not add more request shapes and do not use them as the auth gate.
 
-`--connection-state-bus-only` is the next owner evidence path: `listen` `#ConnectionState.Bus` only, wait the overall deadline, treat per-recv timeout as idle, and never send `#Data.Query` or client-data queries. Client account/position/history queries remain blocked until `AuthStatus=2` is actually observed.
+`--bus-gated-client-read` is the current-terminal evidence path: `listen` `#ConnectionState.Bus` only until `AuthStatus=2` or the overall deadline, treating per-recv timeout as idle. Client account/position/history `#Data.Query` is sent only after that observed `2`. ReadyToSign is observation-only.
 
 ## Channels the probe may send
 
@@ -161,6 +169,15 @@ Alfa PRO **5.26.5.572**, owner UI session with live market data and portfolio vi
 - no `AuthStatus` from `#ConnectionState.Bus` during that bounded run
 - no client account/position/history queries
 - `routing_error: no`
+- trading methods invoked: `NO`
+
+`97e0be8a22809f877793d7c982bdff9015093060` (`--connection-state-bus-only`):
+
+- `connection: pass`
+- `auth_status: 2`
+- `auth_status_source: bus`
+- `ready_to_sign_observed: true`
+- `#ConnectionState.Bus` usable; no `#Data.Query`; no client-data queries
 - trading methods invoked: `NO`
 
 Do not infer unauthenticated state from code `6`. Do not run restart-ID comparison until provider IDs have actually been collected. Do not change ReadyToSign or trading/signing settings for this investigation.

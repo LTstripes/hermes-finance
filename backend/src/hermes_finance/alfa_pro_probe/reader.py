@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Final, Protocol
 
@@ -63,6 +64,7 @@ class CollectedState:
     auth_status_source: str | None = None
     ready_to_sign: bool | None = None
     bus_only: bool = False
+    bus_gated: bool = False
     entities: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     query_status: dict[str, str] = field(default_factory=dict)
     error_codes: dict[str, int] = field(default_factory=dict)
@@ -139,8 +141,16 @@ class AlfaProReadonlyReader:
             except ForbiddenAlfaChannel:
                 continue
 
-    def drain(self, deadline: float, *, continue_on_idle: bool = False) -> None:
+    def drain(
+        self,
+        deadline: float,
+        *,
+        continue_on_idle: bool = False,
+        until: Callable[[], bool] | None = None,
+    ) -> None:
         while time.monotonic() < deadline and self.state.messages_seen < self._max_messages:
+            if until is not None and until():
+                break
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -164,6 +174,8 @@ class AlfaProReadonlyReader:
                     for name in self._pending.values():
                         self.state.entity_truncated[name] = True
                 continue
+            if until is not None and until():
+                break
 
     def close(self) -> None:
         self._transport.close()
@@ -277,6 +289,25 @@ def run_connection_state_bus_session(
     return reader.state
 
 
+def run_bus_gated_client_session(
+    reader: AlfaProReadonlyReader, *, deadline: float
+) -> CollectedState:
+    """Observe AuthStatus from #ConnectionState.Bus, then allowlisted client reads."""
+
+    reader.state.bus_gated = True
+    reader.listen_connection_state()
+    reader.drain(
+        deadline,
+        continue_on_idle=True,
+        until=lambda: reader.state.auth_status == 2,
+    )
+    if reader.state.auth_status != 2:
+        reader.unlisten_all()
+        return reader.state
+    _collect_allowlisted_client_data(reader, deadline=deadline)
+    return reader.state
+
+
 def run_readonly_session(reader: AlfaProReadonlyReader, *, deadline: float) -> CollectedState:
     """Bounded connection-state then client-data reads. Never touches trading channels."""
 
@@ -288,7 +319,11 @@ def run_readonly_session(reader: AlfaProReadonlyReader, *, deadline: float) -> C
         reader.drain(deadline)
     if reader.state.auth_status != 2:
         return reader.state
+    _collect_allowlisted_client_data(reader, deadline=deadline)
+    return reader.state
 
+
+def _collect_allowlisted_client_data(reader: AlfaProReadonlyReader, *, deadline: float) -> None:
     for entity_type in CLIENT_ENTITY_TYPES:
         if time.monotonic() >= deadline:
             break
@@ -302,7 +337,6 @@ def run_readonly_session(reader: AlfaProReadonlyReader, *, deadline: float) -> C
         reader.subscribe_entity("AssetInfoEntity", init=True, keys=object_ids)
     reader.drain(deadline)
     reader.unlisten_all()
-    return reader.state
 
 
 def position_object_ids(state: CollectedState) -> list[int]:

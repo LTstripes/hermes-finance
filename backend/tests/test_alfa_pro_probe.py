@@ -26,6 +26,7 @@ from hermes_finance.alfa_pro_probe.protocol import (
 )
 from hermes_finance.alfa_pro_probe.reader import (
     AlfaProReadonlyReader,
+    run_bus_gated_client_session,
     run_connection_state_bus_session,
     run_readonly_session,
 )
@@ -878,3 +879,144 @@ def test_bus_only_cli_uses_bus_session(monkeypatch: pytest.MonkeyPatch) -> None:
     config = captured["config"]
     assert getattr(config, "connection_state_bus_only") is True
     assert getattr(config, "origin_handshake_only") is False
+
+
+class DelayedAuthScriptedTransport:
+    def __init__(
+        self,
+        fixture: dict[str, object],
+        *,
+        idle_before_auth: int,
+        emit_auth: bool = True,
+        auth_status: int | None = 2,
+    ) -> None:
+        fixture = dict(fixture)
+        fixture["emit_connection_state_bus"] = False
+        connection = fixture.get("connection_state")
+        if isinstance(connection, dict) and auth_status is not None:
+            states = connection.get("States")
+            if isinstance(states, dict):
+                user = states.get("User")
+                if isinstance(user, dict):
+                    user["AuthStatus"] = auth_status
+        self.inner = ScriptedTransport(fixture)
+        self.idle_before_auth = idle_before_auth
+        self.emit_auth = emit_auth
+        self.recv_calls = 0
+        self._auth_emitted = False
+
+    @property
+    def sent(self) -> list[str]:
+        return self.inner.sent
+
+    def send_text(self, message: str) -> None:
+        self.inner.send_text(message)
+
+    def recv_text(self, timeout: float) -> str:
+        self.recv_calls += 1
+        if self.inner._queue:
+            return self.inner._queue.pop(0)
+        if self.emit_auth and not self._auth_emitted and self.recv_calls > self.idle_before_auth:
+            self._auth_emitted = True
+            return encode_router_message(
+                "broadcast",
+                "#ConnectionState.Bus",
+                payload=self.inner.fixture["connection_state"],
+            )
+        time.sleep(timeout)
+        raise TimeoutError
+
+    def close(self) -> None:
+        self.inner.close()
+
+
+def _has_connection_state_data_query(sent: list[str]) -> bool:
+    for payload in _request_payloads(sent):
+        entity = payload.get("Type")
+        if entity == "ConnectionState" or entity is None:
+            return True
+    return False
+
+
+def _client_query_types(sent: list[str]) -> list[str]:
+    found: list[str] = []
+    for payload in _request_payloads(sent):
+        entity = payload.get("Type")
+        if isinstance(entity, str) and entity != "ConnectionState":
+            found.append(entity)
+    return found
+
+
+def test_bus_gated_delayed_auth_then_client_reads() -> None:
+    transport = DelayedAuthScriptedTransport(load_fixture(), idle_before_auth=2)
+    reader = AlfaProReadonlyReader(transport, read_timeout=0.04)
+    state = run_bus_gated_client_session(reader, deadline=time.monotonic() + 0.3)
+    report = build_report(state, connection="pass")
+    text = report.to_text()
+    assert transport.recv_calls >= 3
+    assert report.auth_status == "2"
+    assert report.auth_status_source == "bus"
+    assert report.ready_to_sign_observed == "true"
+    assert report.authenticated_read == "pass"
+    assert report.probe_mode == "bus-gated-client-read"
+    assert report.accounts_count == 1
+    assert report.positions_count == 2
+    assert not _has_connection_state_data_query(transport.sent)
+    types = _client_query_types(transport.sent)
+    assert types[0] == "ClientAccountEntity"
+    assert "ClientPositionEntity" in types
+    assert "ClientOperationEntity" in types
+    assert "AssetInfoEntity" in types
+    assert "ReadyToSign" not in " ".join(transport.sent)
+    assert not any("#Order." in item for item in transport.sent)
+    assert "synth.user" not in text
+    assert "250.5" not in text
+    assert "1500" not in text
+
+
+def test_bus_gated_no_bus_state_sends_zero_client_queries() -> None:
+    transport = DelayedAuthScriptedTransport(load_fixture(), idle_before_auth=2, emit_auth=False)
+    reader = AlfaProReadonlyReader(transport, read_timeout=0.04)
+    state = run_bus_gated_client_session(reader, deadline=time.monotonic() + 0.2)
+    report = build_report(state, connection="pass")
+    assert transport.recv_calls >= 3
+    assert report.auth_status == "unresolved"
+    assert report.authenticated_read == "unresolved"
+    assert report.accounts_count == 0
+    assert _client_query_types(transport.sent) == []
+    assert not _has_connection_state_data_query(transport.sent)
+
+
+def test_bus_gated_auth_not_2_sends_zero_client_queries() -> None:
+    transport = DelayedAuthScriptedTransport(load_fixture(), idle_before_auth=1, auth_status=1)
+    reader = AlfaProReadonlyReader(transport, read_timeout=0.04)
+    state = run_bus_gated_client_session(reader, deadline=time.monotonic() + 0.2)
+    report = build_report(state, connection="pass")
+    assert report.auth_status == "1"
+    assert report.auth_status_source == "bus"
+    assert report.authenticated_read == "fail"
+    assert report.accounts_count == 0
+    assert _client_query_types(transport.sent) == []
+    assert not _has_connection_state_data_query(transport.sent)
+
+
+def test_bus_gated_cli_reaches_live_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_live(config: object) -> object:
+        captured["config"] = config
+        from hermes_finance.alfa_pro_probe.report import ProbeReport
+
+        return ProbeReport(connection="pass", probe_mode="bus-gated-client-read")
+
+    monkeypatch.setattr("hermes_finance.alfa_pro_probe.live.run_live", fake_run_live)
+    code = main(["--live", "--bus-gated-client-read"])
+    assert code == 0
+    config = captured["config"]
+    assert getattr(config, "bus_gated_client_read") is True
+    assert getattr(config, "connection_state_bus_only") is False
+
+
+def test_bus_gated_cli_rejects_bus_only_combination() -> None:
+    code = main(["--live", "--bus-gated-client-read", "--connection-state-bus-only"])
+    assert code == 2

@@ -53,6 +53,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--bus-gated-client-read",
+        action="store_true",
+        help=(
+            "wait for AuthStatus=2 on #ConnectionState.Bus, then allowlisted "
+            "client-data reads; no ConnectionState #Data.Query"
+        ),
+    )
+    parser.add_argument(
         "--origin",
         default=DEFAULT_HANDSHAKE_ORIGIN,
         help="handshake Origin; must be a non-loopback http(s) web origin",
@@ -68,7 +76,12 @@ def main(argv: list[str] | None = None) -> int:
     if not args.live:
         print("refusing to run without --live")
         return 2
-    if args.origin_handshake_only and args.connection_state_bus_only:
+    exclusive_modes = (
+        args.origin_handshake_only,
+        args.connection_state_bus_only,
+        args.bus_gated_client_read,
+    )
+    if sum(1 for flag in exclusive_modes if flag) > 1:
         print(
             ProbeReport(
                 connection="fail",
@@ -114,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             total_deadline=_clamp(args.deadline, 1.0, _MAX_DEADLINE),
             origin_handshake_only=args.origin_handshake_only,
             connection_state_bus_only=args.connection_state_bus_only,
+            bus_gated_client_read=args.bus_gated_client_read,
             origin=origin,
             id_compare_store=store,
         )

@@ -15,6 +15,7 @@ from hermes_finance.alfa_pro_probe.reader import (
     READ_TIMEOUT_S,
     TOTAL_DEADLINE_S,
     AlfaProReadonlyReader,
+    run_bus_gated_client_session,
     run_connection_state_bus_session,
     run_readonly_session,
 )
@@ -31,6 +32,7 @@ class LiveConfig:
     total_deadline: float = TOTAL_DEADLINE_S
     origin_handshake_only: bool = False
     connection_state_bus_only: bool = False
+    bus_gated_client_read: bool = False
     origin: str = HANDSHAKE_ORIGIN
     id_compare_store: Path | None = None
 
@@ -68,6 +70,8 @@ def run_live(config: LiveConfig) -> ProbeReport:
         return _run_origin_handshake(config)
     if config.connection_state_bus_only:
         return _run_connection_state_bus(config)
+    if config.bus_gated_client_read:
+        return _run_bus_gated_client(config)
     return _run_readonly_live(config)
 
 
@@ -111,6 +115,30 @@ def _run_connection_state_bus(config: LiveConfig) -> ProbeReport:
             connection="fail",
             authenticated_read="unresolved",
             probe_mode="connection-state-bus-only",
+        )
+        report.error = sanitize_error(exc)
+        return report
+    finally:
+        if reader is not None:
+            reader.close()
+        elif socket is not None:
+            socket.close()
+
+
+def _run_bus_gated_client(config: LiveConfig) -> ProbeReport:
+    socket: WebsocketTransport | None = None
+    reader: AlfaProReadonlyReader | None = None
+    try:
+        socket = open_websocket(config.endpoint, origin=None, open_timeout=config.connect_timeout)
+        reader = AlfaProReadonlyReader(socket, read_timeout=config.read_timeout)
+        deadline = time.monotonic() + config.total_deadline
+        state = run_bus_gated_client_session(reader, deadline=deadline)
+        return build_report(state, connection="pass", id_compare_store=config.id_compare_store)
+    except Exception as exc:
+        report = ProbeReport(
+            connection="fail",
+            authenticated_read="unresolved",
+            probe_mode="bus-gated-client-read",
         )
         report.error = sanitize_error(exc)
         return report

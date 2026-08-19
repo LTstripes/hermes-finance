@@ -189,7 +189,7 @@ def build_report(
         authenticated_read=_authenticated_read(state, connection),
         auth_status=_auth_status_label(state.auth_status),
         auth_status_source=state.auth_status_source or "unresolved",
-        probe_mode="connection-state-bus-only" if state.bus_only else "",
+        probe_mode=_probe_mode(state),
         ready_to_sign_observed=_ready_label(state.ready_to_sign),
         collection_truncated=_yes_no(state.truncated or any(state.entity_truncated.values())),
         routing_error=_yes_no(state.routing_error),
@@ -320,6 +320,14 @@ def _id_sets(
         "instruments": sorted(instruments),
         "operations": sorted(operations),
     }
+
+
+def _probe_mode(state: CollectedState) -> str:
+    if state.bus_only:
+        return "connection-state-bus-only"
+    if state.bus_gated:
+        return "bus-gated-client-read"
+    return ""
 
 
 def _authenticated_read(state: CollectedState, connection: str) -> str:
