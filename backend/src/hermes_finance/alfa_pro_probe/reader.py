@@ -49,6 +49,8 @@ class CollectedState:
     query_status: dict[str, str] = field(default_factory=dict)
     error_codes: dict[str, int] = field(default_factory=dict)
     entity_truncated: dict[str, bool] = field(default_factory=dict)
+    routing_error: bool = False
+    routing_error_code: int | None = None
     truncated: bool = False
     messages_seen: int = 0
     channels_invoked: list[str] = field(default_factory=list)
@@ -161,37 +163,54 @@ class AlfaProReadonlyReader:
 
     def _ingest(self, raw: str) -> None:
         message = decode_router_message(raw)
+        command = str(message.get("Command") or "")
         channel = str(message.get("Channel") or "")
         if channel and is_order_channel(channel):
             return
         request_id = str(message.get("Id") or "")
         pending = self._pending.pop(request_id, None) if request_id else None
-        top_error = _top_level_error_code(message)
-        if pending and top_error is not None:
-            self._mark_error(pending, top_error)
+        router_code = _standalone_error_code(message)
+        if router_code is not None:
+            if pending is not None:
+                self._mark_error(pending, router_code)
+            else:
+                self._mark_routing_error(router_code)
             return
         payload = decode_payload(message.get("Payload"))
-        if channel == "#ConnectionState.Bus" or pending == "ConnectionState":
-            error_code = _payload_error_code(payload)
-            if error_code is not None:
-                self._mark_error("ConnectionState", error_code)
+        correlated = (
+            pending is not None and command == "response" and channel in {"#Data.Query", ""}
+        )
+        if pending == "ConnectionState" or channel == "#ConnectionState.Bus":
+            if correlated:
+                error_code = _payload_error_code(payload)
+                if error_code is not None:
+                    self._mark_error("ConnectionState", error_code)
+                    return
+                _ingest_connection_state(self.state, payload)
+                self.state.query_status["ConnectionState"] = "ok"
                 return
             _ingest_connection_state(self.state, payload)
-            if self.state.query_status.get("ConnectionState") != "error":
-                self.state.query_status["ConnectionState"] = "ok"
             return
-        entity_type = pending
-        if entity_type is None:
-            entity_type = _entity_type_from_channel(channel)
+        if correlated:
+            error_code = _payload_error_code(payload)
+            if error_code is not None:
+                self._mark_error(pending, error_code)
+                return
+            _ingest_entity_payload(
+                self.state,
+                pending,
+                payload,
+                max_rows=self._max_for(pending),
+            )
+            if self.state.query_status.get(pending) != "error":
+                self.state.query_status[pending] = "ok"
+            return
+        entity_type = _entity_type_from_channel(channel)
         if entity_type is None and isinstance(payload, dict):
             declared = payload.get("Type")
             if isinstance(declared, str) and declared in ALLOWED_ENTITY_TYPES:
                 entity_type = declared
         if entity_type is None:
-            return
-        error_code = _payload_error_code(payload)
-        if error_code is not None:
-            self._mark_error(entity_type, error_code)
             return
         _ingest_entity_payload(
             self.state,
@@ -199,12 +218,14 @@ class AlfaProReadonlyReader:
             payload,
             max_rows=self._max_for(entity_type),
         )
-        if self.state.query_status.get(entity_type) != "error":
-            self.state.query_status[entity_type] = "ok"
 
     def _mark_error(self, name: str, code: int) -> None:
         self.state.query_status[name] = "error"
         self.state.error_codes[name] = code
+
+    def _mark_routing_error(self, code: int) -> None:
+        self.state.routing_error = True
+        self.state.routing_error_code = code
 
     def _max_for(self, entity_type: str) -> int:
         if entity_type == "ClientOperationEntity":
@@ -357,7 +378,9 @@ def _payload_error_code(payload: object) -> int | None:
     return code
 
 
-def _top_level_error_code(message: dict[str, object]) -> int | None:
+def _standalone_error_code(message: dict[str, object]) -> int | None:
+    """Documented RoutingError is {Code, Message} with no Command or Channel."""
+
     if message.get("Command") or message.get("Channel"):
         return None
     code = message.get("Code")

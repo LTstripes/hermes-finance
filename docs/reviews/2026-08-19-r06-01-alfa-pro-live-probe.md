@@ -79,6 +79,8 @@ connection: unresolved
 authenticated_read: unresolved
 ready_to_sign_observed: unresolved
 collection_truncated: unresolved
+routing_error: unresolved
+routing_error_code: unresolved
 
 accounts_count: unresolved
 subaccounts_count: unresolved

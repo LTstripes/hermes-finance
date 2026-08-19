@@ -78,6 +78,8 @@ class ProbeReport:
     private_values_printed: str = "no"
     trading_methods_invoked: str = "no"
     collection_truncated: str = "no"
+    routing_error: str = "no"
+    routing_error_code: str = "unresolved"
     entity_query: list[str] = field(default_factory=list)
     entity_truncated: list[str] = field(default_factory=list)
     entity_error_codes: list[str] = field(default_factory=list)
@@ -96,6 +98,8 @@ class ProbeReport:
             f"authenticated_read: {self.authenticated_read}",
             f"ready_to_sign_observed: {self.ready_to_sign_observed}",
             f"collection_truncated: {self.collection_truncated}",
+            f"routing_error: {self.routing_error}",
+            f"routing_error_code: {self.routing_error_code}",
             "",
             f"accounts_count: {self.accounts_count}",
             f"subaccounts_count: {self.subaccounts_count}",
@@ -173,6 +177,10 @@ def build_report(
         authenticated_read=_authenticated_read(state, connection),
         ready_to_sign_observed=_ready_label(state.ready_to_sign),
         collection_truncated=_yes_no(state.truncated or any(state.entity_truncated.values())),
+        routing_error=_yes_no(state.routing_error),
+        routing_error_code=(
+            str(state.routing_error_code) if state.routing_error_code is not None else "unresolved"
+        ),
         accounts_count=len(accounts),
         subaccounts_count=len(subaccounts),
         razdels_count=len(razdels),
@@ -340,6 +348,8 @@ def _yes_no(value: bool) -> str:
 
 
 def _history_incomplete(state: CollectedState) -> bool:
+    if state.routing_error:
+        return True
     status = state.query_status.get("ClientOperationEntity", "unresolved")
     if status != "ok":
         return True

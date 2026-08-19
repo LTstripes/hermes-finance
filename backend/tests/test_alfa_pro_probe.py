@@ -512,3 +512,117 @@ def test_owner_id_compare_store_emits_labels_only(tmp_path: Path) -> None:
             },
         )
     assert not leaked.exists()
+
+
+class QueueTransport:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self._queue: list[str] = []
+        self.closed = False
+
+    def send_text(self, message: str) -> None:
+        self.sent.append(message)
+
+    def recv_text(self, timeout: float) -> str:
+        if not self._queue:
+            raise TimeoutError
+        return self._queue.pop(0)
+
+    def close(self) -> None:
+        self.closed = True
+
+    def last_id(self) -> str:
+        return str(json.loads(self.sent[-1])["Id"])
+
+
+def _operation_row(operation_id: int, when: str) -> dict[str, object]:
+    return {
+        "IdOperation": operation_id,
+        "TimeOperation": when,
+        "IdOperationType": "TRD",
+        "IdObject": 501,
+        "Quantity": 1,
+        "IdAccount": 101,
+    }
+
+
+def test_uncorrelated_routing_error_surfaces_code_not_message() -> None:
+    transport = QueueTransport()
+    reader = AlfaProReadonlyReader(transport)
+    reader.subscribe_entity("ClientOperationEntity")
+    transport._queue.append(json.dumps({"Code": 5, "Message": "secret router fail"}))
+    reader.drain(time.monotonic() + 1)
+    report = build_report(reader.state, connection="pass")
+    text = report.to_text()
+    assert report.routing_error == "yes"
+    assert report.routing_error_code == "5"
+    assert reader.state.query_status.get("ClientOperationEntity") == "unresolved"
+    assert report.oldest_operation_date == "unresolved"
+    assert report.newest_operation_date == "unresolved"
+    assert "secret router fail" not in text
+    assert "Message" not in text
+
+
+def test_operation_bus_without_init_response_is_not_ok() -> None:
+    transport = QueueTransport()
+    reader = AlfaProReadonlyReader(transport)
+    reader.listen_entity("ClientOperationEntity")
+    reader.subscribe_entity("ClientOperationEntity")
+    transport._queue.append(
+        encode_router_message(
+            "broadcast",
+            "#Data.Bus.ClientOperationEntity",
+            payload={
+                "Type": "ClientOperationEntity",
+                "Updated": [_operation_row(1, "2024-01-15T00:00:00Z")],
+            },
+        )
+    )
+    reader.drain(time.monotonic() + 1)
+    report = build_report(reader.state, connection="pass")
+    assert reader.state.query_status.get("ClientOperationEntity") == "unresolved"
+    assert report.operations_count == 1
+    assert "ClientOperationEntity=ok" not in report.entity_query
+    assert report.oldest_operation_date == "unresolved"
+    assert report.newest_operation_date == "unresolved"
+    assert "2024-01-15" not in report.to_text()
+
+
+def test_bus_then_routing_error_keeps_history_unresolved() -> None:
+    transport = QueueTransport()
+    reader = AlfaProReadonlyReader(transport)
+    reader.subscribe_entity("ClientOperationEntity")
+    transport._queue.extend(
+        [
+            encode_router_message(
+                "response",
+                "#Data.Query",
+                payload={
+                    "Type": "ClientOperationEntity",
+                    "Data": [_operation_row(1, "2024-01-15T00:00:00Z")],
+                },
+                request_id=transport.last_id(),
+            ),
+            encode_router_message(
+                "broadcast",
+                "#Data.Bus.ClientOperationEntity",
+                payload={
+                    "Type": "ClientOperationEntity",
+                    "Updated": [_operation_row(2, "2025-06-01T00:00:00Z")],
+                },
+            ),
+            json.dumps({"Code": 5, "Message": "secret router fail"}),
+        ]
+    )
+    reader.drain(time.monotonic() + 1)
+    report = build_report(reader.state, connection="pass")
+    assert reader.state.query_status.get("ClientOperationEntity") == "ok"
+    assert report.routing_error == "yes"
+    assert report.routing_error_code == "5"
+    assert report.operations_count == 2
+    assert report.oldest_operation_date == "unresolved"
+    assert report.newest_operation_date == "unresolved"
+    text = report.to_text()
+    assert "secret router fail" not in text
+    assert "2024-01-15" not in text
+    assert "2025-06-01" not in text
