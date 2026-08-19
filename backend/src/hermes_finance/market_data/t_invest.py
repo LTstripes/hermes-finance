@@ -234,6 +234,60 @@ def _require_rub_currency(unit: str | None, *, message: str) -> None:
         raise _Unsupported(message)
 
 
+def _bond_maturity_date(bond: dict[str, object]) -> date:
+    stamped = _parse_timestamp(
+        _field(bond, "maturityDate", "maturity_date"),
+        name="bond maturity_date",
+    )
+    return stamped.date()
+
+
+def _bond_initial_nominal(bond: dict[str, object]) -> tuple[Decimal, str]:
+    initial, currency = _money_value(
+        _field(bond, "initialNominal", "initial_nominal"),
+        name="initial_nominal",
+    )
+    if initial <= 0:
+        raise _Malformed("bond initial nominal is not a positive amount")
+    return initial, currency
+
+
+def _bond_nominal_for_discovery(
+    bond: dict[str, object], *, today: date
+) -> tuple[Decimal, str]:
+    nominal, currency = _money_value(_field(bond, "nominal"), name="nominal")
+    if nominal > 0:
+        return nominal, currency
+    if nominal < 0:
+        raise _Malformed("bond nominal is negative")
+
+    maturity_date = _bond_maturity_date(bond)
+    amortizing = _optional_bool(bond, "amortizationFlag", "amortization_flag")
+    if maturity_date > today or amortizing is not False:
+        raise _Unsupported("historical bond nominal cannot be established safely")
+    return _bond_initial_nominal(bond)
+
+
+def _bond_nominal_for_target(
+    bond: dict[str, object], *, target_date: date, today: date
+) -> tuple[Decimal, str]:
+    nominal, currency = _money_value(_field(bond, "nominal"), name="nominal")
+    if nominal > 0:
+        return nominal, currency
+    if nominal < 0:
+        raise _Malformed("bond nominal is negative")
+
+    maturity_date = _bond_maturity_date(bond)
+    if maturity_date > today:
+        raise _Unsupported("historical bond nominal cannot be established safely")
+    if target_date >= maturity_date:
+        raise _Unavailable("bond has matured for the requested target date")
+    amortizing = _optional_bool(bond, "amortizationFlag", "amortization_flag")
+    if amortizing is not False:
+        raise _Unsupported("historical bond nominal cannot be established safely")
+    return _bond_initial_nominal(bond)
+
+
 class TInvestClient:
     """Narrow official-REST client implementing MarketDataProvider."""
 
@@ -350,11 +404,10 @@ class TInvestClient:
                 currency = _text(detail, "currency")
                 if kind is InstrumentType.BOND:
                     bond = self._bond_by_uid(uid)
-                    nominal, nominal_currency = _money_value(
-                        _field(bond, "nominal"), name="nominal"
+                    _, nominal_currency = _bond_nominal_for_discovery(
+                        bond,
+                        today=self._clock(),
                     )
-                    if nominal <= 0:
-                        raise _Malformed("bond nominal is not a positive amount")
                     _require_rub_currency(
                         nominal_currency, message="bond nominal is not RUB-compatible"
                     )
@@ -490,11 +543,14 @@ class TInvestClient:
         currency = _text(detail, "currency")
         face_value: Decimal | None = None
         basis = RawPriceBasis.CASH_PER_UNIT
+        today = self._clock()
         if kind is InstrumentType.BOND:
             bond = self._bond_by_uid(uid)
-            face_value, nominal_currency = _money_value(_field(bond, "nominal"), name="nominal")
-            if face_value <= 0:
-                raise _Malformed("bond nominal is not a positive amount")
+            face_value, nominal_currency = _bond_nominal_for_target(
+                bond,
+                target_date=target_date,
+                today=today,
+            )
             _require_rub_currency(nominal_currency, message="bond nominal is not RUB-compatible")
             _require_rub_currency(
                 _text(bond, "currency") or currency,
@@ -504,7 +560,6 @@ class TInvestClient:
         else:
             _require_rub_currency(currency, message="quote is not RUB-compatible")
 
-        today = self._clock()
         if target_date == today:
             last = self._exchange_last_price(uid)
             if last is not None:
