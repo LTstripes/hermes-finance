@@ -85,6 +85,10 @@ class ScriptedTransport:
         entity = payload.get("Type") if isinstance(payload, dict) else None
         if not isinstance(entity, str):
             return
+        kind = self.fixture.get("required_payload_kind")
+        if isinstance(kind, str) and entity in REQUIRED_SNAPSHOT_ENTITIES:
+            self._queue.append(_structurally_invalid_response(kind, request_id))
+            return
         if entity == "AssetInfoEntity":
             self._asset_info_batches += 1
             silent_after = self.fixture.get("silent_asset_info_after")
@@ -251,6 +255,24 @@ def _client_query_types(sent: list[str]) -> list[str]:
         if isinstance(entity, str):
             found.append(entity)
     return found
+
+
+def _structurally_invalid_response(kind: str, request_id: object) -> str:
+    inner = {
+        "null": "null",
+        "array": "[]",
+        "scalar": "1",
+        "type_mismatch": json.dumps({"Type": "AssetInfoEntity", "Data": []}, separators=(",", ":")),
+    }[kind]
+    return json.dumps(
+        {
+            "Command": "response",
+            "Channel": "#Data.Query",
+            "Id": str(request_id) if request_id else None,
+            "Payload": inner,
+        },
+        separators=(",", ":"),
+    )
 
 
 def _has_connection_state_data_query(sent: list[str]) -> bool:
@@ -727,3 +749,52 @@ def test_malformed_required_account_row_is_not_complete() -> None:
     ).fetch_snapshot()
     assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
     assert snapshot.provenance.eligible_for_apply is False
+
+
+@pytest.mark.parametrize("kind", ["null", "array", "scalar"])
+def test_non_object_required_payloads_never_complete(kind: str) -> None:
+    fixture = load_fixture()
+    fixture["required_payload_kind"] = kind
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_required_payload_type_mismatch_never_complete() -> None:
+    fixture = load_fixture()
+    fixture["required_payload_kind"] = "type_mismatch"
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_position_missing_idobject_never_complete() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list)
+    positions[0].pop("IdObject", None)
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status in {SnapshotStatus.MALFORMED_RESPONSE, SnapshotStatus.INCOMPLETE}
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_position_invalid_idobject_never_complete() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list)
+    positions[0]["IdObject"] = True
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status in {SnapshotStatus.MALFORMED_RESPONSE, SnapshotStatus.INCOMPLETE}
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE

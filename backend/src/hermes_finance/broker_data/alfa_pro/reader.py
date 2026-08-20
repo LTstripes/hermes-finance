@@ -29,7 +29,7 @@ from hermes_finance.broker_data.alfa_pro.codec import (
     decode_router_message,
     encode_router_message,
 )
-from hermes_finance.broker_data.alfa_pro.mapping import as_bool, as_int
+from hermes_finance.broker_data.alfa_pro.mapping import as_bool, as_id, as_int
 
 MAX_MESSAGES: int = 400
 MAX_ROWS_PER_ENTITY: int = 500
@@ -245,16 +245,20 @@ class AlfaProSnapshotReader:
             if error_code is not None:
                 self._mark_error(pending, error_code, request_id=request_id or None)
                 return
+            if not _correlated_payload_structurally_valid(pending, payload):
+                self._mark_malformed(pending, request_id=request_id or None)
+                return
             _ingest_entity_payload(
                 self.state,
                 pending,
                 payload,
                 max_rows=self._max_rows,
             )
-            if self.state.query_status.get(pending) != "error":
+            if self.state.query_status.get(pending) not in {"error", "malformed"}:
                 self.state.query_status[pending] = "ok"
             if request_id and request_id in self.state.request_status:
-                self.state.request_status[request_id] = "ok"
+                if self.state.request_status[request_id] != "error":
+                    self.state.request_status[request_id] = "ok"
             return
         entity_type = _entity_type_from_channel(channel)
         if entity_type is None and isinstance(payload, dict):
@@ -274,6 +278,12 @@ class AlfaProSnapshotReader:
         self.state.query_status[name] = "error"
         self.state.error_codes[name] = code
         if request_id:
+            self.state.request_status[request_id] = "error"
+
+    def _mark_malformed(self, name: str, *, request_id: str | None = None) -> None:
+        self.state.malformed = True
+        self.state.query_status[name] = "malformed"
+        if request_id and request_id in self.state.request_status:
             self.state.request_status[request_id] = "error"
 
 
@@ -339,8 +349,14 @@ def position_object_ids(state: CollectedState) -> list[int]:
 
 def _required_queries_settled(state: CollectedState) -> bool:
     return all(
-        state.query_status.get(name) in {"ok", "error"} for name in REQUIRED_SNAPSHOT_ENTITIES
+        state.query_status.get(name) in {"ok", "error", "malformed"}
+        for name in REQUIRED_SNAPSHOT_ENTITIES
     )
+
+
+def positions_missing_instrument_ref(state: CollectedState) -> bool:
+    rows = state.entities.get("ClientPositionEntity", {})
+    return any(as_id(row.get("IdObject")) is None for row in rows.values())
 
 
 def asset_info_batches_complete(state: CollectedState) -> bool:
@@ -430,6 +446,8 @@ def _ingest_entity_payload(
             state.truncated = True
             state.entity_truncated[entity_type] = True
             continue
+        if entity_type == "ClientPositionEntity" and as_id(item.get("IdObject")) is None:
+            state.malformed = True
         store[key] = item
 
 
@@ -440,6 +458,14 @@ def _row_key(row: dict[str, object], key_name: str) -> str | None:
     if isinstance(value, (int, str)):
         return str(value)
     return None
+
+
+def _correlated_payload_structurally_valid(pending: str, payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if "Type" in payload and payload.get("Type") != pending:
+        return False
+    return True
 
 
 def _payload_error_code(payload: object) -> int | None:

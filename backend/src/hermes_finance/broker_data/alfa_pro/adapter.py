@@ -39,6 +39,7 @@ from hermes_finance.broker_data.alfa_pro.reader import (
     MessageTransport,
     asset_info_batches_complete,
     bounded_timeout,
+    positions_missing_instrument_ref,
     run_snapshot_session,
 )
 from hermes_finance.broker_data.dto import (
@@ -261,6 +262,8 @@ def _status_from_state(state: CollectedState) -> SnapshotStatus:
         return SnapshotStatus.AUTH_NOT_AUTHORIZED
     if state.truncated or state.entity_truncated:
         return SnapshotStatus.INCOMPLETE
+    if positions_missing_instrument_ref(state):
+        return SnapshotStatus.MALFORMED_RESPONSE
     for name in REQUIRED_SNAPSHOT_ENTITIES:
         status = state.query_status.get(name)
         if status != "ok":
