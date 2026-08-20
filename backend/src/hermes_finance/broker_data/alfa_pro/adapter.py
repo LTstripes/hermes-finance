@@ -37,6 +37,7 @@ from hermes_finance.broker_data.alfa_pro.reader import (
     AlfaProSnapshotReader,
     CollectedState,
     MessageTransport,
+    asset_info_batches_complete,
     bounded_timeout,
     run_snapshot_session,
 )
@@ -264,9 +265,7 @@ def _status_from_state(state: CollectedState) -> SnapshotStatus:
         status = state.query_status.get(name)
         if status != "ok":
             return SnapshotStatus.INCOMPLETE
-    if state.query_status.get("AssetInfoEntity") == "error":
-        return SnapshotStatus.INCOMPLETE
-    if state.asset_info_keys and state.query_status.get("AssetInfoEntity") != "ok":
+    if not asset_info_batches_complete(state):
         return SnapshotStatus.INCOMPLETE
     return SnapshotStatus.COMPLETE
 

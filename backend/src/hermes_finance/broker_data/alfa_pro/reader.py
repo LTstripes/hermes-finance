@@ -85,6 +85,8 @@ class CollectedState:
     channels_invoked: list[str] = field(default_factory=list)
     listened: list[str] = field(default_factory=list)
     asset_info_keys: list[int] = field(default_factory=list)
+    asset_info_request_ids: list[str] = field(default_factory=list)
+    request_status: dict[str, str] = field(default_factory=dict)
 
 
 class AlfaProSnapshotReader:
@@ -122,7 +124,7 @@ class AlfaProSnapshotReader:
         *,
         init: bool = True,
         keys: list[int] | None = None,
-    ) -> None:
+    ) -> str:
         if entity_type not in ALLOWED_ENTITY_TYPES:
             raise ForbiddenAlfaChannel(f"refusing unlisted Alfa entity type: {entity_type}")
         self.state.query_status.setdefault(entity_type, "unresolved")
@@ -134,7 +136,7 @@ class AlfaProSnapshotReader:
                 self.state.entity_truncated[entity_type] = True
                 bounded_keys = bounded_keys[:MAX_ASSET_KEYS]
             payload["Keys"] = bounded_keys
-        self._request("#Data.Query", payload, pending=entity_type)
+        return self._request("#Data.Query", payload, pending=entity_type)
 
     def unlisten_all(self) -> None:
         for channel in list(self.state.listened):
@@ -188,10 +190,14 @@ class AlfaProSnapshotReader:
         if channel not in self.state.listened:
             self.state.listened.append(channel)
 
-    def _request(self, channel: str, payload: dict[str, object], *, pending: str) -> None:
+    def _request(self, channel: str, payload: dict[str, object], *, pending: str) -> str:
         request_id = uuid.uuid4().hex
         self._pending[request_id] = pending
+        if pending == "AssetInfoEntity":
+            self.state.asset_info_request_ids.append(request_id)
+            self.state.request_status[request_id] = "unresolved"
         self._dispatch("request", channel, payload=payload, request_id=request_id)
+        return request_id
 
     def _dispatch(
         self,
@@ -219,7 +225,7 @@ class AlfaProSnapshotReader:
         router_code = _standalone_error_code(message)
         if router_code is not None:
             if pending is not None:
-                self._mark_error(pending, router_code)
+                self._mark_error(pending, router_code, request_id=request_id or None)
             else:
                 self.state.routing_error = True
                 self.state.routing_error_code = router_code
@@ -237,7 +243,7 @@ class AlfaProSnapshotReader:
         if correlated:
             error_code = _payload_error_code(payload)
             if error_code is not None:
-                self._mark_error(pending, error_code)
+                self._mark_error(pending, error_code, request_id=request_id or None)
                 return
             _ingest_entity_payload(
                 self.state,
@@ -247,6 +253,8 @@ class AlfaProSnapshotReader:
             )
             if self.state.query_status.get(pending) != "error":
                 self.state.query_status[pending] = "ok"
+            if request_id and request_id in self.state.request_status:
+                self.state.request_status[request_id] = "ok"
             return
         entity_type = _entity_type_from_channel(channel)
         if entity_type is None and isinstance(payload, dict):
@@ -262,9 +270,11 @@ class AlfaProSnapshotReader:
             max_rows=self._max_rows,
         )
 
-    def _mark_error(self, name: str, code: int) -> None:
+    def _mark_error(self, name: str, code: int, *, request_id: str | None = None) -> None:
         self.state.query_status[name] = "error"
         self.state.error_codes[name] = code
+        if request_id:
+            self.state.request_status[request_id] = "error"
 
 
 def run_snapshot_session(reader: AlfaProSnapshotReader, *, deadline: float) -> CollectedState:
@@ -299,8 +309,17 @@ def run_snapshot_session(reader: AlfaProSnapshotReader, *, deadline: float) -> C
                     reader.state.entity_truncated["AssetInfoEntity"] = True
                     break
                 chunk = object_ids[offset : offset + MAX_ASSET_KEYS]
-                reader.subscribe_entity("AssetInfoEntity", init=True, keys=chunk)
-            reader.drain(deadline, until=lambda: reader.state.lost_auth)
+                request_id = reader.subscribe_entity("AssetInfoEntity", init=True, keys=chunk)
+                reader.drain(
+                    deadline,
+                    continue_on_idle=True,
+                    until=lambda rid=request_id: (
+                        reader.state.request_status.get(rid) in {"ok", "error"}
+                        or reader.state.lost_auth
+                    ),
+                )
+                if reader.state.request_status.get(request_id) != "ok":
+                    break
     reader.unlisten_all()
     return reader.state
 
@@ -321,6 +340,19 @@ def position_object_ids(state: CollectedState) -> list[int]:
 def _required_queries_settled(state: CollectedState) -> bool:
     return all(
         state.query_status.get(name) in {"ok", "error"} for name in REQUIRED_SNAPSHOT_ENTITIES
+    )
+
+
+def asset_info_batches_complete(state: CollectedState) -> bool:
+    if not state.asset_info_keys:
+        return True
+    if not state.asset_info_request_ids:
+        return False
+    expected = (len(state.asset_info_keys) + MAX_ASSET_KEYS - 1) // MAX_ASSET_KEYS
+    if len(state.asset_info_request_ids) < expected:
+        return False
+    return all(
+        state.request_status.get(request_id) == "ok" for request_id in state.asset_info_request_ids
     )
 
 

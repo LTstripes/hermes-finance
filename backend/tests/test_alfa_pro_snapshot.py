@@ -61,6 +61,7 @@ class ScriptedTransport:
         self.sent: list[str] = []
         self.closed = False
         self._queue: list[str] = []
+        self._asset_info_batches = 0
 
     def send_text(self, message: str) -> None:
         self.sent.append(message)
@@ -84,6 +85,28 @@ class ScriptedTransport:
         entity = payload.get("Type") if isinstance(payload, dict) else None
         if not isinstance(entity, str):
             return
+        if entity == "AssetInfoEntity":
+            self._asset_info_batches += 1
+            silent_after = self.fixture.get("silent_asset_info_after")
+            if isinstance(silent_after, int) and self._asset_info_batches > silent_after:
+                return
+            batch_errors = self.fixture.get("asset_info_batch_errors")
+            if isinstance(batch_errors, dict) and self._asset_info_batches in batch_errors:
+                self._queue.append(
+                    encode_router_message(
+                        "response",
+                        "#Data.Query",
+                        payload={
+                            "Type": entity,
+                            "Error": {
+                                "Code": batch_errors[self._asset_info_batches],
+                                "Message": "secret provider fail",
+                            },
+                        },
+                        request_id=str(request_id) if request_id else None,
+                    )
+                )
+                return
         errors = self.fixture.get("errors")
         if isinstance(errors, dict) and entity in errors:
             self._queue.append(
@@ -601,9 +624,8 @@ def test_timeouts_reject_unbounded_and_non_finite_values() -> None:
     assert snapshot.status is SnapshotStatus.COMPLETE
 
 
-def test_asset_info_over_key_cap_cannot_be_complete_with_silent_loss() -> None:
+def _fixture_with_many_positions(count: int) -> dict[str, object]:
     fixture = load_fixture()
-    count = MAX_ASSET_KEYS + 1
     fixture["ClientPositionEntity"] = [
         {
             "IdPosition": 2000 + index,
@@ -625,6 +647,12 @@ def test_asset_info_over_key_cap_cannot_be_complete_with_silent_loss() -> None:
         }
         for index in range(count)
     ]
+    return fixture
+
+
+def test_asset_info_over_key_cap_cannot_be_complete_with_silent_loss() -> None:
+    count = MAX_ASSET_KEYS + 1
+    fixture = _fixture_with_many_positions(count)
     transport = ScriptedTransport(fixture)
     snapshot = AlfaProBrokerSnapshotProvider(transport=transport, total_deadline=2).fetch_snapshot()
     requested: set[int] = set()
@@ -644,6 +672,37 @@ def test_asset_info_over_key_cap_cannot_be_complete_with_silent_loss() -> None:
     else:
         assert snapshot.provenance.eligible_for_apply is False
         assert snapshot.status is SnapshotStatus.INCOMPLETE
+
+
+def test_asset_info_second_batch_unresolved_is_never_complete() -> None:
+    count = MAX_ASSET_KEYS + 1
+    fixture = _fixture_with_many_positions(count)
+    fixture["silent_asset_info_after"] = 1
+    transport = ScriptedTransport(fixture)
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=transport, read_timeout=0.04, total_deadline=0.25
+    ).fetch_snapshot()
+    asset_requests = [
+        payload
+        for payload in _request_payloads(transport.sent)
+        if payload.get("Type") == "AssetInfoEntity"
+    ]
+    assert len(asset_requests) == 2
+    assert snapshot.status is SnapshotStatus.INCOMPLETE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_asset_info_second_batch_error_is_fail_closed() -> None:
+    count = MAX_ASSET_KEYS + 1
+    fixture = _fixture_with_many_positions(count)
+    fixture["asset_info_batch_errors"] = {2: 5}
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.INCOMPLETE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
 
 
 def test_malformed_required_row_is_not_complete() -> None:
