@@ -20,6 +20,7 @@ from hermes_finance.broker_data.alfa_pro.channels import (
     ALLOWED_BUS_CHANNELS,
     ALLOWED_ENTITY_TYPES,
     ALLOWED_REQUEST_CHANNELS,
+    ENTITY_PRIMARY_KEY,
     REQUIRED_SNAPSHOT_ENTITIES,
     ForbiddenAlfaChannel,
     assert_router_send_allowed,
@@ -89,6 +90,16 @@ class ScriptedTransport:
         if isinstance(kind, str) and entity in REQUIRED_SNAPSHOT_ENTITIES:
             self._queue.append(_structurally_invalid_response(kind, request_id))
             return
+        if "malformed_error" in self.fixture and entity in REQUIRED_SNAPSHOT_ENTITIES:
+            self._queue.append(
+                encode_router_message(
+                    "response",
+                    "#Data.Query",
+                    payload={"Type": entity, "Error": self.fixture["malformed_error"]},
+                    request_id=str(request_id) if request_id else None,
+                )
+            )
+            return
         if entity == "AssetInfoEntity":
             self._asset_info_batches += 1
             silent_after = self.fixture.get("silent_asset_info_after")
@@ -128,7 +139,13 @@ class ScriptedTransport:
         rows = self.fixture.get(entity, [])
         if entity == "AssetInfoEntity" and isinstance(payload.get("Keys"), list):
             wanted = {key for key in payload["Keys"]}
-            rows = [row for row in rows if isinstance(row, dict) and row.get("IdObject") in wanted]
+            wanted_text = {str(key) for key in wanted}
+            rows = [
+                row
+                for row in rows
+                if isinstance(row, dict)
+                and (row.get("IdObject") in wanted or str(row.get("IdObject")) in wanted_text)
+            ]
         if entity == "AssetInfoEntity" and self.fixture.get("truncate_asset_info"):
             rows = list(rows) + [
                 {"IdObject": 10_000 + index, "ISIN": f"RU000PAD{index:02d}"} for index in range(8)
@@ -811,3 +828,54 @@ def test_position_string_idobject_never_complete() -> None:
     assert snapshot.status in {SnapshotStatus.MALFORMED_RESPONSE, SnapshotStatus.INCOMPLETE}
     assert snapshot.provenance.eligible_for_apply is False
     assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_string_position_primary_key_never_complete() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list)
+    positions[0]["IdPosition"] = "1001"
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+@pytest.mark.parametrize(("entity", "field"), sorted(ENTITY_PRIMARY_KEY.items()))
+def test_string_primary_key_never_complete(entity: str, field: str) -> None:
+    fixture = load_fixture()
+    rows = fixture.get(entity)
+    assert isinstance(rows, list) and rows
+    rows[0][field] = str(rows[0][field])
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status in {SnapshotStatus.MALFORMED_RESPONSE, SnapshotStatus.INCOMPLETE}
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+@pytest.mark.parametrize("error_shape", [[], {}, {"Code": "5"}])
+def test_malformed_present_error_never_complete(error_shape: object) -> None:
+    fixture = load_fixture()
+    fixture["malformed_error"] = error_shape
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_valid_integer_error_is_incomplete_not_complete() -> None:
+    fixture = load_fixture()
+    fixture["errors"] = {"ClientPositionEntity": 5}
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.INCOMPLETE
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE
+    assert snapshot.status is not SnapshotStatus.MALFORMED_RESPONSE

@@ -241,8 +241,11 @@ class AlfaProSnapshotReader:
             pending is not None and command == "response" and channel in {"#Data.Query", ""}
         )
         if correlated:
-            error_code = _payload_error_code(payload)
-            if error_code is not None:
+            error_kind, error_code = _payload_error(payload)
+            if error_kind == "malformed":
+                self._mark_malformed(pending, request_id=request_id or None)
+                return
+            if error_kind == "error" and error_code is not None:
                 self._mark_error(pending, error_code, request_id=request_id or None)
                 return
             if not _correlated_payload_structurally_valid(pending, payload):
@@ -452,12 +455,10 @@ def _ingest_entity_payload(
 
 
 def _row_key(row: dict[str, object], key_name: str) -> str | None:
-    value = row.get(key_name)
-    if value is None or isinstance(value, bool):
+    value = as_int(row.get(key_name))
+    if value is None:
         return None
-    if isinstance(value, (int, str)):
-        return str(value)
-    return None
+    return str(value)
 
 
 def _correlated_payload_structurally_valid(pending: str, payload: object) -> bool:
@@ -468,16 +469,27 @@ def _correlated_payload_structurally_valid(pending: str, payload: object) -> boo
     return True
 
 
-def _payload_error_code(payload: object) -> int | None:
-    if not isinstance(payload, dict):
-        return None
-    error = payload.get("Error")
+def _payload_error(payload: object) -> tuple[str, int | None]:
+    """Classify a correlated payload Error field.
+
+    absent: Error is missing, or documented Code=0 on a valid object.
+    error: present object with a valid nonzero integer Code.
+    malformed: Error is present but not a documented {Code: int} object.
+    """
+
+    if not isinstance(payload, dict) or "Error" not in payload:
+        return ("absent", None)
+    error = payload["Error"]
     if not isinstance(error, dict):
-        return None
+        return ("malformed", None)
+    if "Code" not in error:
+        return ("malformed", None)
     code = as_int(error.get("Code"))
-    if code is None or code == 0:
-        return None
-    return code
+    if code is None:
+        return ("malformed", None)
+    if code == 0:
+        return ("absent", None)
+    return ("error", code)
 
 
 def _standalone_error_code(message: dict[str, object]) -> int | None:
