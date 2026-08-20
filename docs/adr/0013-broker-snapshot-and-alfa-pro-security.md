@@ -1,6 +1,6 @@
 # ADR 0013 — Broker snapshot boundary and Alfa PRO security
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-08-19  
 **Release line:** `r06` / 0.6.x  
 **Task:** R06-02 / issue #74
