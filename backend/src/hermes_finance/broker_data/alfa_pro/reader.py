@@ -7,6 +7,7 @@ only after observed AuthStatus == 2. ConnectionState #Data.Query is absent.
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 from collections.abc import Callable
@@ -36,6 +37,27 @@ MAX_ASSET_KEYS: int = 100
 CONNECT_TIMEOUT_S: float = 5.0
 READ_TIMEOUT_S: float = 3.0
 TOTAL_DEADLINE_S: float = 30.0
+MIN_CONNECT_TIMEOUT_S: float = 0.05
+MAX_CONNECT_TIMEOUT_S: float = 30.0
+MIN_READ_TIMEOUT_S: float = 0.01
+MAX_READ_TIMEOUT_S: float = 15.0
+MIN_TOTAL_DEADLINE_S: float = 0.05
+MAX_TOTAL_DEADLINE_S: float = 120.0
+
+
+class AlfaSnapshotTimeoutError(ValueError):
+    """Raised when a snapshot timeout is non-finite or outside explicit bounds."""
+
+
+def bounded_timeout(name: str, value: object, *, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AlfaSnapshotTimeoutError(f"{name} must be a finite number of seconds")
+    number = float(value)
+    if not math.isfinite(number):
+        raise AlfaSnapshotTimeoutError(f"{name} must be a finite number of seconds")
+    if number < minimum or number > maximum:
+        raise AlfaSnapshotTimeoutError(f"{name} must be between {minimum} and {maximum} seconds")
+    return number
 
 
 class MessageTransport(Protocol):
@@ -77,7 +99,12 @@ class AlfaProSnapshotReader:
         max_rows: int = MAX_ROWS_PER_ENTITY,
     ) -> None:
         self._transport = transport
-        self._read_timeout = read_timeout
+        self._read_timeout = bounded_timeout(
+            "read_timeout",
+            read_timeout,
+            minimum=MIN_READ_TIMEOUT_S,
+            maximum=MAX_READ_TIMEOUT_S,
+        )
         self._max_messages = max_messages
         self._max_rows = max_rows
         self.state = CollectedState()
@@ -101,7 +128,12 @@ class AlfaProSnapshotReader:
         self.state.query_status.setdefault(entity_type, "unresolved")
         payload: dict[str, object] = {"Type": entity_type, "Init": init, "Subscribe": True}
         if keys is not None:
-            payload["Keys"] = keys[:MAX_ASSET_KEYS]
+            bounded_keys = list(keys)
+            if len(bounded_keys) > MAX_ASSET_KEYS:
+                self.state.truncated = True
+                self.state.entity_truncated[entity_type] = True
+                bounded_keys = bounded_keys[:MAX_ASSET_KEYS]
+            payload["Keys"] = bounded_keys
         self._request("#Data.Query", payload, pending=entity_type)
 
     def unlisten_all(self) -> None:
@@ -261,7 +293,13 @@ def run_snapshot_session(reader: AlfaProSnapshotReader, *, deadline: float) -> C
         if object_ids:
             reader.state.asset_info_keys = list(object_ids)
             reader.listen_entity("AssetInfoEntity")
-            reader.subscribe_entity("AssetInfoEntity", init=True, keys=object_ids)
+            for offset in range(0, len(object_ids), MAX_ASSET_KEYS):
+                if time.monotonic() >= deadline or reader.state.lost_auth:
+                    reader.state.truncated = True
+                    reader.state.entity_truncated["AssetInfoEntity"] = True
+                    break
+                chunk = object_ids[offset : offset + MAX_ASSET_KEYS]
+                reader.subscribe_entity("AssetInfoEntity", init=True, keys=chunk)
             reader.drain(deadline, until=lambda: reader.state.lost_auth)
     reader.unlisten_all()
     return reader.state
@@ -277,8 +315,6 @@ def position_object_ids(state: CollectedState) -> list[int]:
             continue
         seen.add(raw)
         found.append(raw)
-        if len(found) >= MAX_ASSET_KEYS:
-            break
     return found
 
 
@@ -335,19 +371,28 @@ def _ingest_entity_payload(
         rows.extend(updated)
     store = state.entities.setdefault(entity_type, {})
     key_name = ENTITY_PRIMARY_KEY[entity_type]
+    for field_name in ("Data", "Updated", "Deleted"):
+        value = payload.get(field_name)
+        if value is not None and not isinstance(value, list):
+            state.malformed = True
     deleted = payload.get("Deleted")
     if isinstance(deleted, list):
         for item in deleted:
             if not isinstance(item, dict):
+                state.malformed = True
                 continue
             key = _row_key(item, key_name)
-            if key is not None:
-                store.pop(key, None)
+            if key is None:
+                state.malformed = True
+                continue
+            store.pop(key, None)
     for item in rows:
         if not isinstance(item, dict):
+            state.malformed = True
             continue
         key = _row_key(item, key_name)
         if key is None:
+            state.malformed = True
             continue
         if key not in store and len(store) >= max_rows:
             state.truncated = True

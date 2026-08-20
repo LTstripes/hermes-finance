@@ -31,7 +31,15 @@ from hermes_finance.broker_data.alfa_pro.codec import (
     validate_endpoint,
 )
 from hermes_finance.broker_data.alfa_pro.mapping import as_decimal
-from hermes_finance.broker_data.alfa_pro.reader import AlfaProSnapshotReader, run_snapshot_session
+from hermes_finance.broker_data.alfa_pro.reader import (
+    MAX_ASSET_KEYS,
+    MAX_CONNECT_TIMEOUT_S,
+    MAX_READ_TIMEOUT_S,
+    MAX_TOTAL_DEADLINE_S,
+    AlfaProSnapshotReader,
+    AlfaSnapshotTimeoutError,
+    run_snapshot_session,
+)
 from hermes_finance.broker_data.dto import SnapshotStatus
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "alfa_pro" / "synthetic_snapshot.json"
@@ -91,6 +99,9 @@ class ScriptedTransport:
             )
             return
         rows = self.fixture.get(entity, [])
+        if entity == "AssetInfoEntity" and isinstance(payload.get("Keys"), list):
+            wanted = {key for key in payload["Keys"]}
+            rows = [row for row in rows if isinstance(row, dict) and row.get("IdObject") in wanted]
         if entity == "AssetInfoEntity" and self.fixture.get("truncate_asset_info"):
             rows = list(rows) + [
                 {"IdObject": 10_000 + index, "ISIN": f"RU000PAD{index:02d}"} for index in range(8)
@@ -560,3 +571,100 @@ def test_official_fixture_has_no_owner_payload() -> None:
     fixture = load_fixture()
     assert str(fixture["meta"]["source"]).startswith("synthetic")
     assert fixture["ClientAccountEntity"] == [{"IdAccount": 101}]
+
+
+def test_timeouts_reject_unbounded_and_non_finite_values() -> None:
+    transport = EmptyTransport()
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(
+            transport=transport, connect_timeout=MAX_CONNECT_TIMEOUT_S + 1
+        )
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, read_timeout=MAX_READ_TIMEOUT_S + 1)
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, total_deadline=MAX_TOTAL_DEADLINE_S + 1)
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, connect_timeout=10**12)
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, read_timeout=0)
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, total_deadline=-1)
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, connect_timeout=float("inf"))
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, read_timeout=float("nan"))
+    with pytest.raises(AlfaSnapshotTimeoutError):
+        AlfaProBrokerSnapshotProvider(transport=transport, connect_timeout=True)
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(load_fixture())
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.COMPLETE
+
+
+def test_asset_info_over_key_cap_cannot_be_complete_with_silent_loss() -> None:
+    fixture = load_fixture()
+    count = MAX_ASSET_KEYS + 1
+    fixture["ClientPositionEntity"] = [
+        {
+            "IdPosition": 2000 + index,
+            "IdAccount": 101,
+            "IdSubAccount": 201,
+            "IdRazdel": 301,
+            "IdObject": 8000 + index,
+            "TorgPos": 1,
+            "IsMoney": False,
+        }
+        for index in range(count)
+    ]
+    fixture["AssetInfoEntity"] = [
+        {
+            "IdObject": 8000 + index,
+            "ISIN": f"RU000SYN{index:03d}",
+            "Ticker": f"S{index:03d}",
+            "Name": f"Synthetic {index}",
+        }
+        for index in range(count)
+    ]
+    transport = ScriptedTransport(fixture)
+    snapshot = AlfaProBrokerSnapshotProvider(transport=transport, total_deadline=2).fetch_snapshot()
+    requested: set[int] = set()
+    for payload in _request_payloads(transport.sent):
+        if payload.get("Type") != "AssetInfoEntity":
+            continue
+        keys = payload.get("Keys")
+        assert isinstance(keys, list)
+        assert len(keys) <= MAX_ASSET_KEYS
+        requested.update(int(key) for key in keys)
+    expected = set(range(8000, 8000 + count))
+    assert requested == expected
+    if snapshot.status is SnapshotStatus.COMPLETE:
+        assert len(snapshot.positions) == count
+        assert all(item.isin for item in snapshot.positions)
+        assert snapshot.provenance.eligible_for_apply is True
+    else:
+        assert snapshot.provenance.eligible_for_apply is False
+        assert snapshot.status is SnapshotStatus.INCOMPLETE
+
+
+def test_malformed_required_row_is_not_complete() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list)
+    positions.append({"TorgPos": 3, "Price": 10, "IdObject": 501})
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
+    assert snapshot.provenance.eligible_for_apply is False
+
+
+def test_malformed_required_account_row_is_not_complete() -> None:
+    fixture = load_fixture()
+    accounts = fixture["ClientAccountEntity"]
+    assert isinstance(accounts, list)
+    accounts.append({"Name": "brokerage"})
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
+    assert snapshot.provenance.eligible_for_apply is False

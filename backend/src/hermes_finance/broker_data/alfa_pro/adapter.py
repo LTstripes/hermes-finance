@@ -26,11 +26,18 @@ from hermes_finance.broker_data.alfa_pro.mapping import (
 )
 from hermes_finance.broker_data.alfa_pro.reader import (
     CONNECT_TIMEOUT_S,
+    MAX_CONNECT_TIMEOUT_S,
+    MAX_READ_TIMEOUT_S,
+    MAX_TOTAL_DEADLINE_S,
+    MIN_CONNECT_TIMEOUT_S,
+    MIN_READ_TIMEOUT_S,
+    MIN_TOTAL_DEADLINE_S,
     READ_TIMEOUT_S,
     TOTAL_DEADLINE_S,
     AlfaProSnapshotReader,
     CollectedState,
     MessageTransport,
+    bounded_timeout,
     run_snapshot_session,
 )
 from hermes_finance.broker_data.dto import (
@@ -87,9 +94,24 @@ class AlfaProBrokerSnapshotProvider:
         self._transport_factory = transport_factory or (
             lambda url, timeout: open_websocket(url, open_timeout=timeout)
         )
-        self._connect_timeout = connect_timeout
-        self._read_timeout = read_timeout
-        self._total_deadline = total_deadline
+        self._connect_timeout = bounded_timeout(
+            "connect_timeout",
+            connect_timeout,
+            minimum=MIN_CONNECT_TIMEOUT_S,
+            maximum=MAX_CONNECT_TIMEOUT_S,
+        )
+        self._read_timeout = bounded_timeout(
+            "read_timeout",
+            read_timeout,
+            minimum=MIN_READ_TIMEOUT_S,
+            maximum=MAX_READ_TIMEOUT_S,
+        )
+        self._total_deadline = bounded_timeout(
+            "total_deadline",
+            total_deadline,
+            minimum=MIN_TOTAL_DEADLINE_S,
+            maximum=MAX_TOTAL_DEADLINE_S,
+        )
 
     def fetch_snapshot(self) -> BrokerSnapshot:
         captured_at = datetime.now().astimezone()
@@ -220,6 +242,8 @@ def sanitize_error(exc: BaseException) -> str:
         return f"{name}: websocket handshake rejected"
     if name == "AlfaSnapshotEndpointError":
         return f"{name}: invalid endpoint"
+    if name == "AlfaSnapshotTimeoutError":
+        return f"{name}: timeout outside bounds"
     return f"{name}: snapshot failed"
 
 
