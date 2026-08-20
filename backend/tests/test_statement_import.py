@@ -449,6 +449,48 @@ def test_colliding_source_rows_fail_closed() -> None:
     assert {row.reason for row in rows} == {"natural_identity_collision"}
 
 
+def test_mapped_natural_identity_collision_across_provider_refs() -> None:
+    pdf = build_income_report_pdf(
+        [
+            _row(
+                depo_account="SYN-DEPO-001",
+                quantity="10",
+                per_unit="1,15",
+                gross="11,50",
+                tax="1,50",
+                net="10,00",
+            ),
+            _row(
+                depo_account="SYN-DEPO-002",
+                quantity="20",
+                per_unit="1,15",
+                gross="23,00",
+                tax="3,00",
+                net="20,00",
+            ),
+        ]
+    )
+    mappings = (
+        AccountMappingInput(hermes_account_id=10, provider_account_ref="SYN-DEPO-001"),
+        AccountMappingInput(hermes_account_id=10, provider_account_ref="SYN-DEPO-002"),
+    )
+    identity = f"10|dividend|{SYN_ISIN}|2026-01-15"
+    prior = (
+        PriorEventView(
+            natural_identity=identity,
+            material_fingerprint="synthetic-prior-fingerprint",
+        ),
+    )
+    rows = _preview(pdf, account_mappings=mappings, prior_events=prior).rows
+    assert len(rows) == 2
+    assert {row.provider_account_ref for row in rows} == {"SYN-DEPO-001", "SYN-DEPO-002"}
+    assert {row.hermes_account_id for row in rows} == {10}
+    assert {row.natural_identity for row in rows} == {identity}
+    assert {row.status for row in rows} == {RowStatus.AMBIGUOUS}
+    assert {row.reason for row in rows} == {"natural_identity_collision"}
+    assert all(row.duplicate_class is None for row in rows)
+
+
 def test_document_fingerprint_deterministic() -> None:
     pdf = build_income_report_pdf()
     first = _preview(pdf)

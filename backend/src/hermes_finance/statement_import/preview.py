@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 
 from hermes_finance.statement_import.dto import (
     AccountMappingInput,
@@ -25,6 +26,7 @@ from hermes_finance.statement_import.schema import (
     PROVIDER,
     REASON_ACCOUNT_AMBIGUOUS,
     REASON_ACCOUNT_UNMAPPED,
+    REASON_IDENTITY_COLLISION,
     REASON_INSTRUMENT_AMBIGUOUS,
     REASON_INSTRUMENT_UNMATCHED,
     REASON_MISSING_ISIN,
@@ -138,6 +140,34 @@ def _duplicate_class(
             return DuplicateClass.DUPLICATE
         return DuplicateClass.CORRECTION
     return None
+
+
+def _apply_mapped_identity_collisions(rows: list[PreviewRow]) -> list[PreviewRow]:
+    """Fail closed on canonical mapped identity, ignoring provider account ref.
+
+    Natural identity is mapped Hermes account + event kind + ISIN + record date.
+    Duplicate/correction classification must not keep a colliding row applyable.
+    """
+
+    groups: dict[str, list[int]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        if row.status in _TERMINAL:
+            continue
+        if not row.natural_identity:
+            continue
+        groups[row.natural_identity].append(index)
+    updated = list(rows)
+    for indexes in groups.values():
+        if len(indexes) < 2:
+            continue
+        for index in indexes:
+            updated[index] = replace(
+                updated[index],
+                status=RowStatus.AMBIGUOUS,
+                duplicate_class=None,
+                reason=REASON_IDENTITY_COLLISION,
+            )
+    return updated
 
 
 def _preview_row(
@@ -292,6 +322,7 @@ def build_preview_from_parsed(
             )
         )
 
+    rows = _apply_mapped_identity_collisions(rows)
     return IncomeReportPreview(
         status=parsed.status,
         provider=PROVIDER,
