@@ -39,6 +39,7 @@ from hermes_finance.services.investment_cash_flows import (
     create_investment_cash_flow,
     list_investment_cash_flows,
     list_passive_income_cash_flows,
+    update_investment_cash_flow,
 )
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
@@ -55,9 +56,11 @@ from hermes_finance.statement_import import (
     AccountMappingInput,
     HermesAccountView,
     HermesInstrumentView,
+    InstrumentMappingInput,
     preview_income_report,
 )
 from hermes_finance.statement_import.dto import ALFA_DEPOSITORY_INCOME_PROVIDER
+from hermes_finance.statement_import.identity import document_sha256
 
 SYN_ISIN = "RU000SYN00001"
 SYN_ISIN_COUPON = "RU000SYN00002"
@@ -154,6 +157,8 @@ def selection_from_row(row, **overrides: object) -> StatementApplySelection:
     payload: dict[str, object] = {
         "natural_identity": row.natural_identity,
         "material_fingerprint": row.material_fingerprint,
+        "expected_hermes_account_id": row.hermes_account_id,
+        "expected_hermes_instrument_id": row.hermes_instrument_id,
     }
     payload.update(overrides)
     return StatementApplySelection(**payload)  # type: ignore[arg-type]
@@ -164,12 +169,17 @@ def apply(
     document: bytes,
     account_id: int,
     selections: tuple[StatementApplySelection, ...],
+    *,
+    expected_document_sha256: str | None = None,
+    instrument_mappings: tuple[InstrumentMappingInput, ...] = (),
 ):
     return apply_income_report_preview(
         session,
         document=document,
         account_mappings=mappings(account_id),
         selections=selections,
+        expected_document_sha256=expected_document_sha256 or document_sha256(document),
+        instrument_mappings=instrument_mappings,
     )
 
 
@@ -724,30 +734,40 @@ def test_unmatched_and_malformed_rows_cannot_apply(tmp_path: Path) -> None:
                 StatementApplySelection(
                     natural_identity="missing|dividend|RU000SYN00001|2026-01-15",
                     material_fingerprint="a" * 64,
+                    expected_hermes_account_id=account_id,
+                    expected_hermes_instrument_id=1,
                 ),
             ),
         )
         assert unmatched.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        encrypted = build_encrypted_pdf()
         malformed = apply_income_report_preview(
             session,
-            document=build_encrypted_pdf(),
+            document=encrypted,
             account_mappings=mappings(account_id),
+            expected_document_sha256=document_sha256(encrypted),
             selections=(
                 StatementApplySelection(
                     natural_identity="x",
                     material_fingerprint="b" * 64,
+                    expected_hermes_account_id=account_id,
+                    expected_hermes_instrument_id=1,
                 ),
             ),
         )
         assert malformed.error_code is StatementApplyFailureCode.MALFORMED_OR_UNSUPPORTED_REPORT
+        wrong_pdf = build_wrong_report_pdf()
         wrong = apply_income_report_preview(
             session,
-            document=build_wrong_report_pdf(),
+            document=wrong_pdf,
             account_mappings=mappings(account_id),
+            expected_document_sha256=document_sha256(wrong_pdf),
             selections=(
                 StatementApplySelection(
                     natural_identity="x",
                     material_fingerprint="c" * 64,
+                    expected_hermes_account_id=account_id,
+                    expected_hermes_instrument_id=1,
                 ),
             ),
         )
@@ -761,6 +781,8 @@ def test_unmatched_and_malformed_rows_cannot_apply(tmp_path: Path) -> None:
                 StatementApplySelection(
                     natural_identity="missing",
                     material_fingerprint="d" * 64,
+                    expected_hermes_account_id=account_id,
+                    expected_hermes_instrument_id=1,
                 ),
             ),
         )
@@ -1076,3 +1098,240 @@ def test_apply_modules_have_no_network_ocr_or_alfa_live_imports() -> None:
                     node.module == name or node.module.startswith(f"{name}.")
                     for name in forbidden_modules
                 )
+
+
+def test_reviewed_instrument_target_mismatch_is_preview_changed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, instruments = build_env(session)
+        other = create_instrument(
+            session,
+            name="Synthetic Twin Without ISIN",
+            instrument_type=InstrumentType.STOCK,
+        )
+        document = build_income_report_pdf()
+        reviewed = preview_income_report(
+            document,
+            hermes_accounts=views(session)[0],
+            hermes_instruments=views(session)[1],
+            account_mappings=mappings(account_id),
+            instrument_mappings=(
+                InstrumentMappingInput(
+                    hermes_instrument_id=instruments[SYN_ISIN],
+                    isin=SYN_ISIN,
+                ),
+            ),
+        )
+        row = reviewed.rows[0]
+        assert row.hermes_instrument_id == instruments[SYN_ISIN]
+        result = apply(
+            session,
+            document,
+            account_id,
+            (selection_from_row(row),),
+            expected_document_sha256=reviewed.document_sha256,
+            instrument_mappings=(
+                InstrumentMappingInput(hermes_instrument_id=other.id, isin=SYN_ISIN),
+            ),
+        )
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        assert counts(session) == (0, 0, 0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_reviewed_document_sha_mismatch_is_preview_changed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session, extra_isins=(SYN_ISIN_COUPON,))
+        pdf_a = build_income_report_pdf()
+        pdf_b = build_income_report_pdf(
+            [
+                _row(),
+                _row(
+                    payment_kind="погашение купона",
+                    isin=SYN_ISIN_COUPON,
+                    quantity="10",
+                    per_unit="2,00",
+                    gross="20,00",
+                    tax="—",
+                    net="20,00",
+                ),
+            ]
+        )
+        assert document_sha256(pdf_a) != document_sha256(pdf_b)
+        reviewed = preview(session, pdf_a, account_id)
+        row_a = reviewed.rows[0]
+        row_b = preview(session, pdf_b, account_id).rows[0]
+        assert row_a.natural_identity == row_b.natural_identity
+        assert row_a.material_fingerprint == row_b.material_fingerprint
+        result = apply(
+            session,
+            pdf_b,
+            account_id,
+            (selection_from_row(row_a),),
+            expected_document_sha256=reviewed.document_sha256,
+        )
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        assert counts(session) == (0, 0, 0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_statement_created_amount_drift_is_preview_changed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        document = build_income_report_pdf()
+        row = preview(session, document, account_id).rows[0]
+        created = apply(session, document, account_id, (selection_from_row(row),))
+        assert created.success is True
+        flow_id = created.items[0].investment_cash_flow_id
+        update_investment_cash_flow(
+            session,
+            flow_id,
+            gross_amount="20.00",
+            tax_amount="1.50",
+            net_amount="18.50",
+        )
+        result = apply(session, document, account_id, (selection_from_row(row),))
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        assert counts(session) == (1, 1, 1)
+        flow = session.get(InvestmentCashFlow, flow_id)
+        assert flow is not None
+        assert flow.gross_amount_kopecks == 2000
+        assert flow.net_amount_kopecks == 1850
+        assert flow.source == ALFA_DEPOSITORY_INCOME_PROVIDER
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_statement_created_instrument_type_source_drift_is_preview_changed(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        other = create_instrument(
+            session,
+            name="Drifted Instrument",
+            instrument_type=InstrumentType.BOND,
+        )
+        document = build_income_report_pdf()
+        row = preview(session, document, account_id).rows[0]
+        created = apply(session, document, account_id, (selection_from_row(row),))
+        flow_id = created.items[0].investment_cash_flow_id
+        update_investment_cash_flow(
+            session,
+            flow_id,
+            instrument_id=other.id,
+            flow_type="coupon",
+            source="manual",
+        )
+        result = apply(session, document, account_id, (selection_from_row(row),))
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        assert counts(session) == (1, 1, 1)
+        flow = session.get(InvestmentCashFlow, flow_id)
+        assert flow is not None
+        assert flow.instrument_id == other.id
+        assert flow.flow_type == "coupon"
+        assert flow.source == "manual"
+        assert flow.gross_amount_kopecks == 1150
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_linked_existing_owner_drift_is_not_silent_unchanged(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instruments = build_env(session)
+        manual = create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instruments[SYN_ISIN],
+            flow_type="dividend",
+            event_date=date(2026, 1, 20),
+            gross_amount="11.50",
+            tax_amount="1.50",
+            commission_amount="0.00",
+            net_amount="10.00",
+            source="manual",
+        )
+        document = build_income_report_pdf()
+        row = preview(session, document, account_id).rows[0]
+        linked = apply(
+            session,
+            document,
+            account_id,
+            (
+                selection_from_row(
+                    row,
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=manual.id,
+                    expected_candidate_ids=(manual.id,),
+                ),
+            ),
+        )
+        assert linked.success is True
+        update_investment_cash_flow(
+            session,
+            manual.id,
+            gross_amount="50.00",
+            tax_amount="0.00",
+            net_amount="50.00",
+        )
+        result = apply(session, document, account_id, (selection_from_row(row),))
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        assert result.items == ()
+        assert counts(session) == (1, 1, 1)
+        session.refresh(manual)
+        assert manual.source == "manual"
+        assert manual.gross_amount_kopecks == 5000
+        assert manual.net_amount_kopecks == 5000
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_closed_source_month_blocks_cross_month_correction(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        january_id, account_id, _ = build_env(session)
+        create_reporting_month(session, year=2026, month=2, snapshot_date=date(2026, 2, 28))
+        original = build_income_report_pdf()
+        row = preview(session, original, account_id).rows[0]
+        created = apply(session, original, account_id, (selection_from_row(row),))
+        assert created.success is True
+        close_reporting_month(session, january_id)
+        corrected = build_income_report_pdf([_row(payment_date="20.02.2026")])
+        changed = preview(session, corrected, account_id).rows[0]
+        assert changed.natural_identity == row.natural_identity
+        assert changed.material_fingerprint != row.material_fingerprint
+        result = apply(
+            session,
+            corrected,
+            account_id,
+            (selection_from_row(changed, action=StatementApplyAction.REVISE),),
+        )
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.CLOSED_MONTH
+        assert counts(session) == (1, 1, 1)
+        flow = list_investment_cash_flows(session)[0]
+        assert flow.event_date == date(2026, 1, 20)
+        assert flow.reporting_month_id == january_id
+        revision = list(session.scalars(select(AppliedStatementEventRevision)))[0]
+        assert revision.revision_kind == "apply"
+        assert revision.event_date == date(2026, 1, 20)
+    finally:
+        session.close()
+        database.engine.dispose()

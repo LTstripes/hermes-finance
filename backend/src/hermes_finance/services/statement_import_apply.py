@@ -15,7 +15,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ReportingMonthStatus, RubleAmount
-from hermes_finance.persistence import Account, Instrument, InvestmentCashFlow, ReportingMonth
+from hermes_finance.persistence import (
+    Account,
+    AppliedStatementEvent,
+    Instrument,
+    InvestmentCashFlow,
+    ReportingMonth,
+)
 from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.applied_statement_events import (
     StatementLinkMode,
@@ -70,16 +76,30 @@ class StatementApplyItemAction(StrEnum):
     UNCHANGED = "unchanged"
 
 
+_SHA256_HEX_LENGTH = 64
+
+
 def _positive_int(value: object, *, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{name} must be a positive integer")
     return value
 
 
+def _normalize_sha256(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    digest = value.strip().lower()
+    if len(digest) != _SHA256_HEX_LENGTH or any(char not in "0123456789abcdef" for char in digest):
+        return None
+    return digest
+
+
 @dataclass(frozen=True, slots=True)
 class StatementApplySelection:
     natural_identity: str
     material_fingerprint: str
+    expected_hermes_account_id: int
+    expected_hermes_instrument_id: int
     action: StatementApplyAction | None = None
     existing_cash_flow_id: int | None = None
     expected_candidate_ids: tuple[int, ...] = ()
@@ -93,6 +113,16 @@ class StatementApplySelection:
             raise ValueError("material_fingerprint must not be empty")
         object.__setattr__(self, "natural_identity", identity.strip())
         object.__setattr__(self, "material_fingerprint", fingerprint.strip())
+        object.__setattr__(
+            self,
+            "expected_hermes_account_id",
+            _positive_int(self.expected_hermes_account_id, name="expected_hermes_account_id"),
+        )
+        object.__setattr__(
+            self,
+            "expected_hermes_instrument_id",
+            _positive_int(self.expected_hermes_instrument_id, name="expected_hermes_instrument_id"),
+        )
         if self.action is not None:
             try:
                 object.__setattr__(self, "action", StatementApplyAction(self.action))
@@ -155,6 +185,7 @@ def apply_income_report_preview(
     document: bytes,
     account_mappings: tuple[AccountMappingInput, ...],
     selections: tuple[StatementApplySelection, ...],
+    expected_document_sha256: str,
     instrument_mappings: tuple[InstrumentMappingInput, ...] = (),
     applied_at: datetime | None = None,
 ) -> StatementApplyResult:
@@ -172,6 +203,13 @@ def apply_income_report_preview(
             selected_count,
             StatementApplyFailureCode.VALIDATION_ERROR,
             "at least one statement row must be selected",
+        )
+    reviewed_digest = _normalize_sha256(expected_document_sha256)
+    if reviewed_digest is None:
+        return _failure(
+            selected_count,
+            StatementApplyFailureCode.VALIDATION_ERROR,
+            "expected_document_sha256 must be a SHA-256 hex digest",
         )
     if session.new or session.dirty or session.deleted:
         return _failure(
@@ -217,6 +255,8 @@ def apply_income_report_preview(
             StatementApplyFailureCode.MALFORMED_OR_UNSUPPORTED_REPORT,
             "statement report is malformed or unsupported",
         )
+    if fresh_preview.document_sha256 != reviewed_digest:
+        return _preview_changed(selected_count)
 
     plan_result = _build_apply_plan(session, fresh_preview.rows, selections)
     if isinstance(plan_result, StatementApplyResult):
@@ -360,6 +400,43 @@ def _provenance_tax_kopecks(row: PreviewRow) -> int | None:
     return kopecks(row.tax_amount)
 
 
+def _linked_flow_matches_accepted(
+    session: Session,
+    *,
+    event: AppliedStatementEvent,
+    flow: InvestmentCashFlow | None,
+) -> bool:
+    """True iff the linked cash flow still matches the last accepted statement state."""
+
+    if flow is None or flow.id != event.investment_cash_flow_id:
+        return False
+    revisions = list_applied_statement_event_revisions(session, event.id)
+    if not revisions:
+        return False
+    accepted = revisions[-1]
+    expected_tax = accepted.tax_amount_kopecks if accepted.tax_available else 0
+    expected_month = get_reporting_month_by_period(
+        session, year=accepted.event_date.year, month=accepted.event_date.month
+    )
+    if expected_month is None or flow.reporting_month_id != expected_month.id:
+        return False
+    if (
+        flow.account_id != event.account_id
+        or flow.instrument_id != event.instrument_id
+        or flow.flow_type != event.event_kind
+        or flow.event_date != accepted.event_date
+        or flow.gross_amount_kopecks != accepted.gross_amount_kopecks
+        or flow.tax_amount_kopecks != expected_tax
+        or flow.commission_amount_kopecks != 0
+        or flow.net_amount_kopecks != accepted.net_amount_kopecks
+        or flow.currency != accepted.net_currency
+    ):
+        return False
+    if StatementLinkMode(event.link_mode) is StatementLinkMode.STATEMENT_CREATED:
+        return flow.source == ALFA_DEPOSITORY_INCOME_PROVIDER
+    return True
+
+
 def _financially_compatible(flow: InvestmentCashFlow, row: PreviewRow) -> bool:
     tax = _cash_flow_tax_kopecks(row)
     if isinstance(tax, StatementApplyFailureCode):
@@ -435,6 +512,11 @@ def _build_apply_plan(
         ):
             validation = True
             continue
+        if (
+            row.hermes_account_id != selection.expected_hermes_account_id
+            or row.hermes_instrument_id != selection.expected_hermes_instrument_id
+        ):
+            return _preview_changed(selected_count)
 
         existing = get_applied_statement_event_by_identity(
             session,
@@ -467,6 +549,9 @@ def _build_apply_plan(
         current_ids = frozenset(candidate_ids)
 
         if existing is not None and existing.material_fingerprint == row.material_fingerprint:
+            linked = session.get(InvestmentCashFlow, existing.investment_cash_flow_id)
+            if not _linked_flow_matches_accepted(session, event=existing, flow=linked):
+                return _preview_changed(selected_count)
             item_action = StatementApplyItemAction.UNCHANGED
             writes = False
             if month is None:
@@ -499,6 +584,17 @@ def _build_apply_plan(
                 continue
             if selection.action is not StatementApplyAction.REVISE:
                 validation = True
+                continue
+            linked = session.get(InvestmentCashFlow, existing.investment_cash_flow_id)
+            if not _linked_flow_matches_accepted(session, event=existing, flow=linked):
+                return _preview_changed(selected_count)
+            assert linked is not None
+            source_month = session.get(ReportingMonth, linked.reporting_month_id)
+            if source_month is None:
+                missing_month = True
+                continue
+            if source_month.status == ReportingMonthStatus.CLOSED.value:
+                closed_month = True
                 continue
             tax = _cash_flow_tax_kopecks(row)
             if isinstance(tax, StatementApplyFailureCode):
