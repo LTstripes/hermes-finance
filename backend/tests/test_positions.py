@@ -17,7 +17,9 @@ from hermes_finance.services.positions import (
     create_position_snapshot,
     delete_position_snapshot,
     get_position_snapshot,
+    get_position_snapshot_by_key,
     list_position_snapshots,
+    stage_create_position_snapshot,
     update_position_snapshot,
 )
 from hermes_finance.services.reporting_months import create_reporting_month
@@ -327,6 +329,59 @@ def test_generic_update_cannot_fabricate_or_corrupt_t_invest(tmp_path: Path) -> 
         assert leftover.id == first_id
         assert leftover.normalized_price_kopecks == first_price
         assert leftover.provider_instrument_id == "11111111-1111-1111-1111-111111111111"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_stage_create_does_not_commit_while_public_create_does(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        staged = stage_create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=2,
+            average_cost_per_unit="10.00",
+            market_price_per_unit="12.00",
+            price_date=date(2030, 5, 12),
+        )
+        assert staged.id is not None
+        session.rollback()
+        assert (
+            get_position_snapshot_by_key(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+            )
+            is None
+        )
+
+        created = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=2,
+            average_cost_per_unit="10.00",
+            market_price_per_unit="12.00",
+            price_date=date(2030, 5, 12),
+        )
+        other = database.session_factory()
+        try:
+            visible = get_position_snapshot_by_key(
+                other,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+            )
+            assert visible is not None
+            assert visible.id == created.id
+        finally:
+            other.close()
     finally:
         session.close()
         database.engine.dispose()
