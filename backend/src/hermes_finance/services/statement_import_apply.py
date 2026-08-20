@@ -41,6 +41,7 @@ from hermes_finance.services.reporting_months import get_reporting_month_by_peri
 from hermes_finance.statement_import.dto import (
     ALFA_DEPOSITORY_INCOME_PROVIDER,
     AccountMappingInput,
+    DuplicateClass,
     HermesAccountView,
     HermesInstrumentView,
     InstrumentMappingInput,
@@ -167,6 +168,52 @@ class StatementApplyResult:
 
 
 @dataclass(frozen=True, slots=True)
+class StatementCandidateFlow:
+    """Sanitized existing cash-flow candidate for owner duplicate decisions."""
+
+    investment_cash_flow_id: int
+    reporting_month_id: int
+    account_id: int
+    instrument_id: int
+    flow_type: str
+    event_date: date
+    gross_amount_kopecks: int
+    tax_amount_kopecks: int
+    commission_amount_kopecks: int
+    net_amount_kopecks: int
+    currency: str
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class StatementPrepareRow:
+    status: RowStatus
+    event_kind: str | None
+    hermes_account_id: int | None
+    hermes_instrument_id: int | None
+    isin: str | None
+    record_date: date | None
+    event_date: date | None
+    natural_identity: str | None
+    material_fingerprint: str | None
+    duplicate_class: DuplicateClass | None
+    reason: str | None
+    reporting_month_id: int | None
+    candidate_ids: tuple[int, ...]
+    candidates: tuple[StatementCandidateFlow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class StatementPrepareResult:
+    status: ReportStatus
+    provider: str
+    document_sha256: str
+    rows: tuple[StatementPrepareRow, ...]
+    warnings: tuple[str, ...]
+    reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class _ApplyPlan:
     selection: StatementApplySelection
     row: PreviewRow
@@ -177,6 +224,134 @@ class _ApplyPlan:
     reporting_month_id: int | None
     writes: bool
     item_action: StatementApplyItemAction
+
+
+def list_statement_cash_flow_candidates(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    account_id: int,
+    instrument_id: int,
+    flow_type: str,
+    event_date: date,
+) -> tuple[InvestmentCashFlow, ...]:
+    """Unlinked cash flows in the exact #92 candidate context, ordered by id."""
+
+    linked = list_linked_investment_cash_flow_ids(session)
+    rows = session.scalars(
+        select(InvestmentCashFlow)
+        .where(
+            InvestmentCashFlow.reporting_month_id == reporting_month_id,
+            InvestmentCashFlow.account_id == account_id,
+            InvestmentCashFlow.instrument_id == instrument_id,
+            InvestmentCashFlow.flow_type == flow_type,
+            InvestmentCashFlow.event_date == event_date,
+        )
+        .order_by(InvestmentCashFlow.id)
+    )
+    return tuple(flow for flow in rows if flow.id not in linked)
+
+
+def _candidate_view(flow: InvestmentCashFlow) -> StatementCandidateFlow:
+    return StatementCandidateFlow(
+        investment_cash_flow_id=flow.id,
+        reporting_month_id=flow.reporting_month_id,
+        account_id=flow.account_id,
+        instrument_id=flow.instrument_id,
+        flow_type=flow.flow_type,
+        event_date=flow.event_date,
+        gross_amount_kopecks=flow.gross_amount_kopecks,
+        tax_amount_kopecks=flow.tax_amount_kopecks,
+        commission_amount_kopecks=flow.commission_amount_kopecks,
+        net_amount_kopecks=flow.net_amount_kopecks,
+        currency=flow.currency,
+        source=flow.source,
+    )
+
+
+def _rebuild_preview(
+    session: Session,
+    document: bytes,
+    account_mappings: tuple[AccountMappingInput, ...],
+    instrument_mappings: tuple[InstrumentMappingInput, ...],
+):
+    return preview_income_report(
+        bytes(document),
+        hermes_accounts=_account_views(session),
+        hermes_instruments=_instrument_views(session),
+        account_mappings=account_mappings,
+        instrument_mappings=instrument_mappings,
+        prior_events=load_prior_event_views(session),
+    )
+
+
+def prepare_income_report_apply(
+    session: Session,
+    *,
+    document: bytes,
+    account_mappings: tuple[AccountMappingInput, ...],
+    instrument_mappings: tuple[InstrumentMappingInput, ...] = (),
+) -> StatementPrepareResult:
+    """Read-only apply-preparation preview. Zero persistence writes."""
+
+    if not isinstance(document, (bytes, bytearray)):
+        raise ValueError("statement document bytes are required")
+    preview = _rebuild_preview(session, bytes(document), account_mappings, instrument_mappings)
+    rows: list[StatementPrepareRow] = []
+    for row in preview.rows:
+        candidates: tuple[StatementCandidateFlow, ...] = ()
+        month_id: int | None = None
+        if (
+            row.status is RowStatus.MATCHED
+            and row.hermes_account_id is not None
+            and row.hermes_instrument_id is not None
+            and row.event_kind is not None
+            and row.event_date is not None
+            and row.natural_identity is not None
+        ):
+            month = _resolve_month(session, row)
+            month_id = month.id if month is not None else None
+            existing = get_applied_statement_event_by_identity(
+                session,
+                provider=ALFA_DEPOSITORY_INCOME_PROVIDER,
+                natural_identity=row.natural_identity,
+            )
+            if existing is None and month is not None:
+                flows = list_statement_cash_flow_candidates(
+                    session,
+                    reporting_month_id=month.id,
+                    account_id=row.hermes_account_id,
+                    instrument_id=row.hermes_instrument_id,
+                    flow_type=row.event_kind,
+                    event_date=row.event_date,
+                )
+                candidates = tuple(_candidate_view(flow) for flow in flows)
+        rows.append(
+            StatementPrepareRow(
+                status=row.status,
+                event_kind=row.event_kind,
+                hermes_account_id=row.hermes_account_id,
+                hermes_instrument_id=row.hermes_instrument_id,
+                isin=row.isin,
+                record_date=row.record_date,
+                event_date=row.event_date,
+                natural_identity=row.natural_identity,
+                material_fingerprint=row.material_fingerprint,
+                duplicate_class=row.duplicate_class,
+                reason=row.reason,
+                reporting_month_id=month_id,
+                candidate_ids=tuple(item.investment_cash_flow_id for item in candidates),
+                candidates=candidates,
+            )
+        )
+    return StatementPrepareResult(
+        status=preview.status,
+        provider=preview.provider,
+        document_sha256=preview.document_sha256,
+        rows=tuple(rows),
+        warnings=preview.warnings,
+        reason=preview.reason,
+    )
 
 
 def apply_income_report_preview(
@@ -235,13 +410,8 @@ def apply_income_report_preview(
     session.rollback()
 
     try:
-        fresh_preview = preview_income_report(
-            bytes(document),
-            hermes_accounts=_account_views(session),
-            hermes_instruments=_instrument_views(session),
-            account_mappings=account_mappings,
-            instrument_mappings=instrument_mappings,
-            prior_events=load_prior_event_views(session),
+        fresh_preview = _rebuild_preview(
+            session, bytes(document), account_mappings, instrument_mappings
         )
     except Exception:
         return _failure(
@@ -358,30 +528,6 @@ def _instrument_views(session: Session) -> tuple[HermesInstrumentView, ...]:
     )
 
 
-def _candidate_flows(
-    session: Session,
-    *,
-    reporting_month_id: int,
-    account_id: int,
-    instrument_id: int,
-    flow_type: str,
-    event_date: date,
-) -> tuple[InvestmentCashFlow, ...]:
-    linked = list_linked_investment_cash_flow_ids(session)
-    rows = session.scalars(
-        select(InvestmentCashFlow)
-        .where(
-            InvestmentCashFlow.reporting_month_id == reporting_month_id,
-            InvestmentCashFlow.account_id == account_id,
-            InvestmentCashFlow.instrument_id == instrument_id,
-            InvestmentCashFlow.flow_type == flow_type,
-            InvestmentCashFlow.event_date == event_date,
-        )
-        .order_by(InvestmentCashFlow.id)
-    )
-    return tuple(flow for flow in rows if flow.id not in linked)
-
-
 def _cash_flow_tax_kopecks(row: PreviewRow) -> int | StatementApplyFailureCode:
     if row.tax_available:
         if row.tax_amount is None:
@@ -495,6 +641,8 @@ def _build_apply_plan(
             or row.material_fingerprint != selection.material_fingerprint
         ):
             return _preview_changed(selected_count)
+        if row.status in {RowStatus.UNMATCHED, RowStatus.AMBIGUOUS}:
+            return _preview_changed(selected_count)
         if (
             row.status is not RowStatus.MATCHED
             or row.hermes_account_id is None
@@ -536,7 +684,7 @@ def _build_apply_plan(
         month_id = month.id if month is not None else None
         candidates: tuple[InvestmentCashFlow, ...] = ()
         if existing is None and month is not None:
-            candidates = _candidate_flows(
+            candidates = list_statement_cash_flow_candidates(
                 session,
                 reporting_month_id=month.id,
                 account_id=row.hermes_account_id,
@@ -728,7 +876,26 @@ def _build_apply_plan(
             StatementApplyFailureCode.VALIDATION_ERROR,
             "selected statement row cannot be applied",
         )
+    if _duplicate_link_targets(plans):
+        return _failure(
+            selected_count,
+            StatementApplyFailureCode.VALIDATION_ERROR,
+            "selected statement rows cannot link to the same cash flow",
+        )
     return tuple(plans)
+
+
+def _duplicate_link_targets(plans: list[_ApplyPlan]) -> bool:
+    seen: set[int] = set()
+    for plan in plans:
+        if plan.item_action is not StatementApplyItemAction.LINKED_EXISTING:
+            continue
+        if plan.existing_cash_flow_id is None:
+            return True
+        if plan.existing_cash_flow_id in seen:
+            return True
+        seen.add(plan.existing_cash_flow_id)
+    return False
 
 
 def _ruble_api(kopeck_value: int) -> str:
