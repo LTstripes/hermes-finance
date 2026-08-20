@@ -837,6 +837,63 @@ def test_closed_month_rejects_with_zero_writes(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_closed_month_rejects_idempotent_reimport(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, _ = build_env(session)
+        document = build_income_report_pdf()
+        row = preview(session, document, account_id).rows[0]
+        first = apply(session, document, account_id, (selection_from_row(row),))
+        assert first.success is True
+        event = list_applied_statement_events(session)[0]
+        revision = list_applied_statement_event_revisions(session, event.id)[0]
+        flow = list_investment_cash_flows(session)[0]
+        before = (
+            event.material_fingerprint,
+            event.document_sha256,
+            event.updated_at,
+            event.investment_cash_flow_id,
+            event.link_mode,
+            revision.id,
+            revision.revision_kind,
+            revision.gross_amount_kopecks,
+            revision.applied_at,
+            flow.gross_amount_kopecks,
+            flow.net_amount_kopecks,
+            flow.source,
+            flow.event_date,
+            flow.reporting_month_id,
+        )
+        close_reporting_month(session, month_id)
+        result = apply(session, document, account_id, (selection_from_row(row),))
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.CLOSED_MONTH
+        assert result.items == ()
+        assert counts(session) == (1, 1, 1)
+        session.refresh(event)
+        session.refresh(revision)
+        session.refresh(flow)
+        assert (
+            event.material_fingerprint,
+            event.document_sha256,
+            event.updated_at,
+            event.investment_cash_flow_id,
+            event.link_mode,
+            revision.id,
+            revision.revision_kind,
+            revision.gross_amount_kopecks,
+            revision.applied_at,
+            flow.gross_amount_kopecks,
+            flow.net_amount_kopecks,
+            flow.source,
+            flow.event_date,
+            flow.reporting_month_id,
+        ) == before
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_spanning_months_fail_atomically_when_one_month_is_invalid(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:

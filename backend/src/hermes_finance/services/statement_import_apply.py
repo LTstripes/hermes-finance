@@ -552,10 +552,14 @@ def _build_apply_plan(
             linked = session.get(InvestmentCashFlow, existing.investment_cash_flow_id)
             if not _linked_flow_matches_accepted(session, event=existing, flow=linked):
                 return _preview_changed(selected_count)
-            item_action = StatementApplyItemAction.UNCHANGED
-            writes = False
             if month is None:
                 missing_month = True
+                continue
+            if month.status == ReportingMonthStatus.CLOSED.value:
+                closed_month = True
+                continue
+            item_action = StatementApplyItemAction.UNCHANGED
+            writes = False
             plans.append(
                 _ApplyPlan(
                     selection=selection,
