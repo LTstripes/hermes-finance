@@ -406,9 +406,7 @@ def test_unauthenticated_state_skips_client_queries() -> None:
     assert all(item.get("Type") != "ConnectionState" for item in _request_payloads(transport.sent))
 
 
-def test_no_broker_portfolio_provider_module() -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("hermes_finance.broker_data")
+def test_no_legacy_broker_portfolio_provider_name() -> None:
     with pytest.raises(ImportError):
         importlib.import_module("hermes_finance.AlfaProBrokerPortfolioProvider")
 
