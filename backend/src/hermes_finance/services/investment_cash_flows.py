@@ -145,7 +145,7 @@ def get_investment_cash_flow(session: Session, flow_id: int) -> InvestmentCashFl
     return flow
 
 
-def create_investment_cash_flow(
+def stage_create_investment_cash_flow(
     session: Session,
     *,
     reporting_month_id: int,
@@ -161,6 +161,10 @@ def create_investment_cash_flow(
     source: str,
     notes: str | None = None,
 ) -> InvestmentCashFlow:
+    """Validate and stage a new cash flow. Caller owns the transaction.
+
+    Flushes so the row receives an id; does not commit.
+    """
     require_editable_reporting_month(session, reporting_month_id)
     account = _require_account(session, account_id)
     _require_instrument(session, instrument_id)
@@ -192,12 +196,47 @@ def create_investment_cash_flow(
         notes=notes,
     )
     session.add(flow)
+    session.flush()
+    return flow
+
+
+def create_investment_cash_flow(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    account_id: int,
+    flow_type: InvestmentCashFlowType | str,
+    event_date: date,
+    gross_amount: RubleAmount | str,
+    tax_amount: RubleAmount | str = "0.00",
+    commission_amount: RubleAmount | str = "0.00",
+    net_amount: RubleAmount | str,
+    instrument_id: int | None = None,
+    currency: str = "RUB",
+    source: str,
+    notes: str | None = None,
+) -> InvestmentCashFlow:
+    flow = stage_create_investment_cash_flow(
+        session,
+        reporting_month_id=reporting_month_id,
+        account_id=account_id,
+        flow_type=flow_type,
+        event_date=event_date,
+        gross_amount=gross_amount,
+        tax_amount=tax_amount,
+        commission_amount=commission_amount,
+        net_amount=net_amount,
+        instrument_id=instrument_id,
+        currency=currency,
+        source=source,
+        notes=notes,
+    )
     session.commit()
     session.refresh(flow)
     return flow
 
 
-def update_investment_cash_flow(
+def stage_update_investment_cash_flow(
     session: Session,
     flow_id: int,
     *,
@@ -211,9 +250,19 @@ def update_investment_cash_flow(
     currency: str | None = None,
     source: str | None = None,
     notes: str | None = None,
+    reporting_month_id: int | None = None,
 ) -> InvestmentCashFlow:
+    """Validate and stage an existing cash-flow mutation. Caller owns the transaction.
+
+    Flushes staged column changes; does not commit. ``reporting_month_id`` is
+    only for sanctioned statement-apply revisions that move payment date
+    across months. Public manual CRUD does not pass it.
+    """
     flow = get_investment_cash_flow(session, flow_id)
     require_editable_child_month(session, flow)
+    if reporting_month_id is not None and reporting_month_id != flow.reporting_month_id:
+        require_editable_reporting_month(session, reporting_month_id)
+        flow.reporting_month_id = reporting_month_id
     account = _require_account(session, flow.account_id)
     if flow_type is not None:
         flow.flow_type = _coerce_flow_type(flow_type).value
@@ -249,6 +298,39 @@ def update_investment_cash_flow(
         net_amount_kopecks=flow.net_amount_kopecks,
     )
     _validate_signed_flow_type(normalized_type, net_amount_kopecks=flow.net_amount_kopecks)
+    session.flush()
+    return flow
+
+
+def update_investment_cash_flow(
+    session: Session,
+    flow_id: int,
+    *,
+    flow_type: InvestmentCashFlowType | str | None = None,
+    event_date: date | None = None,
+    gross_amount: RubleAmount | str | None = None,
+    tax_amount: RubleAmount | str | None = None,
+    commission_amount: RubleAmount | str | None = None,
+    net_amount: RubleAmount | str | None = None,
+    instrument_id: int | None = None,
+    currency: str | None = None,
+    source: str | None = None,
+    notes: str | None = None,
+) -> InvestmentCashFlow:
+    flow = stage_update_investment_cash_flow(
+        session,
+        flow_id,
+        flow_type=flow_type,
+        event_date=event_date,
+        gross_amount=gross_amount,
+        tax_amount=tax_amount,
+        commission_amount=commission_amount,
+        net_amount=net_amount,
+        instrument_id=instrument_id,
+        currency=currency,
+        source=source,
+        notes=notes,
+    )
     session.commit()
     session.refresh(flow)
     return flow
