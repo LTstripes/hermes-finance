@@ -111,6 +111,12 @@ def build_reconciliation_preview(
             else ReconciliationStatus.NON_APPLICABLE
         )
 
+    # B2: apply eligibility of the preview is independent from the source
+    # snapshot. A reconciliation preview is eligible for a future selective apply
+    # ONLY when it is APPLICABLE. NON_APPLICABLE and CONFLICTS must never expose
+    # eligible_for_apply=True (fail-closed).
+    preview_eligible = status_value is ReconciliationStatus.APPLICABLE
+
     month_closed = hermes.month_status == "closed"
     would_touch_closed_month = month_closed and status_value in {
         ReconciliationStatus.APPLICABLE,
@@ -122,7 +128,7 @@ def build_reconciliation_preview(
         provider=snapshot.provider,
         source_as_of=snapshot.source_as_of,
         captured_at=datetime.now(timezone.utc),
-        eligible_for_apply=eligible,
+        eligible_for_apply=preview_eligible,
         snapshot_status=status,
         month_id=hermes.month_id,
         month_status=hermes.month_status,

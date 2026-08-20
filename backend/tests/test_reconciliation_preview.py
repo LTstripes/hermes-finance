@@ -19,6 +19,7 @@ from hermes_finance.broker_data.reconciliation import (
     AccountMappingInput,
     AccountMatchStatus,
     CashRowStatus,
+    InstrumentMappingInput,
     InstrumentMatchStatus,
     OwnerMappingInput,
     PositionRowStatus,
@@ -592,4 +593,304 @@ def test_read_only_adapter_feeds_preview(tmp_path) -> None:
         assert preview.positions[0].quantity_equal is True
     finally:
         session.close()
-        database.engine.dispose()
+
+
+# --- B1. canonical ISIN normalization (strip + upper) ---
+
+
+def test_b1_isin_case_insensitive_match() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="us1234567890", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.instruments[0].status is InstrumentMatchStatus.MATCHED
+    assert preview.instruments[0].hermes_instrument_id == 10
+
+
+def test_b1_isin_whitespace_match() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin=" US1234567890 ", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.instruments[0].status is InstrumentMatchStatus.MATCHED
+    assert preview.instruments[0].hermes_instrument_id == 10
+
+
+def test_b1_normalized_duplicate_hermes_isin_ambiguous() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(
+            HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),
+            HermesInstrumentView(11, "Share A dup", "stock", "US1234567890", "SHA2"),
+        ),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.instruments[0].status is InstrumentMatchStatus.AMBIGUOUS
+    assert preview.instruments[0].hermes_instrument_id is None
+    assert preview.conflict_count >= 1
+
+
+def test_b1_different_case_isin_does_not_bypass_duplicate_conflict() -> None:
+    # Two provider positions with different-case ISINs resolve to the same
+    # canonical (account, instrument) and must still fail closed as duplicate.
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[
+            _pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("7")),
+            _pos("PA1", "PO2", isin="us1234567890", quantity=Decimal("8")),
+        ],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.status is ReconciliationStatus.CONFLICTS
+    assert preview.positions[0].status is PositionRowStatus.CONFLICT
+    assert "duplicate" in (preview.positions[0].reason or "").lower()
+
+
+# --- B2. preview-level apply eligibility fails closed ---
+
+
+def test_b2_conflicts_preview_not_eligible_for_apply() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[
+            _pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("7")),
+            _pos("PA1", "PO2", isin="US1234567890", quantity=Decimal("8")),
+        ],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.snapshot_status is SnapshotStatus.COMPLETE
+    assert snap.provenance.eligible_for_apply is True  # source snapshot candidate
+    assert preview.status is ReconciliationStatus.CONFLICTS
+    assert preview.eligible_for_apply is False  # preview not eligible
+
+
+def test_b2_non_applicable_preview_not_eligible() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+    )
+    # Incomplete snapshot -> non-applicable preview.
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10"))],
+        status=SnapshotStatus.INCOMPLETE,
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.status is ReconciliationStatus.NON_APPLICABLE
+    assert preview.eligible_for_apply is False
+
+
+# --- B3. conflicting explicit mappings must not use last wins ---
+
+
+def test_b3_conflicting_account_mapping_conflict() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+    )
+    hermes = _hermes(
+        accounts=(
+            HermesAccountView(1, "B1", "brokerage", None, "active"),
+            HermesAccountView(2, "B2", "brokerage", None, "active"),
+        ),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(
+            AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),
+            AccountMappingInput(hermes_account_id=2, provider_account_id="PA1"),
+        )
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.accounts[0].status is AccountMatchStatus.CONFLICT
+    assert preview.accounts[0].hermes_account_id is None
+    assert preview.eligible_for_apply is False
+
+
+def test_b3_conflicting_instrument_mapping_conflict() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(
+            HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),
+            HermesInstrumentView(11, "Share A2", "stock", "US0000000000", "SHB"),
+        ),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),),
+        instruments=(
+            InstrumentMappingInput(hermes_instrument_id=10, provider_instrument_id="PO1"),
+            InstrumentMappingInput(hermes_instrument_id=11, provider_instrument_id="PO1"),
+        ),
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.instruments[0].status is InstrumentMatchStatus.CONFLICT
+    assert preview.instruments[0].hermes_instrument_id is None
+    assert preview.eligible_for_apply is False
+
+
+def test_b3_idempotent_repeated_pair_no_conflict() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(
+            AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),
+            AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),
+        ),
+        instruments=(
+            InstrumentMappingInput(hermes_instrument_id=10, provider_instrument_id="PO1"),
+            InstrumentMappingInput(hermes_instrument_id=10, provider_instrument_id="PO1"),
+        ),
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.accounts[0].status is AccountMatchStatus.MATCHED
+    assert preview.instruments[0].status is InstrumentMatchStatus.MATCHED
+    assert preview.eligible_for_apply is True
+
+
+# --- B4. same instrument across different accounts is not an instrument conflict ---
+
+
+def test_b4_same_instrument_two_accounts_no_instrument_conflict() -> None:
+    snap = _complete_snapshot(
+        accounts=[
+            BrokerAccount(provider_account_id="PA1"),
+            BrokerAccount(provider_account_id="PA2"),
+        ],
+        positions=[
+            _pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10")),
+            _pos("PA2", "PO0", isin="US1234567890", quantity=Decimal("20")),
+        ],
+    )
+    hermes = _hermes(
+        accounts=(
+            HermesAccountView(1, "B1", "brokerage", None, "active"),
+            HermesAccountView(2, "B2", "brokerage", None, "active"),
+        ),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),),
+        positions=(
+            HermesPositionView(1, 10, Decimal("10"), 1000, None, 10000, 0),
+            HermesPositionView(2, 10, Decimal("20"), 1000, None, 20000, 0),
+        ),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(
+            AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),
+            AccountMappingInput(hermes_account_id=2, provider_account_id="PA2"),
+        )
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    # One instrument identity resolved per provider id; no instrument-level
+    # conflict. Both provider ids resolve to the same Hermes instrument 10.
+    assert all(r.status is not InstrumentMatchStatus.CONFLICT for r in preview.instruments)
+    matched_instruments = [
+        r for r in preview.instruments if r.status is InstrumentMatchStatus.MATCHED
+    ]
+    assert len(matched_instruments) == 2
+    assert all(r.hermes_instrument_id == 10 for r in matched_instruments)
+    # Both provider positions reconcile as normal MATCHED rows on the same
+    # Hermes instrument under different accounts.
+    matched_positions = [r for r in preview.positions if r.status is PositionRowStatus.MATCHED]
+    assert len(matched_positions) == 2
+    account_ids = {r.account_id for r in matched_positions}
+    assert account_ids == {1, 2}
+    assert preview.status is ReconciliationStatus.APPLICABLE
+
+
+# --- B5. explicit mapping conflicting with ISIN evidence fails closed ---
+
+
+def test_b5_explicit_mapping_contradicts_isin_conflict() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", "US0000000000", "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),),
+        instruments=(
+            InstrumentMappingInput(hermes_instrument_id=10, provider_instrument_id="PO1"),
+        ),
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.instruments[0].status is InstrumentMatchStatus.CONFLICT
+    assert preview.instruments[0].hermes_instrument_id == 10
+    assert "contradict" in (preview.instruments[0].reason or "").lower()
+    assert preview.status is ReconciliationStatus.CONFLICTS
+    assert preview.eligible_for_apply is False
+
+
+def test_b5_explicit_mapping_without_isin_evidence_not_contradicted() -> None:
+    # Explicit mapping stands when provider ISIN absent or Hermes ISIN absent:
+    # absence of evidence is not a contradiction.
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[_pos("PA1", "PO1", isin=None, quantity=Decimal("10"))],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(HermesInstrumentView(10, "Share A", "stock", None, "SHA"),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),),
+        instruments=(
+            InstrumentMappingInput(hermes_instrument_id=10, provider_instrument_id="PO1"),
+        ),
+    )
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+    assert preview.instruments[0].status is InstrumentMatchStatus.MATCHED
+    assert preview.eligible_for_apply is True
