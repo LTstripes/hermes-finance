@@ -798,3 +798,16 @@ def test_position_invalid_idobject_never_complete() -> None:
     assert snapshot.status in {SnapshotStatus.MALFORMED_RESPONSE, SnapshotStatus.INCOMPLETE}
     assert snapshot.provenance.eligible_for_apply is False
     assert snapshot.status is not SnapshotStatus.COMPLETE
+
+
+def test_position_string_idobject_never_complete() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list)
+    positions[0]["IdObject"] = "501"
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture), total_deadline=2
+    ).fetch_snapshot()
+    assert snapshot.status in {SnapshotStatus.MALFORMED_RESPONSE, SnapshotStatus.INCOMPLETE}
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.status is not SnapshotStatus.COMPLETE

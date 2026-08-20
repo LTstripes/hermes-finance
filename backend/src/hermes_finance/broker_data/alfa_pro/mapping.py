@@ -359,7 +359,8 @@ def normalize_position(
     *,
     instruments: dict[str, dict[str, object]],
 ) -> BrokerPosition | None:
-    object_id = as_id(row.get("IdObject"))
+    object_id_int = as_int(row.get("IdObject"))
+    object_id = str(object_id_int) if object_id_int is not None else None
     info = instruments.get(object_id or "") if object_id is not None else None
     mapped: list[str] = []
     quantity = as_decimal(row.get("TorgPos"))

@@ -29,7 +29,7 @@ from hermes_finance.broker_data.alfa_pro.codec import (
     decode_router_message,
     encode_router_message,
 )
-from hermes_finance.broker_data.alfa_pro.mapping import as_bool, as_id, as_int
+from hermes_finance.broker_data.alfa_pro.mapping import as_bool, as_int
 
 MAX_MESSAGES: int = 400
 MAX_ROWS_PER_ENTITY: int = 500
@@ -356,7 +356,7 @@ def _required_queries_settled(state: CollectedState) -> bool:
 
 def positions_missing_instrument_ref(state: CollectedState) -> bool:
     rows = state.entities.get("ClientPositionEntity", {})
-    return any(as_id(row.get("IdObject")) is None for row in rows.values())
+    return any(as_int(row.get("IdObject")) is None for row in rows.values())
 
 
 def asset_info_batches_complete(state: CollectedState) -> bool:
@@ -446,7 +446,7 @@ def _ingest_entity_payload(
             state.truncated = True
             state.entity_truncated[entity_type] = True
             continue
-        if entity_type == "ClientPositionEntity" and as_id(item.get("IdObject")) is None:
+        if entity_type == "ClientPositionEntity" and as_int(item.get("IdObject")) is None:
             state.malformed = True
         store[key] = item
 
