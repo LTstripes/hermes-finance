@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "source": "synthetic Alfa PRO current-state snapshot fixture",
+    "note": "No owner accounts, holdings, or live payloads. Identifiers are synthetic."
+  },
+  "connection_state": {
+    "States": {
+      "User": {
+        "Login": "synth.user",
+        "FullName": "Synthetic Owner",
+        "AuthStatus": 2
+      },
+      "SignService": {
+        "ReadyToSign": true
+      }
+    }
+  },
+  "ClientAccountEntity": [
+    { "IdAccount": 101 }
+  ],
+  "ClientSubAccountEntity": [
+    { "IdAccount": 101, "IdSubAccount": 201 },
+    { "IdAccount": 101, "IdSubAccount": 202 }
+  ],
+  "SubAccountRazdelEntity": [
+    {
+      "IdRazdel": 301,
+      "IdAccount": 101,
+      "IdSubAccount": 201,
+      "IdRazdelGroup": 1,
+      "RCode": "MICEX"
+    }
+  ],
+  "ClientPositionEntity": [
+    {
+      "IdPosition": 401,
+      "IdAccount": 101,
+      "IdSubAccount": 201,
+      "IdRazdel": 301,
+      "IdObject": 501,
+      "TorgPos": 10,
+      "Price": 250.5,
+      "UchPrice": 240,
+      "NKD": 1.25,
+      "PSTNKD": 9.99,
+      "DailyPL": 12.5,
+      "NPLtoMarketCurPrice": 15.5,
+      "IsMoney": false
+    },
+    {
+      "IdPosition": 402,
+      "IdAccount": 101,
+      "IdSubAccount": 201,
+      "IdRazdel": 301,
+      "IdObject": 502,
+      "TorgPos": 1000.0,
+      "IsMoney": true,
+      "IsRur": true
+    }
+  ],
+  "ClientBalanceEntity": [
+    {
+      "DataId": 1609,
+      "IdAccount": 101,
+      "IdSubAccount": 201,
+      "IdRazdelGroup": 1,
+      "Money": 1500.0,
+      "PortfolioCost": 4000.0,
+      "Balance": 4000.0,
+      "NKD": 1.25
+    }
+  ],
+  "AssetInfoEntity": [
+    {
+      "IdObject": 501,
+      "Ticker": "SYNTH",
+      "ISIN": "RU000SYNTH01",
+      "Name": "Synthetic Share"
+    }
+  ]
+}
