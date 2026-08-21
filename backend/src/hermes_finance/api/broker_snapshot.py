@@ -235,20 +235,34 @@ def _decimal(value: Decimal | None) -> str | None:
     return format(value, "f") if value is not None else None
 
 
-def _preview_response(preview, *, fingerprint_mapping: OwnerMappingInput, session: Session) -> BrokerSnapshotPreviewResponse:
+def _preview_response(
+    preview, *, fingerprint_mapping: OwnerMappingInput, session: Session
+) -> BrokerSnapshotPreviewResponse:
     hermes = load_hermes_state_for_month(session, preview.month_id or 0)
-    snapshots = {(row.account_id, row.instrument_id): next(
-        (position for position in hermes.positions if position.account_id == row.account_id and position.instrument_id == row.instrument_id),
-        None,
-    ) for row in preview.positions}
+    snapshots = {
+        (row.account_id, row.instrument_id): next(
+            (
+                position
+                for position in hermes.positions
+                if position.account_id == row.account_id
+                and position.instrument_id == row.instrument_id
+            ),
+            None,
+        )
+        for row in preview.positions
+    }
     positions = []
     for row in preview.positions:
-        fingerprint = position_apply_fingerprint(
-            preview=preview,
-            row=row,
-            mapping=fingerprint_mapping,
-            snapshot=snapshots[(row.account_id, row.instrument_id)],
-        ) if row.status.value in {"matched", "provider_only"} else None
+        fingerprint = (
+            position_apply_fingerprint(
+                preview=preview,
+                row=row,
+                mapping=fingerprint_mapping,
+                snapshot=snapshots[(row.account_id, row.instrument_id)],
+            )
+            if row.status.value in {"matched", "provider_only"}
+            else None
+        )
         positions.append(
             BrokerPositionRowOut(
                 account_id=row.account_id,
@@ -284,10 +298,39 @@ def _preview_response(preview, *, fingerprint_mapping: OwnerMappingInput, sessio
         month_closed=preview.month_closed,
         would_touch_closed_month=preview.would_touch_closed_month,
         conflict_count=preview.conflict_count,
-        accounts=[BrokerAccountRowOut(provider_account_id=row.provider_account_id, hermes_account_id=row.hermes_account_id, status=row.status.value, reason=row.reason) for row in preview.accounts],
-        instruments=[BrokerInstrumentRowOut(provider_instrument_id=row.provider_instrument_id, isin=row.isin, ticker=row.ticker, display_name=row.display_name, hermes_instrument_id=row.hermes_instrument_id, status=row.status.value, reason=row.reason) for row in preview.instruments],
+        accounts=[
+            BrokerAccountRowOut(
+                provider_account_id=row.provider_account_id,
+                hermes_account_id=row.hermes_account_id,
+                status=row.status.value,
+                reason=row.reason,
+            )
+            for row in preview.accounts
+        ],
+        instruments=[
+            BrokerInstrumentRowOut(
+                provider_instrument_id=row.provider_instrument_id,
+                isin=row.isin,
+                ticker=row.ticker,
+                display_name=row.display_name,
+                hermes_instrument_id=row.hermes_instrument_id,
+                status=row.status.value,
+                reason=row.reason,
+            )
+            for row in preview.instruments
+        ],
         positions=positions,
-        cash=[BrokerCashRowOut(provider_account_id=row.provider_account_id, hermes_account_id=row.hermes_account_id, currency=row.currency, provider_amount=_decimal(row.provider_amount), status=row.status.value, reason=row.reason) for row in preview.cash],
+        cash=[
+            BrokerCashRowOut(
+                provider_account_id=row.provider_account_id,
+                hermes_account_id=row.hermes_account_id,
+                currency=row.currency,
+                provider_amount=_decimal(row.provider_amount),
+                status=row.status.value,
+                reason=row.reason,
+            )
+            for row in preview.cash
+        ],
         warnings=list(preview.warnings),
     )
 
@@ -303,18 +346,42 @@ def _dependent(value: BrokerDependentAmountIn | None):
 def _selection(row: BrokerApplySelectionIn) -> BrokerSnapshotApplySelection:
     average = None
     if row.average_cost is not None:
-        average = AverageCostDecision(action=row.average_cost.action, value=_amount(row.average_cost.value))
+        average = AverageCostDecision(
+            action=row.average_cost.action, value=_amount(row.average_cost.value)
+        )
     market = None
     if row.market_price is not None:
-        market = MarketPriceDecision(action=row.market_price.action, market_price_per_unit=_amount(row.market_price.market_price_per_unit), price_date=row.market_price.price_date, price_source=row.market_price.price_source)
+        market = MarketPriceDecision(
+            action=row.market_price.action,
+            market_price_per_unit=_amount(row.market_price.market_price_per_unit),
+            price_date=row.market_price.price_date,
+            price_source=row.market_price.price_source,
+        )
     accrued = None
     if row.accrued_interest is not None:
-        accrued = AccruedInterestDecision(action=row.accrued_interest.action, value=_amount(row.accrued_interest.value))
-    return BrokerSnapshotApplySelection(account_id=row.account_id, instrument_id=row.instrument_id, fingerprint=row.fingerprint, action=row.action, average_cost=average, market_price=market, accrued_interest=accrued)
+        accrued = AccruedInterestDecision(
+            action=row.accrued_interest.action, value=_amount(row.accrued_interest.value)
+        )
+    return BrokerSnapshotApplySelection(
+        account_id=row.account_id,
+        instrument_id=row.instrument_id,
+        fingerprint=row.fingerprint,
+        action=row.action,
+        average_cost=average,
+        market_price=market,
+        accrued_interest=accrued,
+    )
 
 
-@router.post("/api/months/{month_id}/broker-snapshot-preview", response_model=BrokerSnapshotPreviewResponse)
-def broker_snapshot_preview_endpoint(month_id: int, payload: BrokerMappingIn, request: Request, session: Session = Depends(session_for_request)) -> BrokerSnapshotPreviewResponse:
+@router.post(
+    "/api/months/{month_id}/broker-snapshot-preview", response_model=BrokerSnapshotPreviewResponse
+)
+def broker_snapshot_preview_endpoint(
+    month_id: int,
+    payload: BrokerMappingIn,
+    request: Request,
+    session: Session = Depends(session_for_request),
+) -> BrokerSnapshotPreviewResponse:
     mapping = _mapping(payload)
     hermes = load_hermes_state_for_month(session, month_id)
     try:
@@ -332,7 +399,10 @@ def broker_snapshot_preview_endpoint(month_id: int, payload: BrokerMappingIn, re
             month_closed=hermes.month_status == "closed",
             would_touch_closed_month=False,
             conflict_count=0,
-            accounts=[], instruments=[], positions=[], cash=[],
+            accounts=[],
+            instruments=[],
+            positions=[],
+            cash=[],
             warnings=["broker snapshot refresh failed"],
             error_code="provider_error",
             message="Broker snapshot refresh failed",
@@ -342,7 +412,12 @@ def broker_snapshot_preview_endpoint(month_id: int, payload: BrokerMappingIn, re
 
 
 @router.post("/api/months/{month_id}/broker-snapshot-apply", response_model=BrokerApplyResponse)
-def broker_snapshot_apply_endpoint(month_id: int, payload: BrokerSnapshotApplyRequest, request: Request, session: Session = Depends(session_for_request)) -> BrokerApplyResponse:
+def broker_snapshot_apply_endpoint(
+    month_id: int,
+    payload: BrokerSnapshotApplyRequest,
+    request: Request,
+    session: Session = Depends(session_for_request),
+) -> BrokerApplyResponse:
     result = apply_broker_snapshot_preview(
         session,
         provider=_provider(request),
@@ -353,7 +428,24 @@ def broker_snapshot_apply_endpoint(month_id: int, payload: BrokerSnapshotApplyRe
     return BrokerApplyResponse(
         success=result.success,
         selected_count=result.selected_count,
-        items=[BrokerApplyItemOut(action=item.action.value, position_snapshot_id=item.position_snapshot_id, account_id=item.account_id, instrument_id=item.instrument_id, quantity=format(item.quantity, "f"), average_cost_per_unit_kopecks=item.average_cost_per_unit_kopecks, market_price_per_unit_kopecks=item.market_price_per_unit_kopecks, accrued_interest_kopecks=item.accrued_interest_kopecks, market_value_kopecks=item.market_value_kopecks, cost_basis_kopecks=item.cost_basis_kopecks, unrealized_result_kopecks=item.unrealized_result_kopecks, price_date=item.price_date, price_source=item.price_source) for item in result.items],
+        items=[
+            BrokerApplyItemOut(
+                action=item.action.value,
+                position_snapshot_id=item.position_snapshot_id,
+                account_id=item.account_id,
+                instrument_id=item.instrument_id,
+                quantity=format(item.quantity, "f"),
+                average_cost_per_unit_kopecks=item.average_cost_per_unit_kopecks,
+                market_price_per_unit_kopecks=item.market_price_per_unit_kopecks,
+                accrued_interest_kopecks=item.accrued_interest_kopecks,
+                market_value_kopecks=item.market_value_kopecks,
+                cost_basis_kopecks=item.cost_basis_kopecks,
+                unrealized_result_kopecks=item.unrealized_result_kopecks,
+                price_date=item.price_date,
+                price_source=item.price_source,
+            )
+            for item in result.items
+        ],
         error_code=result.error_code.value if result.error_code is not None else None,
         message=result.message,
         source_as_of=result.source_as_of,

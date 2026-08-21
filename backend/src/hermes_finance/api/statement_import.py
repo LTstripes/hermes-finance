@@ -169,17 +169,28 @@ def _read_json(value: str, adapter: TypeAdapter):
     try:
         return adapter.validate_python(json.loads(value or "[]"))
     except (json.JSONDecodeError, ValidationError, TypeError) as error:
-        raise HTTPException(status_code=422, detail="mapping or selection JSON is invalid") from error
+        raise HTTPException(
+            status_code=422, detail="mapping or selection JSON is invalid"
+        ) from error
 
 
 def _account_mappings(value: str) -> tuple[AccountMappingInput, ...]:
     rows = _read_json(value, TypeAdapter(list[StatementAccountMappingIn]))
-    return tuple(AccountMappingInput(hermes_account_id=row.hermes_account_id, provider_account_ref=row.provider_account_ref.strip()) for row in rows)
+    return tuple(
+        AccountMappingInput(
+            hermes_account_id=row.hermes_account_id,
+            provider_account_ref=row.provider_account_ref.strip(),
+        )
+        for row in rows
+    )
 
 
 def _instrument_mappings(value: str) -> tuple[InstrumentMappingInput, ...]:
     rows = _read_json(value, TypeAdapter(list[StatementInstrumentMappingIn]))
-    return tuple(InstrumentMappingInput(hermes_instrument_id=row.hermes_instrument_id, isin=row.isin.strip()) for row in rows)
+    return tuple(
+        InstrumentMappingInput(hermes_instrument_id=row.hermes_instrument_id, isin=row.isin.strip())
+        for row in rows
+    )
 
 
 async def _document(upload: UploadFile) -> bytes:
@@ -192,7 +203,9 @@ async def _document(upload: UploadFile) -> bytes:
                 break
             total += len(chunk)
             if total > MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="statement PDF exceeds the upload limit")
+                raise HTTPException(
+                    status_code=413, detail="statement PDF exceeds the upload limit"
+                )
             chunks.append(chunk)
     finally:
         await upload.close()
@@ -216,7 +229,9 @@ def _candidate(candidate) -> StatementCandidateOut:
     )
 
 
-def _row(row: StatementApplyPreparationRow, *, provider_account_ref: str | None = None) -> StatementRowOut:
+def _row(
+    row: StatementApplyPreparationRow, *, provider_account_ref: str | None = None
+) -> StatementRowOut:
     return StatementRowOut(
         status=row.status.value,
         duplicate_class=row.duplicate_class.value if row.duplicate_class is not None else None,
@@ -245,11 +260,26 @@ def _row(row: StatementApplyPreparationRow, *, provider_account_ref: str | None 
 
 
 def _preparation_response(result: StatementApplyPreparation) -> StatementPreparationResponse:
-    return StatementPreparationResponse(provider=result.provider, document_sha256=result.document_sha256, status=result.status.value, rows=[_row(row) for row in result.rows], warnings=list(result.warnings), reason=result.reason)
+    return StatementPreparationResponse(
+        provider=result.provider,
+        document_sha256=result.document_sha256,
+        status=result.status.value,
+        rows=[_row(row) for row in result.rows],
+        warnings=list(result.warnings),
+        reason=result.reason,
+    )
 
 
 def _selection(row: StatementApplySelectionIn) -> StatementApplySelection:
-    return StatementApplySelection(natural_identity=row.natural_identity, material_fingerprint=row.material_fingerprint, expected_hermes_account_id=row.expected_hermes_account_id, expected_hermes_instrument_id=row.expected_hermes_instrument_id, action=row.action, existing_cash_flow_id=row.existing_cash_flow_id, expected_candidate_ids=tuple(row.expected_candidate_ids))
+    return StatementApplySelection(
+        natural_identity=row.natural_identity,
+        material_fingerprint=row.material_fingerprint,
+        expected_hermes_account_id=row.expected_hermes_account_id,
+        expected_hermes_instrument_id=row.expected_hermes_instrument_id,
+        action=row.action,
+        existing_cash_flow_id=row.existing_cash_flow_id,
+        expected_candidate_ids=tuple(row.expected_candidate_ids),
+    )
 
 
 @router.post("/inspect", response_model=StatementInspectResponse)
@@ -258,8 +288,30 @@ async def inspect_statement_endpoint(
     session: Session = Depends(session_for_request),
 ) -> StatementInspectResponse:
     payload = await _document(document)
-    preview = preview_income_report(payload, hermes_accounts=_account_views(session), hermes_instruments=_instrument_views(session))
-    return StatementInspectResponse(provider=preview.provider, document_sha256=preview.document_sha256, status=preview.status.value, rows=[StatementInspectRowOut(status=row.status.value, provider_account_ref=row.provider_account_ref, isin=row.isin, event_kind=row.event_kind, record_date=row.record_date, event_date=row.event_date, reason=row.reason) for row in preview.rows], warnings=list(preview.warnings), reason=preview.reason)
+    preview = preview_income_report(
+        payload,
+        hermes_accounts=_account_views(session),
+        hermes_instruments=_instrument_views(session),
+    )
+    return StatementInspectResponse(
+        provider=preview.provider,
+        document_sha256=preview.document_sha256,
+        status=preview.status.value,
+        rows=[
+            StatementInspectRowOut(
+                status=row.status.value,
+                provider_account_ref=row.provider_account_ref,
+                isin=row.isin,
+                event_kind=row.event_kind,
+                record_date=row.record_date,
+                event_date=row.event_date,
+                reason=row.reason,
+            )
+            for row in preview.rows
+        ],
+        warnings=list(preview.warnings),
+        reason=preview.reason,
+    )
 
 
 @router.post("/prepare", response_model=StatementPreparationResponse)
@@ -270,7 +322,12 @@ async def prepare_statement_endpoint(
     session: Session = Depends(session_for_request),
 ) -> StatementPreparationResponse:
     payload = await _document(document)
-    result = prepare_income_report_apply(session, document=payload, account_mappings=_account_mappings(account_mappings), instrument_mappings=_instrument_mappings(instrument_mappings))
+    result = prepare_income_report_apply(
+        session,
+        document=payload,
+        account_mappings=_account_mappings(account_mappings),
+        instrument_mappings=_instrument_mappings(instrument_mappings),
+    )
     return _preparation_response(result)
 
 
@@ -285,5 +342,28 @@ async def apply_statement_endpoint(
 ) -> StatementApplyResponse:
     payload = await _document(document)
     selection_rows = _read_json(selections, TypeAdapter(list[StatementApplySelectionIn]))
-    result = apply_income_report_preview(session, document=payload, account_mappings=_account_mappings(account_mappings), instrument_mappings=_instrument_mappings(instrument_mappings), selections=tuple(_selection(row) for row in selection_rows), expected_document_sha256=expected_document_sha256)
-    return StatementApplyResponse(success=result.success, selected_count=result.selected_count, items=[StatementApplyItemOut(action=item.action.value, applied_statement_event_id=item.applied_statement_event_id, investment_cash_flow_id=item.investment_cash_flow_id, natural_identity=item.natural_identity, material_fingerprint=item.material_fingerprint, revision_id=item.revision_id) for item in result.items], error_code=result.error_code.value if result.error_code is not None else None, message=result.message)
+    result = apply_income_report_preview(
+        session,
+        document=payload,
+        account_mappings=_account_mappings(account_mappings),
+        instrument_mappings=_instrument_mappings(instrument_mappings),
+        selections=tuple(_selection(row) for row in selection_rows),
+        expected_document_sha256=expected_document_sha256,
+    )
+    return StatementApplyResponse(
+        success=result.success,
+        selected_count=result.selected_count,
+        items=[
+            StatementApplyItemOut(
+                action=item.action.value,
+                applied_statement_event_id=item.applied_statement_event_id,
+                investment_cash_flow_id=item.investment_cash_flow_id,
+                natural_identity=item.natural_identity,
+                material_fingerprint=item.material_fingerprint,
+                revision_id=item.revision_id,
+            )
+            for item in result.items
+        ],
+        error_code=result.error_code.value if result.error_code is not None else None,
+        message=result.message,
+    )

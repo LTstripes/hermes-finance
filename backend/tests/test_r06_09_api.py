@@ -24,14 +24,20 @@ def _context(tmp_path: Path):
     Base.metadata.create_all(database.engine)
     session = database.session_factory()
     month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
-    account = create_account(session, name="Synthetic brokerage", account_type=AccountType.BROKERAGE)
-    instrument = create_instrument(session, name="Synthetic equity", instrument_type=InstrumentType.STOCK, isin=SYN_ISIN)
+    account = create_account(
+        session, name="Synthetic brokerage", account_type=AccountType.BROKERAGE
+    )
+    instrument = create_instrument(
+        session, name="Synthetic equity", instrument_type=InstrumentType.STOCK, isin=SYN_ISIN
+    )
     session.commit()
     session.close()
     return database, month.id, account.id, instrument.id
 
 
-def test_statement_multipart_prepare_and_apply_are_thin_and_zero_raw_persistence(tmp_path: Path) -> None:
+def test_statement_multipart_prepare_and_apply_are_thin_and_zero_raw_persistence(
+    tmp_path: Path,
+) -> None:
     database, _month_id, account_id, _instrument_id = _context(tmp_path)
     application = create_app(database)
     document = build_income_report_pdf()
@@ -61,7 +67,16 @@ def test_statement_multipart_prepare_and_apply_are_thin_and_zero_raw_persistence
             files={"document": ("report.pdf", document, "application/pdf")},
             data={
                 "account_mappings": mapping_json,
-                "selections": json.dumps([{"natural_identity": row["natural_identity"], "material_fingerprint": row["material_fingerprint"], "expected_hermes_account_id": account_id, "expected_hermes_instrument_id": row["expected_hermes_instrument_id"]}]),
+                "selections": json.dumps(
+                    [
+                        {
+                            "natural_identity": row["natural_identity"],
+                            "material_fingerprint": row["material_fingerprint"],
+                            "expected_hermes_account_id": account_id,
+                            "expected_hermes_instrument_id": row["expected_hermes_instrument_id"],
+                        }
+                    ]
+                ),
                 "expected_document_sha256": body["document_sha256"],
             },
         )
@@ -84,7 +99,10 @@ def test_broker_snapshot_provider_is_only_called_by_explicit_endpoint(tmp_path: 
     assert provider.calls == 0
     with TestClient(application) as client:
         assert provider.calls == 0
-        response = client.post(f"/api/months/{month_id}/broker-snapshot-preview", json={"accounts": [], "instruments": []})
+        response = client.post(
+            f"/api/months/{month_id}/broker-snapshot-preview",
+            json={"accounts": [], "instruments": []},
+        )
     assert response.status_code == 200
     assert provider.calls == 1
     assert response.json()["error_code"] == "provider_error"
