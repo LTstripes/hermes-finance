@@ -176,10 +176,17 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
   const selectedRows =
     preparation?.rows
       .map((row, index) => ({ row, index }))
-      .filter(({ row, index }) => rowReady(row, index)) ?? [];
+      .filter(
+        ({ row, index }) =>
+          selected[rowKey(row, index)] &&
+          row.status === "matched" &&
+          row.duplicate_class !== "duplicate",
+      ) ?? [];
+  const selectedRowsReady =
+    selectedRows.length > 0 && selectedRows.every(({ row, index }) => rowReady(row, index));
 
   async function apply() {
-    if (!file || !preparation || selectedRows.length === 0) return;
+    if (!file || !preparation || !selectedRowsReady) return;
     setBusy(true);
     setMessage(null);
     setSuccess(null);
@@ -208,8 +215,10 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
         return;
       }
       setResultItems(result.items);
+      setPreparation(null);
       setSelected({});
       setDecisions({});
+      setConfirmOpen(false);
       setSuccess(`Импортировано строк: ${result.selected_count}.`);
       await onApplied?.();
     } catch (error) {
@@ -246,7 +255,7 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
         {preparation ? (
           <Button
             onClick={() => setConfirmOpen(true)}
-            disabled={busy || selectedRows.length === 0}
+            disabled={busy || !selectedRowsReady}
             variant="primary"
           >
             Применить выбранные строки
@@ -469,7 +478,7 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
         open={confirmOpen}
         busy={busy}
         title="Применить отчёт?"
-        description={`Будут применены только ${selectedRows.length} строк с явным решением владельца.`}
+        description={`Будут применены все ${selectedRows.length} отмеченные строки; каждая должна иметь явное решение владельца.`}
         confirmLabel="Подтвердить и применить"
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => {
