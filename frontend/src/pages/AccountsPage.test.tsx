@@ -189,9 +189,7 @@ describe("AccountsPage", () => {
     expect(screen.getByText(/Номинал: 1\s*000\s*₽/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Деактивировать" })).toBeNull();
 
-    await user.click(
-      screen.getByRole("button", { name: "Действия для инструмента «ОФЗ 26248»" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Действия для инструмента «ОФЗ 26248»" }));
     await user.click(screen.getByRole("menuitem", { name: "Деактивировать" }));
 
     await waitFor(() =>
