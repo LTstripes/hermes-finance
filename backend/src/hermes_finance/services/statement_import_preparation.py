@@ -23,6 +23,7 @@ from hermes_finance.services.reporting_months import get_reporting_month_by_peri
 from hermes_finance.statement_import.dto import (
     ALFA_DEPOSITORY_INCOME_PROVIDER,
     AccountMappingInput,
+    DuplicateClass,
     HermesAccountView,
     HermesInstrumentView,
     InstrumentMappingInput,
@@ -56,6 +57,7 @@ class StatementApplyPreparationRow:
     """Sanitized reviewed evidence for one parsed statement row."""
 
     status: RowStatus
+    duplicate_class: DuplicateClass | None
     event_kind: str | None
     expected_hermes_account_id: int | None
     expected_hermes_instrument_id: int | None
@@ -88,7 +90,8 @@ class StatementApplyPreparationRow:
         from hermes_finance.services.statement_import_apply import StatementApplySelection
 
         if (
-            self.natural_identity is None
+            self.status is not RowStatus.MATCHED
+            or self.natural_identity is None
             or self.material_fingerprint is None
             or self.expected_hermes_account_id is None
             or self.expected_hermes_instrument_id is None
@@ -226,6 +229,7 @@ def _prepare_row(session: Session, row: PreviewRow) -> StatementApplyPreparation
     sanitized = tuple(_candidate(flow) for flow in candidates)
     return StatementApplyPreparationRow(
         status=row.status,
+        duplicate_class=row.duplicate_class,
         event_kind=row.event_kind,
         expected_hermes_account_id=row.hermes_account_id,
         expected_hermes_instrument_id=row.hermes_instrument_id,

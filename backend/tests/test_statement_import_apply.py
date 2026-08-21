@@ -57,6 +57,7 @@ from hermes_finance.services.statement_import_preparation import (
 )
 from hermes_finance.statement_import import (
     AccountMappingInput,
+    DuplicateClass,
     HermesAccountView,
     HermesInstrumentView,
     InstrumentMappingInput,
@@ -1483,6 +1484,38 @@ def test_preparation_one_candidate_builds_complete_apply_selection(tmp_path: Pat
         database.engine.dispose()
 
 
+def test_preparation_preserves_duplicate_classification(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        document = build_income_report_pdf()
+        row = preview(session, document, account_id).rows[0]
+        assert row.duplicate_class is None
+        assert apply(session, document, account_id, (selection_from_row(row),)).success is True
+        prepared = prepare(session, document, account_id)
+        assert prepared.rows[0].duplicate_class is DuplicateClass.DUPLICATE
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_preparation_preserves_correction_classification(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        original = build_income_report_pdf()
+        row = preview(session, original, account_id).rows[0]
+        assert apply(session, original, account_id, (selection_from_row(row),)).success is True
+        corrected = build_income_report_pdf(
+            [_row(per_unit="2,00", gross="20,00", tax="2,60", net="17,40")]
+        )
+        prepared = prepare(session, corrected, account_id)
+        assert prepared.rows[0].duplicate_class is DuplicateClass.CORRECTION
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_preparation_multiple_candidates_are_deterministic(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
@@ -1552,6 +1585,24 @@ def test_preparation_excludes_already_linked_cash_flow_candidates(tmp_path: Path
         prepared = prepare(session, distinct_identity, account_id)
         assert prepared.rows[0].expected_candidate_ids == ()
         assert prepared.rows[0].candidates == ()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_ambiguous_preparation_row_cannot_build_apply_selection(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        document = build_income_report_pdf([_row(), _row()])
+        prepared = prepare(session, document, account_id)
+        row = prepared.rows[0]
+        assert row.status is RowStatus.AMBIGUOUS
+        assert row.natural_identity is not None
+        assert row.expected_hermes_account_id is not None
+        assert row.expected_hermes_instrument_id is not None
+        with pytest.raises(ValueError, match="only a matched"):
+            row.to_apply_selection()
     finally:
         session.close()
         database.engine.dispose()
