@@ -802,6 +802,165 @@ class AppliedPayoutReconciliation(Base):
     )
 
 
+class AppliedStatementEvent(Base):
+    """Current owner-accepted Alfa depository income-report event.
+
+    One current row per provider + canonical R06-07 natural identity.
+    Raw PDF bytes, extracted text, provider account refs and beneficiary
+    data are never stored here.
+    """
+
+    __tablename__ = "applied_statement_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "natural_identity",
+            name="uq_applied_statement_events_identity",
+        ),
+        UniqueConstraint(
+            "investment_cash_flow_id",
+            name="uq_applied_statement_events_cash_flow",
+        ),
+        Index("ix_applied_statement_events_account", "account_id"),
+        CheckConstraint(
+            "provider IN ('alfa_depository_income_report')",
+            name="ck_applied_statement_events_provider",
+        ),
+        CheckConstraint(
+            "event_kind IN ('dividend', 'coupon', 'redemption')",
+            name="ck_applied_statement_events_event_kind",
+        ),
+        CheckConstraint(
+            "link_mode IN ('statement_created', 'linked_existing')",
+            name="ck_applied_statement_events_link_mode",
+        ),
+        CheckConstraint(
+            "length(natural_identity) > 0",
+            name="ck_applied_statement_events_identity_present",
+        ),
+        CheckConstraint(
+            "length(material_fingerprint) = 64",
+            name="ck_applied_statement_events_fingerprint_sha256",
+        ),
+        CheckConstraint(
+            "length(document_sha256) = 64",
+            name="ck_applied_statement_events_document_sha256",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False)
+    record_date: Mapped[date] = mapped_column(Date, nullable=False)
+    natural_identity: Mapped[str] = mapped_column(String(256), nullable=False)
+    material_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    investment_cash_flow_id: Mapped[int] = mapped_column(
+        ForeignKey("investment_cash_flows.id", ondelete="RESTRICT"), nullable=False
+    )
+    document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    link_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AppliedStatementEventRevision(Base):
+    """Append-only audit of one successful apply, revise, or link_existing."""
+
+    __tablename__ = "applied_statement_event_revisions"
+    __table_args__ = (
+        Index(
+            "ix_applied_statement_event_revisions_event_id",
+            "applied_statement_event_id",
+        ),
+        CheckConstraint(
+            "revision_kind IN ('apply', 'revise', 'link_existing')",
+            name="ck_applied_statement_event_revisions_kind",
+        ),
+        CheckConstraint(
+            "event_kind IN ('dividend', 'coupon', 'redemption')",
+            name="ck_applied_statement_event_revisions_event_kind",
+        ),
+        CheckConstraint(
+            "gross_currency = 'RUB'",
+            name="ck_applied_statement_event_revisions_gross_currency_rub",
+        ),
+        CheckConstraint(
+            "net_currency = 'RUB'",
+            name="ck_applied_statement_event_revisions_net_currency_rub",
+        ),
+        CheckConstraint(
+            "gross_amount_kopecks >= 0",
+            name="ck_applied_statement_event_revisions_gross_nonnegative",
+        ),
+        CheckConstraint(
+            "net_amount_kopecks >= 0",
+            name="ck_applied_statement_event_revisions_net_nonnegative",
+        ),
+        CheckConstraint(
+            "length(quantity) > 0",
+            name="ck_applied_statement_event_revisions_quantity_present",
+        ),
+        CheckConstraint(
+            "length(per_unit) > 0",
+            name="ck_applied_statement_event_revisions_per_unit_present",
+        ),
+        CheckConstraint(
+            "(tax_available = 0 AND tax_amount_kopecks IS NULL) OR "
+            "(tax_available = 1 AND tax_amount_kopecks IS NOT NULL "
+            "AND tax_amount_kopecks >= 0)",
+            name="ck_applied_statement_event_revisions_tax_evidence",
+        ),
+        CheckConstraint(
+            "length(natural_identity) > 0",
+            name="ck_applied_statement_event_revisions_identity_present",
+        ),
+        CheckConstraint(
+            "length(material_fingerprint) = 64",
+            name="ck_applied_statement_event_revisions_fingerprint_sha256",
+        ),
+        CheckConstraint(
+            "length(document_sha256) = 64",
+            name="ck_applied_statement_event_revisions_document_sha256",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    applied_statement_event_id: Mapped[int] = mapped_column(
+        ForeignKey("applied_statement_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    revision_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    natural_identity: Mapped[str] = mapped_column(String(256), nullable=False)
+    material_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False)
+    record_date: Mapped[date] = mapped_column(Date, nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[str] = mapped_column(String(64), nullable=False)
+    per_unit: Mapped[str] = mapped_column(String(64), nullable=False)
+    gross_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    gross_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    tax_available: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    tax_amount_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tax_rate: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    net_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    net_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ExpenseEntry(Base):
     __tablename__ = "expense_entries"
     __table_args__ = (
