@@ -33,6 +33,7 @@ import type {
   MarketIdentityWrite,
 } from "../api/types";
 import { AccountFormDialog } from "../components/AccountFormDialog";
+import { BrokerSnapshotPanel } from "../components/BrokerSnapshotPanel";
 import { InstrumentFormDialog } from "../components/InstrumentFormDialog";
 import { InstrumentMappingDialog } from "../components/InstrumentMappingDialog";
 import { IisAccountSection } from "../components/IisAccountSection";
@@ -601,6 +602,7 @@ export function AccountsPage() {
             )}
           </Panel>
           <IisAccountSection accounts={accounts} />
+          <BrokerSnapshotPanel accounts={accounts} />
         </>
       ) : (
         <Panel label="Справочник" title="Инструменты">

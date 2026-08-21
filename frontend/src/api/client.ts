@@ -99,6 +99,45 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   return payload as T;
 }
 
+export async function apiMultipart<T>(
+  path: string,
+  form: FormData,
+  signal?: AbortSignal,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      body: form,
+      signal,
+      headers: { Accept: "application/json" },
+    });
+  } catch (cause) {
+    throw new ApiClientError(0, {
+      code: "network_error",
+      message: cause instanceof Error ? cause.message : "Network request failed",
+      details: [],
+    });
+  }
+  if (response.status === 204) return undefined as T;
+  const payload = await parseJsonSafe(response);
+  if (!response.ok) {
+    if (isApiErrorResponse(payload)) {
+      throw new ApiClientError(response.status, {
+        code: payload.error.code,
+        message: payload.error.message,
+        details: Array.isArray(payload.error.details) ? payload.error.details : [],
+      });
+    }
+    throw new ApiClientError(response.status, {
+      code: "http_error",
+      message: `Request failed with status ${response.status}`,
+      details: [],
+    });
+  }
+  return payload as T;
+}
+
 function filenameFromContentDisposition(value: string | null): string | null {
   const match = value?.match(/filename="([^"]+)"/i);
   return match?.[1] ?? null;
