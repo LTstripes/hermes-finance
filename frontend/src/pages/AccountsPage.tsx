@@ -602,7 +602,14 @@ export function AccountsPage() {
             )}
           </Panel>
           <IisAccountSection accounts={accounts} />
-          <BrokerSnapshotPanel accounts={accounts} />
+          <BrokerSnapshotPanel
+            accounts={accounts}
+            instruments={instruments}
+            onApplied={async () => {
+              await loadAccounts();
+              await loadInstruments();
+            }}
+          />
         </>
       ) : (
         <Panel label="Справочник" title="Инструменты">

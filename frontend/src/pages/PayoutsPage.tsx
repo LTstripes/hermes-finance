@@ -235,7 +235,16 @@ export function PayoutsPage() {
         </div>
       ) : null}
 
-      <StatementImportPanel accounts={accounts} />
+      <StatementImportPanel
+        accounts={accounts}
+        instruments={instruments}
+        onApplied={async () => {
+          const monthId = Number(selectedMonthId);
+          if (Number.isInteger(monthId) && monthId > 0) {
+            await loadContext(monthId, forecastVersion.trim());
+          }
+        }}
+      />
 
       <Panel
         action={

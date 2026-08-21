@@ -16,6 +16,9 @@ export type BrokerPositionRow = {
   fingerprint: string | null;
   reason: string | null;
   warnings: string[];
+  provider_broker_unit_price: string | null;
+  provider_accrued_interest_nkd: string | null;
+  provider_unrealized_result: string | null;
   [key: string]: unknown;
 };
 
@@ -34,6 +37,9 @@ export type BrokerSnapshotPreview = {
   }[];
   instruments: {
     provider_instrument_id: string | null;
+    isin: string | null;
+    ticker: string | null;
+    display_name: string | null;
     hermes_instrument_id: number | null;
     status: string;
     reason: string | null;
@@ -81,6 +87,12 @@ export function applyBrokerSnapshot(
   return apiRequest<{
     success: boolean;
     selected_count: number;
+    items: {
+      action: string;
+      position_snapshot_id: number;
+      account_id: number;
+      instrument_id: number;
+    }[];
     error_code: string | null;
     message: string | null;
   }>(`/api/months/${monthId}/broker-snapshot-apply`, {
