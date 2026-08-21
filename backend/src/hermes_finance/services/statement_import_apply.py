@@ -8,7 +8,7 @@ in one transaction. Caller-supplied amounts are never trusted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import select
@@ -30,7 +30,6 @@ from hermes_finance.services.applied_statement_events import (
     create_applied_statement_event,
     get_applied_statement_event_by_identity,
     list_applied_statement_event_revisions,
-    list_linked_investment_cash_flow_ids,
     load_prior_event_views,
 )
 from hermes_finance.services.investment_cash_flows import (
@@ -38,6 +37,9 @@ from hermes_finance.services.investment_cash_flows import (
     stage_update_investment_cash_flow,
 )
 from hermes_finance.services.reporting_months import get_reporting_month_by_period
+from hermes_finance.services.statement_import_preparation import (
+    find_conservative_cash_flow_candidates,
+)
 from hermes_finance.statement_import.dto import (
     ALFA_DEPOSITORY_INCOME_PROVIDER,
     AccountMappingInput,
@@ -358,30 +360,6 @@ def _instrument_views(session: Session) -> tuple[HermesInstrumentView, ...]:
     )
 
 
-def _candidate_flows(
-    session: Session,
-    *,
-    reporting_month_id: int,
-    account_id: int,
-    instrument_id: int,
-    flow_type: str,
-    event_date: date,
-) -> tuple[InvestmentCashFlow, ...]:
-    linked = list_linked_investment_cash_flow_ids(session)
-    rows = session.scalars(
-        select(InvestmentCashFlow)
-        .where(
-            InvestmentCashFlow.reporting_month_id == reporting_month_id,
-            InvestmentCashFlow.account_id == account_id,
-            InvestmentCashFlow.instrument_id == instrument_id,
-            InvestmentCashFlow.flow_type == flow_type,
-            InvestmentCashFlow.event_date == event_date,
-        )
-        .order_by(InvestmentCashFlow.id)
-    )
-    return tuple(flow for flow in rows if flow.id not in linked)
-
-
 def _cash_flow_tax_kopecks(row: PreviewRow) -> int | StatementApplyFailureCode:
     if row.tax_available:
         if row.tax_amount is None:
@@ -510,6 +488,8 @@ def _build_apply_plan(
             or row.natural_identity is None
             or row.material_fingerprint is None
         ):
+            if row.status in {RowStatus.UNMATCHED, RowStatus.AMBIGUOUS}:
+                return _preview_changed(selected_count)
             validation = True
             continue
         if (
@@ -536,7 +516,7 @@ def _build_apply_plan(
         month_id = month.id if month is not None else None
         candidates: tuple[InvestmentCashFlow, ...] = ()
         if existing is None and month is not None:
-            candidates = _candidate_flows(
+            candidates = find_conservative_cash_flow_candidates(
                 session,
                 reporting_month_id=month.id,
                 account_id=row.hermes_account_id,
@@ -722,6 +702,12 @@ def _build_apply_plan(
             StatementApplyFailureCode.MANUAL_LINK_CONFLICT,
             "correction of a linked owner cash flow requires manual resolution",
         )
+    if _has_duplicate_link_targets(plans):
+        return _failure(
+            selected_count,
+            StatementApplyFailureCode.VALIDATION_ERROR,
+            "the same existing cash flow cannot be linked to multiple statement rows",
+        )
     if validation or len(plans) != selected_count:
         return _failure(
             selected_count,
@@ -729,6 +715,18 @@ def _build_apply_plan(
             "selected statement row cannot be applied",
         )
     return tuple(plans)
+
+
+def _has_duplicate_link_targets(plans: list[_ApplyPlan]) -> bool:
+    targets: set[int] = set()
+    for plan in plans:
+        if plan.item_action is not StatementApplyItemAction.LINKED_EXISTING:
+            continue
+        assert plan.existing_cash_flow_id is not None
+        if plan.existing_cash_flow_id in targets:
+            return True
+        targets.add(plan.existing_cash_flow_id)
+    return False
 
 
 def _ruble_api(kopeck_value: int) -> str:

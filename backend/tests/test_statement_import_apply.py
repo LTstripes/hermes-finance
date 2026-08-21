@@ -15,7 +15,7 @@ from _statement_pdf import (
     build_income_report_pdf,
     build_wrong_report_pdf,
 )
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -52,11 +52,15 @@ from hermes_finance.services.statement_import_apply import (
     StatementApplySelection,
     apply_income_report_preview,
 )
+from hermes_finance.services.statement_import_preparation import (
+    prepare_income_report_apply,
+)
 from hermes_finance.statement_import import (
     AccountMappingInput,
     HermesAccountView,
     HermesInstrumentView,
     InstrumentMappingInput,
+    RowStatus,
     preview_income_report,
 )
 from hermes_finance.statement_import.dto import ALFA_DEPOSITORY_INCOME_PROVIDER
@@ -180,6 +184,14 @@ def apply(
         selections=selections,
         expected_document_sha256=expected_document_sha256 or document_sha256(document),
         instrument_mappings=instrument_mappings,
+    )
+
+
+def prepare(session: Session, document: bytes, account_id: int):
+    return prepare_income_report_apply(
+        session,
+        document=document,
+        account_mappings=mappings(account_id),
     )
 
 
@@ -1389,6 +1401,246 @@ def test_closed_source_month_blocks_cross_month_correction(tmp_path: Path) -> No
         revision = list(session.scalars(select(AppliedStatementEventRevision)))[0]
         assert revision.revision_kind == "apply"
         assert revision.event_date == date(2026, 1, 20)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_preparation_without_candidate_is_read_only_and_exposes_review_evidence(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    statements: list[str] = []
+
+    def record_write(*args: object) -> None:
+        statement = args[2]
+        if isinstance(statement, str) and statement.lstrip().upper().startswith(
+            ("INSERT", "UPDATE", "DELETE")
+        ):
+            statements.append(statement)
+
+    try:
+        _, account_id, _ = build_env(session)
+        document = build_income_report_pdf()
+        event.listen(database.engine, "before_cursor_execute", record_write)
+        prepared = prepare(session, document, account_id)
+        event.remove(database.engine, "before_cursor_execute", record_write)
+        row = prepared.rows[0]
+        assert prepared.document_sha256 == document_sha256(document)
+        assert row.expected_candidate_ids == ()
+        assert row.candidates == ()
+        assert row.natural_identity is not None
+        assert row.material_fingerprint is not None
+        assert row.expected_hermes_account_id == account_id
+        assert row.expected_hermes_instrument_id is not None
+        assert not hasattr(row, "provider_account_ref")
+        assert statements == []
+        assert counts(session) == (0, 0, 0)
+    finally:
+        if event.contains(database.engine, "before_cursor_execute", record_write):
+            event.remove(database.engine, "before_cursor_execute", record_write)
+        session.close()
+        database.engine.dispose()
+
+
+def test_preparation_one_candidate_builds_complete_apply_selection(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instruments = build_env(session)
+        manual = create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instruments[SYN_ISIN],
+            flow_type="dividend",
+            event_date=date(2026, 1, 20),
+            gross_amount="11.50",
+            tax_amount="1.50",
+            commission_amount="0.00",
+            net_amount="10.00",
+            source="manual",
+        )
+        document = build_income_report_pdf()
+        prepared = prepare(session, document, account_id)
+        row = prepared.rows[0]
+        assert row.expected_candidate_ids == (manual.id,)
+        candidate = row.candidates[0]
+        assert candidate.investment_cash_flow_id == manual.id
+        assert candidate.gross_amount_kopecks == 1150
+        assert candidate.tax_amount_kopecks == 150
+        assert candidate.net_amount_kopecks == 1000
+        selection = row.to_apply_selection(
+            action=StatementApplyAction.LINK_EXISTING,
+            existing_cash_flow_id=candidate.investment_cash_flow_id,
+        )
+        assert isinstance(selection, StatementApplySelection)
+        result = apply(session, document, account_id, (selection,))
+        assert result.success is True
+        assert result.items[0].action is StatementApplyItemAction.LINKED_EXISTING
+        assert result.items[0].investment_cash_flow_id == manual.id
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_preparation_multiple_candidates_are_deterministic(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instruments = build_env(session)
+        first = create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instruments[SYN_ISIN],
+            flow_type="dividend",
+            event_date=date(2026, 1, 20),
+            gross_amount="11.50",
+            tax_amount="1.50",
+            commission_amount="0.00",
+            net_amount="10.00",
+            source="manual",
+        )
+        second = create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instruments[SYN_ISIN],
+            flow_type="dividend",
+            event_date=date(2026, 1, 20),
+            gross_amount="99.00",
+            tax_amount="0.00",
+            commission_amount="0.00",
+            net_amount="99.00",
+            source="excel_migration",
+        )
+        prepared = prepare(session, build_income_report_pdf(), account_id)
+        assert prepared.rows[0].expected_candidate_ids == (first.id, second.id)
+        assert tuple(
+            candidate.investment_cash_flow_id for candidate in prepared.rows[0].candidates
+        ) == (first.id, second.id)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_preparation_excludes_already_linked_cash_flow_candidates(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instruments = build_env(session)
+        manual = create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instruments[SYN_ISIN],
+            flow_type="dividend",
+            event_date=date(2026, 1, 20),
+            gross_amount="11.50",
+            tax_amount="1.50",
+            commission_amount="0.00",
+            net_amount="10.00",
+            source="manual",
+        )
+        original = build_income_report_pdf()
+        original_row = prepare(session, original, account_id).rows[0]
+        selection = original_row.to_apply_selection(
+            action=StatementApplyAction.LINK_EXISTING,
+            existing_cash_flow_id=manual.id,
+        )
+        assert isinstance(selection, StatementApplySelection)
+        assert apply(session, original, account_id, (selection,)).success is True
+        distinct_identity = build_income_report_pdf([_row(record_date="16.01.2026")])
+        prepared = prepare(session, distinct_identity, account_id)
+        assert prepared.rows[0].expected_candidate_ids == ()
+        assert prepared.rows[0].candidates == ()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_fresh_ambiguous_instrument_state_is_preview_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        document = build_income_report_pdf()
+        reviewed = preview(session, document, account_id)
+        row = reviewed.rows[0]
+        assert row.status is RowStatus.MATCHED
+        from hermes_finance.services import statement_import_apply
+
+        original_instrument_views = statement_import_apply._instrument_views
+        monkeypatch.setattr(
+            statement_import_apply,
+            "_instrument_views",
+            lambda current_session: (
+                original_instrument_views(current_session)
+                + (
+                    HermesInstrumentView(
+                        instrument_id=999,
+                        isin=SYN_ISIN.lower(),
+                        name="Synthetic duplicate ISIN",
+                    ),
+                )
+            ),
+        )
+        result = apply(session, document, account_id, (selection_from_row(row),))
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        assert counts(session) == (0, 0, 0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_duplicate_link_existing_target_fails_before_staging(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instruments = build_env(session)
+        manual = create_investment_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instruments[SYN_ISIN],
+            flow_type="dividend",
+            event_date=date(2026, 1, 20),
+            gross_amount="11.50",
+            tax_amount="1.50",
+            commission_amount="0.00",
+            net_amount="10.00",
+            source="manual",
+        )
+        document = build_income_report_pdf(
+            [_row(record_date="15.01.2026"), _row(record_date="16.01.2026")]
+        )
+        rows = preview(session, document, account_id).rows
+        assert len({row.natural_identity for row in rows}) == 2
+        result = apply(
+            session,
+            document,
+            account_id,
+            (
+                selection_from_row(
+                    rows[0],
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=manual.id,
+                    expected_candidate_ids=(manual.id,),
+                ),
+                selection_from_row(
+                    rows[1],
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=manual.id,
+                    expected_candidate_ids=(manual.id,),
+                ),
+            ),
+        )
+        assert result.success is False
+        assert result.error_code is StatementApplyFailureCode.VALIDATION_ERROR
+        assert result.error_code is not StatementApplyFailureCode.PERSISTENCE_ERROR
+        assert counts(session) == (0, 0, 1)
+        session.refresh(manual)
+        assert manual.source == "manual"
+        assert manual.gross_amount_kopecks == 1150
     finally:
         session.close()
         database.engine.dispose()
