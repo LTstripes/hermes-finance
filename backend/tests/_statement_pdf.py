@@ -37,6 +37,10 @@ REPORT_COLUMNS: tuple[str, ...] = (
     "Банк получателя",
 )
 
+LAYOUT_COLUMN_START = 40.0
+LAYOUT_COLUMN_STEP = 126.0
+LAYOUT_PAGE_WIDTH = LAYOUT_COLUMN_START + LAYOUT_COLUMN_STEP * len(REPORT_COLUMNS) + 80.0
+
 _SEMANTIC_TO_COLUMN = {
     "seq": "№",
     "depo_account": "Счет депо",
@@ -244,6 +248,39 @@ def build_income_report_pdf(
         fragments.append((40.0, y, " | ".join(cells)))
         y -= 16.0
     return build_text_pdf([fragments])
+
+
+def _layout_fragments(cells: tuple[str, ...], y: float) -> list[tuple[float, float, str]]:
+    if len(cells) != len(REPORT_COLUMNS):
+        raise ValueError("synthetic layout row must match report column count")
+    return [
+        (LAYOUT_COLUMN_START + index * LAYOUT_COLUMN_STEP, y, cell)
+        for index, cell in enumerate(cells)
+        if cell
+    ]
+
+
+def build_layout_income_report_pdf(
+    rows: list[dict[str, str]] | None = None,
+    *,
+    title: str = REPORT_TITLE,
+    header_rows: tuple[tuple[str, ...], ...],
+) -> bytes:
+    """Build a synthetic graphical-table text layer without pipe delimiters."""
+    payload_rows = rows if rows is not None else [_default_row()]
+    fragments: list[tuple[float, float, str]] = [(LAYOUT_COLUMN_START, 800.0, title)]
+    y = 770.0
+    for header_row in header_rows:
+        fragments.extend(_layout_fragments(header_row, y))
+        y -= 18.0
+    for index, raw in enumerate(payload_rows, start=1):
+        merged = _default_row()
+        merged["seq"] = str(index)
+        merged.update(raw)
+        cells = tuple(merged.get(_column_key(column), "") for column in REPORT_COLUMNS)
+        fragments.extend(_layout_fragments(cells, y))
+        y -= 16.0
+    return build_text_pdf([fragments], width=LAYOUT_PAGE_WIDTH)
 
 
 def _column_key(column: str) -> str:

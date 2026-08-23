@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from decimal import Decimal
 
@@ -60,6 +61,8 @@ from hermes_finance.statement_import.schema import (
 MAX_ROWS = 2_000
 MAX_HEADER_LINES = 3
 MAX_HEADER_SCAN_LINES = 6
+LAYOUT_COLUMN_TOLERANCE = 2
+MIN_LAYOUT_HEADER_FRAGMENTS = 4
 _EXTRACT_STATUS = {
     ExtractStatus.ENCRYPTED: (ReportStatus.MALFORMED, REASON_ENCRYPTED),
     ExtractStatus.UNREADABLE: (ReportStatus.MALFORMED, REASON_UNREADABLE),
@@ -126,6 +129,78 @@ def _multi_line_pipe_header(lines: list[str], start: int) -> tuple[list[str | No
         mapped = [_match_header_cell(cell) for cell in joined]
         if _schema_complete({item for item in mapped if item}):
             return mapped, end
+        if len(header_rows) == MAX_HEADER_LINES:
+            break
+    return None
+
+
+def _layout_fragments(line: str) -> list[tuple[int, str]]:
+    """Return positioned text fragments separated by layout-sized gaps."""
+    return [
+        (match.start(), match.group().strip())
+        for match in re.finditer(r"\S.*?(?=(?: {2,}|$))", line)
+    ]
+
+
+def _layout_header_columns(
+    header_rows: list[list[tuple[int, str]]],
+) -> list[tuple[int, str]] | None:
+    """Join wrapped header cells only when their column positions stay stable."""
+    first_starts = [start for start, _text in header_rows[0]]
+    if len(first_starts) < MIN_LAYOUT_HEADER_FRAGMENTS:
+        return None
+
+    parts: dict[int, list[str]] = {start: [] for start in first_starts}
+    shared_positions = 0
+    for row_index, fragments in enumerate(header_rows):
+        matched_starts: set[int] = set()
+        for start, text in fragments:
+            closest = min(first_starts, key=lambda candidate: abs(candidate - start))
+            if abs(closest - start) > LAYOUT_COLUMN_TOLERANCE:
+                return None
+            parts[closest].append(text)
+            matched_starts.add(closest)
+        if row_index:
+            shared_positions = max(shared_positions, len(matched_starts))
+    if shared_positions < MIN_LAYOUT_HEADER_FRAGMENTS:
+        return None
+
+    columns: list[tuple[int, str]] = []
+    seen_semantics: set[str] = set()
+    for start in first_starts:
+        semantic = _match_header_cell(" ".join(parts[start]))
+        if semantic is None or semantic in seen_semantics:
+            continue
+        columns.append((start, semantic))
+        seen_semantics.add(semantic)
+    columns.sort()
+    return columns if _schema_complete(seen_semantics) else None
+
+
+def _multi_line_layout_header(
+    lines: list[str], start: int
+) -> tuple[list[tuple[int, str]], int] | None:
+    """Recognize a bounded 2–3 line layout header without table delimiters.
+
+    pypdf layout extraction preserves horizontal positions but not graphical table
+    borders. This accepts only adjacent non-pipe lines with stable fragment
+    positions and an exact complete semantic schema.
+    """
+    header_rows: list[list[tuple[int, str]]] = []
+    for end in range(start, min(start + MAX_HEADER_SCAN_LINES, len(lines))):
+        line = lines[end]
+        if not line.strip():
+            continue
+        if "|" in line:
+            break
+        fragments = _layout_fragments(line)
+        if len(fragments) < MIN_LAYOUT_HEADER_FRAGMENTS:
+            break
+        header_rows.append(fragments)
+        if len(header_rows) >= 2:
+            columns = _layout_header_columns(header_rows)
+            if columns is not None:
+                return columns, end
         if len(header_rows) == MAX_HEADER_LINES:
             break
     return None
@@ -447,6 +522,12 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
         multi_line_header = _multi_line_pipe_header(lines, index) if "|" in line else None
         if multi_line_header is not None:
             pipe_semantics, header_index = multi_line_header
+            break
+        multi_line_layout_header = (
+            _multi_line_layout_header(lines, index) if "|" not in line else None
+        )
+        if multi_line_layout_header is not None:
+            layout_cols, header_index = multi_line_layout_header
             break
         layout_cols = _layout_columns(line)
         if layout_cols is not None:

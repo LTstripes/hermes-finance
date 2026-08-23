@@ -188,7 +188,10 @@ describe("StatementImportPanel explicit row decisions", () => {
     await waitFor(() => expect(applyStatement).toHaveBeenCalledTimes(1));
     expect(vi.mocked(applyStatement).mock.calls[0]?.[0]).toBe(file);
     expect(vi.mocked(applyStatement).mock.calls[0]?.[2]).toHaveLength(2);
-    expect(screen.getByText("revise: correction-1")).toBeInTheDocument();
+    expect(screen.getByText("Создано уточнение записи")).toBeInTheDocument();
+    expect(screen.getByText("Итог импорта")).toBeInTheDocument();
+    expect(screen.queryByText("Результат apply")).toBeNull();
+    expect(screen.queryByText("revise: correction-1")).toBeNull();
     expect(screen.queryByText("Уже импортировано")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Импортировано строк: 2");
   });

@@ -41,6 +41,14 @@ const EVENT_KIND_LABELS: Record<string, string> = {
   redemption: "Погашение",
 };
 
+const APPLIED_ACTION_LABELS: Record<string, string> = {
+  created: "Создана новая запись",
+  linked_existing: "Связано с существующей записью",
+  revised: "Создано уточнение записи",
+  unchanged: "Изменения не требуются",
+  revise: "Создано уточнение записи",
+};
+
 function reportMessage(status: string, reason: string | null): string | null {
   if (reason === "wrong_report_family") {
     return "Этот тип отчёта пока не поддерживается. Выберите «Отчет о произведенных выплатах доходов по ценным бумагам».";
@@ -505,11 +513,11 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
         </div>
       ) : null}
       {resultItems.length > 0 ? (
-        <Panel label="Результат apply" title="Применённые строки">
+        <Panel label="Итог импорта" title="Обработанные строки">
           <ul>
             {resultItems.map((item) => (
               <li key={`${item.action}:${item.natural_identity}`}>
-                {item.action}: {item.natural_identity}
+                {APPLIED_ACTION_LABELS[item.action] ?? "Строка обработана"}
               </li>
             ))}
           </ul>

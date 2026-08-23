@@ -379,7 +379,8 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
           ) : null}
           {mappingDirty ? (
             <div className="inline-alert" role="status">
-              Сопоставление изменилось. Обнови preview перед выбором и применением.
+              Сопоставление изменилось. Получите обновлённые данные из Альфа PRO перед выбором и
+              применением.
             </div>
           ) : null}
           <Table>

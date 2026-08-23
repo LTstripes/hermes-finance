@@ -169,5 +169,13 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     expect(screen.queryByText("matched")).toBeNull();
     expect(screen.queryByText("non_applicable")).toBeNull();
     expect(screen.queryByText(/snapshot is not an apply-candidate/)).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText(/needs-owner/), "10");
+    expect(
+      screen.getByText(
+        "Сопоставление изменилось. Получите обновлённые данные из Альфа PRO перед выбором и применением.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Обнови preview/)).toBeNull();
   });
 });

@@ -13,6 +13,7 @@ from _statement_pdf import (
     build_blank_pdf,
     build_encrypted_pdf,
     build_income_report_pdf,
+    build_layout_income_report_pdf,
     build_text_pdf,
     build_wrong_report_pdf,
 )
@@ -225,6 +226,60 @@ def test_multi_line_current_alfa_header_parses_allowlisted_rows(
     )
     instruments = (HermesInstrumentView(instrument_id=30, isin=isin),)
     row = _preview(pdf, hermes_instruments=instruments).rows[0]
+    assert row.status is RowStatus.MATCHED
+    assert row.event_kind == event_kind
+    assert row.gross_amount == Decimal(gross.replace(",", "."))
+
+
+@pytest.mark.parametrize(
+    ("payment_kind", "isin", "quantity", "per_unit", "gross", "net", "event_kind"),
+    (
+        ("выплата дивидендов", "RU000SYN00001", "10", "1,15", "11,50", "10,00", "dividend"),
+        ("погашение купона", "RU000SYN00002", "10", "2,00", "20,00", "20,00", "coupon"),
+        (
+            "полное погашение номинала",
+            "RU000SYN00003",
+            "5",
+            "1000,00",
+            "5000,00",
+            "5000,00",
+            "redemption",
+        ),
+    ),
+)
+def test_layout_multi_line_header_parses_without_pipe_delimiters(
+    payment_kind: str,
+    isin: str,
+    quantity: str,
+    per_unit: str,
+    gross: str,
+    net: str,
+    event_kind: str,
+) -> None:
+    pdf = build_layout_income_report_pdf(
+        [
+            _row(
+                payment_kind=payment_kind,
+                isin=isin,
+                quantity=quantity,
+                per_unit=per_unit,
+                gross=gross,
+                tax="—",
+                tax_rate="—",
+                net=net,
+            )
+        ],
+        header_rows=MULTI_LINE_HEADER,
+    )
+
+    extracted = extract_pdf_text_layer(pdf)
+    assert extracted.status.value == "ok"
+    assert all("|" not in line for page in extracted.pages for line in page.lines)
+
+    parsed = parse_income_report(extracted)
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    row = parsed.rows[0]
     assert row.status is RowStatus.MATCHED
     assert row.event_kind == event_kind
     assert row.gross_amount == Decimal(gross.replace(",", "."))
