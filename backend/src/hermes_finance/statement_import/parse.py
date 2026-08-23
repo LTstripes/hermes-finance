@@ -61,8 +61,34 @@ from hermes_finance.statement_import.schema import (
 MAX_ROWS = 2_000
 MAX_HEADER_LINES = 3
 MAX_HEADER_SCAN_LINES = 6
+MIN_ANCHORED_HEADER_LINES = 5
+MAX_ANCHORED_HEADER_LINES = 6
 LAYOUT_COLUMN_TOLERANCE = 2
 MIN_LAYOUT_HEADER_FRAGMENTS = 4
+_ANCHORED_LAYOUT_SEMANTICS = (
+    "seq",
+    "depo_account",
+    "agreement",
+    "upstream",
+    "payment_kind",
+    "isin",
+    "security_name",
+    "record_date",
+    "quantity",
+    "per_unit",
+    "gross",
+    "gross_currency",
+    "d1",
+    "d2",
+    "tax_rate",
+    "tax",
+    "net",
+    "net_currency",
+    "payment_date",
+    "beneficiary_account",
+    "beneficiary_bank",
+)
+_ANCHOR_SEQUENCE = tuple(str(index) for index in range(1, len(_ANCHORED_LAYOUT_SEMANTICS) + 1))
 _EXTRACT_STATUS = {
     ExtractStatus.ENCRYPTED: (ReportStatus.MALFORMED, REASON_ENCRYPTED),
     ExtractStatus.UNREADABLE: (ReportStatus.MALFORMED, REASON_UNREADABLE),
@@ -140,6 +166,89 @@ def _layout_fragments(line: str) -> list[tuple[int, str]]:
         (match.start(), match.group().strip())
         for match in re.finditer(r"\S.*?(?=(?: {2,}|$))", line)
     ]
+
+
+def _column_number_positions(line: str) -> tuple[int, ...] | None:
+    """Return physical columns only for the exact supported ``1..21`` anchor."""
+    fragments = _layout_fragments(line)
+    if tuple(text for _start, text in fragments) != _ANCHOR_SEQUENCE:
+        return None
+    positions = tuple(start for start, _text in fragments)
+    if len(set(positions)) != len(_ANCHOR_SEQUENCE):
+        return None
+    return positions
+
+
+def _anchored_header_cell_matches(cell: str, expected: str) -> bool:
+    """Validate one physical band of the fixed Alfa 21-column layout.
+
+    The two currency headings are deliberately accepted as plain ``Валюта``
+    only at their known gross/net positions; they are never inferred from
+    arbitrary free text.
+    """
+    folded = fold_text(cell)
+    if expected in {"gross_currency", "net_currency"}:
+        return folded == "валюта" or _match_header_cell(cell) == expected
+    if expected in {"d1", "d2"}:
+        return expected in folded
+    return _match_header_cell(cell) == expected
+
+
+def _anchored_layout_columns(
+    header_lines: list[str], positions: tuple[int, ...]
+) -> list[tuple[int, str]] | None:
+    """Reconstruct a fixed schema from header fragments inside anchor bands."""
+    parts: list[list[str]] = [[] for _semantic in _ANCHORED_LAYOUT_SEMANTICS]
+    for line in header_lines:
+        for start, text in _layout_fragments(line):
+            if start < positions[0]:
+                return None
+            column = max(index for index, boundary in enumerate(positions) if boundary <= start)
+            parts[column].append(text)
+
+    columns: list[tuple[int, str]] = []
+    for index, semantic in enumerate(_ANCHORED_LAYOUT_SEMANTICS):
+        header = " ".join(parts[index])
+        if not _anchored_header_cell_matches(header, semantic):
+            return None
+        columns.append((positions[index], semantic))
+    return columns
+
+
+def _anchored_layout_header(lines: list[str], anchor_index: int) -> list[tuple[int, str]] | None:
+    """Recognize the bounded current Alfa 21-column graphical-table schema."""
+    positions = _column_number_positions(lines[anchor_index])
+    if positions is None:
+        return None
+    preceding: list[str] = []
+    scan_start = max(0, anchor_index - 2 * MAX_ANCHORED_HEADER_LINES)
+    for index in range(anchor_index - 1, scan_start - 1, -1):
+        line = lines[index]
+        if not line.strip():
+            continue
+        if "|" in line or looks_like_title(line):
+            break
+        preceding.append(line)
+        if len(preceding) == MAX_ANCHORED_HEADER_LINES:
+            break
+    preceding.reverse()
+    for count in range(MIN_ANCHORED_HEADER_LINES, len(preceding) + 1):
+        header_lines = preceding[-count:]
+        columns = _anchored_layout_columns(header_lines, positions)
+        if columns is not None:
+            return columns
+    return None
+
+
+def _find_anchored_layout_header(lines: list[str]) -> tuple[list[tuple[int, str]], int] | None:
+    """Find the exact 21-column anchor and a complete supported header above it."""
+    for index, line in enumerate(lines):
+        if _column_number_positions(line) is None:
+            continue
+        columns = _anchored_layout_header(lines, index)
+        if columns is not None:
+            return columns, index
+    return None
 
 
 def _layout_header_columns(
@@ -518,21 +627,25 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
     pipe_semantics: list[str | None] | None = None
     layout_cols: list[tuple[int, str]] | None = None
     header_index: int | None = None
-    for index, line in enumerate(lines):
-        multi_line_header = _multi_line_pipe_header(lines, index) if "|" in line else None
-        if multi_line_header is not None:
-            pipe_semantics, header_index = multi_line_header
-            break
-        multi_line_layout_header = (
-            _multi_line_layout_header(lines, index) if "|" not in line else None
-        )
-        if multi_line_layout_header is not None:
-            layout_cols, header_index = multi_line_layout_header
-            break
-        layout_cols = _layout_columns(line)
-        if layout_cols is not None:
-            header_index = index
-            break
+    anchored_layout_header = _find_anchored_layout_header(lines)
+    if anchored_layout_header is not None:
+        layout_cols, header_index = anchored_layout_header
+    else:
+        for index, line in enumerate(lines):
+            multi_line_header = _multi_line_pipe_header(lines, index) if "|" in line else None
+            if multi_line_header is not None:
+                pipe_semantics, header_index = multi_line_header
+                break
+            multi_line_layout_header = (
+                _multi_line_layout_header(lines, index) if "|" not in line else None
+            )
+            if multi_line_layout_header is not None:
+                layout_cols, header_index = multi_line_layout_header
+                break
+            layout_cols = _layout_columns(line)
+            if layout_cols is not None:
+                header_index = index
+                break
     if header_index is None:
         return ParsedReport(
             status=ReportStatus.MALFORMED,

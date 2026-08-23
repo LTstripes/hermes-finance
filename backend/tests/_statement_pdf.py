@@ -37,6 +37,124 @@ REPORT_COLUMNS: tuple[str, ...] = (
     "Банк получателя",
 )
 
+CURRENT_ALFA_LAYOUT_HEADER: tuple[tuple[str, ...], ...] = (
+    (
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Значение показателя",
+        "Значение показателя",
+        "",
+        "",
+        "",
+        "",
+        "Дата",
+        "",
+        "",
+    ),
+    (
+        "№",
+        "№",
+        "Номер",
+        "Вышестоящий",
+        "Вид",
+        "",
+        "Наименование",
+        "Дата составления",
+        "Число ц/б,",
+        "Размер",
+        "Общая сумма",
+        "",
+        "Показатель",
+        "",
+        "Налоговая ставка,",
+        "Удержанная сумма",
+        "Сумма перечисленного",
+        "",
+        "",
+        "",
+        "",
+    ),
+    (
+        "п/п",
+        "счета",
+        "договора",
+        "депозитарий",
+        "выплаты",
+        "ISIN",
+        "ценной",
+        "списка",
+        "шт.",
+        "выплаты на",
+        "начисленной",
+        "Валюта",
+        "D1",
+        "D2",
+        "%",
+        "налога,",
+        "дохода",
+        "Валюта",
+        "перечисления",
+        "Счет",
+        "Банк",
+    ),
+    (
+        "",
+        "депо",
+        "",
+        "",
+        "",
+        "",
+        "бумаги",
+        "",
+        "",
+        "1 ц.б.",
+        "выплаты",
+        "",
+        "Значение",
+        "Значение",
+        "",
+        "руб.",
+        "",
+        "",
+        "средств клиенту",
+        "",
+        "",
+    ),
+    (
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "получателя",
+        "получателя",
+    ),
+)
+
 LAYOUT_COLUMN_START = 40.0
 LAYOUT_COLUMN_STEP = 126.0
 LAYOUT_PAGE_WIDTH = LAYOUT_COLUMN_START + LAYOUT_COLUMN_STEP * len(REPORT_COLUMNS) + 80.0
@@ -280,6 +398,49 @@ def build_layout_income_report_pdf(
         cells = tuple(merged.get(_column_key(column), "") for column in REPORT_COLUMNS)
         fragments.extend(_layout_fragments(cells, y))
         y -= 16.0
+    return build_text_pdf([fragments], width=LAYOUT_PAGE_WIDTH)
+
+
+def build_current_alfa_layout_income_report_pdf(
+    rows: list[dict[str, str]] | None = None,
+    *,
+    title: str = REPORT_TITLE,
+    header_rows: tuple[tuple[str, ...], ...] = CURRENT_ALFA_LAYOUT_HEADER,
+    column_numbers: tuple[str, ...] | None = None,
+    security_name_continuation: str | None = None,
+) -> bytes:
+    """Build the current five-line Alfa layout with its 21-column number row.
+
+    This is wholly synthetic structural evidence. It deliberately uses no pipe
+    delimiters, keeps sparse wrapped header lines, and optionally places a
+    security-name-only continuation below a data row.
+    """
+    payload_rows = rows if rows is not None else [_default_row()]
+    if len(header_rows) != 5:
+        raise ValueError("current Alfa header must have five layout lines")
+    anchor = column_numbers or tuple(str(index) for index in range(1, 22))
+    if len(anchor) != len(REPORT_COLUMNS):
+        raise ValueError("synthetic column-number row must have 21 cells")
+
+    fragments: list[tuple[float, float, str]] = [(LAYOUT_COLUMN_START, 800.0, title)]
+    y = 770.0
+    for header_row in header_rows:
+        fragments.extend(_layout_fragments(header_row, y))
+        y -= 18.0
+    fragments.extend(_layout_fragments(anchor, y))
+    y -= 18.0
+    for index, raw in enumerate(payload_rows, start=1):
+        merged = _default_row()
+        merged["seq"] = str(index)
+        merged.update(raw)
+        cells = tuple(merged.get(_column_key(column), "") for column in REPORT_COLUMNS)
+        fragments.extend(_layout_fragments(cells, y))
+        y -= 16.0
+        if security_name_continuation:
+            fragments.append(
+                (LAYOUT_COLUMN_START + 6 * LAYOUT_COLUMN_STEP, y, security_name_continuation)
+            )
+            y -= 16.0
     return build_text_pdf([fragments], width=LAYOUT_PAGE_WIDTH)
 
 
