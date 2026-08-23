@@ -154,11 +154,11 @@ describe("StatementImportPanel explicit row decisions", () => {
     const user = userEvent.setup();
     render(<StatementImportPanel accounts={[account]} instruments={[instrument]} />);
     await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
-    await user.click(screen.getByRole("button", { name: "Инспектировать PDF" }));
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
     await screen.findByText("broker-1");
     await user.selectOptions(screen.getByLabelText("Alfa-счёт broker-1"), "1");
-    await user.click(screen.getByRole("button", { name: "Подготовить отчёт" }));
-    await screen.findByText("DUPLICATE · уже импортировано");
+    await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+    await screen.findByText("Уже импортировано");
     return user;
   }
 
@@ -189,7 +189,7 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(vi.mocked(applyStatement).mock.calls[0]?.[0]).toBe(file);
     expect(vi.mocked(applyStatement).mock.calls[0]?.[2]).toHaveLength(2);
     expect(screen.getByText("revise: correction-1")).toBeInTheDocument();
-    expect(screen.queryByText("DUPLICATE · уже импортировано")).not.toBeInTheDocument();
+    expect(screen.queryByText("Уже импортировано")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Импортировано строк: 2");
   });
 
@@ -233,5 +233,30 @@ describe("StatementImportPanel explicit row decisions", () => {
       existing_cash_flow_id: 42,
       expected_candidate_ids: [42, 43],
     });
+  });
+
+  it("uses owner-facing report errors and spaced import sections", async () => {
+    vi.mocked(inspectStatement).mockResolvedValueOnce({
+      ...inspectResult,
+      status: "malformed",
+      rows: [],
+      reason: "missing_required_schema",
+    });
+    const user = userEvent.setup();
+    const { container } = render(
+      <StatementImportPanel accounts={[account]} instruments={[instrument]} />,
+    );
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+
+    expect(
+      await screen.findByText(
+        "Hermes не смог распознать структуру отчёта Alfa. Данные не были импортированы.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("missing_required_schema")).toBeNull();
+    expect(screen.queryByText("mapping")).toBeNull();
+    expect(container.querySelector(".statement-import__summary")).not.toBeNull();
+    expect(container.querySelector(".statement-import__mapping")).not.toBeNull();
   });
 });

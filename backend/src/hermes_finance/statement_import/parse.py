@@ -58,6 +58,8 @@ from hermes_finance.statement_import.schema import (
 )
 
 MAX_ROWS = 2_000
+MAX_HEADER_LINES = 3
+MAX_HEADER_SCAN_LINES = 6
 _EXTRACT_STATUS = {
     ExtractStatus.ENCRYPTED: (ReportStatus.MALFORMED, REASON_ENCRYPTED),
     ExtractStatus.UNREADABLE: (ReportStatus.MALFORMED, REASON_UNREADABLE),
@@ -93,6 +95,39 @@ def _pipe_semantics(header_line: str) -> list[str | None] | None:
     mapped = [_match_header_cell(cell) for cell in cells]
     if "payment_kind" in mapped and "isin" in mapped:
         return mapped
+    return None
+
+
+def _multi_line_pipe_header(lines: list[str], start: int) -> tuple[list[str | None], int] | None:
+    """Recognize one bounded, vertically wrapped table header.
+
+    Current Alfa PDFs may emit a table heading as two or three consecutive
+    pipe-delimited lines. Only equal-width adjacent rows are joined cell by
+    cell; data rows, arbitrary free text and unbounded reconstruction are not
+    accepted as a schema.
+    """
+    first = [cell.strip() for cell in lines[start].split("|")]
+    if len(first) < 2:
+        return None
+    header_rows = [first]
+    for end in range(start, min(start + MAX_HEADER_SCAN_LINES, len(lines))):
+        if end > start:
+            if not lines[end].strip():
+                continue
+            if "|" not in lines[end]:
+                break
+            candidate = [cell.strip() for cell in lines[end].split("|")]
+            if len(candidate) != len(first):
+                break
+            header_rows.append(candidate)
+        joined = [
+            " ".join(row[index] for row in header_rows if row[index]) for index in range(len(first))
+        ]
+        mapped = [_match_header_cell(cell) for cell in joined]
+        if _schema_complete({item for item in mapped if item}):
+            return mapped, end
+        if len(header_rows) == MAX_HEADER_LINES:
+            break
     return None
 
 
@@ -409,9 +444,9 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
     layout_cols: list[tuple[int, str]] | None = None
     header_index: int | None = None
     for index, line in enumerate(lines):
-        pipe_semantics = _pipe_semantics(line)
-        if pipe_semantics is not None:
-            header_index = index
+        multi_line_header = _multi_line_pipe_header(lines, index) if "|" in line else None
+        if multi_line_header is not None:
+            pipe_semantics, header_index = multi_line_header
             break
         layout_cols = _layout_columns(line)
         if layout_cols is not None:

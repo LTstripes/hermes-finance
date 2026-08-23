@@ -385,8 +385,8 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
           <Table>
             <thead>
               <tr>
-                <Th>Выбор</Th>
                 <Th>Счёт / инструмент</Th>
+                <Th>Выбор</Th>
                 <Th>Статус</Th>
                 <Th>Данные из Альфа PRO</Th>
                 <Th>Решения владельца</Th>
@@ -402,6 +402,16 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                 return (
                   <tr key={key}>
                     <Td>
+                      <div className="stack-8">
+                        <strong>{row.account_name ?? "Счёт не найден"}</strong>
+                        <span>
+                          {row.instrument_name ?? "Инструмент не найден"}
+                          {row.instrument_isin ? ` · ${row.instrument_isin}` : ""}
+                        </span>
+                        <span className="muted tiny">ID: {key}</span>
+                      </div>
+                    </Td>
+                    <Td>
                       <input
                         type="checkbox"
                         checked={Boolean(selected[key])}
@@ -412,7 +422,6 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                         aria-label={`Выбрать позицию ${key}`}
                       />
                     </Td>
-                    <Td>{key}</Td>
                     <Td>{labelOf(POSITION_STATUS_LABELS, row.status)}</Td>
                     <Td>
                       <div className="stack-8">

@@ -82,6 +82,56 @@ def _row(**overrides: str) -> dict[str, str]:
     return overrides
 
 
+MULTI_LINE_HEADER = (
+    (
+        "№",
+        "Счет",
+        "Номер",
+        "Вышестоящий",
+        "Вид",
+        "ISIN",
+        "Наименование ценной",
+        "Дата составления",
+        "Количество ценных",
+        "Сумма выплаты",
+        "Общая сумма начисленной",
+        "Валюта",
+        "D1",
+        "D2",
+        "Ставка",
+        "Удержанная сумма",
+        "Сумма перечисленного",
+        "Валюта",
+        "Дата перечисления средств",
+        "Счет",
+        "Банк",
+    ),
+    (
+        "",
+        "депо",
+        "договора",
+        "депозитарий",
+        "выплаты",
+        "",
+        "бумаги",
+        "списка",
+        "бумаг",
+        "на 1 ЦБ",
+        "выплаты",
+        "начисления",
+        "",
+        "",
+        "налога",
+        "налога, руб.",
+        "дохода",
+        "перечисления",
+        "клиенту",
+        "получателя",
+        "получателя",
+    ),
+)
+
+
 def test_report_family_recognition() -> None:
     preview = _preview(build_income_report_pdf())
     assert preview.status is ReportStatus.APPLICABLE
@@ -131,6 +181,53 @@ def test_exact_dividend_mapping() -> None:
     assert row.tax_amount == Decimal("1.50")
     assert row.tax_available is True
     assert row.net_amount == Decimal("10.00")
+
+
+@pytest.mark.parametrize(
+    ("payment_kind", "isin", "quantity", "per_unit", "gross", "net", "event_kind"),
+    (
+        ("выплата дивидендов", "RU000SYN00001", "10", "1,15", "11,50", "10,00", "dividend"),
+        ("погашение купона", "RU000SYN00002", "10", "2,00", "20,00", "20,00", "coupon"),
+        (
+            "полное погашение номинала",
+            "RU000SYN00003",
+            "5",
+            "1000,00",
+            "5000,00",
+            "5000,00",
+            "redemption",
+        ),
+    ),
+)
+def test_multi_line_current_alfa_header_parses_allowlisted_rows(
+    payment_kind: str,
+    isin: str,
+    quantity: str,
+    per_unit: str,
+    gross: str,
+    net: str,
+    event_kind: str,
+) -> None:
+    pdf = build_income_report_pdf(
+        [
+            _row(
+                payment_kind=payment_kind,
+                isin=isin,
+                quantity=quantity,
+                per_unit=per_unit,
+                gross=gross,
+                tax="—",
+                tax_rate="—",
+                net=net,
+            )
+        ],
+        header_rows=MULTI_LINE_HEADER,
+    )
+    instruments = (HermesInstrumentView(instrument_id=30, isin=isin),)
+    row = _preview(pdf, hermes_instruments=instruments).rows[0]
+    assert row.status is RowStatus.MATCHED
+    assert row.event_kind == event_kind
+    assert row.gross_amount == Decimal(gross.replace(",", "."))
 
 
 def test_exact_coupon_mapping() -> None:

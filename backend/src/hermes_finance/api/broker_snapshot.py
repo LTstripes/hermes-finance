@@ -115,6 +115,9 @@ class BrokerPositionRowOut(BaseModel):
 
     account_id: int
     instrument_id: int
+    account_name: str | None
+    instrument_name: str | None
+    instrument_isin: str | None
     status: str
     hermes_quantity: str | None
     provider_quantity: str | None
@@ -240,6 +243,9 @@ def _decimal(value: Decimal | None) -> str | None:
 def _preview_response(
     preview, *, fingerprint_mapping: OwnerMappingInput, session: Session
 ) -> BrokerSnapshotPreviewResponse:
+    hermes = load_hermes_state_for_month(session, preview.month_id or 0)
+    account_names = {account.account_id: account.name for account in hermes.accounts}
+    instruments = {instrument.instrument_id: instrument for instrument in hermes.instruments}
     # Reconciliation state is deliberately a display DTO. The apply contract,
     # however, fingerprints persisted PositionSnapshot identity and revision
     # state, so preview must use the same authoritative records as Apply.
@@ -267,6 +273,17 @@ def _preview_response(
             BrokerPositionRowOut(
                 account_id=row.account_id,
                 instrument_id=row.instrument_id,
+                account_name=account_names.get(row.account_id),
+                instrument_name=(
+                    instruments[row.instrument_id].name
+                    if row.instrument_id in instruments
+                    else None
+                ),
+                instrument_isin=(
+                    instruments[row.instrument_id].isin
+                    if row.instrument_id in instruments
+                    else None
+                ),
                 status=row.status.value,
                 hermes_quantity=_decimal(row.hermes_quantity),
                 provider_quantity=_decimal(row.provider_quantity),

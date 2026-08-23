@@ -22,6 +22,9 @@ const instrument = { id: 10, name: "Синтетическая облигаци�
 const matched = {
   account_id: 1,
   instrument_id: 10,
+  account_name: "Основной счёт",
+  instrument_name: "Синтетическая облигация",
+  instrument_isin: "RU000SYNTH01",
   status: "matched",
   provider_quantity: "2",
   hermes_quantity: "2",
@@ -81,6 +84,9 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
     await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
     expect(await screen.findByText(/101\.25/)).toBeInTheDocument();
+    expect(screen.getByText("Основной счёт")).toBeInTheDocument();
+    expect(screen.getByText(/Синтетическая облигация.*RU000SYNTH01/)).toBeInTheDocument();
+    expect(screen.getByText("ID: 1:10")).toBeInTheDocument();
     const checkbox = screen.getByRole("checkbox", { name: /Выбрать позицию/ });
     expect(checkbox).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Применить выбранное" })).toBeDisabled();

@@ -221,13 +221,18 @@ def test_mapped_snapshot_preview_uses_persisted_position_for_fingerprint_and_sta
         ],
         "instruments": [],
     }
-    application = create_app(database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot()))
+    application = create_app(
+        database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot())
+    )
     with TestClient(application) as client:
         preview = client.post(f"/api/months/{month_id}/broker-snapshot-preview", json=mapping)
         assert preview.status_code == 200
         assert "AttributeError" not in preview.text
         row = preview.json()["positions"][0]
         assert row["status"] == "matched"
+        assert row["account_name"] == "Synthetic brokerage"
+        assert row["instrument_name"] == "Synthetic equity"
+        assert row["instrument_isin"] == SYN_ISIN
         assert isinstance(row["fingerprint"], str)
         assert len(row["fingerprint"]) == 64
         assert all(character in "0123456789abcdef" for character in row["fingerprint"])
@@ -259,9 +264,13 @@ def test_mapped_snapshot_preview_uses_persisted_position_for_fingerprint_and_sta
     assert applied.json()["error_code"] == "preview_changed"
 
 
-def test_mapped_snapshot_preview_without_local_position_keeps_provider_only_path(tmp_path: Path) -> None:
+def test_mapped_snapshot_preview_without_local_position_keeps_provider_only_path(
+    tmp_path: Path,
+) -> None:
     database, month_id, account_id, _instrument_id = _context(tmp_path)
-    application = create_app(database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot()))
+    application = create_app(
+        database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot())
+    )
     with TestClient(application) as client:
         response = client.post(
             f"/api/months/{month_id}/broker-snapshot-preview",
@@ -275,6 +284,9 @@ def test_mapped_snapshot_preview_without_local_position_keeps_provider_only_path
     assert response.status_code == 200
     row = response.json()["positions"][0]
     assert row["status"] == "provider_only"
+    assert row["account_name"] == "Synthetic brokerage"
+    assert row["instrument_name"] == "Synthetic equity"
+    assert row["instrument_isin"] == SYN_ISIN
     assert isinstance(row["fingerprint"], str)
 
 

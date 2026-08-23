@@ -221,6 +221,7 @@ def build_income_report_pdf(
     title: str = REPORT_TITLE,
     extra_lines: tuple[str, ...] = (),
     include_header: bool = True,
+    header_rows: tuple[tuple[str, ...], ...] | None = None,
 ) -> bytes:
     payload_rows = rows if rows is not None else [_default_row()]
     fragments: list[tuple[float, float, str]] = [(40.0, 800.0, title)]
@@ -229,8 +230,12 @@ def build_income_report_pdf(
         fragments.append((40.0, y, extra))
         y -= 16.0
     if include_header:
-        fragments.append((40.0, y, " | ".join(REPORT_COLUMNS)))
-        y -= 18.0
+        rows_for_header = header_rows or (REPORT_COLUMNS,)
+        for header_row in rows_for_header:
+            if len(header_row) != len(REPORT_COLUMNS):
+                raise ValueError("synthetic header must match report column count")
+            fragments.append((40.0, y, " | ".join(header_row)))
+            y -= 18.0
     for index, raw in enumerate(payload_rows, start=1):
         merged = _default_row()
         merged["seq"] = str(index)
