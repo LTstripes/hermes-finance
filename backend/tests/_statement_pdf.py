@@ -368,11 +368,13 @@ def build_income_report_pdf(
     return build_text_pdf([fragments])
 
 
-def _layout_fragments(cells: tuple[str, ...], y: float) -> list[tuple[float, float, str]]:
+def _layout_fragments(
+    cells: tuple[str, ...], y: float, *, x_offset: float = 0.0
+) -> list[tuple[float, float, str]]:
     if len(cells) != len(REPORT_COLUMNS):
         raise ValueError("synthetic layout row must match report column count")
     return [
-        (LAYOUT_COLUMN_START + index * LAYOUT_COLUMN_STEP, y, cell)
+        (LAYOUT_COLUMN_START + index * LAYOUT_COLUMN_STEP + x_offset, y, cell)
         for index, cell in enumerate(cells)
         if cell
     ]
@@ -408,6 +410,7 @@ def build_current_alfa_layout_income_report_pdf(
     header_rows: tuple[tuple[str, ...], ...] = CURRENT_ALFA_LAYOUT_HEADER,
     column_numbers: tuple[str, ...] | None = None,
     security_name_continuation: str | None = None,
+    header_x_offsets: tuple[float, ...] | None = None,
 ) -> bytes:
     """Build the current five-line Alfa layout with its 21-column number row.
 
@@ -418,14 +421,17 @@ def build_current_alfa_layout_income_report_pdf(
     payload_rows = rows if rows is not None else [_default_row()]
     if len(header_rows) != 5:
         raise ValueError("current Alfa header must have five layout lines")
+    offsets = header_x_offsets or (0.0,) * len(header_rows)
+    if len(offsets) != len(header_rows):
+        raise ValueError("current Alfa header offsets must match header line count")
     anchor = column_numbers or tuple(str(index) for index in range(1, 22))
     if len(anchor) != len(REPORT_COLUMNS):
         raise ValueError("synthetic column-number row must have 21 cells")
 
     fragments: list[tuple[float, float, str]] = [(LAYOUT_COLUMN_START, 800.0, title)]
     y = 770.0
-    for header_row in header_rows:
-        fragments.extend(_layout_fragments(header_row, y))
+    for header_row, x_offset in zip(header_rows, offsets, strict=True):
+        fragments.extend(_layout_fragments(header_row, y, x_offset=x_offset))
         y -= 18.0
     fragments.extend(_layout_fragments(anchor, y))
     y -= 18.0

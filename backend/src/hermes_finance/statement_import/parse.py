@@ -88,6 +88,13 @@ _ANCHORED_LAYOUT_SEMANTICS = (
     "beneficiary_account",
     "beneficiary_bank",
 )
+_CURRENT_ALFA_HEADER_FRAGMENT_COLUMNS = (
+    (12, 13, 18),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 14, 15, 16),
+    tuple(range(21)),
+    (1, 6, 9, 10, 12, 13, 15, 18),
+    (19, 20),
+)
 _ANCHOR_SEQUENCE = tuple(str(index) for index in range(1, len(_ANCHORED_LAYOUT_SEMANTICS) + 1))
 _EXTRACT_STATUS = {
     ExtractStatus.ENCRYPTED: (ReportStatus.MALFORMED, REASON_ENCRYPTED),
@@ -190,14 +197,36 @@ def _anchored_header_cell_matches(cell: str, expected: str) -> bool:
     if expected in {"gross_currency", "net_currency"}:
         return folded == "валюта" or _match_header_cell(cell) == expected
     if expected in {"d1", "d2"}:
-        return expected in folded
+        return expected in folded or "значение показателя" in folded
     return _match_header_cell(cell) == expected
+
+
+def _anchored_columns_from_parts(
+    parts: list[list[str]], positions: tuple[int, ...]
+) -> list[tuple[int, str]] | None:
+    columns: list[tuple[int, str]] = []
+    for index, semantic in enumerate(_ANCHORED_LAYOUT_SEMANTICS):
+        header = " ".join(parts[index])
+        if not _anchored_header_cell_matches(header, semantic):
+            return None
+        columns.append((positions[index], semantic))
+    return columns
 
 
 def _anchored_layout_columns(
     header_lines: list[str], positions: tuple[int, ...]
 ) -> list[tuple[int, str]] | None:
     """Reconstruct a fixed schema from header fragments inside anchor bands."""
+    fragment_columns = _CURRENT_ALFA_HEADER_FRAGMENT_COLUMNS
+    if tuple(len(_layout_fragments(line)) for line in header_lines) == tuple(
+        len(columns) for columns in fragment_columns
+    ):
+        parts: list[list[str]] = [[] for _semantic in _ANCHORED_LAYOUT_SEMANTICS]
+        for line, columns in zip(header_lines, fragment_columns, strict=True):
+            for column, (_start, text) in zip(columns, _layout_fragments(line), strict=True):
+                parts[column].append(text)
+        return _anchored_columns_from_parts(parts, positions)
+
     parts: list[list[str]] = [[] for _semantic in _ANCHORED_LAYOUT_SEMANTICS]
     for line in header_lines:
         for start, text in _layout_fragments(line):
@@ -206,13 +235,7 @@ def _anchored_layout_columns(
             column = max(index for index, boundary in enumerate(positions) if boundary <= start)
             parts[column].append(text)
 
-    columns: list[tuple[int, str]] = []
-    for index, semantic in enumerate(_ANCHORED_LAYOUT_SEMANTICS):
-        header = " ".join(parts[index])
-        if not _anchored_header_cell_matches(header, semantic):
-            return None
-        columns.append((positions[index], semantic))
-    return columns
+    return _anchored_columns_from_parts(parts, positions)
 
 
 def _anchored_layout_header(lines: list[str], anchor_index: int) -> list[tuple[int, str]] | None:

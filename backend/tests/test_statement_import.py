@@ -353,6 +353,19 @@ def test_current_alfa_five_line_layout_uses_21_column_anchor_end_to_end() -> Non
     assert coupon.event_date.isoformat() == "2026-01-21"
 
 
+def test_current_alfa_anchor_uses_ranked_header_shape_when_pypdf_offsets_columns() -> None:
+    extracted = extract_pdf_text_layer(
+        build_current_alfa_layout_income_report_pdf(header_x_offsets=(0.0, -30.0, -30.0, 0.0, 0.0))
+    )
+
+    assert extracted.status.value == "ok"
+    parsed = parse_income_report(extracted)
+
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    assert parsed.rows[0].status is RowStatus.MATCHED
+
+
 def _layout_fragments(line: str) -> list[tuple[int, str]]:
     return [
         (match.start(), match.group().strip())
