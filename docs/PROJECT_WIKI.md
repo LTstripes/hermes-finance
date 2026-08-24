@@ -227,3 +227,46 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/history/HERMES_TASKS.md` и Git history. Релизы 0.2–0.5 зафиксированы в `docs/releases/`, `CHANGELOG.md` и `docs/EXECUTION_HISTORY.md`. Wiki не дублирует позадачную историю.
 
 `docs/IDEA.md` намеренно сохранён как исходная концепция.
+
+## 15. Активная линия 0.6.0 / R06
+
+0.6.0 находится в release-hardening, stable-версия остаётся 0.5.0. Канонический `r06` пока не сдвинут с R06-09: `194ec5501211e8940a9328ac9011bb35fb4423d1`. Рабочая линия Gate B идёт отдельно; `main` и production runtime не затрагиваются.
+
+R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
+
+- явный snapshot review/apply из Alfa PRO без background sync/trading;
+- явный импорт стандартизированного депозитарного PDF `Отчет о произведенных выплатах доходов по ценным бумагам` с server-side reparse, fail-closed mapping, idempotency/correction provenance и защитой CLOSED month.
+
+### R06-10 Gate B — owner UAT, состояние на 2026-08-24
+
+Технический Gate A был принят ранее. Owner UAT выполняется только на отдельной копии runtime data; production не используется как тестовый workspace.
+
+Материальные живые находки и fix-cycle:
+
+1. snapshot preview падал после account mapping из-за fingerprint по display DTO вместо persisted `PositionSnapshot`; исправлено без ослабления stale/fingerprint gate;
+2. snapshot Apply UI не позволял безопасно идентифицировать строку по owner-facing счёту/инструменту/ISIN; UI усилен;
+3. реальный Alfa income-payment PDF выявил, что synthetic parser assumptions не совпадают с текущим `pypdf layout`: сначала были отброшены pipe-only и затем слишком общие multi-line assumptions;
+4. parser переведён на bounded fail-closed 21-column report-family structure с точным `1..21` anchor, затем live UAT потребовал несколько узких корректировок реального layout: rank-aligned header reconstruction, актуальная форма заголовков, различение beneficiary columns, игнорирование нетабличного tail и mapping полного data row по физическому column order.
+
+Финальная проверенная code-candidate цепочка после принятого `fa4125a632c8017e076a74c1375502af87866ed6` линейна и содержит пять узких follow-up commit:
+
+- `6a4be2817308bf7e4337e2a1809adede7a9de4c4` — align current Alfa header by rank;
+- `76937cd88c9f2bda350be5f0167a7ff9fc4fca8e` — match current Alfa header layout;
+- `2c24fd2d5551a7823163e994c8c9d62140af57a8` — keep Alfa beneficiary headers distinct;
+- `eeaed4b2ebba5d399f4f712f99ac67a008494d20` — ignore Alfa layout trailing fragments;
+- `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — map anchored Alfa data by column order.
+
+`c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — текущий final code candidate на `r06-10-codex`. Независимый repository read-back подтверждает линейность `fa4125a6… → c4bb8ff…`: `ahead_by=5`, `behind_by=0`, изменения остаются в четырёх parser/schema/synthetic-test файлах. `r06` и `main` остались неизменными.
+
+По owner/Work UAT-report для exact `c4bb8ff…`:
+
+- full backend: `1218 passed` (известное предупреждение pytest cache не считается blocker);
+- independent Terra review: ACCEPT по отчёту Work; эта model-attribution не выводится из Git metadata;
+- тот же owner-local Alfa PDF распознан ровно в 4 строки;
+- локальная сверка event type, ISIN, dates, gross/tax/net с исходным PDF прошла;
+- UI показывает все 4 строки как требующие явного сопоставления, unsupported rows нет;
+- подготовка/apply не выполнялись, persistent writes по этим строкам не делались;
+- owner UAT и dev workspace оставлены clean, localhost остановлен;
+- production runtime, `main`, `r06`, PR/merge/tag/release не затрагивались.
+
+Следующий Gate B шаг — только явный owner mapping найденного отчётного счёта и инструментов в UAT-копии, затем отдельное решение о Prepare/Apply. До успешного owner-selected apply и повторного duplicate/CLOSED smoke Gate B не считается полностью закрытым.
