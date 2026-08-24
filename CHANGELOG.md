@@ -2,6 +2,35 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.6.0] — 2026-08-25
+
+Release candidate for owner-triggered Alfa PRO current snapshot review/apply and a narrow Alfa depository income-payment PDF import.
+
+### Added
+
+- explicit owner-triggered Alfa PRO current-state snapshot: local loopback only, transient account/instrument mapping, preview, then selected apply;
+- provider Price / UchPrice / NKD / P&L remain evidence for comparison, not silent authoritative writes;
+- Inspect → transient mapping → Prepare → explicit selected Apply for the accepted Alfa depository income-payment PDF family (`Отчет о произведенных выплатах доходов по ценным бумагам`);
+- text-layer PDF parse only (no OCR); exact-same PDF is idempotent / duplicate-protected;
+- manual matching cash-flow candidates require an explicit `create_separate` or `link_existing` decision;
+- additive statement provenance tables; CLOSED and missing-month operations fail atomically and never auto-reopen.
+
+### Changed
+
+- Alfa snapshot and statement network/file work happen only after an explicit owner action; startup, dashboard and month reads stay local;
+- no persistent Alfa provider account/instrument mapping is stored;
+- no automatic creation of account, instrument or reporting month from provider or report data.
+
+### Not changed
+
+- T-Invest quotes and payout calendar remain owner-triggered and read-only;
+- local runtime remains loopback-only (`127.0.0.1:8000`); no auth, cloud, VPS, telemetry, background provider refresh, browser → Alfa WebSocket, or trading/order/signing APIs;
+- this is not generic brokerage or bank transaction import.
+
+### Release status
+
+- This is a release candidate. No tag or GitHub release is created by R06-10 Gate C.
+
 ## [0.5.0] — 2026-08-18
 
 Owner-controlled future investment payout calendar on top of locally stored Hermes positions.

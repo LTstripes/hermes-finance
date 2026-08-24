@@ -14,7 +14,8 @@ Hermes Finance — локальное однопользовательское W
 - инвестиционный результат отдельно от денежных потоков;
 - ИИС и полученную/планируемую налоговую выгоду;
 - справочную недвижимость и покрытие ипотеки;
-- рыночные котировки и календарь инвестиционных выплат по явному действию владельца.
+- рыночные котировки и календарь инвестиционных выплат по явному действию владельца;
+- текущий снимок Alfa PRO и узкий импорт депозитарного PDF о выплатах доходов — тоже только по явному действию владельца.
 
 Приложение не является бухгалтерской, налоговой или торговой системой.
 
@@ -36,7 +37,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущая стабильная released-версия — **0.5.0**.
+Последняя опубликованная released-версия — **0.5.0**. Это дерево готовит release candidate **0.6.0**; тег `v0.6.0` ещё не создан.
 
 - released artifact: `v0.5.0` @ `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`;
 - на публикации `main`, `r05` и `v0.5.0` указывали на этот exact SHA;
@@ -47,7 +48,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
 
-В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle.
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import.
 
 Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
 
@@ -66,6 +67,8 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - фактические инвестиционные выплаты и ручные ожидаемые потоки;
 - T-Invest котировки по явной кнопке владельца;
 - T-Invest календарь выплат (preview/apply) поверх локальных позиций Hermes;
+- Alfa PRO current snapshot по явной кнопке, только local loopback, transient mapping, selected apply;
+- импорт принятого Alfa депозитарного PDF о выплатах доходов: Inspect → mapping → Prepare → selected Apply;
 - Goals и основная цель;
 - Dashboard и графики;
 - Markdown/JSON export;
@@ -76,7 +79,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 
 - торговые операции;
 - автоматические банковские транзакции;
-- импорт брокерского портфеля, счетов или операций;
+- generic import брокерского портфеля, сделок, комиссий, пополнений/выводов или произвольных PDF/Excel;
 - cloud/VPS/multi-user/auth;
 - фоновая телеметрия;
 - фоновое обновление котировок или выплат;
@@ -230,7 +233,7 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 ## 15. Активная линия 0.6.0 / R06
 
-0.6.0 находится в release-hardening, stable-версия остаётся 0.5.0. Канонический `r06` пока не сдвинут с R06-09: `194ec5501211e8940a9328ac9011bb35fb4423d1`. Рабочая линия Gate B идёт отдельно; `main` и production runtime не затрагиваются.
+0.6.0 — release candidate на `r06-10-gate-c-grok`. Опубликованный stable остаётся 0.5.0. Канонический `r06` пока не сдвинут с R06-09: `194ec5501211e8940a9328ac9011bb35fb4423d1`. `main` и production runtime не затрагиваются.
 
 R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
 
@@ -269,4 +272,26 @@ R06 добавляет два owner-controlled пути Alfa поверх сущ
 - owner UAT и dev workspace оставлены clean, localhost остановлен;
 - production runtime, `main`, `r06`, PR/merge/tag/release не затрагивались.
 
-Следующий Gate B шаг — только явный owner mapping найденного отчётного счёта и инструментов в UAT-копии, затем отдельное решение о Prepare/Apply. До успешного owner-selected apply и повторного duplicate/CLOSED smoke Gate B не считается полностью закрытым.
+Следующий Gate B шаг на момент промежуточной записи 2026-08-24 — только явный owner mapping найденного отчётного счёта и инструментов в UAT-копии, затем отдельное решение о Prepare/Apply.
+
+### R06-10 Gate B — UAT_PASS / GATE_B_PASS
+
+Каноническое owner-UAT evidence записано в issue #98. Exact Gate B code остаётся `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3`. Production runtime не использовался.
+
+Сводка без частных значений:
+
+- statement Inspect = 4 rows, unsupported 0;
+- mapping/reconciliation PASS;
+- one-row statement Apply PASS;
+- duplicate/idempotency PASS;
+- CLOSED statement PASS;
+- manual candidate explicit decision / zero-write PASS;
+- one-row matched existing snapshot Apply PASS;
+- UNCHANGED no-op behavior observed correctly;
+- CLOSED snapshot PASS;
+- restart stability PASS;
+- no blockers.
+
+### R06-10 Gate C — release candidate preparation
+
+Gate C готовит exact 0.6.0 candidate: version metadata, release-facing docs и повторный verification gate. Merge в `r06`/`main`, тег `v0.6.0` и GitHub Release этим шагом не выполняются.

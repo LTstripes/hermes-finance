@@ -2,7 +2,7 @@
 
 Hermes Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS stays in the repository as a reference adapter and is not called in production.
 
-Alfa PRO / broker portfolio import is future work and is not implemented here.
+Alfa PRO current snapshot and the accepted Alfa depository income-payment PDF import are 0.6 product paths; they are documented in `docs/releases/0.6.0.md` and `docs/release-notes-0.6.0.md`. This file remains the T-Invest quote/payout guide.
 
 ## What this does
 
