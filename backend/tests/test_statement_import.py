@@ -420,6 +420,20 @@ def test_current_alfa_anchor_rejects_structurally_incomplete_header() -> None:
     assert parsed.reason == "missing_required_schema"
 
 
+def test_current_alfa_anchor_rejects_duplicate_beneficiary_account_header() -> None:
+    malformed_rows = [list(row) for row in CURRENT_ALFA_LAYOUT_HEADER]
+    malformed_rows[1][20] = "Счет получателя"
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(
+                header_rows=tuple(tuple(row) for row in malformed_rows)
+            )
+        )
+    )
+    assert parsed.status is ReportStatus.MALFORMED
+    assert parsed.reason == "missing_required_schema"
+
+
 def test_exact_coupon_mapping() -> None:
     pdf = build_income_report_pdf(
         [

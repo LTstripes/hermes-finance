@@ -202,8 +202,8 @@ def _anchored_header_cell_matches(cell: str, expected: str) -> bool:
         return "п/п" in folded
     if expected == "agreement":
         return "соглашения" in folded
-    if expected in {"beneficiary_account", "beneficiary_bank"}:
-        return "получателя" in folded or _match_header_cell(cell) == expected
+    if expected == "beneficiary_bank":
+        return folded == "банк получателя доход" or _match_header_cell(cell) == expected
     return _match_header_cell(cell) == expected
 
 
