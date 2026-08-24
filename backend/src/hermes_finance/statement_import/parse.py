@@ -382,6 +382,19 @@ def _cells_from_layout(line: str, columns: list[tuple[int, str]]) -> dict[str, s
     return values
 
 
+def _cells_from_anchored_layout(line: str, columns: list[tuple[int, str]]) -> dict[str, str] | None:
+    """Map one complete fixed-layout row by its physical column order."""
+    fragments = _layout_fragments(line)
+    if len(fragments) != len(columns):
+        return None
+    return {
+        semantic: text
+        for (_column_start, semantic), (_fragment_start, text) in zip(
+            columns, fragments, strict=True
+        )
+    }
+
+
 def _cells_from_pipe(line: str, semantics: list[str | None]) -> dict[str, str] | None:
     cells = [cell.strip() for cell in line.split("|")]
     if len(cells) != len(semantics):
@@ -732,9 +745,14 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
                 continue
         else:
             assert layout_cols is not None
-            if anchored_layout and not _is_anchored_layout_data_row(line, layout_cols):
-                continue
-            cells = _cells_from_layout(line, layout_cols)
+            if anchored_layout:
+                if not _is_anchored_layout_data_row(line, layout_cols):
+                    continue
+                cells = _cells_from_anchored_layout(line, layout_cols)
+                if cells is None:
+                    continue
+            else:
+                cells = _cells_from_layout(line, layout_cols)
         if not cells.get("payment_kind") and not cells.get("isin"):
             continue
         if len(rows) >= MAX_ROWS:

@@ -411,6 +411,7 @@ def build_current_alfa_layout_income_report_pdf(
     column_numbers: tuple[str, ...] | None = None,
     security_name_continuation: str | None = None,
     header_x_offsets: tuple[float, ...] | None = None,
+    row_x_offset: float = 0.0,
     trailing_fragments: tuple[tuple[int, str], ...] = (),
 ) -> bytes:
     """Build the current five-line Alfa layout with its 21-column number row.
@@ -441,7 +442,7 @@ def build_current_alfa_layout_income_report_pdf(
         merged["seq"] = str(index)
         merged.update(raw)
         cells = tuple(merged.get(_column_key(column), "") for column in REPORT_COLUMNS)
-        fragments.extend(_layout_fragments(cells, y))
+        fragments.extend(_layout_fragments(cells, y, x_offset=row_x_offset))
         y -= 16.0
         if security_name_continuation:
             fragments.append(

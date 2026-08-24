@@ -366,6 +366,16 @@ def test_current_alfa_anchor_uses_ranked_header_shape_when_pypdf_offsets_columns
     assert parsed.rows[0].status is RowStatus.MATCHED
 
 
+def test_current_alfa_anchor_maps_shifted_data_cells_by_column_order() -> None:
+    parsed = parse_income_report(
+        extract_pdf_text_layer(build_current_alfa_layout_income_report_pdf(row_x_offset=-24.0))
+    )
+
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    assert parsed.rows[0].status is RowStatus.MATCHED
+
+
 def test_current_alfa_anchor_ignores_non_tabular_layout_tail() -> None:
     parsed = parse_income_report(
         extract_pdf_text_layer(
