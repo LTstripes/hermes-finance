@@ -219,6 +219,11 @@ def _anchored_columns_from_parts(
     return columns
 
 
+def _is_anchored_layout_data_row(line: str, columns: list[tuple[int, str]]) -> bool:
+    """Accept only a complete physical row below the fixed Alfa anchor."""
+    return len(_layout_fragments(line)) == len(columns)
+
+
 def _anchored_layout_columns(
     header_lines: list[str], positions: tuple[int, ...]
 ) -> list[tuple[int, str]] | None:
@@ -656,9 +661,11 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
     pipe_semantics: list[str | None] | None = None
     layout_cols: list[tuple[int, str]] | None = None
     header_index: int | None = None
+    anchored_layout = False
     anchored_layout_header = _find_anchored_layout_header(lines)
     if anchored_layout_header is not None:
         layout_cols, header_index = anchored_layout_header
+        anchored_layout = True
     else:
         for index, line in enumerate(lines):
             multi_line_header = _multi_line_pipe_header(lines, index) if "|" in line else None
@@ -725,6 +732,8 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
                 continue
         else:
             assert layout_cols is not None
+            if anchored_layout and not _is_anchored_layout_data_row(line, layout_cols):
+                continue
             cells = _cells_from_layout(line, layout_cols)
         if not cells.get("payment_kind") and not cells.get("isin"):
             continue

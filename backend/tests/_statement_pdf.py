@@ -411,6 +411,7 @@ def build_current_alfa_layout_income_report_pdf(
     column_numbers: tuple[str, ...] | None = None,
     security_name_continuation: str | None = None,
     header_x_offsets: tuple[float, ...] | None = None,
+    trailing_fragments: tuple[tuple[int, str], ...] = (),
 ) -> bytes:
     """Build the current five-line Alfa layout with its 21-column number row.
 
@@ -447,6 +448,9 @@ def build_current_alfa_layout_income_report_pdf(
                 (LAYOUT_COLUMN_START + 6 * LAYOUT_COLUMN_STEP, y, security_name_continuation)
             )
             y -= 16.0
+    for column, text in trailing_fragments:
+        fragments.append((LAYOUT_COLUMN_START + column * LAYOUT_COLUMN_STEP, y, text))
+        y -= 16.0
     return build_text_pdf([fragments], width=LAYOUT_PAGE_WIDTH)
 
 

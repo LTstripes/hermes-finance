@@ -366,6 +366,20 @@ def test_current_alfa_anchor_uses_ranked_header_shape_when_pypdf_offsets_columns
     assert parsed.rows[0].status is RowStatus.MATCHED
 
 
+def test_current_alfa_anchor_ignores_non_tabular_layout_tail() -> None:
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(
+                trailing_fragments=((5, "Synthetic trailing note"),)
+            )
+        )
+    )
+
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    assert parsed.rows[0].status is RowStatus.MATCHED
+
+
 def _layout_fragments(line: str) -> list[tuple[int, str]]:
     return [
         (match.start(), match.group().strip())
