@@ -90,10 +90,10 @@ _ANCHORED_LAYOUT_SEMANTICS = (
 )
 _CURRENT_ALFA_HEADER_FRAGMENT_COLUMNS = (
     (12, 13, 18),
-    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 14, 15, 16),
+    (0, 2, 3, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 20),
     tuple(range(21)),
-    (1, 6, 9, 10, 12, 13, 15, 18),
-    (19, 20),
+    (7, 9, 10, 12, 13, 15, 16, 18),
+    (12, 13),
 )
 _ANCHOR_SEQUENCE = tuple(str(index) for index in range(1, len(_ANCHORED_LAYOUT_SEMANTICS) + 1))
 _EXTRACT_STATUS = {
@@ -198,6 +198,12 @@ def _anchored_header_cell_matches(cell: str, expected: str) -> bool:
         return folded == "валюта" or _match_header_cell(cell) == expected
     if expected in {"d1", "d2"}:
         return expected in folded or "значение показателя" in folded
+    if expected == "seq":
+        return "п/п" in folded
+    if expected == "agreement":
+        return "соглашения" in folded
+    if expected in {"beneficiary_account", "beneficiary_bank"}:
+        return "получателя" in folded or _match_header_cell(cell) == expected
     return _match_header_cell(cell) == expected
 
 
