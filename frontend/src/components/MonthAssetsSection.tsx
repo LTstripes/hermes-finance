@@ -361,8 +361,8 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
           <Table className="month-deposits-table">
             <thead>
               <tr>
-                <Th>Название</Th>
-                <Th>Тип</Th>
+                <Th className="month-deposits-table__name">Название</Th>
+                <Th className="month-deposits-table__type">Тип</Th>
                 <Th numeric>Баланс</Th>
                 <Th numeric>Ставка %</Th>
                 <Th numeric>Прогноз / мес</Th>

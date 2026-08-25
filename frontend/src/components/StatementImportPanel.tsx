@@ -135,6 +135,19 @@ function classLabel(row: StatementRow): string {
   return "Новая строка";
 }
 
+function classTone(row: StatementRow): "ok" | "draft" | "closed" | "info" {
+  if (row.duplicate_class === "duplicate") {
+    return "closed";
+  }
+  if (row.duplicate_class === "correction" || row.status !== "matched") {
+    return "draft";
+  }
+  if (row.candidates.length > 0) {
+    return "info";
+  }
+  return "ok";
+}
+
 function lookupName(
   id: number | null | undefined,
   items: Array<{ id: number; name: string }>,
@@ -691,15 +704,14 @@ export function StatementImportPanel({
             <thead>
               <tr>
                 <Th className="statement-import__prepare-table__select">Выбор</Th>
-                <Th>Инструмент</Th>
-                <Th>Счёт</Th>
-                <Th>Событие</Th>
-                <Th>Дата</Th>
+                <Th className="statement-import__prepare-table__instrument">Инструмент</Th>
+                <Th className="statement-import__prepare-table__account">Счёт</Th>
+                <Th className="statement-import__prepare-table__event">Событие</Th>
                 <Th numeric>Брутто</Th>
                 <Th numeric>Налог</Th>
                 <Th numeric>Нетто</Th>
-                <Th>Класс</Th>
-                <Th>Кандидаты / решение</Th>
+                <Th className="statement-import__prepare-table__class">Класс</Th>
+                <Th className="statement-import__prepare-table__decision">Кандидаты / решение</Th>
               </tr>
             </thead>
             <tbody>
@@ -727,15 +739,23 @@ export function StatementImportPanel({
                         aria-label={`Выбрать строку ${index + 1}`}
                       />
                     </Td>
-                    <Td>
-                      <div className="statement-import__stack">
-                        <span>{instrumentName}</span>
+                    <Td className="statement-import__prepare-table__instrument">
+                      <div className="statement-import__identity">
+                        <span className="statement-import__identity-name">{instrumentName}</span>
                         <span className="muted tiny">{row.isin ?? "—"}</span>
                       </div>
                     </Td>
-                    <Td>{accountName}</Td>
-                    <Td>{eventLabel(row.event_kind)}</Td>
-                    <Td>{row.event_date ? formatDate(row.event_date) : "—"}</Td>
+                    <Td className="statement-import__prepare-table__account">
+                      <div className="statement-import__account">{accountName}</div>
+                    </Td>
+                    <Td className="statement-import__prepare-table__event">
+                      <div className="statement-import__event">
+                        <span>{eventLabel(row.event_kind)}</span>
+                        <span className="muted tiny">
+                          {row.event_date ? formatDate(row.event_date) : "—"}
+                        </span>
+                      </div>
+                    </Td>
                     <Td numeric>
                       {moneyDisplay(row.gross_amount, row.gross_currency ?? row.net_currency)}
                     </Td>
@@ -743,65 +763,71 @@ export function StatementImportPanel({
                     <Td numeric>
                       {moneyDisplay(row.net_amount, row.net_currency ?? row.gross_currency)}
                     </Td>
-                    <Td>{classLabel(row)}</Td>
-                    <Td>
-                      {duplicate ? (
-                        <span className="muted">Без изменений; повторно не отправляется.</span>
-                      ) : correction ? (
-                        <Select
-                          aria-label={`Решение correction ${index + 1}`}
-                          value={decision.action}
-                          disabled={!selected[key]}
-                          onChange={(event) =>
-                            updateDecision(key, {
-                              action: event.target.value as StatementDecision["action"],
-                            })
-                          }
-                        >
-                          <option value="">— выбери —</option>
-                          <option value="revise">Пересмотреть локальную запись</option>
-                        </Select>
-                      ) : row.candidates.length === 0 ? (
-                        <span>Создать отдельную запись после выбора строки</span>
-                      ) : (
-                        <div className="stack-8">
+                    <Td className="statement-import__prepare-table__class">
+                      <Badge tone={classTone(row)}>{classLabel(row)}</Badge>
+                    </Td>
+                    <Td className="statement-import__prepare-table__decision">
+                      <div className="statement-import__decision">
+                        {duplicate ? (
+                          <span className="muted statement-import__decision-label">
+                            Без изменений
+                          </span>
+                        ) : correction ? (
                           <Select
-                            aria-label={`Решение кандидата ${index + 1}`}
+                            aria-label={`Решение correction ${index + 1}`}
                             value={decision.action}
                             disabled={!selected[key]}
                             onChange={(event) =>
                               updateDecision(key, {
                                 action: event.target.value as StatementDecision["action"],
-                                candidateId: "",
                               })
                             }
                           >
                             <option value="">— выбери —</option>
-                            <option value="create_separate">Создать отдельно</option>
-                            <option value="link_existing">Связать существующую</option>
+                            <option value="revise">Пересмотреть локальную запись</option>
                           </Select>
-                          {decision.action === "link_existing" ? (
+                        ) : row.candidates.length === 0 ? (
+                          <span className="statement-import__decision-label">Создать</span>
+                        ) : (
+                          <div className="stack-8">
                             <Select
-                              aria-label={`Кандидат для ссылки ${index + 1}`}
-                              value={decision.candidateId}
+                              aria-label={`Решение кандидата ${index + 1}`}
+                              value={decision.action}
                               disabled={!selected[key]}
                               onChange={(event) =>
-                                updateDecision(key, { candidateId: event.target.value })
+                                updateDecision(key, {
+                                  action: event.target.value as StatementDecision["action"],
+                                  candidateId: "",
+                                })
                               }
                             >
-                              <option value="">— выбери существующую запись —</option>
-                              {row.candidates.map((candidate) => (
-                                <option
-                                  key={candidate.investment_cash_flow_id}
-                                  value={candidate.investment_cash_flow_id}
-                                >
-                                  {candidateLabel(candidate, accounts, localInstruments)}
-                                </option>
-                              ))}
+                              <option value="">— выбери —</option>
+                              <option value="create_separate">Создать отдельно</option>
+                              <option value="link_existing">Связать существующую</option>
                             </Select>
-                          ) : null}
-                        </div>
-                      )}
+                            {decision.action === "link_existing" ? (
+                              <Select
+                                aria-label={`Кандидат для ссылки ${index + 1}`}
+                                value={decision.candidateId}
+                                disabled={!selected[key]}
+                                onChange={(event) =>
+                                  updateDecision(key, { candidateId: event.target.value })
+                                }
+                              >
+                                <option value="">— выбери существующую запись —</option>
+                                {row.candidates.map((candidate) => (
+                                  <option
+                                    key={candidate.investment_cash_flow_id}
+                                    value={candidate.investment_cash_flow_id}
+                                  >
+                                    {candidateLabel(candidate, accounts, localInstruments)}
+                                  </option>
+                                ))}
+                              </Select>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
                     </Td>
                   </tr>
                 );
