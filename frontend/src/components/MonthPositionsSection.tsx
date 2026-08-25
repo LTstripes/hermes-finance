@@ -27,6 +27,7 @@ import {
   ConfirmDialog,
   EmptyState,
   Field,
+  HelpTip,
   Input,
   LoadingState,
   OverflowMenu,
@@ -514,7 +515,7 @@ export function MonthPositionsSection({
             title="Пусто"
           />
         ) : (
-          <Table className="month-positions-table">
+          <Table className={`month-positions-table${editingId != null ? " is-editing" : ""}`}>
             <thead>
               <tr>
                 <Th>Счёт</Th>
@@ -524,7 +525,6 @@ export function MonthPositionsSection({
                 <Th numeric>Цена</Th>
                 <Th numeric>Рыночная стоимость</Th>
                 <Th numeric>Результат</Th>
-                <Th className="position-details">Детали оценки</Th>
                 <Th className="month-positions-table__actions">Действия</Th>
               </tr>
             </thead>
@@ -570,29 +570,16 @@ export function MonthPositionsSection({
                     </Td>
                     <Td numeric>
                       {editing ? (
-                        <Input
-                          className="input--money"
-                          value={editDraft.market_price}
-                          onChange={(e) =>
-                            setEditDraft({ ...editDraft, market_price: e.target.value })
-                          }
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.market_price_per_unit))
-                      )}
-                    </Td>
-                    <Td numeric>
-                      <span className="muted">{formatMoney(moneyAmount(row.market_value))}</span>
-                    </Td>
-                    <Td numeric>
-                      <span className="muted">
-                        {formatMoney(moneyAmount(row.unrealized_result))}
-                      </span>
-                    </Td>
-                    <Td className="position-details">
-                      {editing ? (
                         <div className="stack-8">
                           <Input
+                            className="input--money"
+                            value={editDraft.market_price}
+                            onChange={(e) =>
+                              setEditDraft({ ...editDraft, market_price: e.target.value })
+                            }
+                          />
+                          <Input
+                            aria-label="Дата оценки"
                             type="date"
                             value={editDraft.price_date}
                             onChange={(e) =>
@@ -600,6 +587,7 @@ export function MonthPositionsSection({
                             }
                           />
                           <Select
+                            aria-label="Источник оценки"
                             value={editDraft.price_source}
                             onChange={(e) =>
                               setEditDraft({ ...editDraft, price_source: e.target.value })
@@ -610,6 +598,7 @@ export function MonthPositionsSection({
                             <option value="alfa_pdf">Выписка Альфа-Банка</option>
                           </Select>
                           <Input
+                            aria-label="НКД"
                             className="input--money"
                             placeholder="НКД"
                             value={editDraft.accrued_interest}
@@ -622,20 +611,27 @@ export function MonthPositionsSection({
                           />
                         </div>
                       ) : (
-                        <>
-                          {row.price_date !== defaultPriceDate ? (
-                            <div>Оценка на {formatDate(row.price_date)}</div>
-                          ) : null}
-                          <div className="muted tiny">
-                            Источник: {labelOf(PRICE_SOURCE_LABELS, row.price_source)}
-                          </div>
-                          {row.accrued_interest ? (
-                            <div className="muted tiny">
-                              НКД {formatMoney(moneyAmount(row.accrued_interest))}
-                            </div>
-                          ) : null}
-                        </>
+                        <span className="position-price">
+                          <span>{formatMoney(moneyAmount(row.market_price_per_unit))}</span>
+                          <HelpTip
+                            label={`Детали оценки для ${instrument?.name ?? `#${row.instrument_id}`}`}
+                          >
+                            <div>Источник: {labelOf(PRICE_SOURCE_LABELS, row.price_source)}</div>
+                            <div>Дата оценки: {formatDate(row.price_date)}</div>
+                            {row.accrued_interest ? (
+                              <div>НКД {formatMoney(moneyAmount(row.accrued_interest))}</div>
+                            ) : null}
+                          </HelpTip>
+                        </span>
                       )}
+                    </Td>
+                    <Td numeric>
+                      <span className="muted">{formatMoney(moneyAmount(row.market_value))}</span>
+                    </Td>
+                    <Td numeric>
+                      <span className="muted">
+                        {formatMoney(moneyAmount(row.unrealized_result))}
+                      </span>
                     </Td>
                     <Td className="month-positions-table__actions">
                       <div className="row-actions">

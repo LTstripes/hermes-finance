@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
-import { createDebt, deleteDebt, listDebts } from "../api/debts";
-import { createProperty, deleteProperty, listProperties } from "../api/properties";
+import { createDebt, deleteDebt, listDebts, updateDebt } from "../api/debts";
+import { createProperty, deleteProperty, listProperties, updateProperty } from "../api/properties";
 import { getMonthSummary } from "../api/summary";
 import type { DashboardMortgage, DebtEntry, PropertySnapshot } from "../api/types";
 import {
@@ -29,6 +29,20 @@ import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/m
 
 type Props = { monthId: number; readOnly: boolean; onDirtyChange?: (dirty: boolean) => void };
 
+type DebtDraft = {
+  name: string;
+  debt_type: string;
+  current_balance: string;
+  include_in_liquid_capital: boolean;
+};
+
+type PropertyDraft = {
+  name: string;
+  estimated_value: string;
+  mortgage_balance: string;
+  monthly_payment: string;
+};
+
 export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Props) {
   const [debts, setDebts] = useState<DebtEntry[]>([]);
   const [properties, setProperties] = useState<PropertySnapshot[]>([]);
@@ -50,8 +64,13 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
   const [propertyDraftTouched, setPropertyDraftTouched] = useState(false);
   const [delDebt, setDelDebt] = useState<DebtEntry | null>(null);
   const [delProp, setDelProp] = useState<PropertySnapshot | null>(null);
+  const [editingDebtId, setEditingDebtId] = useState<number | null>(null);
+  const [editDebt, setEditDebt] = useState<DebtDraft | null>(null);
+  const [editingPropId, setEditingPropId] = useState<number | null>(null);
+  const [editProp, setEditProp] = useState<PropertyDraft | null>(null);
 
-  const localDirty = debtDraftTouched || propertyDraftTouched;
+  const localDirty =
+    debtDraftTouched || propertyDraftTouched || editingDebtId !== null || editingPropId !== null;
 
   useEffect(() => {
     onDirtyChange?.(localDirty);
@@ -135,6 +154,63 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
     }
   }
 
+  async function handleSaveDebtEdit() {
+    if (editingDebtId == null || !editDebt) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!editDebt.name.trim() || !normalizeMoneyInput(editDebt.current_balance)) {
+        throw new Error("Имя и баланс долга обязательны");
+      }
+      await updateDebt(editingDebtId, {
+        name: editDebt.name.trim(),
+        debt_type: editDebt.debt_type,
+        current_balance: rub(editDebt.current_balance),
+        include_in_liquid_capital: editDebt.include_in_liquid_capital,
+      });
+      setEditingDebtId(null);
+      setEditDebt(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSavePropertyEdit() {
+    if (editingPropId == null || !editProp) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (
+        !editProp.name.trim() ||
+        !normalizeMoneyInput(editProp.estimated_value) ||
+        !normalizeMoneyInput(editProp.mortgage_balance) ||
+        !normalizeMoneyInput(editProp.monthly_payment)
+      ) {
+        throw new Error("Заполни название, стоимость, остаток ипотеки и платёж");
+      }
+      await updateProperty(editingPropId, {
+        name: editProp.name.trim(),
+        estimated_value: rub(editProp.estimated_value),
+        mortgage_balance: rub(editProp.mortgage_balance),
+        monthly_payment: rub(editProp.monthly_payment),
+      });
+      setEditingPropId(null);
+      setEditProp(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function addProperty(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -195,33 +271,129 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                 <Th>Тип</Th>
                 <Th numeric>Баланс</Th>
                 <Th>Учёт</Th>
-                <Th>Действия</Th>
+                <Th className="month-debts-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
-              {debts.map((row) => (
-                <tr key={row.id}>
-                  <Td>{row.name}</Td>
-                  <Td>{labelOf(DEBT_TYPE_LABELS, row.debt_type)}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.current_balance))}</Td>
-                  <Td>
-                    <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
-                      {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
-                    </Badge>
-                  </Td>
-                  <Td>
-                    <OverflowMenu label={`Действия для долга «${row.name}»`}>
-                      <OverflowMenuItem
-                        danger
-                        disabled={busy || readOnly}
-                        onClick={() => setDelDebt(row)}
-                      >
-                        Удалить
-                      </OverflowMenuItem>
-                    </OverflowMenu>
-                  </Td>
-                </tr>
-              ))}
+              {debts.map((row) => {
+                const editing = editingDebtId === row.id && editDebt;
+                return (
+                  <tr key={row.id}>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Название долга"
+                          onChange={(e) => setEditDebt({ ...editDebt, name: e.target.value })}
+                          value={editDebt.name}
+                        />
+                      ) : (
+                        row.name
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Select
+                          aria-label="Тип долга"
+                          onChange={(e) => setEditDebt({ ...editDebt, debt_type: e.target.value })}
+                          value={editDebt.debt_type}
+                        >
+                          <option value="credit_card">Кредитная карта</option>
+                          <option value="other">Прочее</option>
+                        </Select>
+                      ) : (
+                        labelOf(DEBT_TYPE_LABELS, row.debt_type)
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Текущий баланс долга"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditDebt({ ...editDebt, current_balance: e.target.value })
+                          }
+                          value={editDebt.current_balance}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.current_balance))
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <label className="check-row">
+                          <input
+                            checked={editDebt.include_in_liquid_capital}
+                            onChange={(e) =>
+                              setEditDebt({
+                                ...editDebt,
+                                include_in_liquid_capital: e.target.checked,
+                              })
+                            }
+                            type="checkbox"
+                          />
+                          В капитале
+                        </label>
+                      ) : (
+                        <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
+                          {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
+                        </Badge>
+                      )}
+                    </Td>
+                    <Td className="month-debts-table__actions">
+                      <div className="row-actions">
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleSaveDebtEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingDebtId(null);
+                                setEditDebt(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <OverflowMenu label={`Действия для долга «${row.name}»`}>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly}
+                              onClick={() => {
+                                setEditingDebtId(row.id);
+                                setEditDebt({
+                                  name: row.name,
+                                  debt_type: row.debt_type,
+                                  current_balance: moneyAmount(row.current_balance),
+                                  include_in_liquid_capital: row.include_in_liquid_capital,
+                                });
+                              }}
+                            >
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setDelDebt(row)}
+                            >
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}
@@ -299,29 +471,122 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                 <Th numeric>Стоимость</Th>
                 <Th numeric>Ипотека</Th>
                 <Th numeric>Платёж / мес</Th>
-                <Th>Действия</Th>
+                <Th className="month-property-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
-              {properties.map((row) => (
-                <tr key={row.id}>
-                  <Td>{row.name}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.estimated_value))}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.mortgage_balance))}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.monthly_payment))}</Td>
-                  <Td>
-                    <OverflowMenu label={`Действия для объекта «${row.name}»`}>
-                      <OverflowMenuItem
-                        danger
-                        disabled={busy || readOnly}
-                        onClick={() => setDelProp(row)}
-                      >
-                        Удалить
-                      </OverflowMenuItem>
-                    </OverflowMenu>
-                  </Td>
-                </tr>
-              ))}
+              {properties.map((row) => {
+                const editing = editingPropId === row.id && editProp;
+                return (
+                  <tr key={row.id}>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Название объекта"
+                          onChange={(e) => setEditProp({ ...editProp, name: e.target.value })}
+                          value={editProp.name}
+                        />
+                      ) : (
+                        row.name
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Стоимость"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditProp({ ...editProp, estimated_value: e.target.value })
+                          }
+                          value={editProp.estimated_value}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.estimated_value))
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Остаток ипотеки"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditProp({ ...editProp, mortgage_balance: e.target.value })
+                          }
+                          value={editProp.mortgage_balance}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.mortgage_balance))
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Ежемесячный платёж"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditProp({ ...editProp, monthly_payment: e.target.value })
+                          }
+                          value={editProp.monthly_payment}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.monthly_payment))
+                      )}
+                    </Td>
+                    <Td className="month-property-table__actions">
+                      <div className="row-actions">
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleSavePropertyEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingPropId(null);
+                                setEditProp(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <OverflowMenu label={`Действия для объекта «${row.name}»`}>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly}
+                              onClick={() => {
+                                setEditingPropId(row.id);
+                                setEditProp({
+                                  name: row.name,
+                                  estimated_value: moneyAmount(row.estimated_value),
+                                  mortgage_balance: moneyAmount(row.mortgage_balance),
+                                  monthly_payment: moneyAmount(row.monthly_payment),
+                                });
+                              }}
+                            >
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setDelProp(row)}
+                            >
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}

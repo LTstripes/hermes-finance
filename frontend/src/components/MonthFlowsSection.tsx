@@ -7,6 +7,7 @@ import {
   createInvestmentFlow,
   deleteInvestmentFlow,
   listInvestmentFlows,
+  updateInvestmentFlow,
 } from "../api/investmentFlows";
 import { listInstruments } from "../api/instruments";
 import { listPayoutCalendar, type PayoutCalendarMonth } from "../api/payouts";
@@ -19,6 +20,8 @@ import {
   Field,
   Input,
   LoadingState,
+  OverflowMenu,
+  OverflowMenuItem,
   Panel,
   Select,
   Table,
@@ -27,8 +30,9 @@ import {
 } from "./ui";
 import { PayoutPaymentsCalendar } from "./PayoutPaymentsCalendar";
 import { formatDate, formatMoney } from "../lib/format";
-import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
+import { FLOW_TYPE_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import {
+  isManuallyEditableInvestmentFlow,
   isPassiveExpectedFlowType,
   isPassiveInvestmentFlowType,
   isRedemptionFlowType,
@@ -119,8 +123,10 @@ export function MonthFlowsSection({
   const [expectedDraftTouched, setExpectedDraftTouched] = useState(false);
   const [pendingDeleteActual, setPendingDeleteActual] = useState<InvestmentFlow | null>(null);
   const [pendingDeleteExpected, setPendingDeleteExpected] = useState<ExpectedFlow | null>(null);
+  const [editingActualId, setEditingActualId] = useState<number | null>(null);
+  const [editActual, setEditActual] = useState<ActualDraft | null>(null);
 
-  const localDirty = actualDraftTouched || expectedDraftTouched;
+  const localDirty = actualDraftTouched || expectedDraftTouched || editingActualId !== null;
 
   useEffect(() => {
     onDirtyChange?.(localDirty);
@@ -319,6 +325,58 @@ export function MonthFlowsSection({
     }
   }
 
+  function startActualEdit(row: InvestmentFlow) {
+    if (!isManuallyEditableInvestmentFlow(row.source)) {
+      return;
+    }
+    setEditingActualId(row.id);
+    setEditActual({
+      account_id: String(row.account_id),
+      instrument_id: row.instrument_id == null ? "" : String(row.instrument_id),
+      flow_type: row.flow_type,
+      event_date: row.event_date,
+      gross: moneyAmount(row.gross_amount),
+      tax: moneyAmount(row.tax_amount),
+      commission: moneyAmount(row.commission_amount),
+      net: moneyAmount(row.net_amount),
+      source: row.source,
+    });
+  }
+
+  async function handleSaveActualEdit() {
+    if (editingActualId == null || !editActual) {
+      return;
+    }
+    const current = actual.find((row) => row.id === editingActualId);
+    if (!current || !isManuallyEditableInvestmentFlow(current.source)) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!normalizeMoneyInput(editActual.gross) || !normalizeMoneyInput(editActual.net)) {
+        throw new Error("Укажи gross и net");
+      }
+      const instrumentId = editActual.instrument_id ? Number(editActual.instrument_id) : null;
+      await updateInvestmentFlow(editingActualId, {
+        flow_type: editActual.flow_type,
+        event_date: editActual.event_date,
+        gross_amount: rub(editActual.gross),
+        tax_amount: rub(editActual.tax.trim() === "" ? "0" : editActual.tax),
+        commission_amount: rub(editActual.commission.trim() === "" ? "0" : editActual.commission),
+        net_amount: rub(editActual.net),
+        ...(instrumentId && instrumentId > 0 ? { instrument_id: instrumentId } : {}),
+      });
+      setEditingActualId(null);
+      setEditActual(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirmDeleteActual() {
     if (!pendingDeleteActual) return;
     setBusy(true);
@@ -380,7 +438,7 @@ export function MonthFlowsSection({
             title="Пусто"
           />
         ) : (
-          <Table>
+          <Table className="month-flows-table">
             <thead>
               <tr>
                 <Th>Дата</Th>
@@ -390,44 +448,187 @@ export function MonthFlowsSection({
                 <Th numeric>Налог</Th>
                 <Th numeric>Комиссия</Th>
                 <Th numeric>Нетто</Th>
-                <Th>Действия</Th>
+                <Th className="month-flows-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
               {sortedActual.map((row) => {
+                const editing = editingActualId === row.id && editActual;
                 const redemption = isRedemptionFlowType(row.flow_type);
                 const passive = isPassiveInvestmentFlowType(row.flow_type);
+                const manual = isManuallyEditableInvestmentFlow(row.source);
                 return (
                   <tr
                     className={redemption ? "row--muted" : passive ? "row--income" : undefined}
                     key={row.id}
                   >
-                    <Td>{formatDate(row.event_date)}</Td>
                     <Td>
-                      <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
-                        {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
-                      </span>
-                      {redemption ? <div className="muted tiny">не доход (погашение)</div> : null}
-                      {passive ? <div className="muted tiny">пассивный доход</div> : null}
+                      {editing ? (
+                        <Input
+                          aria-label="Дата события"
+                          onChange={(e) =>
+                            setEditActual({ ...editActual, event_date: e.target.value })
+                          }
+                          type="date"
+                          value={editActual.event_date}
+                        />
+                      ) : (
+                        formatDate(row.event_date)
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Select
+                          aria-label="Тип потока"
+                          onChange={(e) =>
+                            setEditActual({ ...editActual, flow_type: e.target.value })
+                          }
+                          value={editActual.flow_type}
+                        >
+                          <option value="coupon">Купон</option>
+                          <option value="dividend">Дивиденды</option>
+                          <option value="interest">Проценты</option>
+                          <option value="redemption">Погашение</option>
+                          <option value="commission">Комиссия</option>
+                          <option value="tax">Налог</option>
+                          <option value="other">Прочее</option>
+                        </Select>
+                      ) : (
+                        <>
+                          <span
+                            className={redemption ? "badge badge--closed" : "badge badge--draft"}
+                          >
+                            {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
+                          </span>
+                          {redemption ? (
+                            <div className="muted tiny">не доход (погашение)</div>
+                          ) : null}
+                          {passive ? <div className="muted tiny">пассивный доход</div> : null}
+                          {!manual ? (
+                            <div className="muted tiny">
+                              {labelOf(SOURCE_LABELS, row.source)} · не редактируется
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                     </Td>
                     <Td>
                       <div>{accountName(row.account_id)}</div>
-                      <div className="muted tiny">{instrumentName(row.instrument_id)}</div>
+                      {editing ? (
+                        <Select
+                          aria-label="Инструмент выплаты"
+                          onChange={(e) =>
+                            setEditActual({ ...editActual, instrument_id: e.target.value })
+                          }
+                          value={editActual.instrument_id}
+                        >
+                          <option value="">—</option>
+                          {instruments.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                              {item.ticker ? ` (${item.ticker})` : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <div className="muted tiny">{instrumentName(row.instrument_id)}</div>
+                      )}
                     </Td>
-                    <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
-                    <Td numeric>{formatMoney(moneyAmount(row.tax_amount))}</Td>
-                    <Td numeric>{formatMoney(moneyAmount(row.commission_amount))}</Td>
-                    <Td numeric>{formatMoney(moneyAmount(row.net_amount))}</Td>
-                    <Td>
-                      <Button
-                        disabled={busy || readOnly}
-                        onClick={() => setPendingDeleteActual(row)}
-                        size="sm"
-                        type="button"
-                        variant="danger"
-                      >
-                        Удал.
-                      </Button>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Брутто"
+                          className="input--money"
+                          onChange={(e) => setEditActual({ ...editActual, gross: e.target.value })}
+                          value={editActual.gross}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.gross_amount))
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Налог"
+                          className="input--money"
+                          onChange={(e) => setEditActual({ ...editActual, tax: e.target.value })}
+                          value={editActual.tax}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.tax_amount))
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Комиссия"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditActual({ ...editActual, commission: e.target.value })
+                          }
+                          value={editActual.commission}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.commission_amount))
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Нетто"
+                          className="input--money"
+                          onChange={(e) => setEditActual({ ...editActual, net: e.target.value })}
+                          value={editActual.net}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.net_amount))
+                      )}
+                    </Td>
+                    <Td className="month-flows-table__actions">
+                      <div className="row-actions">
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleSaveActualEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingActualId(null);
+                                setEditActual(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <OverflowMenu
+                            label={`Действия для выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» от ${row.event_date}`}
+                          >
+                            <OverflowMenuItem
+                              disabled={busy || readOnly || !manual}
+                              onClick={() => startActualEdit(row)}
+                            >
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setPendingDeleteActual(row)}
+                            >
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
+                        )}
+                      </div>
                     </Td>
                   </tr>
                 );
@@ -599,7 +800,7 @@ export function MonthFlowsSection({
             title="Пусто"
           />
         ) : (
-          <Table>
+          <Table className="month-flows-table">
             <thead>
               <tr>
                 <Th>Дата</Th>
@@ -609,7 +810,7 @@ export function MonthFlowsSection({
                 <Th numeric>Прогноз налога</Th>
                 <Th numeric>Прогноз нетто</Th>
                 <Th>Статус</Th>
-                <Th>Действия</Th>
+                <Th className="month-flows-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
@@ -639,16 +840,18 @@ export function MonthFlowsSection({
                       </div>
                       <div className="muted tiny">{row.forecast_version}</div>
                     </Td>
-                    <Td>
-                      <Button
-                        disabled={busy || readOnly}
-                        onClick={() => setPendingDeleteExpected(row)}
-                        size="sm"
-                        type="button"
-                        variant="danger"
+                    <Td className="month-flows-table__actions">
+                      <OverflowMenu
+                        label={`Действия для ожидаемой выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» на ${row.expected_date}`}
                       >
-                        Удал.
-                      </Button>
+                        <OverflowMenuItem
+                          danger
+                          disabled={busy || readOnly}
+                          onClick={() => setPendingDeleteExpected(row)}
+                        >
+                          Удалить
+                        </OverflowMenuItem>
+                      </OverflowMenu>
                     </Td>
                   </tr>
                 );

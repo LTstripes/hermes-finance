@@ -1004,36 +1004,70 @@ a.btn {
   font-size: 0.86rem;
 }
 
-.month-positions-table {
-  min-width: 980px;
-  /* Default input/select min-content was expanding the table past .content. */
+.month-editor-table,
+.month-positions-table,
+.month-deposits-table,
+.month-cash-table,
+.month-budget-table,
+.month-flows-table,
+.month-debts-table,
+.month-property-table {
+  width: 100%;
   table-layout: fixed;
 }
 
-.month-positions-table td {
+.month-positions-table td,
+.month-deposits-table td,
+.month-budget-table td,
+.month-flows-table td {
   overflow-wrap: anywhere;
 }
 
-.month-positions-table .row-actions {
-  flex-wrap: wrap;
+.month-editor-table .row-actions,
+.month-positions-table .row-actions,
+.month-deposits-table .row-actions {
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
-.month-positions-table__actions {
-  width: 148px;
+.month-editor-table__actions,
+.month-positions-table__actions,
+.month-deposits-table__actions,
+.month-cash-table__actions,
+.month-budget-table__actions,
+.month-flows-table__actions,
+.month-debts-table__actions,
+.month-property-table__actions {
+  width: 52px;
+  text-align: right;
+  padding-left: 8px;
 }
 
-.month-debts-table {
-  min-width: 620px;
+.month-editor-table__notes,
+.month-budget-table__notes {
+  min-width: 0;
 }
 
-.month-property-table {
-  min-width: 680px;
+.position-price {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
 }
 
-.position-details {
-  width: 148px;
-  min-width: 126px;
+.position-price .help-tip {
+  flex: 0 0 auto;
+  margin-inline-start: 0;
+}
+
+td.month-positions-table__actions:has(.btn--primary),
+td.month-deposits-table__actions:has(.btn--primary),
+td.month-budget-table__actions:has(.btn--primary),
+td.month-flows-table__actions:has(.btn--primary),
+td.month-debts-table__actions:has(.btn--primary),
+td.month-property-table__actions:has(.btn--primary) {
+  width: 9.5rem;
 }
 
 .table th {
@@ -1066,6 +1100,35 @@ a.btn {
 
 th.num {
   text-align: right;
+}
+
+.month-editor-table th.num,
+.month-editor-table td.num,
+.month-positions-table th.num,
+.month-positions-table td.num,
+.month-deposits-table th.num,
+.month-deposits-table td.num,
+.month-budget-table th.num,
+.month-budget-table td.num,
+.month-flows-table th.num,
+.month-flows-table td.num,
+.month-debts-table th.num,
+.month-debts-table td.num,
+.month-property-table th.num,
+.month-property-table td.num {
+  width: 8.5rem;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+
+.month-positions-table.is-editing th.num,
+.month-positions-table.is-editing td.num,
+.month-deposits-table td.num:has(.input),
+.month-budget-table td.num:has(.input),
+.month-flows-table td.num:has(.input),
+.month-debts-table td.num:has(.input),
+.month-property-table td.num:has(.input) {
+  white-space: normal;
 }
 
 /* ——— Forms ——— */
@@ -1111,7 +1174,19 @@ th.num {
 }
 
 .month-positions-table .input,
-.month-positions-table .select {
+.month-positions-table .select,
+.month-deposits-table .input,
+.month-deposits-table .select,
+.month-budget-table .input,
+.month-budget-table .select,
+.month-flows-table .input,
+.month-flows-table .select,
+.month-debts-table .input,
+.month-debts-table .select,
+.month-property-table .input,
+.month-property-table .select,
+.month-cash-table .input,
+.month-cash-table .select {
   width: 100%;
   min-width: 0;
   max-width: 100%;

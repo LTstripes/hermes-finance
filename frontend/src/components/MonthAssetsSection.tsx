@@ -20,6 +20,8 @@ import {
   Field,
   Input,
   LoadingState,
+  OverflowMenu,
+  OverflowMenuItem,
   Panel,
   Select,
   Table,
@@ -356,7 +358,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
             title="Пусто"
           />
         ) : (
-          <Table>
+          <Table className="month-deposits-table">
             <thead>
               <tr>
                 <Th>Название</Th>
@@ -365,7 +367,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
                 <Th numeric>Ставка %</Th>
                 <Th numeric>Прогноз / мес</Th>
                 <Th numeric>Получено</Th>
-                <Th>Действия</Th>
+                <Th className="month-deposits-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
@@ -445,7 +447,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
                         formatMoney(moneyAmount(row.actual_interest_received))
                       )}
                     </Td>
-                    <Td>
+                    <Td className="month-deposits-table__actions">
                       <div className="row-actions">
                         {editing ? (
                           <>
@@ -471,8 +473,8 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
                             </Button>
                           </>
                         ) : (
-                          <>
-                            <Button
+                          <OverflowMenu label={`Действия для вклада «${row.name}»`}>
+                            <OverflowMenuItem
                               disabled={busy || readOnly}
                               onClick={() => {
                                 setEditingDepositId(row.id);
@@ -485,21 +487,17 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
                                   actual_interest: moneyAmount(row.actual_interest_received),
                                 });
                               }}
-                              size="sm"
-                              type="button"
                             >
-                              Изм.
-                            </Button>
-                            <Button
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
                               disabled={busy || readOnly}
                               onClick={() => setPendingDeleteDeposit(row)}
-                              size="sm"
-                              type="button"
-                              variant="danger"
                             >
-                              Удал.
-                            </Button>
-                          </>
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
                         )}
                       </div>
                     </Td>
@@ -632,13 +630,13 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
         {cashRows.length === 0 ? (
           <EmptyState description="Наличных позиций нет." inline title="Пусто" />
         ) : (
-          <Table>
+          <Table className="month-cash-table">
             <thead>
               <tr>
                 <Th>Название</Th>
                 <Th numeric>Сумма</Th>
                 <Th>В капитале</Th>
-                <Th>Действия</Th>
+                <Th className="month-cash-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
@@ -656,16 +654,16 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
                       {row.include_in_capital ? "да" : "нет"}
                     </Button>
                   </Td>
-                  <Td>
-                    <Button
-                      disabled={busy || readOnly}
-                      onClick={() => setPendingDeleteCash(row)}
-                      size="sm"
-                      type="button"
-                      variant="danger"
-                    >
-                      Удалить
-                    </Button>
+                  <Td className="month-cash-table__actions">
+                    <OverflowMenu label={`Действия для денежной позиции «${row.name}»`}>
+                      <OverflowMenuItem
+                        danger
+                        disabled={busy || readOnly}
+                        onClick={() => setPendingDeleteCash(row)}
+                      >
+                        Удалить
+                      </OverflowMenuItem>
+                    </OverflowMenu>
                   </Td>
                 </tr>
               ))}

@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { InvestmentFlow, InvestmentFlowCreate } from "./types";
+import type { InvestmentFlow, InvestmentFlowCreate, InvestmentFlowUpdate } from "./types";
 
 export function listInvestmentFlows(
   monthId: number,
@@ -22,6 +22,18 @@ export function createInvestmentFlow(
 ): Promise<InvestmentFlow> {
   return apiRequest<InvestmentFlow>("/api/investment-flows", {
     method: "POST",
+    body: payload,
+    signal,
+  });
+}
+
+export function updateInvestmentFlow(
+  flowId: number,
+  payload: InvestmentFlowUpdate,
+  signal?: AbortSignal,
+): Promise<InvestmentFlow> {
+  return apiRequest<InvestmentFlow>(`/api/investment-flows/${flowId}`, {
+    method: "PATCH",
     body: payload,
     signal,
   });
