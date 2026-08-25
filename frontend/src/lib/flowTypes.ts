@@ -13,3 +13,8 @@ export function isRedemptionFlowType(flowType: string): boolean {
 export function isPassiveExpectedFlowType(flowType: string): boolean {
   return flowType !== "redemption";
 }
+
+/** Owner-created rows only. Imported/provider/statement provenance stays read-only. */
+export function isManuallyEditableInvestmentFlow(source: string): boolean {
+  return source === "manual";
+}

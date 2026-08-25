@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { ExpenseEntry } from "./types";
+import type { ExpenseEntry, ExpenseUpdate } from "./types";
 
 export function listExpenses(monthId: number, signal?: AbortSignal): Promise<ExpenseEntry[]> {
   return apiRequest<ExpenseEntry[]>(`/api/expenses?month_id=${monthId}`, {
@@ -20,6 +20,18 @@ export function createExpense(
   signal?: AbortSignal,
 ): Promise<ExpenseEntry> {
   return apiRequest<ExpenseEntry>("/api/expenses", { method: "POST", body: payload, signal });
+}
+
+export function updateExpense(
+  id: number,
+  payload: ExpenseUpdate,
+  signal?: AbortSignal,
+): Promise<ExpenseEntry> {
+  return apiRequest<ExpenseEntry>(`/api/expenses/${id}`, {
+    method: "PATCH",
+    body: payload,
+    signal,
+  });
 }
 
 export function deleteExpense(id: number, signal?: AbortSignal): Promise<void> {

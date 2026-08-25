@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isManuallyEditableInvestmentFlow,
   isPassiveExpectedFlowType,
   isPassiveInvestmentFlowType,
   isRedemptionFlowType,
@@ -23,5 +24,12 @@ describe("flowTypes classification", () => {
   it("expected: non-redemption counts as passive", () => {
     expect(isPassiveExpectedFlowType("coupon")).toBe(true);
     expect(isPassiveExpectedFlowType("redemption")).toBe(false);
+  });
+
+  it("protects imported and provider investment flows from manual edit", () => {
+    expect(isManuallyEditableInvestmentFlow("manual")).toBe(true);
+    expect(isManuallyEditableInvestmentFlow("alfa_depository_income_report")).toBe(false);
+    expect(isManuallyEditableInvestmentFlow("excel_migration")).toBe(false);
+    expect(isManuallyEditableInvestmentFlow("t_invest")).toBe(false);
   });
 });

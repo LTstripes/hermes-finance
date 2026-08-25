@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { DebtEntry } from "./types";
+import type { DebtEntry, DebtUpdate } from "./types";
 
 export function listDebts(monthId: number, signal?: AbortSignal): Promise<DebtEntry[]> {
   return apiRequest<DebtEntry[]>(`/api/debts?month_id=${monthId}`, { method: "GET", signal });
@@ -17,6 +17,14 @@ export function createDebt(
   signal?: AbortSignal,
 ): Promise<DebtEntry> {
   return apiRequest<DebtEntry>("/api/debts", { method: "POST", body: payload, signal });
+}
+
+export function updateDebt(
+  id: number,
+  payload: DebtUpdate,
+  signal?: AbortSignal,
+): Promise<DebtEntry> {
+  return apiRequest<DebtEntry>(`/api/debts/${id}`, { method: "PATCH", body: payload, signal });
 }
 
 export function deleteDebt(id: number, signal?: AbortSignal): Promise<void> {

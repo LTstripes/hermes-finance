@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { formatApiError } from "../api/client";
-import { createExpense, deleteExpense, listExpenses } from "../api/expenses";
-import { createSaving, deleteSaving, listSavings } from "../api/savings";
+import { createExpense, deleteExpense, listExpenses, updateExpense } from "../api/expenses";
+import { createSaving, deleteSaving, listSavings, updateSaving } from "../api/savings";
 import type { ExpenseEntry, SavingAllocation } from "../api/types";
 import {
   Badge,
@@ -13,6 +13,8 @@ import {
   Field,
   Input,
   LoadingState,
+  OverflowMenu,
+  OverflowMenuItem,
   Panel,
   Select,
   Table,
@@ -24,6 +26,19 @@ import { EXPENSE_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
 type Props = { monthId: number; readOnly: boolean; onDirtyChange?: (dirty: boolean) => void };
+
+type ExpenseDraft = {
+  category: string;
+  expense_type: string;
+  amount: string;
+  notes: string;
+};
+
+type SavingDraft = {
+  destination: string;
+  amount: string;
+  notes: string;
+};
 
 export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) {
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
@@ -43,8 +58,16 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
   const [savingDraftTouched, setSavingDraftTouched] = useState(false);
   const [delExpense, setDelExpense] = useState<ExpenseEntry | null>(null);
   const [delSaving, setDelSaving] = useState<SavingAllocation | null>(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
+  const [editExpense, setEditExpense] = useState<ExpenseDraft | null>(null);
+  const [editingSavingId, setEditingSavingId] = useState<number | null>(null);
+  const [editSaving, setEditSaving] = useState<SavingDraft | null>(null);
 
-  const localDirty = expenseDraftTouched || savingDraftTouched;
+  const localDirty =
+    expenseDraftTouched ||
+    savingDraftTouched ||
+    editingExpenseId !== null ||
+    editingSavingId !== null;
 
   useEffect(() => {
     onDirtyChange?.(localDirty);
@@ -124,6 +147,57 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
     }
   }
 
+  async function handleSaveExpenseEdit() {
+    if (editingExpenseId == null || !editExpense) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!editExpense.category.trim() || !normalizeMoneyInput(editExpense.amount)) {
+        throw new Error("Категория и сумма обязательны");
+      }
+      await updateExpense(editingExpenseId, {
+        category: editExpense.category.trim(),
+        amount: rub(editExpense.amount),
+        expense_type: editExpense.expense_type,
+        notes: editExpense.notes.trim() || null,
+      });
+      setEditingExpenseId(null);
+      setEditExpense(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSaveSavingEdit() {
+    if (editingSavingId == null || !editSaving) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!editSaving.destination.trim() || !normalizeMoneyInput(editSaving.amount)) {
+        throw new Error("Назначение и сумма обязательны");
+      }
+      await updateSaving(editingSavingId, {
+        destination: editSaving.destination.trim(),
+        amount: rub(editSaving.amount),
+        notes: editSaving.notes.trim() || null,
+      });
+      setEditingSavingId(null);
+      setEditSaving(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function addSaving(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -169,48 +243,141 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
         {expenses.length === 0 ? (
           <EmptyState description="Расходов пока нет." inline title="Пусто" />
         ) : (
-          <Table>
+          <Table className="month-budget-table">
             <thead>
               <tr>
                 <Th>Категория</Th>
                 <Th>Тип</Th>
                 <Th numeric>Сумма</Th>
-                <Th>Комментарий</Th>
-                <Th>Действия</Th>
+                <Th className="month-budget-table__notes">Комментарий</Th>
+                <Th className="month-budget-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
-              {expenses.map((row) => (
-                <tr key={row.id}>
-                  <Td>{row.category}</Td>
-                  <Td>
-                    <span
-                      className={
-                        row.expense_type === "mandatory"
-                          ? "badge badge--closed"
-                          : "badge badge--draft"
-                      }
-                    >
-                      {labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}
-                    </span>
-                  </Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.amount))}</Td>
-                  <Td>
-                    <span className="muted tiny">{row.notes ?? "—"}</span>
-                  </Td>
-                  <Td>
-                    <Button
-                      disabled={busy || readOnly}
-                      onClick={() => setDelExpense(row)}
-                      size="sm"
-                      type="button"
-                      variant="danger"
-                    >
-                      Удал.
-                    </Button>
-                  </Td>
-                </tr>
-              ))}
+              {expenses.map((row) => {
+                const editing = editingExpenseId === row.id && editExpense;
+                return (
+                  <tr key={row.id}>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Категория расхода"
+                          onChange={(e) =>
+                            setEditExpense({ ...editExpense, category: e.target.value })
+                          }
+                          value={editExpense.category}
+                        />
+                      ) : (
+                        row.category
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Select
+                          aria-label="Тип расхода"
+                          onChange={(e) =>
+                            setEditExpense({ ...editExpense, expense_type: e.target.value })
+                          }
+                          value={editExpense.expense_type}
+                        >
+                          <option value="mandatory">Обязательный</option>
+                          <option value="comfortable">Комфортный</option>
+                          <option value="other">Прочее</option>
+                        </Select>
+                      ) : (
+                        <span
+                          className={
+                            row.expense_type === "mandatory"
+                              ? "badge badge--closed"
+                              : "badge badge--draft"
+                          }
+                        >
+                          {labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}
+                        </span>
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Сумма расхода"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditExpense({ ...editExpense, amount: e.target.value })
+                          }
+                          value={editExpense.amount}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.amount))
+                      )}
+                    </Td>
+                    <Td className="month-budget-table__notes">
+                      {editing ? (
+                        <Input
+                          aria-label="Комментарий расхода"
+                          onChange={(e) =>
+                            setEditExpense({ ...editExpense, notes: e.target.value })
+                          }
+                          value={editExpense.notes}
+                        />
+                      ) : (
+                        <span className="muted tiny">{row.notes ?? "—"}</span>
+                      )}
+                    </Td>
+                    <Td className="month-budget-table__actions">
+                      <div className="row-actions">
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleSaveExpenseEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingExpenseId(null);
+                                setEditExpense(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <OverflowMenu label={`Действия для расхода «${row.category}»`}>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly}
+                              onClick={() => {
+                                setEditingExpenseId(row.id);
+                                setEditExpense({
+                                  category: row.category,
+                                  expense_type: row.expense_type,
+                                  amount: moneyAmount(row.amount),
+                                  notes: row.notes ?? "",
+                                });
+                              }}
+                            >
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setDelExpense(row)}
+                            >
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}
@@ -292,36 +459,110 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
         {savings.length === 0 ? (
           <EmptyState description="Откладываний нет." inline title="Пусто" />
         ) : (
-          <Table>
+          <Table className="month-budget-table">
             <thead>
               <tr>
                 <Th>Куда</Th>
                 <Th numeric>Сумма</Th>
-                <Th>Комментарий</Th>
-                <Th>Действия</Th>
+                <Th className="month-budget-table__notes">Комментарий</Th>
+                <Th className="month-budget-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
-              {savings.map((row) => (
-                <tr key={row.id}>
-                  <Td>{row.destination}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.amount))}</Td>
-                  <Td>
-                    <span className="muted tiny">{row.notes ?? "—"}</span>
-                  </Td>
-                  <Td>
-                    <Button
-                      disabled={busy || readOnly}
-                      onClick={() => setDelSaving(row)}
-                      size="sm"
-                      type="button"
-                      variant="danger"
-                    >
-                      Удал.
-                    </Button>
-                  </Td>
-                </tr>
-              ))}
+              {savings.map((row) => {
+                const editing = editingSavingId === row.id && editSaving;
+                return (
+                  <tr key={row.id}>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Назначение"
+                          onChange={(e) =>
+                            setEditSaving({ ...editSaving, destination: e.target.value })
+                          }
+                          value={editSaving.destination}
+                        />
+                      ) : (
+                        row.destination
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Сумма к откладыванию"
+                          className="input--money"
+                          onChange={(e) => setEditSaving({ ...editSaving, amount: e.target.value })}
+                          value={editSaving.amount}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.amount))
+                      )}
+                    </Td>
+                    <Td className="month-budget-table__notes">
+                      {editing ? (
+                        <Input
+                          aria-label="Комментарий к откладыванию"
+                          onChange={(e) => setEditSaving({ ...editSaving, notes: e.target.value })}
+                          value={editSaving.notes}
+                        />
+                      ) : (
+                        <span className="muted tiny">{row.notes ?? "—"}</span>
+                      )}
+                    </Td>
+                    <Td className="month-budget-table__actions">
+                      <div className="row-actions">
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleSaveSavingEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingSavingId(null);
+                                setEditSaving(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <OverflowMenu label={`Действия для откладывания «${row.destination}»`}>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly}
+                              onClick={() => {
+                                setEditingSavingId(row.id);
+                                setEditSaving({
+                                  destination: row.destination,
+                                  amount: moneyAmount(row.amount),
+                                  notes: row.notes ?? "",
+                                });
+                              }}
+                            >
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setDelSaving(row)}
+                            >
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}

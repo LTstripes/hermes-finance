@@ -542,6 +542,19 @@ export type InvestmentFlowCreate = {
   notes?: string | null;
 };
 
+export type InvestmentFlowUpdate = {
+  flow_type?: string;
+  event_date?: string;
+  gross_amount?: MoneyValue;
+  tax_amount?: MoneyValue;
+  commission_amount?: MoneyValue;
+  net_amount?: MoneyValue;
+  instrument_id?: number | null;
+  currency?: string;
+  source?: string;
+  notes?: string | null;
+};
+
 export type ExpectedFlow = {
   id: number;
   reporting_month_id: number;
@@ -615,12 +628,26 @@ export type ExpenseEntry = {
   notes: string | null;
 };
 
+export type ExpenseUpdate = {
+  category?: string;
+  amount?: MoneyValue;
+  expense_type?: string;
+  is_recurring?: boolean;
+  notes?: string | null;
+};
+
 export type SavingAllocation = {
   id: number;
   reporting_month_id: number;
   destination: string;
   amount: MoneyValue;
   notes: string | null;
+};
+
+export type SavingUpdate = {
+  destination?: string;
+  amount?: MoneyValue;
+  notes?: string | null;
 };
 
 export type DebtEntry = {
@@ -633,6 +660,14 @@ export type DebtEntry = {
   notes: string | null;
 };
 
+export type DebtUpdate = {
+  debt_type?: string;
+  name?: string;
+  current_balance?: MoneyValue;
+  include_in_liquid_capital?: boolean;
+  notes?: string | null;
+};
+
 export type PropertySnapshot = {
   id: number;
   reporting_month_id: number;
@@ -641,6 +676,14 @@ export type PropertySnapshot = {
   mortgage_balance: MoneyValue;
   monthly_payment: MoneyValue;
   notes: string | null;
+};
+
+export type PropertyUpdate = {
+  name?: string;
+  estimated_value?: MoneyValue;
+  mortgage_balance?: MoneyValue;
+  monthly_payment?: MoneyValue;
+  notes?: string | null;
 };
 
 export type MonthlyComment = {

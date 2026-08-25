@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { PropertySnapshot } from "./types";
+import type { PropertySnapshot, PropertyUpdate } from "./types";
 
 export function listProperties(monthId: number, signal?: AbortSignal): Promise<PropertySnapshot[]> {
   return apiRequest<PropertySnapshot[]>(`/api/properties?month_id=${monthId}`, {
@@ -21,6 +21,18 @@ export function createProperty(
 ): Promise<PropertySnapshot> {
   return apiRequest<PropertySnapshot>("/api/properties", {
     method: "POST",
+    body: payload,
+    signal,
+  });
+}
+
+export function updateProperty(
+  id: number,
+  payload: PropertyUpdate,
+  signal?: AbortSignal,
+): Promise<PropertySnapshot> {
+  return apiRequest<PropertySnapshot>(`/api/properties/${id}`, {
+    method: "PATCH",
     body: payload,
     signal,
   });

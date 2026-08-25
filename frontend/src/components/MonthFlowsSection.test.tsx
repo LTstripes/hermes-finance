@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -74,7 +74,38 @@ const mergedCalendar = [
   },
 ];
 
-function setup(calendar: unknown[] | null = []) {
+const manualFlow = {
+  id: 41,
+  reporting_month_id: 7,
+  account_id: 11,
+  instrument_id: 21,
+  flow_type: "coupon",
+  event_date: "2031-01-15",
+  gross_amount: { amount: "1000.00", currency: "RUB" },
+  tax_amount: { amount: "130.00", currency: "RUB" },
+  commission_amount: { amount: "10.00", currency: "RUB" },
+  net_amount: { amount: "860.00", currency: "RUB" },
+  currency: "RUB",
+  source: "manual",
+  notes: null,
+};
+
+const importedFlow = {
+  ...manualFlow,
+  id: 42,
+  event_date: "2031-01-20",
+  source: "alfa_depository_income_report",
+};
+
+function setup({
+  calendar = [] as unknown[] | null,
+  flows = [] as unknown[],
+  readOnly = false,
+}: {
+  calendar?: unknown[] | null;
+  flows?: unknown[];
+  readOnly?: boolean;
+} = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -82,7 +113,7 @@ function setup(calendar: unknown[] | null = []) {
     if (method === "GET" && url === "/api/accounts") return jsonResponse([account]);
     if (method === "GET" && url === "/api/instruments?active=true")
       return jsonResponse([instrument]);
-    if (method === "GET" && url === "/api/investment-flows?month_id=7") return jsonResponse([]);
+    if (method === "GET" && url === "/api/investment-flows?month_id=7") return jsonResponse(flows);
     if (method === "GET" && url === "/api/expected-flows?month_id=7&forecast_version=v1") {
       return jsonResponse([]);
     }
@@ -97,6 +128,9 @@ function setup(calendar: unknown[] | null = []) {
     if (method === "POST" && url === "/api/investment-flows") {
       return jsonResponse({ id: 31 }, 201);
     }
+    if (method === "PATCH" && url === "/api/investment-flows/41") {
+      return jsonResponse({ ...manualFlow, net_amount: { amount: "870.00", currency: "RUB" } });
+    }
 
     return jsonResponse(
       { error: { code: "not_found", message: `no mock for ${method} ${url}`, details: [] } },
@@ -105,7 +139,7 @@ function setup(calendar: unknown[] | null = []) {
   });
 
   vi.stubGlobal("fetch", fetchMock);
-  render(<MonthFlowsSection defaultDate="2031-01-31" monthId={7} readOnly={false} />);
+  render(<MonthFlowsSection defaultDate="2031-01-31" monthId={7} readOnly={readOnly} />);
   return fetchMock;
 }
 
@@ -141,7 +175,7 @@ describe("MonthFlowsSection actual-flow instrument", () => {
   });
 
   it("uses the merged payout calendar and exposes provider provenance", async () => {
-    const fetchMock = setup(mergedCalendar);
+    const fetchMock = setup({ calendar: mergedCalendar });
 
     expect(await screen.findByText("T-Invest")).toBeInTheDocument();
     expect(screen.getByText("возврат капитала, не доход")).toBeInTheDocument();
@@ -159,11 +193,77 @@ describe("MonthFlowsSection actual-flow instrument", () => {
   });
 
   it("keeps manual flow CRUD usable when only the merged calendar read fails", async () => {
-    setup(null);
+    setup({ calendar: null });
 
     expect(await screen.findByText("Фактические потоки")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Добавить выплату" })).toBeInTheDocument();
     expect(screen.getByText(/Календарь временно недоступен/)).toBeInTheDocument();
     expect(screen.getByText(/calendar unavailable/)).toBeInTheDocument();
+  });
+
+  it("opens overflow edit for a manual payout and patches current values", async () => {
+    const fetchMock = setup({ flows: [manualFlow] });
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+
+    expect(within(table).queryByRole("button", { name: "Удал." })).toBeNull();
+    await user.click(
+      within(table).getByRole("button", {
+        name: "Действия для выплаты «Купон» от 2031-01-15",
+      }),
+    );
+    const editItem = screen.getByRole("menuitem", { name: "Изменить" });
+    const deleteItem = screen.getByRole("menuitem", { name: "Удалить" });
+    expect(editItem).toBeEnabled();
+    expect(deleteItem).toHaveClass("overflow-menu__item--danger");
+    await user.click(editItem);
+
+    expect(screen.getByDisplayValue("1000.00")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("860.00")).toBeInTheDocument();
+    const net = screen.getByDisplayValue("860.00");
+    await user.clear(net);
+    await user.type(net, "870.00");
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([input, init]) => String(input) === "/api/investment-flows/41" && init?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch?.[1]?.body))).toMatchObject({
+        flow_type: "coupon",
+        event_date: "2031-01-15",
+        net_amount: { amount: "870.00", currency: "RUB" },
+      });
+      expect(JSON.parse(String(patch?.[1]?.body))).not.toHaveProperty("source");
+    });
+  });
+
+  it("keeps imported statement payouts protected from edit", async () => {
+    setup({ flows: [importedFlow] });
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+
+    expect(table).toHaveTextContent("Выписка Альфа-Банка");
+    expect(table).toHaveTextContent("не редактируется");
+    await user.click(
+      within(table).getByRole("button", {
+        name: "Действия для выплаты «Купон» от 2031-01-20",
+      }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeEnabled();
+  });
+
+  it("disables payout mutations in a closed month", async () => {
+    setup({ flows: [manualFlow], readOnly: true });
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(
+      screen.getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Добавить выплату" })).not.toBeInTheDocument();
   });
 });

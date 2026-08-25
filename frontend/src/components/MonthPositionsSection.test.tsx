@@ -164,17 +164,23 @@ describe("MonthPositionsSection G03 component contract", () => {
     const table = await screen.findByRole("table");
 
     expect(table).not.toHaveTextContent("Оценка на");
-    expect(table).toHaveTextContent("Источник: Вручную");
+    expect(table).not.toHaveTextContent("Источник: Вручную");
+    expect(
+      screen.getByRole("button", { name: "Детали оценки для Synthetic Bond" }),
+    ).toBeInTheDocument();
   });
 
-  it("keeps same-date manual source visible in read-only presentation", async () => {
+  it("keeps same-date manual source available through HelpTip in read-only presentation", async () => {
     setup({}, [{ ...position, price_source: "manual" }], [instrument], true);
     const user = userEvent.setup();
     const table = await screen.findByRole("table");
 
     expect(table).not.toHaveTextContent("Оценка на");
-    expect(table).toHaveTextContent("Источник: Вручную");
+    expect(table).not.toHaveTextContent("Источник: Вручную");
     expect(screen.queryByRole("button", { name: "Изменить" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Детали оценки для Synthetic Bond" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Источник: Вручную");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Дата оценки: 31.01.2031");
     await openPositionMenu(user);
     expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
@@ -208,11 +214,15 @@ describe("MonthPositionsSection G03 component contract", () => {
     });
   });
 
-  it("exposes differing price metadata as secondary detail", async () => {
+  it("exposes differing price metadata through HelpTip", async () => {
     setup({}, [{ ...position, price_date: "2031-02-01", price_source: "moex" }]);
+    const user = userEvent.setup();
     const table = await screen.findByRole("table");
-    expect(table).toHaveTextContent("Оценка на 01.02.2031");
-    expect(table).toHaveTextContent("Мосбиржа");
+    expect(table).not.toHaveTextContent("Оценка на 01.02.2031");
+    expect(table).not.toHaveTextContent("Мосбиржа");
+    await user.click(screen.getByRole("button", { name: "Детали оценки для Synthetic Bond" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Источник: Мосбиржа");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Дата оценки: 01.02.2031");
   });
 
   it("keeps destructive position actions behind a confirmed overflow path", async () => {

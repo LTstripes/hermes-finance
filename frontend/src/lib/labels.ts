@@ -7,6 +7,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   manual: "Вручную",
   excel_migration: "Импорт из Excel",
   alfa_pdf: "Выписка Альфа-Банка",
+  alfa_depository_income_report: "Выписка Альфа-Банка",
 };
 
 export const ACCOUNT_TYPE_LABELS: Record<string, string> = {
