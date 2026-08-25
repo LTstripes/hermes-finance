@@ -37,13 +37,14 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Последняя опубликованная released-версия — **0.5.0**. Это дерево готовит release candidate **0.6.0**; тег `v0.6.0` ещё не создан.
+Это дерево содержит содержимое релиза **0.6.0**. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release. R06 Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
+
+Историческая опубликованная идентичность **0.5.0**:
 
 - released artifact: `v0.5.0` @ `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`;
-- на публикации `main`, `r05` и `v0.5.0` указывали на этот exact SHA;
+- на публикации 0.5.0 `main`, `r05` и `v0.5.0` указывали на этот exact SHA;
 - после публикации канонический development `main` может уходить вперёд post-release docs, maintenance и будущей работой;
 - тег и released SHA остаются неизменяемой идентичностью 0.5.0;
-- GitHub Release `0.5.0` опубликован как Latest;
 - финальный exact-main CI `32140936658` зелёный;
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
@@ -231,9 +232,9 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 `docs/IDEA.md` намеренно сохранён как исходная концепция.
 
-## 15. Активная линия 0.6.0 / R06
+## 15. Линия 0.6.0 / R06
 
-0.6.0 — release candidate на `r06-10-gate-c-grok`. Опубликованный stable остаётся 0.5.0. Канонический `r06` пока не сдвинут с R06-09: `194ec5501211e8940a9328ac9011bb35fb4423d1`. `main` и production runtime не затрагиваются.
+Это дерево содержит содержимое релиза 0.6.0. Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
 
 R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
 
@@ -259,7 +260,7 @@ R06 добавляет два owner-controlled пути Alfa поверх сущ
 - `eeaed4b2ebba5d399f4f712f99ac67a008494d20` — ignore Alfa layout trailing fragments;
 - `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — map anchored Alfa data by column order.
 
-`c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — текущий final code candidate на `r06-10-codex`. Независимый repository read-back подтверждает линейность `fa4125a6… → c4bb8ff…`: `ahead_by=5`, `behind_by=0`, изменения остаются в четырёх parser/schema/synthetic-test файлах. `r06` и `main` остались неизменными.
+`c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — accepted Gate B code. Независимый repository read-back подтверждает линейность `fa4125a6… → c4bb8ff…`: `ahead_by=5`, `behind_by=0`, изменения остаются в четырёх parser/schema/synthetic-test файлах. На том этапе `r06` и `main` ещё не менялись.
 
 По owner/Work UAT-report для exact `c4bb8ff…`:
 
@@ -292,6 +293,6 @@ R06 добавляет два owner-controlled пути Alfa поверх сущ
 - restart stability PASS;
 - no blockers.
 
-### R06-10 Gate C — release candidate preparation
+### R06-10 Gate C — version/docs finalization
 
-Gate C готовит exact 0.6.0 candidate: version metadata, release-facing docs и повторный verification gate. Merge в `r06`/`main`, тег `v0.6.0` и GitHub Release этим шагом не выполняются.
+Gate C синхронизировал version metadata, release-facing docs и повторный verification gate. Принятый worker head `1fc35d173f4c5dbb68cf76c0aaa2a1b20210d421` интегрирован в `r06` через PR #99 (`2222ba016854d52e88eb9a5404c81203655ccd3a`, CI #302). Публикация — отдельный guarded step; exact main/tag/CI identity записывается после release.

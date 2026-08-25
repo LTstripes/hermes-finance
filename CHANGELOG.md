@@ -4,7 +4,7 @@
 
 ## [0.6.0] — 2026-08-25
 
-Release candidate for owner-triggered Alfa PRO current snapshot review/apply and a narrow Alfa depository income-payment PDF import.
+Owner-triggered Alfa PRO current snapshot review/apply and a narrow Alfa depository income-payment PDF import.
 
 ### Added
 
@@ -26,10 +26,6 @@ Release candidate for owner-triggered Alfa PRO current snapshot review/apply and
 - T-Invest quotes and payout calendar remain owner-triggered and read-only;
 - local runtime remains loopback-only (`127.0.0.1:8000`); no auth, cloud, VPS, telemetry, background provider refresh, browser → Alfa WebSocket, or trading/order/signing APIs;
 - this is not generic brokerage or bank transaction import.
-
-### Release status
-
-- This is a release candidate. No tag or GitHub release is created by R06-10 Gate C.
 
 ## [0.5.0] — 2026-08-18
 
