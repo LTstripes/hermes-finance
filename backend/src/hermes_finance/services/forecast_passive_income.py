@@ -38,7 +38,12 @@ from hermes_finance.domain.forecast_passive_income import (
 )
 from hermes_finance.domain.passive_income_average import MonthlyPassiveIncome
 from hermes_finance.domain.reporting import ReportingMonthStatus
-from hermes_finance.persistence import APP_SETTINGS_ID, AppSettings, ReportingMonth
+from hermes_finance.persistence import (
+    APP_SETTINGS_ID,
+    AppSettings,
+    DepositSnapshot,
+    ReportingMonth,
+)
 from hermes_finance.services.passive_income import passive_income_for_month
 from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.reporting_months import get_reporting_month
@@ -60,11 +65,15 @@ def forecast_passive_income(
        calendar owns reconciliation and lifecycle filtering. Redemption rows
        are skipped early to keep the list small; dividend rows are kept so
        the pure calculator's ignore-branch remains defense in depth.
-    3. Load actual net dividends from all closed reporting months ordered
+    3. Load the selected reporting month's persisted deposit snapshot
+       estimates and sum them in integer kopecks.  The pure calculator
+       annualises that monthly sum by 12 and marks it approximate; manual
+       expected interest remains additive through ``expected_flows``.
+    4. Load actual net dividends from all closed reporting months ordered
        by year/month.  For each closed month, call the C02 per-month
        calculator and take ``breakdown.dividends`` (NOT total) to build
        :class:`MonthlyPassiveIncome` entries.
-    4. Delegate to the pure domain calculator.
+    5. Delegate to the pure domain calculator.
     """
     # 1. Resolve reporting month
     get_reporting_month(session, reporting_month_id)
@@ -91,7 +100,19 @@ def forecast_passive_income(
                 )
             )
 
-    # 3. Actual net dividends from closed reporting months
+    # 3. Automatic deposit projection from the selected month's persisted
+    # snapshot values.  This is a read-only analytical query: no snapshots or
+    # expected-flow rows are created/updated by forecast reads.
+    deposit_snapshot_monthly_interest = session.scalars(
+        select(DepositSnapshot.expected_monthly_interest_kopecks).where(
+            DepositSnapshot.reporting_month_id == reporting_month_id
+        )
+    ).all()
+    deposit_snapshot_monthly_interest_kopecks = (
+        sum(deposit_snapshot_monthly_interest) if deposit_snapshot_monthly_interest else None
+    )
+
+    # 4. Actual net dividends from closed reporting months
     closed_months = session.execute(
         select(ReportingMonth.id, ReportingMonth.year, ReportingMonth.month)
         .where(ReportingMonth.status == ReportingMonthStatus.CLOSED.value)
@@ -109,7 +130,7 @@ def forecast_passive_income(
             )
         )
 
-    # 4. Delegate to pure calculator
+    # 5. Delegate to pure calculator
     # Settings are optional for this read path. Do not call
     # ``get_or_create_settings`` here: its first-read seed commits a row and
     # would violate the C04/monthly-summary/dashboard no-writes contract.
@@ -122,5 +143,6 @@ def forecast_passive_income(
             expected_flows=tuple(expected_flows),
             dividend_months=tuple(dividend_months),
             history_start_month=history_start_month,
+            deposit_snapshot_monthly_interest_kopecks=deposit_snapshot_monthly_interest_kopecks,
         )
     )

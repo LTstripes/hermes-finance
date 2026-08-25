@@ -11,10 +11,11 @@ Implements MASTER_SPEC §10.6:
     forecast_monthly_net_passive_income = forecast_12m_net_passive_income / 12
 
 Component sources (C04 checkpoint clarification):
-- **expected_deposit_interest** — sum of expected ``interest`` flows from the
-  12-month calendar window (deposit/savings interest events, same calendar
-  as coupons).  The ``balance × rate`` deposit-interest option from
-  MASTER_SPEC §10.6 is a FUTURE enhancement and is NOT part of this task.
+- **expected_deposit_interest** — manual expected ``interest`` flows from the
+  12-month calendar window plus the selected month's persisted deposit
+  snapshot estimate annualised from its monthly sum.  Snapshot-based
+  annualisation is approximate because maturity and rate changes are not
+  modelled.
 - **expected_coupon_net** — sum of expected ``coupon`` flows (net of tax when
   known, marked approximate when tax is unknown).
 - **expected_dividend_component** — annualised projection from the **actual**
@@ -82,6 +83,10 @@ class ForecastPassiveIncomeInput:
     expected_flows: tuple[ExpectedFlow, ...] = ()
     dividend_months: tuple[MonthlyPassiveIncome, ...] = ()
     history_start_month: tuple[int, int] | None = None
+    # ``None`` means that the selected reporting month has no deposit
+    # snapshots.  A zero value means snapshots exist but their persisted
+    # monthly estimates sum to zero, which is still an approximate source.
+    deposit_snapshot_monthly_interest_kopecks: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +133,9 @@ def calculate_forecast_passive_income(
     relevant Russian warnings.
     """
     # --- Expected flows: sum by type, ignore dividend and redemption ---
+    # Manual expected interest remains additive with the automatic deposit
+    # snapshot projection.  The latter uses the already persisted monthly
+    # estimate and is annualised without re-deriving balance/rate semantics.
     deposit_interest_kop = 0
     coupon_net_kop = 0
     other_kop = 0
@@ -149,6 +157,10 @@ def calculate_forecast_passive_income(
         # DIVIDEND: ignored — dividend component comes from actuals only.
         # REDEMPTION: ignored — principal repayment is never income.
         # Unknown types: ignored (defense in depth).
+
+    if input_data.deposit_snapshot_monthly_interest_kopecks is not None:
+        deposit_interest_kop += input_data.deposit_snapshot_monthly_interest_kopecks * 12
+        is_approximate = True
 
     # --- Dividend component: annualise actual average net dividends ---
     avg_result = calculate_passive_income_average(
@@ -182,6 +194,11 @@ def calculate_forecast_passive_income(
 
     if not input_data.expected_flows:
         warnings.append("Нет ожидаемых выплат в календаре прогноза")
+    if input_data.deposit_snapshot_monthly_interest_kopecks is not None:
+        warnings.append(
+            "Проценты по вкладам оценены по текущему месячному прогнозу × 12; "
+            "срок и изменение ставки не моделируются."
+        )
 
     return ForecastPassiveIncomeResult(
         annual_total=RubleAmount(annual_total_kop),

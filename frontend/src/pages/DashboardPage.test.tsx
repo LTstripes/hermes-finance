@@ -66,6 +66,20 @@ function dashboard(
       mortgage_balance: { amount: "12450000.00", currency: "RUB" },
       mortgage_coverage_pct: "38.7",
     },
+    summary: {
+      forecast: {
+        breakdown: {
+          expected_deposit_interest: { amount: "1200000.00", currency: "RUB" },
+          expected_coupon_net: { amount: "50000.00", currency: "RUB" },
+          expected_dividend_component: { amount: "100000.00", currency: "RUB" },
+          other_expected_capital_income: { amount: "0.00", currency: "RUB" },
+        },
+        is_approximate: true,
+        warnings: [
+          "Проценты по вкладам оценены по текущему месячному прогнозу × 12; срок и изменение ставки не моделируются.",
+        ],
+      },
+    },
     mortgage: {
       mortgage_balance: { amount: "12450000.00", currency: "RUB" },
       coverage_pct: "38.7",
@@ -124,6 +138,13 @@ describe("DashboardPage R03-04 semantics", () => {
     expect(within(overview).getByText("Факт · выбранный месяц")).toBeInTheDocument();
     expect(within(overview).getByText("Прогноз · эквивалент за месяц")).toBeInTheDocument();
     expect(within(overview).getByText("Прогноз / цель")).toBeInTheDocument();
+    expect(within(overview).getByText("Вклады")).toBeInTheDocument();
+    expect(within(overview).getByText("Купоны")).toBeInTheDocument();
+    expect(within(overview).getByText("Дивиденды")).toBeInTheDocument();
+    expect(within(overview).getByText("Прочее")).toBeInTheDocument();
+    expect(within(overview).getByText("Часть прогноза оценочная")).toBeInTheDocument();
+    await user.click(within(overview).getByRole("button", { name: "Как составлен прогноз" }));
+    expect(screen.getByText(/Ручной процент складывается с этой оценкой/)).toBeInTheDocument();
     expect(within(overview).getByText("6 закрытых месяцев из 12")).toBeInTheDocument();
     expect(within(overview).getByText("Покрытие расходов")).toBeInTheDocument();
     expect(within(overview).getByText("Среднее за закрытые месяцы")).toBeInTheDocument();

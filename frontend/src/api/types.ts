@@ -171,6 +171,17 @@ export type DashboardKpis = {
   mortgage_coverage_pct: string | null;
 };
 
+export type DashboardForecast = {
+  breakdown: {
+    expected_deposit_interest: MoneyValue;
+    expected_coupon_net: MoneyValue;
+    expected_dividend_component: MoneyValue;
+    other_expected_capital_income: MoneyValue;
+  };
+  is_approximate: boolean;
+  warnings: string[];
+};
+
 export type DashboardMonthRef = {
   id: number;
   year: number;
@@ -233,6 +244,9 @@ export type InstrumentClassResultPoint = {
 export type DashboardSlice = {
   month?: DashboardMonthRef;
   kpis?: DashboardKpis;
+  summary?: {
+    forecast: DashboardForecast;
+  };
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];
   asset_allocation?: AssetAllocationPoint[];

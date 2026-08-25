@@ -12,6 +12,10 @@ from hermes_finance.domain.passive_income_average import MonthlyPassiveIncome
 
 WARN_NO_DIVIDEND_MONTHS = "Нет закрытых месяцев для оценки дивидендного компонента"
 WARN_NO_EXPECTED_FLOWS = "Нет ожидаемых выплат в календаре прогноза"
+WARN_DEPOSIT_APPROXIMATE = (
+    "Проценты по вкладам оценены по текущему месячному прогнозу × 12; "
+    "срок и изменение ставки не моделируются."
+)
 
 
 def mk_flow(flow_type: str, kopecks: int, approximate: bool = False) -> ExpectedFlow:
@@ -68,6 +72,41 @@ def test_flows_sum_by_type() -> None:
     assert "Дивидендный компонент оценён по" not in result.warnings
     assert WARN_NO_EXPECTED_FLOWS not in result.warnings
     assert WARN_NO_DIVIDEND_MONTHS in result.warnings
+
+
+def test_deposit_snapshot_projection_annualises_persisted_monthly_estimate() -> None:
+    result = calculate_forecast_passive_income(
+        ForecastPassiveIncomeInput(deposit_snapshot_monthly_interest_kopecks=12_345)
+    )
+
+    assert result.breakdown.expected_deposit_interest == RubleAmount(148_140)
+    assert result.annual_total == RubleAmount(148_140)
+    assert result.monthly_total == RubleAmount(12_345)
+    assert result.is_approximate is True
+    assert WARN_DEPOSIT_APPROXIMATE in result.warnings
+
+
+def test_deposit_snapshot_projection_is_additive_with_manual_interest() -> None:
+    result = calculate_forecast_passive_income(
+        ForecastPassiveIncomeInput(
+            expected_flows=(mk_flow("interest", 2_000),),
+            deposit_snapshot_monthly_interest_kopecks=1_000,
+        )
+    )
+
+    assert result.breakdown.expected_deposit_interest == RubleAmount(14_000)
+    assert result.annual_total == RubleAmount(14_000)
+
+
+def test_zero_deposit_snapshot_estimate_is_still_approximate() -> None:
+    result = calculate_forecast_passive_income(
+        ForecastPassiveIncomeInput(deposit_snapshot_monthly_interest_kopecks=0)
+    )
+
+    assert result.breakdown.expected_deposit_interest == RubleAmount(0)
+    assert result.annual_total == RubleAmount(0)
+    assert result.is_approximate is True
+    assert WARN_DEPOSIT_APPROXIMATE in result.warnings
 
 
 # --- dividend expected flows are ignored (actuals only) ---
