@@ -91,7 +91,8 @@ describe("QuotePreviewPanel", () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("shows current, proposed and price date for an OK row", () => {
+  it("shows current, proposed and price date for an OK row", async () => {
+    const user = userEvent.setup();
     renderPanel(
       preview([
         row({
@@ -109,9 +110,15 @@ describe("QuotePreviewPanel", () => {
     expect(table).toHaveTextContent("12.08.2026");
     expect(table).toHaveTextContent("Котировка получена");
     expect(table).toHaveTextContent(/\+15,50/);
+    expect(table).not.toHaveTextContent("Сейчас: Вручную");
+    expect(table).not.toHaveTextContent("01.08.2026");
+    await user.click(screen.getByRole("button", { name: "Текущая оценка для Synthetic Stock" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Источник: Вручную");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Дата оценки: 01.08.2026");
   });
 
-  it("shows a T-Invest identity and backend message without apply controls", () => {
+  it("shows a T-Invest identity and backend message without apply controls", async () => {
+    const user = userEvent.setup();
     renderPanel(
       preview([
         row({
@@ -132,14 +139,26 @@ describe("QuotePreviewPanel", () => {
       ]),
     );
     expect(screen.getByText("T Stock")).toBeInTheDocument();
-    expect(screen.getByText(/T-Invest · 11111111-1111-1111-1111-111111111111/)).toBeInTheDocument();
-    expect(screen.getByText(/read-only токен не настроен/)).toBeInTheDocument();
-    expect(screen.getByText(/Можно ввести цену вручную/)).toBeInTheDocument();
+    expect(screen.getByText("Подходящей котировки нет")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/T-Invest · 11111111-1111-1111-1111-111111111111/),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Идентичность внешнего источника для T Stock" }),
+    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "T-Invest · 11111111-1111-1111-1111-111111111111",
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Подробности статуса для T Stock" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent(/read-only токен не настроен/);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(/Можно ввести цену вручную/);
     expect(screen.queryByText(/t\./i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /примен/i })).not.toBeInTheDocument();
   });
 
-  it("marks stale rows as old and not default-applicable", () => {
+  it("marks stale rows as old and not default-applicable", async () => {
+    const user = userEvent.setup();
     renderPanel(
       preview([
         row({
@@ -160,8 +179,10 @@ describe("QuotePreviewPanel", () => {
     const stale = screen.getByText("Stale Stock").closest("tr");
     expect(stale).toHaveClass("quote-preview-row--stale");
     expect(stale).toHaveTextContent("Котировка старая");
-    expect(stale).toHaveTextContent("Не обычное обновление");
+    expect(stale).toHaveTextContent("Нужно выбрать отдельно");
     expect(stale).toHaveTextContent("01.08.2026");
+    await user.click(screen.getByRole("button", { name: "Подробности статуса для Stale Stock" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Не обычное обновление");
     const staleBox = screen.getByRole("checkbox", {
       name: /Выбрать старую котировку Stale Stock/i,
     });
@@ -268,7 +289,7 @@ describe("QuotePreviewPanel", () => {
     expect(screen.getByText("Kept Stock")).toBeInTheDocument();
   });
 
-  it("keeps a successful T-Invest row selectable when another row failed", () => {
+  it("keeps a successful T-Invest row selectable when another row failed", async () => {
     const onApply = vi.fn();
     renderPanel(
       preview([
@@ -300,7 +321,11 @@ describe("QuotePreviewPanel", () => {
     expect(screen.getByRole("checkbox", { name: "Выбрать Good Stock" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: /Failed Stock/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применить выбранные" })).toBeEnabled();
-    expect(screen.getByText(/Локальное приложение Hermes Finance работает/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Подробности статуса для Failed Stock" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      /Локальное приложение Hermes Finance работает/,
+    );
     expect(screen.queryByText(/timeout/i)).not.toBeInTheDocument();
   });
 

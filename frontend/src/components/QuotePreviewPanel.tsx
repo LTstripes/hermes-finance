@@ -11,7 +11,7 @@ import {
   quoteStatusTone,
 } from "../lib/marketData";
 import { moneyAmount } from "../lib/money";
-import { Badge, Button, EmptyState, LoadingState, Panel, Table, Td, Th } from "./ui";
+import { Badge, Button, EmptyState, HelpTip, LoadingState, Panel, Table, Td, Th } from "./ui";
 
 type Props = {
   preview: QuotePreview | null;
@@ -75,9 +75,13 @@ function PreviewRow({
   const proposed = row.proposed_market_price_per_unit;
   const delta = displayPriceDelta(row.current_market_price_per_unit, proposed);
   const currentAmount = moneyAmount(row.current_market_price_per_unit);
+  const guidance = quoteFailureGuidance(row.failure_reason);
+  const keepManualNote =
+    row.status === "unsupported" || row.status === "unmapped" || row.status === "excluded";
+  const hasStatusDetail = row.status === "stale" || keepManualNote || Boolean(guidance);
   return (
     <tr className={rowClassName(row)} data-preview-status={row.status}>
-      <Td>
+      <Td className="quote-preview-table__select">
         {selectable ? (
           <label className="stack-8">
             <input
@@ -94,44 +98,52 @@ function PreviewRow({
         ) : null}
       </Td>
       <Td>
-        <div className="stack-8">
+        <div className="quote-preview-instrument">
           <strong>{row.instrument_name}</strong>
           <span className="muted tiny">{labelOf(INSTRUMENT_TYPE_LABELS, row.instrument_type)}</span>
           {row.identity ? (
-            <span className="muted tiny">{formatMarketIdentity(row.identity)}</span>
+            <HelpTip label={`Идентичность внешнего источника для ${row.instrument_name}`}>
+              {formatMarketIdentity(row.identity)}
+            </HelpTip>
           ) : null}
         </div>
       </Td>
       <Td numeric>
-        <div className="stack-8">
+        <span className="quote-preview-price">
           <span>{formatMoney(currentAmount)}</span>
-          <span className="muted tiny">
-            Сейчас: {labelOf(PRICE_SOURCE_LABELS, row.current_price_source)} ·{" "}
-            {formatDate(row.current_price_date)}
+          <HelpTip label={`Текущая оценка для ${row.instrument_name}`}>
+            <div>Источник: {labelOf(PRICE_SOURCE_LABELS, row.current_price_source)}</div>
+            <div>Дата оценки: {formatDate(row.current_price_date)}</div>
+          </HelpTip>
+        </span>
+      </Td>
+      <Td numeric>
+        <div className="quote-preview-proposed">
+          <span>{proposed ? formatMoney(moneyAmount(proposed)) : "—"}</span>
+          {delta ? <span className="muted tiny">{delta}</span> : null}
+          <span className="quote-preview-proposed__date">
+            {row.proposed_price_date ? formatDate(row.proposed_price_date) : "—"}
           </span>
         </div>
       </Td>
-      <Td numeric>
-        {proposed ? formatMoney(moneyAmount(proposed)) : "—"}
-        {delta ? <div className="muted tiny">{delta}</div> : null}
-      </Td>
-      <Td>{row.proposed_price_date ? formatDate(row.proposed_price_date) : "—"}</Td>
       <Td>
-        <div className="stack-8">
+        <div className="quote-preview-status">
           <Badge tone={quoteStatusTone(row.status)}>{statusLabel(row.status)}</Badge>
           {row.status === "stale" ? (
-            <span className="quote-preview-stale-note">
-              Не обычное обновление. Дата внешней котировки: {formatDate(row.proposed_price_date)}.
-              Чтобы применить такую цену, её нужно выбрать отдельно.
-            </span>
+            <span className="quote-preview-stale-note">Нужно выбрать отдельно</span>
           ) : null}
-          {row.status === "unsupported" ||
-          row.status === "unmapped" ||
-          row.status === "excluded" ? (
-            <span className="muted tiny">Текущая ручная цена остаётся обычным значением.</span>
-          ) : null}
-          {quoteFailureGuidance(row.failure_reason) ? (
-            <span className="muted tiny">{quoteFailureGuidance(row.failure_reason)}</span>
+          {hasStatusDetail ? (
+            <HelpTip label={`Подробности статуса для ${row.instrument_name}`}>
+              {row.status === "stale" ? (
+                <div>
+                  Не обычное обновление. Дата внешней котировки:{" "}
+                  {formatDate(row.proposed_price_date)}. Чтобы применить такую цену, её нужно
+                  выбрать отдельно.
+                </div>
+              ) : null}
+              {keepManualNote ? <div>Текущая ручная цена остаётся обычным значением.</div> : null}
+              {guidance ? <div>{guidance}</div> : null}
+            </HelpTip>
           ) : null}
         </div>
       </Td>
@@ -240,14 +252,13 @@ export function QuotePreviewPanel({
         />
       ) : null}
       {preview && preview.rows.length > 0 ? (
-        <Table aria-label="Предпросмотр котировок">
+        <Table aria-label="Предпросмотр котировок" className="quote-preview-table">
           <thead>
             <tr>
-              <Th>Выбор</Th>
+              <Th className="quote-preview-table__select">Выбор</Th>
               <Th>Инструмент</Th>
               <Th numeric>Сейчас</Th>
               <Th numeric>Предложение</Th>
-              <Th>Дата внешней котировки</Th>
               <Th>Статус</Th>
             </tr>
           </thead>

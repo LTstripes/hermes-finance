@@ -1,16 +1,21 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { formatApiError } from "../api/client";
+import { updateInstrument } from "../api/instruments";
 import {
   applyStatement,
   inspectStatement,
   prepareStatement,
+  type StatementCandidate,
   type StatementInspect,
   type StatementMapping,
   type StatementPreparation,
   type StatementRow,
 } from "../api/statementImport";
 import type { Account, Instrument } from "../api/types";
+import { formatDate, formatMoney } from "../lib/format";
+import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
+import { fromKopecks } from "../lib/money";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type StatementDecision = {
@@ -73,17 +78,125 @@ function rowKey(row: StatementRow, index: number): string {
   );
 }
 
+function uniqueValues(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function retainMappings(current: Record<string, string>, keys: string[]): Record<string, string> {
+  const allowed = new Set(keys);
+  return Object.fromEntries(
+    Object.entries(current).filter(([key, value]) => allowed.has(key) && value),
+  );
+}
+
+function uniqueInstrumentByIsin(isin: string, instruments: Instrument[]): Instrument | null {
+  const matches = instruments.filter((item) => item.isin === isin);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function moneyDisplay(
+  amount: string | null | undefined,
+  currency: string | null | undefined,
+): string {
+  if (amount == null || amount === "") {
+    return "—";
+  }
+  const symbol = !currency || currency === "RUB" ? "₽" : currency;
+  return formatMoney(amount, { currency: symbol });
+}
+
+function taxDisplay(row: StatementRow): string {
+  if (row.tax_available === false || row.tax_amount == null || row.tax_amount === "") {
+    return "не указан";
+  }
+  return moneyDisplay(row.tax_amount, row.gross_currency ?? row.net_currency);
+}
+
+function eventLabel(kind: string | null | undefined): string {
+  if (!kind) {
+    return "—";
+  }
+  return EVENT_KIND_LABELS[kind] ?? labelOf(FLOW_TYPE_LABELS, kind);
+}
+
+function classLabel(row: StatementRow): string {
+  if (row.duplicate_class === "duplicate") {
+    return "Уже импортировано";
+  }
+  if (row.duplicate_class === "correction") {
+    return "Требует пересмотра";
+  }
+  if (row.status !== "matched") {
+    return ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен";
+  }
+  if (row.candidates.length > 0) {
+    return "Нужно решение";
+  }
+  return "Новая строка";
+}
+
+function lookupName(
+  id: number | null | undefined,
+  items: Array<{ id: number; name: string }>,
+): string {
+  if (id == null) {
+    return "—";
+  }
+  return items.find((item) => item.id === id)?.name ?? `#${id}`;
+}
+
+function candidateLabel(
+  candidate: StatementCandidate,
+  accounts: Account[],
+  instruments: Instrument[],
+): string {
+  const net = moneyDisplay(fromKopecks(BigInt(candidate.net_amount_kopecks)), candidate.currency);
+  return [
+    formatDate(candidate.event_date),
+    eventLabel(candidate.flow_type),
+    lookupName(candidate.instrument_id, instruments),
+    lookupName(candidate.account_id, accounts),
+    net,
+    `#${candidate.investment_cash_flow_id}`,
+  ].join(" · ");
+}
+
+function isinSaveKind(
+  statementIsin: string,
+  instrument: Instrument | undefined,
+): "none" | "save" | "same" | "conflict" {
+  if (!instrument) {
+    return "none";
+  }
+  const existing = instrument.isin?.trim() ?? "";
+  if (!existing) {
+    return "save";
+  }
+  return existing === statementIsin ? "same" : "conflict";
+}
+
+function readyForBulkSelect(row: StatementRow): boolean {
+  return row.status === "matched" && row.duplicate_class == null && row.candidates.length === 0;
+}
+
 type Props = {
   accounts: Account[];
   instruments: Instrument[];
   onApplied?: () => Promise<void> | void;
+  onInstrumentsChange?: (instruments: Instrument[]) => void;
 };
 
-export function StatementImportPanel({ accounts, instruments, onApplied }: Props) {
+export function StatementImportPanel({
+  accounts,
+  instruments,
+  onApplied,
+  onInstrumentsChange,
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
   const [accountMappings, setAccountMappings] = useState<Record<string, string>>({});
   const [instrumentMappings, setInstrumentMappings] = useState<Record<string, string>>({});
+  const [localInstruments, setLocalInstruments] = useState<Instrument[]>(instruments);
   const [preparation, setPreparation] = useState<StatementPreparation | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [decisions, setDecisions] = useState<Record<string, StatementDecision>>({});
@@ -95,25 +208,31 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
     [],
   );
 
+  useEffect(() => {
+    setLocalInstruments(instruments);
+  }, [instruments]);
+
   const accountRefs = useMemo(
-    () => [
-      ...new Set(
-        inspected?.rows
-          .map((row) => row.provider_account_ref)
-          .filter((value): value is string => Boolean(value)) ?? [],
-      ),
-    ],
+    () => uniqueValues(inspected?.rows.map((row) => row.provider_account_ref) ?? []),
     [inspected],
   );
   const isins = useMemo(
-    () => [
-      ...new Set(
-        inspected?.rows.map((row) => row.isin).filter((value): value is string => Boolean(value)) ??
-          [],
-      ),
-    ],
+    () => uniqueValues(inspected?.rows.map((row) => row.isin) ?? []),
     [inspected],
   );
+
+  const mappingSummary = useMemo(() => {
+    let auto = 0;
+    let manualNeeded = 0;
+    for (const isin of isins) {
+      if (instrumentMappings[isin] || uniqueInstrumentByIsin(isin, localInstruments)) {
+        auto += 1;
+      } else {
+        manualNeeded += 1;
+      }
+    }
+    return { auto, manualNeeded, accounts: accountRefs.length, isins: isins.length };
+  }, [accountRefs.length, instrumentMappings, isins, localInstruments]);
 
   function mapping(): StatementMapping {
     return {
@@ -140,11 +259,15 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
   function chooseFile(next: File | null) {
     setFile(next);
     setInspected(null);
-    setAccountMappings({});
-    setInstrumentMappings({});
     clearReview();
     setMessage(null);
     setSuccess(null);
+  }
+
+  function resetMappings() {
+    setAccountMappings({});
+    setInstrumentMappings({});
+    clearReview();
   }
 
   async function inspect() {
@@ -158,7 +281,11 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
     clearReview();
     try {
       const next = await inspectStatement(file);
+      const nextRefs = uniqueValues(next.rows.map((row) => row.provider_account_ref));
+      const nextIsins = uniqueValues(next.rows.map((row) => row.isin));
       setInspected(next);
+      setAccountMappings((current) => retainMappings(current, nextRefs));
+      setInstrumentMappings((current) => retainMappings(current, nextIsins));
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
       setMessage(formatApiError(error));
@@ -190,6 +317,33 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
       const next = await prepareStatement(file, mapping());
       setPreparation(next);
       setMessage(reportMessage(next.status, next.reason));
+    } catch (error) {
+      setMessage(formatApiError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCanonicalIsin(isin: string, instrumentId: number) {
+    const instrument = localInstruments.find((item) => item.id === instrumentId);
+    const kind = isinSaveKind(isin, instrument);
+    if (kind !== "save" || !instrument) {
+      if (kind === "conflict" && instrument) {
+        setMessage(
+          `У инструмента «${instrument.name}» уже указан ISIN ${instrument.isin}. ISIN из отчёта ${isin} не записан.`,
+        );
+      }
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    setSuccess(null);
+    try {
+      const updated = await updateInstrument(instrumentId, { isin });
+      const next = localInstruments.map((item) => (item.id === updated.id ? updated : item));
+      setLocalInstruments(next);
+      onInstrumentsChange?.(next);
+      setSuccess(`ISIN ${isin} сохранён в инструмент «${updated.name}».`);
     } catch (error) {
       setMessage(formatApiError(error));
     } finally {
@@ -229,6 +383,49 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
       ) ?? [];
   const selectedRowsReady =
     selectedRows.length > 0 && selectedRows.every(({ row, index }) => rowReady(row, index));
+
+  const preparedSummary = useMemo(() => {
+    if (!preparation) {
+      return null;
+    }
+    let readyNew = 0;
+    let duplicates = 0;
+    let needsDecision = 0;
+    for (const row of preparation.rows) {
+      if (row.duplicate_class === "duplicate") {
+        duplicates += 1;
+      } else if (
+        row.duplicate_class === "correction" ||
+        row.candidates.length > 0 ||
+        row.status !== "matched"
+      ) {
+        needsDecision += 1;
+      } else {
+        readyNew += 1;
+      }
+    }
+    const selectedCount = preparation.rows.filter(
+      (row, index) => selected[rowKey(row, index)],
+    ).length;
+    return {
+      total: preparation.rows.length,
+      readyNew,
+      duplicates,
+      needsDecision,
+      selectedCount,
+    };
+  }, [preparation, selected]);
+
+  function selectAllReady() {
+    if (!preparation) {
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    preparation.rows.forEach((row, index) => {
+      next[rowKey(row, index)] = readyForBulkSelect(row);
+    });
+    setSelected(next);
+  }
 
   async function apply() {
     if (!file || !preparation || !selectedRowsReady) return;
@@ -325,57 +522,124 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
               {REPORT_STATUS_LABELS[inspected.status] ?? "Статус отчёта неизвестен"}
             </Badge>
             <span className="muted">Найдено строк: {inspected.rows.length}</span>
+            <span className="muted">
+              ISIN: {mappingSummary.auto} совпали, {mappingSummary.manualNeeded} нужно сопоставить
+            </span>
           </div>
           <Panel
             className="statement-import__mapping"
             label="Сопоставление"
             title="Временное сопоставление для этой проверки"
           >
-            {accountRefs.map((ref) => (
-              <Field key={ref} htmlFor={`statement-map-account-${ref}`} label={`Alfa-счёт ${ref}`}>
-                <Select
-                  id={`statement-map-account-${ref}`}
-                  value={accountMappings[ref] ?? ""}
-                  onChange={(event) => {
-                    setAccountMappings((current) => ({ ...current, [ref]: event.target.value }));
-                    clearReview();
-                  }}
-                >
-                  <option value="">— выбери существующий счёт —</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            ))}
-            {isins.map((isin) => (
-              <Field
-                key={isin}
-                htmlFor={`statement-map-instrument-${isin}`}
-                label={`ISIN ${isin} (необязательно при уникальном совпадении)`}
-              >
-                <Select
-                  id={`statement-map-instrument-${isin}`}
-                  value={instrumentMappings[isin] ?? ""}
-                  onChange={(event) => {
-                    setInstrumentMappings((current) => ({
-                      ...current,
-                      [isin]: event.target.value,
-                    }));
-                    clearReview();
-                  }}
-                >
-                  <option value="">— авто только при уникальном ISIN —</option>
-                  {instruments.map((instrument) => (
-                    <option key={instrument.id} value={instrument.id}>
-                      {instrument.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            ))}
+            <div className="statement-import__mapping-toolbar">
+              <Button disabled={busy} onClick={resetMappings} size="sm" type="button">
+                Сбросить сопоставления
+              </Button>
+              <span className="muted tiny">
+                Сопоставления Alfa-счетов живут только в этой сессии и не записываются в базу.
+              </span>
+            </div>
+            <div className="statement-import__mapping-grid">
+              <div className="stack-12">
+                <p className="panel__label section-form-label">Счета Alfa</p>
+                {accountRefs.map((ref) => (
+                  <Field
+                    key={ref}
+                    htmlFor={`statement-map-account-${ref}`}
+                    label={`Alfa-счёт ${ref}`}
+                  >
+                    <Select
+                      id={`statement-map-account-${ref}`}
+                      value={accountMappings[ref] ?? ""}
+                      onChange={(event) => {
+                        setAccountMappings((current) => ({
+                          ...current,
+                          [ref]: event.target.value,
+                        }));
+                        clearReview();
+                      }}
+                    >
+                      <option value="">— выбери существующий счёт —</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ))}
+              </div>
+              <div className="stack-12">
+                <p className="panel__label section-form-label">ISIN</p>
+                {isins.map((isin) => {
+                  const auto = uniqueInstrumentByIsin(isin, localInstruments);
+                  const selectedId = instrumentMappings[isin];
+                  const selectedInstrument = localInstruments.find(
+                    (item) => String(item.id) === selectedId,
+                  );
+                  const kind = isinSaveKind(isin, selectedInstrument);
+                  return (
+                    <div className="statement-import__isin-row" key={isin}>
+                      <div className="statement-import__isin-head">
+                        <code>{isin}</code>
+                        {auto && !selectedId ? (
+                          <Badge tone="ok">совпало автоматически</Badge>
+                        ) : selectedId ? (
+                          <Badge tone="draft">вручную</Badge>
+                        ) : (
+                          <Badge tone="closed">нужно сопоставить</Badge>
+                        )}
+                      </div>
+                      <Field
+                        htmlFor={`statement-map-instrument-${isin}`}
+                        label={`Инструмент для ${isin}`}
+                      >
+                        <Select
+                          id={`statement-map-instrument-${isin}`}
+                          value={instrumentMappings[isin] ?? ""}
+                          onChange={(event) => {
+                            setInstrumentMappings((current) => ({
+                              ...current,
+                              [isin]: event.target.value,
+                            }));
+                            clearReview();
+                          }}
+                        >
+                          <option value="">
+                            {auto ? `авто: ${auto.name}` : "— авто только при уникальном ISIN —"}
+                          </option>
+                          {localInstruments.map((instrument) => (
+                            <option key={instrument.id} value={instrument.id}>
+                              {instrument.name}
+                              {instrument.isin ? ` · ${instrument.isin}` : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      {kind === "save" && selectedInstrument ? (
+                        <Button
+                          disabled={busy}
+                          onClick={() => void saveCanonicalIsin(isin, selectedInstrument.id)}
+                          size="sm"
+                          type="button"
+                        >
+                          Сохранить ISIN в инструмент
+                        </Button>
+                      ) : null}
+                      {kind === "same" ? (
+                        <span className="muted tiny">ISIN уже сохранён в инструменте</span>
+                      ) : null}
+                      {kind === "conflict" && selectedInstrument ? (
+                        <div className="inline-alert inline-alert--warn" role="status">
+                          У инструмента «{selectedInstrument.name}» уже ISIN{" "}
+                          {selectedInstrument.isin}. ISIN из отчёта {isin} не будет записан.
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </Panel>
           <Table className="statement-import__inspect-table">
             <thead>
@@ -393,7 +657,7 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                 >
                   <Td>{row.provider_account_ref ?? "—"}</Td>
                   <Td>{row.isin ?? "—"}</Td>
-                  <Td>{row.event_kind ? (EVENT_KIND_LABELS[row.event_kind] ?? "Другое") : "—"}</Td>
+                  <Td>{eventLabel(row.event_kind)}</Td>
                   <Td>{ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен"}</Td>
                 </tr>
               ))}
@@ -407,13 +671,33 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
             <Badge tone={preparation.status === "applicable" ? "ok" : "closed"}>
               {REPORT_STATUS_LABELS[preparation.status] ?? "Статус отчёта неизвестен"}
             </Badge>
-            <span className="muted">Файл проверен и готов к применению.</span>
+            {preparedSummary ? (
+              <span className="muted">
+                {preparedSummary.total} строк · {preparedSummary.readyNew} новых ·{" "}
+                {preparedSummary.duplicates} дубля · {preparedSummary.needsDecision} требует решения
+                · выбрано {preparedSummary.selectedCount}
+              </span>
+            ) : (
+              <span className="muted">Файл проверен и готов к применению.</span>
+            )}
+            <Button disabled={busy} onClick={selectAllReady} size="sm" type="button">
+              Выбрать все готовые
+            </Button>
+            <Button disabled={busy} onClick={() => setSelected({})} size="sm" type="button">
+              Снять выбор
+            </Button>
           </div>
           <Table className="statement-import__prepare-table">
             <thead>
               <tr>
-                <Th>Выбор</Th>
-                <Th>Статус</Th>
+                <Th className="statement-import__prepare-table__select">Выбор</Th>
+                <Th>Инструмент</Th>
+                <Th>Счёт</Th>
+                <Th>Событие</Th>
+                <Th>Дата</Th>
+                <Th numeric>Брутто</Th>
+                <Th numeric>Налог</Th>
+                <Th numeric>Нетто</Th>
                 <Th>Класс</Th>
                 <Th>Кандидаты / решение</Th>
               </tr>
@@ -425,9 +709,14 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                 const duplicate = row.duplicate_class === "duplicate";
                 const correction = row.duplicate_class === "correction";
                 const selectable = row.status === "matched" && !duplicate;
+                const instrumentName = lookupName(
+                  row.expected_hermes_instrument_id,
+                  localInstruments,
+                );
+                const accountName = lookupName(row.expected_hermes_account_id, accounts);
                 return (
                   <tr key={key}>
-                    <Td>
+                    <Td className="statement-import__prepare-table__select">
                       <input
                         type="checkbox"
                         checked={Boolean(selected[key])}
@@ -438,14 +727,23 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                         aria-label={`Выбрать строку ${index + 1}`}
                       />
                     </Td>
-                    <Td>{ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен"}</Td>
                     <Td>
-                      {duplicate
-                        ? "Уже импортировано"
-                        : correction
-                          ? "Требует пересмотра"
-                          : "Новая строка"}
+                      <div className="statement-import__stack">
+                        <span>{instrumentName}</span>
+                        <span className="muted tiny">{row.isin ?? "—"}</span>
+                      </div>
                     </Td>
+                    <Td>{accountName}</Td>
+                    <Td>{eventLabel(row.event_kind)}</Td>
+                    <Td>{row.event_date ? formatDate(row.event_date) : "—"}</Td>
+                    <Td numeric>
+                      {moneyDisplay(row.gross_amount, row.gross_currency ?? row.net_currency)}
+                    </Td>
+                    <Td numeric>{taxDisplay(row)}</Td>
+                    <Td numeric>
+                      {moneyDisplay(row.net_amount, row.net_currency ?? row.gross_currency)}
+                    </Td>
+                    <Td>{classLabel(row)}</Td>
                     <Td>
                       {duplicate ? (
                         <span className="muted">Без изменений; повторно не отправляется.</span>
@@ -497,7 +795,7 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                                   key={candidate.investment_cash_flow_id}
                                   value={candidate.investment_cash_flow_id}
                                 >
-                                  Запись #{candidate.investment_cash_flow_id}
+                                  {candidateLabel(candidate, accounts, localInstruments)}
                                 </option>
                               ))}
                             </Select>
