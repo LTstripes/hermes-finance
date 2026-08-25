@@ -37,7 +37,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Это дерево содержит содержимое релиза **0.6.2**. Это maintenance поверх опубликованного **0.6.1**: безопасный retract ошибочно применённых Alfa statement payouts и polish layout редактора месяца / statement review. Provider/trading семантика 0.6.0 не меняется. Канонический Alembic head — `0029_statement_event_retract`. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
+Это дерево содержит содержимое release-prep **0.6.3**. Это maintenance поверх **0.6.2**: dashboard information architecture и payout readability, approximate deposit-interest forecast completeness и explicit T-Invest batch refresh / payout-calendar UX. Provider/trading семантика не меняется. Канонический Alembic head — `0029_statement_event_retract`. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -51,7 +51,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
 
-В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0. `0.6.2` добавляет auditable retract ошибочно применённых statement payouts и polish layout; parser/provider/trading семантика не меняется.
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0. `0.6.2` добавляет auditable retract ошибочно применённых statement payouts и polish layout. `0.6.3` фиксирует M06-07/M06-08/M06-09; deposit forecast остаётся approximate, T-Invest refresh — explicit owner-triggered, parser/provider/trading семантика не меняется.
 
 Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
 
@@ -236,7 +236,7 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 ## 15. Линия 0.6.0 / R06
 
-Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — maintenance 0.6.2, см. раздел 17. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1 или 0.6.2.
+Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — release-prep maintenance 0.6.3, см. раздел 18. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1, 0.6.2 или 0.6.3.
 
 R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
 
@@ -318,3 +318,14 @@ Safety contract 0.6 остаётся: нет OCR, нет persistent raw Alfa/pro
 - **M06-06** (issue #113): только подготовка release identity `0.6.2` (version metadata, CHANGELOG, public notes, wiki/history). Не feature work. Не merge/tag/GitHub Release из этой задачи.
 
 Safety contract 0.6.2: предыдущий контракт 0.6 плюс statement-specific auditable retract; generic investment-flow delete не уничтожает statement provenance молча; Alembic head остаётся `0029_statement_event_retract`.
+
+## 18. Линия 0.6.3 / M06 maintenance
+
+`0.6.3` — release-prep maintenance поверх 0.6.2. Исторические записи 0.6.0, 0.6.1 и 0.6.2 выше не переписываются.
+
+- **M06-07** (issue #115 / PR #118): dashboard cards разделяют passive-income fact, forecast/goal и mandatory-expense coverage; actual coverage остаётся backend/domain Decimal calculation; mortgage context и instrument/company-first payout rows стали читаемее. Интегрировано merge `407dad4238e8dbd0c96eed44fd0c195ca5ada63d`.
+- **M06-08** (issue #116 / PR #119): selected-month persisted deposit snapshots дают annualised monthly estimate × 12; этот deposit component явно approximate, manual expected interest additive; forecast breakdown показывает deposits/coupons/dividend component/other. Интегрировано merge `0a4210e5898e6674742f2ad2874d7bb8f62a7c19`.
+- **M06-09** (issue #117 / PR #120): `Проверить все позиции T-Invest` и `Проверить изменённые` остаются explicit owner-triggered preview actions; изменения количества не запускают background refresh; Apply остаётся отдельным explicit действием; payout calendar получил явное раскрытие месяца и instrument/company-first rows. Интегрировано merge `f20ac97ba792f3e7ccf549c7df99f592172806da`.
+- **M06-10** (issue #121): только подготовка release identity `0.6.3` — version surfaces, health/release expectations, CHANGELOG, public notes, release record, README/wiki/history. Exact baseline `f20ac97ba792f3e7ccf549c7df99f592172806da`; task branch `m06-10-release-063`. Не feature work, не merge/tag/GitHub Release.
+
+Safety contract 0.6.3: deposit forecast is approximate and not maturity-aware; T-Invest provider/network refresh is explicit and owner-triggered with no background refresh; batch preview не означает cross-position atomic Apply; нет cloud/auth/telemetry/trading/provider writes; no new migration; canonical Alembic head остаётся `0029_statement_event_retract`.

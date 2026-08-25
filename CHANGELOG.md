@@ -2,6 +2,34 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.6.3] — 2026-08-25
+
+Maintenance on top of 0.6.2: dashboard information architecture and payout readability, approximate deposit-interest forecast completeness, and explicit T-Invest batch refresh with clearer payout-calendar UX. No new product line, provider write or trading semantics.
+
+### Added
+
+- dashboard cards now distinguish passive-income fact, forecast/goal and mandatory-expense coverage;
+- selected-month deposit snapshots contribute an explicitly approximate annualised monthly forecast component; manual expected interest remains additive;
+- explicit owner-triggered `Проверить все позиции T-Invest` and `Проверить изменённые` preview actions;
+- clearer payout-calendar month disclosure and instrument/company-first payout rows with account secondary, source/provenance and redemption-as-capital context.
+
+### Changed
+
+- actual mandatory-expense coverage remains a backend/domain Decimal calculation distinct from forecast coverage;
+- mortgage context is visible without the old hidden extra-metric interaction;
+- `Ручные ожидаемые выплаты` is clearly manual-only/additive and follows the merged calendar in DOM order;
+- single-position preview and explicit Apply/re-fetch/stale-preview guards remain available.
+
+### Not changed
+
+- deposit forecast is an approximation from the selected month snapshot; maturity and rate changes are not modeled;
+- T-Invest refresh is explicit and owner-triggered; quantity changes do not start background provider/network refresh;
+- batch preview does not imply cross-position atomic Apply;
+- statement retract/edit/delete semantics, provider counting semantics, CLOSED guards and provider/privacy boundaries remain unchanged;
+- no cloud, auth, telemetry, trading or provider write operations were added;
+- no new Alembic revision; canonical head remains `0029_statement_event_retract`;
+- local runtime remains loopback-only (`127.0.0.1:8000`).
+
 ## [0.6.2] — 2026-08-25
 
 Maintenance on top of 0.6.1: auditable retract for wrongly applied Alfa statement payouts, plus month-editor / statement-review layout polish. No new product line, provider or trading semantics.

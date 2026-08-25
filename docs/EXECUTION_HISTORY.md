@@ -401,6 +401,50 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.6.3 maintenance
+
+### M06-07 — dashboard information architecture and payout readability
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue:** #115
+- **PR:** #118
+- **Integrated into:** `main` merge `407dad4238e8dbd0c96eed44fd0c195ca5ada63d`
+- **Scope:** dashboard cards distinguish passive-income fact, forecast/goal and mandatory-expense coverage; actual coverage remains a backend/domain `Decimal` / `ROUND_HALF_UP` calculation; mortgage context and instrument/company-first payout rows are clearer. Statement retract/edit/delete semantics remain unchanged.
+- **Decision notes:** no provider/network refresh or persistence semantics were added by this documentation release-prep task.
+- **References:** issue #115, PR #118
+
+### M06-08 — deposit-interest forecast completeness
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue:** #116
+- **PR:** #119
+- **Integrated into:** `main` merge `0a4210e5898e6674742f2ad2874d7bb8f62a7c19`
+- **Scope:** selected-month persisted `DepositSnapshot.expected_monthly_interest_kopecks` values are annualised as monthly estimate × 12; the automatic deposit component is explicitly approximate; manual expected `interest` remains additive; forecast breakdown exposes deposits/coupons/dividend component/other.
+- **Decision notes:** maturity/rate changes are not modeled; forecast/dashboard read paths remain read-only and do not call providers/network; existing T-Invest counting semantics remain unchanged.
+- **References:** issue #116, PR #119
+
+### M06-09 — T-Invest batch payout refresh and payout calendar UX
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue:** #117
+- **PR:** #120
+- **Integrated into:** `main` merge `f20ac97ba792f3e7ccf549c7df99f592172806da`
+- **Scope:** explicit owner-triggered `Проверить все позиции T-Invest` and `Проверить изменённые` preview actions; no background refresh on local quantity changes; explicit per-payout Apply with re-fetch/preview-changed guards; single-position preview retained; payout calendar month disclosure and instrument/company-first expanded rows; manual expected payouts remain manual-only/additive after the merged calendar in DOM order.
+- **Decision notes:** batch preview does not imply cross-position atomic Apply; statement retract/CLOSED/provider privacy semantics remain unchanged.
+- **References:** issue #117, PR #120
+
+### M06-10 — prepare Hermes Finance v0.6.3 maintenance release
+
+- **Recorded:** 2026-08-25 as release-prep context from issue #121. This is not an accept/integrate verdict and not a published release.
+- **Issue:** #121
+- **Exact baseline `origin/main`:** `f20ac97ba792f3e7ccf549c7df99f592172806da`
+- **Task branch:** `m06-10-release-063`
+- **Scope:** synchronize version identity to `0.6.3`, health/release expectations, CHANGELOG, public release notes, compact release record, README/wiki/history. No product, dashboard, forecast, payout, provider or persistence semantic change. No new migration; canonical Alembic head remains `0029_statement_event_retract`.
+- **Not done in this task:** merge to `main`; tag `v0.6.3`; GitHub Release; production/private-data use.
+- **References:** issue #121, `docs/releases/0.6.3.md`, `docs/release-notes-0.6.3.md`, `CHANGELOG.md`
+
+---
+
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
