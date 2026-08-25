@@ -7,18 +7,23 @@ import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import {
   applyPayouts,
+  getPayoutRefreshStatus,
   listPayoutCalendar,
+  previewPayoutsBatch,
   previewPayouts,
   type PayoutApplySelection,
+  type PayoutBatchPreview,
   type PayoutCalendarMonth,
+  type PayoutContextRequest,
   type PayoutPreview,
+  type PayoutRefreshStatus,
 } from "../api/payouts";
 import { listPositions } from "../api/positions";
 import type { Account, Instrument, PositionSnapshot, ReportingMonth } from "../api/types";
 import { PayoutPaymentsCalendar } from "../components/PayoutPaymentsCalendar";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import { StatementImportPanel } from "../components/StatementImportPanel";
-import { Badge, EmptyState, Field, LoadingState, Panel, Select } from "../components/ui";
+import { Badge, Button, EmptyState, Field, LoadingState, Panel, Select } from "../components/ui";
 import { formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 
@@ -40,6 +45,8 @@ export function PayoutsPage() {
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [positions, setPositions] = useState<PositionSnapshot[]>([]);
   const [calendar, setCalendar] = useState<PayoutCalendarMonth[]>([]);
+  const [refreshStatus, setRefreshStatus] = useState<PayoutRefreshStatus | null>(null);
+  const [batchPreview, setBatchPreview] = useState<PayoutBatchPreview | null>(null);
   const [selectedMonthId, setSelectedMonthId] = useState("");
   const [selectedPositionId, setSelectedPositionId] = useState("");
   const [forecastVersion, setForecastVersion] = useState("v1");
@@ -47,6 +54,7 @@ export function PayoutsPage() {
   const [loadingBase, setLoadingBase] = useState(true);
   const [loadingContext, setLoadingContext] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [batchLoading, setBatchLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -102,13 +110,15 @@ export function PayoutsPage() {
       setLoadingContext(true);
       setError(null);
       try {
-        const [positionRows, calendarRows] = await Promise.all([
+        const [positionRows, calendarRows, refreshRows] = await Promise.all([
           listPositions(monthId, undefined, signal),
           listPayoutCalendar(monthId, version, signal),
+          getPayoutRefreshStatus(monthId, signal),
         ]);
         if (signal?.aborted) return;
         setPositions(positionRows);
         setCalendar(calendarRows);
+        setRefreshStatus(refreshRows);
         setSelectedPositionId((current) =>
           positionRows.some((row) => String(row.id) === current)
             ? current
@@ -130,9 +140,11 @@ export function PayoutsPage() {
     if (!Number.isInteger(monthId) || monthId < 1 || !forecastVersion.trim()) {
       setPositions([]);
       setCalendar([]);
+      setRefreshStatus(null);
       return;
     }
     setPreview(null);
+    setBatchPreview(null);
     setActionError(null);
     setSuccess(null);
     const controller = new AbortController();
@@ -150,12 +162,30 @@ export function PayoutsPage() {
     return `${account?.name ?? `#${selectedPosition.account_id}`} · ${instrumentText}`;
   }, [accountById, instrumentById, selectedPosition]);
 
+  function positionLabelFor(accountId: number, instrumentId: number): string {
+    const account = accountById.get(accountId);
+    const instrument = instrumentById.get(instrumentId);
+    const instrumentText = instrument
+      ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
+      : `#${instrumentId}`;
+    return `${instrumentText} · ${account?.name ?? `#${accountId}`}`;
+  }
+
   function contextPayload() {
     if (!selectedPosition || !forecastVersion.trim()) return null;
     return {
       account_id: selectedPosition.account_id,
       instrument_id: selectedPosition.instrument_id,
       position_snapshot_id: selectedPosition.id,
+      forecast_version: forecastVersion.trim(),
+    };
+  }
+
+  function payloadForPreview(value: PayoutPreview): PayoutContextRequest {
+    return {
+      account_id: value.account_id,
+      instrument_id: value.instrument_id,
+      position_snapshot_id: value.position_snapshot_id ?? 0,
       forecast_version: forecastVersion.trim(),
     };
   }
@@ -177,6 +207,56 @@ export function PayoutsPage() {
     }
   }
 
+  async function handleBatchPreview(positionSnapshotIds?: number[]) {
+    const monthId = Number(selectedMonthId);
+    if (!Number.isInteger(monthId) || monthId < 1 || !forecastVersion.trim()) return;
+    setBatchLoading(true);
+    setActionError(null);
+    setSuccess(null);
+    try {
+      setBatchPreview(
+        await previewPayoutsBatch(monthId, forecastVersion.trim(), positionSnapshotIds),
+      );
+    } catch (err) {
+      setBatchPreview(null);
+      setActionError(formatApiError(err));
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
+  async function handleBatchPositionRefresh(positionSnapshotId: number) {
+    const monthId = Number(selectedMonthId);
+    const position = positions.find((row) => row.id === positionSnapshotId);
+    if (!position || !Number.isInteger(monthId) || monthId < 1) return;
+    setPreviewLoading(true);
+    setActionError(null);
+    try {
+      const value = await previewPayouts(monthId, {
+        account_id: position.account_id,
+        instrument_id: position.instrument_id,
+        position_snapshot_id: position.id,
+        forecast_version: forecastVersion.trim(),
+      });
+      setBatchPreview((current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((item) =>
+                item.position_snapshot_id === positionSnapshotId
+                  ? { ...item, status: "previewed", message: null, preview: value }
+                  : item,
+              ),
+            }
+          : current,
+      );
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   async function handleApply(rows: PayoutApplySelection[]) {
     const monthId = Number(selectedMonthId);
     const payload = contextPayload();
@@ -184,6 +264,22 @@ export function PayoutsPage() {
     setApplying(true);
     setActionError(null);
     setSuccess(null);
+    try {
+      await applyRows(payload, rows, (result) => {
+        if (result.success) setPreview(null);
+      });
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  async function applyRows(
+    payload: PayoutContextRequest,
+    rows: PayoutApplySelection[],
+    onSuccess?: (result: Awaited<ReturnType<typeof applyPayouts>>) => void,
+  ) {
+    const monthId = Number(selectedMonthId);
+    if (rows.length === 0 || !Number.isInteger(monthId) || monthId < 1) return;
     try {
       const result = await applyPayouts(monthId, { ...payload, rows });
       if (!result.success) {
@@ -196,13 +292,40 @@ export function PayoutsPage() {
         return;
       }
       setCalendar(await listPayoutCalendar(monthId, forecastVersion.trim()));
-      setPreview(null);
+      setRefreshStatus(await getPayoutRefreshStatus(monthId));
       setSuccess(`Применено выплат: ${result.selected_count}. Календарь обновлён.`);
+      onSuccess?.(result);
     } catch (err) {
       setActionError(formatApiError(err));
-    } finally {
-      setApplying(false);
     }
+  }
+
+  async function handleBatchApply(previewValue: PayoutPreview, rows: PayoutApplySelection[]) {
+    if (previewValue.position_snapshot_id === null) return;
+    setApplying(true);
+    setActionError(null);
+    setSuccess(null);
+    await applyRows(payloadForPreview(previewValue), rows, (result) => {
+      if (!result.success) return;
+      setBatchPreview((current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((item) =>
+                item.preview?.position_snapshot_id === previewValue.position_snapshot_id
+                  ? {
+                      ...item,
+                      status: "applied",
+                      message: `Применено выплат: ${result.selected_count}`,
+                      preview: null,
+                    }
+                  : item,
+              ),
+            }
+          : current,
+      );
+    });
+    setApplying(false);
   }
 
   if (loadingBase) {
@@ -342,6 +465,91 @@ export function PayoutsPage() {
         preview={preview}
         readOnly={selectedMonth?.status === "closed"}
       />
+
+      {refreshStatus && refreshStatus.positions_changed > 0 ? (
+        <div className="inline-alert inline-alert--warn payout-refresh-needed" role="status">
+          <div>
+            <strong>Прогноз выплат требует обновления.</strong> {refreshStatus.positions_changed}{" "}
+            позиции изменились локально; T-Invest ещё не перечитан.
+          </div>
+          <Button
+            disabled={batchLoading || applying || loadingContext}
+            onClick={() =>
+              void handleBatchPreview(refreshStatus.items.map((item) => item.position_snapshot_id))
+            }
+            type="button"
+          >
+            {batchLoading ? "Запрашиваем…" : "Проверить изменённые"}
+          </Button>
+        </div>
+      ) : null}
+
+      <Panel label="Синхронизация" title="Проверка позиций T-Invest">
+        <div className="stack-8">
+          <p className="muted">
+            Проверка читает provider events только после явного действия. Apply остаётся отдельным
+            выбором внутри каждой позиции.
+          </p>
+          <div className="toolbar">
+            <Button
+              disabled={batchLoading || applying || loadingContext || positions.length === 0}
+              onClick={() => void handleBatchPreview()}
+              type="button"
+              variant="primary"
+            >
+              {batchLoading ? "Запрашиваем…" : "Проверить все позиции T-Invest"}
+            </Button>
+          </div>
+        </div>
+        {batchPreview ? (
+          <div className="stack-18 payout-batch-results">
+            <div className="inline-alert inline-alert--info" role="status">
+              {batchPreview.summary.total_positions} позиций · {batchPreview.summary.with_events} с
+              событиями · {batchPreview.summary.without_events} без событий ·{" "}
+              {batchPreview.summary.errors} ошибок · {batchPreview.summary.skipped} пропущено
+            </div>
+            {batchPreview.items.map((item) => {
+              const itemLabel = positionLabelFor(item.account_id, item.instrument_id);
+              const previewValue = item.preview;
+              return (
+                <div className="payout-batch-results__group" key={item.position_snapshot_id}>
+                  <div className="payout-batch-results__heading">
+                    <strong>{itemLabel}</strong>
+                    <span className="muted tiny">
+                      PositionSnapshot #{item.position_snapshot_id}
+                    </span>
+                  </div>
+                  {previewValue ? (
+                    <PayoutPreviewPanel
+                      applying={applying}
+                      error={null}
+                      forecastVersion={forecastVersion}
+                      loading={previewLoading}
+                      onApply={(rows) => void handleBatchApply(previewValue, rows)}
+                      onForecastVersionChange={() => undefined}
+                      onRefresh={() => void handleBatchPositionRefresh(item.position_snapshot_id)}
+                      positionLabel={itemLabel}
+                      preview={previewValue}
+                      readOnly={selectedMonth?.status === "closed"}
+                    />
+                  ) : (
+                    <div className="inline-alert inline-alert--warn" role="status">
+                      <Badge tone={item.status === "error" ? "closed" : "draft"}>
+                        {item.status === "skipped"
+                          ? "Пропущено"
+                          : item.status === "applied"
+                            ? "Применено"
+                            : "Ошибка"}
+                      </Badge>{" "}
+                      {item.message ?? "Для позиции нет доступного preview."}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </Panel>
 
       <Panel
         action={<Badge>12 месяцев · manual + T-Invest</Badge>}

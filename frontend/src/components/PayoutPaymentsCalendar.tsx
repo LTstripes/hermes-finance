@@ -58,9 +58,11 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
       {months.map((month) => (
         <details className="payments-calendar__month" key={`${month.year}-${month.month}`}>
           <summary className="payments-calendar__head">
+            <span className="payments-calendar__chevron" aria-hidden="true" />
             <span className="payments-calendar__month-name">
               {formatMonth(month.year, month.month)}
             </span>
+            <span className="payments-calendar__count">{month.items.length} выплат</span>
             <span className="payments-calendar__chips">{monthChips(month)}</span>
             <span className="payments-calendar__passive">
               Пассивный доход: <strong>{formatMoney(moneyAmount(month.passive_net))}</strong>
@@ -96,11 +98,10 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
                       ) : null}
                     </Td>
                     <Td>
-                      <div>{item.account_name}</div>
-                      <div className="muted tiny">
-                        {item.instrument_name ?? `#${item.instrument_id}`}
-                        {item.is_approximate ? " · приблизительно" : ""}
+                      <div>
+                        <strong>{item.instrument_name ?? `#${item.instrument_id}`}</strong>
                       </div>
+                      <div className="muted tiny">{item.account_name}</div>
                     </Td>
                     <Td>
                       <div className="stack-8">
@@ -118,7 +119,12 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
                         ) : null}
                       </div>
                     </Td>
-                    <Td numeric>{formatMoney(moneyAmount(item.expected_net_amount))}</Td>
+                    <Td numeric>
+                      {formatMoney(moneyAmount(item.expected_net_amount))}
+                      {item.is_approximate ? (
+                        <div className="muted tiny">приблизительно</div>
+                      ) : null}
+                    </Td>
                   </tr>
                 );
               })}

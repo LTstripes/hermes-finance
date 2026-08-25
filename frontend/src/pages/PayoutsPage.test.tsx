@@ -9,7 +9,9 @@ import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import {
   applyPayouts,
+  getPayoutRefreshStatus,
   listPayoutCalendar,
+  previewPayoutsBatch,
   previewPayouts,
   type PayoutPreview,
 } from "../api/payouts";
@@ -26,8 +28,10 @@ vi.mock("../api/payouts", async (importOriginal) => {
   return {
     ...actual,
     previewPayouts: vi.fn(),
+    previewPayoutsBatch: vi.fn(),
     applyPayouts: vi.fn(),
     listPayoutCalendar: vi.fn(),
+    getPayoutRefreshStatus: vi.fn(),
   };
 });
 
@@ -224,6 +228,35 @@ beforeEach(() => {
   vi.mocked(listInstruments).mockResolvedValue([instrument]);
   vi.mocked(listPositions).mockResolvedValue([position]);
   vi.mocked(listPayoutCalendar).mockResolvedValue(mergedCalendar);
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 7,
+    positions_changed: 0,
+    items: [],
+  });
+  vi.mocked(previewPayoutsBatch).mockResolvedValue({
+    reporting_month_id: 7,
+    forecast_version: "v1",
+    summary: {
+      total_positions: 1,
+      eligible_positions: 1,
+      with_events: 1,
+      without_events: 0,
+      errors: 0,
+      skipped: 0,
+    },
+    items: [
+      {
+        account_id: 11,
+        instrument_id: 21,
+        position_snapshot_id: 44,
+        provider: "t_invest",
+        instrument_uid: providerUid,
+        status: "previewed",
+        message: null,
+        preview: newAndRevisedPreview,
+      },
+    ],
+  });
   vi.mocked(previewPayouts).mockResolvedValue(newAndRevisedPreview);
   vi.mocked(applyPayouts).mockResolvedValue({
     success: true,
@@ -269,6 +302,43 @@ describe("PayoutsPage", () => {
     expect(screen.getByRole("checkbox", { name: "Выбрать выплату redemption" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Применить выбранные (1)" })).toBeEnabled();
     expect(screen.queryByText(providerUid)).not.toBeInTheDocument();
+  });
+
+  it("runs an explicit sequential batch preview and keeps Apply inside each position group", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("option", { name: /ОФЗ 26248/ });
+
+    await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
+
+    await waitFor(() => expect(previewPayoutsBatch).toHaveBeenCalledWith(7, "v1", undefined));
+    expect(await screen.findByText(/1 позиций · 1 с событиями/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить выбранные (1)" })).toBeEnabled();
+    expect(applyPayouts).not.toHaveBeenCalled();
+  });
+
+  it("offers changed-only refresh from local staleness without refreshing on render", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+      reporting_month_id: 7,
+      positions_changed: 1,
+      items: [
+        {
+          account_id: 11,
+          instrument_id: 21,
+          position_snapshot_id: 44,
+          current_quantity: "63.000000",
+          frozen_quantity: "62.000000",
+          applied_payout_count: 2,
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByText(/Прогноз выплат требует обновления/);
+    expect(previewPayouts).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Проверить изменённые" }));
+    await waitFor(() => expect(previewPayoutsBatch).toHaveBeenCalledWith(7, "v1", [44]));
   });
 
   it("explains a missing accepted T-Invest mapping instead of a generic validation phrase", async () => {

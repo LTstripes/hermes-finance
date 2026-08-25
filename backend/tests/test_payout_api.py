@@ -30,7 +30,7 @@ from hermes_finance.services.instrument_mappings import (
     set_accepted_mapping,
 )
 from hermes_finance.services.instruments import create_instrument
-from hermes_finance.services.positions import create_position_snapshot
+from hermes_finance.services.positions import create_position_snapshot, update_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 UID = "44444444-4444-4444-4444-444444444444"
@@ -205,6 +205,128 @@ def test_invalid_local_mapping_fails_before_provider_call(
         assert body["code"] == "payout_mapping_required"
         assert message in body["message"]
         assert provider.requests == []
+    finally:
+        database.engine.dispose()
+
+
+def test_batch_preview_checks_mapped_positions_sequentially_and_reports_skips(
+    tmp_path: Path,
+) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as session:
+            month_id, account_id, instrument_id, _ = build_environment(session)
+            second = create_instrument(
+                session, name="Second Synthetic Bond", instrument_type=InstrumentType.BOND
+            )
+            second_snapshot = create_position_snapshot(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=second.id,
+                quantity="3",
+                average_cost_per_unit="100.00",
+                market_price_per_unit="101.00",
+                price_date=date(2030, 5, 12),
+            )
+            accept_t_invest_mapping(session, second.id, OTHER_UID, kind=InstrumentType.BOND)
+            unmapped = create_instrument(
+                session, name="Unmapped Synthetic Bond", instrument_type=InstrumentType.BOND
+            )
+            create_position_snapshot(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=unmapped.id,
+                quantity="1",
+                average_cost_per_unit="100.00",
+                market_price_per_unit="101.00",
+                price_date=date(2030, 5, 12),
+            )
+            excluded = create_instrument(
+                session, name="Excluded Synthetic Bond", instrument_type=InstrumentType.BOND
+            )
+            create_position_snapshot(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=excluded.id,
+                quantity="1",
+                average_cost_per_unit="100.00",
+                market_price_per_unit="101.00",
+                price_date=date(2030, 5, 12),
+            )
+            exclude_instrument_mapping(session, excluded.id)
+
+        with TestClient(create_app(database, payout_provider=provider)) as client:
+            response = client.post(
+                f"/api/months/{month_id}/payout-batch-preview",
+                json={"forecast_version": "v1"},
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["summary"] == {
+            "total_positions": 4,
+            "eligible_positions": 2,
+            "with_events": 2,
+            "without_events": 0,
+            "errors": 0,
+            "skipped": 2,
+        }
+        assert [request.instrument_uid for request in provider.requests] == [UID, OTHER_UID]
+        assert [item["status"] for item in body["items"]] == [
+            "previewed",
+            "previewed",
+            "skipped",
+            "skipped",
+        ]
+        assert body["items"][1]["position_snapshot_id"] == second_snapshot.id
+    finally:
+        database.engine.dispose()
+
+
+def test_refresh_status_is_local_and_clears_after_explicit_apply(tmp_path: Path) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as session:
+            month_id, account_id, instrument_id, snapshot_id = build_environment(session)
+        with TestClient(create_app(database, payout_provider=provider)) as client:
+            preview = client.post(
+                f"/api/months/{month_id}/payout-preview",
+                json=context_payload(account_id, instrument_id, snapshot_id),
+            ).json()
+            row = preview["rows"][0]
+            applied = client.post(
+                f"/api/months/{month_id}/payout-apply",
+                json={
+                    **context_payload(account_id, instrument_id, snapshot_id),
+                    "rows": [
+                        {
+                            "provider": row["provider"],
+                            "instrument_uid": row["instrument_uid"],
+                            "event_kind": row["event_kind"],
+                            "identity_key": row["identity_key"],
+                            "fingerprint": row["fingerprint"],
+                        }
+                    ],
+                },
+            )
+            assert applied.status_code == 200, applied.text
+            before = client.get(f"/api/months/{month_id}/payout-refresh-status")
+            with database.session_factory() as session:
+                update_position_snapshot(session, snapshot_id, quantity="3")
+            after = client.get(f"/api/months/{month_id}/payout-refresh-status")
+
+        assert before.status_code == 200
+        assert before.json()["positions_changed"] == 0
+        assert after.status_code == 200
+        assert after.json()["positions_changed"] == 1
+        assert Decimal(after.json()["items"][0]["current_quantity"]) == Decimal("3")
+        assert Decimal(after.json()["items"][0]["frozen_quantity"]) == Decimal("2")
+        assert len(provider.requests) == 2
     finally:
         database.engine.dispose()
 

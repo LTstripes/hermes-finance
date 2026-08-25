@@ -826,10 +826,31 @@ export function MonthFlowsSection({
       </Panel>
 
       <Panel
-        action={<Badge>прогноз пассивного дохода {formatMoney(expectedPassiveTotal)}</Badge>}
-        label="Календарь"
-        title="Ожидаемые потоки"
+        className="payout-merged-calendar"
+        action={<Badge>12 месяцев · manual + T-Invest</Badge>}
+        label="Прогноз"
+        title="Календарь выплат"
       >
+        {calendarError ? (
+          <div className="inline-alert inline-alert--warn" role="status">
+            Календарь временно недоступен: {calendarError}
+          </div>
+        ) : (
+          <PayoutPaymentsCalendar months={calendar} />
+        )}
+      </Panel>
+
+      <Panel
+        className="payout-manual-expected"
+        action={<Badge>ручные ожидаемые: {formatMoney(expectedPassiveTotal)}</Badge>}
+        label="Календарь"
+        title="Ручные ожидаемые выплаты"
+      >
+        <p className="muted">
+          Ручные ожидаемые выплаты добавляются к выплатам провайдера и предназначены для потоков,
+          которых нет в других источниках. Не вноси сюда тот же процент по депозиту или событие
+          T-Invest повторно: после M06-08 это может посчитать сумму дважды.
+        </p>
         <div className="editor-grid filter-grid">
           <Field htmlFor="exp-version" label="Версия прогноза">
             <Input
@@ -910,7 +931,7 @@ export function MonthFlowsSection({
 
         <div className="totals-bar">
           <span>
-            Прогноз пассивного дохода (нетто): <strong>{formatMoney(expectedPassiveTotal)}</strong>
+            Ручные ожидаемые (нетто): <strong>{formatMoney(expectedPassiveTotal)}</strong>
           </span>
         </div>
 
@@ -1033,20 +1054,6 @@ export function MonthFlowsSection({
             </Button>
           </form>
         ) : null}
-      </Panel>
-
-      <Panel
-        action={<Badge>12 месяцев · manual + T-Invest</Badge>}
-        label="Прогноз"
-        title="Календарь выплат"
-      >
-        {calendarError ? (
-          <div className="inline-alert inline-alert--warn" role="status">
-            Календарь временно недоступен: {calendarError}
-          </div>
-        ) : (
-          <PayoutPaymentsCalendar months={calendar} />
-        )}
       </Panel>
 
       <ConfirmDialog
