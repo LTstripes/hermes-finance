@@ -432,7 +432,9 @@ def _refresh_status(
         session.scalars(
             select(PositionSnapshot)
             .where(PositionSnapshot.reporting_month_id == reporting_month_id)
-            .order_by(PositionSnapshot.account_id, PositionSnapshot.instrument_id, PositionSnapshot.id)
+            .order_by(
+                PositionSnapshot.account_id, PositionSnapshot.instrument_id, PositionSnapshot.id
+            )
         )
     )
     payouts = list(
@@ -456,7 +458,8 @@ def _refresh_status(
         stale = [
             payout
             for payout in related
-            if payout.source_position_snapshot_id != snapshot.id or payout.quantity != snapshot.quantity
+            if payout.source_position_snapshot_id != snapshot.id
+            or payout.quantity != snapshot.quantity
         ]
         if not stale:
             continue
@@ -578,7 +581,9 @@ def payout_batch_preview_endpoint(
 
     snapshot_query = select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == month_id)
     if payload.position_snapshot_ids is not None:
-        snapshot_query = snapshot_query.where(PositionSnapshot.id.in_(payload.position_snapshot_ids))
+        snapshot_query = snapshot_query.where(
+            PositionSnapshot.id.in_(payload.position_snapshot_ids)
+        )
     snapshots = list(
         session.scalars(
             snapshot_query.order_by(

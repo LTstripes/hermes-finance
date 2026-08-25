@@ -311,9 +311,7 @@ describe("PayoutsPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
 
-    await waitFor(() =>
-      expect(previewPayoutsBatch).toHaveBeenCalledWith(7, "v1", undefined),
-    );
+    await waitFor(() => expect(previewPayoutsBatch).toHaveBeenCalledWith(7, "v1", undefined));
     expect(await screen.findByText(/1 позиций · 1 с событиями/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применить выбранные (1)" })).toBeEnabled();
     expect(applyPayouts).not.toHaveBeenCalled();

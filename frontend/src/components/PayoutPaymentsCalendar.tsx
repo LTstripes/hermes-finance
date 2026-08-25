@@ -101,9 +101,7 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
                       <div>
                         <strong>{item.instrument_name ?? `#${item.instrument_id}`}</strong>
                       </div>
-                      <div className="muted tiny">
-                        {item.account_name}
-                      </div>
+                      <div className="muted tiny">{item.account_name}</div>
                     </Td>
                     <Td>
                       <div className="stack-8">
@@ -123,7 +121,9 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
                     </Td>
                     <Td numeric>
                       {formatMoney(moneyAmount(item.expected_net_amount))}
-                      {item.is_approximate ? <div className="muted tiny">приблизительно</div> : null}
+                      {item.is_approximate ? (
+                        <div className="muted tiny">приблизительно</div>
+                      ) : null}
                     </Td>
                   </tr>
                 );

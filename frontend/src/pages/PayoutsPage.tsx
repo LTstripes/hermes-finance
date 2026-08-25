@@ -469,16 +469,13 @@ export function PayoutsPage() {
       {refreshStatus && refreshStatus.positions_changed > 0 ? (
         <div className="inline-alert inline-alert--warn payout-refresh-needed" role="status">
           <div>
-            <strong>Прогноз выплат требует обновления.</strong>{" "}
-            {refreshStatus.positions_changed} позиции изменились локально; T-Invest ещё не
-            перечитан.
+            <strong>Прогноз выплат требует обновления.</strong> {refreshStatus.positions_changed}{" "}
+            позиции изменились локально; T-Invest ещё не перечитан.
           </div>
           <Button
             disabled={batchLoading || applying || loadingContext}
             onClick={() =>
-              void handleBatchPreview(
-                refreshStatus.items.map((item) => item.position_snapshot_id),
-              )
+              void handleBatchPreview(refreshStatus.items.map((item) => item.position_snapshot_id))
             }
             type="button"
           >
@@ -518,7 +515,9 @@ export function PayoutsPage() {
                 <div className="payout-batch-results__group" key={item.position_snapshot_id}>
                   <div className="payout-batch-results__heading">
                     <strong>{itemLabel}</strong>
-                    <span className="muted tiny">PositionSnapshot #{item.position_snapshot_id}</span>
+                    <span className="muted tiny">
+                      PositionSnapshot #{item.position_snapshot_id}
+                    </span>
                   </div>
                   {previewValue ? (
                     <PayoutPreviewPanel

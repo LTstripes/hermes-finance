@@ -209,7 +209,9 @@ def test_invalid_local_mapping_fails_before_provider_call(
         database.engine.dispose()
 
 
-def test_batch_preview_checks_mapped_positions_sequentially_and_reports_skips(tmp_path: Path) -> None:
+def test_batch_preview_checks_mapped_positions_sequentially_and_reports_skips(
+    tmp_path: Path,
+) -> None:
     database = database_for(tmp_path)
     provider = RecordingPayoutProvider()
     try:

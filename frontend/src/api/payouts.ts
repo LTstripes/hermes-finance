@@ -224,10 +224,10 @@ export function getPayoutRefreshStatus(
   monthId: number,
   signal?: AbortSignal,
 ): Promise<PayoutRefreshStatus> {
-  return apiRequest<PayoutRefreshStatus>(
-    `/api/months/${monthId}/payout-refresh-status`,
-    { method: "GET", signal },
-  );
+  return apiRequest<PayoutRefreshStatus>(`/api/months/${monthId}/payout-refresh-status`, {
+    method: "GET",
+    signal,
+  });
 }
 
 export function applyPayouts(
