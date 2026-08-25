@@ -138,7 +138,7 @@ def get_position_snapshot_by_key(
     )
 
 
-def create_position_snapshot(
+def stage_create_position_snapshot(
     session: Session,
     *,
     reporting_month_id: int,
@@ -153,6 +153,10 @@ def create_position_snapshot(
     manual_adjustment: bool = False,
     notes: str | None = None,
 ) -> PositionSnapshot:
+    """Validate and stage a new snapshot. Caller owns the transaction.
+
+    Flushes so the row receives an id; does not commit.
+    """
     require_editable_reporting_month(session, reporting_month_id)
     _require_account(session, account_id)
     instrument = _require_instrument(session, instrument_id)
@@ -186,7 +190,40 @@ def create_position_snapshot(
         notes=notes,
     )
     session.add(snapshot)
+    session.flush()
+    return snapshot
+
+
+def create_position_snapshot(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    account_id: int,
+    instrument_id: int,
+    quantity: int | Decimal | str,
+    average_cost_per_unit: RubleAmount | str | int,
+    market_price_per_unit: RubleAmount | str | int,
+    accrued_interest: RubleAmount | str | int | None = None,
+    price_date: date,
+    price_source: PriceSource | str = PriceSource.MANUAL,
+    manual_adjustment: bool = False,
+    notes: str | None = None,
+) -> PositionSnapshot:
     try:
+        snapshot = stage_create_position_snapshot(
+            session,
+            reporting_month_id=reporting_month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=quantity,
+            average_cost_per_unit=average_cost_per_unit,
+            market_price_per_unit=market_price_per_unit,
+            accrued_interest=accrued_interest,
+            price_date=price_date,
+            price_source=price_source,
+            manual_adjustment=manual_adjustment,
+            notes=notes,
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -197,7 +234,7 @@ def create_position_snapshot(
     return snapshot
 
 
-def update_position_snapshot(
+def stage_update_position_snapshot(
     session: Session,
     snapshot_id: int,
     *,
@@ -211,6 +248,10 @@ def update_position_snapshot(
     notes: str | None = None,
     expected_updated_at: datetime | None = None,
 ) -> PositionSnapshot:
+    """Validate and stage an existing snapshot mutation. Caller owns the transaction.
+
+    Flushes staged column changes; does not commit.
+    """
     snapshot = get_position_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)
     instrument = _require_instrument(session, snapshot.instrument_id)
@@ -266,6 +307,37 @@ def update_position_snapshot(
         snapshot.average_cost_per_unit_kopecks,
         snapshot.market_price_per_unit_kopecks,
         snapshot.accrued_interest_kopecks,
+    )
+    session.flush()
+    return snapshot
+
+
+def update_position_snapshot(
+    session: Session,
+    snapshot_id: int,
+    *,
+    quantity: int | Decimal | str | None = None,
+    average_cost_per_unit: RubleAmount | str | int | None = None,
+    market_price_per_unit: RubleAmount | str | int | None = None,
+    accrued_interest: RubleAmount | str | int | None = None,
+    price_date: date | None = None,
+    price_source: PriceSource | str | None = None,
+    manual_adjustment: bool | None = None,
+    notes: str | None = None,
+    expected_updated_at: datetime | None = None,
+) -> PositionSnapshot:
+    snapshot = stage_update_position_snapshot(
+        session,
+        snapshot_id,
+        quantity=quantity,
+        average_cost_per_unit=average_cost_per_unit,
+        market_price_per_unit=market_price_per_unit,
+        accrued_interest=accrued_interest,
+        price_date=price_date,
+        price_source=price_source,
+        manual_adjustment=manual_adjustment,
+        notes=notes,
+        expected_updated_at=expected_updated_at,
     )
     session.commit()
     session.refresh(snapshot)

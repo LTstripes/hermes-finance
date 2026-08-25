@@ -74,7 +74,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0027_applied_provider_payouts",
+        "revision": "0028_applied_statement_events",
         "months_status": 200,
     }
 
@@ -104,7 +104,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0027_applied_provider_payouts"}
+    assert observed == {"revision": "0028_applied_statement_events"}
     assert starts == 2
 
 

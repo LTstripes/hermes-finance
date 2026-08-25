@@ -14,7 +14,8 @@ Hermes Finance — локальное однопользовательское W
 - инвестиционный результат отдельно от денежных потоков;
 - ИИС и полученную/планируемую налоговую выгоду;
 - справочную недвижимость и покрытие ипотеки;
-- рыночные котировки и календарь инвестиционных выплат по явному действию владельца.
+- рыночные котировки и календарь инвестиционных выплат по явному действию владельца;
+- текущий снимок Alfa PRO и узкий импорт депозитарного PDF о выплатах доходов — тоже только по явному действию владельца.
 
 Приложение не является бухгалтерской, налоговой или торговой системой.
 
@@ -36,18 +37,19 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущая стабильная released-версия — **0.5.0**.
+Это дерево содержит содержимое релиза **0.6.0**. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release. R06 Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
+
+Историческая опубликованная идентичность **0.5.0**:
 
 - released artifact: `v0.5.0` @ `7a032eb8c61c675f3a779f9afda59d47e9c8dc81`;
-- на публикации `main`, `r05` и `v0.5.0` указывали на этот exact SHA;
+- на публикации 0.5.0 `main`, `r05` и `v0.5.0` указывали на этот exact SHA;
 - после публикации канонический development `main` может уходить вперёд post-release docs, maintenance и будущей работой;
 - тег и released SHA остаются неизменяемой идентичностью 0.5.0;
-- GitHub Release `0.5.0` опубликован как Latest;
 - финальный exact-main CI `32140936658` зелёный;
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
 
-В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle.
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import.
 
 Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
 
@@ -66,6 +68,8 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - фактические инвестиционные выплаты и ручные ожидаемые потоки;
 - T-Invest котировки по явной кнопке владельца;
 - T-Invest календарь выплат (preview/apply) поверх локальных позиций Hermes;
+- Alfa PRO current snapshot по явной кнопке, только local loopback, transient mapping, selected apply;
+- импорт принятого Alfa депозитарного PDF о выплатах доходов: Inspect → mapping → Prepare → selected Apply;
 - Goals и основная цель;
 - Dashboard и графики;
 - Markdown/JSON export;
@@ -76,7 +80,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 
 - торговые операции;
 - автоматические банковские транзакции;
-- импорт брокерского портфеля, счетов или операций;
+- generic import брокерского портфеля, сделок, комиссий, пополнений/выводов или произвольных PDF/Excel;
 - cloud/VPS/multi-user/auth;
 - фоновая телеметрия;
 - фоновое обновление котировок или выплат;
@@ -227,3 +231,68 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 Детальный phase-by-phase execution journal MVP 0.1 сохранён в `docs/history/HERMES_TASKS.md` и Git history. Релизы 0.2–0.5 зафиксированы в `docs/releases/`, `CHANGELOG.md` и `docs/EXECUTION_HISTORY.md`. Wiki не дублирует позадачную историю.
 
 `docs/IDEA.md` намеренно сохранён как исходная концепция.
+
+## 15. Линия 0.6.0 / R06
+
+Это дерево содержит содержимое релиза 0.6.0. Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
+
+R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
+
+- явный snapshot review/apply из Alfa PRO без background sync/trading;
+- явный импорт стандартизированного депозитарного PDF `Отчет о произведенных выплатах доходов по ценным бумагам` с server-side reparse, fail-closed mapping, idempotency/correction provenance и защитой CLOSED month.
+
+### R06-10 Gate B — owner UAT, состояние на 2026-08-24
+
+Технический Gate A был принят ранее. Owner UAT выполняется только на отдельной копии runtime data; production не используется как тестовый workspace.
+
+Материальные живые находки и fix-cycle:
+
+1. snapshot preview падал после account mapping из-за fingerprint по display DTO вместо persisted `PositionSnapshot`; исправлено без ослабления stale/fingerprint gate;
+2. snapshot Apply UI не позволял безопасно идентифицировать строку по owner-facing счёту/инструменту/ISIN; UI усилен;
+3. реальный Alfa income-payment PDF выявил, что synthetic parser assumptions не совпадают с текущим `pypdf layout`: сначала были отброшены pipe-only и затем слишком общие multi-line assumptions;
+4. parser переведён на bounded fail-closed 21-column report-family structure с точным `1..21` anchor, затем live UAT потребовал несколько узких корректировок реального layout: rank-aligned header reconstruction, актуальная форма заголовков, различение beneficiary columns, игнорирование нетабличного tail и mapping полного data row по физическому column order.
+
+Финальная проверенная code-candidate цепочка после принятого `fa4125a632c8017e076a74c1375502af87866ed6` линейна и содержит пять узких follow-up commit:
+
+- `6a4be2817308bf7e4337e2a1809adede7a9de4c4` — align current Alfa header by rank;
+- `76937cd88c9f2bda350be5f0167a7ff9fc4fca8e` — match current Alfa header layout;
+- `2c24fd2d5551a7823163e994c8c9d62140af57a8` — keep Alfa beneficiary headers distinct;
+- `eeaed4b2ebba5d399f4f712f99ac67a008494d20` — ignore Alfa layout trailing fragments;
+- `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — map anchored Alfa data by column order.
+
+`c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` — accepted Gate B code. Независимый repository read-back подтверждает линейность `fa4125a6… → c4bb8ff…`: `ahead_by=5`, `behind_by=0`, изменения остаются в четырёх parser/schema/synthetic-test файлах. На том этапе `r06` и `main` ещё не менялись.
+
+По owner/Work UAT-report для exact `c4bb8ff…`:
+
+- full backend: `1218 passed` (известное предупреждение pytest cache не считается blocker);
+- independent Terra review: ACCEPT по отчёту Work; эта model-attribution не выводится из Git metadata;
+- тот же owner-local Alfa PDF распознан ровно в 4 строки;
+- локальная сверка event type, ISIN, dates, gross/tax/net с исходным PDF прошла;
+- UI показывает все 4 строки как требующие явного сопоставления, unsupported rows нет;
+- подготовка/apply не выполнялись, persistent writes по этим строкам не делались;
+- owner UAT и dev workspace оставлены clean, localhost остановлен;
+- production runtime, `main`, `r06`, PR/merge/tag/release не затрагивались.
+
+Следующий Gate B шаг на момент промежуточной записи 2026-08-24 — только явный owner mapping найденного отчётного счёта и инструментов в UAT-копии, затем отдельное решение о Prepare/Apply.
+
+### R06-10 Gate B — UAT_PASS / GATE_B_PASS
+
+Каноническое owner-UAT evidence записано в issue #98. Exact Gate B code остаётся `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3`. Production runtime не использовался.
+
+Сводка без частных значений:
+
+- statement Inspect = 4 rows, unsupported 0;
+- mapping/reconciliation PASS;
+- one-row statement Apply PASS;
+- duplicate/idempotency PASS;
+- CLOSED statement PASS;
+- manual candidate explicit decision / zero-write PASS;
+- one-row matched existing snapshot Apply PASS;
+- UNCHANGED no-op behavior observed correctly;
+- CLOSED snapshot PASS;
+- restart stability PASS;
+- no blockers.
+
+### R06-10 Gate C — version/docs finalization
+
+Gate C синхронизировал version metadata, release-facing docs и повторный verification gate. Принятый worker head `1fc35d173f4c5dbb68cf76c0aaa2a1b20210d421` интегрирован в `r06` через PR #99 (`2222ba016854d52e88eb9a5404c81203655ccd3a`, CI #302). Публикация — отдельный guarded step; exact main/tag/CI identity записывается после release.

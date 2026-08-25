@@ -139,14 +139,19 @@ def prove_guard_catches_regression() -> None:
 
 
 def _install_client_construction_guard() -> None:
+    from hermes_finance.broker_data.alfa_pro import AlfaProBrokerSnapshotProvider
     from hermes_finance.market_data.moex_iss import MoexIssClient
     from hermes_finance.market_data.t_invest import TInvestClient
 
-    def boom(self: object, *args: object, **kwargs: object) -> None:
+    def boom_market(self: object, *args: object, **kwargs: object) -> None:
         raise AssertionError("startup must not construct a market-data client")
 
-    TInvestClient.__init__ = boom  # type: ignore[method-assign]
-    MoexIssClient.__init__ = boom  # type: ignore[method-assign]
+    def boom_alfa(self: object, *args: object, **kwargs: object) -> None:
+        raise AssertionError("startup must not construct an Alfa PRO snapshot provider")
+
+    TInvestClient.__init__ = boom_market  # type: ignore[method-assign]
+    MoexIssClient.__init__ = boom_market  # type: ignore[method-assign]
+    AlfaProBrokerSnapshotProvider.__init__ = boom_alfa  # type: ignore[method-assign]
 
 
 def run_cold_startup_probe(database_path: Path) -> None:

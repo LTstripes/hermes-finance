@@ -17,6 +17,7 @@ import { listPositions } from "../api/positions";
 import type { Account, Instrument, PositionSnapshot, ReportingMonth } from "../api/types";
 import { PayoutPaymentsCalendar } from "../components/PayoutPaymentsCalendar";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
+import { StatementImportPanel } from "../components/StatementImportPanel";
 import { Badge, EmptyState, Field, LoadingState, Panel, Select } from "../components/ui";
 import { formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
@@ -233,6 +234,17 @@ export function PayoutsPage() {
           {success}
         </div>
       ) : null}
+
+      <StatementImportPanel
+        accounts={accounts}
+        instruments={instruments}
+        onApplied={async () => {
+          const monthId = Number(selectedMonthId);
+          if (Number.isInteger(monthId) && monthId > 0) {
+            await loadContext(monthId, forecastVersion.trim());
+          }
+        }}
+      />
 
       <Panel
         action={

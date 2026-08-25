@@ -9,6 +9,7 @@ from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
 from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
+from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
 from hermes_finance.api.comments import router as comments_router
 from hermes_finance.api.dashboard import router as dashboard_router
@@ -33,6 +34,7 @@ from hermes_finance.api.quote_preview import router as quote_preview_router
 from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
+from hermes_finance.api.statement_import import router as statement_import_router
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.database import Database
 from hermes_finance.security import LocalhostSecurityMiddleware
@@ -62,6 +64,7 @@ def create_app(
     static_dir: Path | None = None,
     market_data_provider: object | None = None,
     payout_provider: object | None = None,
+    broker_snapshot_provider: object | None = None,
 ) -> FastAPI:
     application = FastAPI(title="Hermes Finance API", version=__version__)
     application.add_middleware(LocalhostSecurityMiddleware)
@@ -71,6 +74,8 @@ def create_app(
         application.state.market_data_provider = market_data_provider
     if payout_provider is not None:
         application.state.payout_provider = payout_provider
+    if broker_snapshot_provider is not None:
+        application.state.broker_snapshot_provider = broker_snapshot_provider
     register_error_handlers(application)
     application.include_router(settings_router)
     application.include_router(tax_brackets_router)
@@ -78,6 +83,8 @@ def create_app(
     application.include_router(quote_preview_router)
     application.include_router(quote_apply_router)
     application.include_router(payouts_router)
+    application.include_router(broker_snapshot_router)
+    application.include_router(statement_import_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
     application.include_router(accounts_router)

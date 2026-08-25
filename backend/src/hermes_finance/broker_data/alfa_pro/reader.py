@@ -1,0 +1,503 @@
+"""Narrow typed Alfa PRO snapshot reader. No public generic send(channel, payload).
+
+Production auth is bus-only: listen #ConnectionState.Bus, then client #Data.Query
+only after observed AuthStatus == 2. ConnectionState #Data.Query is absent.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import time
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Protocol
+
+from hermes_finance.broker_data.alfa_pro.channels import (
+    ALLOWED_ENTITY_TYPES,
+    ENTITY_PRIMARY_KEY,
+    REQUIRED_SNAPSHOT_ENTITIES,
+    ForbiddenAlfaChannel,
+    assert_router_send_allowed,
+    bus_channel_for_entity,
+    is_order_channel,
+)
+from hermes_finance.broker_data.alfa_pro.codec import (
+    MAX_PAYLOAD_CHARS,
+    decode_payload,
+    decode_router_message,
+    encode_router_message,
+)
+from hermes_finance.broker_data.alfa_pro.mapping import as_bool, as_int
+
+MAX_MESSAGES: int = 400
+MAX_ROWS_PER_ENTITY: int = 500
+MAX_ASSET_KEYS: int = 100
+CONNECT_TIMEOUT_S: float = 5.0
+READ_TIMEOUT_S: float = 3.0
+TOTAL_DEADLINE_S: float = 30.0
+MIN_CONNECT_TIMEOUT_S: float = 0.05
+MAX_CONNECT_TIMEOUT_S: float = 30.0
+MIN_READ_TIMEOUT_S: float = 0.01
+MAX_READ_TIMEOUT_S: float = 15.0
+MIN_TOTAL_DEADLINE_S: float = 0.05
+MAX_TOTAL_DEADLINE_S: float = 120.0
+
+
+class AlfaSnapshotTimeoutError(ValueError):
+    """Raised when a snapshot timeout is non-finite or outside explicit bounds."""
+
+
+def bounded_timeout(name: str, value: object, *, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AlfaSnapshotTimeoutError(f"{name} must be a finite number of seconds")
+    number = float(value)
+    if not math.isfinite(number):
+        raise AlfaSnapshotTimeoutError(f"{name} must be a finite number of seconds")
+    if number < minimum or number > maximum:
+        raise AlfaSnapshotTimeoutError(f"{name} must be between {minimum} and {maximum} seconds")
+    return number
+
+
+class MessageTransport(Protocol):
+    def send_text(self, message: str) -> None: ...
+
+    def recv_text(self, timeout: float) -> str: ...
+
+    def close(self) -> None: ...
+
+
+@dataclass
+class CollectedState:
+    auth_status: int | None = None
+    ready_to_sign: bool | None = None
+    entities: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
+    query_status: dict[str, str] = field(default_factory=dict)
+    error_codes: dict[str, int] = field(default_factory=dict)
+    entity_truncated: dict[str, bool] = field(default_factory=dict)
+    routing_error: bool = False
+    routing_error_code: int | None = None
+    truncated: bool = False
+    malformed: bool = False
+    lost_auth: bool = False
+    messages_seen: int = 0
+    channels_invoked: list[str] = field(default_factory=list)
+    listened: list[str] = field(default_factory=list)
+    asset_info_keys: list[int] = field(default_factory=list)
+    asset_info_request_ids: list[str] = field(default_factory=list)
+    request_status: dict[str, str] = field(default_factory=dict)
+
+
+class AlfaProSnapshotReader:
+    """Allowlisted listen/subscribe only. Callers cannot pick an arbitrary channel."""
+
+    def __init__(
+        self,
+        transport: MessageTransport,
+        *,
+        read_timeout: float = READ_TIMEOUT_S,
+        max_messages: int = MAX_MESSAGES,
+        max_rows: int = MAX_ROWS_PER_ENTITY,
+    ) -> None:
+        self._transport = transport
+        self._read_timeout = bounded_timeout(
+            "read_timeout",
+            read_timeout,
+            minimum=MIN_READ_TIMEOUT_S,
+            maximum=MAX_READ_TIMEOUT_S,
+        )
+        self._max_messages = max_messages
+        self._max_rows = max_rows
+        self.state = CollectedState()
+        self._pending: dict[str, str] = {}
+
+    def listen_connection_state(self) -> None:
+        self._listen("#ConnectionState.Bus")
+
+    def listen_entity(self, entity_type: str) -> None:
+        self._listen(bus_channel_for_entity(entity_type))
+
+    def subscribe_entity(
+        self,
+        entity_type: str,
+        *,
+        init: bool = True,
+        keys: list[int] | None = None,
+    ) -> str:
+        if entity_type not in ALLOWED_ENTITY_TYPES:
+            raise ForbiddenAlfaChannel(f"refusing unlisted Alfa entity type: {entity_type}")
+        self.state.query_status.setdefault(entity_type, "unresolved")
+        payload: dict[str, object] = {"Type": entity_type, "Init": init, "Subscribe": True}
+        if keys is not None:
+            bounded_keys = list(keys)
+            if len(bounded_keys) > MAX_ASSET_KEYS:
+                self.state.truncated = True
+                self.state.entity_truncated[entity_type] = True
+                bounded_keys = bounded_keys[:MAX_ASSET_KEYS]
+            payload["Keys"] = bounded_keys
+        return self._request("#Data.Query", payload, pending=entity_type)
+
+    def unlisten_all(self) -> None:
+        for channel in list(self.state.listened):
+            try:
+                self._dispatch("unlisten", channel)
+            except ForbiddenAlfaChannel:
+                continue
+
+    def drain(
+        self,
+        deadline: float,
+        *,
+        continue_on_idle: bool = False,
+        until: Callable[[], bool] | None = None,
+    ) -> None:
+        while time.monotonic() < deadline and self.state.messages_seen < self._max_messages:
+            if until is not None and until():
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            timeout = min(self._read_timeout, remaining)
+            try:
+                raw = self._transport.recv_text(timeout)
+            except TimeoutError:
+                if continue_on_idle:
+                    continue
+                break
+            except OSError:
+                break
+            self.state.messages_seen += 1
+            if self.state.messages_seen >= self._max_messages:
+                self.state.truncated = True
+            try:
+                self._ingest(raw)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                self.state.malformed = True
+                if len(raw) > MAX_PAYLOAD_CHARS:
+                    self.state.truncated = True
+                continue
+            if self.state.lost_auth:
+                break
+            if until is not None and until():
+                break
+
+    def close(self) -> None:
+        self._transport.close()
+
+    def _listen(self, channel: str) -> None:
+        self._dispatch("listen", channel)
+        if channel not in self.state.listened:
+            self.state.listened.append(channel)
+
+    def _request(self, channel: str, payload: dict[str, object], *, pending: str) -> str:
+        request_id = uuid.uuid4().hex
+        self._pending[request_id] = pending
+        if pending == "AssetInfoEntity":
+            self.state.asset_info_request_ids.append(request_id)
+            self.state.request_status[request_id] = "unresolved"
+        self._dispatch("request", channel, payload=payload, request_id=request_id)
+        return request_id
+
+    def _dispatch(
+        self,
+        command: str,
+        channel: str,
+        *,
+        payload: object | None = None,
+        request_id: str | None = None,
+    ) -> None:
+        assert_router_send_allowed(command, channel)
+        encoded = encode_router_message(command, channel, payload=payload, request_id=request_id)
+        invoked = f"{command}:{channel}"
+        if invoked not in self.state.channels_invoked:
+            self.state.channels_invoked.append(invoked)
+        self._transport.send_text(encoded)
+
+    def _ingest(self, raw: str) -> None:
+        message = decode_router_message(raw)
+        command = str(message.get("Command") or "")
+        channel = str(message.get("Channel") or "")
+        if channel and is_order_channel(channel):
+            return
+        request_id = str(message.get("Id") or "")
+        pending = self._pending.pop(request_id, None) if request_id else None
+        router_code = _standalone_error_code(message)
+        if router_code is not None:
+            if pending is not None:
+                self._mark_error(pending, router_code, request_id=request_id or None)
+            else:
+                self.state.routing_error = True
+                self.state.routing_error_code = router_code
+            return
+        payload = decode_payload(message.get("Payload"))
+        if channel == "#ConnectionState.Bus":
+            previous = self.state.auth_status
+            _ingest_connection_state(self.state, payload)
+            if previous == 2 and self.state.auth_status != 2:
+                self.state.lost_auth = True
+            return
+        correlated = (
+            pending is not None and command == "response" and channel in {"#Data.Query", ""}
+        )
+        if correlated:
+            error_kind, error_code = _payload_error(payload)
+            if error_kind == "malformed":
+                self._mark_malformed(pending, request_id=request_id or None)
+                return
+            if error_kind == "error" and error_code is not None:
+                self._mark_error(pending, error_code, request_id=request_id or None)
+                return
+            if not _correlated_payload_structurally_valid(pending, payload):
+                self._mark_malformed(pending, request_id=request_id or None)
+                return
+            _ingest_entity_payload(
+                self.state,
+                pending,
+                payload,
+                max_rows=self._max_rows,
+            )
+            if self.state.query_status.get(pending) not in {"error", "malformed"}:
+                self.state.query_status[pending] = "ok"
+            if request_id and request_id in self.state.request_status:
+                if self.state.request_status[request_id] != "error":
+                    self.state.request_status[request_id] = "ok"
+            return
+        entity_type = _entity_type_from_channel(channel)
+        if entity_type is None and isinstance(payload, dict):
+            declared = payload.get("Type")
+            if isinstance(declared, str) and declared in ALLOWED_ENTITY_TYPES:
+                entity_type = declared
+        if entity_type is None:
+            return
+        _ingest_entity_payload(
+            self.state,
+            entity_type,
+            payload,
+            max_rows=self._max_rows,
+        )
+
+    def _mark_error(self, name: str, code: int, *, request_id: str | None = None) -> None:
+        self.state.query_status[name] = "error"
+        self.state.error_codes[name] = code
+        if request_id:
+            self.state.request_status[request_id] = "error"
+
+    def _mark_malformed(self, name: str, *, request_id: str | None = None) -> None:
+        self.state.malformed = True
+        self.state.query_status[name] = "malformed"
+        if request_id and request_id in self.state.request_status:
+            self.state.request_status[request_id] = "error"
+
+
+def run_snapshot_session(reader: AlfaProSnapshotReader, *, deadline: float) -> CollectedState:
+    """Bus-gated one-shot current-state collection. Never queries history or orders."""
+
+    reader.listen_connection_state()
+    reader.drain(
+        deadline,
+        continue_on_idle=True,
+        until=lambda: reader.state.auth_status == 2,
+    )
+    if reader.state.auth_status != 2:
+        reader.unlisten_all()
+        return reader.state
+    for entity_type in REQUIRED_SNAPSHOT_ENTITIES:
+        if time.monotonic() >= deadline or reader.state.auth_status != 2:
+            break
+        reader.listen_entity(entity_type)
+        reader.subscribe_entity(entity_type, init=True)
+    reader.drain(
+        deadline,
+        until=lambda: _required_queries_settled(reader.state) or reader.state.lost_auth,
+    )
+    if reader.state.auth_status == 2 and not reader.state.lost_auth and time.monotonic() < deadline:
+        object_ids = position_object_ids(reader.state)
+        if object_ids:
+            reader.state.asset_info_keys = list(object_ids)
+            reader.listen_entity("AssetInfoEntity")
+            for offset in range(0, len(object_ids), MAX_ASSET_KEYS):
+                if time.monotonic() >= deadline or reader.state.lost_auth:
+                    reader.state.truncated = True
+                    reader.state.entity_truncated["AssetInfoEntity"] = True
+                    break
+                chunk = object_ids[offset : offset + MAX_ASSET_KEYS]
+                request_id = reader.subscribe_entity("AssetInfoEntity", init=True, keys=chunk)
+                reader.drain(
+                    deadline,
+                    continue_on_idle=True,
+                    until=lambda rid=request_id: (
+                        reader.state.request_status.get(rid) in {"ok", "error"}
+                        or reader.state.lost_auth
+                    ),
+                )
+                if reader.state.request_status.get(request_id) != "ok":
+                    break
+    reader.unlisten_all()
+    return reader.state
+
+
+def position_object_ids(state: CollectedState) -> list[int]:
+    rows = state.entities.get("ClientPositionEntity", {})
+    found: list[int] = []
+    seen: set[int] = set()
+    for row in rows.values():
+        raw = as_int(row.get("IdObject"))
+        if raw is None or raw in seen:
+            continue
+        seen.add(raw)
+        found.append(raw)
+    return found
+
+
+def _required_queries_settled(state: CollectedState) -> bool:
+    return all(
+        state.query_status.get(name) in {"ok", "error", "malformed"}
+        for name in REQUIRED_SNAPSHOT_ENTITIES
+    )
+
+
+def positions_missing_instrument_ref(state: CollectedState) -> bool:
+    rows = state.entities.get("ClientPositionEntity", {})
+    return any(as_int(row.get("IdObject")) is None for row in rows.values())
+
+
+def asset_info_batches_complete(state: CollectedState) -> bool:
+    if not state.asset_info_keys:
+        return True
+    if not state.asset_info_request_ids:
+        return False
+    expected = (len(state.asset_info_keys) + MAX_ASSET_KEYS - 1) // MAX_ASSET_KEYS
+    if len(state.asset_info_request_ids) < expected:
+        return False
+    return all(
+        state.request_status.get(request_id) == "ok" for request_id in state.asset_info_request_ids
+    )
+
+
+def _entity_type_from_channel(channel: str) -> str | None:
+    prefix = "#Data.Bus."
+    if not channel.startswith(prefix):
+        return None
+    entity_type = channel[len(prefix) :]
+    if entity_type in ALLOWED_ENTITY_TYPES:
+        return entity_type
+    return None
+
+
+def _ingest_connection_state(state: CollectedState, payload: object) -> None:
+    if not isinstance(payload, dict):
+        return
+    states = payload.get("States")
+    root = states if isinstance(states, dict) else payload
+    if not isinstance(root, dict):
+        return
+    user = root.get("User")
+    if isinstance(user, dict):
+        status = as_int(user.get("AuthStatus"))
+        if status is not None:
+            state.auth_status = status
+    sign = root.get("SignService")
+    if isinstance(sign, dict):
+        ready = as_bool(sign.get("ReadyToSign"))
+        if ready is not None:
+            state.ready_to_sign = ready
+
+
+def _ingest_entity_payload(
+    state: CollectedState,
+    entity_type: str,
+    payload: object,
+    *,
+    max_rows: int,
+) -> None:
+    if entity_type not in ALLOWED_ENTITY_TYPES or not isinstance(payload, dict):
+        return
+    rows: list[object] = []
+    data = payload.get("Data")
+    updated = payload.get("Updated")
+    if isinstance(data, list):
+        rows.extend(data)
+    if isinstance(updated, list):
+        rows.extend(updated)
+    store = state.entities.setdefault(entity_type, {})
+    key_name = ENTITY_PRIMARY_KEY[entity_type]
+    for field_name in ("Data", "Updated", "Deleted"):
+        value = payload.get(field_name)
+        if value is not None and not isinstance(value, list):
+            state.malformed = True
+    deleted = payload.get("Deleted")
+    if isinstance(deleted, list):
+        for item in deleted:
+            if not isinstance(item, dict):
+                state.malformed = True
+                continue
+            key = _row_key(item, key_name)
+            if key is None:
+                state.malformed = True
+                continue
+            store.pop(key, None)
+    for item in rows:
+        if not isinstance(item, dict):
+            state.malformed = True
+            continue
+        key = _row_key(item, key_name)
+        if key is None:
+            state.malformed = True
+            continue
+        if key not in store and len(store) >= max_rows:
+            state.truncated = True
+            state.entity_truncated[entity_type] = True
+            continue
+        if entity_type == "ClientPositionEntity" and as_int(item.get("IdObject")) is None:
+            state.malformed = True
+        store[key] = item
+
+
+def _row_key(row: dict[str, object], key_name: str) -> str | None:
+    value = as_int(row.get(key_name))
+    if value is None:
+        return None
+    return str(value)
+
+
+def _correlated_payload_structurally_valid(pending: str, payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if "Type" in payload and payload.get("Type") != pending:
+        return False
+    return True
+
+
+def _payload_error(payload: object) -> tuple[str, int | None]:
+    """Classify a correlated payload Error field.
+
+    absent: Error is missing, or documented Code=0 on a valid object.
+    error: present object with a valid nonzero integer Code.
+    malformed: Error is present but not a documented {Code: int} object.
+    """
+
+    if not isinstance(payload, dict) or "Error" not in payload:
+        return ("absent", None)
+    error = payload["Error"]
+    if not isinstance(error, dict):
+        return ("malformed", None)
+    if "Code" not in error:
+        return ("malformed", None)
+    code = as_int(error.get("Code"))
+    if code is None:
+        return ("malformed", None)
+    if code == 0:
+        return ("absent", None)
+    return ("error", code)
+
+
+def _standalone_error_code(message: dict[str, object]) -> int | None:
+    """Documented RoutingError is {Code, Message} with no Command or Channel."""
+
+    if message.get("Command") or message.get("Channel"):
+        return None
+    code = as_int(message.get("Code"))
+    if code is None or code == 0:
+        return None
+    return code
