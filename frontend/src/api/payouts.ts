@@ -70,6 +70,44 @@ export type PayoutPreview = {
   rows: PayoutPreviewRow[];
 };
 
+export type PayoutBatchPreviewItem = {
+  account_id: number;
+  instrument_id: number;
+  position_snapshot_id: number;
+  provider: string | null;
+  instrument_uid: string | null;
+  status: "skipped" | "previewed" | "no_events" | "error" | string;
+  message: string | null;
+  preview: PayoutPreview | null;
+};
+
+export type PayoutBatchPreview = {
+  reporting_month_id: number;
+  forecast_version: string;
+  summary: {
+    total_positions: number;
+    eligible_positions: number;
+    with_events: number;
+    without_events: number;
+    errors: number;
+    skipped: number;
+  };
+  items: PayoutBatchPreviewItem[];
+};
+
+export type PayoutRefreshStatus = {
+  reporting_month_id: number;
+  positions_changed: number;
+  items: Array<{
+    account_id: number;
+    instrument_id: number;
+    position_snapshot_id: number;
+    current_quantity: string;
+    frozen_quantity: string;
+    applied_payout_count: number;
+  }>;
+};
+
 export type ManualDuplicateDecision = {
   expected_cash_flow_id: number;
   counting_decision: PayoutCountingDecision;
@@ -164,6 +202,32 @@ export function previewPayouts(
     body: payload,
     signal,
   });
+}
+
+export function previewPayoutsBatch(
+  monthId: number,
+  forecastVersion: string,
+  positionSnapshotIds?: number[],
+  signal?: AbortSignal,
+): Promise<PayoutBatchPreview> {
+  return apiRequest<PayoutBatchPreview>(`/api/months/${monthId}/payout-batch-preview`, {
+    method: "POST",
+    body: {
+      forecast_version: forecastVersion,
+      ...(positionSnapshotIds ? { position_snapshot_ids: positionSnapshotIds } : {}),
+    },
+    signal,
+  });
+}
+
+export function getPayoutRefreshStatus(
+  monthId: number,
+  signal?: AbortSignal,
+): Promise<PayoutRefreshStatus> {
+  return apiRequest<PayoutRefreshStatus>(
+    `/api/months/${monthId}/payout-refresh-status`,
+    { method: "GET", signal },
+  );
 }
 
 export function applyPayouts(

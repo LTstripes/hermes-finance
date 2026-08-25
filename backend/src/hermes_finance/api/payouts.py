@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.market_data import (
@@ -24,7 +25,7 @@ from hermes_finance.market_data.payout_protocol import (
     PayoutFetchResult,
     PayoutProvider,
 )
-from hermes_finance.persistence import PositionSnapshot, ReportingMonth
+from hermes_finance.persistence import AppliedProviderPayout, PositionSnapshot, ReportingMonth
 from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.services.instrument_mappings import get_instrument_mapping
 from hermes_finance.services.payout_apply import (
@@ -102,6 +103,65 @@ class PayoutPreviewResponse(BaseModel):
     provider: str
     instrument_uid: str
     rows: list[PayoutPreviewRowOut]
+
+
+class PayoutBatchPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    forecast_version: str = Field(min_length=1, max_length=32)
+    position_snapshot_ids: list[int] | None = Field(default=None, max_length=500)
+
+
+class PayoutBatchPreviewItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int
+    instrument_id: int
+    position_snapshot_id: int
+    provider: str | None
+    instrument_uid: str | None
+    status: str
+    message: str | None
+    preview: PayoutPreviewResponse | None
+
+
+class PayoutBatchPreviewSummaryOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_positions: int
+    eligible_positions: int
+    with_events: int
+    without_events: int
+    errors: int
+    skipped: int
+
+
+class PayoutBatchPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reporting_month_id: int
+    forecast_version: str
+    summary: PayoutBatchPreviewSummaryOut
+    items: list[PayoutBatchPreviewItemOut]
+
+
+class PayoutRefreshStatusItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int
+    instrument_id: int
+    position_snapshot_id: int
+    current_quantity: str
+    frozen_quantity: str
+    applied_payout_count: int
+
+
+class PayoutRefreshStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reporting_month_id: int
+    positions_changed: int
+    items: list[PayoutRefreshStatusItemOut]
 
 
 class ManualDuplicateDecisionIn(BaseModel):
@@ -349,6 +409,74 @@ def _preview_response(result: PayoutPreviewResult) -> PayoutPreviewResponse:
     )
 
 
+def _batch_item_status(preview: PayoutPreviewResult) -> tuple[str, bool, bool, bool]:
+    event_rows = [row for row in preview.rows if row.event_kind is not None]
+    has_error = any(row.status.value == PayoutEventStatus.ERROR.value for row in preview.rows)
+    if has_error:
+        return "error", bool(event_rows), False, True
+    if not event_rows:
+        return "no_events", False, True, False
+    return "previewed", True, False, False
+
+
+def _refresh_status(
+    session: Session,
+    *,
+    reporting_month_id: int,
+) -> PayoutRefreshStatusResponse:
+    month = session.get(ReportingMonth, reporting_month_id)
+    if month is None:
+        raise ReportingMonthNotFoundError(f"reporting month {reporting_month_id} was not found")
+
+    snapshots = list(
+        session.scalars(
+            select(PositionSnapshot)
+            .where(PositionSnapshot.reporting_month_id == reporting_month_id)
+            .order_by(PositionSnapshot.account_id, PositionSnapshot.instrument_id, PositionSnapshot.id)
+        )
+    )
+    payouts = list(
+        session.scalars(
+            select(AppliedProviderPayout)
+            .where(
+                AppliedProviderPayout.reporting_month_id == reporting_month_id,
+                AppliedProviderPayout.provider == T_INVEST_PROVIDER,
+                AppliedProviderPayout.lifecycle == "active",
+            )
+            .order_by(AppliedProviderPayout.id)
+        )
+    )
+    by_position = {}
+    for payout in payouts:
+        by_position.setdefault((payout.account_id, payout.instrument_id), []).append(payout)
+
+    items: list[PayoutRefreshStatusItemOut] = []
+    for snapshot in snapshots:
+        related = by_position.get((snapshot.account_id, snapshot.instrument_id), [])
+        stale = [
+            payout
+            for payout in related
+            if payout.source_position_snapshot_id != snapshot.id or payout.quantity != snapshot.quantity
+        ]
+        if not stale:
+            continue
+        items.append(
+            PayoutRefreshStatusItemOut(
+                account_id=snapshot.account_id,
+                instrument_id=snapshot.instrument_id,
+                position_snapshot_id=snapshot.id,
+                current_quantity=_decimal_text(snapshot.quantity) or "0",
+                frozen_quantity=_decimal_text(stale[0].quantity) or "0",
+                applied_payout_count=len(stale),
+            )
+        )
+    return PayoutRefreshStatusResponse(
+        reporting_month_id=month.id,
+        positions_changed=len(items),
+        items=items,
+    )
+
+
 def _apply_selection(
     row: PayoutApplySelectionIn,
     *,
@@ -432,6 +560,152 @@ def payout_preview_endpoint(
     finally:
         close_owned_payout_resource(owned_resource)
     return _preview_response(result)
+
+
+@router.post(
+    "/api/months/{month_id}/payout-batch-preview",
+    response_model=PayoutBatchPreviewResponse,
+)
+def payout_batch_preview_endpoint(
+    month_id: int,
+    payload: PayoutBatchPreviewRequest,
+    request: Request,
+    session: Session = Depends(session_for_request),
+) -> PayoutBatchPreviewResponse:
+    month = session.get(ReportingMonth, month_id)
+    if month is None:
+        raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
+
+    snapshot_query = select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == month_id)
+    if payload.position_snapshot_ids is not None:
+        snapshot_query = snapshot_query.where(PositionSnapshot.id.in_(payload.position_snapshot_ids))
+    snapshots = list(
+        session.scalars(
+            snapshot_query.order_by(
+                PositionSnapshot.account_id,
+                PositionSnapshot.instrument_id,
+                PositionSnapshot.id,
+            )
+        )
+    )
+    items: list[PayoutBatchPreviewItemOut] = []
+    eligible = with_events = without_events = errors = skipped = 0
+    provider, owned_resource = resolve_payout_provider(request)
+    try:
+        for snapshot in snapshots:
+            mapping = get_instrument_mapping(session, snapshot.instrument_id)
+            if mapping.state is not MarketMappingState.MAPPED or mapping.identity is None:
+                skipped += 1
+                message = (
+                    "Позиция исключена из обновления"
+                    if mapping.state is MarketMappingState.EXCLUDED
+                    else "Нет принятого сопоставления T-Invest"
+                )
+                items.append(
+                    PayoutBatchPreviewItemOut(
+                        account_id=snapshot.account_id,
+                        instrument_id=snapshot.instrument_id,
+                        position_snapshot_id=snapshot.id,
+                        provider=None,
+                        instrument_uid=None,
+                        status="skipped",
+                        message=message,
+                        preview=None,
+                    )
+                )
+                continue
+            if mapping.identity.provider != T_INVEST_PROVIDER:
+                skipped += 1
+                items.append(
+                    PayoutBatchPreviewItemOut(
+                        account_id=snapshot.account_id,
+                        instrument_id=snapshot.instrument_id,
+                        position_snapshot_id=snapshot.id,
+                        provider=mapping.identity.provider,
+                        instrument_uid=mapping.identity.provider_instrument_id,
+                        status="skipped",
+                        message="Принятое сопоставление не поддерживает payout refresh T-Invest",
+                        preview=None,
+                    )
+                )
+                continue
+
+            eligible += 1
+            try:
+                context = _resolve_context(
+                    session,
+                    reporting_month_id=month_id,
+                    account_id=snapshot.account_id,
+                    instrument_id=snapshot.instrument_id,
+                    position_snapshot_id=snapshot.id,
+                )
+                fetch_result = _safe_fetch(provider, context)
+                result = build_payout_preview(
+                    session,
+                    reporting_month_id=month_id,
+                    account_id=snapshot.account_id,
+                    instrument_id=snapshot.instrument_id,
+                    position_snapshot_id=snapshot.id,
+                    forecast_version=payload.forecast_version,
+                    fetch_result=fetch_result,
+                )
+                status, has_events, no_events, has_error = _batch_item_status(result)
+                with_events += int(has_events)
+                without_events += int(no_events)
+                errors += int(has_error)
+                items.append(
+                    PayoutBatchPreviewItemOut(
+                        account_id=snapshot.account_id,
+                        instrument_id=snapshot.instrument_id,
+                        position_snapshot_id=snapshot.id,
+                        provider=result.provider,
+                        instrument_uid=result.instrument_uid,
+                        status=status,
+                        message=None,
+                        preview=_preview_response(result),
+                    )
+                )
+            except Exception:
+                errors += 1
+                items.append(
+                    PayoutBatchPreviewItemOut(
+                        account_id=snapshot.account_id,
+                        instrument_id=snapshot.instrument_id,
+                        position_snapshot_id=snapshot.id,
+                        provider=T_INVEST_PROVIDER,
+                        instrument_uid=mapping.identity.provider_instrument_id,
+                        status="error",
+                        message="Не удалось подготовить preview позиции",
+                        preview=None,
+                    )
+                )
+    finally:
+        close_owned_payout_resource(owned_resource)
+
+    return PayoutBatchPreviewResponse(
+        reporting_month_id=month_id,
+        forecast_version=payload.forecast_version.strip(),
+        summary=PayoutBatchPreviewSummaryOut(
+            total_positions=len(snapshots),
+            eligible_positions=eligible,
+            with_events=with_events,
+            without_events=without_events,
+            errors=errors,
+            skipped=skipped,
+        ),
+        items=items,
+    )
+
+
+@router.get(
+    "/api/months/{month_id}/payout-refresh-status",
+    response_model=PayoutRefreshStatusResponse,
+)
+def payout_refresh_status_endpoint(
+    month_id: int,
+    session: Session = Depends(session_for_request),
+) -> PayoutRefreshStatusResponse:
+    return _refresh_status(session, reporting_month_id=month_id)
 
 
 @router.post("/api/months/{month_id}/payout-apply", response_model=PayoutApplyResponse)

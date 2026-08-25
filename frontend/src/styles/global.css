@@ -1628,6 +1628,14 @@ th.num {
   gap: 18px;
 }
 
+.stack-18 > .payout-merged-calendar {
+  order: 3;
+}
+
+.stack-18 > .payout-manual-expected {
+  order: 4;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -1933,9 +1941,29 @@ th.num {
   display: none;
 }
 
+.payments-calendar__chevron {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+}
+
+.payments-calendar__month[open] .payments-calendar__chevron {
+  transform: rotate(45deg);
+}
+
 .payments-calendar__month-name {
   min-width: 110px;
   font-weight: 600;
+}
+
+.payments-calendar__count {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .payments-calendar__chips {
