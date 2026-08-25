@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Это дерево содержит содержимое релиза **0.6.2**. Опубликованная идентичность релиза определяется неизменяемым Git-тегом и GitHub Release. `0.6.2` — maintenance поверх опубликованного `0.6.1`: безопасный retract ошибочно применённых Alfa statement payouts и polish layout редактора месяца / statement review.
+Это дерево содержит содержимое релиза **0.6.3**. Опубликованная идентичность релиза определяется неизменяемым Git-тегом и GitHub Release. `0.6.3` — maintenance поверх `0.6.2`: dashboard information architecture и payout readability, approximate deposit-interest forecast completeness и explicit T-Invest batch refresh / payout-calendar UX.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -76,18 +76,18 @@ Frontend будет на `127.0.0.1:5173`, `/api` проксируется в л
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Для 0.6.2 ожидается:
+Для 0.6.3 ожидается:
 
 ```json
 {
   "status": "ok",
-  "version": "0.6.2"
+  "version": "0.6.3"
 }
 ```
 
-## Что доступно в 0.6.2
+## Что доступно в 0.6.3
 
-Maintenance `0.6.2` добавляет безопасный retract ошибочно применённых Alfa statement payouts и уплотняет таблицы редактора месяца / prepared-import review. Продуктовый scope `0.6.0` не расширяется новой линейкой. Основной UI больше не содержит staged placeholders для ключевых разделов. Доступны:
+Maintenance `0.6.3` фиксирует уже интегрированные M06-07/M06-08/M06-09. Dashboard разделяет fact/forecast/coverage, депозитный forecast включает явно approximate component из selected-month snapshot, а T-Invest batch refresh остаётся explicit owner-triggered без background refresh. Продуктовый scope `0.6.0` не расширяется новой линейкой. Доступны:
 
 - **Дашборд** — KPI, графики капитала/пассивного дохода, распределение активов, инвестиционный результат и основная цель;
 - **Месяцы** — draft/closed lifecycle, клонирование, ввод данных, reopen/close и безопасное удаление draft вместе с его месячными данными;
@@ -125,9 +125,11 @@ Maintenance `0.6.2` добавляет безопасный retract ошибоч
 
 Основная passive-income цель использует rolling average фактического net passive income по закрытым месяцам (до последних 12). Это же фактическое среднее является `Текущим значением` и источником прогресса цели. C04 forecast остаётся отдельной прогнозной метрикой и не подменяет фактический прогресс; при истории короче 12 месяцев UI явно показывает, сколько закрытых месяцев учтено.
 
+Автоматический deposit component прогноза строится из `DepositSnapshot.expected_monthly_interest_kopecks` выбранного месяца и annualises monthly estimate × 12. Это приблизительная оценка: maturity и изменения ставки не моделируются. Ручной expected `interest` остаётся additive.
+
 ### Календарь ожидаемых выплат
 
-В **0.6.2** календарь по-прежнему объединяет ручные ожидаемые выплаты и уже применённые события T-Invest. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
+В **0.6.3** календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest; раскрытие месяца очевидно, а expanded rows показывают instrument/company первично, account вторично, source/provenance, amount и redemption-as-capital context. `Ручные ожидаемые выплаты` остаются manual-only/additive и стоят после merged calendar в DOM. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
 
 - количество для провайдерской выплаты берётся из локального `PositionSnapshot`, не из брокерского портфеля;
 - apply не редактирует и не удаляет ручные `expected_cash_flows`;
@@ -196,10 +198,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps
 
 Launcher сам применит Alembic migrations перед readiness-check.
 
-## Известные ограничения 0.6.2
+## Известные ограничения 0.6.3
 
 - только один локальный пользователь, без auth/cloud/VPS/HTTPS;
-- котировки и выплаты T-Invest только после явного preview/apply владельца; фонового обновления, polling и startup-сети нет; MOEX не является production fallback;
+- котировки и выплаты T-Invest только после явного preview/apply владельца; изменение количества позиции не запускает background refresh, polling или startup-сеть; MOEX не является production fallback;
 - снимок Alfa PRO только после явной кнопки и только к локальному терминалу; нет background refresh, browser → Alfa WebSocket и trading/order/signing API;
 - PDF-импорт Alfa — только принятое семейство депозитарного отчёта о выплатах доходов, text layer, без OCR; это не generic import брокерского портфеля, сделок или банковских транзакций;
 - persistent mapping счетов/инструментов Alfa нет; account/instrument/month из провайдера или PDF автоматически не создаются;
@@ -276,9 +278,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-rel
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
-  -Version 0.6.2 `
+  -Version 0.6.3 `
   -ExpectedMainSha <полный-40-символьный-sha-принятого-origin/main> `
-  -ReleaseNotes .\docs\release-notes-0.6.2.md
+  -ReleaseNotes .\docs\release-notes-0.6.3.md
 ```
 
 Хелпер не двигает ветки, не делает force-update тега, не создаёт коммиты и не читает `.env`.
@@ -297,13 +299,13 @@ Active:
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — журнал исполнения;
 - [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения;
-- [`docs/releases/0.6.2.md`](docs/releases/0.6.2.md) — 0.6.2 maintenance release record;
-- [`docs/release-notes-0.6.2.md`](docs/release-notes-0.6.2.md) — публичные notes для позднего guarded release helper.
+- [`docs/releases/0.6.3.md`](docs/releases/0.6.3.md) — 0.6.3 maintenance release record;
+- [`docs/release-notes-0.6.3.md`](docs/release-notes-0.6.3.md) — публичные notes для позднего guarded release helper.
 
 Historical:
 
 - [`docs/history/`](docs/history/) — архив старых Hermes process/backlog документов;
-- [`docs/releases/`](docs/releases/) — исторические release records, включая [`0.6.1`](docs/releases/0.6.1.md), [`0.6.0`](docs/releases/0.6.0.md), [`0.5.0`](docs/releases/0.5.0.md) и [`0.4.0`](docs/releases/0.4.0.md);
+- [`docs/releases/`](docs/releases/) — исторические release records, включая [`0.6.2`](docs/releases/0.6.2.md), [`0.6.1`](docs/releases/0.6.1.md), [`0.6.0`](docs/releases/0.6.0.md), [`0.5.0`](docs/releases/0.5.0.md) и [`0.4.0`](docs/releases/0.4.0.md);
 - [`docs/reviews/`](docs/reviews/) — исторические review notes;
 - [`sketches/`](sketches/) — исторические UI-эскизы, не source of truth.
 
