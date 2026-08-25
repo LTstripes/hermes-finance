@@ -2,6 +2,45 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.6.2] — 2026-08-25
+
+Maintenance on top of 0.6.1: auditable retract for wrongly applied Alfa statement payouts, plus month-editor / statement-review layout polish. No new product line, provider or trading semantics.
+
+### Added
+
+- safe undo/retract for wrongly applied Alfa statement payouts:
+  - auditable `active | retracted` statement-event lifecycle;
+  - `retract` append-only revision;
+  - statement-created payout retract removes its financial effect while retaining audit evidence;
+  - linked-existing retract only detaches statement provenance and preserves the original manual flow;
+  - the same statement can be re-imported after retract with a corrected mapping;
+  - CLOSED/missing month fail closed;
+  - explicit owner UI `Отменить импорт` / `Отвязать выписку`.
+
+### Changed
+
+#### Month editor and statement review
+
+- unnecessary desktop horizontal overflow removed in targeted month tables (deposits, positions, debts, property);
+- position inline-edit uses a dedicated readable layout instead of wrapping Save/Cancel in the action column;
+- Alfa prepared-import review is denser: identity, account, event/date, class badge and concise decision text;
+- simple new rows use a short decision label instead of a long repeated sentence;
+- actual-payout green accent no longer crosses the date text.
+
+### Not changed
+
+- no OCR;
+- no persistent raw Alfa/provider payload;
+- no persistent Alfa account mapping;
+- Apply remains explicit and selected-row only;
+- duplicate/idempotency guards remain;
+- CLOSED and missing-month operations still fail closed;
+- generic investment-flow delete must not silently destroy statement provenance;
+- retract is statement-specific and auditable;
+- no provider or trading semantic change;
+- no new Alembic revision in this prep task; canonical head remains `0029_statement_event_retract` (already on main from M06-04);
+- local runtime remains loopback-only (`127.0.0.1:8000`).
+
 ## [0.6.1] — 2026-08-25
 
 Maintenance UX on top of 0.6.0. No schema, provider or persistence change.

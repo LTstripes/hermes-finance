@@ -28,9 +28,9 @@
 
 .EXAMPLE
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
-        -Version 0.6.1 `
+        -Version 0.6.2 `
         -ExpectedMainSha 0123456789abcdef0123456789abcdef01234567 `
-        -ReleaseNotes .\docs\release-notes-0.6.1.md
+        -ReleaseNotes .\docs\release-notes-0.6.2.md
 #>
 
 [CmdletBinding()]

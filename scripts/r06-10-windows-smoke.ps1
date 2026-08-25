@@ -8,7 +8,7 @@ param()
 # still load the ignored repository-root .env; this script does not prove
 # the token file was unread. It must not print or expose a token.
 # Proves the production listener is exactly 127.0.0.1:8000
-# and /api/health reports version 0.6.1.
+# and /api/health reports version 0.6.2.
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
@@ -231,10 +231,10 @@ try {
     }
 
     $healthBody = $healthResponse.Content | ConvertFrom-Json
-    if ($healthBody.status -ne "ok" -or $healthBody.version -ne "0.6.1") {
-        throw "Expected health {status=ok, version=0.6.1}, got '$($healthResponse.Content)'."
+    if ($healthBody.status -ne "ok" -or $healthBody.version -ne "0.6.2") {
+        throw "Expected health {status=ok, version=0.6.2}, got '$($healthResponse.Content)'."
     }
-    Write-Host "R06-10 Windows smoke: /api/health reports 0.6.1." -ForegroundColor Green
+    Write-Host "R06-10 Windows smoke: /api/health reports 0.6.2." -ForegroundColor Green
 
     $revision = Get-AlembicRevision -DatabasePath $databasePath
     if ($revision -ne $expectedRevision) {
