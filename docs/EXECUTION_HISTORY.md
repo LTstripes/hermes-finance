@@ -303,6 +303,29 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.6.0 development
+
+### 0.6.0 / R06-10 — release hardening, owner UAT, release-candidate preparation
+
+- **Accepted:** 2026-08-25
+- **Implemented by:** Grok / Grok Build — exact model identity not independently runtime-confirmed in the accepted evidence
+- **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
+- **Issue:** #98
+- **Original R06 baseline:** `194ec5501211e8940a9328ac9011bb35fb4423d1`
+- **Final Gate B code:** `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3`
+- **Gate C worker baseline:** `f284d82e3065fc3cb06fa07cd02cf2664c80ae33`
+- **Candidate trail:** initial Gate C `480fe591fb4d0a7e013ba0ecdc78cb294d4d7e04` → accepted after docs follow-up `1fc35d173f4c5dbb68cf76c0aaa2a1b20210d421` (`r06-10-gate-c-grok`)
+- **Material review iteration:** the first Gate C candidate added a premature pre-integration `EXECUTION_HISTORY` record; that section was removed. The file's recording policy allows an execution record only after accept + integrate into the target branch.
+- **Integrated into:** `r06` via PR #99 merge `2222ba016854d52e88eb9a5404c81203655ccd3a`
+- **PR CI:** #302, all green
+- **Worker verification before PR:** backend `1221 passed`, frontend `258 passed / 45 files`, Ruff/Biome/build/privacy/`git diff --check`/release-helper/Windows smoke passed. Runtime suites were not rerun for the docs-only follow-up; exact PR CI exercised the accepted head.
+- **Gate B:** `UAT_PASS` / `GATE_B_PASS` on exact code `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3`. Owner UAT on a copied runtime, production untouched: real supported Alfa PDF parse/reconciliation/selective apply/duplicate protection, explicit manual-candidate decision, snapshot selective apply, CLOSED protections and restart stability passed. No private values recorded here.
+- **Decision notes:** accepted after real owner UAT plus exact-SHA release verification. Gate C was version/docs/release finalization only; no Alfa/report semantic expansion.
+- **Publication status:** not released yet. `r06 → main`, exact-main CI and `v0.6.0` remain subsequent release steps.
+- **References:** issue #98, PR #99, `docs/releases/0.6.0.md`, `docs/release-notes-0.6.0.md`, `CHANGELOG.md`
+
+---
+
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
