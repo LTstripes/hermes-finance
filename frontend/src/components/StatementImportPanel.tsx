@@ -20,6 +20,51 @@ type StatementDecision = {
 
 const EMPTY_DECISION: StatementDecision = { action: "", candidateId: "" };
 
+const REPORT_STATUS_LABELS: Record<string, string> = {
+  applicable: "Отчёт готов к подготовке",
+  non_applicable: "Отчёт нельзя импортировать",
+  malformed: "Структура отчёта не распознана",
+  unsupported: "Есть неподдерживаемые строки",
+};
+
+const ROW_STATUS_LABELS: Record<string, string> = {
+  matched: "Распознано",
+  unmatched: "Требуется сопоставление",
+  ambiguous: "Нужно уточнение",
+  malformed: "Строка не распознана",
+  unsupported: "Строка не поддерживается",
+};
+
+const EVENT_KIND_LABELS: Record<string, string> = {
+  dividend: "Дивиденды",
+  coupon: "Купон",
+  redemption: "Погашение",
+};
+
+const APPLIED_ACTION_LABELS: Record<string, string> = {
+  created: "Создана новая запись",
+  linked_existing: "Связано с существующей записью",
+  revised: "Создано уточнение записи",
+  unchanged: "Изменения не требуются",
+  revise: "Создано уточнение записи",
+};
+
+function reportMessage(status: string, reason: string | null): string | null {
+  if (reason === "wrong_report_family") {
+    return "Этот тип отчёта пока не поддерживается. Выберите «Отчет о произведенных выплатах доходов по ценным бумагам».";
+  }
+  if (reason === "missing_required_schema") {
+    return "Hermes не смог распознать структуру отчёта Alfa. Данные не были импортированы.";
+  }
+  if (status === "malformed") {
+    return "Файл отчёта Alfa не удалось безопасно прочитать. Данные не были импортированы.";
+  }
+  if (status === "non_applicable") {
+    return "Этот отчёт нельзя импортировать. Выберите поддерживаемый отчёт Alfa.";
+  }
+  return reason ? "Не удалось подготовить отчёт к импорту." : null;
+}
+
 function rowKey(row: StatementRow, index: number): string {
   return (
     row.natural_identity ??
@@ -114,7 +159,7 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
     try {
       const next = await inspectStatement(file);
       setInspected(next);
-      if (next.reason) setMessage(next.reason);
+      setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
       setMessage(formatApiError(error));
     } finally {
@@ -144,7 +189,7 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
     try {
       const next = await prepareStatement(file, mapping());
       setPreparation(next);
-      if (next.reason) setMessage(next.reason);
+      setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
       setMessage(formatApiError(error));
     } finally {
@@ -229,9 +274,10 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
   }
 
   return (
-    <Panel label="Alfa PDF" title="Импорт отчёта Alfa">
+    <Panel className="statement-import" label="Alfa PDF" title="Импорт отчёта Alfa">
       <p className="muted">
-        PDF читается только в памяти. На apply отправляется тот же File и проверяется его SHA-256.
+        PDF читается только в памяти. При применении Hermes повторно проверит тот же файл и
+        убедится, что он не изменился.
       </p>
       <div className="editor-grid">
         <Field htmlFor="statement-file" label="PDF отчёта Alfa">
@@ -245,11 +291,11 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
       </div>
       <div className="toolbar">
         <Button onClick={() => void inspect()} disabled={busy || !file}>
-          Инспектировать PDF
+          Проверить отчёт
         </Button>
         {inspected ? (
           <Button onClick={() => void prepare()} disabled={busy || !mappingReady}>
-            Подготовить отчёт
+            Подготовить к импорту
           </Button>
         ) : null}
         {preparation ? (
@@ -274,13 +320,17 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
       ) : null}
       {inspected ? (
         <div className="stack-12">
-          <div className="toolbar">
+          <div className="statement-import__summary">
             <Badge tone={inspected.status === "applicable" ? "ok" : "closed"}>
-              {inspected.status}
+              {REPORT_STATUS_LABELS[inspected.status] ?? "Статус отчёта неизвестен"}
             </Badge>
             <span className="muted">Найдено строк: {inspected.rows.length}</span>
           </div>
-          <Panel label="Сопоставление" title="Временные mapping для этого просмотра">
+          <Panel
+            className="statement-import__mapping"
+            label="Сопоставление"
+            title="Временное сопоставление для этой проверки"
+          >
             {accountRefs.map((ref) => (
               <Field key={ref} htmlFor={`statement-map-account-${ref}`} label={`Alfa-счёт ${ref}`}>
                 <Select
@@ -327,10 +377,10 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
               </Field>
             ))}
           </Panel>
-          <Table>
+          <Table className="statement-import__inspect-table">
             <thead>
               <tr>
-                <Th>Provider account ref</Th>
+                <Th>Счёт у Alfa</Th>
                 <Th>ISIN</Th>
                 <Th>Событие</Th>
                 <Th>Статус</Th>
@@ -343,8 +393,8 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                 >
                   <Td>{row.provider_account_ref ?? "—"}</Td>
                   <Td>{row.isin ?? "—"}</Td>
-                  <Td>{row.event_kind ?? "—"}</Td>
-                  <Td>{row.status}</Td>
+                  <Td>{row.event_kind ? (EVENT_KIND_LABELS[row.event_kind] ?? "Другое") : "—"}</Td>
+                  <Td>{ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен"}</Td>
                 </tr>
               ))}
             </tbody>
@@ -353,13 +403,13 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
       ) : null}
       {preparation ? (
         <div className="stack-12">
-          <div className="toolbar">
+          <div className="statement-import__summary">
             <Badge tone={preparation.status === "applicable" ? "ok" : "closed"}>
-              {preparation.status}
+              {REPORT_STATUS_LABELS[preparation.status] ?? "Статус отчёта неизвестен"}
             </Badge>
-            <span className="muted">SHA-256: {preparation.document_sha256}</span>
+            <span className="muted">Файл проверен и готов к применению.</span>
           </div>
-          <Table>
+          <Table className="statement-import__prepare-table">
             <thead>
               <tr>
                 <Th>Выбор</Th>
@@ -388,13 +438,13 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                         aria-label={`Выбрать строку ${index + 1}`}
                       />
                     </Td>
-                    <Td>{row.status}</Td>
+                    <Td>{ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен"}</Td>
                     <Td>
                       {duplicate
-                        ? "DUPLICATE · уже импортировано"
+                        ? "Уже импортировано"
                         : correction
-                          ? "CORRECTION · требуется revise"
-                          : "NEW"}
+                          ? "Требует пересмотра"
+                          : "Новая строка"}
                     </Td>
                     <Td>
                       {duplicate ? (
@@ -441,14 +491,13 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
                                 updateDecision(key, { candidateId: event.target.value })
                               }
                             >
-                              <option value="">— выбери exact candidate —</option>
+                              <option value="">— выбери существующую запись —</option>
                               {row.candidates.map((candidate) => (
                                 <option
                                   key={candidate.investment_cash_flow_id}
                                   value={candidate.investment_cash_flow_id}
                                 >
-                                  #{candidate.investment_cash_flow_id} ·{" "}
-                                  {candidate.net_amount_kopecks} kopecks
+                                  Запись #{candidate.investment_cash_flow_id}
                                 </option>
                               ))}
                             </Select>
@@ -464,11 +513,11 @@ export function StatementImportPanel({ accounts, instruments, onApplied }: Props
         </div>
       ) : null}
       {resultItems.length > 0 ? (
-        <Panel label="Результат apply" title="Применённые строки">
+        <Panel label="Итог импорта" title="Обработанные строки">
           <ul>
             {resultItems.map((item) => (
               <li key={`${item.action}:${item.natural_identity}`}>
-                {item.action}: {item.natural_identity}
+                {APPLIED_ACTION_LABELS[item.action] ?? "Строка обработана"}
               </li>
             ))}
           </ul>

@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
@@ -16,6 +17,7 @@ from hermes_finance.broker_data.protocol import BrokerSnapshotProvider
 from hermes_finance.broker_data.reconciliation.dto import OwnerMappingInput
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.domain import PriceSource, RubleAmount
+from hermes_finance.persistence import PositionSnapshot
 from hermes_finance.services.broker_reconciliation import load_hermes_state_for_month
 from hermes_finance.services.broker_snapshot_apply import (
     AccruedInterestDecision,
@@ -113,6 +115,9 @@ class BrokerPositionRowOut(BaseModel):
 
     account_id: int
     instrument_id: int
+    account_name: str | None
+    instrument_name: str | None
+    instrument_isin: str | None
     status: str
     hermes_quantity: str | None
     provider_quantity: str | None
@@ -239,17 +244,18 @@ def _preview_response(
     preview, *, fingerprint_mapping: OwnerMappingInput, session: Session
 ) -> BrokerSnapshotPreviewResponse:
     hermes = load_hermes_state_for_month(session, preview.month_id or 0)
+    account_names = {account.account_id: account.name for account in hermes.accounts}
+    instruments = {instrument.instrument_id: instrument for instrument in hermes.instruments}
+    # Reconciliation state is deliberately a display DTO. The apply contract,
+    # however, fingerprints persisted PositionSnapshot identity and revision
+    # state, so preview must use the same authoritative records as Apply.
     snapshots = {
-        (row.account_id, row.instrument_id): next(
-            (
-                position
-                for position in hermes.positions
-                if position.account_id == row.account_id
-                and position.instrument_id == row.instrument_id
-            ),
-            None,
+        (snapshot.account_id, snapshot.instrument_id): snapshot
+        for snapshot in session.scalars(
+            select(PositionSnapshot).where(
+                PositionSnapshot.reporting_month_id == (preview.month_id or 0)
+            )
         )
-        for row in preview.positions
     }
     positions = []
     for row in preview.positions:
@@ -258,7 +264,7 @@ def _preview_response(
                 preview=preview,
                 row=row,
                 mapping=fingerprint_mapping,
-                snapshot=snapshots[(row.account_id, row.instrument_id)],
+                snapshot=snapshots.get((row.account_id, row.instrument_id)),
             )
             if row.status.value in {"matched", "provider_only"}
             else None
@@ -267,6 +273,17 @@ def _preview_response(
             BrokerPositionRowOut(
                 account_id=row.account_id,
                 instrument_id=row.instrument_id,
+                account_name=account_names.get(row.account_id),
+                instrument_name=(
+                    instruments[row.instrument_id].name
+                    if row.instrument_id in instruments
+                    else None
+                ),
+                instrument_isin=(
+                    instruments[row.instrument_id].isin
+                    if row.instrument_id in instruments
+                    else None
+                ),
                 status=row.status.value,
                 hermes_quantity=_decimal(row.hermes_quantity),
                 provider_quantity=_decimal(row.provider_quantity),

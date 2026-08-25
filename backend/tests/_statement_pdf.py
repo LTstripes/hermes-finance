@@ -37,6 +37,128 @@ REPORT_COLUMNS: tuple[str, ...] = (
     "Банк получателя",
 )
 
+CURRENT_ALFA_LAYOUT_HEADER: tuple[tuple[str, ...], ...] = (
+    (
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Значение показателя",
+        "Значение показателя",
+        "",
+        "",
+        "",
+        "",
+        "Дата",
+        "",
+        "",
+    ),
+    (
+        "№",
+        "",
+        "ген.",
+        "Вышестоящий",
+        "",
+        "",
+        "",
+        "Дата",
+        "Число ц/б,",
+        "Размер",
+        "Общая сумма",
+        "",
+        "Д1, предоставленное",
+        "Д2, предоставленное",
+        "Налоговая",
+        "Удержанная сумма",
+        "Сумма",
+        "",
+        "перечисления",
+        "",
+        "Банк получателя",
+    ),
+    (
+        "п/п",
+        "№ счета депо",
+        "соглашения",
+        "депозитарий",
+        "Вид выплаты",
+        "ISIN",
+        "Наименование ценной бумаги",
+        "фиксации",
+        "шт.",
+        "выплаты",
+        "начисленной",
+        "Валюта",
+        "эмитентом для расчета",
+        "эмитентом для расчета",
+        "ставка, %",
+        "налога,",
+        "перечисленного",
+        "Валюта",
+        "средств",
+        "Счет получателя дохода",
+        "доход",
+    ),
+    (
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "реестра",
+        "",
+        "на 1 ц.б.",
+        "выплаты",
+        "",
+        "суммы налога на",
+        "суммы налога на",
+        "",
+        "руб.",
+        "дохода",
+        "",
+        "клиенту",
+        "",
+        "",
+    ),
+    (
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "дивиденды (сноска 0)",
+        "дивиденды (сноска 0)",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    ),
+)
+
+LAYOUT_COLUMN_START = 40.0
+LAYOUT_COLUMN_STEP = 126.0
+LAYOUT_PAGE_WIDTH = LAYOUT_COLUMN_START + LAYOUT_COLUMN_STEP * len(REPORT_COLUMNS) + 80.0
+
 _SEMANTIC_TO_COLUMN = {
     "seq": "№",
     "depo_account": "Счет депо",
@@ -221,6 +343,7 @@ def build_income_report_pdf(
     title: str = REPORT_TITLE,
     extra_lines: tuple[str, ...] = (),
     include_header: bool = True,
+    header_rows: tuple[tuple[str, ...], ...] | None = None,
 ) -> bytes:
     payload_rows = rows if rows is not None else [_default_row()]
     fragments: list[tuple[float, float, str]] = [(40.0, 800.0, title)]
@@ -229,8 +352,12 @@ def build_income_report_pdf(
         fragments.append((40.0, y, extra))
         y -= 16.0
     if include_header:
-        fragments.append((40.0, y, " | ".join(REPORT_COLUMNS)))
-        y -= 18.0
+        rows_for_header = header_rows or (REPORT_COLUMNS,)
+        for header_row in rows_for_header:
+            if len(header_row) != len(REPORT_COLUMNS):
+                raise ValueError("synthetic header must match report column count")
+            fragments.append((40.0, y, " | ".join(header_row)))
+            y -= 18.0
     for index, raw in enumerate(payload_rows, start=1):
         merged = _default_row()
         merged["seq"] = str(index)
@@ -239,6 +366,93 @@ def build_income_report_pdf(
         fragments.append((40.0, y, " | ".join(cells)))
         y -= 16.0
     return build_text_pdf([fragments])
+
+
+def _layout_fragments(
+    cells: tuple[str, ...], y: float, *, x_offset: float = 0.0
+) -> list[tuple[float, float, str]]:
+    if len(cells) != len(REPORT_COLUMNS):
+        raise ValueError("synthetic layout row must match report column count")
+    return [
+        (LAYOUT_COLUMN_START + index * LAYOUT_COLUMN_STEP + x_offset, y, cell)
+        for index, cell in enumerate(cells)
+        if cell
+    ]
+
+
+def build_layout_income_report_pdf(
+    rows: list[dict[str, str]] | None = None,
+    *,
+    title: str = REPORT_TITLE,
+    header_rows: tuple[tuple[str, ...], ...],
+) -> bytes:
+    """Build a synthetic graphical-table text layer without pipe delimiters."""
+    payload_rows = rows if rows is not None else [_default_row()]
+    fragments: list[tuple[float, float, str]] = [(LAYOUT_COLUMN_START, 800.0, title)]
+    y = 770.0
+    for header_row in header_rows:
+        fragments.extend(_layout_fragments(header_row, y))
+        y -= 18.0
+    for index, raw in enumerate(payload_rows, start=1):
+        merged = _default_row()
+        merged["seq"] = str(index)
+        merged.update(raw)
+        cells = tuple(merged.get(_column_key(column), "") for column in REPORT_COLUMNS)
+        fragments.extend(_layout_fragments(cells, y))
+        y -= 16.0
+    return build_text_pdf([fragments], width=LAYOUT_PAGE_WIDTH)
+
+
+def build_current_alfa_layout_income_report_pdf(
+    rows: list[dict[str, str]] | None = None,
+    *,
+    title: str = REPORT_TITLE,
+    header_rows: tuple[tuple[str, ...], ...] = CURRENT_ALFA_LAYOUT_HEADER,
+    column_numbers: tuple[str, ...] | None = None,
+    security_name_continuation: str | None = None,
+    header_x_offsets: tuple[float, ...] | None = None,
+    row_x_offset: float = 0.0,
+    trailing_fragments: tuple[tuple[int, str], ...] = (),
+) -> bytes:
+    """Build the current five-line Alfa layout with its 21-column number row.
+
+    This is wholly synthetic structural evidence. It deliberately uses no pipe
+    delimiters, keeps sparse wrapped header lines, and optionally places a
+    security-name-only continuation below a data row.
+    """
+    payload_rows = rows if rows is not None else [_default_row()]
+    if len(header_rows) != 5:
+        raise ValueError("current Alfa header must have five layout lines")
+    offsets = header_x_offsets or (0.0,) * len(header_rows)
+    if len(offsets) != len(header_rows):
+        raise ValueError("current Alfa header offsets must match header line count")
+    anchor = column_numbers or tuple(str(index) for index in range(1, 22))
+    if len(anchor) != len(REPORT_COLUMNS):
+        raise ValueError("synthetic column-number row must have 21 cells")
+
+    fragments: list[tuple[float, float, str]] = [(LAYOUT_COLUMN_START, 800.0, title)]
+    y = 770.0
+    for header_row, x_offset in zip(header_rows, offsets, strict=True):
+        fragments.extend(_layout_fragments(header_row, y, x_offset=x_offset))
+        y -= 18.0
+    fragments.extend(_layout_fragments(anchor, y))
+    y -= 18.0
+    for index, raw in enumerate(payload_rows, start=1):
+        merged = _default_row()
+        merged["seq"] = str(index)
+        merged.update(raw)
+        cells = tuple(merged.get(_column_key(column), "") for column in REPORT_COLUMNS)
+        fragments.extend(_layout_fragments(cells, y, x_offset=row_x_offset))
+        y -= 16.0
+        if security_name_continuation:
+            fragments.append(
+                (LAYOUT_COLUMN_START + 6 * LAYOUT_COLUMN_STEP, y, security_name_continuation)
+            )
+            y -= 16.0
+    for column, text in trailing_fragments:
+        fragments.append((LAYOUT_COLUMN_START + column * LAYOUT_COLUMN_STEP, y, text))
+        y -= 16.0
+    return build_text_pdf([fragments], width=LAYOUT_PAGE_WIDTH)
 
 
 def _column_key(column: str) -> str:

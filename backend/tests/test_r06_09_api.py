@@ -1,23 +1,86 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from _statement_pdf import build_income_report_pdf, build_wrong_report_pdf
 from fastapi.testclient import TestClient
 
+from hermes_finance.broker_data.dto import (
+    ALFA_PRO_PROVIDER,
+    BrokerAccount,
+    BrokerPosition,
+    BrokerSnapshot,
+    SnapshotProvenance,
+    SnapshotStatus,
+    TimestampProvenance,
+)
 from hermes_finance.database import create_database
-from hermes_finance.domain import AccountType, InstrumentType
+from hermes_finance.domain import AccountType, InstrumentType, PriceSource
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.broker_snapshot_apply import BrokerSnapshotApplyFailureCode
 from hermes_finance.services.instruments import create_instrument
+from hermes_finance.services.positions import create_position_snapshot, update_position_snapshot
 from hermes_finance.services.reporting_months import create_reporting_month
 
 SYN_ISIN = "RU000SYN00001"
 SYN_DEPO = "SYN-DEPO-001"
+SYN_PROVIDER_INSTRUMENT = "SYN-POSITION-001"
+
+
+class _StaticSnapshotProvider:
+    def __init__(self, snapshot: BrokerSnapshot) -> None:
+        self.snapshot = snapshot
+
+    def fetch_snapshot(self) -> BrokerSnapshot:
+        return self.snapshot
+
+
+def _complete_snapshot() -> BrokerSnapshot:
+    return BrokerSnapshot(
+        provider=ALFA_PRO_PROVIDER,
+        status=SnapshotStatus.COMPLETE,
+        source_as_of=datetime(2026, 1, 31, 12, tzinfo=UTC),
+        accounts=(BrokerAccount(provider_account_id=SYN_DEPO),),
+        subaccounts=(),
+        sections=(),
+        positions=(
+            BrokerPosition(
+                provider_account_id=SYN_DEPO,
+                provider_subaccount_id=None,
+                provider_section_id=None,
+                provider_instrument_id=SYN_PROVIDER_INSTRUMENT,
+                isin=SYN_ISIN,
+                ticker="SYN",
+                display_name="Synthetic provider position",
+                quantity=Decimal("15"),
+                broker_unit_price=Decimal("101.25"),
+                market_value=None,
+                accounting_price=None,
+                accrued_interest_nkd=None,
+                unrealized_result=None,
+                is_money=False,
+                mapped_fields=("quantity=TorgPos",),
+            ),
+        ),
+        cash_balances=(),
+        warnings=(),
+        provenance=SnapshotProvenance(
+            provider=ALFA_PRO_PROVIDER,
+            api_doc_version="synthetic",
+            captured_at=datetime(2026, 1, 31, 12, tzinfo=UTC),
+            timestamp_provenance=TimestampProvenance.LOCAL_OBSERVATION,
+            auth_status=2,
+            ready_to_sign=True,
+            channels_invoked=("synthetic",),
+            entity_query_status=("synthetic:ok",),
+            eligible_for_apply=True,
+        ),
+    )
 
 
 def _context(tmp_path: Path):
@@ -129,6 +192,102 @@ def test_broker_snapshot_provider_is_only_called_by_explicit_endpoint(tmp_path: 
     assert provider.calls == 1
     assert response.json()["error_code"] == "provider_error"
     assert "synthetic provider failure" not in response.text
+
+
+def test_mapped_snapshot_preview_uses_persisted_position_for_fingerprint_and_staleness(
+    tmp_path: Path,
+) -> None:
+    database, month_id, account_id, instrument_id = _context(tmp_path)
+    session = database.session_factory()
+    try:
+        position = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity="10",
+            average_cost_per_unit="100",
+            market_price_per_unit="110",
+            price_date=date(2026, 1, 31),
+            price_source=PriceSource.MANUAL,
+        )
+        position_id = position.id
+    finally:
+        session.close()
+
+    mapping = {
+        "accounts": [
+            {"hermes_account_id": account_id, "provider_account_id": SYN_DEPO},
+        ],
+        "instruments": [],
+    }
+    application = create_app(
+        database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot())
+    )
+    with TestClient(application) as client:
+        preview = client.post(f"/api/months/{month_id}/broker-snapshot-preview", json=mapping)
+        assert preview.status_code == 200
+        assert "AttributeError" not in preview.text
+        row = preview.json()["positions"][0]
+        assert row["status"] == "matched"
+        assert row["account_name"] == "Synthetic brokerage"
+        assert row["instrument_name"] == "Synthetic equity"
+        assert row["instrument_isin"] == SYN_ISIN
+        assert isinstance(row["fingerprint"], str)
+        assert len(row["fingerprint"]) == 64
+        assert all(character in "0123456789abcdef" for character in row["fingerprint"])
+
+        session = database.session_factory()
+        try:
+            update_position_snapshot(session, position_id, quantity="11")
+        finally:
+            session.close()
+
+        applied = client.post(
+            f"/api/months/{month_id}/broker-snapshot-apply",
+            json={
+                "mapping": mapping,
+                "selections": [
+                    {
+                        "account_id": account_id,
+                        "instrument_id": instrument_id,
+                        "fingerprint": row["fingerprint"],
+                        "action": "update",
+                        "average_cost": {"action": "keep_existing"},
+                        "market_price": {"action": "keep_existing"},
+                        "accrued_interest": {"action": "keep_existing"},
+                    }
+                ],
+            },
+        )
+    assert applied.status_code == 200
+    assert applied.json()["error_code"] == "preview_changed"
+
+
+def test_mapped_snapshot_preview_without_local_position_keeps_provider_only_path(
+    tmp_path: Path,
+) -> None:
+    database, month_id, account_id, _instrument_id = _context(tmp_path)
+    application = create_app(
+        database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot())
+    )
+    with TestClient(application) as client:
+        response = client.post(
+            f"/api/months/{month_id}/broker-snapshot-preview",
+            json={
+                "accounts": [
+                    {"hermes_account_id": account_id, "provider_account_id": SYN_DEPO},
+                ],
+                "instruments": [],
+            },
+        )
+    assert response.status_code == 200
+    row = response.json()["positions"][0]
+    assert row["status"] == "provider_only"
+    assert row["account_name"] == "Synthetic brokerage"
+    assert row["instrument_name"] == "Synthetic equity"
+    assert row["instrument_isin"] == SYN_ISIN
+    assert isinstance(row["fingerprint"], str)
 
 
 def test_r06_09_boundaries_and_no_trading_surface(tmp_path: Path) -> None:

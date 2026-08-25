@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from decimal import Decimal
 
@@ -58,6 +59,43 @@ from hermes_finance.statement_import.schema import (
 )
 
 MAX_ROWS = 2_000
+MAX_HEADER_LINES = 3
+MAX_HEADER_SCAN_LINES = 6
+MIN_ANCHORED_HEADER_LINES = 5
+MAX_ANCHORED_HEADER_LINES = 6
+LAYOUT_COLUMN_TOLERANCE = 2
+MIN_LAYOUT_HEADER_FRAGMENTS = 4
+_ANCHORED_LAYOUT_SEMANTICS = (
+    "seq",
+    "depo_account",
+    "agreement",
+    "upstream",
+    "payment_kind",
+    "isin",
+    "security_name",
+    "record_date",
+    "quantity",
+    "per_unit",
+    "gross",
+    "gross_currency",
+    "d1",
+    "d2",
+    "tax_rate",
+    "tax",
+    "net",
+    "net_currency",
+    "payment_date",
+    "beneficiary_account",
+    "beneficiary_bank",
+)
+_CURRENT_ALFA_HEADER_FRAGMENT_COLUMNS = (
+    (12, 13, 18),
+    (0, 2, 3, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 20),
+    tuple(range(21)),
+    (7, 9, 10, 12, 13, 15, 16, 18),
+    (12, 13),
+)
+_ANCHOR_SEQUENCE = tuple(str(index) for index in range(1, len(_ANCHORED_LAYOUT_SEMANTICS) + 1))
 _EXTRACT_STATUS = {
     ExtractStatus.ENCRYPTED: (ReportStatus.MALFORMED, REASON_ENCRYPTED),
     ExtractStatus.UNREADABLE: (ReportStatus.MALFORMED, REASON_UNREADABLE),
@@ -96,6 +134,221 @@ def _pipe_semantics(header_line: str) -> list[str | None] | None:
     return None
 
 
+def _multi_line_pipe_header(lines: list[str], start: int) -> tuple[list[str | None], int] | None:
+    """Recognize one bounded, vertically wrapped table header.
+
+    Current Alfa PDFs may emit a table heading as two or three consecutive
+    pipe-delimited lines. Only equal-width adjacent rows are joined cell by
+    cell; data rows, arbitrary free text and unbounded reconstruction are not
+    accepted as a schema.
+    """
+    first = [cell.strip() for cell in lines[start].split("|")]
+    if len(first) < 2:
+        return None
+    header_rows = [first]
+    for end in range(start, min(start + MAX_HEADER_SCAN_LINES, len(lines))):
+        if end > start:
+            if not lines[end].strip():
+                continue
+            if "|" not in lines[end]:
+                break
+            candidate = [cell.strip() for cell in lines[end].split("|")]
+            if len(candidate) != len(first):
+                break
+            header_rows.append(candidate)
+        joined = [
+            " ".join(row[index] for row in header_rows if row[index]) for index in range(len(first))
+        ]
+        mapped = [_match_header_cell(cell) for cell in joined]
+        if _schema_complete({item for item in mapped if item}):
+            return mapped, end
+        if len(header_rows) == MAX_HEADER_LINES:
+            break
+    return None
+
+
+def _layout_fragments(line: str) -> list[tuple[int, str]]:
+    """Return positioned text fragments separated by layout-sized gaps."""
+    return [
+        (match.start(), match.group().strip())
+        for match in re.finditer(r"\S.*?(?=(?: {2,}|$))", line)
+    ]
+
+
+def _column_number_positions(line: str) -> tuple[int, ...] | None:
+    """Return physical columns only for the exact supported ``1..21`` anchor."""
+    fragments = _layout_fragments(line)
+    if tuple(text for _start, text in fragments) != _ANCHOR_SEQUENCE:
+        return None
+    positions = tuple(start for start, _text in fragments)
+    if len(set(positions)) != len(_ANCHOR_SEQUENCE):
+        return None
+    return positions
+
+
+def _anchored_header_cell_matches(cell: str, expected: str) -> bool:
+    """Validate one physical band of the fixed Alfa 21-column layout.
+
+    The two currency headings are deliberately accepted as plain ``Валюта``
+    only at their known gross/net positions; they are never inferred from
+    arbitrary free text.
+    """
+    folded = fold_text(cell)
+    if expected in {"gross_currency", "net_currency"}:
+        return folded == "валюта" or _match_header_cell(cell) == expected
+    if expected in {"d1", "d2"}:
+        return expected in folded or "значение показателя" in folded
+    if expected == "seq":
+        return "п/п" in folded
+    if expected == "agreement":
+        return "соглашения" in folded
+    if expected == "beneficiary_bank":
+        return folded == "банк получателя доход" or _match_header_cell(cell) == expected
+    return _match_header_cell(cell) == expected
+
+
+def _anchored_columns_from_parts(
+    parts: list[list[str]], positions: tuple[int, ...]
+) -> list[tuple[int, str]] | None:
+    columns: list[tuple[int, str]] = []
+    for index, semantic in enumerate(_ANCHORED_LAYOUT_SEMANTICS):
+        header = " ".join(parts[index])
+        if not _anchored_header_cell_matches(header, semantic):
+            return None
+        columns.append((positions[index], semantic))
+    return columns
+
+
+def _is_anchored_layout_data_row(line: str, columns: list[tuple[int, str]]) -> bool:
+    """Accept only a complete physical row below the fixed Alfa anchor."""
+    return len(_layout_fragments(line)) == len(columns)
+
+
+def _anchored_layout_columns(
+    header_lines: list[str], positions: tuple[int, ...]
+) -> list[tuple[int, str]] | None:
+    """Reconstruct a fixed schema from header fragments inside anchor bands."""
+    fragment_columns = _CURRENT_ALFA_HEADER_FRAGMENT_COLUMNS
+    if tuple(len(_layout_fragments(line)) for line in header_lines) == tuple(
+        len(columns) for columns in fragment_columns
+    ):
+        parts: list[list[str]] = [[] for _semantic in _ANCHORED_LAYOUT_SEMANTICS]
+        for line, columns in zip(header_lines, fragment_columns, strict=True):
+            for column, (_start, text) in zip(columns, _layout_fragments(line), strict=True):
+                parts[column].append(text)
+        return _anchored_columns_from_parts(parts, positions)
+
+    parts: list[list[str]] = [[] for _semantic in _ANCHORED_LAYOUT_SEMANTICS]
+    for line in header_lines:
+        for start, text in _layout_fragments(line):
+            if start < positions[0]:
+                return None
+            column = max(index for index, boundary in enumerate(positions) if boundary <= start)
+            parts[column].append(text)
+
+    return _anchored_columns_from_parts(parts, positions)
+
+
+def _anchored_layout_header(lines: list[str], anchor_index: int) -> list[tuple[int, str]] | None:
+    """Recognize the bounded current Alfa 21-column graphical-table schema."""
+    positions = _column_number_positions(lines[anchor_index])
+    if positions is None:
+        return None
+    preceding: list[str] = []
+    scan_start = max(0, anchor_index - 2 * MAX_ANCHORED_HEADER_LINES)
+    for index in range(anchor_index - 1, scan_start - 1, -1):
+        line = lines[index]
+        if not line.strip():
+            continue
+        if "|" in line or looks_like_title(line):
+            break
+        preceding.append(line)
+        if len(preceding) == MAX_ANCHORED_HEADER_LINES:
+            break
+    preceding.reverse()
+    for count in range(MIN_ANCHORED_HEADER_LINES, len(preceding) + 1):
+        header_lines = preceding[-count:]
+        columns = _anchored_layout_columns(header_lines, positions)
+        if columns is not None:
+            return columns
+    return None
+
+
+def _find_anchored_layout_header(lines: list[str]) -> tuple[list[tuple[int, str]], int] | None:
+    """Find the exact 21-column anchor and a complete supported header above it."""
+    for index, line in enumerate(lines):
+        if _column_number_positions(line) is None:
+            continue
+        columns = _anchored_layout_header(lines, index)
+        if columns is not None:
+            return columns, index
+    return None
+
+
+def _layout_header_columns(
+    header_rows: list[list[tuple[int, str]]],
+) -> list[tuple[int, str]] | None:
+    """Join wrapped header cells only when their column positions stay stable."""
+    first_starts = [start for start, _text in header_rows[0]]
+    if len(first_starts) < MIN_LAYOUT_HEADER_FRAGMENTS:
+        return None
+
+    parts: dict[int, list[str]] = {start: [] for start in first_starts}
+    shared_positions = 0
+    for row_index, fragments in enumerate(header_rows):
+        matched_starts: set[int] = set()
+        for start, text in fragments:
+            closest = min(first_starts, key=lambda candidate: abs(candidate - start))
+            if abs(closest - start) > LAYOUT_COLUMN_TOLERANCE:
+                return None
+            parts[closest].append(text)
+            matched_starts.add(closest)
+        if row_index:
+            shared_positions = max(shared_positions, len(matched_starts))
+    if shared_positions < MIN_LAYOUT_HEADER_FRAGMENTS:
+        return None
+
+    columns: list[tuple[int, str]] = []
+    seen_semantics: set[str] = set()
+    for start in first_starts:
+        semantic = _match_header_cell(" ".join(parts[start]))
+        if semantic is None or semantic in seen_semantics:
+            continue
+        columns.append((start, semantic))
+        seen_semantics.add(semantic)
+    columns.sort()
+    return columns if _schema_complete(seen_semantics) else None
+
+
+def _multi_line_layout_header(
+    lines: list[str], start: int
+) -> tuple[list[tuple[int, str]], int] | None:
+    """Recognize a bounded 2–3 line layout header without table delimiters.
+
+    pypdf layout extraction preserves horizontal positions but not graphical table
+    borders. This accepts only adjacent non-pipe lines with stable fragment
+    positions and an exact complete semantic schema.
+    """
+    header_rows: list[list[tuple[int, str]]] = []
+    for end in range(start, min(start + MAX_HEADER_SCAN_LINES, len(lines))):
+        line = lines[end]
+        if not line.strip():
+            continue
+        if "|" in line:
+            break
+        fragments = _layout_fragments(line)
+        if len(fragments) < MIN_LAYOUT_HEADER_FRAGMENTS:
+            break
+        header_rows.append(fragments)
+        if len(header_rows) >= 2:
+            columns = _layout_header_columns(header_rows)
+            if columns is not None:
+                return columns, end
+        if len(header_rows) == MAX_HEADER_LINES:
+            break
+    return None
+
+
 def _layout_columns(header_line: str) -> list[tuple[int, str]] | None:
     haystack = header_line.replace("ё", "е").replace("Ё", "Е").lower()
     if "вид выплаты" not in haystack or "isin" not in haystack:
@@ -127,6 +380,19 @@ def _cells_from_layout(line: str, columns: list[tuple[int, str]]) -> dict[str, s
         end = columns[index + 1][0] if index + 1 < len(columns) else len(line)
         values[semantic] = line[start:end].strip()
     return values
+
+
+def _cells_from_anchored_layout(line: str, columns: list[tuple[int, str]]) -> dict[str, str] | None:
+    """Map one complete fixed-layout row by its physical column order."""
+    fragments = _layout_fragments(line)
+    if len(fragments) != len(columns):
+        return None
+    return {
+        semantic: text
+        for (_column_start, semantic), (_fragment_start, text) in zip(
+            columns, fragments, strict=True
+        )
+    }
 
 
 def _cells_from_pipe(line: str, semantics: list[str | None]) -> dict[str, str] | None:
@@ -408,15 +674,27 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
     pipe_semantics: list[str | None] | None = None
     layout_cols: list[tuple[int, str]] | None = None
     header_index: int | None = None
-    for index, line in enumerate(lines):
-        pipe_semantics = _pipe_semantics(line)
-        if pipe_semantics is not None:
-            header_index = index
-            break
-        layout_cols = _layout_columns(line)
-        if layout_cols is not None:
-            header_index = index
-            break
+    anchored_layout = False
+    anchored_layout_header = _find_anchored_layout_header(lines)
+    if anchored_layout_header is not None:
+        layout_cols, header_index = anchored_layout_header
+        anchored_layout = True
+    else:
+        for index, line in enumerate(lines):
+            multi_line_header = _multi_line_pipe_header(lines, index) if "|" in line else None
+            if multi_line_header is not None:
+                pipe_semantics, header_index = multi_line_header
+                break
+            multi_line_layout_header = (
+                _multi_line_layout_header(lines, index) if "|" not in line else None
+            )
+            if multi_line_layout_header is not None:
+                layout_cols, header_index = multi_line_layout_header
+                break
+            layout_cols = _layout_columns(line)
+            if layout_cols is not None:
+                header_index = index
+                break
     if header_index is None:
         return ParsedReport(
             status=ReportStatus.MALFORMED,
@@ -467,7 +745,14 @@ def parse_income_report(extracted: ExtractedDocument) -> ParsedReport:
                 continue
         else:
             assert layout_cols is not None
-            cells = _cells_from_layout(line, layout_cols)
+            if anchored_layout:
+                if not _is_anchored_layout_data_row(line, layout_cols):
+                    continue
+                cells = _cells_from_anchored_layout(line, layout_cols)
+                if cells is None:
+                    continue
+            else:
+                cells = _cells_from_layout(line, layout_cols)
         if not cells.get("payment_kind") and not cells.get("isin"):
             continue
         if len(rows) >= MAX_ROWS:

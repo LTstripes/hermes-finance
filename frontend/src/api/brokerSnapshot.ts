@@ -8,6 +8,9 @@ export type BrokerMapping = {
 export type BrokerPositionRow = {
   account_id: number;
   instrument_id: number;
+  account_name: string | null;
+  instrument_name: string | null;
+  instrument_isin: string | null;
   status: string;
   provider_quantity: string | null;
   hermes_quantity: string | null;

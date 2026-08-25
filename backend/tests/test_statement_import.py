@@ -5,14 +5,18 @@ from __future__ import annotations
 import ast
 import hashlib
 import inspect
+import re
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from _statement_pdf import (
+    CURRENT_ALFA_LAYOUT_HEADER,
     build_blank_pdf,
+    build_current_alfa_layout_income_report_pdf,
     build_encrypted_pdf,
     build_income_report_pdf,
+    build_layout_income_report_pdf,
     build_text_pdf,
     build_wrong_report_pdf,
 )
@@ -82,6 +86,56 @@ def _row(**overrides: str) -> dict[str, str]:
     return overrides
 
 
+MULTI_LINE_HEADER = (
+    (
+        "№",
+        "Счет",
+        "Номер",
+        "Вышестоящий",
+        "Вид",
+        "ISIN",
+        "Наименование ценной",
+        "Дата составления",
+        "Количество ценных",
+        "Сумма выплаты",
+        "Общая сумма начисленной",
+        "Валюта",
+        "D1",
+        "D2",
+        "Ставка",
+        "Удержанная сумма",
+        "Сумма перечисленного",
+        "Валюта",
+        "Дата перечисления средств",
+        "Счет",
+        "Банк",
+    ),
+    (
+        "",
+        "депо",
+        "договора",
+        "депозитарий",
+        "выплаты",
+        "",
+        "бумаги",
+        "списка",
+        "бумаг",
+        "на 1 ЦБ",
+        "выплаты",
+        "начисления",
+        "",
+        "",
+        "налога",
+        "налога, руб.",
+        "дохода",
+        "перечисления",
+        "клиенту",
+        "получателя",
+        "получателя",
+    ),
+)
+
+
 def test_report_family_recognition() -> None:
     preview = _preview(build_income_report_pdf())
     assert preview.status is ReportStatus.APPLICABLE
@@ -131,6 +185,277 @@ def test_exact_dividend_mapping() -> None:
     assert row.tax_amount == Decimal("1.50")
     assert row.tax_available is True
     assert row.net_amount == Decimal("10.00")
+
+
+@pytest.mark.parametrize(
+    ("payment_kind", "isin", "quantity", "per_unit", "gross", "net", "event_kind"),
+    (
+        ("выплата дивидендов", "RU000SYN00001", "10", "1,15", "11,50", "10,00", "dividend"),
+        ("погашение купона", "RU000SYN00002", "10", "2,00", "20,00", "20,00", "coupon"),
+        (
+            "полное погашение номинала",
+            "RU000SYN00003",
+            "5",
+            "1000,00",
+            "5000,00",
+            "5000,00",
+            "redemption",
+        ),
+    ),
+)
+def test_multi_line_current_alfa_header_parses_allowlisted_rows(
+    payment_kind: str,
+    isin: str,
+    quantity: str,
+    per_unit: str,
+    gross: str,
+    net: str,
+    event_kind: str,
+) -> None:
+    pdf = build_income_report_pdf(
+        [
+            _row(
+                payment_kind=payment_kind,
+                isin=isin,
+                quantity=quantity,
+                per_unit=per_unit,
+                gross=gross,
+                tax="—",
+                tax_rate="—",
+                net=net,
+            )
+        ],
+        header_rows=MULTI_LINE_HEADER,
+    )
+    instruments = (HermesInstrumentView(instrument_id=30, isin=isin),)
+    row = _preview(pdf, hermes_instruments=instruments).rows[0]
+    assert row.status is RowStatus.MATCHED
+    assert row.event_kind == event_kind
+    assert row.gross_amount == Decimal(gross.replace(",", "."))
+
+
+@pytest.mark.parametrize(
+    ("payment_kind", "isin", "quantity", "per_unit", "gross", "net", "event_kind"),
+    (
+        ("выплата дивидендов", "RU000SYN00001", "10", "1,15", "11,50", "10,00", "dividend"),
+        ("погашение купона", "RU000SYN00002", "10", "2,00", "20,00", "20,00", "coupon"),
+        (
+            "полное погашение номинала",
+            "RU000SYN00003",
+            "5",
+            "1000,00",
+            "5000,00",
+            "5000,00",
+            "redemption",
+        ),
+    ),
+)
+def test_layout_multi_line_header_parses_without_pipe_delimiters(
+    payment_kind: str,
+    isin: str,
+    quantity: str,
+    per_unit: str,
+    gross: str,
+    net: str,
+    event_kind: str,
+) -> None:
+    pdf = build_layout_income_report_pdf(
+        [
+            _row(
+                payment_kind=payment_kind,
+                isin=isin,
+                quantity=quantity,
+                per_unit=per_unit,
+                gross=gross,
+                tax="—",
+                tax_rate="—",
+                net=net,
+            )
+        ],
+        header_rows=MULTI_LINE_HEADER,
+    )
+
+    extracted = extract_pdf_text_layer(pdf)
+    assert extracted.status.value == "ok"
+    assert all("|" not in line for page in extracted.pages for line in page.lines)
+
+    parsed = parse_income_report(extracted)
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    row = parsed.rows[0]
+    assert row.status is RowStatus.MATCHED
+    assert row.event_kind == event_kind
+    assert row.gross_amount == Decimal(gross.replace(",", "."))
+
+
+def _fragment_count(line: str) -> int:
+    return len(re.findall(r"\S.*?(?=(?: {2,}|$))", line))
+
+
+def test_current_alfa_five_line_layout_uses_21_column_anchor_end_to_end() -> None:
+    pdf = build_current_alfa_layout_income_report_pdf(
+        [
+            _row(
+                payment_kind="выплата дивидендов",
+                isin="RU000SYN00001",
+                quantity="10",
+                per_unit="1,15",
+                gross="11,50",
+                tax_rate="13",
+                tax="1,50",
+                net="10,00",
+                payment_date="20.01.2026",
+            ),
+            _row(
+                payment_kind="погашение купона",
+                isin="RU000SYN00002",
+                quantity="5",
+                per_unit="2,00",
+                gross="10,00",
+                tax_rate="—",
+                tax="—",
+                net="10,00",
+                payment_date="21.01.2026",
+            ),
+        ],
+        security_name_continuation="Synthetic Security Name Continuation",
+    )
+
+    extracted = extract_pdf_text_layer(pdf)
+    assert extracted.status.value == "ok"
+    lines = tuple(line for line in extracted.pages[0].lines if line.strip())
+    assert all("|" not in line for line in lines)
+    assert [_fragment_count(line) for line in lines[1:6]] == [3, 14, 21, 8, 2]
+    assert tuple(text for _start, text in _layout_fragments(lines[6])) == tuple(
+        str(index) for index in range(1, 22)
+    )
+
+    parsed = parse_income_report(extracted)
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 2
+    dividend, coupon = parsed.rows
+    assert dividend.status is RowStatus.MATCHED
+    assert dividend.event_kind == "dividend"
+    assert dividend.quantity == Decimal("10")
+    assert dividend.per_unit == Decimal("1.15")
+    assert dividend.gross_amount == Decimal("11.50")
+    assert dividend.tax_amount == Decimal("1.50")
+    assert dividend.net_amount == Decimal("10.00")
+    assert dividend.event_date.isoformat() == "2026-01-20"
+    assert coupon.status is RowStatus.MATCHED
+    assert coupon.event_kind == "coupon"
+    assert coupon.quantity == Decimal("5")
+    assert coupon.per_unit == Decimal("2.00")
+    assert coupon.gross_amount == Decimal("10.00")
+    assert coupon.tax_available is False
+    assert coupon.tax_amount is None
+    assert coupon.net_amount == Decimal("10.00")
+    assert coupon.event_date.isoformat() == "2026-01-21"
+
+
+def test_current_alfa_anchor_uses_ranked_header_shape_when_pypdf_offsets_columns() -> None:
+    extracted = extract_pdf_text_layer(
+        build_current_alfa_layout_income_report_pdf(header_x_offsets=(0.0, -30.0, -30.0, 0.0, 0.0))
+    )
+
+    assert extracted.status.value == "ok"
+    parsed = parse_income_report(extracted)
+
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    assert parsed.rows[0].status is RowStatus.MATCHED
+
+
+def test_current_alfa_anchor_maps_shifted_data_cells_by_column_order() -> None:
+    parsed = parse_income_report(
+        extract_pdf_text_layer(build_current_alfa_layout_income_report_pdf(row_x_offset=-24.0))
+    )
+
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    assert parsed.rows[0].status is RowStatus.MATCHED
+
+
+def test_current_alfa_anchor_ignores_non_tabular_layout_tail() -> None:
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(
+                trailing_fragments=((5, "Synthetic trailing note"),)
+            )
+        )
+    )
+
+    assert parsed.status is ReportStatus.APPLICABLE
+    assert len(parsed.rows) == 1
+    assert parsed.rows[0].status is RowStatus.MATCHED
+
+
+def _layout_fragments(line: str) -> list[tuple[int, str]]:
+    return [
+        (match.start(), match.group().strip())
+        for match in re.finditer(r"\S.*?(?=(?: {2,}|$))", line)
+    ]
+
+
+def test_current_alfa_anchor_requires_exact_report_family() -> None:
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(title="Синтетический другой отчет")
+        )
+    )
+    assert parsed.status is ReportStatus.NON_APPLICABLE
+    assert parsed.reason == "wrong_report_family"
+
+
+@pytest.mark.parametrize(
+    "column_numbers",
+    (
+        tuple("" if index == 9 else str(index) for index in range(1, 22)),
+        tuple("20" if index == 21 else str(index) for index in range(1, 22)),
+        tuple(
+            "11" if index == 10 else "10" if index == 11 else str(index) for index in range(1, 22)
+        ),
+    ),
+)
+def test_current_alfa_anchor_rejects_missing_duplicate_or_out_of_order_numbers(
+    column_numbers: tuple[str, ...],
+) -> None:
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(column_numbers=column_numbers)
+        )
+    )
+    assert parsed.status is ReportStatus.MALFORMED
+    assert parsed.reason == "missing_required_schema"
+
+
+def test_current_alfa_anchor_rejects_structurally_incomplete_header() -> None:
+    incomplete_rows = [list(row) for row in CURRENT_ALFA_LAYOUT_HEADER]
+    incomplete_rows[1][8] = ""
+    incomplete_rows[2][8] = ""
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(
+                header_rows=tuple(tuple(row) for row in incomplete_rows)
+            )
+        )
+    )
+    assert parsed.status is ReportStatus.MALFORMED
+    assert parsed.reason == "missing_required_schema"
+
+
+def test_current_alfa_anchor_rejects_duplicate_beneficiary_account_header() -> None:
+    malformed_rows = [list(row) for row in CURRENT_ALFA_LAYOUT_HEADER]
+    malformed_rows[1][20] = "Счет получателя"
+    parsed = parse_income_report(
+        extract_pdf_text_layer(
+            build_current_alfa_layout_income_report_pdf(
+                header_rows=tuple(tuple(row) for row in malformed_rows)
+            )
+        )
+    )
+    assert parsed.status is ReportStatus.MALFORMED
+    assert parsed.reason == "missing_required_schema"
 
 
 def test_exact_coupon_mapping() -> None:
