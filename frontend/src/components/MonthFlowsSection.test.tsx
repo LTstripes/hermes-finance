@@ -95,16 +95,37 @@ const importedFlow = {
   id: 42,
   event_date: "2031-01-20",
   source: "alfa_depository_income_report",
+  statement_link: {
+    applied_statement_event_id: 9,
+    link_mode: "statement_created",
+    status: "active",
+  },
+};
+
+const linkedExistingFlow = {
+  ...manualFlow,
+  id: 43,
+  event_date: "2031-01-22",
+  source: "manual",
+  statement_link: {
+    applied_statement_event_id: 10,
+    link_mode: "linked_existing",
+    status: "active",
+  },
 };
 
 function setup({
   calendar = [] as unknown[] | null,
   flows = [] as unknown[],
   readOnly = false,
+  retractStatus = 200,
+  retractCode = "already_retracted",
 }: {
   calendar?: unknown[] | null;
   flows?: unknown[];
   readOnly?: boolean;
+  retractStatus?: number;
+  retractCode?: string;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -130,6 +151,35 @@ function setup({
     }
     if (method === "PATCH" && url === "/api/investment-flows/41") {
       return jsonResponse({ ...manualFlow, net_amount: { amount: "870.00", currency: "RUB" } });
+    }
+    if (method === "POST" && url === "/api/statement-import/applied-events/9/retract") {
+      return retractStatus === 200
+        ? jsonResponse({
+            applied_statement_event_id: 9,
+            link_mode: "statement_created",
+            cash_flow_deleted: true,
+            investment_cash_flow_id: null,
+            revision_id: 12,
+          })
+        : jsonResponse(
+            {
+              error: {
+                code: retractCode,
+                message: "applied statement event is already retracted",
+                details: [],
+              },
+            },
+            retractStatus,
+          );
+    }
+    if (method === "POST" && url === "/api/statement-import/applied-events/10/retract") {
+      return jsonResponse({
+        applied_statement_event_id: 10,
+        link_mode: "linked_existing",
+        cash_flow_deleted: false,
+        investment_cash_flow_id: 43,
+        revision_id: 13,
+      });
     }
 
     return jsonResponse(
@@ -252,7 +302,74 @@ describe("MonthFlowsSection actual-flow instrument", () => {
       }),
     );
     expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeEnabled();
+    expect(screen.queryByRole("menuitem", { name: "Удалить" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Отменить импорт" })).toBeEnabled();
+  });
+
+  it("confirms statement-created retract with row evidence and refreshes", async () => {
+    const fetchMock = setup({ flows: [importedFlow] });
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(
+      screen.getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-20" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Отменить импорт" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Отменить импорт?");
+    expect(dialog).toHaveTextContent("Synthetic Broker");
+    expect(dialog).toHaveTextContent("Synthetic Bond");
+    expect(dialog).toHaveTextContent("Нетто: 860 ₽");
+    expect(dialog).toHaveTextContent("2031-01-20");
+    await user.click(within(dialog).getByRole("button", { name: "Отменить импорт" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input) === "/api/statement-import/applied-events/9/retract" &&
+            init?.method === "POST",
+        ),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(
+          ([input, init]) =>
+            String(input) === "/api/investment-flows?month_id=7" &&
+            (init?.method ?? "GET") === "GET",
+        ).length,
+      ).toBeGreaterThan(1);
+    });
+  });
+
+  it("shows a typed backend retract error", async () => {
+    setup({ flows: [importedFlow], retractStatus: 409, retractCode: "already_retracted" });
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(
+      screen.getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-20" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Отменить импорт" }));
+    await user.click(screen.getByRole("button", { name: "Отменить импорт" }));
+    expect(
+      await screen.findByText("Эта строка выписки уже отменена. Обнови список выплат."),
+    ).toBeInTheDocument();
+  });
+
+  it("offers unlink for a linked-existing statement row", async () => {
+    setup({ flows: [linkedExistingFlow] });
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(
+      screen.getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-22" }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.queryByRole("menuitem", { name: "Удалить" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Отвязать выписку" })).toBeEnabled();
+    await user.click(screen.getByRole("menuitem", { name: "Отвязать выписку" }));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Отвязать выписку?");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Сама выплата останется");
   });
 
   it("disables payout mutations in a closed month", async () => {
@@ -264,6 +381,17 @@ describe("MonthFlowsSection actual-flow instrument", () => {
     );
     expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Добавить выплату" })).not.toBeInTheDocument();
+  });
+
+  it("disables statement retract in a closed month", async () => {
+    setup({ flows: [importedFlow], readOnly: true });
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(
+      screen.getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-20" }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Отменить импорт" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Добавить выплату" })).not.toBeInTheDocument();
   });
 });

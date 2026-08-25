@@ -5,6 +5,7 @@ import {
   isPassiveExpectedFlowType,
   isPassiveInvestmentFlowType,
   isRedemptionFlowType,
+  statementCorrectionKind,
 } from "./flowTypes";
 
 describe("flowTypes classification", () => {
@@ -31,5 +32,30 @@ describe("flowTypes classification", () => {
     expect(isManuallyEditableInvestmentFlow("alfa_depository_income_report")).toBe(false);
     expect(isManuallyEditableInvestmentFlow("excel_migration")).toBe(false);
     expect(isManuallyEditableInvestmentFlow("t_invest")).toBe(false);
+  });
+
+  it("does not treat a linked-existing manual row as editable until unlinked", () => {
+    expect(
+      isManuallyEditableInvestmentFlow("manual", {
+        applied_statement_event_id: 9,
+        link_mode: "linked_existing",
+        status: "active",
+      }),
+    ).toBe(false);
+    expect(
+      statementCorrectionKind({
+        applied_statement_event_id: 9,
+        link_mode: "linked_existing",
+        status: "active",
+      }),
+    ).toBe("unlink_statement");
+    expect(
+      statementCorrectionKind({
+        applied_statement_event_id: 8,
+        link_mode: "statement_created",
+        status: "active",
+      }),
+    ).toBe("retract_import");
+    expect(statementCorrectionKind(null)).toBeNull();
   });
 });

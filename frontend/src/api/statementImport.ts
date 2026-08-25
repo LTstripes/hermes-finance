@@ -1,4 +1,4 @@
-import { apiMultipart } from "./client";
+import { apiMultipart, apiRequest } from "./client";
 
 export type StatementMapping = {
   account_mappings: { hermes_account_id: number; provider_account_ref: string }[];
@@ -90,6 +90,21 @@ export function prepareStatement(file: File, mapping: StatementMapping, signal?:
     "/api/statement-import/prepare",
     baseForm(file, mapping),
     signal,
+  );
+}
+
+export type StatementRetractResult = {
+  applied_statement_event_id: number;
+  link_mode: string;
+  cash_flow_deleted: boolean;
+  investment_cash_flow_id: number | null;
+  revision_id: number;
+};
+
+export function retractStatementEvent(eventId: number, signal?: AbortSignal) {
+  return apiRequest<StatementRetractResult>(
+    `/api/statement-import/applied-events/${eventId}/retract`,
+    { method: "POST", signal },
   );
 }
 

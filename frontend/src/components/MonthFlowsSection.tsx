@@ -9,6 +9,7 @@ import {
   listInvestmentFlows,
   updateInvestmentFlow,
 } from "../api/investmentFlows";
+import { retractStatementEvent } from "../api/statementImport";
 import { listInstruments } from "../api/instruments";
 import { listPayoutCalendar, type PayoutCalendarMonth } from "../api/payouts";
 import type { Account, ExpectedFlow, Instrument, InvestmentFlow } from "../api/types";
@@ -36,6 +37,7 @@ import {
   isPassiveExpectedFlowType,
   isPassiveInvestmentFlowType,
   isRedemptionFlowType,
+  statementCorrectionKind,
 } from "../lib/flowTypes";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
@@ -122,6 +124,7 @@ export function MonthFlowsSection({
   const [actualDraftTouched, setActualDraftTouched] = useState(false);
   const [expectedDraftTouched, setExpectedDraftTouched] = useState(false);
   const [pendingDeleteActual, setPendingDeleteActual] = useState<InvestmentFlow | null>(null);
+  const [pendingRetractActual, setPendingRetractActual] = useState<InvestmentFlow | null>(null);
   const [pendingDeleteExpected, setPendingDeleteExpected] = useState<ExpectedFlow | null>(null);
   const [editingActualId, setEditingActualId] = useState<number | null>(null);
   const [editActual, setEditActual] = useState<ActualDraft | null>(null);
@@ -326,7 +329,7 @@ export function MonthFlowsSection({
   }
 
   function startActualEdit(row: InvestmentFlow) {
-    if (!isManuallyEditableInvestmentFlow(row.source)) {
+    if (!isManuallyEditableInvestmentFlow(row.source, row.statement_link)) {
       return;
     }
     setEditingActualId(row.id);
@@ -348,7 +351,7 @@ export function MonthFlowsSection({
       return;
     }
     const current = actual.find((row) => row.id === editingActualId);
-    if (!current || !isManuallyEditableInvestmentFlow(current.source)) {
+    if (!current || !isManuallyEditableInvestmentFlow(current.source, current.statement_link)) {
       return;
     }
     setBusy(true);
@@ -388,6 +391,22 @@ export function MonthFlowsSection({
     } catch (err) {
       setActionError(formatApiError(err));
       setPendingDeleteActual(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmRetractActual() {
+    if (!pendingRetractActual?.statement_link) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await retractStatementEvent(pendingRetractActual.statement_link.applied_statement_event_id);
+      setPendingRetractActual(null);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+      setPendingRetractActual(null);
     } finally {
       setBusy(false);
     }
@@ -456,7 +475,8 @@ export function MonthFlowsSection({
                 const editing = editingActualId === row.id && editActual;
                 const redemption = isRedemptionFlowType(row.flow_type);
                 const passive = isPassiveInvestmentFlowType(row.flow_type);
-                const manual = isManuallyEditableInvestmentFlow(row.source);
+                const manual = isManuallyEditableInvestmentFlow(row.source, row.statement_link);
+                const correction = statementCorrectionKind(row.statement_link);
                 return (
                   <tr
                     className={redemption ? "row--muted" : passive ? "row--income" : undefined}
@@ -619,13 +639,25 @@ export function MonthFlowsSection({
                             >
                               Изменить
                             </OverflowMenuItem>
-                            <OverflowMenuItem
-                              danger
-                              disabled={busy || readOnly}
-                              onClick={() => setPendingDeleteActual(row)}
-                            >
-                              Удалить
-                            </OverflowMenuItem>
+                            {correction ? (
+                              <OverflowMenuItem
+                                danger
+                                disabled={busy || readOnly}
+                                onClick={() => setPendingRetractActual(row)}
+                              >
+                                {correction === "unlink_statement"
+                                  ? "Отвязать выписку"
+                                  : "Отменить импорт"}
+                              </OverflowMenuItem>
+                            ) : (
+                              <OverflowMenuItem
+                                danger
+                                disabled={busy || readOnly}
+                                onClick={() => setPendingDeleteActual(row)}
+                              >
+                                Удалить
+                              </OverflowMenuItem>
+                            )}
                           </OverflowMenu>
                         )}
                       </div>
@@ -1015,6 +1047,36 @@ export function MonthFlowsSection({
         onConfirm={() => void confirmDeleteActual()}
         open={pendingDeleteActual !== null}
         title="Удалить выплату?"
+      />
+      <ConfirmDialog
+        busy={busy}
+        cancelLabel="Отмена"
+        confirmLabel={
+          statementCorrectionKind(pendingRetractActual?.statement_link) === "unlink_statement"
+            ? "Отвязать выписку"
+            : "Отменить импорт"
+        }
+        danger
+        description={
+          pendingRetractActual
+            ? [
+                statementCorrectionKind(pendingRetractActual.statement_link) === "unlink_statement"
+                  ? `Отвязать выписку от выплаты «${labelOf(FLOW_TYPE_LABELS, pendingRetractActual.flow_type)}» от ${pendingRetractActual.event_date}? Сама выплата останется.`
+                  : `Отменить импорт выплаты «${labelOf(FLOW_TYPE_LABELS, pendingRetractActual.flow_type)}» от ${pendingRetractActual.event_date}? Выплата пропадёт из месяца, ту же строку выписки можно будет импортировать заново.`,
+                `Счёт: ${accountName(pendingRetractActual.account_id)}`,
+                `Инструмент: ${instrumentName(pendingRetractActual.instrument_id)}`,
+                `Нетто: ${formatMoney(moneyAmount(pendingRetractActual.net_amount))}`,
+              ].join(" ")
+            : ""
+        }
+        onCancel={() => setPendingRetractActual(null)}
+        onConfirm={() => void confirmRetractActual()}
+        open={pendingRetractActual !== null}
+        title={
+          statementCorrectionKind(pendingRetractActual?.statement_link) === "unlink_statement"
+            ? "Отвязать выписку?"
+            : "Отменить импорт?"
+        }
       />
       <ConfirmDialog
         busy={busy}

@@ -511,6 +511,12 @@ export type PositionUpdate = {
   notes?: string | null;
 };
 
+export type StatementLink = {
+  applied_statement_event_id: number;
+  link_mode: "statement_created" | "linked_existing";
+  status: "active" | "retracted";
+};
+
 export type InvestmentFlow = {
   id: number;
   reporting_month_id: number;
@@ -525,6 +531,7 @@ export type InvestmentFlow = {
   currency: string;
   source: string;
   notes: string | null;
+  statement_link?: StatementLink | null;
 };
 
 export type InvestmentFlowCreate = {

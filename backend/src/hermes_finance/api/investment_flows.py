@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import InvestmentCashFlowType, RubleAmount
+from hermes_finance.services.applied_statement_events import (
+    list_active_statement_events_by_cash_flow_ids,
+)
 from hermes_finance.services.investment_cash_flows import (
     create_investment_cash_flow,
     delete_investment_cash_flow,
@@ -53,6 +56,14 @@ class InvestmentFlowUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class StatementLinkOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    applied_statement_event_id: int
+    link_mode: str
+    status: str
+
+
 class InvestmentFlowResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,6 +80,7 @@ class InvestmentFlowResponse(BaseModel):
     currency: str
     source: str
     notes: str | None
+    statement_link: StatementLinkOut | None = None
 
 
 def _validate_flow_type(value: str) -> str:
@@ -87,7 +99,17 @@ def _money(kopecks: int) -> MoneyValue:
     return MoneyValue(amount=RubleAmount(kopecks).to_api(), currency="RUB")
 
 
-def _response(flow: object) -> InvestmentFlowResponse:
+def _statement_link(event: object | None) -> StatementLinkOut | None:
+    if event is None:
+        return None
+    return StatementLinkOut(
+        applied_statement_event_id=event.id,
+        link_mode=event.link_mode,
+        status=event.status,
+    )
+
+
+def _response(flow: object, event: object | None = None) -> InvestmentFlowResponse:
     return InvestmentFlowResponse(
         id=flow.id,
         reporting_month_id=flow.reporting_month_id,
@@ -102,6 +124,7 @@ def _response(flow: object) -> InvestmentFlowResponse:
         currency=flow.currency,
         source=flow.source,
         notes=flow.notes,
+        statement_link=_statement_link(event),
     )
 
 
@@ -117,7 +140,8 @@ def list_flows(
         if flow.reporting_month_id == month_id
         and (account_id is None or flow.account_id == account_id)
     ]
-    return [_response(flow) for flow in flows]
+    events = list_active_statement_events_by_cash_flow_ids(session, [flow.id for flow in flows])
+    return [_response(flow, events.get(flow.id)) for flow in flows]
 
 
 @router.post("", response_model=InvestmentFlowResponse, status_code=status.HTTP_201_CREATED)
@@ -153,7 +177,9 @@ def get_flow(
     flow_id: int,
     session: Session = Depends(session_for_request),
 ) -> InvestmentFlowResponse:
-    return _response(get_investment_cash_flow(session, flow_id))
+    flow = get_investment_cash_flow(session, flow_id)
+    events = list_active_statement_events_by_cash_flow_ids(session, [flow.id])
+    return _response(flow, events.get(flow.id))
 
 
 @router.patch("/{flow_id}", response_model=InvestmentFlowResponse)
