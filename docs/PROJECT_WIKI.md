@@ -37,7 +37,9 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Это дерево содержит содержимое релиза **0.6.0**. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release. R06 Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
+Это дерево содержит содержимое релиза **0.6.1**. Это maintenance UX поверх опубликованного **0.6.0**: плотность редактора месяца и review котировок/Alfa statement import. Продуктовый scope, схема и provider-контракты 0.6.0 не меняются. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
+
+Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
 Историческая опубликованная идентичность **0.5.0**:
 
@@ -49,7 +51,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
 
-В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import.
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0.
 
 Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
 
@@ -234,7 +236,7 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 ## 15. Линия 0.6.0 / R06
 
-Это дерево содержит содержимое релиза 0.6.0. Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
+Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — maintenance 0.6.1, см. раздел 16. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1.
 
 R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
 
@@ -296,3 +298,13 @@ R06 добавляет два owner-controlled пути Alfa поверх сущ
 ### R06-10 Gate C — version/docs finalization
 
 Gate C синхронизировал version metadata, release-facing docs и повторный verification gate. Принятый worker head `1fc35d173f4c5dbb68cf76c0aaa2a1b20210d421` интегрирован в `r06` через PR #99 (`2222ba016854d52e88eb9a5404c81203655ccd3a`, CI #302). Публикация — отдельный guarded step; exact main/tag/CI identity записывается после release.
+
+## 16. Линия 0.6.1 / M06 maintenance
+
+`0.6.1` — maintenance поверх 0.6.0. Исторические записи 0.6.0 выше не переписываются.
+
+- **M06-01** (issue/PR #103): плотность таблиц редактора месяца, общие overflow-действия, недостающие Edit для ручных investment/expense/savings/debt/property потоков через существующие PATCH, provenance оценки позиции в HelpTip. Backend/schema не менялись. Интегрировано merge `a00e0768db2827bdfad917559c82aab01aea745d`.
+- **M06-02** (issue #104 / PR #105): читаемая иерархия quote preview; transient Alfa mapping только пока панель импорта смонтирована; явный безопасный save ISIN в канонический `Instrument.isin`; человекочитаемое evidence в prepared/candidate review; `select all ready`. Backend/schema/provider persistence не менялись. Интегрировано merge `196e992c7b3a72255c7b91ca7ec11ef9e1e32281`.
+- **M06-03** (issue #106): только подготовка release identity `0.6.1` (version metadata, CHANGELOG, public notes, wiki/history). Не feature work. Не merge/tag/GitHub Release из этой задачи.
+
+Safety contract 0.6 остаётся: нет OCR, нет persistent raw Alfa/provider payload, нет persistent Alfa account mapping, explicit selected Apply, duplicate/idempotency, CLOSED/missing month fail closed, без изменения provider/trading семантики.
