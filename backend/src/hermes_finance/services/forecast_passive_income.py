@@ -109,9 +109,7 @@ def forecast_passive_income(
         )
     ).all()
     deposit_snapshot_monthly_interest_kopecks = (
-        sum(deposit_snapshot_monthly_interest)
-        if deposit_snapshot_monthly_interest
-        else None
+        sum(deposit_snapshot_monthly_interest) if deposit_snapshot_monthly_interest else None
     )
 
     # 4. Actual net dividends from closed reporting months

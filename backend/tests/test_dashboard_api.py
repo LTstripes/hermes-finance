@@ -172,9 +172,7 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert dash["kpis"]["passive_income_actual"] == _rub("0.00")
     assert dash["kpis"]["actual_mandatory_expense_coverage_pct"] == "9.35"
     assert dash["summary"]["coverage"]["actual_mandatory_expense_coverage_pct"] == "9.35"
-    assert dash["summary"]["forecast"]["breakdown"]["expected_deposit_interest"] == _rub(
-        "12000.00"
-    )
+    assert dash["summary"]["forecast"]["breakdown"]["expected_deposit_interest"] == _rub("12000.00")
     assert dash["summary"]["forecast"]["is_approximate"] is True
     assert any(
         "Проценты по вкладам оценены" in warning
