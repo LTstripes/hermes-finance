@@ -37,7 +37,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Это дерево содержит содержимое релиза **0.6.1**. Это maintenance UX поверх опубликованного **0.6.0**: плотность редактора месяца и review котировок/Alfa statement import. Продуктовый scope, схема и provider-контракты 0.6.0 не меняются. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
+Это дерево содержит содержимое релиза **0.6.2**. Это maintenance поверх опубликованного **0.6.1**: безопасный retract ошибочно применённых Alfa statement payouts и polish layout редактора месяца / statement review. Provider/trading семантика 0.6.0 не меняется. Канонический Alembic head — `0029_statement_event_retract`. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -51,7 +51,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
 
-В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0.
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0. `0.6.2` добавляет auditable retract ошибочно применённых statement payouts и polish layout; parser/provider/trading семантика не меняется.
 
 Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
 
@@ -236,7 +236,7 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 ## 15. Линия 0.6.0 / R06
 
-Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — maintenance 0.6.1, см. раздел 16. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1.
+Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — maintenance 0.6.2, см. раздел 17. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1 или 0.6.2.
 
 R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
 
@@ -308,3 +308,13 @@ Gate C синхронизировал version metadata, release-facing docs и �
 - **M06-03** (issue #106): только подготовка release identity `0.6.1` (version metadata, CHANGELOG, public notes, wiki/history). Не feature work. Не merge/tag/GitHub Release из этой задачи.
 
 Safety contract 0.6 остаётся: нет OCR, нет persistent raw Alfa/provider payload, нет persistent Alfa account mapping, explicit selected Apply, duplicate/idempotency, CLOSED/missing month fail closed, без изменения provider/trading семантики.
+
+## 17. Линия 0.6.2 / M06 maintenance
+
+`0.6.2` — maintenance поверх 0.6.1. Исторические записи 0.6.0 и 0.6.1 выше не переписываются.
+
+- **M06-04** (issue #108 / PR #110): безопасный auditable retract ошибочно применённых Alfa statement payouts; Alembic `0029_statement_event_retract`; UI `Отменить импорт` / `Отвязать выписку`. Интегрировано merge `53610ce370f70bdf028d85d97692f83b8ba79014`.
+- **M06-05** (issue #109 / PR #112): polish layout таблиц редактора месяца, dedicated position inline-edit, плотность Alfa prepared-import, accent даты выплат. Frontend/layout only поверх already-merged retract. Интегрировано merge `382d572a2da976c76bd7dc873153dae61948c6c2`.
+- **M06-06** (issue #113): только подготовка release identity `0.6.2` (version metadata, CHANGELOG, public notes, wiki/history). Не feature work. Не merge/tag/GitHub Release из этой задачи.
+
+Safety contract 0.6.2: предыдущий контракт 0.6 плюс statement-specific auditable retract; generic investment-flow delete не уничтожает statement provenance молча; Alembic head остаётся `0029_statement_event_retract`.

@@ -365,6 +365,42 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.6.2 maintenance
+
+### M06-04 — safe retract for wrongly applied statement payouts
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue:** #108
+- **PR:** #110
+- **Worker candidate:** `m06-04-statement-retract` @ `89e816231f44fe529bd44dfdd5ae069e09bb9874`
+- **Integrated into:** `main` merge `53610ce370f70bdf028d85d97692f83b8ba79014`
+- **Scope:** auditable `active | retracted` statement-event lifecycle; append-only `retract` revision; statement-created payout retract removes financial effect and keeps audit evidence; linked-existing retract detaches provenance and keeps the manual flow; re-import after retract; CLOSED/missing month fail closed; owner UI `Отменить импорт` / `Отвязать выписку`. Alembic head `0029_statement_event_retract`.
+- **Decision notes:** generic investment-flow delete must not silently destroy statement provenance. Retract is statement-specific.
+- **References:** issue #108, PR #110
+
+### M06-05 — month tables and payout review layout polish
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue:** #109
+- **PR:** #112
+- **Original candidate:** `m06-05-layout-polish` @ `ac23dcc7ef150ff93d3b373ebb13a81bf4672320` (from v0.6.1 baseline `379697e3799df6e8bfbfd8f8e7584331cd77a817`)
+- **Integration candidate:** `m06-05-layout-polish-integration` @ `a04ac793550c06bc138645967922b036c76d9798`
+- **Integrated into:** `main` merge `382d572a2da976c76bd7dc873153dae61948c6c2`
+- **Scope:** frontend/layout only. Remove unnecessary desktop horizontal overflow in deposits/positions/debts/property; dedicated position inline-edit; denser Alfa prepared-import review; concise simple-row decision text; payout date accent spacing. No financial/provider/domain semantic change. Retract semantics from M06-04 preserved.
+- **References:** issue #109, PR #112
+
+### M06-06 — prepare Hermes Finance v0.6.2 maintenance release
+
+- **Recorded:** 2026-08-25 as release-prep context from issue #113. This is not an accept/integrate verdict and not a published release.
+- **Issue:** #113
+- **Exact baseline `origin/main`:** `382d572a2da976c76bd7dc873153dae61948c6c2`
+- **Task branch:** `m06-06-release-062`
+- **Scope:** synchronize version identity to `0.6.2`, CHANGELOG, public release notes, compact release record, README/wiki/history. No feature, provider or new-migration change. Canonical Alembic head remains `0029_statement_event_retract`.
+- **Not done in this task:** merge to `main`; tag `v0.6.2`; GitHub Release; production runtime use.
+- **References:** issue #113, `docs/releases/0.6.2.md`, `docs/release-notes-0.6.2.md`, `CHANGELOG.md`
+
+---
+
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
