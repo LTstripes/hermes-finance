@@ -5,33 +5,45 @@ export type StatementMapping = {
   instrument_mappings: { hermes_instrument_id: number; isin: string }[];
 };
 
+export type StatementCandidate = {
+  investment_cash_flow_id: number;
+  reporting_month_id: number;
+  account_id: number;
+  instrument_id: number | null;
+  flow_type: string;
+  event_date: string;
+  gross_amount_kopecks: number;
+  tax_amount_kopecks: number;
+  commission_amount_kopecks: number;
+  net_amount_kopecks: number;
+  currency: string;
+  source: string;
+};
+
 export type StatementRow = {
   status: string;
   duplicate_class: "duplicate" | "correction" | null;
+  event_kind?: string | null;
   provider_account_ref?: string | null;
   expected_hermes_account_id: number | null;
   expected_hermes_instrument_id: number | null;
   natural_identity: string | null;
   material_fingerprint: string | null;
   expected_candidate_ids: number[];
-  candidates: {
-    investment_cash_flow_id: number;
-    reporting_month_id: number;
-    account_id: number;
-    instrument_id: number | null;
-    flow_type: string;
-    event_date: string;
-    gross_amount_kopecks: number;
-    tax_amount_kopecks: number;
-    commission_amount_kopecks: number;
-    net_amount_kopecks: number;
-    currency: string;
-    source: string;
-  }[];
+  candidates: StatementCandidate[];
   isin: string | null;
+  record_date?: string | null;
   event_date: string | null;
+  quantity?: string | null;
+  per_unit?: string | null;
+  gross_amount?: string | null;
+  gross_currency?: string | null;
+  tax_amount?: string | null;
+  tax_available?: boolean;
+  tax_rate?: string | null;
+  net_amount?: string | null;
+  net_currency?: string | null;
   reason: string | null;
-  [key: string]: unknown;
 };
 
 export type StatementPreparation = {

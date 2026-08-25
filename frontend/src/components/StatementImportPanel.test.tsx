@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { updateInstrument } from "../api/instruments";
 import {
   applyStatement,
   inspectStatement,
@@ -15,6 +16,9 @@ vi.mock("../api/statementImport", () => ({
   applyStatement: vi.fn(),
   inspectStatement: vi.fn(),
   prepareStatement: vi.fn(),
+}));
+vi.mock("../api/instruments", () => ({
+  updateInstrument: vi.fn(),
 }));
 
 const account = { id: 1, name: "Основной счёт" } as Account;
@@ -39,6 +43,16 @@ const inspectResult = {
   reason: null,
 };
 
+const moneyRow = {
+  event_kind: "coupon",
+  gross_amount: "12450.00",
+  gross_currency: "RUB",
+  tax_amount: "1618.50",
+  tax_available: true,
+  net_amount: "10831.50",
+  net_currency: "RUB",
+};
+
 const preparation: StatementPreparation = {
   provider: "alfa_pdf",
   document_sha256: "sha-1",
@@ -59,6 +73,7 @@ const preparation: StatementPreparation = {
       isin: "RU000SYNTH01",
       event_date: "2026-08-01",
       reason: null,
+      ...moneyRow,
     },
     {
       status: "matched",
@@ -73,6 +88,9 @@ const preparation: StatementPreparation = {
       isin: "RU000SYNTH01",
       event_date: "2026-08-02",
       reason: null,
+      ...moneyRow,
+      tax_available: false,
+      tax_amount: null,
     },
     {
       status: "matched",
@@ -87,6 +105,7 @@ const preparation: StatementPreparation = {
       isin: "RU000SYNTH01",
       event_date: "2026-08-03",
       reason: null,
+      ...moneyRow,
     },
   ],
 };
@@ -261,5 +280,97 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(screen.queryByText("mapping")).toBeNull();
     expect(container.querySelector(".statement-import__summary")).not.toBeNull();
     expect(container.querySelector(".statement-import__mapping")).not.toBeNull();
+  });
+
+  it("renders prepared rows with account, instrument, amounts and duplicate class", async () => {
+    const user = await prepareReport();
+    const prepareTable = screen.getAllByRole("table")[1];
+    expect(prepareTable).toHaveTextContent("Основной счёт");
+    expect(prepareTable).toHaveTextContent("Синтетическая облигация");
+    expect(prepareTable).toHaveTextContent("RU000SYNTH01");
+    expect(prepareTable).toHaveTextContent("Купон");
+    expect(prepareTable).toHaveTextContent("03.08.2026");
+    expect(prepareTable).toHaveTextContent(/12\s*450/);
+    expect(prepareTable).toHaveTextContent("не указан");
+    expect(prepareTable).toHaveTextContent(/10\s*831,50/);
+    expect(prepareTable).toHaveTextContent("Уже импортировано");
+    expect(prepareTable).toHaveTextContent("Новая строка");
+    expect(
+      screen.getByText(/3 строк · 1 новых · 1 дубля · 1 требует решения · выбрано 0/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes[0]).toBeDisabled();
+    expect(checkboxes[0]).not.toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
+    expect(checkboxes[2]).toBeChecked();
+    expect(screen.getByRole("button", { name: "Применить выбранные строки" })).toBeEnabled();
+  });
+
+  it("shows candidate evidence instead of only a numeric id", async () => {
+    vi.mocked(prepareStatement).mockResolvedValueOnce(candidatePreparation);
+    const user = await prepareReport();
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[3]);
+    await user.selectOptions(screen.getByLabelText("Решение кандидата 4"), "link_existing");
+    const candidateSelect = screen.getByLabelText("Кандидат для ссылки 4");
+    expect(candidateSelect).toHaveTextContent("03.08.2026");
+    expect(candidateSelect).toHaveTextContent("Купон");
+    expect(candidateSelect).toHaveTextContent("Синтетическая облигация");
+    expect(candidateSelect).toHaveTextContent("Основной счёт");
+    expect(candidateSelect).toHaveTextContent("#42");
+    expect(candidateSelect).not.toHaveTextContent(/^Запись #42$/);
+  });
+
+  it("keeps overlapping mappings after another PDF in the same session", async () => {
+    const user = userEvent.setup();
+    render(<StatementImportPanel accounts={[account]} instruments={[instrument]} />);
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await screen.findByText("broker-1");
+    await user.selectOptions(screen.getByLabelText("Alfa-счёт broker-1"), "1");
+    expect(screen.getByLabelText("Alfa-счёт broker-1")).toHaveValue("1");
+
+    const second = new File(["second pdf"], "statement-2.pdf", { type: "application/pdf" });
+    vi.mocked(inspectStatement).mockResolvedValueOnce({
+      ...inspectResult,
+      document_sha256: "sha-2",
+    });
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), second);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    expect(await screen.findByLabelText("Alfa-счёт broker-1")).toHaveValue("1");
+
+    await user.click(screen.getByRole("button", { name: "Сбросить сопоставления" }));
+    expect(screen.getByLabelText("Alfa-счёт broker-1")).toHaveValue("");
+  });
+
+  it("saves a blank Hermes ISIN only through the explicit action", async () => {
+    const blank = { ...instrument, id: 11, name: "Без ISIN", isin: null };
+    vi.mocked(updateInstrument).mockResolvedValue({ ...blank, isin: "RU000SYNTH01" });
+    const user = userEvent.setup();
+    render(<StatementImportPanel accounts={[account]} instruments={[blank]} />);
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await user.selectOptions(screen.getByLabelText("Инструмент для RU000SYNTH01"), "11");
+    expect(updateInstrument).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Сохранить ISIN в инструмент" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Сохранить ISIN в инструмент" }));
+    await waitFor(() =>
+      expect(updateInstrument).toHaveBeenCalledWith(11, { isin: "RU000SYNTH01" }),
+    );
+    expect(await screen.findByText(/ISIN RU000SYNTH01 сохранён/)).toBeInTheDocument();
+    expect(screen.getByText("ISIN уже сохранён в инструменте")).toBeInTheDocument();
+  });
+
+  it("does not overwrite a conflicting Hermes ISIN", async () => {
+    const conflicted = { ...instrument, id: 12, name: "Чужой ISIN", isin: "RU000OTHER01" };
+    const user = userEvent.setup();
+    render(<StatementImportPanel accounts={[account]} instruments={[conflicted]} />);
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await user.selectOptions(screen.getByLabelText("Инструмент для RU000SYNTH01"), "12");
+    expect(screen.queryByRole("button", { name: "Сохранить ISIN в инструмент" })).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("уже ISIN RU000OTHER01");
+    expect(updateInstrument).not.toHaveBeenCalled();
   });
 });

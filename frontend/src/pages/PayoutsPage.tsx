@@ -244,6 +244,7 @@ export function PayoutsPage() {
             await loadContext(monthId, forecastVersion.trim());
           }
         }}
+        onInstrumentsChange={setInstruments}
       />
 
       <Panel

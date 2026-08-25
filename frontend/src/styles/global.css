@@ -539,6 +539,103 @@ a.btn {
   margin: 20px 0;
 }
 
+.statement-import__mapping-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.statement-import__mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+}
+
+.statement-import__isin-row {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.statement-import__isin-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.statement-import__isin-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.statement-import__isin-head code {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+}
+
+.statement-import__prepare-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.statement-import__prepare-table__select {
+  width: 48px;
+}
+
+.statement-import__stack {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quote-preview-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.quote-preview-table__select {
+  width: 52px;
+}
+
+.quote-preview-instrument {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+
+.quote-preview-price,
+.quote-preview-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quote-preview-price {
+  justify-content: flex-end;
+}
+
+.quote-preview-price .help-tip,
+.quote-preview-status .help-tip,
+.quote-preview-instrument .help-tip {
+  margin-inline-start: 0;
+}
+
+.quote-preview-proposed {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.quote-preview-proposed__date {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
 .editor-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -761,7 +858,8 @@ a.btn {
 
 @media (max-width: 680px) {
   .clone-grid,
-  .form-row-2 {
+  .form-row-2,
+  .statement-import__mapping-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1115,7 +1213,11 @@ th.num {
 .month-debts-table th.num,
 .month-debts-table td.num,
 .month-property-table th.num,
-.month-property-table td.num {
+.month-property-table td.num,
+.quote-preview-table th.num,
+.quote-preview-table td.num,
+.statement-import__prepare-table th.num,
+.statement-import__prepare-table td.num {
   width: 8.5rem;
   padding-inline: 14px;
   white-space: nowrap;
