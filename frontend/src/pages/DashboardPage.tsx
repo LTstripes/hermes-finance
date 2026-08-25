@@ -4,7 +4,12 @@ import { Link } from "react-router";
 import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
-import type { DashboardKpis, DashboardSlice, ReportingMonth } from "../api/types";
+import type {
+  DashboardForecast,
+  DashboardKpis,
+  DashboardSlice,
+  ReportingMonth,
+} from "../api/types";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
 import {
@@ -161,7 +166,11 @@ export function DashboardPage() {
       <section className="dashboard-overview-grid" aria-label="Ключевое состояние">
         <CapitalOverviewCard kpis={kpis} loading={loadingDash} />
         <PassiveIncomeOverviewCard kpis={kpis} loading={loadingDash} />
-        <ForecastOverviewCard kpis={kpis} loading={loadingDash} />
+        <ForecastOverviewCard
+          forecast={dashboard?.summary?.forecast ?? null}
+          kpis={kpis}
+          loading={loadingDash}
+        />
         <CoverageOverviewCard kpis={kpis} loading={loadingDash} />
       </section>
 
@@ -286,7 +295,15 @@ function PassiveIncomeOverviewCard({
   );
 }
 
-function ForecastOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; loading: boolean }) {
+function ForecastOverviewCard({
+  forecast,
+  kpis,
+  loading,
+}: {
+  forecast: DashboardForecast | null;
+  kpis: DashboardKpis | null;
+  loading: boolean;
+}) {
   const ready = !loading && kpis != null;
 
   return (
@@ -312,10 +329,59 @@ function ForecastOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; l
           <strong>{ready ? pctLabel(kpis.goal_progress_pct) : "…"}</strong>
         </div>
       </div>
+      {ready ? <ForecastBreakdown forecast={forecast} /> : null}
       <Link className="overview-card__link" to="/goals">
         Настроить цель →
       </Link>
     </article>
+  );
+}
+
+function ForecastBreakdown({ forecast }: { forecast: DashboardForecast | null }) {
+  // These are backend-provided components.  The frontend only formats and
+  // labels them; it does not recreate the forecast formula.
+  if (!forecast) return null;
+
+  return (
+    <>
+      <div className="overview-card__compare">
+        <div>
+          <span>Вклады</span>
+          <strong>{formatMoney(moneyAmount(forecast.breakdown.expected_deposit_interest))}</strong>
+        </div>
+        <div>
+          <span>Купоны</span>
+          <strong>{formatMoney(moneyAmount(forecast.breakdown.expected_coupon_net))}</strong>
+        </div>
+        <div>
+          <span>Дивиденды</span>
+          <strong>
+            {formatMoney(moneyAmount(forecast.breakdown.expected_dividend_component))}
+          </strong>
+        </div>
+        <div>
+          <span>Прочее</span>
+          <strong>
+            {formatMoney(moneyAmount(forecast.breakdown.other_expected_capital_income))}
+          </strong>
+        </div>
+      </div>
+      <div className="overview-card__context overview-card__context--with-help">
+        {forecast.is_approximate ? <span>Часть прогноза оценочная</span> : null}
+        <HelpTip label="Как составлен прогноз" align="start">
+          Проценты по вкладам — оценка по снимкам выбранного месяца и текущему месячному прогнозу ×
+          12; срок и изменение ставки не моделируются. Ручной процент складывается с этой оценкой,
+          поэтому не вводи один и тот же процент дважды. Купоны берутся только из локального
+          применённого календаря выплат. Дивидендный компонент построен по фактической истории;
+          погашения исключены.
+        </HelpTip>
+      </div>
+      {forecast.warnings.map((warning) => (
+        <p className="overview-card__context muted tiny" key={warning}>
+          {warning}
+        </p>
+      ))}
+    </>
   );
 }
 

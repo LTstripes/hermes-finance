@@ -19,6 +19,7 @@ from hermes_finance.persistence import (
     AppliedProviderPayout,
     AppSettings,
     Base,
+    DepositSnapshot,
     ExpectedCashFlow,
     Goal,
 )
@@ -32,6 +33,7 @@ from hermes_finance.services.applied_payouts import (
     set_applied_payout_reconciliation,
 )
 from hermes_finance.services.dashboard import build_dashboard
+from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
 from hermes_finance.services.forecast_passive_income import forecast_passive_income
 from hermes_finance.services.instruments import create_instrument
@@ -143,6 +145,15 @@ def test_provider_payouts_feed_c04_and_dashboard_without_recalculation(tmp_path:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, instrument_id, snapshot_id = environment(session)
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Synthetic deposit",
+            deposit_type="deposit",
+            balance="120000.00",
+            annual_rate="10.00",
+        )
         manual_flow(
             session,
             month_id=month_id,
@@ -196,11 +207,12 @@ def test_provider_payouts_feed_c04_and_dashboard_without_recalculation(tmp_path:
 
         first = forecast_passive_income(session, month_id, "v1")
         assert first.breakdown.expected_coupon_net == RubleAmount(5_000)
-        assert first.breakdown.expected_deposit_interest == RubleAmount(2_000)
+        assert first.breakdown.expected_deposit_interest == RubleAmount(1_202_000)
         assert first.breakdown.other_expected_capital_income == RubleAmount(3_000)
         assert first.breakdown.expected_dividend_component == RubleAmount(0)
-        assert first.annual_total == RubleAmount(10_000)
+        assert first.annual_total == RubleAmount(1_210_000)
         assert first.is_approximate is True
+        assert any("Проценты по вкладам оценены" in warning for warning in first.warnings)
         assert coupon.total_amount_kopecks == 5_000
 
         update_position_snapshot(session, snapshot_id, quantity="9.000000")
@@ -213,6 +225,9 @@ def test_provider_payouts_feed_c04_and_dashboard_without_recalculation(tmp_path:
         after = counts(session)
         assert after == before
         assert not session.new and not session.dirty and not session.deleted
+        assert dashboard.summary.coverage.forecast_monthly == first.monthly_total
+        assert dashboard.summary.coverage.goal_progress_pct is not None
+        assert dashboard.summary.coverage.is_approximate is True
         assert {(item.source_kind, item.flow_type) for item in dashboard.expected_payments} == {
             ("manual", "interest"),
             ("manual", "other"),
@@ -261,6 +276,77 @@ def test_provider_payouts_feed_c04_and_dashboard_without_recalculation(tmp_path:
         assert len(closed_serialized["expected_payments"]) == 5
         assert counts(session) == before_closed_dashboard
         assert not session.new and not session.dirty and not session.deleted
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_multiple_and_zero_deposit_snapshots_are_read_and_annualised_exactly(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, _instrument_id, _snapshot_id = environment(session)
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Deposit one",
+            deposit_type="deposit",
+            balance="120000.00",
+            annual_rate="10.00",
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Deposit two",
+            deposit_type="savings",
+            balance="60000.00",
+            annual_rate="20.00",
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Zero deposit",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
+        )
+        manual_flow(
+            session,
+            month_id=month_id,
+            account_id=account_id,
+            instrument_id=_instrument_id,
+            flow_type=ExpectedCashFlowType.INTEREST,
+            amount="20.00",
+        )
+        session.commit()
+
+        before_snapshot_count = session.scalar(select(func.count()).select_from(DepositSnapshot))
+        result = forecast_passive_income(session, month_id, "v1")
+        after_snapshot_count = session.scalar(select(func.count()).select_from(DepositSnapshot))
+
+        # Each non-zero snapshot contributes 1000.00 RUB/month; the manual
+        # 20.00 RUB interest is additive: (100000 + 100000) * 12 + 2000 kop.
+        assert result.breakdown.expected_deposit_interest == RubleAmount(2_402_000)
+        assert result.annual_total == RubleAmount(2_402_000)
+        assert result.monthly_total == RubleAmount(200_167)
+        assert result.is_approximate is True
+        assert any("Проценты по вкладам оценены" in warning for warning in result.warnings)
+        assert after_snapshot_count == before_snapshot_count
+        assert not session.new and not session.dirty and not session.deleted
+
+        close_reporting_month(session, month_id)
+        closed_result = forecast_passive_income(session, month_id, "v1")
+        assert closed_result.annual_total == result.annual_total
+        assert (
+            closed_result.breakdown.expected_deposit_interest
+            == result.breakdown.expected_deposit_interest
+        )
+        assert closed_result.is_approximate is True
+        assert any("Проценты по вкладам оценены" in warning for warning in closed_result.warnings)
     finally:
         session.close()
         database.engine.dispose()
