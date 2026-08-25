@@ -1,4 +1,4 @@
-"""R06-10 release verification: 0.5-era upgrade, health 0.6.0, and network boundary."""
+"""R06-10 release verification: 0.5-era upgrade, current health 0.6.1, and network boundary."""
 
 from __future__ import annotations
 
@@ -36,14 +36,14 @@ def _manual_flow_fingerprint(database_path: Path) -> list[tuple[object, ...]]:
         connection.close()
 
 
-def test_health_version_is_060() -> None:
+def test_health_version_is_061() -> None:
     from hermes_finance.main import app
 
-    assert __version__ == "0.6.0"
+    assert __version__ == "0.6.1"
     with TestClient(app) as client:
         response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.6.0"}
+    assert response.json() == {"status": "ok", "version": "0.6.1"}
 
 
 def test_pre_06_schema_upgrades_from_05_without_rewriting_owner_rows(tmp_path: Path) -> None:

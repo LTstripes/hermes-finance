@@ -326,6 +326,45 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.6.1 maintenance
+
+### M06-01 — month editor density and missing edit actions
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue/PR:** #103
+- **Baseline:** published `main` `3a76533dc306267b1715f1853923ce5c97b24726` (`v0.6.0`)
+- **Worker candidate:** `m06-01-month-editor-density` @ `27705331cf3731b72153b79d0d194e7b9912458c`
+- **Integrated into:** `main` merge `a00e0768db2827bdfad917559c82aab01aea745d`
+- **Scope:** frontend-only UX. Shared three-dot overflow for deposits/month tables; valuation provenance behind HelpTip; Edit via existing PATCH for manual investment flows, expenses, savings, debts and property/mortgage. No backend/schema/provider change.
+- **Worker verification reported on candidate:** 47 targeted tests; full frontend 276 passed / 48 files; lint, changed-file format, tsc+vite, `git diff --check`, privacy PASS.
+- **Decision notes:** maintenance after owner UAT of 0.6.0. Imported/provider investment flows remain non-editable in UI.
+- **References:** PR #103
+
+### M06-02 — quote preview and Alfa statement import review UX
+
+- **Accepted/integrated:** 2026-08-25
+- **Issue:** #104
+- **PR:** #105
+- **Stacked base at start:** M06-01 candidate `27705331cf3731b72153b79d0d194e7b9912458c`; M06-01 later on `main` as `a00e0768db2827bdfad917559c82aab01aea745d`
+- **Worker candidate:** `m06-02-import-review-ux` @ `a78a0711d25c74f32c22982992cd9f290400e7d5`
+- **Integrated into:** `main` merge `196e992c7b3a72255c7b91ca7ec11ef9e1e32281`
+- **Scope:** frontend-only UX. Readable quote-preview hierarchy; transient Alfa mappings for the mounted import session with explicit reset; explicit canonical `Instrument.isin` save only when safe; prepared/candidate review evidence; select-all-ready. No backend/schema/provider persistence change.
+- **Worker verification reported on candidate:** 58 targeted tests; full frontend 281 passed / 48 files; lint, changed-file format, tsc+vite, `git diff --check`, privacy PASS. Backend unchanged.
+- **Decision notes:** T-Invest mapping remains a separate identity from canonical ISIN. Duplicate/unready rows stay non-applyable.
+- **References:** issue #104, PR #105
+
+### M06-03 — prepare Hermes Finance v0.6.1 maintenance release
+
+- **Recorded:** 2026-08-25 as release-prep context from issue #106. This is not an accept/integrate verdict and not a published release.
+- **Issue:** #106
+- **Exact baseline `origin/main`:** `196e992c7b3a72255c7b91ca7ec11ef9e1e32281`
+- **Task branch:** `m06-03-release-061`
+- **Scope:** synchronize version identity to `0.6.1`, CHANGELOG, public release notes, compact release record, README/wiki/history. No feature, schema, provider or persistence change.
+- **Not done in this task:** merge to `main`; tag `v0.6.1`; GitHub Release; production runtime use.
+- **References:** issue #106, `docs/releases/0.6.1.md`, `docs/release-notes-0.6.1.md`, `CHANGELOG.md`
+
+---
+
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.

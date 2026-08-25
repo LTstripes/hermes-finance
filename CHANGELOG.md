@@ -2,6 +2,40 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.6.1] — 2026-08-25
+
+Maintenance UX on top of 0.6.0. No schema, provider or persistence change.
+
+### Changed
+
+#### Month editor
+
+- deposit and table actions moved into the shared three-dot overflow menu;
+- missing Edit actions added for manual investment flows, expenses, savings, debts and property/mortgage using the existing PATCH contracts;
+- position valuation provenance moved into a compact HelpTip/details control;
+- spacing tightened in dense month tables.
+
+#### Quotes and Alfa statement review
+
+- quote preview hierarchy made readable: proposed price and quote date grouped; secondary provenance and long guidance moved behind accessible detail;
+- transient Alfa PDF mappings retained while the import panel remains mounted, with an explicit reset; no persistent Alfa provider mapping;
+- an explicit owner action can save a statement ISIN into canonical `Instrument.isin` only when safe; a conflicting non-empty ISIN is never silently overwritten; T-Invest mapping remains separate;
+- prepared Alfa statement rows show human-readable account, instrument, event, date, gross, tax, net and classification;
+- candidate reconciliation shows meaningful evidence instead of only row IDs;
+- safe `select all ready` and clear-selection controls.
+
+### Not changed
+
+- no OCR;
+- no persistent raw Alfa/provider payload;
+- no persistent Alfa account mapping;
+- Apply remains explicit and selected-row only;
+- duplicate/idempotency guards remain;
+- CLOSED and missing-month operations still fail closed;
+- no provider or trading semantic change;
+- no Alembic migration;
+- local runtime remains loopback-only (`127.0.0.1:8000`).
+
 ## [0.6.0] — 2026-08-25
 
 Owner-triggered Alfa PRO current snapshot review/apply and a narrow Alfa depository income-payment PDF import.
