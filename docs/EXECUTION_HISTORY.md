@@ -303,21 +303,6 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
-# 0.6.0 candidate (not integrated)
-
-### R06-10 Gate C — 0.6.0 release-candidate preparation
-
-- **Recorded:** 2026-08-25
-- **Kind:** release-candidate preparation; not accepted and not integrated
-- **Issue:** #98
-- **Baseline worker-line:** `origin/r06-10-codex` @ `f284d82e3065fc3cb06fa07cd02cf2664c80ae33`
-- **Gate B exact code:** `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3` (`UAT_PASS` / `GATE_B_PASS`; evidence in issue #98)
-- **Canonical `r06` (unchanged):** `194ec5501211e8940a9328ac9011bb35fb4423d1`
-- **Candidate branch:** `r06-10-gate-c-grok`
-- **Policy:** this file records an accepted/integrated task only after the accepting integrator writes that record. Gate C does not invent merge, tag, CI or GitHub Release SHAs. The integrator appends the final 0.6.0 execution/publication record after `r06`/`main` integration and publication.
-
----
-
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
