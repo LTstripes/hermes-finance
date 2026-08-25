@@ -477,6 +477,15 @@ export function MonthFlowsSection({
                 const passive = isPassiveInvestmentFlowType(row.flow_type);
                 const manual = isManuallyEditableInvestmentFlow(row.source, row.statement_link);
                 const correction = statementCorrectionKind(row.statement_link);
+                const instrument =
+                  row.instrument_id == null
+                    ? null
+                    : instruments.find((item) => item.id === row.instrument_id);
+                const instrumentPrimary = instrument
+                  ? instrument.ticker
+                    ? `${instrument.name} (${instrument.ticker})`
+                    : instrument.name
+                  : accountName(row.account_id);
                 return (
                   <tr
                     className={redemption ? "row--muted" : passive ? "row--income" : undefined}
@@ -533,25 +542,32 @@ export function MonthFlowsSection({
                       )}
                     </Td>
                     <Td>
-                      <div>{accountName(row.account_id)}</div>
                       {editing ? (
-                        <Select
-                          aria-label="Инструмент выплаты"
-                          onChange={(e) =>
-                            setEditActual({ ...editActual, instrument_id: e.target.value })
-                          }
-                          value={editActual.instrument_id}
-                        >
-                          <option value="">—</option>
-                          {instruments.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                              {item.ticker ? ` (${item.ticker})` : ""}
-                            </option>
-                          ))}
-                        </Select>
+                        <>
+                          <div>{accountName(row.account_id)}</div>
+                          <Select
+                            aria-label="Инструмент выплаты"
+                            onChange={(e) =>
+                              setEditActual({ ...editActual, instrument_id: e.target.value })
+                            }
+                            value={editActual.instrument_id}
+                          >
+                            <option value="">—</option>
+                            {instruments.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                                {item.ticker ? ` (${item.ticker})` : ""}
+                              </option>
+                            ))}
+                          </Select>
+                        </>
                       ) : (
-                        <div className="muted tiny">{instrumentName(row.instrument_id)}</div>
+                        <div className="month-flows-table__party">
+                          <strong>{instrumentPrimary || "—"}</strong>
+                          <div className="muted tiny">
+                            {instrument ? accountName(row.account_id) : "—"}
+                          </div>
+                        </div>
                       )}
                     </Td>
                     <Td numeric>

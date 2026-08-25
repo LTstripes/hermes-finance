@@ -5,11 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardPage } from "./DashboardPage";
 
-vi.mock("../components/MainGoalPanel", () => ({
-  MainGoalPanel: ({ reportingMonthId }: { reportingMonthId: number | null }) => (
-    <article>main goal {reportingMonthId ?? "none"}</article>
-  ),
-}));
 vi.mock("../components/charts/CapitalChart", () => ({
   CapitalChart: () => <div>capital chart stub</div>,
 }));
@@ -54,7 +49,10 @@ function dashboard(
     kpis: {
       liquid_capital_net: { amount: "4820500.00", currency: "RUB" },
       liquid_capital_delta: { amount: "120000.00", currency: "RUB" },
+      passive_income_actual: { amount: "860.00", currency: "RUB" },
+      passive_income_delta: { amount: "-10.00", currency: "RUB" },
       forecast_monthly_passive_income: { amount: "86420.00", currency: "RUB" },
+      forecast_annual_passive_income: { amount: "1037040.00", currency: "RUB" },
       passive_income_average: { amount: "85200.00", currency: "RUB" },
       passive_income_average_months: 6,
       passive_income_average_complete: false,
@@ -64,6 +62,7 @@ function dashboard(
       goal_target: { amount: "100000.00", currency: "RUB" },
       mandatory_expenses: { amount: "150000.00", currency: "RUB" },
       mandatory_expense_coverage_pct: "56.8",
+      actual_mandatory_expense_coverage_pct: "56.7",
       mortgage_balance: { amount: "12450000.00", currency: "RUB" },
       mortgage_coverage_pct: "38.7",
     },
@@ -109,7 +108,7 @@ afterEach(() => {
 });
 
 describe("DashboardPage R03-04 semantics", () => {
-  it("keeps four overview blocks and distinguishes fact forecast and goal", async () => {
+  it("keeps four overview blocks with distinct fact, forecast and coverage semantics", async () => {
     const fetchMock = setupDashboard((monthId) =>
       jsonResponse(dashboard(monthId, monthId === 2 ? "Среднее доступно за 6 месяцев" : null)),
     );
@@ -122,12 +121,19 @@ describe("DashboardPage R03-04 semantics", () => {
     const overview = screen.getByRole("region", { name: "Ключевое состояние" });
     expect(within(overview).getAllByRole("article")).toHaveLength(4);
     expect(within(overview).getByText("Изменение за месяц")).toBeInTheDocument();
-    expect(within(overview).getByText("Факт · среднее")).toBeInTheDocument();
-    expect(within(overview).getByText("Прогноз")).toBeInTheDocument();
-    expect(within(overview).getByText("Цель")).toBeInTheDocument();
+    expect(within(overview).getByText("Факт · выбранный месяц")).toBeInTheDocument();
+    expect(within(overview).getByText("Прогноз · эквивалент за месяц")).toBeInTheDocument();
+    expect(within(overview).getByText("Прогноз / цель")).toBeInTheDocument();
     expect(within(overview).getByText("6 закрытых месяцев из 12")).toBeInTheDocument();
     expect(within(overview).getByText("Покрытие расходов")).toBeInTheDocument();
-    expect(screen.getByText("main goal 2")).toBeInTheDocument();
+    expect(within(overview).getByText("Среднее за закрытые месяцы")).toBeInTheDocument();
+    expect(within(overview).getByText("Прогноз покрытия")).toBeInTheDocument();
+    expect(within(overview).getByText("Покрытие ипотеки")).toBeInTheDocument();
+    expect(within(overview).getByText("Остаток ипотеки")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Настроить цель →" })).toHaveAttribute(
+      "href",
+      "/goals",
+    );
 
     expect(screen.queryByText("Среднее доступно за 6 месяцев")).toBeNull();
     expect(screen.queryByText(/По мере закрытия новых месяцев окно обновляется/)).toBeNull();
@@ -148,7 +154,6 @@ describe("DashboardPage R03-04 semantics", () => {
 
     await user.selectOptions(selector, "1");
     expect(selector).toHaveValue("1");
-    expect(await screen.findByText("main goal 1")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input]) => String(input) === "/api/months/1/dashboard"),
     ).toBe(true);

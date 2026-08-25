@@ -260,6 +260,24 @@ describe("MonthFlowsSection actual-flow instrument", () => {
     expect(table).toHaveTextContent("15.01.2031");
   });
 
+  it("puts the instrument first and the account below it", async () => {
+    setup({ flows: [manualFlow] });
+    const table = await screen.findByRole("table");
+
+    const instrument = within(table).getByText("Synthetic Bond (SYNB)");
+    expect(instrument.tagName).toBe("STRONG");
+    expect(instrument.nextElementSibling).toHaveTextContent("Synthetic Broker");
+  });
+
+  it("falls back to the account when an actual payout has no instrument", async () => {
+    setup({ flows: [{ ...manualFlow, id: 44, instrument_id: null }] });
+    const table = await screen.findByRole("table");
+
+    const account = within(table).getByText("Synthetic Broker");
+    expect(account.tagName).toBe("STRONG");
+    expect(account.nextElementSibling).toHaveTextContent("—");
+  });
+
   it("opens overflow edit for a manual payout and patches current values", async () => {
     const fetchMock = setup({ flows: [manualFlow] });
     const user = userEvent.setup();
