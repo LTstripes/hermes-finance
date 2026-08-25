@@ -7,7 +7,6 @@ import { listMonths } from "../api/months";
 import type { DashboardKpis, DashboardSlice, ReportingMonth } from "../api/types";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
-import { MainGoalPanel } from "../components/MainGoalPanel";
 import {
   EmptyState,
   ErrorState,
@@ -162,11 +161,7 @@ export function DashboardPage() {
       <section className="dashboard-overview-grid" aria-label="Ключевое состояние">
         <CapitalOverviewCard kpis={kpis} loading={loadingDash} />
         <PassiveIncomeOverviewCard kpis={kpis} loading={loadingDash} />
-        <MainGoalPanel
-          fallbackProgressPct={kpis?.goal_progress_pct ?? null}
-          fallbackTargetAmount={kpis ? moneyAmount(kpis.goal_target) : null}
-          reportingMonthId={selectedId}
-        />
+          <ForecastOverviewCard kpis={kpis} loading={loadingDash} />
         <CoverageOverviewCard kpis={kpis} loading={loadingDash} />
       </section>
 
@@ -240,11 +235,11 @@ function PassiveIncomeOverviewCard({
   const completeWindow = ready && kpis.passive_income_average_complete;
 
   return (
-    <article className="overview-card overview-card--comparison">
-      <div className="overview-card__label">Пассивный доход</div>
-      <div className="semantic-label semantic-label--fact">Факт · среднее</div>
+    <article className="overview-card">
+      <div className="overview-card__label">Пассивный доход · факт</div>
+      <div className="semantic-label semantic-label--fact">Факт · выбранный месяц</div>
       <div className="overview-card__value">
-        {ready ? formatMoney(moneyAmount(kpis.passive_income_average)) : "…"}
+        {ready ? formatMoney(moneyAmount(kpis.passive_income_actual)) : "…"}
       </div>
       <div className="overview-card__context overview-card__context--with-help">
         {ready ? (
@@ -273,18 +268,47 @@ function PassiveIncomeOverviewCard({
             : " · вся доступная история"}
         </p>
       ) : null}
+      <div className="overview-card__supporting">
+        <span>Среднее за закрытые месяцы</span>
+        <strong>{ready ? formatMoney(moneyAmount(kpis.passive_income_average)) : "…"}</strong>
+      </div>
+      <div className={`overview-card__delta overview-card__delta--${ready ? deltaToneFromAmount(moneyAmount(kpis.passive_income_delta)) : "neutral"}`}>
+        <span>К предыдущему месяцу</span>
+        <strong>
+          {ready && kpis.passive_income_delta ? formatMoneyDelta(moneyAmount(kpis.passive_income_delta)) : "—"}
+        </strong>
+      </div>
+    </article>
+  );
+}
+
+function ForecastOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; loading: boolean }) {
+  const ready = !loading && kpis != null;
+
+  return (
+    <article className="overview-card">
+      <div className="overview-card__label">Прогноз · 12 месяцев</div>
+      <div className="semantic-label semantic-label--forecast">Прогноз · эквивалент за месяц</div>
+      <div className="overview-card__value">
+        {ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}
+      </div>
+      <div className="overview-card__supporting">
+        <span>За следующие 12 месяцев</span>
+        <strong>{ready ? formatMoney(moneyAmount(kpis.forecast_annual_passive_income)) : "…"}</strong>
+      </div>
       <div className="overview-card__compare">
-        <div className="overview-card__compare-item overview-card__compare-item--forecast">
-          <span className="semantic-label semantic-label--forecast">Прогноз</span>
-          <strong>
-            {ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}
-          </strong>
-        </div>
-        <div className="overview-card__compare-item overview-card__compare-item--goal">
-          <span className="semantic-label semantic-label--goal">Цель</span>
+        <div>
+          <span>Цель пассивного дохода</span>
           <strong>{ready ? formatMoney(moneyAmount(kpis.goal_target)) : "…"}</strong>
         </div>
+        <div>
+          <span>Прогноз / цель</span>
+          <strong>{ready ? pctLabel(kpis.goal_progress_pct) : "…"}</strong>
+        </div>
       </div>
+      <Link className="overview-card__link" to="/goals">
+        Настроить цель →
+      </Link>
     </article>
   );
 }
@@ -295,15 +319,19 @@ function CoverageOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; l
   return (
     <article className="overview-card">
       <div className="overview-card__label">Покрытие расходов</div>
+      <div className="semantic-label semantic-label--fact">Факт · среднее</div>
       <div className="overview-card__value">
-        {ready ? pctLabel(kpis.mandatory_expense_coverage_pct) : "…"}
+        {ready ? pctLabel(kpis.actual_mandatory_expense_coverage_pct) : "…"}
       </div>
       <div className="overview-card__supporting">
         <span>Обязательные расходы</span>
         <strong>{ready ? formatMoney(moneyAmount(kpis.mandatory_expenses)) : "…"}</strong>
       </div>
-      <details className="overview-card__details">
-        <summary>Ещё показатель</summary>
+      <div className="overview-card__compare">
+        <div>
+          <span>Прогноз покрытия</span>
+          <strong>{ready ? pctLabel(kpis.mandatory_expense_coverage_pct) : "…"}</strong>
+        </div>
         <div>
           <span>Покрытие ипотеки</span>
           <strong>{ready ? pctLabel(kpis.mortgage_coverage_pct) : "…"}</strong>
@@ -312,7 +340,7 @@ function CoverageOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; l
           <span>Остаток ипотеки</span>
           <strong>{ready ? formatMoney(moneyAmount(kpis.mortgage_balance)) : "…"}</strong>
         </div>
-      </details>
+      </div>
     </article>
   );
 }

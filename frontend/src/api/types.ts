@@ -153,7 +153,10 @@ export type DashboardMortgage = {
 export type DashboardKpis = {
   liquid_capital_net: MoneyValue;
   liquid_capital_delta: MoneyValue | null;
+  passive_income_actual: MoneyValue;
+  passive_income_delta: MoneyValue | null;
   forecast_monthly_passive_income: MoneyValue;
+  forecast_annual_passive_income: MoneyValue;
   passive_income_average: MoneyValue;
   passive_income_average_months: number;
   passive_income_average_complete: boolean;
@@ -163,6 +166,7 @@ export type DashboardKpis = {
   goal_target: MoneyValue;
   mandatory_expenses: MoneyValue;
   mandatory_expense_coverage_pct: string | null;
+  actual_mandatory_expense_coverage_pct: string | null;
   mortgage_balance: MoneyValue;
   mortgage_coverage_pct: string | null;
 };

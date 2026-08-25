@@ -8,6 +8,9 @@ Implements MASTER_SPEC §10.7-§10.8:
     mandatory_expense_coverage_pct =
         forecast_monthly_net_passive_income / mandatory_expenses * 100
 
+    actual_mandatory_expense_coverage_pct =
+        passive_income_average / mandatory_expenses * 100
+
     passive_income_minus_mandatory_expenses =
         forecast_monthly_net_passive_income - mandatory_expenses
 
@@ -58,6 +61,7 @@ class CoverageGoalsResult:
     actual_average: RubleAmount
     mandatory_expenses: RubleAmount
     coverage_pct: Decimal | None
+    actual_mandatory_expense_coverage_pct: Decimal | None
     passive_income_minus_mandatory_expenses: RubleAmount
     goal_target: RubleAmount
     goal_progress_pct: Decimal | None
@@ -83,6 +87,9 @@ def calculate_coverage_goals(input_data: CoverageGoalsInput) -> CoverageGoalsRes
     coverage_pct = _percent(
         input_data.forecast_monthly.kopecks, input_data.mandatory_expenses.kopecks
     )
+    actual_mandatory_expense_coverage_pct = _percent(
+        input_data.actual_average.kopecks, input_data.mandatory_expenses.kopecks
+    )
     goal_progress_pct = _percent(
         input_data.forecast_monthly.kopecks, input_data.goal_target.kopecks
     )
@@ -98,6 +105,7 @@ def calculate_coverage_goals(input_data: CoverageGoalsInput) -> CoverageGoalsRes
         actual_average=input_data.actual_average,
         mandatory_expenses=input_data.mandatory_expenses,
         coverage_pct=coverage_pct,
+        actual_mandatory_expense_coverage_pct=actual_mandatory_expense_coverage_pct,
         passive_income_minus_mandatory_expenses=RubleAmount(
             input_data.forecast_monthly.kopecks - input_data.mandatory_expenses.kopecks
         ),

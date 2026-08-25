@@ -36,6 +36,7 @@ def test_coverage_and_progress_normal_case() -> None:
     result = run(forecast_monthly=1_000_000, expenses=500_000)
     # 10000.00 / 5000.00 * 100 = 200.00%
     assert result.coverage_pct == Decimal("200.00")
+    assert result.actual_mandatory_expense_coverage_pct == Decimal("0.00")
     # 10000.00 / 100000.00 * 100 = 10.00%
     assert result.goal_progress_pct == Decimal("10.00")
     assert result.passive_income_minus_mandatory_expenses == RubleAmount(500_000)
@@ -52,6 +53,7 @@ def test_coverage_and_progress_normal_case() -> None:
 def test_zero_expenses_returns_none_coverage_and_warning() -> None:
     result = run(forecast_monthly=1_000_000, expenses=0)
     assert result.coverage_pct is None
+    assert result.actual_mandatory_expense_coverage_pct is None
     assert result.passive_income_minus_mandatory_expenses == RubleAmount(1_000_000)
     assert "Обязательные расходы равны нулю — покрытие не рассчитывается" in result.warnings
     # goal progress still works
@@ -95,6 +97,12 @@ def test_percent_quantized_to_two_decimals() -> None:
     result = run(forecast_monthly=10_000, expenses=30_000)
     # 100.00 / 300.00 * 100 = 33.333... -> 33.33
     assert result.coverage_pct == Decimal("33.33")
+
+
+def test_actual_average_coverage_rounds_with_half_up() -> None:
+    result = run(forecast_monthly=10_000, expenses=30_000, actual_average=10_001)
+    # 100.01 / 300.00 * 100 = 33.3366... -> 33.34
+    assert result.actual_mandatory_expense_coverage_pct == Decimal("33.34")
 
 
 def test_percent_rounds_half_up() -> None:

@@ -97,6 +97,7 @@ class CoverageOut(BaseModel):
     actual_average: MoneyValue
     mandatory_expenses: MoneyValue
     coverage_pct: str | None
+    actual_mandatory_expense_coverage_pct: str | None
     passive_income_minus_mandatory_expenses: MoneyValue
     goal_target: MoneyValue
     goal_progress_pct: str | None
@@ -274,7 +275,10 @@ class KpiOut(BaseModel):
 
     liquid_capital_net: MoneyValue
     liquid_capital_delta: MoneyValue | None
+    passive_income_actual: MoneyValue
+    passive_income_delta: MoneyValue | None
     forecast_monthly_passive_income: MoneyValue
+    forecast_annual_passive_income: MoneyValue
     passive_income_average: MoneyValue
     passive_income_average_months: int
     passive_income_average_complete: bool
@@ -284,6 +288,7 @@ class KpiOut(BaseModel):
     goal_target: MoneyValue
     mandatory_expenses: MoneyValue
     mandatory_expense_coverage_pct: str | None
+    actual_mandatory_expense_coverage_pct: str | None
     mortgage_balance: MoneyValue
     mortgage_coverage_pct: str | None
 
@@ -378,6 +383,9 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             actual_average=_money(coverage.actual_average),
             mandatory_expenses=_money(coverage.mandatory_expenses),
             coverage_pct=_dec_str(coverage.coverage_pct),
+            actual_mandatory_expense_coverage_pct=_dec_str(
+                coverage.actual_mandatory_expense_coverage_pct
+            ),
             passive_income_minus_mandatory_expenses=_money(
                 coverage.passive_income_minus_mandatory_expenses
             ),
@@ -465,7 +473,10 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         kpis=KpiOut(
             liquid_capital_net=summary_out.liquid_capital.liquid_capital_net,
             liquid_capital_delta=summary_out.liquid_capital_delta,
+            passive_income_actual=summary_out.passive_income_actual,
+            passive_income_delta=summary_out.passive_income_delta,
             forecast_monthly_passive_income=summary_out.forecast.monthly_total,
+            forecast_annual_passive_income=summary_out.forecast.annual_total,
             passive_income_average=summary_out.passive_income_average,
             passive_income_average_months=summary_out.passive_income_average_months,
             passive_income_average_complete=summary_out.passive_income_average_complete,
@@ -475,6 +486,9 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
             goal_target=summary_out.coverage.goal_target,
             mandatory_expenses=summary_out.coverage.mandatory_expenses,
             mandatory_expense_coverage_pct=summary_out.coverage.coverage_pct,
+            actual_mandatory_expense_coverage_pct=(
+                summary_out.coverage.actual_mandatory_expense_coverage_pct
+            ),
             mortgage_balance=_money(dashboard.mortgage.mortgage_balance),
             mortgage_coverage_pct=_dec_str(dashboard.mortgage.coverage_pct),
         ),

@@ -161,7 +161,10 @@ function mockLoadedMonth(month: ReportingMonth = draftMonth) {
     kpis: {
       liquid_capital_net: { amount: "1500000.00", currency: "RUB" },
       liquid_capital_delta: { amount: "10000.00", currency: "RUB" },
+      passive_income_actual: { amount: "42000.00", currency: "RUB" },
+      passive_income_delta: { amount: "2000.00", currency: "RUB" },
       forecast_monthly_passive_income: { amount: "50000.00", currency: "RUB" },
+      forecast_annual_passive_income: { amount: "600000.00", currency: "RUB" },
       passive_income_average: { amount: "45000.00", currency: "RUB" },
       passive_income_average_months: 6,
       passive_income_average_complete: false,
@@ -169,6 +172,7 @@ function mockLoadedMonth(month: ReportingMonth = draftMonth) {
       goal_target: { amount: "100000.00", currency: "RUB" },
       mandatory_expenses: { amount: "90000.00", currency: "RUB" },
       mandatory_expense_coverage_pct: "50.0",
+      actual_mandatory_expense_coverage_pct: "46.7",
       mortgage_balance: { amount: "3000000.00", currency: "RUB" },
       mortgage_coverage_pct: "50.0",
     },

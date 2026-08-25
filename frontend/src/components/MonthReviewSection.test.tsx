@@ -19,7 +19,10 @@ vi.mock("../api/months", () => ({
 const kpis: DashboardKpis = {
   liquid_capital_net: { amount: "1000000.00", currency: "RUB" },
   liquid_capital_delta: null,
+  passive_income_actual: { amount: "12000.00", currency: "RUB" },
+  passive_income_delta: null,
   forecast_monthly_passive_income: { amount: "15000.00", currency: "RUB" },
+  forecast_annual_passive_income: { amount: "180000.00", currency: "RUB" },
   passive_income_average: { amount: "12000.00", currency: "RUB" },
   passive_income_average_months: 6,
   passive_income_average_complete: false,
@@ -27,6 +30,7 @@ const kpis: DashboardKpis = {
   goal_target: { amount: "100000.00", currency: "RUB" },
   mandatory_expenses: { amount: "50000.00", currency: "RUB" },
   mandatory_expense_coverage_pct: "40.0",
+  actual_mandatory_expense_coverage_pct: "24.0",
   mortgage_balance: { amount: "0.00", currency: "RUB" },
   mortgage_coverage_pct: null,
 };

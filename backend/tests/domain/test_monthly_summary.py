@@ -94,6 +94,7 @@ def make_result(**overrides: object) -> MonthlySummaryResult:
         actual_average=ZERO,
         mandatory_expenses=ZERO,
         coverage_pct=None,
+        actual_mandatory_expense_coverage_pct=None,
         passive_income_minus_mandatory_expenses=ZERO,
         goal_target=ZERO,
         goal_progress_pct=None,

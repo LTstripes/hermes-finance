@@ -140,11 +140,18 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
         kpis: {
           liquid_capital_net: { amount: "1000000.00", currency: "RUB" },
           liquid_capital_delta: { amount: "10000.00", currency: "RUB" },
+          passive_income_actual: { amount: "78000.00", currency: "RUB" },
+          passive_income_delta: { amount: "3000.00", currency: "RUB" },
           forecast_monthly_passive_income: { amount: "80000.00", currency: "RUB" },
+          forecast_annual_passive_income: { amount: "960000.00", currency: "RUB" },
           passive_income_average: { amount: "75000.00", currency: "RUB" },
+          passive_income_average_months: 6,
+          passive_income_average_complete: false,
           goal_progress_pct: "42.0",
+          goal_target: { amount: "100000.00", currency: "RUB" },
           mandatory_expenses: { amount: "120000.00", currency: "RUB" },
           mandatory_expense_coverage_pct: "62.5",
+          actual_mandatory_expense_coverage_pct: "62.5",
           mortgage_balance: { amount: "4000000.00", currency: "RUB" },
           mortgage_coverage_pct: "25.0",
         },
@@ -180,7 +187,7 @@ describe("App", () => {
     expect(document.getElementById("main")).not.toBeNull();
     // KPI labels render immediately (values may be loading placeholders)
     expect(screen.getByText("Ликвидный капитал")).toBeInTheDocument();
-    expect(screen.getByText("Пассивный доход")).toBeInTheDocument();
+    expect(screen.getByText("Пассивный доход · факт")).toBeInTheDocument();
   });
 
   it("loads live KPI values from dashboard API for the latest month", async () => {
@@ -196,11 +203,18 @@ describe("App", () => {
             kpis: {
               liquid_capital_net: { amount: "4820500.00", currency: "RUB" },
               liquid_capital_delta: { amount: "120000.00", currency: "RUB" },
+              passive_income_actual: { amount: "86400.00", currency: "RUB" },
+              passive_income_delta: { amount: "1200.00", currency: "RUB" },
               forecast_monthly_passive_income: { amount: "86420.00", currency: "RUB" },
+              forecast_annual_passive_income: { amount: "1037040.00", currency: "RUB" },
               passive_income_average: { amount: "85200.00", currency: "RUB" },
+              passive_income_average_months: 6,
+              passive_income_average_complete: false,
               goal_progress_pct: "68.0",
+              goal_target: { amount: "100000.00", currency: "RUB" },
               mandatory_expenses: { amount: "150000.00", currency: "RUB" },
               mandatory_expense_coverage_pct: "56.8",
+              actual_mandatory_expense_coverage_pct: "56.8",
               mortgage_balance: { amount: "12450000.00", currency: "RUB" },
               mortgage_coverage_pct: "38.7",
             },
@@ -220,7 +234,7 @@ describe("App", () => {
     expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
     expect(screen.getByText("Изменение за месяц")).toBeInTheDocument();
     expect(screen.getByText("Факт · среднее")).toBeInTheDocument();
-    expect(screen.getByText("Прогресс цели")).toBeInTheDocument();
+    expect(screen.getByText("Прогноз / цель")).toBeInTheDocument();
     expect(screen.getByText("Обязательные расходы")).toBeInTheDocument();
     expect(screen.getByText("Покрытие расходов")).toBeInTheDocument();
     expect(screen.getByText("Покрытие ипотеки")).toBeInTheDocument();

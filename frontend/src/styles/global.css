@@ -1176,6 +1176,15 @@ a.btn {
   overflow-wrap: break-word;
 }
 
+.month-flows-table__party {
+  display: grid;
+  gap: 2px;
+}
+
+.month-flows-table__party strong {
+  color: var(--ink);
+}
+
 .month-editor-table .row-actions,
 .month-positions-table .row-actions,
 .month-deposits-table .row-actions {

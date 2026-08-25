@@ -80,6 +80,7 @@ def make_dashboard() -> DashboardResult:
             actual_average=R(4_000_000),
             mandatory_expenses=R(5_000_000),
             coverage_pct=Decimal("120.00"),
+            actual_mandatory_expense_coverage_pct=Decimal("80.00"),
             passive_income_minus_mandatory_expenses=R(1_000_000),
             goal_target=R(10_000_000),
             goal_progress_pct=Decimal("60.00"),

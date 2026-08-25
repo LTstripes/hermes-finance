@@ -156,15 +156,22 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert set(dash["kpis"]) >= {
         "liquid_capital_net",
         "liquid_capital_delta",
+        "passive_income_actual",
+        "passive_income_delta",
         "forecast_monthly_passive_income",
+        "forecast_annual_passive_income",
         "passive_income_average",
         "goal_progress_pct",
         "mandatory_expenses",
         "mandatory_expense_coverage_pct",
+        "actual_mandatory_expense_coverage_pct",
         "mortgage_balance",
         "mortgage_coverage_pct",
     }
     assert dash["kpis"]["mandatory_expenses"] == _rub("20000.00")
+    assert dash["kpis"]["passive_income_actual"] == _rub("0.00")
+    assert dash["kpis"]["actual_mandatory_expense_coverage_pct"] == "9.35"
+    assert dash["summary"]["coverage"]["actual_mandatory_expense_coverage_pct"] == "9.35"
     assert dash["kpis"]["mortgage_balance"] == _rub("4000000.00")
     assert dash["kpis"]["goal_target"] == _rub("100000.00")
     # one closed month → incomplete 12-month passive-income history
