@@ -28,6 +28,7 @@ from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
+from hermes_finance.services.statement_import_retract import StatementRetractError
 from hermes_finance.services.tax_brackets import TaxBracketYearLockedError
 
 logger = logging.getLogger("hermes_finance.api.errors")
@@ -217,6 +218,19 @@ def register_error_handlers(application: FastAPI) -> None:
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
+
+    @application.exception_handler(StatementRetractError)
+    async def _statement_retract_handler(
+        request: Request, exc: StatementRetractError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=%d code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.status_code,
+            exc.code,
+        )
+        return _error_response(exc.status_code, exc.code, str(exc))
 
     @application.exception_handler(ValueError)
     async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:

@@ -57,10 +57,16 @@ class StatementLinkMode(StrEnum):
     LINKED_EXISTING = "linked_existing"
 
 
+class StatementEventStatus(StrEnum):
+    ACTIVE = "active"
+    RETRACTED = "retracted"
+
+
 class StatementRevisionKind(StrEnum):
     APPLY = "apply"
     REVISE = "revise"
     LINK_EXISTING = "link_existing"
+    RETRACT = "retract"
 
 
 def _require_account(session: Session, account_id: int) -> None:
@@ -183,6 +189,7 @@ def get_applied_statement_event_by_identity(
         select(AppliedStatementEvent).where(
             AppliedStatementEvent.provider == provider,
             AppliedStatementEvent.natural_identity == natural_identity,
+            AppliedStatementEvent.status == StatementEventStatus.ACTIVE.value,
         )
     )
 
@@ -192,7 +199,8 @@ def get_applied_statement_event_by_cash_flow(
 ) -> AppliedStatementEvent | None:
     return session.scalar(
         select(AppliedStatementEvent).where(
-            AppliedStatementEvent.investment_cash_flow_id == investment_cash_flow_id
+            AppliedStatementEvent.investment_cash_flow_id == investment_cash_flow_id,
+            AppliedStatementEvent.status == StatementEventStatus.ACTIVE.value,
         )
     )
 
@@ -214,18 +222,53 @@ def list_applied_statement_event_revisions(
     )
 
 
+def list_active_applied_statement_events(session: Session) -> list[AppliedStatementEvent]:
+    return list(
+        session.scalars(
+            select(AppliedStatementEvent)
+            .where(AppliedStatementEvent.status == StatementEventStatus.ACTIVE.value)
+            .order_by(AppliedStatementEvent.id)
+        )
+    )
+
+
 def load_prior_event_views(session: Session) -> tuple[PriorEventView, ...]:
     return tuple(
         PriorEventView(
             natural_identity=event.natural_identity,
             material_fingerprint=event.material_fingerprint,
         )
-        for event in list_applied_statement_events(session)
+        for event in list_active_applied_statement_events(session)
     )
 
 
 def list_linked_investment_cash_flow_ids(session: Session) -> set[int]:
-    return set(session.scalars(select(AppliedStatementEvent.investment_cash_flow_id)))
+    return set(
+        session.scalars(
+            select(AppliedStatementEvent.investment_cash_flow_id).where(
+                AppliedStatementEvent.status == StatementEventStatus.ACTIVE.value,
+                AppliedStatementEvent.investment_cash_flow_id.is_not(None),
+            )
+        )
+    )
+
+
+def list_active_statement_events_by_cash_flow_ids(
+    session: Session, cash_flow_ids: list[int]
+) -> dict[int, AppliedStatementEvent]:
+    if not cash_flow_ids:
+        return {}
+    events = session.scalars(
+        select(AppliedStatementEvent).where(
+            AppliedStatementEvent.status == StatementEventStatus.ACTIVE.value,
+            AppliedStatementEvent.investment_cash_flow_id.in_(cash_flow_ids),
+        )
+    )
+    return {
+        event.investment_cash_flow_id: event
+        for event in events
+        if event.investment_cash_flow_id is not None
+    }
 
 
 def _append_revision_row(
@@ -365,6 +408,8 @@ def create_applied_statement_event(
         investment_cash_flow_id=flow.id,
         document_sha256=digest,
         link_mode=mode.value,
+        status=StatementEventStatus.ACTIVE.value,
+        retracted_at=None,
         created_at=accepted_at,
         updated_at=accepted_at,
     )
@@ -429,6 +474,8 @@ def append_applied_statement_revision(
     applied_at: datetime | None = None,
 ) -> AppliedStatementEventRevision:
     event = get_applied_statement_event(session, event_id)
+    if event.status != StatementEventStatus.ACTIVE.value:
+        raise AppliedStatementRevisionError("retracted statement event is frozen")
     kind = _coerce_revision_kind(revision_kind)
     if kind is StatementRevisionKind.APPLY:
         raise AppliedStatementRevisionError(
@@ -438,6 +485,10 @@ def append_applied_statement_revision(
     if kind is StatementRevisionKind.LINK_EXISTING:
         raise AppliedStatementRevisionError(
             "link_existing is recorded by create_applied_statement_event"
+        )
+    if kind is StatementRevisionKind.RETRACT:
+        raise AppliedStatementRevisionError(
+            "retract is recorded by retract_applied_statement_event"
         )
     accepted_at = _require_timestamp(applied_at or datetime.now(UTC), name="applied_at")
     fingerprint = _require_sha256(material_fingerprint, name="material_fingerprint")

@@ -23,6 +23,10 @@ from hermes_finance.services.statement_import_preparation import (
     _instrument_views,
     prepare_income_report_apply,
 )
+from hermes_finance.services.statement_import_retract import (
+    retract_applied_statement_event,
+    retract_statement_backed_cash_flow,
+)
 from hermes_finance.statement_import import (
     AccountMappingInput,
     InstrumentMappingInput,
@@ -136,6 +140,16 @@ class StatementApplyResponse(BaseModel):
     items: list[StatementApplyItemOut]
     error_code: str | None
     message: str | None
+
+
+class StatementRetractResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    applied_statement_event_id: int
+    link_mode: str
+    cash_flow_deleted: bool
+    investment_cash_flow_id: int | None
+    revision_id: int
 
 
 class StatementInspectRowOut(BaseModel):
@@ -367,3 +381,35 @@ async def apply_statement_endpoint(
         error_code=result.error_code.value if result.error_code is not None else None,
         message=result.message,
     )
+
+
+def _retract_response(result: object) -> StatementRetractResponse:
+    return StatementRetractResponse(
+        applied_statement_event_id=result.applied_statement_event_id,
+        link_mode=result.link_mode,
+        cash_flow_deleted=result.cash_flow_deleted,
+        investment_cash_flow_id=result.investment_cash_flow_id,
+        revision_id=result.revision_id,
+    )
+
+
+@router.post(
+    "/applied-events/{event_id}/retract",
+    response_model=StatementRetractResponse,
+)
+def retract_applied_event_endpoint(
+    event_id: int,
+    session: Session = Depends(session_for_request),
+) -> StatementRetractResponse:
+    return _retract_response(retract_applied_statement_event(session, event_id))
+
+
+@router.post(
+    "/cash-flows/{flow_id}/retract",
+    response_model=StatementRetractResponse,
+)
+def retract_statement_cash_flow_endpoint(
+    flow_id: int,
+    session: Session = Depends(session_for_request),
+) -> StatementRetractResponse:
+    return _retract_response(retract_statement_backed_cash_flow(session, flow_id))

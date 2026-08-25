@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0028_applied_statement_events"
+REVISION = "0029_statement_event_retract"
 PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
 
@@ -370,6 +370,8 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "investment_cash_flow_id",
             "document_sha256",
             "link_mode",
+            "status",
+            "retracted_at",
             "created_at",
             "updated_at",
         ]
@@ -1324,3 +1326,189 @@ def test_applied_statement_migration_module_has_no_network_or_pdf_imports() -> N
     assert "pypdf" not in source
     assert "preview_income_report" not in source
     assert "ClientOperationEntity" not in source
+
+
+def test_statement_retract_migration_module_has_no_network_or_pdf_imports() -> None:
+    source = (
+        BACKEND_ROOT / "migrations" / "versions" / "0029_statement_event_retract.py"
+    ).read_text(encoding="utf-8")
+    assert "httpx" not in source
+    assert "urllib" not in source
+    assert "socket" not in source
+    assert "pypdf" not in source
+    assert "preview_income_report" not in source
+    assert "ClientOperationEntity" not in source
+
+
+def test_statement_retract_migration_preserves_v061_active_events(tmp_path: Path) -> None:
+    database_path = tmp_path / "statement-retract-upgrade.db"
+    digest = "a" * 64
+    previous = run_alembic(database_path, "upgrade", "0028_applied_statement_events")
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2026,
+                1,
+                "2026-01-01",
+                "2026-01-31",
+                "2026-01-31",
+                "draft",
+                "manual",
+                "2026-01-31 00:00:00",
+                "2026-01-31 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts (name, account_type, status, include_in_capital, "
+            "include_in_returns) VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Broker", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO instruments "
+            "(name, instrument_type, isin, ticker, moex_secid, currency, is_active, "
+            "manual_price_allowed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("Synthetic Equity", "stock", "RU000SYN00001", None, None, "RUB", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO investment_cash_flows "
+            "(reporting_month_id, account_id, instrument_id, flow_type, event_date, "
+            "gross_amount_kopecks, tax_amount_kopecks, commission_amount_kopecks, "
+            "net_amount_kopecks, currency, source, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                1,
+                "dividend",
+                "2026-01-20",
+                1150,
+                150,
+                0,
+                1000,
+                "RUB",
+                "alfa_depository_income_report",
+                None,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO applied_statement_events "
+            "(provider, account_id, instrument_id, event_kind, isin, record_date, "
+            "natural_identity, material_fingerprint, investment_cash_flow_id, "
+            "document_sha256, link_mode, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "alfa_depository_income_report",
+                1,
+                1,
+                "dividend",
+                "RU000SYN00001",
+                "2026-01-15",
+                "1|dividend|RU000SYN00001|2026-01-15",
+                digest,
+                1,
+                digest,
+                "statement_created",
+                "2026-01-20 00:00:00",
+                "2026-01-20 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO applied_statement_event_revisions "
+            "(applied_statement_event_id, revision_kind, document_sha256, "
+            "natural_identity, material_fingerprint, account_id, instrument_id, "
+            "event_kind, isin, record_date, event_date, quantity, per_unit, "
+            "gross_amount_kopecks, gross_currency, tax_available, tax_amount_kopecks, "
+            "tax_rate, net_amount_kopecks, net_currency, applied_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                "apply",
+                digest,
+                "1|dividend|RU000SYN00001|2026-01-15",
+                digest,
+                1,
+                1,
+                "dividend",
+                "RU000SYN00001",
+                "2026-01-15",
+                "2026-01-20",
+                "1.00000000",
+                "11.50000000",
+                1150,
+                "RUB",
+                1,
+                150,
+                "0.13000000",
+                1000,
+                "RUB",
+                "2026-01-20 00:00:00",
+            ),
+        )
+        connection.commit()
+        event_before = connection.execute(
+            "SELECT provider, account_id, instrument_id, event_kind, isin, record_date, "
+            "natural_identity, material_fingerprint, investment_cash_flow_id, "
+            "document_sha256, link_mode FROM applied_statement_events WHERE id = 1"
+        ).fetchone()
+        revision_before = connection.execute(
+            "SELECT revision_kind, natural_identity, gross_amount_kopecks, "
+            "net_amount_kopecks FROM applied_statement_event_revisions WHERE id = 1"
+        ).fetchone()
+        flow_before = connection.execute(
+            "SELECT net_amount_kopecks, source FROM investment_cash_flows WHERE id = 1"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    migrated = run_alembic(database_path, "upgrade", "head")
+    assert migrated.returncode == 0, migrated.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        event_columns = {
+            row[1]: row for row in connection.execute("PRAGMA table_info(applied_statement_events)")
+        }
+        assert event_columns["status"][3] == 1
+        assert event_columns["investment_cash_flow_id"][3] == 0
+        assert event_columns["retracted_at"][3] == 0
+        event_after = connection.execute(
+            "SELECT provider, account_id, instrument_id, event_kind, isin, record_date, "
+            "natural_identity, material_fingerprint, investment_cash_flow_id, "
+            "document_sha256, link_mode, status, retracted_at "
+            "FROM applied_statement_events WHERE id = 1"
+        ).fetchone()
+        assert event_after[:11] == event_before
+        assert event_after[11] == "active"
+        assert event_after[12] is None
+        assert (
+            connection.execute(
+                "SELECT revision_kind, natural_identity, gross_amount_kopecks, "
+                "net_amount_kopecks FROM applied_statement_event_revisions WHERE id = 1"
+            ).fetchone()
+            == revision_before
+        )
+        assert (
+            connection.execute(
+                "SELECT net_amount_kopecks, source FROM investment_cash_flows WHERE id = 1"
+            ).fetchone()
+            == flow_before
+        )
+        index_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'uq_applied_statement_events_active_identity'"
+        ).fetchone()
+        assert index_sql is not None
+        assert "status = 'active'" in index_sql[0]
+        revision_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'applied_statement_event_revisions'"
+        ).fetchone()[0]
+        assert "retract" in revision_sql
+    finally:
+        connection.close()

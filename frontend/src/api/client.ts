@@ -268,6 +268,14 @@ function localizeApiMessage(error: ApiClientError): string {
       return "Котировка изменилась после предпросмотра. Обнови предпросмотр и выбери строки заново.";
     case "payout_mapping_required":
       return "Для выбранного инструмента нет принятого источника T-Invest. Сохрани сопоставление в справочнике инструментов — после этого можно проверять автоматические выплаты.";
+    case "already_retracted":
+      return "Эта строка выписки уже отменена. Обнови список выплат.";
+    case "not_statement_backed":
+      return "Это обычная выплата, не импорт из выписки.";
+    case "closed_month":
+      return "Закрытый месяц нельзя менять. Сначала открой его.";
+    case "incompatible_provenance":
+      return "Состояние импорта выписки несовместимо с отменой.";
     case "conflict":
       return "Операцию нельзя выполнить в текущем состоянии данных.";
     case "unprocessable":

@@ -805,7 +805,8 @@ class AppliedPayoutReconciliation(Base):
 class AppliedStatementEvent(Base):
     """Current owner-accepted Alfa depository income-report event.
 
-    One current row per provider + canonical R06-07 natural identity.
+    At most one *active* row per provider + canonical R06-07 natural identity.
+    Retracted rows remain as frozen audit and do not participate in matching.
     Raw PDF bytes, extracted text, provider account refs and beneficiary
     data are never stored here.
     """
@@ -813,15 +814,17 @@ class AppliedStatementEvent(Base):
     __tablename__ = "applied_statement_events"
     __table_args__ = (
         UniqueConstraint(
-            "provider",
-            "natural_identity",
-            name="uq_applied_statement_events_identity",
-        ),
-        UniqueConstraint(
             "investment_cash_flow_id",
             name="uq_applied_statement_events_cash_flow",
         ),
         Index("ix_applied_statement_events_account", "account_id"),
+        Index(
+            "uq_applied_statement_events_active_identity",
+            "provider",
+            "natural_identity",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+        ),
         CheckConstraint(
             "provider IN ('alfa_depository_income_report')",
             name="ck_applied_statement_events_provider",
@@ -833,6 +836,17 @@ class AppliedStatementEvent(Base):
         CheckConstraint(
             "link_mode IN ('statement_created', 'linked_existing')",
             name="ck_applied_statement_events_link_mode",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'retracted')",
+            name="ck_applied_statement_events_status",
+        ),
+        CheckConstraint(
+            "(status = 'active' AND investment_cash_flow_id IS NOT NULL "
+            "AND retracted_at IS NULL) OR "
+            "(status = 'retracted' AND investment_cash_flow_id IS NULL "
+            "AND retracted_at IS NOT NULL)",
+            name="ck_applied_statement_events_retract_state",
         ),
         CheckConstraint(
             "length(natural_identity) > 0",
@@ -861,17 +875,21 @@ class AppliedStatementEvent(Base):
     record_date: Mapped[date] = mapped_column(Date, nullable=False)
     natural_identity: Mapped[str] = mapped_column(String(256), nullable=False)
     material_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    investment_cash_flow_id: Mapped[int] = mapped_column(
-        ForeignKey("investment_cash_flows.id", ondelete="RESTRICT"), nullable=False
+    investment_cash_flow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("investment_cash_flows.id", ondelete="RESTRICT"), nullable=True
     )
     document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     link_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default=text("'active'")
+    )
+    retracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class AppliedStatementEventRevision(Base):
-    """Append-only audit of one successful apply, revise, or link_existing."""
+    """Append-only audit of one successful apply, revise, link_existing, or retract."""
 
     __tablename__ = "applied_statement_event_revisions"
     __table_args__ = (
@@ -880,7 +898,7 @@ class AppliedStatementEventRevision(Base):
             "applied_statement_event_id",
         ),
         CheckConstraint(
-            "revision_kind IN ('apply', 'revise', 'link_existing')",
+            "revision_kind IN ('apply', 'revise', 'link_existing', 'retract')",
             name="ck_applied_statement_event_revisions_kind",
         ),
         CheckConstraint(

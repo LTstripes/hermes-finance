@@ -20,7 +20,7 @@ $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("hermes-r06-10-" + [guid]::New
 $databasePath = Join-Path $tempRoot "finance.db"
 $launcherProcess = $null
 $listenPort = 8000
-$expectedRevision = "0028_applied_statement_events"
+$expectedRevision = "0029_statement_event_retract"
 
 if (-not (Test-Path $launcher -PathType Leaf)) {
     throw "Canonical launcher not found at '$launcher'."
