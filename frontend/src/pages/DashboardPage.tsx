@@ -161,7 +161,7 @@ export function DashboardPage() {
       <section className="dashboard-overview-grid" aria-label="Ключевое состояние">
         <CapitalOverviewCard kpis={kpis} loading={loadingDash} />
         <PassiveIncomeOverviewCard kpis={kpis} loading={loadingDash} />
-          <ForecastOverviewCard kpis={kpis} loading={loadingDash} />
+        <ForecastOverviewCard kpis={kpis} loading={loadingDash} />
         <CoverageOverviewCard kpis={kpis} loading={loadingDash} />
       </section>
 
@@ -272,10 +272,14 @@ function PassiveIncomeOverviewCard({
         <span>Среднее за закрытые месяцы</span>
         <strong>{ready ? formatMoney(moneyAmount(kpis.passive_income_average)) : "…"}</strong>
       </div>
-      <div className={`overview-card__delta overview-card__delta--${ready ? deltaToneFromAmount(moneyAmount(kpis.passive_income_delta)) : "neutral"}`}>
+      <div
+        className={`overview-card__delta overview-card__delta--${ready ? deltaToneFromAmount(moneyAmount(kpis.passive_income_delta)) : "neutral"}`}
+      >
         <span>К предыдущему месяцу</span>
         <strong>
-          {ready && kpis.passive_income_delta ? formatMoneyDelta(moneyAmount(kpis.passive_income_delta)) : "—"}
+          {ready && kpis.passive_income_delta
+            ? formatMoneyDelta(moneyAmount(kpis.passive_income_delta))
+            : "—"}
         </strong>
       </div>
     </article>
@@ -294,7 +298,9 @@ function ForecastOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; l
       </div>
       <div className="overview-card__supporting">
         <span>За следующие 12 месяцев</span>
-        <strong>{ready ? formatMoney(moneyAmount(kpis.forecast_annual_passive_income)) : "…"}</strong>
+        <strong>
+          {ready ? formatMoney(moneyAmount(kpis.forecast_annual_passive_income)) : "…"}
+        </strong>
       </div>
       <div className="overview-card__compare">
         <div>

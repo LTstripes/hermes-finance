@@ -477,9 +477,10 @@ export function MonthFlowsSection({
                 const passive = isPassiveInvestmentFlowType(row.flow_type);
                 const manual = isManuallyEditableInvestmentFlow(row.source, row.statement_link);
                 const correction = statementCorrectionKind(row.statement_link);
-                const instrument = row.instrument_id == null
-                  ? null
-                  : instruments.find((item) => item.id === row.instrument_id);
+                const instrument =
+                  row.instrument_id == null
+                    ? null
+                    : instruments.find((item) => item.id === row.instrument_id);
                 const instrumentPrimary = instrument
                   ? instrument.ticker
                     ? `${instrument.name} (${instrument.ticker})`
@@ -563,7 +564,9 @@ export function MonthFlowsSection({
                       ) : (
                         <div className="month-flows-table__party">
                           <strong>{instrumentPrimary || "—"}</strong>
-                          <div className="muted tiny">{instrument ? accountName(row.account_id) : "—"}</div>
+                          <div className="muted tiny">
+                            {instrument ? accountName(row.account_id) : "—"}
+                          </div>
                         </div>
                       )}
                     </Td>
