@@ -482,7 +482,7 @@ export function MonthFlowsSection({
                     className={redemption ? "row--muted" : passive ? "row--income" : undefined}
                     key={row.id}
                   >
-                    <Td>
+                    <Td className="month-flows-table__date">
                       {editing ? (
                         <Input
                           aria-label="Дата события"
