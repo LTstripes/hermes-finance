@@ -242,6 +242,20 @@ describe("MonthFlowsSection actual-flow instrument", () => {
     ).toBe(false);
   });
 
+  it("renders the merged calendar before manual expected payouts in the DOM", async () => {
+    setup({ calendar: mergedCalendar });
+
+    await screen.findByRole("heading", { name: "Календарь выплат" });
+    const headings = Array.from(
+      document.querySelectorAll<HTMLElement>(".stack-18 > .panel h2"),
+      (heading) => heading.textContent,
+    );
+
+    expect(headings.indexOf("Календарь выплат")).toBeLessThan(
+      headings.indexOf("Ручные ожидаемые выплаты"),
+    );
+  });
+
   it("keeps manual flow CRUD usable when only the merged calendar read fails", async () => {
     setup({ calendar: null });
 

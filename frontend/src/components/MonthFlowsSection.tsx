@@ -826,6 +826,21 @@ export function MonthFlowsSection({
       </Panel>
 
       <Panel
+        className="payout-merged-calendar"
+        action={<Badge>12 месяцев · manual + T-Invest</Badge>}
+        label="Прогноз"
+        title="Календарь выплат"
+      >
+        {calendarError ? (
+          <div className="inline-alert inline-alert--warn" role="status">
+            Календарь временно недоступен: {calendarError}
+          </div>
+        ) : (
+          <PayoutPaymentsCalendar months={calendar} />
+        )}
+      </Panel>
+
+      <Panel
         className="payout-manual-expected"
         action={<Badge>ручные ожидаемые: {formatMoney(expectedPassiveTotal)}</Badge>}
         label="Календарь"
@@ -1039,21 +1054,6 @@ export function MonthFlowsSection({
             </Button>
           </form>
         ) : null}
-      </Panel>
-
-      <Panel
-        className="payout-merged-calendar"
-        action={<Badge>12 месяцев · manual + T-Invest</Badge>}
-        label="Прогноз"
-        title="Календарь выплат"
-      >
-        {calendarError ? (
-          <div className="inline-alert inline-alert--warn" role="status">
-            Календарь временно недоступен: {calendarError}
-          </div>
-        ) : (
-          <PayoutPaymentsCalendar months={calendar} />
-        )}
       </Panel>
 
       <ConfirmDialog

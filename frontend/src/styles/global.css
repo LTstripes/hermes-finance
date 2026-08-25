@@ -1628,14 +1628,6 @@ th.num {
   gap: 18px;
 }
 
-.stack-18 > .payout-merged-calendar {
-  order: 3;
-}
-
-.stack-18 > .payout-manual-expected {
-  order: 4;
-}
-
 .muted {
   color: var(--muted);
 }
