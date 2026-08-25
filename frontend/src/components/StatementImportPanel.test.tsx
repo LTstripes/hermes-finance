@@ -295,6 +295,18 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(prepareTable).toHaveTextContent(/10\s*831,50/);
     expect(prepareTable).toHaveTextContent("Уже импортировано");
     expect(prepareTable).toHaveTextContent("Новая строка");
+    expect(prepareTable).toHaveTextContent("Создать");
+    expect(prepareTable).not.toHaveTextContent("Создать отдельную запись после выбора строки");
+    expect(prepareTable.querySelector(".statement-import__identity")).not.toBeNull();
+    expect(prepareTable.querySelector(".statement-import__account")).toHaveTextContent(
+      "Основной счёт",
+    );
+    const eventCells = [...prepareTable.querySelectorAll(".statement-import__event")].map(
+      (cell) => cell.textContent ?? "",
+    );
+    expect(eventCells.some((text) => text.includes("Купон") && text.includes("03.08.2026"))).toBe(
+      true,
+    );
     expect(
       screen.getByText(/3 строк · 1 новых · 1 дубля · 1 требует решения · выбрано 0/),
     ).toBeInTheDocument();

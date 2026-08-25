@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -201,7 +201,7 @@ describe("MonthPositionsSection G03 component contract", () => {
     const priceInput = screen.getByDisplayValue("1100.00");
     await user.clear(priceInput);
     await user.type(priceInput, "1200");
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
         ([input, init]) => String(input) === "/api/positions/31" && init?.method === "PATCH",
@@ -253,11 +253,38 @@ describe("MonthPositionsSection G03 component contract", () => {
 
     expect(screen.getByDisplayValue("8")).toBeInTheDocument();
     expect(screen.queryByDisplayValue("8.000000")).toBeNull();
-    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Отмена" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Действия для позиции Synthetic Bond" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Действия для позиции Other Stock" })).toBeNull();
+  });
+
+  it("exposes a dedicated inline-edit grid with readable Save/Cancel actions", async () => {
+    setup({}, [position]);
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await startPositionEdit(user);
+
+    const edit = document.querySelector(".position-inline-edit");
+    expect(edit).toBeInstanceOf(HTMLElement);
+    const editRoot = edit as HTMLElement;
+    expect(within(editRoot).getByRole("button", { name: "Сохранить" })).toBeInTheDocument();
+    expect(within(editRoot).getByRole("button", { name: "Отмена" })).toBeInTheDocument();
+    expect(within(editRoot).getByLabelText("Количество")).toHaveValue("10");
+    expect(within(editRoot).getByLabelText("Средняя цена приобретения")).toHaveValue("1000.00");
+    expect(within(editRoot).getByLabelText("Рыночная цена")).toHaveValue("1100.00");
+    expect(within(editRoot).getByLabelText("Дата оценки")).toHaveValue("2031-01-31");
+    expect(within(editRoot).getByLabelText("Источник оценки")).toHaveValue("manual");
+    expect(editRoot.closest("td")).toHaveAttribute("colspan", "8");
+    expect(editRoot.closest("td")).not.toHaveClass("month-positions-table__actions");
+
+    await user.click(within(editRoot).getByRole("button", { name: "Отмена" }));
+    expect(document.querySelector(".position-inline-edit")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Действия для позиции Synthetic Bond" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps delete on the overflow menu and still confirms it", async () => {
@@ -624,7 +651,7 @@ describe("MonthPositionsSection G03 component contract", () => {
     const priceInput = screen.getAllByDisplayValue("1100.00")[0];
     await user.clear(priceInput);
     await user.type(priceInput, "1200.00");
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
     const patch = fetchMock.mock.calls.find(
       ([input, init]) => String(input) === "/api/positions/31" && init?.method === "PATCH",
     );

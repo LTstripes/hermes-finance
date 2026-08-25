@@ -251,6 +251,15 @@ describe("MonthFlowsSection actual-flow instrument", () => {
     expect(screen.getByText(/calendar unavailable/)).toBeInTheDocument();
   });
 
+  it("keeps the actual payout date and income accent class on the row", async () => {
+    setup({ flows: [manualFlow] });
+    const table = await screen.findByRole("table");
+    const incomeRow = table.querySelector("tr.row--income");
+    expect(incomeRow).not.toBeNull();
+    expect(incomeRow?.querySelector(".month-flows-table__date")).toHaveTextContent("15.01.2031");
+    expect(table).toHaveTextContent("15.01.2031");
+  });
+
   it("opens overflow edit for a manual payout and patches current values", async () => {
     const fetchMock = setup({ flows: [manualFlow] });
     const user = userEvent.setup();

@@ -582,14 +582,54 @@ a.btn {
   width: 100%;
 }
 
-.statement-import__prepare-table__select {
-  width: 48px;
+.statement-import__prepare-table th,
+.statement-import__prepare-table td {
+  min-width: 0;
 }
 
-.statement-import__stack {
+.statement-import__prepare-table__select {
+  width: 44px;
+}
+
+.statement-import__prepare-table__instrument {
+  width: 18%;
+}
+
+.statement-import__prepare-table__account {
+  width: 11%;
+}
+
+.statement-import__prepare-table__event {
+  width: 11%;
+}
+
+.statement-import__prepare-table__class {
+  width: 9.5rem;
+}
+
+.statement-import__prepare-table__decision {
+  width: 16%;
+}
+
+.statement-import__identity,
+.statement-import__event {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.statement-import__identity-name,
+.statement-import__account {
+  overflow-wrap: break-word;
+}
+
+.statement-import__decision {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.statement-import__decision-label {
+  white-space: nowrap;
 }
 
 .quote-preview-table {
@@ -1114,11 +1154,26 @@ a.btn {
   table-layout: fixed;
 }
 
+.month-positions-table th,
+.month-positions-table td,
+.month-deposits-table th,
+.month-deposits-table td,
+.month-cash-table th,
+.month-cash-table td,
+.month-debts-table th,
+.month-debts-table td,
+.month-property-table th,
+.month-property-table td,
+.month-flows-table th,
+.month-flows-table td {
+  min-width: 0;
+}
+
 .month-positions-table td,
 .month-deposits-table td,
 .month-budget-table td,
 .month-flows-table td {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .month-editor-table .row-actions,
@@ -1139,11 +1194,41 @@ a.btn {
   width: 52px;
   text-align: right;
   padding-left: 8px;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.month-deposits-table:has(td.month-deposits-table__actions .btn--primary)
+  .month-deposits-table__actions,
+.month-cash-table:has(td.month-cash-table__actions .btn--primary) .month-cash-table__actions,
+.month-budget-table:has(td.month-budget-table__actions .btn--primary) .month-budget-table__actions,
+.month-flows-table:has(td.month-flows-table__actions .btn--primary) .month-flows-table__actions,
+.month-debts-table:has(td.month-debts-table__actions .btn--primary) .month-debts-table__actions,
+.month-property-table:has(td.month-property-table__actions .btn--primary)
+  .month-property-table__actions {
+  width: 11rem;
 }
 
 .month-editor-table__notes,
 .month-budget-table__notes {
   min-width: 0;
+}
+
+.month-deposits-table__name,
+.month-debts-table__name,
+.month-property-table__name,
+.month-positions-table__instrument {
+  width: auto;
+}
+
+.month-deposits-table__type,
+.month-positions-table__account,
+.month-debts-table__type {
+  width: 7.5rem;
+}
+
+.month-debts-table__inclusion {
+  width: 7.25rem;
 }
 
 .position-price {
@@ -1159,13 +1244,58 @@ a.btn {
   margin-inline-start: 0;
 }
 
-td.month-positions-table__actions:has(.btn--primary),
-td.month-deposits-table__actions:has(.btn--primary),
-td.month-budget-table__actions:has(.btn--primary),
-td.month-flows-table__actions:has(.btn--primary),
-td.month-debts-table__actions:has(.btn--primary),
-td.month-property-table__actions:has(.btn--primary) {
-  width: 9.5rem;
+.position-inline-edit {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 2px 0 6px;
+}
+
+.position-inline-edit__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  min-width: 0;
+}
+
+.position-inline-edit__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.position-inline-edit__readonly {
+  display: grid;
+  gap: 6px;
+}
+
+.position-inline-edit__readonly-value {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.position-inline-edit__actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.position-inline-edit__actions .btn {
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+}
+
+.month-flows-table th:first-child,
+.month-flows-table td:first-child,
+.month-flows-table__date {
+  padding-left: 12px;
 }
 
 .table th {
@@ -1202,35 +1332,70 @@ th.num {
 
 .month-editor-table th.num,
 .month-editor-table td.num,
-.month-positions-table th.num,
-.month-positions-table td.num,
-.month-deposits-table th.num,
-.month-deposits-table td.num,
 .month-budget-table th.num,
 .month-budget-table td.num,
-.month-flows-table th.num,
-.month-flows-table td.num,
-.month-debts-table th.num,
-.month-debts-table td.num,
-.month-property-table th.num,
-.month-property-table td.num,
 .quote-preview-table th.num,
-.quote-preview-table td.num,
-.statement-import__prepare-table th.num,
-.statement-import__prepare-table td.num {
+.quote-preview-table td.num {
   width: 8.5rem;
   padding-inline: 14px;
   white-space: nowrap;
 }
 
-.month-positions-table.is-editing th.num,
-.month-positions-table.is-editing td.num,
+.month-positions-table th.num,
+.month-positions-table td.num,
+.month-deposits-table th.num,
+.month-deposits-table td.num,
+.month-cash-table th.num,
+.month-cash-table td.num,
+.month-flows-table th.num,
+.month-flows-table td.num,
+.month-debts-table th.num,
+.month-debts-table td.num,
+.month-property-table th.num,
+.month-property-table td.num {
+  width: 7.25rem;
+  padding-inline: 8px;
+}
+
+.statement-import__prepare-table th.num,
+.statement-import__prepare-table td.num {
+  width: 6.75rem;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
+.month-positions-table td.num,
+.month-deposits-table td.num,
+.month-cash-table td.num,
+.month-flows-table td.num,
+.month-debts-table td.num,
+.month-property-table td.num {
+  white-space: nowrap;
+}
+
+.month-positions-table th.num,
+.month-deposits-table th.num,
+.month-cash-table th.num,
+.month-flows-table th.num,
+.month-debts-table th.num,
+.month-property-table th.num {
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+}
+
 .month-deposits-table td.num:has(.input),
 .month-budget-table td.num:has(.input),
 .month-flows-table td.num:has(.input),
 .month-debts-table td.num:has(.input),
 .month-property-table td.num:has(.input) {
   white-space: normal;
+}
+
+@media (max-width: 900px) {
+  .position-inline-edit__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ——— Forms ——— */

@@ -518,8 +518,8 @@ export function MonthPositionsSection({
           <Table className={`month-positions-table${editingId != null ? " is-editing" : ""}`}>
             <thead>
               <tr>
-                <Th>Счёт</Th>
-                <Th>Инструмент</Th>
+                <Th className="month-positions-table__account">Счёт</Th>
+                <Th className="month-positions-table__instrument">Инструмент</Th>
                 <Th numeric>Количество</Th>
                 <Th numeric>Средняя цена приобретения</Th>
                 <Th numeric>Цена</Th>
@@ -533,118 +533,122 @@ export function MonthPositionsSection({
                 const editing = editingId === row.id && editDraft;
                 const instrument = instrumentById.get(row.instrument_id);
                 const account = accountById.get(row.account_id);
-                return (
-                  <tr key={row.id}>
-                    <Td>{account?.name ?? `#${row.account_id}`}</Td>
-                    <Td>
-                      {instrument
-                        ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
-                        : `#${row.instrument_id}`}
-                      <div className="muted tiny">
-                        {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")}
-                      </div>
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <Input
-                          className="input--money"
-                          value={editDraft.quantity}
-                          onChange={(e) => setEditDraft({ ...editDraft, quantity: e.target.value })}
-                        />
-                      ) : (
-                        formatQuantity(row.quantity)
-                      )}
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <Input
-                          className="input--money"
-                          value={editDraft.average_cost}
-                          onChange={(e) =>
-                            setEditDraft({ ...editDraft, average_cost: e.target.value })
-                          }
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.average_cost_per_unit))
-                      )}
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <div className="stack-8">
-                          <Input
-                            className="input--money"
-                            value={editDraft.market_price}
-                            onChange={(e) =>
-                              setEditDraft({ ...editDraft, market_price: e.target.value })
-                            }
-                          />
-                          <Input
-                            aria-label="Дата оценки"
-                            type="date"
-                            value={editDraft.price_date}
-                            onChange={(e) =>
-                              setEditDraft({ ...editDraft, price_date: e.target.value })
-                            }
-                          />
-                          <Select
-                            aria-label="Источник оценки"
-                            value={editDraft.price_source}
-                            onChange={(e) =>
-                              setEditDraft({ ...editDraft, price_source: e.target.value })
-                            }
-                          >
-                            <option value="manual">Вручную</option>
-                            <option value="moex">Мосбиржа</option>
-                            <option value="alfa_pdf">Выписка Альфа-Банка</option>
-                          </Select>
-                          <Input
-                            aria-label="НКД"
-                            className="input--money"
-                            placeholder="НКД"
-                            value={editDraft.accrued_interest}
-                            onChange={(e) =>
-                              setEditDraft({
-                                ...editDraft,
-                                accrued_interest: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                      ) : (
-                        <span className="position-price">
-                          <span>{formatMoney(moneyAmount(row.market_price_per_unit))}</span>
-                          <HelpTip
-                            label={`Детали оценки для ${instrument?.name ?? `#${row.instrument_id}`}`}
-                          >
-                            <div>Источник: {labelOf(PRICE_SOURCE_LABELS, row.price_source)}</div>
-                            <div>Дата оценки: {formatDate(row.price_date)}</div>
-                            {row.accrued_interest ? (
-                              <div>НКД {formatMoney(moneyAmount(row.accrued_interest))}</div>
-                            ) : null}
-                          </HelpTip>
-                        </span>
-                      )}
-                    </Td>
-                    <Td numeric>
-                      <span className="muted">{formatMoney(moneyAmount(row.market_value))}</span>
-                    </Td>
-                    <Td numeric>
-                      <span className="muted">
-                        {formatMoney(moneyAmount(row.unrealized_result))}
-                      </span>
-                    </Td>
-                    <Td className="month-positions-table__actions">
-                      <div className="row-actions">
-                        {editing ? (
-                          <>
+                const instrumentTitle = instrument
+                  ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
+                  : `#${row.instrument_id}`;
+                if (editing) {
+                  return (
+                    <tr className="month-positions-table__edit-row" key={row.id}>
+                      <Td colSpan={8}>
+                        <form
+                          className="position-inline-edit"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleSaveEdit();
+                          }}
+                        >
+                          <div className="position-inline-edit__identity">
+                            <strong>{account?.name ?? `#${row.account_id}`}</strong>
+                            <span>{instrumentTitle}</span>
+                            <span className="muted tiny">
+                              {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")}
+                            </span>
+                          </div>
+                          <div className="position-inline-edit__grid">
+                            <Field htmlFor={`pos-edit-${row.id}-qty`} label="Количество">
+                              <Input
+                                className="input--money"
+                                id={`pos-edit-${row.id}-qty`}
+                                value={editDraft.quantity}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, quantity: e.target.value })
+                                }
+                              />
+                            </Field>
+                            <Field
+                              htmlFor={`pos-edit-${row.id}-avg`}
+                              label="Средняя цена приобретения"
+                            >
+                              <Input
+                                className="input--money"
+                                id={`pos-edit-${row.id}-avg`}
+                                value={editDraft.average_cost}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, average_cost: e.target.value })
+                                }
+                              />
+                            </Field>
+                            <Field htmlFor={`pos-edit-${row.id}-price`} label="Рыночная цена">
+                              <Input
+                                className="input--money"
+                                id={`pos-edit-${row.id}-price`}
+                                value={editDraft.market_price}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, market_price: e.target.value })
+                                }
+                              />
+                            </Field>
+                            <Field htmlFor={`pos-edit-${row.id}-nkd`} label="НКД">
+                              <Input
+                                aria-label="НКД"
+                                className="input--money"
+                                id={`pos-edit-${row.id}-nkd`}
+                                placeholder="НКД"
+                                value={editDraft.accrued_interest}
+                                onChange={(e) =>
+                                  setEditDraft({
+                                    ...editDraft,
+                                    accrued_interest: e.target.value,
+                                  })
+                                }
+                              />
+                            </Field>
+                            <Field htmlFor={`pos-edit-${row.id}-date`} label="Дата оценки">
+                              <Input
+                                aria-label="Дата оценки"
+                                id={`pos-edit-${row.id}-date`}
+                                type="date"
+                                value={editDraft.price_date}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, price_date: e.target.value })
+                                }
+                              />
+                            </Field>
+                            <Field htmlFor={`pos-edit-${row.id}-source`} label="Источник оценки">
+                              <Select
+                                aria-label="Источник оценки"
+                                id={`pos-edit-${row.id}-source`}
+                                value={editDraft.price_source}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, price_source: e.target.value })
+                                }
+                              >
+                                <option value="manual">Вручную</option>
+                                <option value="moex">Мосбиржа</option>
+                                <option value="alfa_pdf">Выписка Альфа-Банка</option>
+                              </Select>
+                            </Field>
+                            <div className="position-inline-edit__readonly">
+                              <span className="field__label">Рыночная стоимость</span>
+                              <span className="position-inline-edit__readonly-value muted">
+                                {formatMoney(moneyAmount(row.market_value))}
+                              </span>
+                            </div>
+                            <div className="position-inline-edit__readonly">
+                              <span className="field__label">Результат</span>
+                              <span className="position-inline-edit__readonly-value muted">
+                                {formatMoney(moneyAmount(row.unrealized_result))}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="position-inline-edit__actions">
                             <Button
                               disabled={busy || readOnly}
-                              onClick={() => void handleSaveEdit()}
                               size="sm"
-                              type="button"
+                              type="submit"
                               variant="primary"
                             >
-                              OK
+                              Сохранить
                             </Button>
                             <Button
                               disabled={busy}
@@ -657,29 +661,67 @@ export function MonthPositionsSection({
                             >
                               Отмена
                             </Button>
-                          </>
-                        ) : (
-                          <OverflowMenu
-                            label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                          </div>
+                        </form>
+                      </Td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={row.id}>
+                    <Td>{account?.name ?? `#${row.account_id}`}</Td>
+                    <Td>
+                      {instrumentTitle}
+                      <div className="muted tiny">
+                        {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")}
+                      </div>
+                    </Td>
+                    <Td numeric>{formatQuantity(row.quantity)}</Td>
+                    <Td numeric>{formatMoney(moneyAmount(row.average_cost_per_unit))}</Td>
+                    <Td numeric>
+                      <span className="position-price">
+                        <span>{formatMoney(moneyAmount(row.market_price_per_unit))}</span>
+                        <HelpTip
+                          label={`Детали оценки для ${instrument?.name ?? `#${row.instrument_id}`}`}
+                        >
+                          <div>Источник: {labelOf(PRICE_SOURCE_LABELS, row.price_source)}</div>
+                          <div>Дата оценки: {formatDate(row.price_date)}</div>
+                          {row.accrued_interest ? (
+                            <div>НКД {formatMoney(moneyAmount(row.accrued_interest))}</div>
+                          ) : null}
+                        </HelpTip>
+                      </span>
+                    </Td>
+                    <Td numeric>
+                      <span className="muted">{formatMoney(moneyAmount(row.market_value))}</span>
+                    </Td>
+                    <Td numeric>
+                      <span className="muted">
+                        {formatMoney(moneyAmount(row.unrealized_result))}
+                      </span>
+                    </Td>
+                    <Td className="month-positions-table__actions">
+                      <div className="row-actions">
+                        <OverflowMenu
+                          label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                        >
+                          <OverflowMenuItem
+                            disabled={busy || readOnly}
+                            onClick={() => {
+                              setEditingId(row.id);
+                              setEditDraft(editDraftFromPosition(row));
+                            }}
                           >
-                            <OverflowMenuItem
-                              disabled={busy || readOnly}
-                              onClick={() => {
-                                setEditingId(row.id);
-                                setEditDraft(editDraftFromPosition(row));
-                              }}
-                            >
-                              Изменить
-                            </OverflowMenuItem>
-                            <OverflowMenuItem
-                              danger
-                              disabled={busy || readOnly}
-                              onClick={() => setPendingDelete(row)}
-                            >
-                              Удалить
-                            </OverflowMenuItem>
-                          </OverflowMenu>
-                        )}
+                            Изменить
+                          </OverflowMenuItem>
+                          <OverflowMenuItem
+                            danger
+                            disabled={busy || readOnly}
+                            onClick={() => setPendingDelete(row)}
+                          >
+                            Удалить
+                          </OverflowMenuItem>
+                        </OverflowMenu>
                       </div>
                     </Td>
                   </tr>

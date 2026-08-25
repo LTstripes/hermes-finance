@@ -267,10 +267,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
           <Table className="month-debts-table">
             <thead>
               <tr>
-                <Th>Название</Th>
-                <Th>Тип</Th>
+                <Th className="month-debts-table__name">Название</Th>
+                <Th className="month-debts-table__type">Тип</Th>
                 <Th numeric>Баланс</Th>
-                <Th>Учёт</Th>
+                <Th className="month-debts-table__inclusion">Учёт</Th>
                 <Th className="month-debts-table__actions">Действия</Th>
               </tr>
             </thead>
@@ -467,7 +467,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
           <Table className="month-property-table">
             <thead>
               <tr>
-                <Th>Объект</Th>
+                <Th className="month-property-table__name">Объект</Th>
                 <Th numeric>Стоимость</Th>
                 <Th numeric>Ипотека</Th>
                 <Th numeric>Платёж / мес</Th>
