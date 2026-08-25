@@ -321,7 +321,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Worker verification before PR:** backend `1221 passed`, frontend `258 passed / 45 files`, Ruff/Biome/build/privacy/`git diff --check`/release-helper/Windows smoke passed. Runtime suites were not rerun for the docs-only follow-up; exact PR CI exercised the accepted head.
 - **Gate B:** `UAT_PASS` / `GATE_B_PASS` on exact code `c4bb8ff15631f82b957ae82f2508a6598d0cc6e3`. Owner UAT on a copied runtime, production untouched: real supported Alfa PDF parse/reconciliation/selective apply/duplicate protection, explicit manual-candidate decision, snapshot selective apply, CLOSED protections and restart stability passed. No private values recorded here.
 - **Decision notes:** accepted after real owner UAT plus exact-SHA release verification. Gate C was version/docs/release finalization only; no Alfa/report semantic expansion.
-- **Publication status:** not released yet. `r06 → main`, exact-main CI and `v0.6.0` remain subsequent release steps.
+- **Publication status:** publication is a separate guarded step after integration; exact main/tag/CI identity is recorded in the publication record after release.
 - **References:** issue #98, PR #99, `docs/releases/0.6.0.md`, `docs/release-notes-0.6.0.md`, `CHANGELOG.md`
 
 ---
