@@ -224,7 +224,10 @@ GitHub Actions включает backend, frontend, privacy guard, Windows produc
 
 - один production runtime clone с локальными ignored runtime-данными;
 - независимый clone на каждого development-агента, со своим Git directory;
-- агент не видит и не линкует production `.env`, DB, backups, `private/` или owner payloads.
+- агент не видит и не линкует production `.env`, DB, backups, `private/` или owner payloads;
+- owner preview/UAT и experiment runtimes тоже не являются agent workspace.
+
+Будущий Windows launcher (контракт ADR 0014, реализация — issue #144) выбирает **runtime profile**: отдельный checkout + идентичность кода + данные, а не `git checkout` поверх одной `finance.db`. Stable может открыть только production runtime/data. Preview и Experiment не могут открыть production DB. v1 — один процесс на `127.0.0.1:8000`. Исполняемого launcher в текущем дереве ещё нет; daily start по-прежнему `scripts/start-local.ps1`.
 
 Перед новой задачей чистый clone синхронизируется с каноническим `main`. Несколько писателей в одном scope не работают. Machine-specific абсолютные пути — локальная конфигурация, не архитектура репозитория.
 
@@ -236,7 +239,7 @@ GitHub Actions включает backend, frontend, privacy guard, Windows produc
 
 Для prepared release нормальный chat-first маршрут идёт через `docs/RELEASE_AUTOMATION.md` и permanent Release Control issue #124: integrator сам проверяет exact main/CI/version/notes, сам публикует guarded `/release` request и сам делает independent tag/release read-back. Локальный `scripts/release.ps1` остаётся fallback, а не обязательным hand-off.
 
-Подробности: ADR 0012, `AGENTS.md`, `docs/agents/`, `docs/MODEL_ROUTING.md`, `docs/RELEASE_AUTOMATION.md`.
+Подробности: ADR 0012, ADR 0014, `AGENTS.md`, `docs/agents/`, `docs/MODEL_ROUTING.md`, `docs/RELEASE_AUTOMATION.md`.
 
 ## 14. История
 
