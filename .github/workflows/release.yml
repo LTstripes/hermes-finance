@@ -1,0 +1,65 @@
+name: Guarded Release
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-finance-guarded-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Guarded release
+    if: >-
+      github.event.issue.number == 124 &&
+      github.event.comment.user.login == github.repository_owner &&
+      github.actor == github.repository_owner &&
+      startsWith(github.event.comment.body, '/release')
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Check out canonical main
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure annotated-tag identity
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run guarded release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HERMES_RELEASE_REQUEST_BODY: ${{ github.event.comment.body }}
+          HERMES_REPOSITORY: ${{ github.repository }}
+          HERMES_ACTOR: ${{ github.actor }}
+          HERMES_COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          HERMES_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          HERMES_EVENT_NAME: ${{ github.event_name }}
+          HERMES_EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-automation.ps1 `
+            -RequestBody $env:HERMES_RELEASE_REQUEST_BODY `
+            -Repository $env:HERMES_REPOSITORY `
+            -Actor $env:HERMES_ACTOR `
+            -CommentAuthor $env:HERMES_COMMENT_AUTHOR `
+            -IssueNumber ([int]$env:HERMES_ISSUE_NUMBER) `
+            -ControlIssueNumber 124 `
+            -EventName $env:HERMES_EVENT_NAME `
+            -EventAction $env:HERMES_EVENT_ACTION
+
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
