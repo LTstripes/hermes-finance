@@ -121,11 +121,14 @@ Canonical PR/main CI includes a Windows `Release safety` job. It runs:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-request.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-workflow.ps1
 ```
 
 `test-release.ps1` exercises the publication contract through an injected fake command runner, including successful publication semantics and fail-closed cases such as missing/failed/wrong-kind CI and conflicting tags/releases. It does not create a real tag or GitHub Release.
 
 `test-release-request.ps1` exercises the owner-control request grammar, provenance checks, version identity and release-note requirements using temporary synthetic files only.
+
+`test-release-workflow.ps1` parses the real automation entrypoint with the Windows PowerShell parser and verifies the tracked workflow contract: narrow trigger, control issue binding, owner gates, built-in token use and minimal permissions. It performs no network or publication calls.
 
 No HYG-04 acceptance test publishes a throwaway real Hermes Finance tag or release.
 
