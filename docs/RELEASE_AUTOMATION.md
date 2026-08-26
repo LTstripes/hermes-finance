@@ -24,16 +24,20 @@ The issue-comment trigger is intentional: the ChatGPT GitHub integration can cre
 
 ## Chat-first integrator flow
 
+This is the **normal release route** when the active integrator has direct GitHub access and can create/read issue comments and Actions runs. The owner should not be asked to open GitHub, PowerShell or Codex merely to relay the release trigger.
+
 For the normal chat-driven path the owner can ask the integrator to release a prepared version. The integrator should:
 
 1. read current GitHub `main` and capture its exact 40-character SHA;
 2. confirm canonical `ci.yml` has a completed successful `push` run for that exact `main` SHA;
 3. verify repository release identity and `docs/release-notes-X.Y.Z.md` are present;
-4. create the exact `/release` request comment on control issue #124;
+4. create the exact `/release` request comment on control issue #124 itself;
 5. read the Guarded Release run and its job summary;
 6. independently read back the tag object, peeled commit and published GitHub Release before reporting success.
 
 The workflow repeats the critical checks itself. Pre-checking in chat is convenience and defense in depth, not authorization to skip workflow guards.
+
+If the direct integration cannot perform a materially required step, use the narrowest safe fallback. Do not hand the owner routine repository busywork merely because another execution surface also exists. See [`AGENTS.md`](../AGENTS.md) and [`docs/agents/chatgpt.md`](agents/chatgpt.md).
 
 ## Guard chain
 

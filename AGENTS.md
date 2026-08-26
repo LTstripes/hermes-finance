@@ -16,6 +16,31 @@ When documents disagree, use this order:
 
 Do not treat old release-execution notes as current standing orders.
 
+## Preferred owner/integrator execution route
+
+When the active owner/integrator surface has direct GitHub read/write access and can inspect GitHub Actions, it should complete repository-side work itself instead of using the owner as a human courier to another coding client or to the GitHub UI.
+
+For a normal repository write task, prefer this guarded route:
+
+1. read canonical GitHub `main` and capture its exact SHA;
+2. create one isolated task branch from that exact baseline;
+3. edit only the task branch and keep scope narrow;
+4. open a PR and inspect the actual diff, scope and privacy boundary;
+5. require the applicable PR CI/checks to complete successfully;
+6. merge only when the integrator is authorized and the candidate is accepted;
+7. read back canonical `main` after merge;
+8. require canonical `push` CI on the exact merged `main` SHA before reporting integration complete.
+
+Do **not** send the owner to Codex, another local agent, PowerShell or the GitHub UI merely to relay branch/file/PR/merge/release actions that the active integrator can already perform safely through GitHub.
+
+Use a local development agent or another execution surface when it materially adds a capability the direct GitHub route does not provide, for example required local command execution, runtime/browser inspection, live provider work, binary/artifact manipulation, or an explicitly requested independent implementation/review. A relay is not a capability.
+
+If a nonessential cleanup action is unavailable through the current connector, report the residual cleanup instead of shifting routine busywork to the owner. Never weaken safety or verification to avoid a hand-off.
+
+For release publication, use the guarded repository-owned route in [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md). When the integrator can create the control comment itself, the owner should not be asked to open GitHub or a local coding session only to trigger the release.
+
+Client-specific behavior for ChatGPT is documented in [`docs/agents/chatgpt.md`](docs/agents/chatgpt.md).
+
 ## Sync before a new task
 
 In a **clean** development clone, before starting a new task:
@@ -30,6 +55,8 @@ git status --short
 Do not switch, reset or pull over unfinished task work.
 
 A write task starts from current canonical `main` unless the task explicitly pins another baseline.
+
+For a GitHub-native integrator without a local checkout, the equivalent requirement is to read canonical GitHub `main`, capture the exact baseline SHA, and create the isolated task branch from that SHA. Do not pretend a local sync command ran when no local checkout exists.
 
 ## One writer, isolated task branch
 
@@ -95,9 +122,11 @@ Every task requires:
 - proportional targeted checks;
 - a final scope, diff and privacy review;
 - exact checks reported truthfully;
-- a final state read-back of `HEAD`, branch/remote and working tree.
+- a final state read-back of `HEAD`, branch/remote and working tree, or the truthful GitHub-native equivalent when no local checkout exists.
 
 Do not claim a full suite passed unless that suite actually ran and passed.
+
+For an integrated GitHub-native task, PR checks are not the final proof by themselves: read back the merged `main` SHA and verify the canonical `push` CI/checks for that exact SHA when the repository workflow provides them.
 
 ## Delivery
 
@@ -111,6 +140,8 @@ These remain owner/integrator controlled unless explicitly delegated:
 - branch or tag deletion;
 - release publication;
 - repository settings.
+
+Owner/integrator controlled does not mean owner-manual. An authorized integrator with direct GitHub capability should perform the permitted action itself rather than instructing the owner to click through GitHub or relay it through another agent.
 
 ## Documentation synchronization
 
