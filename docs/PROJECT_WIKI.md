@@ -37,7 +37,9 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Это дерево содержит содержимое release-prep **0.6.3**. Это maintenance поверх **0.6.2**: dashboard information architecture и payout readability, approximate deposit-interest forecast completeness и explicit T-Invest batch refresh / payout-calendar UX. Provider/trading семантика не меняется. Канонический Alembic head — `0029_statement_event_retract`. Опубликованная идентичность определяется неизменяемым Git-тегом и GitHub Release.
+Опубликованная стабильная product identity — **0.6.3**. Annotated tag `v0.6.3` peel'ится в exact released main SHA `366b4a7c37265de5e62feb639060f88afaba54fc`; canonical exact-main CI #331 для этого SHA завершился `success`, GitHub Release опубликован 2026-08-25. Канонический Alembic head — `0029_statement_event_retract`.
+
+После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -214,9 +216,9 @@ Market value/cost basis/unrealized result пересчитываются backend
 - Windows/migrations/backup/restore/security/concurrency — targeted → relevant full suite → task probe → exact-HEAD CI;
 - task-card может только усилить policy.
 
-GitHub Actions включает backend, frontend, privacy guard и Windows production smoke.
+GitHub Actions включает backend, frontend, privacy guard, Windows production smoke и `Release safety`. Для интегрированной GitHub-native задачи PR CI не подменяет post-merge read-back: canonical `push` CI проверяется на exact merged `main` SHA.
 
-## 13. Workspace и агенты
+## 13. Workspace, агенты и owner/integrator route
 
 Репозиторий — канонический общий source. После 0.5.0 runtime и development разведены:
 
@@ -226,7 +228,15 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 Перед новой задачей чистый clone синхронизируется с каноническим `main`. Несколько писателей в одном scope не работают. Machine-specific абсолютные пути — локальная конфигурация, не архитектура репозитория.
 
-Подробности: ADR 0012, `AGENTS.md`, `docs/agents/`, `docs/MODEL_ROUTING.md`.
+Для owner/integrator repository work действует capability-based default: если активная интеграционная поверхность имеет прямой GitHub read/write и видит GitHub Actions, она закрывает GitHub-часть задачи сама. Стандартный маршрут: exact `main` → isolated task branch → scoped changes → PR/diff/privacy review → applicable PR CI → authorized merge → read-back merged `main` → exact-main `push` CI.
+
+Владелец не используется как human courier. Его не отправляют в GitHub UI, PowerShell, Codex или другой coding client только ради branch/file/PR/merge/release plumbing, которое активный интегратор уже может выполнить безопасно. Другой execution surface подключается, когда реально нужна отсутствующая capability: local/runtime/browser/live-provider работа, недоступное через CI исполнение, binary/artifact operation или независимая реализация/review.
+
+Для ChatGPT эта политика конкретизирована в `docs/agents/chatgpt.md`. GitHub Actions служит нормальной remote verification surface для repository-only изменений. Это не даёт ChatGPT или Actions доступа к production runtime data.
+
+Для prepared release нормальный chat-first маршрут идёт через `docs/RELEASE_AUTOMATION.md` и permanent Release Control issue #124: integrator сам проверяет exact main/CI/version/notes, сам публикует guarded `/release` request и сам делает independent tag/release read-back. Локальный `scripts/release.ps1` остаётся fallback, а не обязательным hand-off.
+
+Подробности: ADR 0012, `AGENTS.md`, `docs/agents/`, `docs/MODEL_ROUTING.md`, `docs/RELEASE_AUTOMATION.md`.
 
 ## 14. История
 
@@ -236,7 +246,7 @@ GitHub Actions включает backend, frontend, privacy guard и Windows prod
 
 ## 15. Линия 0.6.0 / R06
 
-Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — release-prep maintenance 0.6.3, см. раздел 18. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1, 0.6.2 или 0.6.3.
+Линия 0.6.0 закрыта как published product line: Gate A/B/C пройдены; R06-10 accepted and integrated. Опубликованная идентичность 0.6.0 определяется неизменяемым Git-тегом и GitHub Release. Текущее дерево — post-release development поверх опубликованной maintenance 0.6.3; см. разделы 18–19. Не переписывайте записи ниже так, будто работа 0.6.0 происходила уже под 0.6.1, 0.6.2 или 0.6.3.
 
 R06 добавляет два owner-controlled пути Alfa поверх существующей локальной модели Hermes:
 
@@ -321,11 +331,28 @@ Safety contract 0.6.2: предыдущий контракт 0.6 плюс statem
 
 ## 18. Линия 0.6.3 / M06 maintenance
 
-`0.6.3` — release-prep maintenance поверх 0.6.2. Исторические записи 0.6.0, 0.6.1 и 0.6.2 выше не переписываются.
+`0.6.3` — опубликованная maintenance поверх 0.6.2. Исторические записи 0.6.0, 0.6.1 и 0.6.2 выше не переписываются.
 
 - **M06-07** (issue #115 / PR #118): dashboard cards разделяют passive-income fact, forecast/goal и mandatory-expense coverage; actual coverage остаётся backend/domain Decimal calculation; mortgage context и instrument/company-first payout rows стали читаемее. Интегрировано merge `407dad4238e8dbd0c96eed44fd0c195ca5ada63d`.
 - **M06-08** (issue #116 / PR #119): selected-month persisted deposit snapshots дают annualised monthly estimate × 12; этот deposit component явно approximate, manual expected interest additive; forecast breakdown показывает deposits/coupons/dividend component/other. Интегрировано merge `0a4210e5898e6674742f2ad2874d7bb8f62a7c19`.
 - **M06-09** (issue #117 / PR #120): `Проверить все позиции T-Invest` и `Проверить изменённые` остаются explicit owner-triggered preview actions; изменения количества не запускают background refresh; Apply остаётся отдельным explicit действием; payout calendar получил явное раскрытие месяца и instrument/company-first rows. Интегрировано merge `f20ac97ba792f3e7ccf549c7df99f592172806da`.
-- **M06-10** (issue #121): только подготовка release identity `0.6.3` — version surfaces, health/release expectations, CHANGELOG, public notes, release record, README/wiki/history. Exact baseline `f20ac97ba792f3e7ccf549c7df99f592172806da`; task branch `m06-10-release-063`. Не feature work, не merge/tag/GitHub Release.
+- **M06-10** (issue #121 / PR #122): release identity `0.6.3` — version surfaces, health/release expectations, CHANGELOG, public notes, release record, README/wiki/history. Exact baseline `f20ac97ba792f3e7ccf549c7df99f592172806da`; merge/released main `366b4a7c37265de5e62feb639060f88afaba54fc`; canonical exact-main CI #331 `success`; annotated `v0.6.3` points to that exact commit; GitHub Release published 2026-08-25.
 
 Safety contract 0.6.3: deposit forecast is approximate and not maturity-aware; T-Invest provider/network refresh is explicit and owner-triggered with no background refresh; batch preview не означает cross-position atomic Apply; нет cloud/auth/telemetry/trading/provider writes; no new migration; canonical Alembic head остаётся `0029_statement_event_retract`.
+
+## 19. Post-0.6.3 infrastructure / HYG
+
+### HYG-04 — Release Automation
+
+- **Issue / PR:** #123 / #125; issue closed `completed` after integration.
+- **Integrated state:** merge `cc3be7270624ebf93ac1a09ece17295b42bd691d`.
+- **Canonical verification:** exact-main push CI #336 `success`; Backend, Frontend, Privacy guard, Windows production smoke и Release safety — все green.
+- **Release-safety evidence:** 37 existing publication-guard cases + 16 request/version-identity cases + 5 workflow-contract cases = **58/58**.
+- **Permanent control endpoint:** open issue #124 `Release Control — guarded owner trigger`.
+- **Trigger:** owner-authored exact three-line `/release` request; workflow rechecks exact main, exact-main CI, version identity, canonical notes and tag/release state before publication.
+- **Publication boundary:** one annotated release tag + published GitHub Release only; no branch move/force-update/delete; built-in `GITHUB_TOKEN` with minimal documented permissions.
+- **Live wiring check:** non-release owner comment on #124 produced Guarded Release run #1 with `conclusion=skipped`, proving issue-comment wiring without publishing a tag or release.
+- **Operational consequence:** capable direct GitHub integrators should complete branch/PR/CI/merge/read-back themselves instead of routing routine repository mechanics through the owner or Codex. ChatGPT-specific rules are in `docs/agents/chatgpt.md`; universal policy is in `AGENTS.md`.
+- **Privacy boundary:** GitHub-native integration and Actions never imply access to production `.env`, finance DB, backups, `private/`, owner exports or live provider credentials.
+
+HYG-04 is repository infrastructure only; it does not change the published 0.6.3 product identity or product semantics.
