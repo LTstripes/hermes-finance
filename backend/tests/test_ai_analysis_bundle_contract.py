@@ -90,6 +90,11 @@ def test_schema_fails_closed_for_unknown_or_inconsistent_fields(
     with pytest.raises(ValidationError):
         _validator(schema).validate(leaked)
 
+    nested_leak = copy.deepcopy(bundle)
+    nested_leak["metadata"]["calculation_versions"]["api_token"] = "synthetic-but-forbidden"
+    with pytest.raises(ValidationError):
+        _validator(schema).validate(nested_leak)
+
     inconsistent = copy.deepcopy(bundle)
     metric = inconsistent["iis_and_tax"]["salary_tax_context"]["taxable_gross_ytd"]
     metric["value"] = {"amount": "1.00", "currency": "RUB"}
@@ -105,6 +110,47 @@ def test_schema_fails_closed_for_unknown_or_inconsistent_fields(
     redemption["included_in_passive_income_forecast"] = True
     with pytest.raises(ValidationError):
         _validator(schema).validate(principal_as_income)
+
+    provider_as_exact_net = copy.deepcopy(bundle)
+    provider_flow = next(
+        item
+        for item in provider_as_exact_net["upcoming_cash_flows"]["items"]
+        if item["provenance"]["source_kind"] == "provider" and item["flow_type"] != "redemption"
+    )
+    provider_flow["amount_semantics"] = "owner_expected_net"
+    provider_flow["personal_tax_status"] = "known_or_accounted"
+    provider_flow["is_approximate"] = False
+    provider_flow["reason_codes"] = []
+    with pytest.raises(ValidationError):
+        _validator(schema).validate(provider_as_exact_net)
+
+
+def test_schema_represents_unavailable_breakdown_components(
+    schema: dict[str, object], bundle: dict[str, object]
+) -> None:
+    unavailable_component = copy.deepcopy(bundle)
+    component = unavailable_component["passive_income"]["forecast"]["breakdown"][
+        "expected_coupon_component"
+    ]
+    component.update(
+        value=None,
+        availability="unavailable",
+        precision="unknown",
+        reason_codes=["provider_tax_semantics_unavailable"],
+    )
+    _validator(schema).validate(unavailable_component)
+
+    unavailable_actual_component = copy.deepcopy(bundle)
+    actual_component = unavailable_actual_component["reporting_history"][0]["kpis"][
+        "passive_income_actual_breakdown"
+    ]["dividends"]
+    actual_component.update(
+        value=None,
+        availability="unavailable",
+        precision="unknown",
+        reason_codes=["actual_component_unavailable"],
+    )
+    _validator(schema).validate(unavailable_actual_component)
 
 
 def test_fixture_is_multi_year_multi_status_and_preserves_unknown_gaps(
@@ -131,7 +177,7 @@ def test_actual_passive_income_and_rolling_average_reconcile(
     for point in history:
         kpis = point["kpis"]
         breakdown = kpis["passive_income_actual_breakdown"]
-        component_total = sum((_amount(value) for value in breakdown.values()), Decimal(0))
+        component_total = sum((_metric_amount(value) for value in breakdown.values()), Decimal(0))
         actual = _metric_amount(kpis["passive_income_actual"])
         assert component_total == actual
         if point["status"] == "closed":
@@ -196,7 +242,9 @@ def test_forecast_and_upcoming_flow_counting_cannot_double_count(
     bundle: dict[str, object],
 ) -> None:
     forecast = bundle["passive_income"]["forecast"]
-    breakdown_total = sum((_amount(value) for value in forecast["breakdown"].values()), Decimal(0))
+    breakdown_total = sum(
+        (_metric_amount(value) for value in forecast["breakdown"].values()), Decimal(0)
+    )
     assert breakdown_total == _metric_amount(forecast["annual_total"])
     expected_monthly = (breakdown_total / Decimal(12)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
@@ -207,26 +255,34 @@ def test_forecast_and_upcoming_flow_counting_cannot_double_count(
     included = [item for item in calendar["items"] if item["included_in_calendar_total"]]
     principal = [item for item in included if item["flow_type"] == "redemption"]
     passive = [item for item in included if item["flow_type"] != "redemption"]
-    assert sum((_amount(item["expected_net_amount"]) for item in principal), Decimal(0)) == (
+    assert sum((_amount(item["amount"]) for item in principal), Decimal(0)) == (
         _metric_amount(calendar["principal_total"])
     )
-    assert sum((_amount(item["expected_net_amount"]) for item in passive), Decimal(0)) == (
-        _metric_amount(calendar["passive_calendar_total"])
+    assert sum((_amount(item["amount"]) for item in passive), Decimal(0)) == (
+        _metric_amount(calendar["non_principal_calendar_amount_total"])
     )
     assert _metric_amount(calendar["principal_total"]) + _metric_amount(
-        calendar["passive_calendar_total"]
+        calendar["non_principal_calendar_amount_total"]
     ) == _metric_amount(calendar["calendar_total"])
 
     for item in calendar["items"]:
         if item["flow_type"] == "redemption":
             assert item["included_in_passive_income_forecast"] is False
             assert item["forecast_treatment"] == "excluded_principal"
+            assert item["amount_semantics"] == "principal"
+            assert item["personal_tax_status"] == "not_applicable"
         elif item["flow_type"] == "dividend":
             assert item["included_in_passive_income_forecast"] is False
             assert item["forecast_treatment"] == "represented_by_historical_component"
         else:
             assert item["included_in_passive_income_forecast"] is True
             assert item["forecast_treatment"] == "included"
+
+        if item["provenance"]["source_kind"] == "provider" and item["flow_type"] != "redemption":
+            assert item["amount_semantics"] == "provider_announced_amount_tax_unknown"
+            assert item["personal_tax_status"] == "unknown"
+            assert item["is_approximate"] is True
+            assert "personal_tax_unknown" in item["reason_codes"]
 
     assert len({item["event_ref"] for item in calendar["items"]}) == len(calendar["items"])
     assert any(

@@ -203,7 +203,13 @@
         "generation_mode": {"const": "read_only"},
         "calculation_versions": {
           "type": "object",
-          "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 64}
+          "additionalProperties": false,
+          "required": ["monthly_summary", "passive_income_forecast", "goal_achievement"],
+          "properties": {
+            "monthly_summary": {"type": "string", "minLength": 1, "maxLength": 64},
+            "passive_income_forecast": {"type": "string", "minLength": 1, "maxLength": 64},
+            "goal_achievement": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
         },
         "ordering_contract": {
           "const": "arrays_are_stably_sorted_as_defined_by_contract"
@@ -250,10 +256,10 @@
       "additionalProperties": false,
       "required": ["deposit_interest", "bond_coupons", "dividends", "other_capital_income"],
       "properties": {
-        "deposit_interest": {"$ref": "#/$defs/money"},
-        "bond_coupons": {"$ref": "#/$defs/money"},
-        "dividends": {"$ref": "#/$defs/money"},
-        "other_capital_income": {"$ref": "#/$defs/money"}
+        "deposit_interest": {"$ref": "#/$defs/money_metric"},
+        "bond_coupons": {"$ref": "#/$defs/money_metric"},
+        "dividends": {"$ref": "#/$defs/money_metric"},
+        "other_capital_income": {"$ref": "#/$defs/money_metric"}
       }
     },
     "reporting_kpis": {
@@ -503,15 +509,15 @@
           "additionalProperties": false,
           "required": [
             "expected_deposit_interest",
-            "expected_coupon_net",
+            "expected_coupon_component",
             "expected_dividend_component",
             "other_expected_capital_income"
           ],
           "properties": {
-            "expected_deposit_interest": {"$ref": "#/$defs/money"},
-            "expected_coupon_net": {"$ref": "#/$defs/money"},
-            "expected_dividend_component": {"$ref": "#/$defs/money"},
-            "other_expected_capital_income": {"$ref": "#/$defs/money"}
+            "expected_deposit_interest": {"$ref": "#/$defs/money_metric"},
+            "expected_coupon_component": {"$ref": "#/$defs/money_metric"},
+            "expected_dividend_component": {"$ref": "#/$defs/money_metric"},
+            "other_expected_capital_income": {"$ref": "#/$defs/money_metric"}
           }
         },
         "dividend_component_source": {"const": "actual_closed_month_dividend_average_annualized"},
@@ -688,8 +694,11 @@
         "flow_type",
         "account_ref",
         "instrument_ref",
-        "expected_net_amount",
+        "amount",
+        "amount_semantics",
+        "personal_tax_status",
         "is_approximate",
+        "reason_codes",
         "provenance",
         "duplicate_resolution",
         "included_in_calendar_total",
@@ -702,8 +711,18 @@
         "flow_type": {"enum": ["coupon", "dividend", "interest", "redemption", "other"]},
         "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
         "instrument_ref": {"type": ["string", "null"], "pattern": "^inst-[a-z0-9-]+$"},
-        "expected_net_amount": {"$ref": "#/$defs/money"},
+        "amount": {"$ref": "#/$defs/money"},
+        "amount_semantics": {
+          "enum": [
+            "owner_expected_net",
+            "owner_expected_amount_tax_unknown",
+            "provider_announced_amount_tax_unknown",
+            "principal"
+          ]
+        },
+        "personal_tax_status": {"enum": ["known_or_accounted", "unknown", "not_applicable"]},
         "is_approximate": {"type": "boolean"},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"},
         "provenance": {"$ref": "#/$defs/provenance"},
         "duplicate_resolution": {
           "enum": ["none", "keep_both", "count_manual", "count_provider", "unresolved_manual_only"]
@@ -720,7 +739,9 @@
           "then": {
             "properties": {
               "included_in_passive_income_forecast": {"const": false},
-              "forecast_treatment": {"const": "excluded_principal"}
+              "forecast_treatment": {"const": "excluded_principal"},
+              "amount_semantics": {"const": "principal"},
+              "personal_tax_status": {"const": "not_applicable"}
             }
           }
         },
@@ -741,6 +762,40 @@
               "forecast_treatment": {"const": "included"}
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "properties": {"source_kind": {"const": "provider"}}
+              },
+              "flow_type": {"enum": ["coupon", "dividend", "interest", "other"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "amount_semantics": {"const": "provider_announced_amount_tax_unknown"},
+              "personal_tax_status": {"const": "unknown"},
+              "is_approximate": {"const": true},
+              "reason_codes": {"contains": {"const": "personal_tax_unknown"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"amount_semantics": {"const": "owner_expected_net"}}},
+          "then": {"properties": {"personal_tax_status": {"const": "known_or_accounted"}}}
+        },
+        {
+          "if": {
+            "properties": {"amount_semantics": {"const": "owner_expected_amount_tax_unknown"}}
+          },
+          "then": {
+            "properties": {
+              "personal_tax_status": {"const": "unknown"},
+              "is_approximate": {"const": true},
+              "reason_codes": {"contains": {"const": "personal_tax_unknown"}}
+            }
+          }
         }
       ]
     },
@@ -751,7 +806,7 @@
         "window_start",
         "window_end_exclusive",
         "forecast_version",
-        "passive_calendar_total",
+        "non_principal_calendar_amount_total",
         "principal_total",
         "calendar_total",
         "items",
@@ -761,7 +816,7 @@
         "window_start": {"type": "string", "format": "date"},
         "window_end_exclusive": {"type": "string", "format": "date"},
         "forecast_version": {"type": "string", "minLength": 1, "maxLength": 64},
-        "passive_calendar_total": {"$ref": "#/$defs/money_metric"},
+        "non_principal_calendar_amount_total": {"$ref": "#/$defs/money_metric"},
         "principal_total": {"$ref": "#/$defs/money_metric"},
         "calendar_total": {"$ref": "#/$defs/money_metric"},
         "items": {

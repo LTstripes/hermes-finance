@@ -26,6 +26,8 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
   are not used for money, rates, percentages, prices, or quantities.
 - Every analytically optional metric carries `availability`, `precision`, `source`, and
   `reason_codes`. An unavailable value is `null`, has `precision=unknown`, and explains why.
+- Actual and forecast breakdown components use the same metric shape as their totals. A missing
+  component is unavailable; an exporter must not invent zero or retain a stale numeric placeholder.
 - Missing calendar months are unknown history. They are listed in
   `coverage.missing_calendar_periods` and are never synthesized as zero-valued months.
 - A draft month may be exported, but its values carry `draft_value` and the point has partial
@@ -58,7 +60,7 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
 | Debt and property | debt, property, liquid-capital, and mortgage services | Included short-term debt affects liquid capital; mortgage/property remain reference context. Property equity is separate. |
 | IIS | `iis_result` plus persisted IIS profile, contributions, and benefit states | Only received tax benefits increase the result with benefit. Planned/submitted remain separate; rejected does not increase either result. Redemption and contributions are not income. |
 | Salary tax | `calculate_salary_tax` and salary-tax opening context | YTD/bracket values appear only if backend calculation succeeds with complete known history. `salary_tax_history_incomplete` is an unavailable state, never an assumed zero. |
-| Upcoming cash flows | `merged_payout_calendar` / ADR 0011 | Manual/provider reconciliation decides which row counts. An unresolved duplicate uses the existing safe manual-only behavior. Calendar total, passive calendar total, and principal total are separate. |
+| Upcoming cash flows | `merged_payout_calendar` / ADR 0011 | Manual/provider reconciliation decides which row counts. Provider totals with unknown personal tax remain provider-announced approximate amounts, never labelled net. An unresolved duplicate uses the existing safe manual-only behavior. Calendar total, non-principal calendar amount total, and principal total are separate. |
 | Provenance | persisted manual/provider/statement provenance already accepted by Hermes | `manual`, `t_invest`, `alfa_pro`, and `alfa_statement` are reported only where meaningful. Raw protocol payloads and provider correlation IDs are excluded. |
 
 The historical `actual_history_metric_path` is a path, not a duplicate series. A consumer reads
@@ -75,6 +77,17 @@ different totals unambiguous:
 - `forecast_treatment` explains `included`, `represented_by_historical_component`, or
   `excluded_principal`.
 
+The neutral `amount` field is interpreted only together with `amount_semantics` and
+`personal_tax_status`:
+
+- `owner_expected_net` means the owner-entered expected tax is known/accounted in the amount;
+- `owner_expected_amount_tax_unknown` remains approximate and carries
+  `personal_tax_unknown`;
+- `provider_announced_amount_tax_unknown` is the provider-announced total, not a promise of
+  personal net income; it is always approximate and carries `personal_tax_unknown`;
+- `principal` applies to redemption and has tax status `not_applicable` for passive-income
+  classification.
+
 Therefore:
 
 - coupon, interest, and other expected capital income may be included in the forecast;
@@ -82,7 +95,7 @@ Therefore:
   `represented_by_historical_component` because the forecast already annualizes actual dividend
   history;
 - redemption uses `excluded_principal` and never increases passive income;
-- `calendar_total = passive_calendar_total + principal_total`;
+- `calendar_total = non_principal_calendar_amount_total + principal_total`;
 - duplicate resolution is explicit and never permits a provider/manual pair to count twice by
   accident.
 
@@ -128,6 +141,10 @@ optional fields after validating the instance with the schema declared by that i
 checked-in `1.0.0` schema is intentionally strict (`additionalProperties=false`) to detect exporter
 leaks and typos; a later minor version publishes its matching strict schema rather than weakening
 the old schema. New required fields or new financial meanings require major `2`.
+
+`metadata.calculation_versions` is also an allowlisted object. v1 accepts only
+`monthly_summary`, `passive_income_forecast`, and `goal_achievement`; it is not an extension map
+for arbitrary runtime metadata.
 
 Fields are required when their semantic state must always be known. Potentially absent financial
 values are not omitted: they use the explicit unavailable shape. An optional application version
