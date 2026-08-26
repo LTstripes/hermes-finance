@@ -27,6 +27,7 @@ hermes-finance-legacy-migrate = "hermes_finance.legacy_migration_cli:main"
 [dependency-groups]
 dev = [
     "httpx2>=2.9.1",
+    "jsonschema>=4.25,<5.0",
     "pytest>=8.4,<9.0",
     "ruff>=0.16.1",
 ]
