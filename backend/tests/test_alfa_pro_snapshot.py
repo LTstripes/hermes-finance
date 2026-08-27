@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState, AlfaDiagnosticFailureClass
 from hermes_finance.broker_data.alfa_pro.adapter import (
     AlfaProBrokerSnapshotProvider,
     sanitize_error,
@@ -73,6 +74,14 @@ class ScriptedTransport:
         raw_payload = parsed.get("Payload")
         payload = json.loads(raw_payload) if isinstance(raw_payload, str) else {}
         if command == "listen" and channel == "#ConnectionState.Bus":
+            if self.fixture.get("emit_unknown_router_message"):
+                self._queue.append(
+                    encode_router_message(
+                        "broadcast",
+                        "#Data.Bus.Unknown",
+                        payload={"Data": []},
+                    )
+                )
             if self.fixture.get("emit_connection_state_bus", True):
                 self._queue.append(
                     encode_router_message(
@@ -347,6 +356,144 @@ def test_bus_gated_delayed_auth_then_client_reads() -> None:
     assert transport.closed is True
 
 
+def test_synthetic_snapshot_records_compatible_fingerprint_without_private_values() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list) and isinstance(positions[0], dict)
+    positions[0]["/private/synthetic/path"] = "secret-value"
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+
+    changed_fixture = load_fixture()
+    changed_positions = changed_fixture["ClientPositionEntity"]
+    assert isinstance(changed_positions, list) and isinstance(changed_positions[0], dict)
+    changed_positions[0]["TorgPos"] = 999999
+    changed_positions[0]["Price"] = 999999999
+    changed_snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(changed_fixture),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+
+    assert snapshot.status is SnapshotStatus.COMPLETE
+    assert changed_snapshot.status is SnapshotStatus.COMPLETE
+    assert (
+        snapshot.diagnostics.compatibility_fingerprint
+        == changed_snapshot.diagnostics.compatibility_fingerprint
+    )
+    assert snapshot.provenance.compatibility_state is AlfaCompatibilityState.COMPATIBLE
+    assert snapshot.provenance.failure_class is AlfaDiagnosticFailureClass.NONE
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.COMPATIBLE
+    assert snapshot.diagnostics.observed_alfa_pro_version == "synthetic-compat-1"
+    assert snapshot.diagnostics.observed_api_version == "2.1"
+    assert snapshot.diagnostics.observed_protocol_version == "2.1"
+    assert len(snapshot.diagnostics.compatibility_fingerprint or "") == 64
+    assert snapshot.diagnostics.to_dict()["safe_artifact"] is True
+    report = snapshot.diagnostics.to_text()
+    for private_or_value in (
+        "synth.user",
+        "Synthetic Owner",
+        "RU000SYNTH01",
+        '"IdAccount":101',
+        "250.5",
+        "1500.0",
+        "/private/synthetic/path",
+        "secret-value",
+    ):
+        assert private_or_value not in report
+
+
+def test_unknown_router_message_fails_closed_as_protocol_compatibility_error() -> None:
+    fixture = load_fixture()
+    fixture["emit_unknown_router_message"] = True
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+
+    assert snapshot.status is SnapshotStatus.COMPATIBILITY_ERROR
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.UNKNOWN
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.PROTOCOL
+    assert "unknown_entity_channel" in snapshot.diagnostics.failure_codes
+    assert "#Data.Bus.Unknown" not in snapshot.diagnostics.to_text()
+
+
+def test_unknown_layout_field_fails_closed_without_silent_mapping() -> None:
+    fixture = load_fixture()
+    positions = fixture["ClientPositionEntity"]
+    assert isinstance(positions, list) and isinstance(positions[0], dict)
+    positions[0].pop("TorgPos")
+    positions[0]["Quantity"] = 10
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+
+    assert snapshot.status is SnapshotStatus.COMPATIBILITY_ERROR
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.UNKNOWN
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.LAYOUT
+    assert snapshot.diagnostics.layout_family == "unresolved"
+    assert "missing_required_entity_field" in snapshot.diagnostics.failure_codes
+
+
+def test_arbitrary_version_hints_remain_observational_when_structure_is_known() -> None:
+    fixture = load_fixture()
+    connection_state = fixture["connection_state"]
+    assert isinstance(connection_state, dict)
+    states = connection_state["States"]
+    assert isinstance(states, dict)
+    states["ApiVersion"] = "9.9"
+    states["ProtocolVersion"] = "router-2026"
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(fixture),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+
+    assert snapshot.status is SnapshotStatus.COMPLETE
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.COMPATIBLE
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.NONE
+    assert snapshot.diagnostics.protocol_family == "router-v1"
+    assert snapshot.diagnostics.layout_family == "snapshot-v2.1"
+    assert snapshot.diagnostics.observed_api_version == "9.9"
+    assert snapshot.diagnostics.observed_protocol_version == "router-2026"
+
+    baseline = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(load_fixture()),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+    assert baseline.diagnostics.compatibility_fingerprint != (
+        snapshot.diagnostics.compatibility_fingerprint
+    )
+
+
+def test_connection_failure_diagnostic_is_sanitized() -> None:
+    class FailingTransport:
+        def send_text(self, message: str) -> None:
+            raise ConnectionRefusedError("synthetic transport details")
+
+        def recv_text(self, timeout: float) -> str:
+            raise AssertionError("recv must not run")
+
+        def close(self) -> None:
+            pass
+
+    snapshot = AlfaProBrokerSnapshotProvider(transport=FailingTransport()).fetch_snapshot()
+
+    assert snapshot.status is SnapshotStatus.PROVIDER_UNAVAILABLE
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.CONNECTION
+    assert snapshot.diagnostics.failure_codes == ("transport_failed",)
+    assert "synthetic transport details" not in snapshot.diagnostics.to_text()
+
+
 def test_missing_auth_sends_zero_client_queries() -> None:
     transport = DelayedAuthScriptedTransport(load_fixture(), idle_before_auth=2, emit_auth=False)
     snapshot = AlfaProBrokerSnapshotProvider(
@@ -355,6 +502,8 @@ def test_missing_auth_sends_zero_client_queries() -> None:
     assert transport.recv_calls >= 3
     assert snapshot.status is SnapshotStatus.AUTH_UNRESOLVED
     assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.AUTH
+    assert snapshot.diagnostics.failure_codes == ("auth_unresolved",)
     assert _client_query_types(transport.sent) == []
     assert not _has_connection_state_data_query(transport.sent)
 
@@ -366,6 +515,8 @@ def test_non_2_auth_sends_zero_client_queries() -> None:
     ).fetch_snapshot()
     assert snapshot.status is SnapshotStatus.AUTH_NOT_AUTHORIZED
     assert snapshot.accounts == ()
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.AUTH
+    assert snapshot.diagnostics.failure_codes == ("auth_not_authorized",)
     assert _client_query_types(transport.sent) == []
     assert not _has_connection_state_data_query(transport.sent)
 
@@ -479,6 +630,8 @@ def test_required_entity_error_is_incomplete() -> None:
     assert snapshot.status is SnapshotStatus.INCOMPLETE
     assert snapshot.provenance.eligible_for_apply is False
     assert "ClientPositionEntity=error" in snapshot.provenance.entity_query_status
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.ROUTING
+    assert snapshot.diagnostics.failure_codes == ("entity_query_failed",)
     assert snapshot.message is not None
     assert "secret provider fail" not in snapshot.message
 
@@ -494,6 +647,8 @@ def test_truncation_is_incomplete() -> None:
     snapshot = build_snapshot(state, captured_at=datetime.now(timezone.utc))
     assert snapshot.status is SnapshotStatus.INCOMPLETE
     assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.PROTOCOL
+    assert "collection_truncated" in snapshot.diagnostics.failure_codes
 
 
 def test_lost_auth_marks_incomplete() -> None:
@@ -505,6 +660,8 @@ def test_lost_auth_marks_incomplete() -> None:
     ).fetch_snapshot()
     assert snapshot.status is SnapshotStatus.INCOMPLETE
     assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.AUTH
+    assert snapshot.diagnostics.failure_codes == ("auth_lost",)
 
 
 def test_asset_info_request_uses_observed_position_object_ids() -> None:
@@ -568,6 +725,8 @@ def test_provider_unavailable_on_connect_failure() -> None:
     assert snapshot.provenance.eligible_for_apply is False
     assert snapshot.message is not None
     assert "terminal missing" not in snapshot.message
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.CONNECTION
+    assert snapshot.diagnostics.failure_codes == ("transport_failed",)
 
 
 def test_malformed_response_status() -> None:
@@ -594,6 +753,9 @@ def test_malformed_response_status() -> None:
     ).fetch_snapshot()
     assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
     assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.UNKNOWN
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.PROTOCOL
+    assert "invalid_router_payload" in snapshot.diagnostics.failure_codes
 
 
 def test_float_in_row_is_not_recovered() -> None:

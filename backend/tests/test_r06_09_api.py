@@ -8,6 +8,7 @@ from pathlib import Path
 from _statement_pdf import build_income_report_pdf, build_wrong_report_pdf
 from fastapi.testclient import TestClient
 
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState, AlfaDiagnosticReport
 from hermes_finance.broker_data.dto import (
     ALFA_PRO_PROVIDER,
     BrokerAccount,
@@ -79,6 +80,17 @@ def _complete_snapshot() -> BrokerSnapshot:
             channels_invoked=("synthetic",),
             entity_query_status=("synthetic:ok",),
             eligible_for_apply=True,
+            compatibility_state=AlfaCompatibilityState.COMPATIBLE,
+            compatibility_fingerprint="a" * 64,
+        ),
+        diagnostics=AlfaDiagnosticReport(
+            api_doc_version="synthetic",
+            snapshot_status="complete",
+            eligible_for_apply=True,
+            compatibility_state=AlfaCompatibilityState.COMPATIBLE,
+            compatibility_fingerprint="a" * 64,
+            protocol_family="synthetic-router",
+            layout_family="synthetic-layout",
         ),
     )
 
@@ -236,6 +248,10 @@ def test_mapped_snapshot_preview_uses_persisted_position_for_fingerprint_and_sta
         assert isinstance(row["fingerprint"], str)
         assert len(row["fingerprint"]) == 64
         assert all(character in "0123456789abcdef" for character in row["fingerprint"])
+        assert preview.json()["diagnostics"]["compatibility_state"] == "compatible"
+        assert preview.json()["diagnostics"]["failure_class"] == "none"
+        assert preview.json()["diagnostics"]["safe_artifact"] is True
+        assert "101.25" not in preview.json()["diagnostic_report"]
 
         session = database.session_factory()
         try:
@@ -288,6 +304,26 @@ def test_mapped_snapshot_preview_without_local_position_keeps_provider_only_path
     assert row["instrument_name"] == "Synthetic equity"
     assert row["instrument_isin"] == SYN_ISIN
     assert isinstance(row["fingerprint"], str)
+
+
+def test_snapshot_preview_diagnostic_separates_mapping_failure(tmp_path: Path) -> None:
+    database, month_id, _account_id, _instrument_id = _context(tmp_path)
+    application = create_app(
+        database, broker_snapshot_provider=_StaticSnapshotProvider(_complete_snapshot())
+    )
+    with TestClient(application) as client:
+        response = client.post(
+            f"/api/months/{month_id}/broker-snapshot-preview",
+            json={"accounts": [], "instruments": []},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["diagnostics"]["compatibility_state"] == "compatible"
+    assert body["diagnostics"]["failure_class"] == "mapping"
+    assert "account_mapping_unresolved" in body["diagnostics"]["failure_codes"]
+    assert body["diagnostics"]["safe_artifact"] is True
+    assert "SYN-DEPO-001" not in body["diagnostic_report"]
 
 
 def test_r06_09_boundaries_and_no_trading_surface(tmp_path: Path) -> None:

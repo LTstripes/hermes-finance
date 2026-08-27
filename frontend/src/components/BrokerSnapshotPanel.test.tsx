@@ -50,6 +50,31 @@ function preview(overrides: Record<string, unknown> = {}) {
     instruments: [],
     cash: [],
     warnings: [],
+    diagnostics: {
+      schema_version: "alfa-pro-diagnostics/v1",
+      provider: "alfa_pro",
+      snapshot_status: "complete",
+      eligible_for_apply: true,
+      compatibility_state: "compatible",
+      compatibility_fingerprint: "a".repeat(64),
+      api_doc_version: "2.1",
+      observed_alfa_pro_version: "synthetic-compat-1",
+      observed_api_version: "2.1",
+      observed_protocol_version: "2.1",
+      protocol_family: "router-v1",
+      layout_family: "snapshot-v2.1",
+      capabilities: ["position_quantity"],
+      failure_class: "none",
+      failure_codes: [],
+      entity_status: ["synthetic=ok"],
+      entity_counts: ["synthetic=1"],
+      observed_fields: ["synthetic={Field}"],
+      safe_artifact: true,
+      raw_payload_saved: false,
+      private_values_included: false,
+      credentials_included: false,
+    },
+    diagnostic_report: "safe synthetic diagnostics\n",
     error_code: null,
     message: null,
     ...overrides,
@@ -177,5 +202,51 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Обнови preview/)).toBeNull();
+  });
+
+  it("explains unknown provider layout and keeps apply unavailable", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue({
+      ...preview(),
+      status: "non_applicable",
+      eligible_for_apply: false,
+      snapshot_status: "compatibility_error",
+      diagnostics: {
+        ...preview().diagnostics,
+        snapshot_status: "compatibility_error",
+        eligible_for_apply: false,
+        compatibility_state: "unknown",
+        failure_class: "layout",
+        failure_codes: ["missing_required_entity_field"],
+      },
+      diagnostic_report: "compatibility_state: unknown\nfailure_class: layout\n",
+    });
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(
+      await screen.findByText(
+        "Не удалось однозначно распознать формат данных Альфа PRO. Применение отключено; передайте безопасную диагностику разработчику.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить выбранное" })).toBeDisabled();
+  });
+
+  it("shows and copies the safe diagnostic artifact", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(await screen.findByText("safe synthetic diagnostics")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Скопировать диагностику" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("safe synthetic diagnostics\n"));
+    expect(screen.getByRole("button", { name: "Скопировано" })).toBeInTheDocument();
   });
 });

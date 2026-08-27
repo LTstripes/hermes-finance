@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+
+from hermes_finance.alfa_pro_diagnostics import (
+    AlfaCompatibilityState,
+    AlfaDiagnosticFailureClass,
+    AlfaDiagnosticReport,
+)
 
 ALFA_PRO_PROVIDER = "alfa_pro"
 
@@ -36,6 +42,9 @@ class SnapshotProvenance:
     channels_invoked: tuple[str, ...]
     entity_query_status: tuple[str, ...]
     eligible_for_apply: bool
+    compatibility_state: AlfaCompatibilityState = AlfaCompatibilityState.UNKNOWN
+    compatibility_fingerprint: str | None = None
+    failure_class: AlfaDiagnosticFailureClass = AlfaDiagnosticFailureClass.NONE
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,3 +109,4 @@ class BrokerSnapshot:
     warnings: tuple[str, ...]
     provenance: SnapshotProvenance
     message: str | None = None
+    diagnostics: AlfaDiagnosticReport = field(default_factory=AlfaDiagnosticReport)

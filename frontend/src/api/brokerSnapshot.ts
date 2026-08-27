@@ -25,6 +25,39 @@ export type BrokerPositionRow = {
   [key: string]: unknown;
 };
 
+export type BrokerSnapshotDiagnostics = {
+  schema_version: string;
+  provider: string;
+  snapshot_status: string;
+  eligible_for_apply: boolean;
+  compatibility_state: "compatible" | "unknown" | "unsupported" | string;
+  compatibility_fingerprint: string | null;
+  api_doc_version: string;
+  observed_alfa_pro_version: string | null;
+  observed_api_version: string | null;
+  observed_protocol_version: string | null;
+  protocol_family: string;
+  layout_family: string;
+  capabilities: string[];
+  failure_class:
+    | "none"
+    | "connection"
+    | "auth"
+    | "routing"
+    | "protocol"
+    | "layout"
+    | "mapping"
+    | string;
+  failure_codes: string[];
+  entity_status: string[];
+  entity_counts: string[];
+  observed_fields: string[];
+  safe_artifact: boolean;
+  raw_payload_saved: boolean;
+  private_values_included: boolean;
+  credentials_included: boolean;
+};
+
 export type BrokerSnapshotPreview = {
   reporting_month_id: number;
   provider: string;
@@ -49,6 +82,8 @@ export type BrokerSnapshotPreview = {
   }[];
   cash: unknown[];
   warnings: string[];
+  diagnostics: BrokerSnapshotDiagnostics;
+  diagnostic_report: string;
   error_code: string | null;
   message: string | null;
   [key: string]: unknown;

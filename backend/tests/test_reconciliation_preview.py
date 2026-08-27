@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState
 from hermes_finance.broker_data.dto import (
     ALFA_PRO_PROVIDER,
     BrokerAccount,
@@ -36,7 +37,10 @@ from hermes_finance.broker_data.reconciliation.dto import (
 )
 
 
-def _provenance(eligible: bool = True) -> SnapshotProvenance:
+def _provenance(
+    eligible: bool = True,
+    compatibility_state: AlfaCompatibilityState = AlfaCompatibilityState.COMPATIBLE,
+) -> SnapshotProvenance:
     return SnapshotProvenance(
         provider=ALFA_PRO_PROVIDER,
         api_doc_version="v2.1",
@@ -47,6 +51,8 @@ def _provenance(eligible: bool = True) -> SnapshotProvenance:
         channels_invoked=("#Data.Query",),
         entity_query_status=("ClientAccountEntity:ok",),
         eligible_for_apply=eligible,
+        compatibility_state=compatibility_state,
+        compatibility_fingerprint="a" * 64,
     )
 
 
@@ -56,6 +62,7 @@ def _complete_snapshot(
     positions=(),
     cash=(),
     eligible: bool = True,
+    compatibility_state: AlfaCompatibilityState = AlfaCompatibilityState.COMPATIBLE,
     status: SnapshotStatus = SnapshotStatus.COMPLETE,
     source_as_of: datetime | None = datetime(2026, 8, 20, 11, 0, tzinfo=timezone.utc),
 ) -> BrokerSnapshot:
@@ -69,7 +76,7 @@ def _complete_snapshot(
         positions=tuple(positions),
         cash_balances=tuple(cash),
         warnings=(),
-        provenance=_provenance(eligible=eligible),
+        provenance=_provenance(eligible=eligible, compatibility_state=compatibility_state),
     )
 
 
@@ -174,6 +181,21 @@ def test_complete_but_not_eligible_is_non_applicable() -> None:
         snapshot=snap, hermes=hermes, mapping=OwnerMappingInput()
     )
     assert preview.status is ReconciliationStatus.NON_APPLICABLE
+
+
+def test_unknown_alfa_compatibility_is_non_applicable_even_when_snapshot_is_complete() -> None:
+    snap = _complete_snapshot(
+        compatibility_state=AlfaCompatibilityState.UNKNOWN,
+        accounts=[BrokerAccount("PA1")],
+    )
+    hermes = _hermes(accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),))
+    preview = build_reconciliation_preview(
+        snapshot=snap, hermes=hermes, mapping=OwnerMappingInput()
+    )
+
+    assert preview.status is ReconciliationStatus.NON_APPLICABLE
+    assert preview.eligible_for_apply is False
+    assert "compatibility is not confirmed" in preview.warnings[0]
 
 
 # --- 3. missing account mapping => unmatched/conflict, never inferred ---

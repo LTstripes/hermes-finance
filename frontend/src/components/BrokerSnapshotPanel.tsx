@@ -1,18 +1,17 @@
 import { useEffect, useState } from "react";
-
-import { formatApiError } from "../api/client";
-import { listMonths } from "../api/months";
 import {
   applyBrokerSnapshot,
-  previewBrokerSnapshot,
   type BrokerApplySelection,
   type BrokerMapping,
   type BrokerPositionRow,
   type BrokerSnapshotPreview,
+  previewBrokerSnapshot,
 } from "../api/brokerSnapshot";
+import { formatApiError } from "../api/client";
+import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
 import { formatMonth } from "../lib/format";
-import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
+import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type DecisionAction = "keep_existing" | "replace" | "";
@@ -58,6 +57,18 @@ function needsOwnerResolution(status: string): boolean {
 function previewErrorMessage(next: BrokerSnapshotPreview): string | null {
   if (next.snapshot_status === "provider_unavailable" || next.error_code === "provider_error") {
     return "Не удалось подключиться к Альфа PRO. Убедитесь, что терминал запущен и выполнен вход.";
+  }
+  if (next.diagnostics?.compatibility_state === "unsupported") {
+    return "Протокол Альфа PRO не поддержан. Применение отключено; передайте безопасную диагностику разработчику.";
+  }
+  if (next.diagnostics?.compatibility_state === "unknown") {
+    if (next.diagnostics.failure_class === "protocol") {
+      return "Не удалось однозначно распознать протокол Альфа PRO. Применение отключено; передайте безопасную диагностику разработчику.";
+    }
+    if (next.diagnostics.failure_class === "layout") {
+      return "Не удалось однозначно распознать формат данных Альфа PRO. Применение отключено; передайте безопасную диагностику разработчику.";
+    }
+    return "Совместимость Альфа PRO не подтверждена. Применение отключено; передайте безопасную диагностику разработчику.";
   }
   if (next.error_code) return next.message ?? "Не удалось получить данные из Альфа PRO.";
   return null;
@@ -133,6 +144,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [diagnosticCopied, setDiagnosticCopied] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -178,6 +190,18 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
     setDecisions({});
     setMappingDirty(false);
     setConfirmOpen(false);
+    setDiagnosticCopied(false);
+  }
+
+  async function copyDiagnostic() {
+    if (!preview) return;
+    try {
+      await navigator.clipboard.writeText(preview.diagnostic_report);
+      setDiagnosticCopied(true);
+    } catch {
+      setDiagnosticCopied(false);
+      setMessage("Не удалось скопировать диагностику. Выделите текст вручную.");
+    }
   }
 
   async function refresh() {
@@ -303,6 +327,24 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
               {labelOf(PREVIEW_STATUS_LABELS, preview.status)}
             </Badge>
           </div>
+          <details>
+            <summary>Безопасная диагностика для поддержки</summary>
+            <div className="stack-8">
+              <p className="muted">
+                Здесь нет credentials, исходного payload, номеров счетов или финансовых значений.
+                Этот текст можно передать разработчику.
+              </p>
+              <pre className="diagnostic-output">{preview.diagnostic_report}</pre>
+              <Button
+                onClick={() => void copyDiagnostic()}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {diagnosticCopied ? "Скопировано" : "Скопировать диагностику"}
+              </Button>
+            </div>
+          </details>
           {preview.accounts.some((row) => needsOwnerResolution(row.status)) ? (
             <Panel label="Сопоставление" title="Счета Alfa → Hermes">
               {preview.accounts
