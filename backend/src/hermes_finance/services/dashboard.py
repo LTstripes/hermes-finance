@@ -26,6 +26,10 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.asset_allocation import AssetClassSlice, asset_allocation_for_month
+from hermes_finance.services.cash_flow_ladder import (
+    CashFlowLadderResult,
+    build_cash_flow_ladder,
+)
 from hermes_finance.services.liquid_capital import (
     liquid_capital_for_months,
 )
@@ -114,6 +118,7 @@ class DashboardResult:
     expected_payments: tuple[ExpectedPaymentItem, ...]
     mortgage: MortgageCoverageSlice
     warnings: tuple[str, ...]
+    cash_flow_ladder: CashFlowLadderResult | None = None
 
 
 def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
@@ -327,4 +332,9 @@ def build_dashboard(
             gap=gap,
         ),
         warnings=summary.warnings,
+        cash_flow_ladder=build_cash_flow_ladder(
+            session,
+            reporting_month_id,
+            forecast_version=forecast_version,
+        ),
     )

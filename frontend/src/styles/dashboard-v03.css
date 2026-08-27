@@ -214,3 +214,76 @@
     min-height: 0;
   }
 }
+
+.cash-flow-ladder__windows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.cash-flow-ladder__window {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.cash-flow-ladder__window-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cash-flow-ladder__window-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.cash-flow-ladder__window p {
+  margin: 6px 0 0;
+}
+
+.cash-flow-ladder__events {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cash-flow-ladder__events li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.cash-flow-ladder__note {
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-soft);
+  font-size: 0.875rem;
+}
+
+.cash-flow-ladder__table th,
+.cash-flow-ladder__table td {
+  white-space: nowrap;
+}
+
+.cash-flow-ladder__provenance {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 800px) {
+  .cash-flow-ladder__windows {
+    grid-template-columns: 1fr;
+  }
+}

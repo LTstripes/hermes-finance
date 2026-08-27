@@ -182,6 +182,68 @@ export type DashboardForecast = {
   warnings: string[];
 };
 
+export type CashFlowLadderEvent = {
+  source_kind: "manual" | "provider" | "deposit_forecast" | string;
+  source_id: number;
+  expected_date: string;
+  flow_type: string;
+  component:
+    | "coupon"
+    | "dividend"
+    | "deposit_interest"
+    | "other_capital_income"
+    | "redemption_principal"
+    | string;
+  account_id: number;
+  account_name: string;
+  instrument_id: number | null;
+  instrument_name: string | null;
+  expected_net_amount: MoneyValue;
+  is_approximate: boolean;
+  source: string;
+  provider: string | null;
+  provider_instrument_uid: string | null;
+  provider_identity_key: string | null;
+  reconciliation_id: number | null;
+  counting_decision: string | null;
+  linked_manual_id: number | null;
+  linked_provider_payout_id: number | null;
+  source_as_of_date: string | null;
+};
+
+export type CashFlowLadderMonth = {
+  year: number;
+  month: number;
+  coupon: MoneyValue;
+  dividend: MoneyValue;
+  deposit_interest: MoneyValue;
+  other_capital_income: MoneyValue;
+  redemption_principal: MoneyValue;
+  passive_income: MoneyValue;
+  total_cash_flow: MoneyValue;
+  is_approximate: boolean;
+  items: CashFlowLadderEvent[];
+};
+
+export type UpcomingEventsWindow = {
+  days: number;
+  from_date: string;
+  to_date: string;
+  passive_income: MoneyValue;
+  redemption_principal: MoneyValue;
+  total_cash_flow: MoneyValue;
+  items: CashFlowLadderEvent[];
+};
+
+export type CashFlowLadder = {
+  as_of_date: string;
+  forecast_version: string;
+  months: CashFlowLadderMonth[];
+  upcoming_14_days: UpcomingEventsWindow;
+  upcoming_30_days: UpcomingEventsWindow;
+  warnings: string[];
+};
+
 export type DashboardMonthRef = {
   id: number;
   year: number;
@@ -254,6 +316,7 @@ export type DashboardSlice = {
   result_by_instrument_class?: InstrumentClassResultPoint[];
   warnings?: string[];
   calculation_version?: string;
+  cash_flow_ladder?: CashFlowLadder | null;
 };
 
 export type Account = {
