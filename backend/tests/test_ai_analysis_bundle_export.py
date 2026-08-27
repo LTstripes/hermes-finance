@@ -109,14 +109,16 @@ def _validator() -> Draft202012Validator:
 
 def _seed_history(client: TestClient) -> dict[str, int]:
     brokerage = _ok(
-        client.post("/api/accounts", json={"name": "Synthetic Brokerage", "account_type": "brokerage"})
+        client.post(
+            "/api/accounts", json={"name": "Synthetic Brokerage", "account_type": "brokerage"}
+        )
     )["id"]
     deposit_account = _ok(
         client.post("/api/accounts", json={"name": "Synthetic Deposit", "account_type": "deposit"})
     )["id"]
-    iis_account = _ok(client.post("/api/accounts", json={"name": "Synthetic IIS", "account_type": "iis"}))[
-        "id"
-    ]
+    iis_account = _ok(
+        client.post("/api/accounts", json={"name": "Synthetic IIS", "account_type": "iis"})
+    )["id"]
     bond = _ok(
         client.post(
             "/api/instruments",
@@ -144,7 +146,11 @@ def _seed_history(client: TestClient) -> dict[str, int]:
     _ok(
         client.put(
             f"/api/iis/{iis_account}/profile",
-            json={"iis_type": "iis-a", "opened_at": "2024-01-15", "eligible_close_at": "2027-01-15"},
+            json={
+                "iis_type": "iis-a",
+                "opened_at": "2024-01-15",
+                "eligible_close_at": "2027-01-15",
+            },
         ),
         status=200,
     )
@@ -156,7 +162,7 @@ def _seed_history(client: TestClient) -> dict[str, int]:
     )
     _ok(
         client.post(
-            f"/api/iis/{iis_account}/tax-benefits",
+            f"/api/iis/{iis_account}/benefits",
             json={
                 "tax_year": 2025,
                 "benefit_type": "deduction",
@@ -379,23 +385,17 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["schema_version"] == "1.0.0"
 
     mixed_sources = {
-        source
-        for point in payload["reporting_history"]
-        for source in point["provenance_sources"]
+        source for point in payload["reporting_history"] for source in point["provenance_sources"]
     }
     assert "manual" in mixed_sources
     assert "excel_migration" in mixed_sources
     assert "alfa_statement" in mixed_sources
 
-    draft = next(
-        item for item in payload["reporting_history"] if item["status"] == "draft"
-    )
+    draft = next(item for item in payload["reporting_history"] if item["status"] == "draft")
     assert "draft_value" in draft["kpis"]["liquid_capital_net"]["reason_codes"]
     assert draft["coverage"]["status"] == "partial"
 
-    assert payload["kpis"] if False else payload["passive_income"]["rolling_actual_average"][
-        "eligible_month_count"
-    ] == 5
+    assert payload["passive_income"]["rolling_actual_average"]["eligible_month_count"] == 5
     assert payload["passive_income"]["rolling_actual_average"]["is_complete_window"] is False
 
     calendar = payload["upcoming_cash_flows"]
@@ -417,7 +417,9 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     goal_refs = [goal["ref"] for goal in payload["goals"]]
     assert goal_refs == sorted(goal_refs)
     assert payload["iis_and_tax"]["iis_accounts"]
-    assert payload["iis_and_tax"]["salary_tax_context"]["history_coverage"]["status"] == "unavailable"
+    assert (
+        payload["iis_and_tax"]["salary_tax_context"]["history_coverage"]["status"] == "unavailable"
+    )
     assert payload["reporting_history"][-1]["kpis"]["investment_return"]["value_pct"] is None
     assert payload["reporting_history"][-1]["kpis"]["market_value_change"]["value"] is None
 
@@ -430,9 +432,9 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert again.content == response.content
     explicit = _export(client, path="/api/export/ai-analysis-bundle/json")
     assert explicit.status_code == 200, explicit.text
-    assert json.loads(explicit.content.decode("utf-8"))["current_portfolio"]["selection_reason"] == (
-        "latest_closed"
-    )
+    assert json.loads(explicit.content.decode("utf-8"))["current_portfolio"][
+        "selection_reason"
+    ] == ("latest_closed")
 
 
 def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
@@ -448,8 +450,7 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.0.0.md"
-        in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.0.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
     assert body.startswith("# Hermes Finance AI Analysis Bundle 1.0.0")

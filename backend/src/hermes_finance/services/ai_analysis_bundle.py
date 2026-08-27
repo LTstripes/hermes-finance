@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
+from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.values import PercentageRate, RubleAmount
-from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
     AppliedPayoutReconciliation,
@@ -30,12 +30,12 @@ from hermes_finance.persistence import (
     IisProfile,
     IncomeEntry,
     PositionQuoteProvenance,
-    PositionSnapshot,
     PropertySnapshot,
     ReportingMonth,
     TaxBenefit,
 )
 from hermes_finance.services.accounts import list_accounts
+from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.cash_balance import cash_balance_for_month
 from hermes_finance.services.debts import total_debts, total_included_debts
@@ -68,7 +68,6 @@ from hermes_finance.services.salary_tax_context import (
 )
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 from hermes_finance.services.tax_brackets import get_or_create_default_tax_brackets
-from hermes_finance.domain.incomes import IncomeType
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
 SCHEMA_VERSION = "1.0.0"
@@ -618,11 +617,7 @@ def assemble_ai_analysis_bundle(
             "ref": instrument_refs[row.id],
             "name": row.name,
             "instrument_type": row.instrument_type,
-            "isin": (
-                row.isin
-                if row.isin and ISIN_PATTERN.fullmatch(row.isin)
-                else None
-            ),
+            "isin": (row.isin if row.isin and ISIN_PATTERN.fullmatch(row.isin) else None),
             "ticker": row.ticker,
             "currency": "RUB",
         }
