@@ -12,6 +12,7 @@ from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
+from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
 from hermes_finance.api.comments import router as comments_router
 from hermes_finance.api.dashboard import router as dashboard_router
 from hermes_finance.api.debts import router as debts_router
@@ -96,6 +97,7 @@ def create_app(
     application.include_router(positions_router)
     application.include_router(deposits_router)
     application.include_router(cash_router)
+    application.include_router(cash_flow_ladder_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)
     application.include_router(expected_flows_router)

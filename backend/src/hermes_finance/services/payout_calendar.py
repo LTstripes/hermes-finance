@@ -58,6 +58,7 @@ class MergedPayoutCalendarItem:
     # applied provider contract exposes only its frozen announced total.
     gross_amount: RubleAmount | None = None
     expected_tax_amount: RubleAmount | None = None
+    source_as_of_date: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +197,7 @@ def merged_payout_calendar(
                     if flow.expected_tax_amount_kopecks is not None
                     else None
                 ),
+                source_as_of_date=flow.source_as_of_date,
             )
         )
 
@@ -256,6 +258,7 @@ def merged_payout_calendar(
                     else None
                 ),
                 linked_manual_id=resolved_manual_id,
+                source_as_of_date=None,
             )
         )
 

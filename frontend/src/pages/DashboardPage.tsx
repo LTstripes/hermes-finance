@@ -12,6 +12,7 @@ import type {
 } from "../api/types";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
+import { CashFlowLadder } from "../components/CashFlowLadder";
 import {
   EmptyState,
   ErrorState,
@@ -206,6 +207,24 @@ export function DashboardPage() {
           />
         ) : (
           <EmptyState description="Нет данных для графика." inline title="Пусто" />
+        )}
+      </Panel>
+
+      <Panel
+        action={<span className="muted tiny">manual · provider · deposit snapshots</span>}
+        label="Казначейство"
+        title="Ближайшие события и денежная лестница"
+      >
+        {loadingDash ? (
+          <LoadingState description="Загружаем ожидаемые потоки…" inline />
+        ) : dashboard?.cash_flow_ladder ? (
+          <CashFlowLadder ladder={dashboard.cash_flow_ladder} />
+        ) : (
+          <EmptyState
+            description="Нет данных о будущих денежных потоках для выбранного месяца."
+            inline
+            title="Лестница недоступна"
+          />
         )}
       </Panel>
     </section>

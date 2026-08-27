@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.cash_flow_ladder import CashFlowLadderOut, cash_flow_ladder_to_out
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
@@ -317,6 +318,7 @@ class DashboardOut(BaseModel):
     mortgage: MortgageOut
     warnings: list[str]
     calculation_version: str
+    cash_flow_ladder: CashFlowLadderOut | None = None
 
 
 def _liquid_out(result: object) -> LiquidCapitalOut:
@@ -560,6 +562,11 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         ),
         warnings=list(dashboard.warnings),
         calculation_version=dashboard.summary.calculation_version,
+        cash_flow_ladder=(
+            cash_flow_ladder_to_out(dashboard.cash_flow_ladder)
+            if dashboard.cash_flow_ladder is not None
+            else None
+        ),
     )
 
 
