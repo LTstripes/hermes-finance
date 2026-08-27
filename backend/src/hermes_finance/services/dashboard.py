@@ -26,9 +26,11 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.asset_allocation import AssetClassSlice, asset_allocation_for_month
-from hermes_finance.services.liquid_capital import liquid_capital_for_month
+from hermes_finance.services.liquid_capital import (
+    liquid_capital_for_months,
+)
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
-from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.passive_income import passive_income_for_months
 from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.properties import mortgage_coverage, total_mortgage_balance
 from hermes_finance.services.reporting_months import get_reporting_month
@@ -122,10 +124,13 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
             .order_by(ReportingMonth.year, ReportingMonth.month)
         )
     )
+    month_ids = [month.id for month in months]
+    liquid_by_month = liquid_capital_for_months(session, month_ids)
+    passive_by_month = passive_income_for_months(session, month_ids)
     points: list[HistoricalPoint] = []
     for month in months:
-        liquid = liquid_capital_for_month(session, month.id)
-        passive = passive_income_for_month(session, month.id)
+        liquid = liquid_by_month[month.id]
+        passive = passive_by_month[month.id]
         points.append(
             HistoricalPoint(
                 year=month.year,

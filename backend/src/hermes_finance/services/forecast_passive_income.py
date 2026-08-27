@@ -44,7 +44,7 @@ from hermes_finance.persistence import (
     DepositSnapshot,
     ReportingMonth,
 )
-from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.passive_income import passive_income_for_months
 from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.reporting_months import get_reporting_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
@@ -119,9 +119,12 @@ def forecast_passive_income(
         .order_by(ReportingMonth.year, ReportingMonth.month)
     ).all()
 
+    result_by_month = passive_income_for_months(
+        session, [month_id for month_id, _, _ in closed_months]
+    )
     dividend_months: list[MonthlyPassiveIncome] = []
     for month_id, year, month in closed_months:
-        result = passive_income_for_month(session, month_id)
+        result = result_by_month[month_id]
         dividend_months.append(
             MonthlyPassiveIncome(
                 year=year,
