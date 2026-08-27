@@ -116,6 +116,10 @@ public static class ProfileValidator
         command.ArgumentList.Add("Bypass");
         command.ArgumentList.Add("-File");
         command.ArgumentList.Add(startScript);
+        // Pydantic gives process environment precedence over the checkout's .env.
+        // This binds Alembic's effective database to the same resolved path that
+        // completed all tuple, file-identity and schema checks above.
+        command.Environment["HERMES_FINANCE_DATABASE_PATH"] = profile.Database;
         return command;
     }
 
@@ -138,7 +142,7 @@ public static class ProfileValidator
         File.Move(temporary, sidecarPath);
     }
 
-    private static void AssertProfileTuple(
+    internal static void AssertProfileTuple(
         LauncherProfile profile,
         string canonicalCheckout,
         string canonicalDataDir,
@@ -200,7 +204,7 @@ public static class ProfileValidator
         return head;
     }
 
-    private static string AssertSidecar(LauncherProfile profile, string dataDir, string database)
+    internal static string AssertSidecar(LauncherProfile profile, string dataDir, string database)
     {
         var expectedKind = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
             ? "production"
