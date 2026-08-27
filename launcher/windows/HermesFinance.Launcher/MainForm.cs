@@ -96,6 +96,24 @@ public sealed class MainForm : Form
         _launcherProcess.BeginErrorReadLine();
     }
 
+    internal static bool TryCompleteReady(
+        ValidatedProfile profile,
+        Action stopStack,
+        Action<string> reportError)
+    {
+        try
+        {
+            ProfileValidator.WriteMissingSidecar(profile);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            reportError($"BLOCKING ERROR: data identity sidecar could not be written; the launched stack will be stopped. {exception.Message}");
+            stopStack();
+            return false;
+        }
+    }
+
     private void HandleProcessLine(ValidatedProfile profile, string? line)
     {
         if (string.IsNullOrWhiteSpace(line))
@@ -104,24 +122,48 @@ public sealed class MainForm : Form
         }
         BeginInvoke(() =>
         {
-            AppendStatus(line);
             if (line.Contains(ReadyMarker, StringComparison.Ordinal))
             {
-                try
+                if (!TryCompleteReady(
+                        profile,
+                        StopLaunchedStack,
+                        message => AppendStatus(message)))
                 {
-                    ProfileValidator.WriteMissingSidecar(profile);
+                    _start.Enabled = true;
+                    return;
                 }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    AppendStatus($"Health passed, but the data identity sidecar could not be written: {exception.Message}");
-                }
+                AppendStatus(line);
                 AppendStatus("Health checks passed. Hermes Finance is ready on loopback.");
                 if (profile.Profile.OpenBrowser)
                 {
                     Process.Start(new ProcessStartInfo("http://127.0.0.1:8000") { UseShellExecute = true });
                 }
+
+                return;
             }
+
+            AppendStatus(line);
         });
+    }
+
+    private void StopLaunchedStack()
+    {
+        var process = _launcherProcess;
+        if (process is null || process.HasExited)
+        {
+            return;
+        }
+
+        try
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(5000);
+            AppendStatus("Launched stack stopped because its data identity could not be established.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            AppendStatus($"BLOCKING ERROR: could not stop the launched stack automatically. {exception.Message}");
+        }
     }
 
     private void AppendStatus(string message) => _status.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");

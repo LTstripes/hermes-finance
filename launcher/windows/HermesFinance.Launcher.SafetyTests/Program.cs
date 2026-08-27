@@ -11,6 +11,7 @@ var tests = new (string Name, Action Run)[]
     ("rejects preview aliases to the production database before startup", RejectsUnsafeTupleAliases),
     ("rejects preview hardlinks to the production database", RejectsProductionHardlink),
     ("rejects an existing preview database with the wrong sidecar", RejectsWrongPreviewSidecar),
+    ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
 };
@@ -121,6 +122,34 @@ static void RejectsWrongPreviewSidecar()
         AssertThrowsMessage(
             () => ProfileValidator.AssertSidecar(PreviewProfile(root, database), root, database),
             "Data sidecar does not match this profile type.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void FailsClosedOnReadySidecarFailure()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-ready-{Guid.NewGuid():N}");
+    try
+    {
+        Directory.CreateDirectory(root);
+        var sidecarPath = Path.Combine(root, ".hermes-data-identity.json");
+        Directory.CreateDirectory(sidecarPath);
+        var profile = new ValidatedProfile(
+            new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = root, ExpectedRef = "HEAD", DataDir = root, Database = Path.Combine(root, "preview.db"), OpenBrowser = true },
+            root,
+            root,
+            Path.Combine(root, "preview.db"),
+            "abcdef",
+            "preview");
+        var stopCalls = 0;
+        var errors = new List<string>();
+        var ready = MainForm.TryCompleteReady(profile, () => stopCalls++, errors.Add);
+        Assert(!ready, "A failed sidecar stamp must not declare the stack ready.");
+        Assert(stopCalls == 1, "A failed sidecar stamp must stop the launched stack exactly once.");
+        Assert(errors.Count == 1 && errors[0].StartsWith("BLOCKING ERROR:", StringComparison.Ordinal), "A failed sidecar stamp must surface a blocking error.");
     }
     finally
     {
