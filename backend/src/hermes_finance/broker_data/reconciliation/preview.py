@@ -10,7 +10,8 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 
-from hermes_finance.broker_data.dto import SnapshotStatus
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState
+from hermes_finance.broker_data.dto import ALFA_PRO_PROVIDER, SnapshotStatus
 from hermes_finance.broker_data.reconciliation.cash import reconcile_cash
 from hermes_finance.broker_data.reconciliation.dto import (
     HermesStateView,
@@ -60,8 +61,9 @@ def build_reconciliation_preview(
     if not isinstance(snapshot, object) or not hasattr(snapshot, "status"):
         raise TypeError("snapshot must be a BrokerSnapshot")
 
-    # Fail-closed gate: only COMPLETE + eligible_for_apply snapshots are
-    # apply-candidate. Anything else yields a diagnostic non-applicable preview.
+    # Fail-closed gate: only COMPLETE + eligible_for_apply snapshots with
+    # confirmed Alfa compatibility are apply-candidates. Anything else yields
+    # a diagnostic non-applicable preview.
     status = snapshot.status
     provenance = getattr(snapshot, "provenance", None)
     eligible = bool(getattr(provenance, "eligible_for_apply", False))
@@ -73,6 +75,19 @@ def build_reconciliation_preview(
                 "snapshot is not an apply-candidate: "
                 f"status={status.value if isinstance(status, SnapshotStatus) else status}, "
                 f"eligible_for_apply={eligible}"
+            ),
+        )
+    compatibility_state = getattr(provenance, "compatibility_state", AlfaCompatibilityState.UNKNOWN)
+    if (
+        snapshot.provider == ALFA_PRO_PROVIDER
+        and compatibility_state is not AlfaCompatibilityState.COMPATIBLE
+    ):
+        return _non_applicable(
+            snapshot=snapshot,
+            hermes=hermes,
+            reason=(
+                "snapshot compatibility is not confirmed: "
+                f"state={compatibility_state.value if isinstance(compatibility_state, AlfaCompatibilityState) else compatibility_state}"
             ),
         )
 

@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState
 from hermes_finance.broker_data.dto import (
     ALFA_PRO_PROVIDER,
     BrokerAccount,
@@ -97,6 +98,8 @@ def _provenance(eligible: bool = True) -> SnapshotProvenance:
         channels_invoked=("#Data.Query",),
         entity_query_status=("ClientAccountEntity:ok",),
         eligible_for_apply=eligible,
+        compatibility_state=AlfaCompatibilityState.COMPATIBLE,
+        compatibility_fingerprint="a" * 64,
     )
 
 

@@ -12,7 +12,10 @@
       },
       "SignService": {
         "ReadyToSign": true
-      }
+      },
+      "AlfaProVersion": "synthetic-compat-1",
+      "ApiVersion": "2.1",
+      "ProtocolVersion": "2.1"
     }
   },
   "ClientAccountEntity": [

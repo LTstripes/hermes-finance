@@ -14,6 +14,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from hermes_finance.alfa_pro_diagnostics import (
+    REQUIRED_SNAPSHOT_ENTITY_FIELDS,
+    extract_version_hints,
+)
 from hermes_finance.broker_data.alfa_pro.channels import (
     ALLOWED_ENTITY_TYPES,
     ENTITY_PRIMARY_KEY,
@@ -87,6 +91,15 @@ class CollectedState:
     asset_info_keys: list[int] = field(default_factory=list)
     asset_info_request_ids: list[str] = field(default_factory=list)
     request_status: dict[str, str] = field(default_factory=dict)
+    observed_alfa_pro_version: str | None = None
+    observed_api_version: str | None = None
+    observed_protocol_version: str | None = None
+    observed_message_shapes: set[str] = field(default_factory=set)
+    entity_payload_fields: dict[str, set[str]] = field(default_factory=dict)
+    entity_fields: dict[str, set[str]] = field(default_factory=dict)
+    protocol_anomalies: set[str] = field(default_factory=set)
+    layout_anomalies: set[str] = field(default_factory=set)
+    transport_error: bool = False
 
 
 class AlfaProSnapshotReader:
@@ -166,6 +179,7 @@ class AlfaProSnapshotReader:
                     continue
                 break
             except OSError:
+                self.state.transport_error = True
                 break
             self.state.messages_seen += 1
             if self.state.messages_seen >= self._max_messages:
@@ -174,6 +188,7 @@ class AlfaProSnapshotReader:
                 self._ingest(raw)
             except (ValueError, TypeError, json.JSONDecodeError):
                 self.state.malformed = True
+                self.state.protocol_anomalies.add("invalid_router_payload")
                 if len(raw) > MAX_PAYLOAD_CHARS:
                     self.state.truncated = True
                 continue
@@ -218,6 +233,7 @@ class AlfaProSnapshotReader:
         message = decode_router_message(raw)
         command = str(message.get("Command") or "")
         channel = str(message.get("Channel") or "")
+        _observe_message_shape(self.state, message, command=command, channel=channel)
         if channel and is_order_channel(channel):
             return
         request_id = str(message.get("Id") or "")
@@ -232,6 +248,7 @@ class AlfaProSnapshotReader:
             return
         payload = decode_payload(message.get("Payload"))
         if channel == "#ConnectionState.Bus":
+            _record_version_hints(self.state, extract_version_hints(payload))
             previous = self.state.auth_status
             _ingest_connection_state(self.state, payload)
             if previous == 2 and self.state.auth_status != 2:
@@ -269,6 +286,7 @@ class AlfaProSnapshotReader:
             if isinstance(declared, str) and declared in ALLOWED_ENTITY_TYPES:
                 entity_type = declared
         if entity_type is None:
+            self.state.protocol_anomalies.add("unknown_entity_channel")
             return
         _ingest_entity_payload(
             self.state,
@@ -285,6 +303,7 @@ class AlfaProSnapshotReader:
 
     def _mark_malformed(self, name: str, *, request_id: str | None = None) -> None:
         self.state.malformed = True
+        self.state.layout_anomalies.add("malformed_entity_payload")
         self.state.query_status[name] = "malformed"
         if request_id and request_id in self.state.request_status:
             self.state.request_status[request_id] = "error"
@@ -387,21 +406,27 @@ def _entity_type_from_channel(channel: str) -> str | None:
 
 def _ingest_connection_state(state: CollectedState, payload: object) -> None:
     if not isinstance(payload, dict):
+        state.layout_anomalies.add("connection_state_not_object")
         return
     states = payload.get("States")
     root = states if isinstance(states, dict) else payload
     if not isinstance(root, dict):
+        state.layout_anomalies.add("connection_state_root_not_object")
         return
     user = root.get("User")
     if isinstance(user, dict):
         status = as_int(user.get("AuthStatus"))
         if status is not None:
             state.auth_status = status
+    elif "User" in root:
+        state.layout_anomalies.add("connection_state_user_not_object")
     sign = root.get("SignService")
     if isinstance(sign, dict):
         ready = as_bool(sign.get("ReadyToSign"))
         if ready is not None:
             state.ready_to_sign = ready
+    elif "SignService" in root:
+        state.layout_anomalies.add("connection_state_sign_service_not_object")
 
 
 def _ingest_entity_payload(
@@ -412,7 +437,11 @@ def _ingest_entity_payload(
     max_rows: int,
 ) -> None:
     if entity_type not in ALLOWED_ENTITY_TYPES or not isinstance(payload, dict):
+        state.layout_anomalies.add("entity_payload_not_object")
         return
+    state.entity_payload_fields.setdefault(entity_type, set()).update(
+        str(key) for key in payload if isinstance(key, str)
+    )
     rows: list[object] = []
     data = payload.get("Data")
     updated = payload.get("Updated")
@@ -426,24 +455,29 @@ def _ingest_entity_payload(
         value = payload.get(field_name)
         if value is not None and not isinstance(value, list):
             state.malformed = True
+            state.layout_anomalies.add("entity_row_list_not_array")
     deleted = payload.get("Deleted")
     if isinstance(deleted, list):
         for item in deleted:
             if not isinstance(item, dict):
                 state.malformed = True
+                state.layout_anomalies.add("deleted_row_not_object")
                 continue
             key = _row_key(item, key_name)
             if key is None:
                 state.malformed = True
+                state.layout_anomalies.add("missing_entity_primary_key")
                 continue
             store.pop(key, None)
     for item in rows:
         if not isinstance(item, dict):
             state.malformed = True
+            state.layout_anomalies.add("entity_row_not_object")
             continue
         key = _row_key(item, key_name)
         if key is None:
             state.malformed = True
+            state.layout_anomalies.add("missing_entity_primary_key")
             continue
         if key not in store and len(store) >= max_rows:
             state.truncated = True
@@ -451,7 +485,58 @@ def _ingest_entity_payload(
             continue
         if entity_type == "ClientPositionEntity" and as_int(item.get("IdObject")) is None:
             state.malformed = True
+            state.layout_anomalies.add("missing_position_instrument_identity")
+        required_fields = REQUIRED_SNAPSHOT_ENTITY_FIELDS.get(entity_type, ())
+        if any(field_name not in item for field_name in required_fields):
+            state.layout_anomalies.add("missing_required_entity_field")
+        state.entity_fields.setdefault(entity_type, set()).update(
+            str(key) for key in item if isinstance(key, str)
+        )
         store[key] = item
+
+
+def _observe_message_shape(
+    state: CollectedState,
+    message: dict[str, object],
+    *,
+    command: str,
+    channel: str,
+) -> None:
+    if not command and not channel:
+        if _standalone_error_code(message) is not None:
+            state.observed_message_shapes.add("routing_error")
+        else:
+            state.protocol_anomalies.add("router_envelope_unknown")
+        return
+    if channel == "#ConnectionState.Bus" and command in {"broadcast", "response"}:
+        state.observed_message_shapes.add("connection_state_bus")
+        return
+    if channel in {"#Data.Query", ""} and command == "response":
+        state.observed_message_shapes.add("entity_response")
+        return
+    if channel.startswith("#Data.Bus.") and command in {"broadcast", "response"}:
+        state.observed_message_shapes.add("entity_broadcast")
+        return
+    if is_order_channel(channel):
+        state.protocol_anomalies.add("unexpected_order_message")
+    else:
+        state.protocol_anomalies.add("unexpected_router_message")
+
+
+def _record_version_hints(state: CollectedState, hints: dict[str, str | None]) -> None:
+    for attribute, hint_name in (
+        ("observed_alfa_pro_version", "alfa_pro_version"),
+        ("observed_api_version", "api_version"),
+        ("observed_protocol_version", "protocol_version"),
+    ):
+        value = hints.get(hint_name)
+        if value is None:
+            continue
+        previous = getattr(state, attribute)
+        if previous is None:
+            setattr(state, attribute, value)
+        elif previous != value:
+            state.protocol_anomalies.add("inconsistent_version_hint")
 
 
 def _row_key(row: dict[str, object], key_name: str) -> str | None:
@@ -466,7 +551,9 @@ def _correlated_payload_structurally_valid(pending: str, payload: object) -> boo
         return False
     if "Type" in payload and payload.get("Type") != pending:
         return False
-    return True
+    return any(
+        isinstance(payload.get(field_name), list) for field_name in ("Data", "Updated", "Deleted")
+    )
 
 
 def _payload_error(payload: object) -> tuple[str, int | None]:

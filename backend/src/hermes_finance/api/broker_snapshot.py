@@ -10,6 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.alfa_pro_diagnostics import (
+    DEFAULT_API_DOC_VERSION,
+    AlfaCompatibilityState,
+    AlfaDiagnosticFailureClass,
+    AlfaDiagnosticReport,
+    diagnostic_for_failure,
+)
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.broker_data.alfa_pro import AlfaProBrokerSnapshotProvider
 from hermes_finance.broker_data.dto import SnapshotStatus
@@ -148,6 +155,33 @@ class BrokerCashRowOut(BaseModel):
     reason: str | None
 
 
+class BrokerSnapshotDiagnosticsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    provider: str
+    snapshot_status: str
+    eligible_for_apply: bool
+    compatibility_state: str
+    compatibility_fingerprint: str | None
+    api_doc_version: str
+    observed_alfa_pro_version: str | None
+    observed_api_version: str | None
+    observed_protocol_version: str | None
+    protocol_family: str
+    layout_family: str
+    capabilities: list[str]
+    failure_class: str
+    failure_codes: list[str]
+    entity_status: list[str]
+    entity_counts: list[str]
+    observed_fields: list[str]
+    safe_artifact: bool
+    raw_payload_saved: bool
+    private_values_included: bool
+    credentials_included: bool
+
+
 class BrokerSnapshotPreviewResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -167,6 +201,8 @@ class BrokerSnapshotPreviewResponse(BaseModel):
     positions: list[BrokerPositionRowOut]
     cash: list[BrokerCashRowOut]
     warnings: list[str]
+    diagnostics: BrokerSnapshotDiagnosticsOut
+    diagnostic_report: str
     error_code: str | None = None
     message: str | None = None
 
@@ -241,7 +277,11 @@ def _decimal(value: Decimal | None) -> str | None:
 
 
 def _preview_response(
-    preview, *, fingerprint_mapping: OwnerMappingInput, session: Session
+    preview,
+    *,
+    fingerprint_mapping: OwnerMappingInput,
+    session: Session,
+    snapshot: object,
 ) -> BrokerSnapshotPreviewResponse:
     hermes = load_hermes_state_for_month(session, preview.month_id or 0)
     account_names = {account.account_id: account.name for account in hermes.accounts}
@@ -303,6 +343,24 @@ def _preview_response(
                 fingerprint=fingerprint,
             )
         )
+    diagnostics = getattr(snapshot, "diagnostics", AlfaDiagnosticReport())
+    if not isinstance(diagnostics, AlfaDiagnosticReport):
+        diagnostics = AlfaDiagnosticReport()
+    mapping_failure_codes = _mapping_failure_codes(preview)
+    if (
+        mapping_failure_codes
+        and diagnostics.compatibility_state is AlfaCompatibilityState.COMPATIBLE
+        and diagnostics.failure_class
+        in {AlfaDiagnosticFailureClass.NONE, AlfaDiagnosticFailureClass.MAPPING}
+    ):
+        diagnostics = diagnostics.with_failure(
+            AlfaDiagnosticFailureClass.MAPPING, *mapping_failure_codes
+        )
+    diagnostics = diagnostics.with_snapshot(
+        status=preview.snapshot_status.value,
+        eligible_for_apply=preview.eligible_for_apply,
+    )
+    diagnostics_out = BrokerSnapshotDiagnosticsOut(**diagnostics.to_dict())
     return BrokerSnapshotPreviewResponse(
         reporting_month_id=preview.month_id or 0,
         provider=preview.provider,
@@ -349,7 +407,24 @@ def _preview_response(
             for row in preview.cash
         ],
         warnings=list(preview.warnings),
+        diagnostics=diagnostics_out,
+        diagnostic_report=diagnostics.to_text(),
     )
+
+
+def _mapping_failure_codes(preview) -> tuple[str, ...]:
+    codes: list[str] = []
+    if any(row.status.value != "matched" for row in preview.accounts):
+        codes.append("account_mapping_unresolved")
+    if any(row.status.value != "matched" for row in preview.instruments):
+        codes.append("instrument_mapping_unresolved")
+    if any(row.status.value == "conflict" for row in preview.positions):
+        codes.append("position_mapping_conflict")
+    if preview.status.value == "conflicts":
+        codes.append("mapping_conflict")
+    elif preview.status.value == "non_applicable" and preview.snapshot_status.value == "complete":
+        codes.append("mapping_unresolved")
+    return tuple(dict.fromkeys(codes))
 
 
 def _amount(value: str | None) -> RubleAmount | None:
@@ -404,6 +479,12 @@ def broker_snapshot_preview_endpoint(
     try:
         snapshot = _provider(request).fetch_snapshot()
     except Exception:
+        diagnostics = diagnostic_for_failure(
+            api_doc_version=DEFAULT_API_DOC_VERSION,
+            failure_class=AlfaDiagnosticFailureClass.CONNECTION,
+            failure_code="provider_fetch_failed",
+            snapshot_status=SnapshotStatus.MALFORMED_RESPONSE.value,
+        )
         return BrokerSnapshotPreviewResponse(
             reporting_month_id=month_id,
             provider="alfa_pro",
@@ -421,11 +502,18 @@ def broker_snapshot_preview_endpoint(
             positions=[],
             cash=[],
             warnings=["broker snapshot refresh failed"],
+            diagnostics=BrokerSnapshotDiagnosticsOut(**diagnostics.to_dict()),
+            diagnostic_report=diagnostics.to_text(),
             error_code="provider_error",
             message="Broker snapshot refresh failed",
         )
     preview = build_reconciliation_preview(snapshot=snapshot, hermes=hermes, mapping=mapping)
-    return _preview_response(preview, fingerprint_mapping=mapping, session=session)
+    return _preview_response(
+        preview,
+        fingerprint_mapping=mapping,
+        session=session,
+        snapshot=snapshot,
+    )
 
 
 @router.post("/api/months/{month_id}/broker-snapshot-apply", response_model=BrokerApplyResponse)
