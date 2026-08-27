@@ -271,3 +271,14 @@
   font-family: var(--mono);
   font-size: var(--text-xs);
 }
+
+.close-cockpit-notices {
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.close-cockpit-notices .closeout-warnings {
+  margin-bottom: 0;
+}

@@ -53,6 +53,7 @@ function itemsFor(
 
 export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusChanged }: Props) {
   const [previewKpis, setPreviewKpis] = useState<DashboardKpis | null>(null);
+  const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
   const [readiness, setReadiness] = useState<CloseReadiness | null>(null);
   const [mainGoal, setMainGoal] = useState<GoalSummary | null>(null);
   const [pendingAction, setPendingAction] = useState<"close" | "reopen" | null>(null);
@@ -73,6 +74,7 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
         ]);
         if (signal?.aborted) return;
         setPreviewKpis(dashboard?.kpis ?? null);
+        setPreviewWarnings(dashboard?.warnings ?? []);
         setMainGoal(goals.find((goal) => goal.is_main) ?? null);
         setReadiness(closeReadiness);
       } catch (err) {
@@ -207,6 +209,30 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
             );
           })}
         </div>
+
+        <section
+          aria-label="Расчётные уведомления"
+          className="close-cockpit-notices"
+          data-testid="dashboard-calculation-notices"
+        >
+          <div className="close-cockpit__group-heading">
+            <h3>Расчётные уведомления</h3>
+            <Badge tone="draft">{previewWarnings.length}</Badge>
+          </div>
+          <p className="muted close-cockpit__hint">
+            Это расчётные уведомления дашборда. Они не входят в чеклист закрытия и не блокируют
+            закрытие месяца.
+          </p>
+          {previewWarnings.length === 0 ? (
+            <p className="muted">Расчётных уведомлений нет.</p>
+          ) : (
+            <ul className="closeout-warnings">
+              {previewWarnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {status === "closed" ? (
           <p className="muted">

@@ -226,4 +226,33 @@ describe("MonthReviewSection", () => {
     expect(reopenMonthMock).toHaveBeenCalledWith(7);
     expect(onStatusChanged).toHaveBeenCalledOnce();
   });
+
+  it("shows existing dashboard warnings without blocking close", async () => {
+    render(
+      <MemoryRouter>
+        <MonthReviewSection
+          dirty={false}
+          monthId={7}
+          onStatusChanged={vi.fn()}
+          readOnly={false}
+          status="draft"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Расчётные уведомления" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Среднее доступно по части истории")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-calculation-notices")).toHaveTextContent(
+      "Среднее доступно по части истории",
+    );
+    expect(
+      within(screen.getByTestId("close-cockpit")).queryByText("Среднее доступно по части истории"),
+    ).toBeNull();
+    expect(screen.getByRole("heading", { name: "Блокирует закрытие" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Стоит проверить" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Контекст" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
+  });
 });
