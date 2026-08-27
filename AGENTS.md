@@ -65,6 +65,17 @@ For a GitHub-native integrator without a local checkout, the equivalent requirem
 - Reviewers do not silently modify the candidate they are independently reviewing.
 - Parallel work is allowed only when scopes are genuinely independent.
 
+## Parallel task isolation — physical workspace invariant
+
+- **Never run two active write or verification tasks in the same physical working tree, even when they use different Git branches.**
+- One active write/verification task owns one physical working tree for the duration of that task's local edits, tests and final verification.
+- Parallel tasks must use separately assigned Git worktrees or independent clones. Branch isolation alone is insufficient when two sessions share the same checkout directory.
+- A second session must not switch, reset, pull or otherwise change the branch/HEAD of a working tree that another active task is using for implementation or verification.
+- Read-only review may share GitHub repository state, but any local review whose result depends on checkout contents or local test execution requires its own assigned workspace when another task is active in the original tree.
+- Creating a sibling worktree/clone under the canonical workspace root still requires explicit owner/integrator assignment under the workspace-root rules below.
+- Prefer a dedicated independent clone rather than a worktree when a high-risk migration/runtime/live-provider task benefits from stronger filesystem isolation.
+- Production runtime and owner preview/UAT/live-probe workspaces remain forbidden development-agent workspaces regardless of this parallelism rule.
+
 ## Runtime isolation — hard invariant
 
 Production runtime data must never enter or be exposed to a development-agent workspace.
