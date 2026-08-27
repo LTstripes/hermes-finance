@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.services.month_clone import clone_reporting_month
 from hermes_finance.services.reporting_months import (
+    close_hard_guards,
     close_reporting_month,
     create_reporting_month,
     delete_reporting_month,
@@ -153,10 +154,11 @@ def close_month(
     session: Session = Depends(session_for_request),
 ) -> ReportingMonthResponse:
     month = get_reporting_month(session, month_id)
-    if month.snapshot_date is None:
+    blockers = close_hard_guards(month)
+    if blockers:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="snapshot_date is required before closing a reporting month",
+            detail=blockers[0][1],
         )
     closed = close_reporting_month(session, month_id)
     return ReportingMonthResponse.model_validate(closed)

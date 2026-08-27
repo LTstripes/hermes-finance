@@ -51,6 +51,25 @@ export type ReportingMonthUpdate = {
   source?: ReportingMonthSource;
 };
 
+export type CloseReadinessSeverity = "hard_blocker" | "warning" | "info";
+
+export type CloseReadinessItem = {
+  severity: CloseReadinessSeverity;
+  code: string;
+  message: string;
+  context: Record<string, unknown>;
+};
+
+export type CloseReadiness = {
+  year: number;
+  month: number;
+  status: ReportingMonthStatus;
+  snapshot_date: string | null;
+  source: ReportingMonthSource;
+  can_close: boolean;
+  items: CloseReadinessItem[];
+};
+
 export type BackupSource = {
   name: string;
   size_bytes: number;

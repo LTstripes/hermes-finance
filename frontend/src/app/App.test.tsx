@@ -163,6 +163,16 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
         warnings: [],
         calculation_version: "test",
       }),
+    [`GET /api/months/${month.id}/close-readiness`]: () =>
+      jsonResponse({
+        year: month.year,
+        month: month.month,
+        status: month.status,
+        snapshot_date: month.snapshot_date,
+        source: month.source,
+        can_close: true,
+        items: [],
+      }),
   };
 }
 

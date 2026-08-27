@@ -10,7 +10,7 @@ import { listGoalSummary } from "../api/goals";
 import { getCashTotal, listCashBalances } from "../api/cash";
 import { listDeposits } from "../api/deposits";
 import { listIncomes, replaceSalaryIncome } from "../api/incomes";
-import { closeMonth, getMonth, reopenMonth, updateMonth } from "../api/months";
+import { closeMonth, getCloseReadiness, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
 import type { ReportingMonth } from "../api/types";
 import { MonthDetailPage } from "./MonthDetailPage";
@@ -35,6 +35,7 @@ vi.mock("../api/months", async (importOriginal) => {
   return {
     ...actual,
     closeMonth: vi.fn(),
+    getCloseReadiness: vi.fn(),
     getMonth: vi.fn(),
     reopenMonth: vi.fn(),
     updateMonth: vi.fn(),
@@ -110,6 +111,7 @@ const getDashboardMock = vi.mocked(getDashboard);
 const listGoalSummaryMock = vi.mocked(listGoalSummary);
 const updateMonthMock = vi.mocked(updateMonth);
 const closeMonthMock = vi.mocked(closeMonth);
+const getCloseReadinessMock = vi.mocked(getCloseReadiness);
 const reopenMonthMock = vi.mocked(reopenMonth);
 
 function MonthRouteHarness() {
@@ -184,6 +186,25 @@ function mockLoadedMonth(month: ReportingMonth = draftMonth) {
     warnings: ["Проверь данные"],
   });
   listGoalSummaryMock.mockResolvedValue([]);
+  getCloseReadinessMock.mockResolvedValue({
+    year: month.year,
+    month: month.month,
+    status: month.status,
+    snapshot_date: month.snapshot_date,
+    source: month.source,
+    can_close: true,
+    items:
+      month.status === "closed"
+        ? [
+            {
+              severity: "info",
+              code: "month_already_closed",
+              message: "Месяц уже закрыт. Повторное закрытие не предлагается.",
+              context: { status: "closed" },
+            },
+          ]
+        : [],
+  });
 }
 
 describe("MonthDetailPage R03-06 workspace", () => {
