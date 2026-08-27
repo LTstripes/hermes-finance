@@ -7,6 +7,7 @@ from starlette.responses import FileResponse
 
 from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
+from hermes_finance.api.ai_analysis_bundle import router as ai_analysis_bundle_router
 from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
@@ -105,6 +106,7 @@ def create_app(
     application.include_router(properties_router)
     application.include_router(comments_router)
     application.include_router(exports_router)
+    application.include_router(ai_analysis_bundle_router)
     application.include_router(goals_router)
 
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])
