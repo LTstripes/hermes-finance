@@ -109,7 +109,7 @@ class AiAnalysisBundleUnavailableError(NoReportingHistoryError):
     """Backward-compatible alias for empty history."""
 
 
-class AiAnalysisBundleValidationError(ValueError):
+class AiAnalysisBundleValidationError(RuntimeError):
     """Generated bundle failed the declared schema before download."""
 
 
