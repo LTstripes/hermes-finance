@@ -102,7 +102,7 @@ function summary(): FreshnessProvenanceSummary {
     evaluated_on: "2026-08-27",
     quote_valuation_target_date: "2026-08-27",
     generated_at: "2026-08-27T09:30:00+00:00",
-    providers: ["alfa_pro", "t_invest"],
+    providers: ["t_invest"],
     reasons: [
       {
         code: "quote_stale",
@@ -146,7 +146,7 @@ function summary(): FreshnessProvenanceSummary {
         family_id: "alfa_pro_positions",
         title: "Позиции Alfa PRO",
         status: "unknown",
-        providers: ["alfa_pro"],
+        providers: [],
         coverage: {
           row_count: 0,
           current_count: 0,

@@ -60,6 +60,9 @@ or broker-snapshot provenance after quantity apply (ADR 0013 persistence gate).
 
 - Family status is always `unknown`.
 - Reason `alfa_pro_observation_not_persisted`.
+- `providers` is empty unless a persisted month-scoped audit marker already proves
+  Alfa PRO participation. Capability/configuration alone must not list `alfa_pro`
+  or contribute it to `multiple_providers`.
 - Do not substitute `snapshot_date`, `updated_at`, or apply time as Alfa PRO freshness.
 
 ### `alfa_statement_payouts`

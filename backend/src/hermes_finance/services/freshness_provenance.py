@@ -567,11 +567,18 @@ def _build_t_invest_payouts(session: Session, *, month_id: int) -> FreshnessFami
 
 
 def _build_alfa_pro_positions() -> FreshnessFamily:
+    """Alfa PRO family without claiming a provider from capability alone.
+
+    Quantity apply does not persist a month-scoped Alfa observation or source
+    marker. Until such evidence exists, ``providers`` stays empty so this family
+    cannot create a false ``MULTIPLE_PROVIDERS`` signal.
+    """
+
     return FreshnessFamily(
         family_id=FreshnessFamilyId.ALFA_PRO_POSITIONS,
         title="Позиции Alfa PRO",
         status=FreshnessStatus.UNKNOWN,
-        providers=("alfa_pro",),
+        providers=(),
         coverage=FreshnessCoverage(row_count=0, unknown_count=1),
         reasons=(
             _reason(FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED, FreshnessSeverity.INFO),

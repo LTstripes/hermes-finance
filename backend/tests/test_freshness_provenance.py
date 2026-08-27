@@ -160,6 +160,8 @@ def test_empty_month_has_no_score_and_manual_is_not_stale(tmp_path: Path) -> Non
     assert quotes.coverage.stale_count == 0
     alfa = _family(summary, FreshnessFamilyId.ALFA_PRO_POSITIONS)
     assert alfa.status is FreshnessStatus.UNKNOWN
+    assert alfa.providers == ()
+    assert "alfa_pro" not in summary.providers
     assert FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED in {
         reason.code for reason in alfa.reasons
     }
@@ -325,6 +327,29 @@ def test_manual_override_keeps_history_and_stops_quote_freshness(tmp_path: Path)
     assert quotes.status is not FreshnessStatus.STALE
 
 
+def test_t_invest_only_month_does_not_claim_alfa_pro_provider(tmp_path: Path) -> None:
+    session, _database = session_for(tmp_path)
+    month, account, _deposit_account, stock, _fund = _seed_month(session)
+    snapshot = _t_invest_snapshot(
+        session,
+        month_id=month.id,
+        account_id=account.id,
+        instrument_id=stock.id,
+        price_date=date(2026, 8, 25),
+    )
+    _add_quote_provenance(session, snapshot, price_date=date(2026, 8, 25))
+    summary = build_freshness_provenance_summary(session, month.id, today=TODAY)
+    alfa = _family(summary, FreshnessFamilyId.ALFA_PRO_POSITIONS)
+    assert "alfa_pro" not in summary.providers
+    assert alfa.providers == ()
+    assert FreshnessReasonCode.MULTIPLE_PROVIDERS not in _codes(summary)
+    assert set(summary.providers) == {"t_invest"}
+    assert alfa.status is FreshnessStatus.UNKNOWN
+    assert FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED in {
+        reason.code for reason in alfa.reasons
+    }
+
+
 def test_payouts_and_statements_are_not_stale_by_event_age(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month, account, _deposit_account, stock, _fund = _seed_month(session)
@@ -405,7 +430,8 @@ def test_payouts_and_statements_are_not_stale_by_event_age(tmp_path: Path) -> No
     assert FreshnessReasonCode.PAYOUT_NOT_FRESHNESS_CLASSIFIED in _codes(summary)
     assert FreshnessReasonCode.STATEMENT_NOT_FRESHNESS_CLASSIFIED in _codes(summary)
     assert FreshnessReasonCode.MULTIPLE_PROVIDERS in _codes(summary)
-    assert set(summary.providers) == {"alfa_depository_income_report", "alfa_pro", "t_invest"}
+    assert set(summary.providers) == {"alfa_depository_income_report", "t_invest"}
+    assert "alfa_pro" not in summary.providers
 
 
 def test_cash_without_edit_timestamp_is_unavailable_clock_not_stale(tmp_path: Path) -> None:
@@ -513,7 +539,14 @@ def test_api_returns_summary_and_404(tmp_path: Path) -> None:
     assert quote_item["source_date"] == "2026-08-10"
     assert quote_item["import_apply_time"].startswith("2026-08-21")
     assert families["alfa_pro_positions"]["status"] == "unknown"
+    assert families["alfa_pro_positions"]["providers"] == []
+    assert "alfa_pro" not in body["providers"]
+    assert "multiple_providers" not in {reason["code"] for reason in body["reasons"]}
     assert any(reason["code"] == "quote_stale" for reason in body["reasons"])
+    assert any(
+        reason["code"] == "alfa_pro_observation_not_persisted"
+        for reason in families["alfa_pro_positions"]["reasons"]
+    )
     forbidden = {"freshness_score", "freshness_pct", "overall_freshness", "freshness_percent"}
 
     def _walk(value: object) -> None:
