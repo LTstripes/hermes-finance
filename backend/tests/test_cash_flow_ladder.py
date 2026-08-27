@@ -134,8 +134,46 @@ def test_ladder_has_twelve_months_and_keeps_redemption_out_of_passive_income(
         assert july.passive_income.kopecks == deposit.expected_monthly_interest_kopecks
         assert july.total_cash_flow.kopecks == 1_000_000 + deposit.expected_monthly_interest_kopecks
         assert all(month.is_approximate for month in result.months)
-        assert result.upcoming_14_days.items[0].source_kind is CashFlowLadderSource.DEPOSIT_FORECAST
+        assert [item.source_kind for item in result.upcoming_14_days.items] == [
+            CashFlowLadderSource.MANUAL
+        ]
+        assert result.upcoming_14_days.passive_income.kopecks == 10_000
+        assert result.upcoming_14_days.total_cash_flow.kopecks == 10_000
+        assert [item.source_kind for item in result.upcoming_30_days.items] == [
+            CashFlowLadderSource.MANUAL
+        ]
+        assert result.upcoming_30_days.passive_income.kopecks == 10_000
+        assert result.upcoming_30_days.total_cash_flow.kopecks == 10_000
         assert any("приблизительная" in warning for warning in result.warnings)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_undated_deposit_estimate_is_monthly_only(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, _, _ = build_environment(session)
+        deposit = create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Synthetic deposit",
+            deposit_type="deposit",
+            balance="120000.00",
+            annual_rate="12.00",
+        )
+
+        result = build_cash_flow_ladder(session, month_id)
+
+        assert all(
+            month.deposit_interest.kopecks == deposit.expected_monthly_interest_kopecks
+            for month in result.months
+        )
+        for window in (result.upcoming_14_days, result.upcoming_30_days):
+            assert window.items == ()
+            assert window.passive_income.kopecks == 0
+            assert window.total_cash_flow.kopecks == 0
     finally:
         session.close()
         database.engine.dispose()

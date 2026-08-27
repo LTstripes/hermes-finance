@@ -4,8 +4,9 @@ The ladder is deliberately built on top of the accepted merged payout
 calendar.  That keeps manual/provider reconciliation, lifecycle filtering and
 the redemption-as-capital rule in one place.  Deposit estimates are the
 persisted selected-month snapshot values used by the existing C04 forecast;
-they are repeated monthly for the twelve-month horizon and remain visibly
-approximate.
+they are aggregated directly into each monthly row for the twelve-month
+horizon and remain visibly approximate because the snapshot has no payment
+date.
 """
 
 from __future__ import annotations
@@ -104,15 +105,6 @@ def _event_component(flow_type: str) -> str:
     return flow_type
 
 
-def _deposit_event_date(as_of_date: date, *, year: int, month: int) -> date:
-    """Place a recurring snapshot estimate on the matching monthly day."""
-    # Moving the day to the last valid day keeps February and short months
-    # deterministic without introducing a new maturity/payment contract.
-    next_year, next_month = _month_add(year, month, 1)
-    last_day = (date(next_year, next_month, 1) - timedelta(days=1)).day
-    return date(year, month, min(as_of_date.day, last_day))
-
-
 def _window(
     events: tuple[CashFlowLadderEvent, ...],
     *,
@@ -157,7 +149,6 @@ def build_cash_flow_ladder(
         raise ValueError("forecast_version must not be empty")
 
     as_of_date = month.snapshot_date
-    horizon_end = date(*_month_add(as_of_date.year, as_of_date.month, 12), 1)
     merged = merged_payout_calendar(
         session,
         reporting_month_id=reporting_month_id,
@@ -198,36 +189,9 @@ def build_cash_flow_ladder(
         .where(DepositSnapshot.reporting_month_id == reporting_month_id)
         .order_by(DepositSnapshot.id)
     ).all()
-    for snapshot, account_name in deposit_rows:
-        for offset in range(12):
-            year, month_number = _month_add(as_of_date.year, as_of_date.month, offset)
-            expected_date = _deposit_event_date(
-                as_of_date,
-                year=year,
-                month=month_number,
-            )
-            if not as_of_date <= expected_date < horizon_end:
-                continue
-            amount = RubleAmount(snapshot.expected_monthly_interest_kopecks)
-            if amount.kopecks == 0:
-                continue
-            events.append(
-                CashFlowLadderEvent(
-                    source_kind=CashFlowLadderSource.DEPOSIT_FORECAST,
-                    source_id=snapshot.id,
-                    expected_date=expected_date,
-                    flow_type=ExpectedCashFlowType.INTEREST.value,
-                    component="deposit_interest",
-                    account_id=snapshot.account_id,
-                    account_name=account_name,
-                    instrument_id=None,
-                    instrument_name=snapshot.name,
-                    expected_net_amount=amount,
-                    is_approximate=True,
-                    source="deposit_snapshot",
-                    source_as_of_date=as_of_date,
-                )
-            )
+    deposit_interest = RubleAmount(
+        sum(snapshot.expected_monthly_interest_kopecks for snapshot, _ in deposit_rows)
+    )
 
     events.sort(key=lambda event: (event.expected_date, event.source_kind.value, event.source_id))
     all_events = tuple(events)
@@ -246,11 +210,7 @@ def build_cash_flow_ladder(
             "dividend": sum(
                 item.expected_net_amount.kopecks for item in items if item.component == "dividend"
             ),
-            "deposit_interest": sum(
-                item.expected_net_amount.kopecks
-                for item in items
-                if item.component == "deposit_interest"
-            ),
+            "deposit_interest": deposit_interest.kopecks,
             "other_capital_income": sum(
                 item.expected_net_amount.kopecks
                 for item in items
@@ -275,7 +235,7 @@ def build_cash_flow_ladder(
                 redemption_principal=RubleAmount(amounts["redemption_principal"]),
                 passive_income=RubleAmount(passive),
                 total_cash_flow=RubleAmount(total),
-                is_approximate=any(item.is_approximate for item in items),
+                is_approximate=bool(deposit_rows) or any(item.is_approximate for item in items),
                 items=items,
             )
         )
