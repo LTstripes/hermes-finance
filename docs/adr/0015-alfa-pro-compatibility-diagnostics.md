@@ -30,14 +30,24 @@ entity row field names, and capability labels. It does not cover row keys or
 any field values. Version hints are read only from bounded allowlisted fields;
 an absent or invalid hint remains `unresolved`.
 
+The current accepted contract does not prove that an Alfa API version hint or a
+router/protocol version hint uses the API-documentation version namespace. The
+adapter therefore records both as observational evidence and does not compare
+either value to `api_doc_version`. An observed value that differs from `2.1`
+does not by itself mean `unsupported`; compatibility is decided by the
+confirmed structural protocol and layout guards below. A future `unsupported`
+classification requires a separately accepted supported-protocol/version
+contract or mapping.
+
 Compatibility has three explicit states:
 
 - `compatible`: the expected bus/query shapes and required current-state layout
   were observed, with no material protocol or layout anomaly.
 - `unknown`: the observation is incomplete or a protocol/layout anomaly was
   seen; the adapter cannot prove safe compatibility.
-- `unsupported`: an explicitly observed API/protocol version is outside the
-  adapter contract.
+- `unsupported`: a separately accepted API/protocol version contract explicitly
+  marks the observed version outside the adapter contract. No such version
+  mapping is assumed by this v1 implementation.
 
 Diagnostics classify the first actionable boundary as `connection`, `auth`,
 `routing`, `protocol`, `layout`, or `mapping`. Failure codes are bounded,
@@ -64,7 +74,8 @@ application logs.
 
 This task verifies the contract with synthetic/sanitized fixtures only. It
 covers a compatible fingerprint, value-independent structural fingerprinting,
-unknown router protocol, unknown entity layout, unsupported protocol version,
-connection failure sanitization, mapping classification, and the existing
-preview/apply staleness behavior. No live Alfa PRO probe or owner UAT is part
-of this implementation or its verification.
+arbitrary observed API/protocol version hints, unknown router protocol,
+malformed router input, unknown entity layout, connection failure
+sanitization, mapping classification, and the existing preview/apply staleness
+behavior. No live Alfa PRO probe or owner UAT is part of this implementation or
+its verification.

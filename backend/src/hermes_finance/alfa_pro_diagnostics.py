@@ -261,23 +261,9 @@ def evaluate_compatibility(
         else None
     )
 
-    version_mismatch = any(
-        value is not None and value != api_doc_version
-        for value in (observed_api_version, observed_protocol_version)
-    )
-    if version_mismatch:
-        return CompatibilityEvaluation(
-            compatibility_state=AlfaCompatibilityState.UNSUPPORTED,
-            compatibility_fingerprint=fingerprint,
-            observed_alfa_pro_version=observed_alfa_pro_version,
-            observed_api_version=observed_api_version,
-            observed_protocol_version=observed_protocol_version,
-            protocol_family="unresolved",
-            layout_family=layout_family,
-            capabilities=capabilities,
-            failure_class=AlfaDiagnosticFailureClass.PROTOCOL,
-            failure_codes=("unsupported_api_or_protocol_version",),
-        )
+    # Version hints are observational until an accepted contract proves their
+    # namespace and supported values. Structural protocol/layout guards remain
+    # the compatibility decision for the current adapter contract.
     if protocol_issues or not protocol_observed:
         codes = protocol_issues or ("protocol_shape_unresolved",)
         return CompatibilityEvaluation(

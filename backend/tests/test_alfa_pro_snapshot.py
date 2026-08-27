@@ -443,24 +443,36 @@ def test_unknown_layout_field_fails_closed_without_silent_mapping() -> None:
     assert "missing_required_entity_field" in snapshot.diagnostics.failure_codes
 
 
-def test_unsupported_protocol_version_fails_closed() -> None:
+def test_arbitrary_version_hints_remain_observational_when_structure_is_known() -> None:
     fixture = load_fixture()
     connection_state = fixture["connection_state"]
     assert isinstance(connection_state, dict)
     states = connection_state["States"]
     assert isinstance(states, dict)
-    states["ProtocolVersion"] = "9.9"
+    states["ApiVersion"] = "9.9"
+    states["ProtocolVersion"] = "router-2026"
     snapshot = AlfaProBrokerSnapshotProvider(
         transport=ScriptedTransport(fixture),
         read_timeout=0.04,
         total_deadline=0.4,
     ).fetch_snapshot()
 
-    assert snapshot.status is SnapshotStatus.COMPATIBILITY_ERROR
-    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.UNSUPPORTED
-    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.PROTOCOL
-    assert snapshot.diagnostics.observed_protocol_version == "9.9"
-    assert "unsupported_api_or_protocol_version" in snapshot.diagnostics.failure_codes
+    assert snapshot.status is SnapshotStatus.COMPLETE
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.COMPATIBLE
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.NONE
+    assert snapshot.diagnostics.protocol_family == "router-v1"
+    assert snapshot.diagnostics.layout_family == "snapshot-v2.1"
+    assert snapshot.diagnostics.observed_api_version == "9.9"
+    assert snapshot.diagnostics.observed_protocol_version == "router-2026"
+
+    baseline = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(load_fixture()),
+        read_timeout=0.04,
+        total_deadline=0.4,
+    ).fetch_snapshot()
+    assert baseline.diagnostics.compatibility_fingerprint != (
+        snapshot.diagnostics.compatibility_fingerprint
+    )
 
 
 def test_connection_failure_diagnostic_is_sanitized() -> None:
@@ -741,6 +753,7 @@ def test_malformed_response_status() -> None:
     ).fetch_snapshot()
     assert snapshot.status is SnapshotStatus.MALFORMED_RESPONSE
     assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.diagnostics.compatibility_state is AlfaCompatibilityState.UNKNOWN
     assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.PROTOCOL
     assert "invalid_router_payload" in snapshot.diagnostics.failure_codes
 
