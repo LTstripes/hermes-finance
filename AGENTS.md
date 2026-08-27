@@ -84,6 +84,7 @@ Agent and development clones must not contain or link to:
 
 - a real `.env`;
 - the real finance database;
+- owner preview/UAT databases;
 - SQLite sidecars;
 - backups;
 - `private/`;
@@ -92,7 +93,7 @@ Agent and development clones must not contain or link to:
 
 This prohibition includes copies, symlinks, junctions, hardlinks and other filesystem indirection.
 
-The production runtime clone is never an agent development workspace.
+The production runtime clone is never an agent development workspace. Owner preview/experiment runtimes and their UAT copies are also never agent workspaces. A future Windows launcher may select only prepared runtime profiles (checkout + code identity + data location), not an arbitrary Git branch against one database; see [`docs/adr/0014-launcher-runtime-profile-safety.md`](docs/adr/0014-launcher-runtime-profile-safety.md).
 
 Do not put machine-specific absolute local paths into tracked repository docs.
 
