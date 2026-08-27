@@ -164,3 +164,30 @@ jobs:
           if ($null -ne $listener) {
               throw "Canonical launcher left port 8000 listening after -ExitAfterReady."
           }
+
+  windows-launcher-safety:
+    name: Windows launcher safety
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build and run launcher safety harness
+        shell: pwsh
+        run: |
+          dotnet build .\launcher\windows\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+          dotnet run --project .\launcher\windows\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release --no-build
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
