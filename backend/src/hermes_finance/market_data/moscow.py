@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Final
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
-
-def _moscow_tz() -> timezone | ZoneInfo:
-    try:
-        return ZoneInfo("Europe/Moscow")
-    except ZoneInfoNotFoundError:
-        # Windows CPython has no IANA database; Moscow has been UTC+3 year-round since 2014.
-        return timezone(timedelta(hours=3))
-
-
-MOSCOW_TZ: Final = _moscow_tz()
+# The IANA timezone database is supplied by the `tzdata` runtime dependency on
+# platforms without a system IANA database (notably Windows CPython). We resolve
+# the zone eagerly at import time and fail closed if it is genuinely missing: a
+# silent UTC+3 fallback would mask an uninstalled dependency and drift from the
+# canonical IANA data on any future DST/policy change.
+MOSCOW_TZ: Final = ZoneInfo("Europe/Moscow")
 
 
 def moscow_calendar_date(instant: datetime) -> date:

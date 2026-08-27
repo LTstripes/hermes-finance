@@ -22,6 +22,7 @@ from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSI
 from hermes_finance.domain.values import PercentageRate, RubleAmount
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
+    DEFAULT_TIMEZONE,
     AppliedPayoutReconciliation,
     AppliedProviderPayout,
     AppSettings,
@@ -289,7 +290,7 @@ def assemble_ai_analysis_bundle(
     ordered_months = sorted(months, key=lambda item: (item.year, item.month, item.id))
     current, selection_reason = _select_current(ordered_months)
     settings = _settings(session)
-    zone = ZoneInfo(settings.timezone if settings is not None else "Europe/Moscow")
+    zone = ZoneInfo(settings.timezone if settings is not None else DEFAULT_TIMEZONE)
     generated = generated_at or datetime.now(tz=zone)
     if generated.tzinfo is None:
         generated = generated.replace(tzinfo=zone)
