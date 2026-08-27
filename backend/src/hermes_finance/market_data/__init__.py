@@ -1,5 +1,15 @@
 """Isolated read-only market-data provider boundary (R04-02)."""
 
+from hermes_finance.market_data.capabilities import (
+    MOEX_ISS_CAPABILITIES,
+    T_INVEST_CAPABILITIES,
+    ProviderCapabilities,
+    ProviderCapability,
+    ProviderCapabilityName,
+    ProviderCapabilityStatus,
+    all_provider_capabilities,
+    provider_capabilities,
+)
 from hermes_finance.market_data.dto import (
     MOEX_ISS_PROVIDER,
     T_INVEST_PROVIDER,
@@ -41,15 +51,21 @@ from hermes_finance.market_data.t_invest import (
 
 __all__ = [
     "MOEX_ISS_PROVIDER",
+    "MOEX_ISS_CAPABILITIES",
     "MOEX_PRODUCTION_DISABLED_MESSAGE",
     "MOSCOW_TZ",
     "T_INVEST_PROVIDER",
+    "T_INVEST_CAPABILITIES",
     "TOKEN_UNAVAILABLE_MESSAGE",
     "DiscoverCandidate",
     "DiscoverResult",
     "InvalidMoexIdentityError",
     "MarketDataProvider",
     "MarketIdentity",
+    "ProviderCapabilities",
+    "ProviderCapability",
+    "ProviderCapabilityName",
+    "ProviderCapabilityStatus",
     "MoexIdentityParts",
     "MoexIssClient",
     "ProductionMarketDataProvider",
@@ -61,6 +77,7 @@ __all__ = [
     "RawPriceBasis",
     "RejectedCandidate",
     "TInvestClient",
+    "all_provider_capabilities",
     "decode_moex_venue",
     "encode_moex_venue",
     "market_identity_from_moex",
@@ -69,6 +86,7 @@ __all__ = [
     "moex_parts_from_identity",
     "normalize_t_invest_uid",
     "production_market_data_provider",
+    "provider_capabilities",
     "quotation_to_decimal",
     "t_invest_identity",
 ]

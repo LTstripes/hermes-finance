@@ -7,10 +7,14 @@ from datetime import date
 from typing import Protocol
 
 from hermes_finance.domain import InstrumentType
+from hermes_finance.market_data.capabilities import ProviderCapabilities
 from hermes_finance.market_data.dto import DiscoverResult, MarketIdentity, QuoteResult
 
 
 class MarketDataProvider(Protocol):
+    @property
+    def capabilities(self) -> ProviderCapabilities: ...
+
     def discover_candidates(
         self,
         *,

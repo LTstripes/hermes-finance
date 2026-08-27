@@ -9,6 +9,10 @@ from decimal import Decimal
 from typing import Final
 
 from hermes_finance.domain import InstrumentType
+from hermes_finance.market_data.capabilities import (
+    T_INVEST_CAPABILITIES,
+    ProviderCapabilities,
+)
 from hermes_finance.market_data.dto import T_INVEST_PROVIDER, DiscoverResult, QuoteStatus
 from hermes_finance.market_data.moscow import MOSCOW_TZ
 from hermes_finance.market_data.payout import (
@@ -115,6 +119,10 @@ class TInvestPayoutProvider:
             raise ValueError("dividend_record_margin_days must be a non-negative integer")
         self._client = client
         self._dividend_record_margin_days = dividend_record_margin_days
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return T_INVEST_CAPABILITIES
 
     def fetch_payouts(self, request: PayoutFetchRequest) -> PayoutFetchResult:
         try:

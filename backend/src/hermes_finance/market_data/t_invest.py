@@ -12,6 +12,10 @@ from uuid import UUID
 import httpx2
 
 from hermes_finance.domain import InstrumentType
+from hermes_finance.market_data.capabilities import (
+    T_INVEST_CAPABILITIES,
+    ProviderCapabilities,
+)
 from hermes_finance.market_data.dto import (
     T_INVEST_PROVIDER,
     DiscoverCandidate,
@@ -321,6 +325,10 @@ class TInvestClient:
     def close(self) -> None:
         if self._owns_client:
             self._http.close()
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return T_INVEST_CAPABILITIES
 
     def __enter__(self) -> TInvestClient:
         return self
