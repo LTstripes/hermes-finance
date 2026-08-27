@@ -16,6 +16,16 @@ After a local read-only token is configured, you can:
 
 There is no background refresh and no trading.
 
+## Provider capabilities
+
+The local diagnostics endpoint `GET /api/market-data/providers/capabilities`
+exposes the registered market-provider profiles without constructing a client or
+calling a remote service. Each capability is marked `production_enabled`,
+`verification_only` or `unsupported`, with supported instrument types and
+limitations. T-Invest payout/calendar support is represented by its separate
+owner-triggered payout adapter; Alfa PRO broker snapshots are not part of this
+market-data contract.
+
 ## Token
 
 You need a T-Invest / T-Bank brokerage account, even an empty one.

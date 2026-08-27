@@ -8,6 +8,11 @@ from datetime import date, datetime
 import httpx2
 
 from hermes_finance.domain import InstrumentType
+from hermes_finance.market_data.capabilities import (
+    MOEX_ISS_CAPABILITIES,
+    T_INVEST_CAPABILITIES,
+    ProviderCapabilities,
+)
 from hermes_finance.market_data.dto import (
     MOEX_ISS_PROVIDER,
     T_INVEST_PROVIDER,
@@ -30,6 +35,10 @@ class ProductionMarketDataProvider:
 
     def close(self) -> None:
         self._t_invest.close()
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return T_INVEST_CAPABILITIES
 
     def discover_candidates(
         self,
@@ -67,6 +76,10 @@ class ProductionMarketDataProvider:
 
 class DisabledMoexVerificationProvider:
     """verify=true for moex_iss must not open a live MOEX connection."""
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return MOEX_ISS_CAPABILITIES
 
     def discover_candidates(self, **kwargs: object) -> DiscoverResult:
         return DiscoverResult(
