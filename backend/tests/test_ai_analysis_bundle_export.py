@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import socket
 from calendar import monthrange
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -13,12 +14,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator, FormatChecker
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
+from sqlalchemy.engine import Engine
 from startup_network_guard import NETWORK_FORBIDDEN, install_network_guard
 
 from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services import ai_analysis_bundle as bundle_service
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.schema.json"
@@ -44,6 +47,30 @@ FORBIDDEN_KEYS = {
     "session_token",
 }
 GENERATED_AT = "2026-05-15T12:00:00+03:00"
+
+
+_WRITE_SQL = ("INSERT", "UPDATE", "DELETE", "REPLACE")
+
+
+@contextmanager
+def _forbid_sql_writes(engine: Engine) -> Iterator[None]:
+    def _before_cursor_execute(
+        _conn,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        verb = statement.lstrip().split(None, 1)[0].upper()
+        if verb in _WRITE_SQL:
+            raise AssertionError(f"export issued persistence write: {statement[:240]}")
+
+    event.listen(engine, "before_cursor_execute", _before_cursor_execute)
+    try:
+        yield
+    finally:
+        event.remove(engine, "before_cursor_execute", _before_cursor_execute)
 
 
 @pytest.fixture
@@ -359,7 +386,8 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     with pytest.raises(AssertionError, match=NETWORK_FORBIDDEN):
         socket.create_connection(("example.com", 443), timeout=1)
 
-    response = _export(client)
+    with _forbid_sql_writes(database.engine):
+        response = _export(client)
     assert response.status_code == 200, response.text
     assert (
         "hermes-ai-analysis-bundle-2026-04-30-v1.0.0.json"
@@ -494,3 +522,29 @@ def test_bundle_export_uses_latest_available_when_no_closed_month(
     assert payload["current_portfolio"]["reporting_status"] == "draft"
     assert payload["current_portfolio"]["coverage"]["status"] == "partial"
     assert "draft_value" in payload["current_portfolio"]["coverage"]["reason_codes"]
+
+
+def test_bundle_schema_validation_failure_is_http_500_without_payload_or_mutation(
+    app_context: tuple[TestClient, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, database = app_context
+    _seed_history(client)
+    before = _table_counts(database)
+    real_validate = bundle_service.validate_bundle
+
+    def _fail_closed(bundle: dict[str, object]) -> None:
+        broken = dict(bundle)
+        broken["schema_name"] = "not-the-declared-contract"
+        real_validate(broken)
+
+    monkeypatch.setattr(bundle_service, "validate_bundle", _fail_closed)
+    failing_client = TestClient(client.app, raise_server_exceptions=False)
+    with _forbid_sql_writes(database.engine):
+        response = _export(failing_client)
+    assert response.status_code == 500
+    disposition = response.headers.get("content-disposition", "")
+    assert "attachment" not in disposition.lower()
+    assert b"hermes.finance.ai_analysis_bundle" not in response.content
+    assert b"hermes-ai-analysis-bundle-" not in response.content
+    assert _table_counts(database) == before

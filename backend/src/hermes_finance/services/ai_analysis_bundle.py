@@ -14,12 +14,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
-from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.values import PercentageRate, RubleAmount
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
@@ -28,7 +27,6 @@ from hermes_finance.persistence import (
     AppSettings,
     IisContribution,
     IisProfile,
-    IncomeEntry,
     PositionQuoteProvenance,
     PropertySnapshot,
     ReportingMonth,
@@ -61,13 +59,8 @@ from hermes_finance.services.properties import (
     total_property_value,
 )
 from hermes_finance.services.reporting_months import list_reporting_months
-from hermes_finance.services.salary import calculate_salary_tax
-from hermes_finance.services.salary_tax_context import (
-    SalaryTaxHistoryIncompleteError,
-    get_salary_tax_year_context,
-)
+from hermes_finance.services.salary import salary_tax_snapshot_for_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
-from hermes_finance.services.tax_brackets import get_or_create_default_tax_brackets
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
 SCHEMA_VERSION = "1.0.0"
@@ -283,24 +276,6 @@ def _settings(session: Session) -> AppSettings | None:
     return session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
 
 
-def _salary_tax_history_incomplete(session: Session, month: ReportingMonth) -> bool:
-    if month.month == 1:
-        return False
-    context = get_salary_tax_year_context(session, month.year)
-    first_required = context.effective_from_month if context is not None else 1
-    known = set(
-        session.scalars(
-            select(ReportingMonth.month).where(
-                ReportingMonth.year == month.year,
-                ReportingMonth.month >= first_required,
-                ReportingMonth.month < month.month,
-                ReportingMonth.status == "closed",
-            )
-        )
-    )
-    return bool(set(range(first_required, month.month)) - {int(value) for value in known})
-
-
 def assemble_ai_analysis_bundle(
     session: Session,
     *,
@@ -314,8 +289,6 @@ def assemble_ai_analysis_bundle(
     ordered_months = sorted(months, key=lambda item: (item.year, item.month, item.id))
     current, selection_reason = _select_current(ordered_months)
     settings = _settings(session)
-    for year in sorted({item.year for item in ordered_months}):
-        get_or_create_default_tax_brackets(session, year, commit=False)
     zone = ZoneInfo(settings.timezone if settings is not None else "Europe/Moscow")
     generated = generated_at or datetime.now(tz=zone)
     if generated.tzinfo is None:
@@ -870,10 +843,9 @@ def assemble_ai_analysis_bundle(
         )
     iis_accounts.sort(key=lambda item: item["account_ref"])
 
-    salary_warning_codes: list[str] = []
-    context = get_salary_tax_year_context(session, current.year)
-    if _salary_tax_history_incomplete(session, current):
-        salary_warning_codes = ["salary_tax_history_incomplete"]
+    snapshot = salary_tax_snapshot_for_month(session, current.id)
+    salary_warning_codes = list(snapshot.warning_codes)
+    if not snapshot.history_complete:
         add_warning(
             "salary_tax_history_incomplete",
             "warning",
@@ -881,90 +853,31 @@ def assemble_ai_analysis_bundle(
             "Salary-tax YTD cannot be computed because prior months in the tax year are missing or not closed.",
         )
         salary_tax_context = {
-            "tax_year": current.year,
+            "tax_year": snapshot.tax_year,
             "history_coverage": _coverage("unavailable", "salary_tax_history_incomplete"),
-            "opening_context_available": context is not None,
+            "opening_context_available": snapshot.opening_context_available,
             "taxable_gross_ytd": _metric(
                 None, source="backend_derived", reason_codes=["salary_tax_history_incomplete"]
             ),
             "current_marginal_rate_pct": _ratio(
                 None, reason_codes=["salary_tax_history_incomplete"], available=False
             ),
-            "warning_codes": ["salary_tax_history_incomplete"],
+            "warning_codes": salary_warning_codes,
         }
     else:
-        nested = session.begin_nested()
-        try:
-            get_or_create_default_tax_brackets(session, current.year, commit=False)
-            tax = calculate_salary_tax(session, current.id)
-        except SalaryTaxHistoryIncompleteError:
-            nested.rollback()
-            salary_warning_codes = ["salary_tax_history_incomplete"]
-            add_warning(
-                "salary_tax_history_incomplete",
-                "warning",
-                "iis_and_tax",
-                "Salary-tax YTD cannot be computed because prior months in the tax year are missing or not closed.",
-            )
-            salary_tax_context = {
-                "tax_year": current.year,
-                "history_coverage": _coverage("unavailable", "salary_tax_history_incomplete"),
-                "opening_context_available": context is not None,
-                "taxable_gross_ytd": _metric(
-                    None,
-                    source="backend_derived",
-                    reason_codes=["salary_tax_history_incomplete"],
-                ),
-                "current_marginal_rate_pct": _ratio(
-                    None, reason_codes=["salary_tax_history_incomplete"], available=False
-                ),
-                "warning_codes": ["salary_tax_history_incomplete"],
-            }
-            tax = None
-        else:
-            nested.rollback()
-        if not salary_warning_codes:
-            ytd = 0
-            if current.month != 1:
-                if context is not None and current.month >= context.effective_from_month:
-                    ytd += context.opening_taxable_gross_kopecks
-            prior = session.execute(
-                select(func.coalesce(func.sum(IncomeEntry.gross_amount_kopecks), 0))
-                .select_from(ReportingMonth)
-                .outerjoin(
-                    IncomeEntry,
-                    and_(
-                        IncomeEntry.reporting_month_id == ReportingMonth.id,
-                        IncomeEntry.income_type == IncomeType.SALARY.value,
-                    ),
-                )
-                .where(
-                    ReportingMonth.year == current.year,
-                    ReportingMonth.month < current.month,
-                    ReportingMonth.status == "closed",
-                )
-            ).scalar_one()
-            ytd += int(prior or 0)
-            payment = session.execute(
-                select(func.coalesce(func.sum(IncomeEntry.gross_amount_kopecks), 0)).where(
-                    IncomeEntry.reporting_month_id == current.id,
-                    IncomeEntry.income_type == IncomeType.SALARY.value,
-                )
-            ).scalar_one()
-            ytd += int(payment or 0)
-            marginal = None
-            if tax is not None:
-                for part in tax.parts:
-                    if part.taxable_kopecks > 0:
-                        marginal = Decimal(part.rate_bps) / Decimal(100)
-            salary_tax_context = {
-                "tax_year": current.year,
-                "history_coverage": _coverage("complete"),
-                "opening_context_available": context is not None,
-                "taxable_gross_ytd": _metric(ytd, source="backend_derived"),
-                "current_marginal_rate_pct": _ratio(marginal, available=marginal is not None),
-                "warning_codes": [],
-            }
+        marginal = None
+        if snapshot.current_marginal_rate_bps is not None:
+            marginal = Decimal(snapshot.current_marginal_rate_bps) / Decimal(100)
+        salary_tax_context = {
+            "tax_year": snapshot.tax_year,
+            "history_coverage": _coverage("complete"),
+            "opening_context_available": snapshot.opening_context_available,
+            "taxable_gross_ytd": _metric(
+                snapshot.taxable_gross_ytd_kopecks, source="backend_derived"
+            ),
+            "current_marginal_rate_pct": _ratio(marginal, available=marginal is not None),
+            "warning_codes": salary_warning_codes,
+        }
 
     calendar = merged_payout_calendar(
         session, reporting_month_id=current.id, forecast_version=forecast_version
