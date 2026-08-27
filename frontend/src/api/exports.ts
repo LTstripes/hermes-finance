@@ -16,3 +16,17 @@ export function downloadJsonReport(monthId: number, signal?: AbortSignal): Promi
     signal,
   });
 }
+
+export function downloadAiAnalysisBundleJson(signal?: AbortSignal): Promise<ApiDownload> {
+  return apiDownload("/api/export/ai-analysis-bundle", {
+    method: "POST",
+    signal,
+  });
+}
+
+export function downloadAiAnalysisBundleMarkdown(signal?: AbortSignal): Promise<ApiDownload> {
+  return apiDownload("/api/export/ai-analysis-bundle/markdown", {
+    method: "POST",
+    signal,
+  });
+}

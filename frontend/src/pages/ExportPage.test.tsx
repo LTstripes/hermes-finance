@@ -217,6 +217,140 @@ describe("ExportPage", () => {
     expect(screen.queryByText(/Файл .*скачан/i)).not.toBeInTheDocument();
   });
 
+  it("downloads the full-history AI Analysis Bundle without transforming the backend artifact", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:ai-analysis-bundle");
+    const revokeObjectURL = vi.fn();
+    const bundle = '{"schema_name":"hermes.finance.ai_analysis_bundle"}\n';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(
+        new Response(bundle, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Disposition":
+              'attachment; filename="hermes-ai-analysis-bundle-2026-07-31-v1.0.0.json"',
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+
+    render(<ExportPage />);
+
+    const button = await screen.findByRole("button", {
+      name: "Скачать AI Analysis Bundle (JSON)",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await user.click(button);
+
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/export/ai-analysis-bundle",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(anchorClick.mock.instances[0]).toHaveProperty(
+      "download",
+      "hermes-ai-analysis-bundle-2026-07-31-v1.0.0.json",
+    );
+    const [createdBlob] = createObjectURL.mock.calls[0] ?? [];
+    expect(await (createdBlob as Blob).text()).toBe(bundle);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:ai-analysis-bundle");
+    expect(await screen.findByRole("status")).toHaveTextContent(/скачан/i);
+  });
+
+  it("downloads the optional Markdown companion only after an explicit click", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:ai-analysis-markdown"),
+      revokeObjectURL: vi.fn(),
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(
+        new Response("# Hermes Finance AI Analysis Bundle 1.0.0\n", {
+          status: 200,
+          headers: {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Content-Disposition":
+              'attachment; filename="hermes-ai-analysis-bundle-2026-07-31-v1.0.0.md"',
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExportPage />);
+    await user.click(await screen.findByRole("button", { name: "Скачать Markdown-компаньон" }));
+
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/export/ai-analysis-bundle/markdown",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(/финансовые данные/i);
+  });
+
+  it("shows a bundle error without claiming a download", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            { error: { code: "internal_error", message: "Bundle failed", details: [] } },
+            500,
+          ),
+        ),
+    );
+
+    render(<ExportPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Скачать AI Analysis Bundle (JSON)" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Внутренняя ошибка приложения. Попробуй обновить данные.");
+    expect(alert).not.toHaveTextContent("Bundle failed");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("handles a network-offline bundle request without contacting a cloud URL", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExportPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Скачать AI Analysis Bundle (JSON)" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.",
+    );
+    expect(fetchMock.mock.calls.every(([path]) => String(path).startsWith("/api/"))).toBe(true);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("loads backup metadata newest first and shows the source database", async () => {
     vi.stubGlobal(
       "fetch",
