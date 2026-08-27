@@ -19,9 +19,9 @@ from hermes_finance.persistence import ReportingMonth
 from hermes_finance.services.asset_allocation import (
     ASSET_CLASSES,
     AssetClassSlice,
-    asset_allocation_for_month,
+    asset_allocation_for_months,
 )
-from hermes_finance.services.liquid_capital import liquid_capital_for_month
+from hermes_finance.services.liquid_capital import liquid_capital_for_months
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +52,13 @@ def capital_composition_history(session: Session) -> CapitalCompositionHistory:
         )
     )
 
+    month_ids = [month.id for month in months]
+    liquid_by_month = liquid_capital_for_months(session, month_ids)
+    allocation_by_month = asset_allocation_for_months(session, month_ids, liquid_by_month)
     points: list[CapitalCompositionPoint] = []
     for month in months:
-        liquid = liquid_capital_for_month(session, month.id)
-        allocation = asset_allocation_for_month(session, month.id, liquid)
+        liquid = liquid_by_month[month.id]
+        allocation = allocation_by_month[month.id]
         points.append(
             CapitalCompositionPoint(
                 reporting_month_id=month.id,

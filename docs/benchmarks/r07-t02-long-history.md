@@ -107,6 +107,64 @@ payloads.
 | clone -> close -> reopen | 38.621 ms | 49.532 ms | 41 | 96 |
 | backup listing | 3.107 ms | 3.937 ms | 0 | 233 |
 
+## R07-T02A after batched historical reads
+
+The same command, deterministic seed, warm-up and five measured requests were
+rerun after the R07-T02A implementation. Each cell is `median / p95 / SQL`
+and uses milliseconds for the first two values. Response sizes stayed exactly
+equal to the baseline at every horizon.
+
+### Before → after: 1 year — 12 months
+
+| Operation | Before | After |
+| --- | --- | --- |
+| dashboard load | 155.381 / 168.656 / 320 | 80.001 / 84.153 / 87 |
+| capital-composition analytics | 45.294 / 53.145 / 85 | 13.614 / 16.151 / 6 |
+| Markdown export | 197.629 / 284.538 / 329 | 85.457 / 196.825 / 96 |
+| JSON export | 184.709 / 190.587 / 352 | 100.134 / 112.127 / 119 |
+| clone → close → reopen | 41.340 / 51.806 / 41 | 50.702 / 56.393 / 41 |
+| backup listing | 3.325 / 4.245 / 0 | 4.743 / 5.089 / 0 |
+
+### Before → after: 5 years — 60 months
+
+| Operation | Before | After |
+| --- | --- | --- |
+| dashboard load | 694.692 / 743.755 / 1,328 | 102.441 / 115.076 / 87 |
+| capital-composition analytics | 235.830 / 246.189 / 421 | 27.429 / 31.065 / 6 |
+| Markdown export | 641.694 / 679.005 / 1,337 | 104.226 / 118.468 / 96 |
+| JSON export | 661.843 / 683.330 / 1,360 | 132.780 / 134.961 / 119 |
+| clone → close → reopen | 46.204 / 50.239 / 41 | 56.563 / 68.350 / 41 |
+| backup listing | 2.791 / 3.664 / 0 | 3.659 / 4.502 / 0 |
+
+### Before → after: 10 years — 120 months
+
+| Operation | Before | After |
+| --- | --- | --- |
+| dashboard load | 1,258.277 / 1,271.717 / 2,588 | 132.810 / 180.537 / 87 |
+| capital-composition analytics | 450.033 / 452.274 / 841 | 45.747 / 53.212 / 6 |
+| Markdown export | 1,162.983 / 1,179.817 / 2,597 | 159.660 / 171.625 / 96 |
+| JSON export | 1,178.079 / 1,201.139 / 2,620 | 192.459 / 196.938 / 119 |
+| clone → close → reopen | 38.742 / 49.483 / 41 | 58.195 / 80.196 / 41 |
+| backup listing | 2.329 / 2.875 / 0 | 4.175 / 4.298 / 0 |
+
+### Before → after: 20 years — 240 months
+
+| Operation | Before | After |
+| --- | --- | --- |
+| dashboard load | 2,323.467 / 2,336.628 / 5,108 | 222.050 / 238.949 / 87 |
+| capital-composition analytics | 856.586 / 868.801 / 1,681 | 83.200 / 232.810 / 6 |
+| Markdown export | 2,299.123 / 2,360.467 / 5,117 | 246.721 / 424.442 / 96 |
+| JSON export | 2,429.285 / 2,489.225 / 5,140 | 281.942 / 415.168 / 119 |
+| clone → close → reopen | 38.621 / 49.532 / 41 | 51.282 / 63.136 / 41 |
+| backup listing | 3.107 / 3.937 / 0 | 3.596 / 4.214 / 0 |
+
+The implementation batches the month-scoped liquid-capital, passive-income
+and asset-allocation reads with `IN (...)` plus grouped SQL. It keeps the
+existing pure financial calculators, CLOSED-month filtering and persisted
+snapshot semantics. No materialized table/view, cache or formula change was
+introduced. The remaining dashboard/export cost is the bounded current-month
+assembly and response serialization rather than linear historical SQL fan-out.
+
 ## Interpretation and verdict
 
 The 20-year p95 results remain within the stated local budgets. Lifecycle
