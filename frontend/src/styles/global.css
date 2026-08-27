@@ -336,6 +336,21 @@ a {
   background: var(--green-soft);
 }
 
+.chip--stale {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.chip--unknown {
+  color: var(--muted);
+  background: #eaede8;
+}
+
+.chip--missing {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
 .badge--draft {
   color: var(--amber);
   background: var(--amber-soft);
@@ -2048,4 +2063,28 @@ a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 8px;
+}
+
+.freshness-clocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.freshness-family__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.freshness-reason-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.freshness-reason-list li {
+  margin: 0 0 var(--space-2);
 }

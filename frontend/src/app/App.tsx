@@ -5,6 +5,7 @@ import { AccountsPage } from "../pages/AccountsPage";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { ExportPage } from "../pages/ExportPage";
+import { FreshnessProvenancePage } from "../pages/FreshnessProvenancePage";
 import { GoalsPage } from "../pages/GoalsPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
@@ -18,6 +19,7 @@ export function App() {
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="freshness" element={<FreshnessProvenancePage />} />
           <Route path="months" element={<MonthsPage />} />
           <Route path="months/:monthId" element={<MonthDetailPage />} />
           <Route path="payouts" element={<PayoutsPage />} />

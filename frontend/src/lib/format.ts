@@ -184,6 +184,22 @@ export function formatDate(
   return `${dd}.${mm}.${year}`;
 }
 
+/** UTC timestamp from an ISO datetime: "2026-08-21T11:00:00+00:00" → "21.08.2026 11:00 UTC" */
+export function formatDateTime(
+  input: string | null | undefined,
+  options: { empty?: string } = {},
+): string {
+  const { empty = "—" } = options;
+  if (input == null || input.trim() === "") {
+    return empty;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(input.trim());
+  if (!match) {
+    return formatDate(input, options);
+  }
+  return `${match[3]}.${match[2]}.${match[1]}${NBSP}${match[4]}:${match[5]}${NBSP}UTC`;
+}
+
 /** Month label: formatMonth(2026, 7) → "Июль 2026" */
 export function formatMonth(year: number, month: number, options: { empty?: string } = {}): string {
   const { empty = "—" } = options;

@@ -746,3 +746,65 @@ export type TaxBenefit = {
   received_at: string | null;
   notes: string | null;
 };
+
+export type FreshnessStatus =
+  | "current"
+  | "stale"
+  | "mixed"
+  | "unavailable"
+  | "unknown"
+  | "not_applicable"
+  | "missing";
+
+export type FreshnessReason = {
+  code: string;
+  severity: "info" | "warning" | string;
+  message: string;
+};
+
+export type FreshnessCoverage = {
+  row_count: number;
+  current_count: number;
+  stale_count: number;
+  unavailable_count: number;
+  unknown_count: number;
+  missing_count: number;
+  manual_count: number;
+  provider_count: number;
+};
+
+export type FreshnessItem = {
+  item_kind: string;
+  label: string;
+  freshness_status: FreshnessStatus;
+  source_kind: string;
+  source_timestamp_kind: string;
+  source_date: string | null;
+  source_datetime: string | null;
+  fetched_at: string | null;
+  import_apply_time: string | null;
+  local_edit_time: string | null;
+  reason_codes: string[];
+  account_name: string | null;
+  instrument_name: string | null;
+};
+
+export type FreshnessFamily = {
+  family_id: string;
+  title: string;
+  status: FreshnessStatus;
+  providers: string[];
+  coverage: FreshnessCoverage;
+  reasons: FreshnessReason[];
+  items: FreshnessItem[];
+};
+
+export type FreshnessProvenanceSummary = {
+  reporting_month: ReportingMonth;
+  evaluated_on: string;
+  quote_valuation_target_date: string;
+  generated_at: string;
+  families: FreshnessFamily[];
+  reasons: FreshnessReason[];
+  providers: string[];
+};
