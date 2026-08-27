@@ -1,0 +1,841 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.0.0/schema.json",
+  "title": "Hermes Finance AI Analysis Bundle",
+  "description": "Versioned read-only multi-period financial analysis export. Financial calculations are supplied by authoritative Hermes backend services; this schema defines transport only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_name",
+    "schema_version",
+    "metadata",
+    "coverage",
+    "reporting_history",
+    "current_portfolio",
+    "passive_income",
+    "goals",
+    "debts_and_real_estate",
+    "iis_and_tax",
+    "upcoming_cash_flows",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_name": {"const": "hermes.finance.ai_analysis_bundle"},
+    "schema_version": {"const": "1.0.0"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "reporting_history": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/reporting_history_point"}
+    },
+    "current_portfolio": {"$ref": "#/$defs/current_portfolio"},
+    "passive_income": {"$ref": "#/$defs/passive_income"},
+    "goals": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/goal"}
+    },
+    "debts_and_real_estate": {"$ref": "#/$defs/debts_and_real_estate"},
+    "iis_and_tax": {"$ref": "#/$defs/iis_and_tax"},
+    "upcoming_cash_flows": {"$ref": "#/$defs/upcoming_cash_flows"},
+    "warnings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/warning"}
+    }
+  },
+  "$defs": {
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)\\.[0-9]{2}$"
+        },
+        "currency": {"const": "RUB"}
+      }
+    },
+    "availability": {
+      "enum": ["available", "unavailable"]
+    },
+    "precision": {
+      "enum": ["exact", "approximate", "unknown"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    },
+    "money_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "availability", "precision", "source", "reason_codes"],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {"$ref": "#/$defs/money"},
+            {"type": "null"}
+          ]
+        },
+        "availability": {"$ref": "#/$defs/availability"},
+        "precision": {"$ref": "#/$defs/precision"},
+        "source": {
+          "enum": [
+            "backend_derived",
+            "persisted_configuration",
+            "persisted_snapshot",
+            "persisted_actual",
+            "persisted_expected",
+            "merged_payout_calendar"
+          ]
+        },
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"availability": {"const": "available"}}},
+          "then": {"properties": {"value": {"$ref": "#/$defs/money"}}}
+        },
+        {
+          "if": {"properties": {"availability": {"const": "unavailable"}}},
+          "then": {
+            "properties": {
+              "value": {"type": "null"},
+              "precision": {"const": "unknown"}
+            }
+          }
+        }
+      ]
+    },
+    "ratio_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value_pct", "availability", "precision", "source", "reason_codes"],
+      "properties": {
+        "value_pct": {
+          "type": ["string", "null"],
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,4})?$"
+        },
+        "availability": {"$ref": "#/$defs/availability"},
+        "precision": {"$ref": "#/$defs/precision"},
+        "source": {"const": "backend_derived"},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"availability": {"const": "available"}}},
+          "then": {"properties": {"value_pct": {"type": "string"}}}
+        },
+        {
+          "if": {"properties": {"availability": {"const": "unavailable"}}},
+          "then": {
+            "properties": {
+              "value_pct": {"type": "null"},
+              "precision": {"const": "unknown"}
+            }
+          }
+        }
+      ]
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["year", "month"],
+      "properties": {
+        "year": {"type": "integer", "minimum": 1900, "maximum": 9999},
+        "month": {"type": "integer", "minimum": 1, "maximum": 12}
+      }
+    },
+    "coverage_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes"],
+      "properties": {
+        "status": {"enum": ["complete", "partial", "unavailable"]},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_kind", "provider", "observed_at"],
+      "properties": {
+        "source_kind": {
+          "enum": ["manual", "provider", "statement", "migration", "backend_derived"]
+        },
+        "provider": {
+          "type": ["string", "null"],
+          "enum": [null, "t_invest", "alfa_pro", "alfa_statement"]
+        },
+        "observed_at": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generated_at",
+        "as_of_date",
+        "base_currency",
+        "application",
+        "generation_mode",
+        "calculation_versions",
+        "ordering_contract"
+      ],
+      "properties": {
+        "generated_at": {"type": "string", "format": "date-time"},
+        "as_of_date": {"type": "string", "format": "date"},
+        "base_currency": {"const": "RUB"},
+        "application": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": {"const": "Hermes Finance"},
+            "version": {"type": ["string", "null"], "maxLength": 64}
+          }
+        },
+        "generation_mode": {"const": "read_only"},
+        "calculation_versions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["monthly_summary", "passive_income_forecast", "goal_achievement"],
+          "properties": {
+            "monthly_summary": {"type": "string", "minLength": 1, "maxLength": 64},
+            "passive_income_forecast": {"type": "string", "minLength": 1, "maxLength": 64},
+            "goal_achievement": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        },
+        "ordering_contract": {
+          "const": "arrays_are_stably_sorted_as_defined_by_contract"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_reporting_period",
+        "last_reporting_period",
+        "closed_month_count",
+        "draft_month_count",
+        "missing_calendar_periods",
+        "domains"
+      ],
+      "properties": {
+        "first_reporting_period": {"$ref": "#/$defs/period"},
+        "last_reporting_period": {"$ref": "#/$defs/period"},
+        "closed_month_count": {"type": "integer", "minimum": 0},
+        "draft_month_count": {"type": "integer", "minimum": 0},
+        "missing_calendar_periods": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/period"}
+        },
+        "domains": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capital", "passive_income", "salary_tax", "portfolio", "payouts"],
+          "properties": {
+            "capital": {"$ref": "#/$defs/coverage_state"},
+            "passive_income": {"$ref": "#/$defs/coverage_state"},
+            "salary_tax": {"$ref": "#/$defs/coverage_state"},
+            "portfolio": {"$ref": "#/$defs/coverage_state"},
+            "payouts": {"$ref": "#/$defs/coverage_state"}
+          }
+        }
+      }
+    },
+    "passive_breakdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deposit_interest", "bond_coupons", "dividends", "other_capital_income"],
+      "properties": {
+        "deposit_interest": {"$ref": "#/$defs/money_metric"},
+        "bond_coupons": {"$ref": "#/$defs/money_metric"},
+        "dividends": {"$ref": "#/$defs/money_metric"},
+        "other_capital_income": {"$ref": "#/$defs/money_metric"}
+      }
+    },
+    "reporting_kpis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "liquid_assets_total",
+        "included_debts",
+        "liquid_capital_net",
+        "passive_income_actual",
+        "passive_income_actual_breakdown",
+        "active_income_net",
+        "mandatory_expenses",
+        "saving_allocations",
+        "monthly_cash_balance",
+        "property_equity",
+        "market_value_change",
+        "investment_return"
+      ],
+      "properties": {
+        "liquid_assets_total": {"$ref": "#/$defs/money_metric"},
+        "included_debts": {"$ref": "#/$defs/money_metric"},
+        "liquid_capital_net": {"$ref": "#/$defs/money_metric"},
+        "passive_income_actual": {"$ref": "#/$defs/money_metric"},
+        "passive_income_actual_breakdown": {"$ref": "#/$defs/passive_breakdown"},
+        "active_income_net": {"$ref": "#/$defs/money_metric"},
+        "mandatory_expenses": {"$ref": "#/$defs/money_metric"},
+        "saving_allocations": {"$ref": "#/$defs/money_metric"},
+        "monthly_cash_balance": {"$ref": "#/$defs/money_metric"},
+        "property_equity": {"$ref": "#/$defs/money_metric"},
+        "market_value_change": {"$ref": "#/$defs/money_metric"},
+        "investment_return": {"$ref": "#/$defs/ratio_metric"}
+      }
+    },
+    "reporting_history_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "period",
+        "status",
+        "snapshot_date",
+        "coverage",
+        "provenance_sources",
+        "kpis",
+        "warning_codes"
+      ],
+      "properties": {
+        "period": {"$ref": "#/$defs/period"},
+        "status": {"enum": ["closed", "draft"]},
+        "snapshot_date": {"type": "string", "format": "date"},
+        "coverage": {"$ref": "#/$defs/coverage_state"},
+        "provenance_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["manual", "excel_migration", "t_invest", "alfa_pro", "alfa_statement"]
+          }
+        },
+        "kpis": {"$ref": "#/$defs/reporting_kpis"},
+        "warning_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "account_type", "status", "include_in_capital", "include_in_returns"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "account_type": {"enum": ["brokerage", "iis", "deposit", "savings", "cash", "other"]},
+        "status": {"enum": ["active", "frozen", "closed", "hidden"]},
+        "include_in_capital": {"type": "boolean"},
+        "include_in_returns": {"type": "boolean"}
+      }
+    },
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "instrument_type", "isin", "ticker", "currency"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^inst-[a-z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 256},
+        "instrument_type": {"enum": ["stock", "bond", "fund", "currency", "gold", "other"]},
+        "isin": {"type": ["string", "null"], "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$"},
+        "ticker": {"type": ["string", "null"], "maxLength": 32},
+        "currency": {"const": "RUB"}
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_ref",
+        "instrument_ref",
+        "quantity",
+        "market_price_per_unit",
+        "market_value",
+        "cost_basis",
+        "unrealized_result",
+        "accrued_interest",
+        "price_date",
+        "valuation_provenance"
+      ],
+      "properties": {
+        "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
+        "instrument_ref": {"type": "string", "pattern": "^inst-[a-z0-9-]+$"},
+        "quantity": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+        "market_price_per_unit": {"$ref": "#/$defs/money_metric"},
+        "market_value": {"$ref": "#/$defs/money_metric"},
+        "cost_basis": {"$ref": "#/$defs/money_metric"},
+        "unrealized_result": {"$ref": "#/$defs/money_metric"},
+        "accrued_interest": {"$ref": "#/$defs/money_metric"},
+        "price_date": {"type": "string", "format": "date"},
+        "valuation_provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "deposit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_ref",
+        "name",
+        "deposit_type",
+        "balance",
+        "annual_rate_pct",
+        "expected_monthly_interest",
+        "actual_interest_received",
+        "provenance"
+      ],
+      "properties": {
+        "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "deposit_type": {"enum": ["deposit", "savings"]},
+        "balance": {"$ref": "#/$defs/money_metric"},
+        "annual_rate_pct": {"type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,4})?$"},
+        "expected_monthly_interest": {"$ref": "#/$defs/money_metric"},
+        "actual_interest_received": {"$ref": "#/$defs/money_metric"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "cash_balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_ref", "name", "amount", "include_in_capital", "provenance"],
+      "properties": {
+        "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "amount": {"$ref": "#/$defs/money_metric"},
+        "include_in_capital": {"type": "boolean"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "current_portfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reporting_period",
+        "snapshot_date",
+        "reporting_status",
+        "selection_reason",
+        "coverage",
+        "accounts",
+        "instruments",
+        "positions",
+        "deposits",
+        "cash_balances"
+      ],
+      "properties": {
+        "reporting_period": {"$ref": "#/$defs/period"},
+        "snapshot_date": {"type": "string", "format": "date"},
+        "reporting_status": {"enum": ["closed", "draft"]},
+        "selection_reason": {"enum": ["latest_closed", "latest_available"]},
+        "coverage": {"$ref": "#/$defs/coverage_state"},
+        "accounts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/account"}
+        },
+        "instruments": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/instrument"}
+        },
+        "positions": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/position"}
+        },
+        "deposits": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/deposit"}
+        },
+        "cash_balances": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/cash_balance"}
+        }
+      }
+    },
+    "rolling_average": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "eligible_month_count",
+        "target_window_months",
+        "is_complete_window",
+        "history_start_period",
+        "periods_used",
+        "source"
+      ],
+      "properties": {
+        "value": {"$ref": "#/$defs/money_metric"},
+        "eligible_month_count": {"type": "integer", "minimum": 0, "maximum": 12},
+        "target_window_months": {"const": 12},
+        "is_complete_window": {"type": "boolean"},
+        "history_start_period": {
+          "oneOf": [
+            {"$ref": "#/$defs/period"},
+            {"type": "null"}
+          ]
+        },
+        "periods_used": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {"$ref": "#/$defs/period"}
+        },
+        "source": {"const": "eligible_closed_reporting_months"}
+      }
+    },
+    "passive_forecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "forecast_version",
+        "as_of_date",
+        "annual_total",
+        "monthly_total",
+        "breakdown",
+        "dividend_component_source",
+        "deposit_projection_method",
+        "warning_codes"
+      ],
+      "properties": {
+        "forecast_version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "as_of_date": {"type": "string", "format": "date"},
+        "annual_total": {"$ref": "#/$defs/money_metric"},
+        "monthly_total": {"$ref": "#/$defs/money_metric"},
+        "breakdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expected_deposit_interest",
+            "expected_coupon_component",
+            "expected_dividend_component",
+            "other_expected_capital_income"
+          ],
+          "properties": {
+            "expected_deposit_interest": {"$ref": "#/$defs/money_metric"},
+            "expected_coupon_component": {"$ref": "#/$defs/money_metric"},
+            "expected_dividend_component": {"$ref": "#/$defs/money_metric"},
+            "other_expected_capital_income": {"$ref": "#/$defs/money_metric"}
+          }
+        },
+        "dividend_component_source": {"const": "actual_closed_month_dividend_average_annualized"},
+        "deposit_projection_method": {
+          "enum": ["persisted_monthly_estimate_times_12_plus_expected_interest", "unavailable"]
+        },
+        "warning_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "passive_income": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actual_history_metric_path", "rolling_actual_average", "forecast"],
+      "properties": {
+        "actual_history_metric_path": {
+          "const": "reporting_history[].kpis.passive_income_actual"
+        },
+        "rolling_actual_average": {"$ref": "#/$defs/rolling_average"},
+        "forecast": {"$ref": "#/$defs/passive_forecast"}
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "name",
+        "goal_type",
+        "is_primary",
+        "target",
+        "current_value",
+        "gap",
+        "progress",
+        "projection_status",
+        "estimated_achievement_date",
+        "method_version",
+        "source_metric_path",
+        "warning_codes"
+      ],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^goal-[a-z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "goal_type": {"enum": ["passive_income", "capital", "expense_coverage", "mortgage_coverage", "other"]},
+        "is_primary": {"type": "boolean"},
+        "target": {"$ref": "#/$defs/money_metric"},
+        "current_value": {"$ref": "#/$defs/money_metric"},
+        "gap": {"$ref": "#/$defs/money_metric"},
+        "progress": {"$ref": "#/$defs/ratio_metric"},
+        "projection_status": {"enum": ["achieved", "not_projectable", "inactive", "unsupported"]},
+        "estimated_achievement_date": {"type": ["string", "null"], "format": "date"},
+        "method_version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "source_metric_path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "warning_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "debt_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["included_in_liquid_capital", "excluded_from_liquid_capital"],
+      "properties": {
+        "included_in_liquid_capital": {"$ref": "#/$defs/money_metric"},
+        "excluded_from_liquid_capital": {"$ref": "#/$defs/money_metric"}
+      }
+    },
+    "property_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["estimated_value", "mortgage_balance", "property_equity", "monthly_payment"],
+      "properties": {
+        "estimated_value": {"$ref": "#/$defs/money_metric"},
+        "mortgage_balance": {"$ref": "#/$defs/money_metric"},
+        "property_equity": {"$ref": "#/$defs/money_metric"},
+        "monthly_payment": {"$ref": "#/$defs/money_metric"}
+      }
+    },
+    "debts_and_real_estate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "debts", "real_estate", "mortgage_coverage", "liquidity_rule"],
+      "properties": {
+        "reporting_period": {"$ref": "#/$defs/period"},
+        "debts": {"$ref": "#/$defs/debt_summary"},
+        "real_estate": {"$ref": "#/$defs/property_summary"},
+        "mortgage_coverage": {"$ref": "#/$defs/ratio_metric"},
+        "liquidity_rule": {"const": "real_estate_and_mortgage_are_excluded_from_liquid_capital"}
+      }
+    },
+    "iis_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_ref",
+        "iis_type",
+        "opened_at",
+        "eligible_close_at",
+        "contributions_by_tax_year",
+        "tax_benefits",
+        "portfolio_result_without_tax_benefit",
+        "portfolio_result_with_received_tax_benefit",
+        "result_rule"
+      ],
+      "properties": {
+        "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
+        "iis_type": {"type": "string", "minLength": 1, "maxLength": 64},
+        "opened_at": {"type": "string", "format": "date"},
+        "eligible_close_at": {"type": ["string", "null"], "format": "date"},
+        "contributions_by_tax_year": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tax_year", "amount", "is_target_reached"],
+            "properties": {
+              "tax_year": {"type": "integer", "minimum": 1900, "maximum": 9999},
+              "amount": {"$ref": "#/$defs/money"},
+              "is_target_reached": {"type": "boolean"}
+            }
+          }
+        },
+        "tax_benefits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["planned", "submitted", "received", "rejected"],
+          "properties": {
+            "planned": {"$ref": "#/$defs/money"},
+            "submitted": {"$ref": "#/$defs/money"},
+            "received": {"$ref": "#/$defs/money"},
+            "rejected": {"$ref": "#/$defs/money"}
+          }
+        },
+        "portfolio_result_without_tax_benefit": {"$ref": "#/$defs/money_metric"},
+        "portfolio_result_with_received_tax_benefit": {"$ref": "#/$defs/money_metric"},
+        "result_rule": {"const": "only_received_tax_benefits_are_added_to_actual_result"}
+      }
+    },
+    "salary_tax_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tax_year",
+        "history_coverage",
+        "opening_context_available",
+        "taxable_gross_ytd",
+        "current_marginal_rate_pct",
+        "warning_codes"
+      ],
+      "properties": {
+        "tax_year": {"type": "integer", "minimum": 1900, "maximum": 9999},
+        "history_coverage": {"$ref": "#/$defs/coverage_state"},
+        "opening_context_available": {"type": "boolean"},
+        "taxable_gross_ytd": {"$ref": "#/$defs/money_metric"},
+        "current_marginal_rate_pct": {"$ref": "#/$defs/ratio_metric"},
+        "warning_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "iis_and_tax": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iis_accounts", "salary_tax_context"],
+      "properties": {
+        "iis_accounts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/iis_account"}
+        },
+        "salary_tax_context": {"$ref": "#/$defs/salary_tax_context"}
+      }
+    },
+    "cash_flow_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_ref",
+        "expected_date",
+        "flow_type",
+        "account_ref",
+        "instrument_ref",
+        "amount",
+        "amount_semantics",
+        "personal_tax_status",
+        "is_approximate",
+        "reason_codes",
+        "provenance",
+        "duplicate_resolution",
+        "included_in_calendar_total",
+        "included_in_passive_income_forecast",
+        "forecast_treatment"
+      ],
+      "properties": {
+        "event_ref": {"type": "string", "pattern": "^flow-[a-z0-9-]+$"},
+        "expected_date": {"type": "string", "format": "date"},
+        "flow_type": {"enum": ["coupon", "dividend", "interest", "redemption", "other"]},
+        "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
+        "instrument_ref": {"type": ["string", "null"], "pattern": "^inst-[a-z0-9-]+$"},
+        "amount": {"$ref": "#/$defs/money"},
+        "amount_semantics": {
+          "enum": [
+            "owner_expected_net",
+            "owner_expected_amount_tax_unknown",
+            "provider_announced_amount_tax_unknown",
+            "principal"
+          ]
+        },
+        "personal_tax_status": {"enum": ["known_or_accounted", "unknown", "not_applicable"]},
+        "is_approximate": {"type": "boolean"},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "duplicate_resolution": {
+          "enum": ["none", "keep_both", "count_manual", "count_provider", "unresolved_manual_only"]
+        },
+        "included_in_calendar_total": {"const": true},
+        "included_in_passive_income_forecast": {"type": "boolean"},
+        "forecast_treatment": {
+          "enum": ["included", "represented_by_historical_component", "excluded_principal"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"flow_type": {"const": "redemption"}}},
+          "then": {
+            "properties": {
+              "included_in_passive_income_forecast": {"const": false},
+              "forecast_treatment": {"const": "excluded_principal"},
+              "amount_semantics": {"const": "principal"},
+              "personal_tax_status": {"const": "not_applicable"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"flow_type": {"const": "dividend"}}},
+          "then": {
+            "properties": {
+              "included_in_passive_income_forecast": {"const": false},
+              "forecast_treatment": {"const": "represented_by_historical_component"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"flow_type": {"enum": ["coupon", "interest", "other"]}}},
+          "then": {
+            "properties": {
+              "included_in_passive_income_forecast": {"const": true},
+              "forecast_treatment": {"const": "included"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "properties": {"source_kind": {"const": "provider"}}
+              },
+              "flow_type": {"enum": ["coupon", "dividend", "interest", "other"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "amount_semantics": {"const": "provider_announced_amount_tax_unknown"},
+              "personal_tax_status": {"const": "unknown"},
+              "is_approximate": {"const": true},
+              "reason_codes": {"contains": {"const": "personal_tax_unknown"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"amount_semantics": {"const": "owner_expected_net"}}},
+          "then": {"properties": {"personal_tax_status": {"const": "known_or_accounted"}}}
+        },
+        {
+          "if": {
+            "properties": {"amount_semantics": {"const": "owner_expected_amount_tax_unknown"}}
+          },
+          "then": {
+            "properties": {
+              "personal_tax_status": {"const": "unknown"},
+              "is_approximate": {"const": true},
+              "reason_codes": {"contains": {"const": "personal_tax_unknown"}}
+            }
+          }
+        }
+      ]
+    },
+    "upcoming_cash_flows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_start",
+        "window_end_exclusive",
+        "forecast_version",
+        "non_principal_calendar_amount_total",
+        "principal_total",
+        "calendar_total",
+        "items",
+        "warning_codes"
+      ],
+      "properties": {
+        "window_start": {"type": "string", "format": "date"},
+        "window_end_exclusive": {"type": "string", "format": "date"},
+        "forecast_version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "non_principal_calendar_amount_total": {"$ref": "#/$defs/money_metric"},
+        "principal_total": {"$ref": "#/$defs/money_metric"},
+        "calendar_total": {"$ref": "#/$defs/money_metric"},
+        "items": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/cash_flow_item"}
+        },
+        "warning_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "scope", "message"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 256},
+        "message": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    }
+  }
+}

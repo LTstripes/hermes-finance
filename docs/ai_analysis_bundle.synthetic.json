@@ -1,0 +1,539 @@
+{
+  "$schema": "./ai_analysis_bundle.schema.json",
+  "schema_name": "hermes.finance.ai_analysis_bundle",
+  "schema_version": "1.0.0",
+  "metadata": {
+    "generated_at": "2026-05-15T12:00:00+03:00",
+    "as_of_date": "2026-05-15",
+    "base_currency": "RUB",
+    "application": {
+      "name": "Hermes Finance",
+      "version": "0.6.3-synthetic"
+    },
+    "generation_mode": "read_only",
+    "calculation_versions": {
+      "monthly_summary": "v2",
+      "passive_income_forecast": "v1",
+      "goal_achievement": "goal_achievement_v1"
+    },
+    "ordering_contract": "arrays_are_stably_sorted_as_defined_by_contract"
+  },
+  "coverage": {
+    "first_reporting_period": {"year": 2025, "month": 11},
+    "last_reporting_period": {"year": 2026, "month": 5},
+    "closed_month_count": 5,
+    "draft_month_count": 1,
+    "missing_calendar_periods": [
+      {"year": 2026, "month": 2}
+    ],
+    "domains": {
+      "capital": {"status": "complete", "reason_codes": []},
+      "passive_income": {"status": "partial", "reason_codes": ["incomplete_12_month_window"]},
+      "salary_tax": {"status": "unavailable", "reason_codes": ["salary_tax_history_incomplete"]},
+      "portfolio": {"status": "complete", "reason_codes": []},
+      "payouts": {"status": "partial", "reason_codes": ["unresolved_provider_mapping"]}
+    }
+  },
+  "reporting_history": [
+    {
+      "period": {"year": 2025, "month": 11},
+      "status": "closed",
+      "snapshot_date": "2025-11-30",
+      "coverage": {"status": "complete", "reason_codes": []},
+      "provenance_sources": ["manual"],
+      "kpis": {
+        "liquid_assets_total": {"value": {"amount": "3000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "included_debts": {"value": {"amount": "100000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "liquid_capital_net": {"value": {"amount": "2900000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual": {"value": {"amount": "12000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual_breakdown": {
+          "deposit_interest": {"value": {"amount": "5000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "bond_coupons": {"value": {"amount": "4000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "dividends": {"value": {"amount": "2000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "other_capital_income": {"value": {"amount": "1000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []}
+        },
+        "active_income_net": {"value": {"amount": "300000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "mandatory_expenses": {"value": {"amount": "120000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "saving_allocations": {"value": {"amount": "80000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "monthly_cash_balance": {"value": {"amount": "112000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "property_equity": {"value": {"amount": "4800000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "market_value_change": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["authoritative_market_value_change_unavailable"]},
+        "investment_return": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["cash_flow_adjusted_return_unavailable"]}
+      },
+      "warning_codes": []
+    },
+    {
+      "period": {"year": 2025, "month": 12},
+      "status": "closed",
+      "snapshot_date": "2025-12-31",
+      "coverage": {"status": "complete", "reason_codes": []},
+      "provenance_sources": ["manual", "t_invest"],
+      "kpis": {
+        "liquid_assets_total": {"value": {"amount": "3200000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "included_debts": {"value": {"amount": "80000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "liquid_capital_net": {"value": {"amount": "3120000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual": {"value": {"amount": "20000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual_breakdown": {
+          "deposit_interest": {"value": {"amount": "6000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "bond_coupons": {"value": {"amount": "5000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "dividends": {"value": {"amount": "8000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "other_capital_income": {"value": {"amount": "1000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []}
+        },
+        "active_income_net": {"value": {"amount": "450000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "mandatory_expenses": {"value": {"amount": "125000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "saving_allocations": {"value": {"amount": "150000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "monthly_cash_balance": {"value": {"amount": "195000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "property_equity": {"value": {"amount": "4850000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "market_value_change": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["authoritative_market_value_change_unavailable"]},
+        "investment_return": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["cash_flow_adjusted_return_unavailable"]}
+      },
+      "warning_codes": []
+    },
+    {
+      "period": {"year": 2026, "month": 1},
+      "status": "closed",
+      "snapshot_date": "2026-01-31",
+      "coverage": {"status": "complete", "reason_codes": []},
+      "provenance_sources": ["manual", "alfa_pro"],
+      "kpis": {
+        "liquid_assets_total": {"value": {"amount": "3400000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "included_debts": {"value": {"amount": "60000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "liquid_capital_net": {"value": {"amount": "3340000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual": {"value": {"amount": "15000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual_breakdown": {
+          "deposit_interest": {"value": {"amount": "5000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "bond_coupons": {"value": {"amount": "6000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "dividends": {"value": {"amount": "3000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "other_capital_income": {"value": {"amount": "1000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []}
+        },
+        "active_income_net": {"value": {"amount": "310000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "mandatory_expenses": {"value": {"amount": "125000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "saving_allocations": {"value": {"amount": "90000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "monthly_cash_balance": {"value": {"amount": "110000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "property_equity": {"value": {"amount": "4900000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "market_value_change": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["authoritative_market_value_change_unavailable"]},
+        "investment_return": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["cash_flow_adjusted_return_unavailable"]}
+      },
+      "warning_codes": []
+    },
+    {
+      "period": {"year": 2026, "month": 3},
+      "status": "closed",
+      "snapshot_date": "2026-03-31",
+      "coverage": {"status": "partial", "reason_codes": ["previous_calendar_period_missing"]},
+      "provenance_sources": ["manual", "alfa_statement"],
+      "kpis": {
+        "liquid_assets_total": {"value": {"amount": "3550000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "included_debts": {"value": {"amount": "70000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "liquid_capital_net": {"value": {"amount": "3480000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual": {"value": {"amount": "18000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual_breakdown": {
+          "deposit_interest": {"value": {"amount": "6000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "bond_coupons": {"value": {"amount": "7000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "dividends": {"value": {"amount": "4000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "other_capital_income": {"value": {"amount": "1000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []}
+        },
+        "active_income_net": {"value": {"amount": "315000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "mandatory_expenses": {"value": {"amount": "130000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "saving_allocations": {"value": {"amount": "95000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "monthly_cash_balance": {"value": {"amount": "108000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "property_equity": {"value": {"amount": "4950000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "market_value_change": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["authoritative_market_value_change_unavailable"]},
+        "investment_return": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["cash_flow_adjusted_return_unavailable"]}
+      },
+      "warning_codes": ["previous_calendar_period_missing"]
+    },
+    {
+      "period": {"year": 2026, "month": 4},
+      "status": "closed",
+      "snapshot_date": "2026-04-30",
+      "coverage": {"status": "complete", "reason_codes": []},
+      "provenance_sources": ["manual", "t_invest", "alfa_pro"],
+      "kpis": {
+        "liquid_assets_total": {"value": {"amount": "3800000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "included_debts": {"value": {"amount": "50000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "liquid_capital_net": {"value": {"amount": "3750000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual": {"value": {"amount": "25000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "passive_income_actual_breakdown": {
+          "deposit_interest": {"value": {"amount": "7000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "bond_coupons": {"value": {"amount": "10000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "dividends": {"value": {"amount": "7000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+          "other_capital_income": {"value": {"amount": "1000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []}
+        },
+        "active_income_net": {"value": {"amount": "320000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "mandatory_expenses": {"value": {"amount": "130000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "saving_allocations": {"value": {"amount": "100000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "monthly_cash_balance": {"value": {"amount": "115000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "property_equity": {"value": {"amount": "5000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "market_value_change": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["authoritative_market_value_change_unavailable"]},
+        "investment_return": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["cash_flow_adjusted_return_unavailable"]}
+      },
+      "warning_codes": []
+    },
+    {
+      "period": {"year": 2026, "month": 5},
+      "status": "draft",
+      "snapshot_date": "2026-05-15",
+      "coverage": {"status": "partial", "reason_codes": ["draft_month_incomplete"]},
+      "provenance_sources": ["manual"],
+      "kpis": {
+        "liquid_assets_total": {"value": {"amount": "3900000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "included_debts": {"value": {"amount": "40000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "liquid_capital_net": {"value": {"amount": "3860000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "passive_income_actual": {"value": {"amount": "8000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "passive_income_actual_breakdown": {
+          "deposit_interest": {"value": {"amount": "3000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+          "bond_coupons": {"value": {"amount": "4000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+          "dividends": {"value": {"amount": "1000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+          "other_capital_income": {"value": {"amount": "0.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]}
+        },
+        "active_income_net": {"value": {"amount": "160000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "mandatory_expenses": {"value": {"amount": "130000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "saving_allocations": {"value": {"amount": "50000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "monthly_cash_balance": {"value": {"amount": "-12000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "property_equity": {"value": {"amount": "5000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["draft_value"]},
+        "market_value_change": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["authoritative_market_value_change_unavailable"]},
+        "investment_return": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["cash_flow_adjusted_return_unavailable"]}
+      },
+      "warning_codes": ["draft_month_incomplete"]
+    }
+  ],
+  "current_portfolio": {
+    "reporting_period": {"year": 2026, "month": 4},
+    "snapshot_date": "2026-04-30",
+    "reporting_status": "closed",
+    "selection_reason": "latest_closed",
+    "coverage": {"status": "complete", "reason_codes": []},
+    "accounts": [
+      {"ref": "acct-brokerage", "name": "Synthetic Brokerage", "account_type": "brokerage", "status": "active", "include_in_capital": true, "include_in_returns": true},
+      {"ref": "acct-cash", "name": "Synthetic Cash", "account_type": "cash", "status": "active", "include_in_capital": true, "include_in_returns": false},
+      {"ref": "acct-deposit", "name": "Synthetic Deposit", "account_type": "deposit", "status": "active", "include_in_capital": true, "include_in_returns": true},
+      {"ref": "acct-iis", "name": "Synthetic IIS", "account_type": "iis", "status": "active", "include_in_capital": true, "include_in_returns": true},
+      {"ref": "acct-metals", "name": "Synthetic Metals", "account_type": "other", "status": "frozen", "include_in_capital": true, "include_in_returns": false}
+    ],
+    "instruments": [
+      {"ref": "inst-bond-a", "name": "Synthetic Bond A", "instrument_type": "bond", "isin": "RU000A10BND2", "ticker": "SBND", "currency": "RUB"},
+      {"ref": "inst-gold", "name": "Synthetic Physical Gold", "instrument_type": "gold", "isin": null, "ticker": null, "currency": "RUB"},
+      {"ref": "inst-stock-a", "name": "Synthetic Stock A", "instrument_type": "stock", "isin": "RU000A10SYN1", "ticker": "SYN", "currency": "RUB"}
+    ],
+    "positions": [
+      {
+        "account_ref": "acct-brokerage",
+        "instrument_ref": "inst-bond-a",
+        "quantity": "50",
+        "market_price_per_unit": {"value": {"amount": "9900.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "market_value": {"value": {"amount": "500000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "cost_basis": {"value": {"amount": "470000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "unrealized_result": {"value": {"amount": "30000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "accrued_interest": {"value": {"amount": "5000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "price_date": "2026-04-30",
+        "valuation_provenance": {"source_kind": "provider", "provider": "t_invest", "observed_at": "2026-04-30T18:00:00+03:00"}
+      },
+      {
+        "account_ref": "acct-brokerage",
+        "instrument_ref": "inst-stock-a",
+        "quantity": "100",
+        "market_price_per_unit": {"value": {"amount": "6000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "market_value": {"value": {"amount": "600000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "cost_basis": {"value": {"amount": "560000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "unrealized_result": {"value": {"amount": "40000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "accrued_interest": {"value": {"amount": "0.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "price_date": "2026-04-30",
+        "valuation_provenance": {"source_kind": "provider", "provider": "alfa_pro", "observed_at": "2026-04-30T18:05:00+03:00"}
+      },
+      {
+        "account_ref": "acct-iis",
+        "instrument_ref": "inst-bond-a",
+        "quantity": "30",
+        "market_price_per_unit": {"value": {"amount": "9900.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "market_value": {"value": {"amount": "300000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "cost_basis": {"value": {"amount": "285000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "unrealized_result": {"value": {"amount": "15000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "accrued_interest": {"value": {"amount": "3000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "price_date": "2026-04-30",
+        "valuation_provenance": {"source_kind": "provider", "provider": "t_invest", "observed_at": "2026-04-30T18:00:00+03:00"}
+      },
+      {
+        "account_ref": "acct-iis",
+        "instrument_ref": "inst-stock-a",
+        "quantity": "100",
+        "market_price_per_unit": {"value": {"amount": "6000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "market_value": {"value": {"amount": "600000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "cost_basis": {"value": {"amount": "585000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "unrealized_result": {"value": {"amount": "15000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "accrued_interest": {"value": {"amount": "0.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "price_date": "2026-04-30",
+        "valuation_provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T18:10:00+03:00"}
+      },
+      {
+        "account_ref": "acct-metals",
+        "instrument_ref": "inst-gold",
+        "quantity": "1.250",
+        "market_price_per_unit": {"value": {"amount": "320000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": ["stale_quote"]},
+        "market_value": {"value": {"amount": "400000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": ["stale_quote"]},
+        "cost_basis": {"value": {"amount": "350000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "unrealized_result": {"value": {"amount": "50000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": ["stale_quote"]},
+        "accrued_interest": {"value": {"amount": "0.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "price_date": "2026-03-15",
+        "valuation_provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-03-15T12:00:00+03:00"}
+      }
+    ],
+    "deposits": [
+      {
+        "account_ref": "acct-deposit",
+        "name": "Synthetic Fixed Deposit",
+        "deposit_type": "deposit",
+        "balance": {"value": {"amount": "1000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "annual_rate_pct": "13.80",
+        "expected_monthly_interest": {"value": {"amount": "11500.00", "currency": "RUB"}, "availability": "available", "precision": "approximate", "source": "persisted_snapshot", "reason_codes": ["maturity_not_modelled"]},
+        "actual_interest_received": {"value": {"amount": "7000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_actual", "reason_codes": []},
+        "provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T18:15:00+03:00"}
+      }
+    ],
+    "cash_balances": [
+      {
+        "account_ref": "acct-cash",
+        "name": "Synthetic Cash Balance",
+        "amount": {"value": {"amount": "400000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+        "include_in_capital": true,
+        "provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T18:20:00+03:00"}
+      }
+    ]
+  },
+  "passive_income": {
+    "actual_history_metric_path": "reporting_history[].kpis.passive_income_actual",
+    "rolling_actual_average": {
+      "value": {"value": {"amount": "18000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["incomplete_12_month_window"]},
+      "eligible_month_count": 5,
+      "target_window_months": 12,
+      "is_complete_window": false,
+      "history_start_period": {"year": 2025, "month": 11},
+      "periods_used": [
+        {"year": 2025, "month": 11},
+        {"year": 2025, "month": 12},
+        {"year": 2026, "month": 1},
+        {"year": 2026, "month": 3},
+        {"year": 2026, "month": 4}
+      ],
+      "source": "eligible_closed_reporting_months"
+    },
+    "forecast": {
+      "forecast_version": "v1",
+      "as_of_date": "2026-04-30",
+      "annual_total": {"value": {"amount": "273600.00", "currency": "RUB"}, "availability": "available", "precision": "approximate", "source": "backend_derived", "reason_codes": ["deposit_projection_approximate", "incomplete_dividend_history"]},
+      "monthly_total": {"value": {"amount": "22800.00", "currency": "RUB"}, "availability": "available", "precision": "approximate", "source": "backend_derived", "reason_codes": ["deposit_projection_approximate", "incomplete_dividend_history"]},
+      "breakdown": {
+        "expected_deposit_interest": {"value": {"amount": "144000.00", "currency": "RUB"}, "availability": "available", "precision": "approximate", "source": "backend_derived", "reason_codes": ["deposit_projection_approximate"]},
+        "expected_coupon_component": {"value": {"amount": "60000.00", "currency": "RUB"}, "availability": "available", "precision": "approximate", "source": "backend_derived", "reason_codes": ["personal_tax_unknown"]},
+        "expected_dividend_component": {"value": {"amount": "57600.00", "currency": "RUB"}, "availability": "available", "precision": "approximate", "source": "backend_derived", "reason_codes": ["incomplete_dividend_history"]},
+        "other_expected_capital_income": {"value": {"amount": "12000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []}
+      },
+      "dividend_component_source": "actual_closed_month_dividend_average_annualized",
+      "deposit_projection_method": "persisted_monthly_estimate_times_12_plus_expected_interest",
+      "warning_codes": ["deposit_projection_approximate", "incomplete_dividend_history"]
+    }
+  },
+  "goals": [
+    {
+      "ref": "goal-primary-passive",
+      "name": "Synthetic Passive Income Goal",
+      "goal_type": "passive_income",
+      "is_primary": true,
+      "target": {"value": {"amount": "100000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_configuration", "reason_codes": []},
+      "current_value": {"value": {"amount": "18000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": ["incomplete_12_month_window"]},
+      "gap": {"value": {"amount": "82000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+      "progress": {"value_pct": "18.00", "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+      "projection_status": "not_projectable",
+      "estimated_achievement_date": null,
+      "method_version": "goal_achievement_v1",
+      "source_metric_path": "passive_income.rolling_actual_average.value",
+      "warning_codes": ["incomplete_12_month_window", "no_trajectory_model"]
+    }
+  ],
+  "debts_and_real_estate": {
+    "reporting_period": {"year": 2026, "month": 4},
+    "debts": {
+      "included_in_liquid_capital": {"value": {"amount": "50000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+      "excluded_from_liquid_capital": {"value": {"amount": "3000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": ["mortgage_is_reference_only"]}
+    },
+    "real_estate": {
+      "estimated_value": {"value": {"amount": "8000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+      "mortgage_balance": {"value": {"amount": "3000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []},
+      "property_equity": {"value": {"amount": "5000000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+      "monthly_payment": {"value": {"amount": "45000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_snapshot", "reason_codes": []}
+    },
+    "mortgage_coverage": {"value_pct": "125.00", "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+    "liquidity_rule": "real_estate_and_mortgage_are_excluded_from_liquid_capital"
+  },
+  "iis_and_tax": {
+    "iis_accounts": [
+      {
+        "account_ref": "acct-iis",
+        "iis_type": "type_a",
+        "opened_at": "2024-06-01",
+        "eligible_close_at": "2027-06-01",
+        "contributions_by_tax_year": [
+          {"tax_year": 2025, "amount": {"amount": "400000.00", "currency": "RUB"}, "is_target_reached": true},
+          {"tax_year": 2026, "amount": {"amount": "200000.00", "currency": "RUB"}, "is_target_reached": false}
+        ],
+        "tax_benefits": {
+          "planned": {"amount": "40000.00", "currency": "RUB"},
+          "submitted": {"amount": "45000.00", "currency": "RUB"},
+          "received": {"amount": "52000.00", "currency": "RUB"},
+          "rejected": {"amount": "0.00", "currency": "RUB"}
+        },
+        "portfolio_result_without_tax_benefit": {"value": {"amount": "150000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "portfolio_result_with_received_tax_benefit": {"value": {"amount": "202000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "backend_derived", "reason_codes": []},
+        "result_rule": "only_received_tax_benefits_are_added_to_actual_result"
+      }
+    ],
+    "salary_tax_context": {
+      "tax_year": 2026,
+      "history_coverage": {"status": "unavailable", "reason_codes": ["salary_tax_history_incomplete"]},
+      "opening_context_available": false,
+      "taxable_gross_ytd": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["salary_tax_history_incomplete"]},
+      "current_marginal_rate_pct": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["salary_tax_history_incomplete"]},
+      "warning_codes": ["salary_tax_history_incomplete"]
+    }
+  },
+  "upcoming_cash_flows": {
+    "window_start": "2026-04-30",
+    "window_end_exclusive": "2027-04-30",
+    "forecast_version": "v1",
+    "non_principal_calendar_amount_total": {"value": {"amount": "128000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "merged_payout_calendar", "reason_codes": []},
+    "principal_total": {"value": {"amount": "100000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "merged_payout_calendar", "reason_codes": ["excluded_from_passive_income"]},
+    "calendar_total": {"value": {"amount": "228000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "merged_payout_calendar", "reason_codes": []},
+    "items": [
+      {
+        "event_ref": "flow-2026-06-coupon-manual",
+        "expected_date": "2026-06-15",
+        "flow_type": "coupon",
+        "account_ref": "acct-brokerage",
+        "instrument_ref": "inst-bond-a",
+        "amount": {"amount": "30000.00", "currency": "RUB"},
+        "amount_semantics": "owner_expected_net",
+        "personal_tax_status": "known_or_accounted",
+        "is_approximate": false,
+        "reason_codes": [],
+        "provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T19:00:00+03:00"},
+        "duplicate_resolution": "none",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": true,
+        "forecast_treatment": "included"
+      },
+      {
+        "event_ref": "flow-2026-07-dividend-provider",
+        "expected_date": "2026-07-20",
+        "flow_type": "dividend",
+        "account_ref": "acct-brokerage",
+        "instrument_ref": "inst-stock-a",
+        "amount": {"amount": "25000.00", "currency": "RUB"},
+        "amount_semantics": "provider_announced_amount_tax_unknown",
+        "personal_tax_status": "unknown",
+        "is_approximate": true,
+        "reason_codes": ["personal_tax_unknown"],
+        "provenance": {"source_kind": "provider", "provider": "t_invest", "observed_at": "2026-04-30T19:05:00+03:00"},
+        "duplicate_resolution": "count_provider",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": false,
+        "forecast_treatment": "represented_by_historical_component"
+      },
+      {
+        "event_ref": "flow-2026-08-interest-manual",
+        "expected_date": "2026-08-01",
+        "flow_type": "interest",
+        "account_ref": "acct-deposit",
+        "instrument_ref": null,
+        "amount": {"amount": "6000.00", "currency": "RUB"},
+        "amount_semantics": "owner_expected_net",
+        "personal_tax_status": "known_or_accounted",
+        "is_approximate": false,
+        "reason_codes": [],
+        "provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T19:10:00+03:00"},
+        "duplicate_resolution": "none",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": true,
+        "forecast_treatment": "included"
+      },
+      {
+        "event_ref": "flow-2026-09-redemption-provider",
+        "expected_date": "2026-09-30",
+        "flow_type": "redemption",
+        "account_ref": "acct-iis",
+        "instrument_ref": "inst-bond-a",
+        "amount": {"amount": "100000.00", "currency": "RUB"},
+        "amount_semantics": "principal",
+        "personal_tax_status": "not_applicable",
+        "is_approximate": false,
+        "reason_codes": ["excluded_from_passive_income"],
+        "provenance": {"source_kind": "provider", "provider": "t_invest", "observed_at": "2026-04-30T19:15:00+03:00"},
+        "duplicate_resolution": "none",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": false,
+        "forecast_treatment": "excluded_principal"
+      },
+      {
+        "event_ref": "flow-2026-10-coupon-provider",
+        "expected_date": "2026-10-15",
+        "flow_type": "coupon",
+        "account_ref": "acct-iis",
+        "instrument_ref": "inst-bond-a",
+        "amount": {"amount": "30000.00", "currency": "RUB"},
+        "amount_semantics": "provider_announced_amount_tax_unknown",
+        "personal_tax_status": "unknown",
+        "is_approximate": true,
+        "reason_codes": ["personal_tax_unknown"],
+        "provenance": {"source_kind": "provider", "provider": "t_invest", "observed_at": "2026-04-30T19:20:00+03:00"},
+        "duplicate_resolution": "count_provider",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": true,
+        "forecast_treatment": "included"
+      },
+      {
+        "event_ref": "flow-2026-11-dividend-unresolved",
+        "expected_date": "2026-11-20",
+        "flow_type": "dividend",
+        "account_ref": "acct-iis",
+        "instrument_ref": "inst-stock-a",
+        "amount": {"amount": "25000.00", "currency": "RUB"},
+        "amount_semantics": "owner_expected_amount_tax_unknown",
+        "personal_tax_status": "unknown",
+        "is_approximate": true,
+        "reason_codes": ["personal_tax_unknown", "unresolved_provider_mapping"],
+        "provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T19:25:00+03:00"},
+        "duplicate_resolution": "unresolved_manual_only",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": false,
+        "forecast_treatment": "represented_by_historical_component"
+      },
+      {
+        "event_ref": "flow-2026-12-other-manual",
+        "expected_date": "2026-12-10",
+        "flow_type": "other",
+        "account_ref": "acct-brokerage",
+        "instrument_ref": null,
+        "amount": {"amount": "12000.00", "currency": "RUB"},
+        "amount_semantics": "owner_expected_net",
+        "personal_tax_status": "known_or_accounted",
+        "is_approximate": false,
+        "reason_codes": [],
+        "provenance": {"source_kind": "manual", "provider": null, "observed_at": "2026-04-30T19:30:00+03:00"},
+        "duplicate_resolution": "none",
+        "included_in_calendar_total": true,
+        "included_in_passive_income_forecast": true,
+        "forecast_treatment": "included"
+      }
+    ],
+    "warning_codes": ["unresolved_provider_mapping"]
+  },
+  "warnings": [
+    {"code": "authoritative_market_value_change_unavailable", "severity": "info", "scope": "reporting_history", "message": "No accepted aggregate market-value-change service exists; liquid-capital changes are not substituted for it."},
+    {"code": "cash_flow_adjusted_return_unavailable", "severity": "info", "scope": "reporting_history", "message": "Cash-flow-adjusted investment return is unavailable; market value change must not be interpreted as investment return."},
+    {"code": "deposit_projection_approximate", "severity": "warning", "scope": "passive_income.forecast", "message": "Deposit forecast annualizes a persisted monthly estimate and does not model maturity or rate changes."},
+    {"code": "incomplete_12_month_window", "severity": "warning", "scope": "passive_income.rolling_actual_average", "message": "The rolling actual average uses five eligible closed months out of twelve."},
+    {"code": "reporting_history_gap", "severity": "warning", "scope": "coverage.missing_calendar_periods", "message": "February 2026 is missing and is unknown history, not a zero month."},
+    {"code": "salary_tax_history_incomplete", "severity": "warning", "scope": "iis_and_tax.salary_tax_context", "message": "Current YTD salary-tax context is unavailable because required closed-month history or an opening context is missing."},
+    {"code": "stale_quote", "severity": "warning", "scope": "current_portfolio.positions[4]", "message": "The synthetic gold valuation uses an older manual price date."},
+    {"code": "unresolved_provider_mapping", "severity": "warning", "scope": "upcoming_cash_flows", "message": "An unresolved manual/provider duplicate uses the safe manual-only calendar count."}
+  ]
+}
