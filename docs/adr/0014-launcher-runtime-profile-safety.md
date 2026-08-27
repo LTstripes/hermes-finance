@@ -1,6 +1,6 @@
 # ADR 0014 — Launcher runtime-profile safety contract
 
-- **Status:** Proposed (R07-D01 / issue #131)
+- **Status:** Accepted
 - **Date:** 2026-08-26
 - **Release line:** `r07` desktop / launcher track
 - **Source task:** R07-D01, parent roadmap #127
