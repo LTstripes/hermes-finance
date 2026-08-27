@@ -56,3 +56,11 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
+
+# Windows launcher package output
+launcher/windows/artifacts/
+launcher/windows/.dotnet/
+launcher/windows/.dotnet-home/
+launcher/windows/.test-tmp/
+launcher/windows/**/bin/
+launcher/windows/**/obj/
