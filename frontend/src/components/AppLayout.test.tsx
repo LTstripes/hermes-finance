@@ -42,6 +42,10 @@ describe("AppLayout", () => {
     expect(within(nav).getByRole("link", { name: /Месяцы/i })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Счета и инструменты/i })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Цели/i })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /Налоги и ИИС/i })).toHaveAttribute(
+      "href",
+      "/tax-iis-planner",
+    );
 
     analytics.focus();
     expect(analytics).toHaveFocus();

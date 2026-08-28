@@ -829,6 +829,62 @@ export type TaxBenefit = {
   notes: string | null;
 };
 
+export type TaxIisPlannerBracket = {
+  threshold_from: MoneyValue;
+  threshold_to: MoneyValue | null;
+  rate_bps: number;
+};
+
+export type TaxIisPlannerSalaryTax = {
+  tax_year: number | null;
+  history_complete: boolean;
+  history_coverage: "complete" | "unavailable";
+  available: boolean;
+  opening_context_available: boolean;
+  taxable_gross_ytd: MoneyValue | null;
+  current_marginal_bracket: TaxIisPlannerBracket | null;
+  current_marginal_rate_bps: number | null;
+  next_threshold: MoneyValue | null;
+  distance_to_next_threshold: MoneyValue | null;
+  tax_bracket_source: string | null;
+  warning_codes: string[];
+};
+
+export type TaxIisPlannerContribution = {
+  tax_year: number;
+  amount: MoneyValue;
+  is_target_reached: boolean;
+};
+
+export type TaxIisPlannerBenefitTotals = {
+  planned: MoneyValue;
+  submitted: MoneyValue;
+  received: MoneyValue;
+  rejected: MoneyValue;
+};
+
+export type TaxIisPlannerAccount = {
+  account_id: number;
+  account_name: string;
+  iis_type: string;
+  opened_at: string;
+  eligible_close_at: string | null;
+  contributions_by_tax_year: TaxIisPlannerContribution[];
+  tax_benefits: TaxIisPlannerBenefitTotals;
+};
+
+export type TaxIisPlanner = {
+  contract_version: string;
+  tax_year: number | null;
+  as_of: {
+    reporting_month: ReportingMonth | null;
+    selection_reason: string;
+  };
+  salary_tax: TaxIisPlannerSalaryTax;
+  iis_accounts: TaxIisPlannerAccount[];
+  warnings: string[];
+};
+
 export type FreshnessStatus =
   | "current"
   | "stale"

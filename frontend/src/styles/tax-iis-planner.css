@@ -1,0 +1,143 @@
+.tax-iis-planner-page__header {
+  max-width: 760px;
+}
+
+.tax-iis-planner-page__toolbar {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.tax-iis-planner-page__toolbar .field {
+  min-width: 280px;
+}
+
+.tax-iis-planner-page__as-of {
+  margin: 0;
+}
+
+.tax-iis-planner-page__warnings,
+.tax-iis-planner-page__warning-codes {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.tax-iis-planner-page__warning-codes {
+  margin-top: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.tax-iis-planner-page__warning-codes code {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+.tax-iis-planner-page__salary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.tax-iis-planner-page__salary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  margin-top: var(--space-5);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.tax-iis-planner-page__salary-meta strong {
+  color: var(--ink);
+}
+
+.tax-iis-planner-page__accounts {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.tax-iis-planner-page__account {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-soft);
+}
+
+.tax-iis-planner-page__account-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.tax-iis-planner-page__account-header h3 {
+  margin: var(--space-2) 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.tax-iis-planner-page__account-meta {
+  margin: var(--space-2) 0 0;
+}
+
+.tax-iis-planner-page__account-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.tax-iis-planner-page__account-section h4 {
+  margin: 0 0 var(--space-3);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.tax-iis-planner-page__benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.tax-iis-planner-page__benefits-grid .data-value {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  .tax-iis-planner-page__salary-grid,
+  .tax-iis-planner-page__benefits-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .tax-iis-planner-page__toolbar {
+    align-items: stretch;
+  }
+
+  .tax-iis-planner-page__toolbar .field,
+  .tax-iis-planner-page__toolbar .btn {
+    width: 100%;
+  }
+
+  .tax-iis-planner-page__salary-grid,
+  .tax-iis-planner-page__benefits-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-iis-planner-page__account {
+    padding: var(--space-4);
+  }
+
+  .tax-iis-planner-page__account-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
