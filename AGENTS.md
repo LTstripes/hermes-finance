@@ -16,6 +16,22 @@ When documents disagree, use this order:
 
 Do not treat old release-execution notes as current standing orders.
 
+## Task prompt authority
+
+The active GitHub issue, accepted ADR/contract, and explicit Integrator note are the task specification. They contain scope, acceptance criteria and guardrails subject to the source-of-truth precedence above.
+
+A launch prompt sent to a coding agent is **locator/execution context only**, not a second copy of the specification. By default it should contain only:
+
+- issue number/link;
+- assigned task branch and physical workspace;
+- exact baseline/current integration SHA when relevant;
+- instruction to read this `AGENTS.md`, the issue and any Integrator note/accepted contract;
+- instruction to run the required checks, commit/push only the task branch, and return the exact final SHA.
+
+Do not duplicate or rewrite the issue's requirements in the launch prompt. If requirements change, amend the authoritative issue/contract/Integrator note instead of changing them only in chat.
+
+When routing several tasks, give each task/agent its own separate copyable prompt. Never bundle unrelated launch prompts into one block.
+
 ## Preferred owner/integrator execution route
 
 When the active owner/integrator surface has direct GitHub read/write access and can inspect GitHub Actions, it should complete repository-side work itself instead of using the owner as a human courier to another coding client or to the GitHub UI.
