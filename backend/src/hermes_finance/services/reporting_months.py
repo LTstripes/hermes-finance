@@ -174,6 +174,14 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         for table in _reporting_month_owned_tables():
             reporting_month_id = table.c.reporting_month_id
             session.execute(delete(table).where(reporting_month_id == month_id))
+        # External transfer links are intentionally independent of a month and
+        # survive draft deletion. Reconcile their status after bulk-deleting
+        # month-owned external-flow rows.
+        from hermes_finance.services.external_flows import (
+            refresh_external_transfer_link_statuses,
+        )
+
+        refresh_external_transfer_link_statuses(session)
         session.delete(reporting_month)
         session.commit()
     except Exception:

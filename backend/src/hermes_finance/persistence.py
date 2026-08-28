@@ -573,6 +573,139 @@ class InvestmentCashFlow(Base):
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
+class ExternalTransferLink(Base):
+    """Owner-created identity for the two legs of one account transfer.
+
+    A link is intentionally independent of amount/date matching.  It may be
+    created before either leg is entered, while ``status`` records whether the
+    owner has supplied a complete opposite-direction pair.
+    """
+
+    __tablename__ = "external_transfer_links"
+    __table_args__ = (
+        UniqueConstraint("transfer_key", name="uq_external_transfer_links_key"),
+        CheckConstraint(
+            "status IN ('unresolved', 'resolved')",
+            name="ck_external_transfer_links_status",
+        ),
+        CheckConstraint(
+            "length(trim(transfer_key)) > 0",
+            name="ck_external_transfer_links_key_nonempty",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    transfer_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unresolved", server_default=text("'unresolved'")
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    @property
+    def is_resolved(self) -> bool:
+        return self.status == "resolved"
+
+
+class ExternalFlow(Base):
+    """Explicit owner-managed cash movement across a tracked-account boundary.
+
+    ``boundary_amount_kopecks`` is the actual non-negative amount crossing the
+    boundary.  ``kind`` and ``direction`` deliberately store both the
+    high-level semantic and its sign-free account direction; the table check
+    constraint prevents them from disagreeing.
+    """
+
+    __tablename__ = "external_flows"
+    __table_args__ = (
+        Index("ix_external_flows_month", "reporting_month_id"),
+        Index("ix_external_flows_account", "account_id"),
+        Index("ix_external_flows_transfer_link", "transfer_link_id"),
+        CheckConstraint(
+            "kind IN ('external_contribution', 'external_withdrawal')",
+            name="ck_external_flows_kind",
+        ),
+        CheckConstraint(
+            "direction IN ('contribution', 'withdrawal')",
+            name="ck_external_flows_direction",
+        ),
+        CheckConstraint(
+            "(kind = 'external_contribution' AND direction = 'contribution') OR "
+            "(kind = 'external_withdrawal' AND direction = 'withdrawal')",
+            name="ck_external_flows_kind_direction",
+        ),
+        CheckConstraint(
+            "boundary_amount_kopecks >= 0",
+            name="ck_external_flows_boundary_amount_nonnegative",
+        ),
+        CheckConstraint(
+            "length(trim(currency)) = 3",
+            name="ck_external_flows_currency_length",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    boundary_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    transfer_link_id: Mapped[int | None] = mapped_column(
+        ForeignKey("external_transfer_links.id", ondelete="RESTRICT"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    @property
+    def amount_kopecks(self) -> int:
+        """Compatibility spelling for callers that use generic amount wording."""
+
+        return self.boundary_amount_kopecks
+
+    @property
+    def flow_kind(self) -> str:
+        """Compatibility spelling for the explicit persisted ``kind``."""
+
+        return self.kind
+
+    @property
+    def transfer_group_id(self) -> int | None:
+        """Compatibility spelling for the durable transfer-link identity."""
+
+        return self.transfer_link_id
+
+
+# Public vocabulary aliases for callers that use the contract's
+# ``boundary-flow`` / ``transfer-link`` terminology.
+ExternalBoundaryFlow = ExternalFlow
+TransferLink = ExternalTransferLink
+
+
 class ExpectedCashFlow(Base):
     __tablename__ = "expected_cash_flows"
     __table_args__ = (

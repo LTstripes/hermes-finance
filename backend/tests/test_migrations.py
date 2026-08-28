@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0029_statement_event_retract"
+REVISION = "0030_external_flow_persistence"
 PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
 
@@ -201,6 +201,31 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "currency",
             "source",
             "notes",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(external_transfer_links)")
+        ] == [
+            "id",
+            "transfer_key",
+            "status",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(external_flows)")] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "event_date",
+            "boundary_amount_kopecks",
+            "direction",
+            "kind",
+            "currency",
+            "transfer_link_id",
+            "source",
+            "notes",
+            "created_at",
+            "updated_at",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expected_cash_flows)")] == [
             "id",
