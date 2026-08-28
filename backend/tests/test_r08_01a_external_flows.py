@@ -14,10 +14,11 @@ from hermes_finance.domain import (
     ExternalFlowDirection,
     ExternalFlowKind,
     ExternalFlowScope,
+    ExternalFlowScopeMembership,
     ExternalTransferStatus,
 )
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Account, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.external_flows import (
     classify_external_flow,
@@ -56,6 +57,7 @@ def test_external_contribution_and_withdrawal_use_exact_explicit_boundary_semant
             boundary_amount="1234.56",
             direction=ExternalFlowDirection.CONTRIBUTION,
             kind=ExternalFlowKind.EXTERNAL_CONTRIBUTION,
+            scope_membership=ExternalFlowScopeMembership.STABLE_IN_SCOPE,
             source="manual",
         )
         withdrawal = create_external_flow(
@@ -66,6 +68,7 @@ def test_external_contribution_and_withdrawal_use_exact_explicit_boundary_semant
             boundary_amount="12.34",
             direction=ExternalFlowDirection.WITHDRAWAL,
             kind=ExternalFlowKind.EXTERNAL_WITHDRAWAL,
+            scope_membership=ExternalFlowScopeMembership.STABLE_IN_SCOPE,
             source="manual",
         )
 
@@ -105,6 +108,54 @@ def test_external_contribution_and_withdrawal_use_exact_explicit_boundary_semant
         database.engine.dispose()
 
 
+def test_historical_scope_classification_does_not_follow_current_account_flag(
+    tmp_path: Path,
+) -> None:
+    session, database, month_id, source_id, _ = _environment(tmp_path)
+    try:
+        asserted_flow = create_external_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=source_id,
+            event_date=date(2030, 5, 10),
+            boundary_amount="123.45",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        assert (
+            classify_external_flow(session, asserted_flow.id, scope="portfolio")
+            is ExternalFlowClassification.EXTERNAL_CONTRIBUTION
+        )
+
+        account = session.get(Account, source_id)
+        assert account is not None
+        account.include_in_returns = False
+        session.commit()
+
+        assert (
+            classify_external_flow(session, asserted_flow.id, scope="portfolio")
+            is ExternalFlowClassification.EXTERNAL_CONTRIBUTION
+        )
+
+        unasserted_flow = create_external_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=source_id,
+            event_date=date(2030, 5, 11),
+            boundary_amount="1.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        assert (
+            classify_external_flow(session, unasserted_flow.id, scope="portfolio")
+            is ExternalFlowClassification.NOT_AUTHORITATIVE
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_linked_transfer_is_internal_for_portfolio_and_crosses_account_boundary(
     tmp_path: Path,
 ) -> None:
@@ -119,6 +170,7 @@ def test_linked_transfer_is_internal_for_portfolio_and_crosses_account_boundary(
             boundary_amount="100.00",
             direction="withdrawal",
             kind="external_withdrawal",
+            scope_membership="stable_in_scope",
             transfer_link_id=link.id,
         )
         assert link.status == ExternalTransferStatus.UNRESOLVED.value
@@ -135,6 +187,7 @@ def test_linked_transfer_is_internal_for_portfolio_and_crosses_account_boundary(
             boundary_amount="100.00",
             direction="contribution",
             kind="external_contribution",
+            scope_membership="stable_in_scope",
             transfer_link_id=link.id,
         )
         session.refresh(link)
@@ -174,6 +227,7 @@ def test_one_sided_transfer_stays_unresolved_until_explicit_second_leg(tmp_path:
             boundary_amount="50.00",
             direction="withdrawal",
             kind="external_withdrawal",
+            scope_membership="stable_in_scope",
             transfer_link_id=link.id,
         )
         assert link.status == "unresolved"
@@ -197,6 +251,7 @@ def test_draft_month_delete_reconciles_surviving_transfer_link(tmp_path: Path) -
             boundary_amount="50.00",
             direction="withdrawal",
             kind="external_withdrawal",
+            scope_membership="stable_in_scope",
             transfer_link_id=link.id,
         )
         create_external_flow(
@@ -207,6 +262,7 @@ def test_draft_month_delete_reconciles_surviving_transfer_link(tmp_path: Path) -
             boundary_amount="50.00",
             direction="contribution",
             kind="external_contribution",
+            scope_membership="stable_in_scope",
             transfer_link_id=link.id,
         )
         assert link.status == "resolved"
@@ -237,6 +293,7 @@ def test_external_flow_api_crud_and_closed_month_guard(tmp_path: Path) -> None:
                     "boundary_amount": {"amount": "200.01", "currency": "RUB"},
                     "direction": "contribution",
                     "kind": "external_contribution",
+                    "scope_membership": "stable_in_scope",
                     "source": "manual",
                 },
             )
@@ -244,6 +301,7 @@ def test_external_flow_api_crud_and_closed_month_guard(tmp_path: Path) -> None:
             body = created.json()
             assert body["boundary_amount"] == {"amount": "200.01", "currency": "RUB"}
             assert body["kind"] == "external_contribution"
+            assert body["scope_membership"] == "stable_in_scope"
             flow_id = body["id"]
 
             fractional_kopeck = client.post(
@@ -309,6 +367,7 @@ def test_transfer_link_api_crud_and_explicit_pairing(tmp_path: Path) -> None:
                     "amount": {"amount": "75.00", "currency": "RUB"},
                     "direction": "withdrawal",
                     "flow_type": "external_withdrawal",
+                    "scope_membership": "stable_in_scope",
                 },
             )
             destination_flow = client.post(
@@ -320,6 +379,7 @@ def test_transfer_link_api_crud_and_explicit_pairing(tmp_path: Path) -> None:
                     "amount": {"amount": "75.00", "currency": "RUB"},
                     "direction": "contribution",
                     "flow_type": "external_contribution",
+                    "scope_membership": "stable_in_scope",
                 },
             )
             assert source_flow.status_code == 201, source_flow.text
@@ -479,14 +539,176 @@ def test_migration_downgrade_refuses_to_delete_new_owner_data(tmp_path: Path) ->
         connection.close()
 
 
+def test_scope_membership_migration_preserves_existing_flows_and_downgrades_safely(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "r08-01a-scope-membership-existing.db"
+    previous = run_alembic(database_path, "upgrade", "0030_external_flow_persistence")
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2032,
+                1,
+                "2032-01-01",
+                "2032-01-31",
+                "2032-01-31",
+                "draft",
+                "manual",
+                "2032-01-31 00:00:00",
+                "2032-01-31 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts (name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Existing Account", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO external_flows "
+            "(reporting_month_id, account_id, event_date, boundary_amount_kopecks, direction, kind, "
+            "currency, transfer_link_id, source, notes, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "2032-01-10",
+                12345,
+                "contribution",
+                "external_contribution",
+                "RUB",
+                None,
+                "legacy-r08-01a",
+                "preserve this row",
+                "2032-01-10 00:00:00",
+                "2032-01-10 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute(
+            "SELECT boundary_amount_kopecks, direction, kind, currency, scope_membership, "
+            "source, notes FROM external_flows"
+        ).fetchone() == (
+            12345,
+            "contribution",
+            "external_contribution",
+            "RUB",
+            "unknown",
+            "legacy-r08-01a",
+            "preserve this row",
+        )
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0030_external_flow_persistence")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(external_flows)")]
+        assert "scope_membership" not in columns
+        assert connection.execute(
+            "SELECT boundary_amount_kopecks, direction, kind, currency, source, notes "
+            "FROM external_flows"
+        ).fetchone() == (
+            12345,
+            "contribution",
+            "external_contribution",
+            "RUB",
+            "legacy-r08-01a",
+            "preserve this row",
+        )
+    finally:
+        connection.close()
+
+
+def test_scope_membership_migration_refuses_to_drop_owner_evidence(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "r08-01a-scope-membership-downgrade.db"
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2032,
+                2,
+                "2032-02-01",
+                "2032-02-29",
+                "2032-02-29",
+                "draft",
+                "manual",
+                "2032-02-29 00:00:00",
+                "2032-02-29 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts (name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Evidence Account", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO external_flows "
+            "(reporting_month_id, account_id, event_date, boundary_amount_kopecks, direction, kind, "
+            "scope_membership, currency, transfer_link_id, source, notes, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "2032-02-10",
+                9999,
+                "withdrawal",
+                "external_withdrawal",
+                "stable_in_scope",
+                "RUB",
+                None,
+                "manual",
+                None,
+                "2032-02-10 00:00:00",
+                "2032-02-10 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0030_external_flow_persistence")
+    assert downgraded.returncode != 0
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0031_external_flow_scope_membership",
+        )
+        assert connection.execute("SELECT scope_membership FROM external_flows").fetchone() == (
+            "stable_in_scope",
+        )
+    finally:
+        connection.close()
+
+
 def test_external_flow_migration_is_network_and_provider_free() -> None:
-    migration = (
-        Path(__file__).resolve().parents[1]
-        / "migrations"
-        / "versions"
-        / "0030_external_flow_persistence.py"
-    ).read_text(encoding="utf-8")
-    lowered = migration.lower()
-    assert "httpx" not in lowered
-    assert "urllib" not in lowered
-    assert "socket" not in lowered
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    for filename in (
+        "0030_external_flow_persistence.py",
+        "0031_external_flow_scope_membership.py",
+    ):
+        lowered = (migrations_dir / filename).read_text(encoding="utf-8").lower()
+        assert "httpx" not in lowered
+        assert "urllib" not in lowered
+        assert "socket" not in lowered

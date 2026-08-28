@@ -650,6 +650,10 @@ class ExternalFlow(Base):
             "length(trim(currency)) = 3",
             name="ck_external_flows_currency_length",
         ),
+        CheckConstraint(
+            "scope_membership IN ('unknown', 'stable_in_scope', 'stable_out_of_scope')",
+            name="ck_external_flows_scope_membership",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -665,6 +669,9 @@ class ExternalFlow(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")
+    )
+    scope_membership: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="unknown", server_default=text("'unknown'")
     )
     transfer_link_id: Mapped[int | None] = mapped_column(
         ForeignKey("external_transfer_links.id", ondelete="RESTRICT"), nullable=True

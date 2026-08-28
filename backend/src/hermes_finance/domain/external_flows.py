@@ -26,11 +26,20 @@ class ExternalFlowScope(StrEnum):
     ACCOUNT = "account"
 
 
+class ExternalFlowScopeMembership(StrEnum):
+    """Owner-asserted v1 membership evidence for a historical flow."""
+
+    UNKNOWN = "unknown"
+    STABLE_IN_SCOPE = "stable_in_scope"
+    STABLE_OUT_OF_SCOPE = "stable_out_of_scope"
+
+
 class ExternalFlowClassification(StrEnum):
     EXTERNAL_CONTRIBUTION = "external_contribution"
     EXTERNAL_WITHDRAWAL = "external_withdrawal"
     INTERNAL_TRANSFER = "internal_transfer"
     UNRESOLVED = "unresolved"
+    NOT_AUTHORITATIVE = "not_authoritative"
     NOT_IN_SCOPE = "not_in_scope"
 
 

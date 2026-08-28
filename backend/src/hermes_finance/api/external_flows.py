@@ -44,6 +44,7 @@ class ExternalFlowCreate(BaseModel):
         max_length=32,
         validation_alias=AliasChoices("kind", "flow_kind", "flow_type"),
     )
+    scope_membership: str = Field(default="unknown", min_length=1, max_length=24)
     transfer_link_id: int | None = Field(
         default=None,
         validation_alias=AliasChoices("transfer_link_id", "transfer_group_id"),
@@ -77,6 +78,7 @@ class ExternalFlowUpdate(BaseModel):
         max_length=32,
         validation_alias=AliasChoices("kind", "flow_kind", "flow_type"),
     )
+    scope_membership: str | None = Field(default=None, min_length=1, max_length=24)
     transfer_link_id: int | None = Field(
         default=None,
         validation_alias=AliasChoices("transfer_link_id", "transfer_group_id"),
@@ -107,6 +109,7 @@ class ExternalFlowResponse(BaseModel):
     direction: str
     kind: str
     currency: str
+    scope_membership: str
     transfer_link_id: int | None
     transfer_status: str | None
     portfolio_scope_classification: str
@@ -159,6 +162,7 @@ def _flow_response(session: Session, flow: Any) -> ExternalFlowResponse:
         direction=flow.direction,
         kind=flow.kind,
         currency=flow.currency,
+        scope_membership=flow.scope_membership,
         transfer_link_id=flow.transfer_link_id,
         transfer_status=transfer_status.value if transfer_status is not None else None,
         portfolio_scope_classification=classify_external_flow(
@@ -215,6 +219,7 @@ def create_external_flow_endpoint(
         boundary_amount=_amount(payload.boundary_amount),
         direction=payload.direction,
         kind=payload.kind,
+        scope_membership=payload.scope_membership,
         transfer_link_id=payload.transfer_link_id,
         currency=payload.boundary_amount.currency,
         source=payload.source,
@@ -245,6 +250,7 @@ def update_external_flow_endpoint(
         ),
         "direction": payload.direction,
         "kind": payload.kind,
+        "scope_membership": payload.scope_membership,
         "source": payload.source,
         "notes": payload.notes,
     }

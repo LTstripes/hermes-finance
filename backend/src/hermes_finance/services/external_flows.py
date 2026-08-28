@@ -21,6 +21,7 @@ from hermes_finance.domain import (
     ExternalFlowDirection,
     ExternalFlowKind,
     ExternalFlowScope,
+    ExternalFlowScopeMembership,
     ExternalTransferStatus,
     RubleAmount,
 )
@@ -90,6 +91,17 @@ def _coerce_kind(kind: ExternalFlowKind | str) -> ExternalFlowKind:
         return ExternalFlowKind(kind)
     except ValueError as error:
         raise ValueError(f"unsupported external flow kind: {kind!r}") from error
+
+
+def _coerce_scope_membership(
+    scope_membership: ExternalFlowScopeMembership | str,
+) -> ExternalFlowScopeMembership:
+    try:
+        return ExternalFlowScopeMembership(scope_membership)
+    except ValueError as error:
+        raise ValueError(
+            f"unsupported external flow scope membership: {scope_membership!r}"
+        ) from error
 
 
 def _kind_for_direction(direction: ExternalFlowDirection) -> ExternalFlowKind:
@@ -333,6 +345,7 @@ def stage_create_external_flow(
     boundary_amount: RubleAmount | str,
     direction: ExternalFlowDirection | str,
     kind: ExternalFlowKind | str,
+    scope_membership: ExternalFlowScopeMembership | str = ExternalFlowScopeMembership.UNKNOWN,
     transfer_link_id: int | None = None,
     currency: str = "RUB",
     source: str = "manual",
@@ -341,6 +354,7 @@ def stage_create_external_flow(
     require_editable_reporting_month(session, reporting_month_id)
     _require_account(session, account_id)
     normalized_kind, normalized_direction = _normalize_kind_direction(kind, direction)
+    normalized_scope_membership = _coerce_scope_membership(scope_membership)
     amount_kopecks = _normalize_exact_amount(boundary_amount, field="boundary_amount")
     normalized_currency = _normalize_currency(currency)
     normalized_source = _normalize_text(source, field="source", max_length=64)
@@ -363,6 +377,7 @@ def stage_create_external_flow(
         boundary_amount_kopecks=amount_kopecks,
         direction=normalized_direction.value,
         kind=normalized_kind.value,
+        scope_membership=normalized_scope_membership.value,
         currency=normalized_currency,
         transfer_link_id=transfer_link_id,
         source=normalized_source,
@@ -384,6 +399,7 @@ def create_external_flow(
     boundary_amount: RubleAmount | str,
     direction: ExternalFlowDirection | str,
     kind: ExternalFlowKind | str,
+    scope_membership: ExternalFlowScopeMembership | str = ExternalFlowScopeMembership.UNKNOWN,
     transfer_link_id: int | None = None,
     currency: str = "RUB",
     source: str = "manual",
@@ -397,6 +413,7 @@ def create_external_flow(
         boundary_amount=boundary_amount,
         direction=direction,
         kind=kind,
+        scope_membership=scope_membership,
         transfer_link_id=transfer_link_id,
         currency=currency,
         source=source,
@@ -416,6 +433,7 @@ def stage_update_external_flow(
     boundary_amount: RubleAmount | str | None = None,
     direction: ExternalFlowDirection | str | None = None,
     kind: ExternalFlowKind | str | None = None,
+    scope_membership: ExternalFlowScopeMembership | str | None = None,
     transfer_link_id: int | None | object = _UNSET,
     currency: str | None = None,
     source: str | None = None,
@@ -428,6 +446,9 @@ def stage_update_external_flow(
     new_account = _require_account(session, new_account_id)
     current_kind = ExternalFlowKind(flow.kind)
     current_direction = ExternalFlowDirection(flow.direction)
+    normalized_scope_membership = (
+        _coerce_scope_membership(scope_membership) if scope_membership is not None else None
+    )
     if kind is None and direction is None:
         normalized_kind, normalized_direction = current_kind, current_direction
     else:
@@ -467,6 +488,9 @@ def stage_update_external_flow(
         )
         _require_editable_transfer_legs(session, new_legs)
 
+    identity_changed = new_account_id != flow.account_id or (
+        event_date is not None and event_date != flow.event_date
+    )
     if account_id is not None:
         flow.account_id = new_account.id
     if event_date is not None:
@@ -478,6 +502,10 @@ def stage_update_external_flow(
     if kind is not None or direction is not None:
         flow.kind = normalized_kind.value
         flow.direction = normalized_direction.value
+    if normalized_scope_membership is not None:
+        flow.scope_membership = normalized_scope_membership.value
+    elif identity_changed:
+        flow.scope_membership = ExternalFlowScopeMembership.UNKNOWN.value
     if transfer_link_id is not _UNSET:
         flow.transfer_link_id = new_link_id  # type: ignore[assignment]
     if currency is not None:
@@ -506,6 +534,7 @@ def update_external_flow(
     boundary_amount: RubleAmount | str | None = None,
     direction: ExternalFlowDirection | str | None = None,
     kind: ExternalFlowKind | str | None = None,
+    scope_membership: ExternalFlowScopeMembership | str | None = None,
     transfer_link_id: int | None | object = _UNSET,
     currency: str | None = None,
     source: str | None = None,
@@ -519,6 +548,7 @@ def update_external_flow(
         boundary_amount=boundary_amount,
         direction=direction,
         kind=kind,
+        scope_membership=scope_membership,
         transfer_link_id=transfer_link_id,
         currency=currency,
         source=source,
@@ -551,9 +581,10 @@ def classify_external_flow(
 ) -> ExternalFlowClassification:
     """Classify one explicit flow at portfolio or account scope.
 
-    The portfolio classification uses the account's current explicit
-    ``include_in_returns`` flag.  This helper is deliberately not an
-    availability calculation and does not claim historical membership proof;
+    ``scope_membership`` is an owner-asserted, persisted v1 constraint for the
+    historical flow.  ``unknown`` is explicitly non-authoritative.  The
+    account's current ``include_in_returns`` flag is never used to reinterpret
+    a historical flow, and this helper does not claim interval coverage;
     R08-01B/C must add that contract before exact performance metrics consume it.
     """
 
@@ -566,29 +597,37 @@ def classify_external_flow(
     if normalized_scope is ExternalFlowScope.ACCOUNT:
         if account_id is None:
             raise ValueError("account_id is required for account scope")
-        selected_account = _require_account(session, account_id)
-        if not selected_account.include_in_returns or flow.account_id != account_id:
+        _require_account(session, account_id)
+        if flow.account_id != account_id:
             return ExternalFlowClassification.NOT_IN_SCOPE
         if flow.transfer_link_id is not None:
             link = _require_transfer_link(session, flow.transfer_link_id)
             legs = _transfer_legs(session, link.id)
             if not _is_complete_transfer(legs):
                 return ExternalFlowClassification.UNRESOLVED
-        return ExternalFlowClassification(flow.kind)
+        if flow.scope_membership == ExternalFlowScopeMembership.UNKNOWN.value:
+            return ExternalFlowClassification.NOT_AUTHORITATIVE
+        if flow.scope_membership == ExternalFlowScopeMembership.STABLE_IN_SCOPE.value:
+            return ExternalFlowClassification(flow.kind)
+        return ExternalFlowClassification.NOT_IN_SCOPE
 
-    account = _require_account(session, flow.account_id)
-    if not account.include_in_returns:
+    if flow.scope_membership == ExternalFlowScopeMembership.STABLE_OUT_OF_SCOPE.value:
         return ExternalFlowClassification.NOT_IN_SCOPE
     if flow.transfer_link_id is None:
+        if flow.scope_membership == ExternalFlowScopeMembership.UNKNOWN.value:
+            return ExternalFlowClassification.NOT_AUTHORITATIVE
         return ExternalFlowClassification(flow.kind)
 
     link = _require_transfer_link(session, flow.transfer_link_id)
     legs = _transfer_legs(session, link.id)
     if not _is_complete_transfer(legs):
         return ExternalFlowClassification.UNRESOLVED
+    if flow.scope_membership == ExternalFlowScopeMembership.UNKNOWN.value:
+        return ExternalFlowClassification.NOT_AUTHORITATIVE
     other = next(leg for leg in legs if leg.id != flow.id)
-    other_account = _require_account(session, other.account_id)
-    if other_account.include_in_returns:
+    if other.scope_membership == ExternalFlowScopeMembership.UNKNOWN.value:
+        return ExternalFlowClassification.NOT_AUTHORITATIVE
+    if other.scope_membership == ExternalFlowScopeMembership.STABLE_IN_SCOPE.value:
         return ExternalFlowClassification.INTERNAL_TRANSFER
     return ExternalFlowClassification(flow.kind)
 

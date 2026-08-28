@@ -12,6 +12,7 @@ from hermes_finance.domain.external_flows import (
     ExternalFlowDirection,
     ExternalFlowKind,
     ExternalFlowScope,
+    ExternalFlowScopeMembership,
     ExternalTransferStatus,
     TransferLinkStatus,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "ExternalFlowDirection",
     "ExternalFlowKind",
     "ExternalFlowScope",
+    "ExternalFlowScopeMembership",
     "ExternalTransferStatus",
     "DepositType",
     "ExpenseType",
