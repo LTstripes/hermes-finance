@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -295,7 +296,7 @@ def test_allocation_uses_explicit_types_accounts_and_deterministic_top_n(
     assert stock_position.id not in [item.position_id for item in result.top_positions.items]
 
 
-def test_missing_and_foreign_currency_are_not_guessed_or_included(session: Session) -> None:
+def test_missing_and_foreign_currency_do_not_remove_saved_valuation(session: Session) -> None:
     month = _month(session)
     account = create_account(
         session,
@@ -315,14 +316,14 @@ def test_missing_and_foreign_currency_are_not_guessed_or_included(session: Sessi
     )
     missing_currency.currency = ""
     session.commit()
-    _position(
+    missing_currency_position = _position(
         session,
         month_id=month.id,
         account_id=account.id,
         instrument_id=missing_currency.id,
         amount="1000.00",
     )
-    _position(
+    foreign_currency_position = _position(
         session,
         month_id=month.id,
         account_id=account.id,
@@ -342,15 +343,29 @@ def test_missing_and_foreign_currency_are_not_guessed_or_included(session: Sessi
 
     result = risk_allocation_for_month(session, month.id)
 
-    assert result.liquid_assets_total.kopecks == 0
-    assert result.allocation_by_asset_class.items == ()
-    assert result.allocation_by_account.items == ()
-    assert result.top_positions.items == ()
-    assert result.allocation_by_asset_class.support.status is RiskSupportStatus.UNAVAILABLE
-    assert result.allocation_by_asset_class.support.reason_codes == (
-        "currency_conversion_not_supported",
-        "currency_not_persisted",
-    )
+    assert result.liquid_assets_total.kopecks == 300_000
+    asset_items = {item.key: item for item in result.allocation_by_asset_class.items}
+    assert asset_items["stock"].amount.kopecks == 100_000
+    assert asset_items["stock"].share_pct == Decimal("33.33")
+    assert asset_items["bond"].amount.kopecks == 200_000
+    assert asset_items["bond"].share_pct == Decimal("66.67")
+    assert result.allocation_by_asset_class.covered_amount.kopecks == 300_000
+    assert result.allocation_by_asset_class.unallocated_amount.kopecks == 0
+    assert result.allocation_by_asset_class.coverage_pct == Decimal("100.00")
+    assert result.allocation_by_asset_class.support.status is RiskSupportStatus.SUPPORTED
+
+    account_items = result.allocation_by_account.items
+    assert len(account_items) == 1
+    assert account_items[0].amount.kopecks == 300_000
+    assert account_items[0].share_pct == Decimal("100.00")
+    assert result.allocation_by_account.support.status is RiskSupportStatus.SUPPORTED
+    assert {item.position_id for item in result.top_positions.items} == {
+        missing_currency_position.id,
+        foreign_currency_position.id,
+    }
+    assert result.top_positions.top_amount.kopecks == 300_000
+    assert result.top_positions.top_share_pct == Decimal("100.00")
+    assert result.top_positions.support.status is RiskSupportStatus.SUPPORTED
     assert result.support["currency"].status is RiskSupportStatus.UNAVAILABLE
     assert result.support["currency"].reason_codes == (
         "currency_conversion_not_supported",
@@ -360,6 +375,79 @@ def test_missing_and_foreign_currency_are_not_guessed_or_included(session: Sessi
     assert "no_dated_payouts" not in result.payout_concentration.support.reason_codes
     assert result.support["issuer"].status is RiskSupportStatus.UNAVAILABLE
     assert result.support["maturity"].status is RiskSupportStatus.UNAVAILABLE
+
+
+def test_unknown_instrument_type_keeps_valuation_and_marks_partial_class_coverage(
+    session: Session,
+) -> None:
+    month = _month(session)
+    account = create_account(
+        session,
+        name="Synthetic classification account",
+        account_type=AccountType.BROKERAGE,
+    )
+    stock = create_instrument(
+        session,
+        name="Synthetic known stock",
+        instrument_type=InstrumentType.STOCK,
+    )
+    unknown_type = create_instrument(
+        session,
+        name="Synthetic unknown type",
+        instrument_type=InstrumentType.BOND,
+    )
+    known_position = _position(
+        session,
+        month_id=month.id,
+        account_id=account.id,
+        instrument_id=stock.id,
+        amount="1000.00",
+    )
+    unknown_position = _position(
+        session,
+        month_id=month.id,
+        account_id=account.id,
+        instrument_id=unknown_type.id,
+        amount="2000.00",
+    )
+
+    # The production schema rejects malformed classifications. This fixture
+    # simulates legacy/externally persisted data without changing that schema.
+    session.execute(text("PRAGMA ignore_check_constraints = ON"))
+    session.execute(
+        text("UPDATE instruments SET instrument_type = :value WHERE id = :instrument_id"),
+        {"value": "unknown-type", "instrument_id": unknown_type.id},
+    )
+    session.commit()
+    session.execute(text("PRAGMA ignore_check_constraints = OFF"))
+
+    result = risk_allocation_for_month(session, month.id)
+
+    assert result.liquid_assets_total.kopecks == 300_000
+    asset_items = {item.key: item for item in result.allocation_by_asset_class.items}
+    assert asset_items["stock"].amount.kopecks == 100_000
+    assert asset_items["stock"].share_pct == Decimal("33.33")
+    assert asset_items["unknown_asset_class"].label == "Unknown asset class"
+    assert asset_items["unknown_asset_class"].amount.kopecks == 200_000
+    assert asset_items["unknown_asset_class"].share_pct == Decimal("66.67")
+    assert asset_items["unknown_asset_class"].instrument_type is None
+    assert result.allocation_by_asset_class.covered_amount.kopecks == 100_000
+    assert result.allocation_by_asset_class.unallocated_amount.kopecks == 200_000
+    assert result.allocation_by_asset_class.coverage_pct == Decimal("33.33")
+    assert result.allocation_by_asset_class.support.status is RiskSupportStatus.UNKNOWN
+    assert result.allocation_by_asset_class.support.reason_codes == (
+        "instrument_type_not_authoritative",
+    )
+    assert result.allocation_by_account.items[0].amount.kopecks == 300_000
+    assert result.allocation_by_account.items[0].share_pct == Decimal("100.00")
+    assert result.allocation_by_account.support.status is RiskSupportStatus.SUPPORTED
+    assert [item.position_id for item in result.top_positions.items] == [
+        unknown_position.id,
+        known_position.id,
+    ]
+    assert result.top_positions.top_amount.kopecks == 300_000
+    assert result.top_positions.top_share_pct == Decimal("100.00")
+    assert result.top_positions.support.status is RiskSupportStatus.SUPPORTED
 
 
 def test_payout_and_redemption_concentration_uses_dated_ladder_semantics(

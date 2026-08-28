@@ -42,6 +42,7 @@ from hermes_finance.services.cash_flow_ladder import (
     CashFlowLadderSource,
     build_cash_flow_ladder,
 )
+from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
@@ -57,7 +58,7 @@ class _SafePosition:
     account_name: str
     instrument_id: int
     instrument_name: str
-    instrument_type: str
+    instrument_type: str | None
     amount_kopecks: int
 
 
@@ -368,14 +369,17 @@ def risk_allocation_for_month(
                 PositionSnapshot.id,
             )
         ).all()
+        authoritative_liquid_capital = liquid_capital_for_month(session, reporting_month_id)
 
     asset_amounts: dict[str, int] = defaultdict(int)
     account_amounts: dict[int, int] = defaultdict(int)
     account_names: dict[int, str] = {}
     valuation_issues: list[SupportIssue] = []
+    asset_class_issues: list[SupportIssue] = []
     currency_issues: list[SupportIssue] = []
     safe_positions: list[_SafePosition] = []
     valid_cash_kopecks = 0
+    unknown_asset_class_kopecks = 0
 
     for cash in cash_rows:
         currency_state = _currency_support(cash.currency)
@@ -386,9 +390,7 @@ def risk_allocation_for_month(
                 currency_state.status,
                 currency_state.reason_codes[0],
             )
-            valuation_issues.append(row_issue)
             currency_issues.append(row_issue)
-            continue
         if not _amount_is_valid(cash.amount_kopecks):
             valuation_issues.append(
                 _issue(
@@ -429,10 +431,9 @@ def risk_allocation_for_month(
                 currency_state.status,
                 currency_state.reason_codes[0],
             )
-            valuation_issues.append(row_issue)
             currency_issues.append(row_issue)
         if kind_state.status is not RiskSupportStatus.SUPPORTED:
-            valuation_issues.append(
+            asset_class_issues.append(
                 _issue(
                     "position_snapshot",
                     snapshot.id,
@@ -440,21 +441,15 @@ def risk_allocation_for_month(
                     kind_state.reason_codes[0],
                 )
             )
-        if (
-            currency_state.status is not RiskSupportStatus.SUPPORTED
-            or kind_state.status is not RiskSupportStatus.SUPPORTED
-            or kind is None
-            or not _amount_is_valid(snapshot.market_value_kopecks)
-        ):
-            if not _amount_is_valid(snapshot.market_value_kopecks):
-                valuation_issues.append(
-                    _issue(
-                        "position_snapshot",
-                        snapshot.id,
-                        RiskSupportStatus.UNAVAILABLE,
-                        "unsupported_position_valuation",
-                    )
+        if not _amount_is_valid(snapshot.market_value_kopecks):
+            valuation_issues.append(
+                _issue(
+                    "position_snapshot",
+                    snapshot.id,
+                    RiskSupportStatus.UNAVAILABLE,
+                    "unsupported_position_valuation",
                 )
+            )
             continue
         safe_positions.append(
             _SafePosition(
@@ -467,25 +462,34 @@ def risk_allocation_for_month(
                 amount_kopecks=snapshot.market_value_kopecks,
             )
         )
-        asset_amounts[kind] += snapshot.market_value_kopecks
+        if kind is None:
+            unknown_asset_class_kopecks += snapshot.market_value_kopecks
+        else:
+            asset_amounts[kind] += snapshot.market_value_kopecks
         account_amounts[snapshot.account_id] += snapshot.market_value_kopecks
         account_names[snapshot.account_id] = account_name
 
-    denominator_kopecks = sum(asset_amounts.values())
+    denominator_kopecks = authoritative_liquid_capital.total_assets.kopecks
     valuation_issue_tuple = tuple(valuation_issues)
-    allocation_support = support_from_issues(valuation_issue_tuple)
+    asset_class_issue_tuple = tuple(asset_class_issues)
+    allocation_support = support_from_issues(valuation_issue_tuple + asset_class_issue_tuple)
+    asset_amounts_for_metric = dict(asset_amounts)
+    if unknown_asset_class_kopecks:
+        asset_amounts_for_metric["unknown_asset_class"] = unknown_asset_class_kopecks
+    known_asset_class_kopecks = sum(asset_amounts.values())
     account_support = support_from_issues(
         valuation_issue_tuple,
         extra_reason_codes=("cash_not_account_linked",) if cash_rows else (),
     )
     asset_metric = _allocation_metric(
-        dict(asset_amounts),
+        asset_amounts_for_metric,
         denominator_kopecks=denominator_kopecks,
-        covered_kopecks=denominator_kopecks,
-        unallocated_kopecks=0,
+        covered_kopecks=known_asset_class_kopecks,
+        unallocated_kopecks=unknown_asset_class_kopecks,
         support=allocation_support,
-        excluded=valuation_issue_tuple,
+        excluded=valuation_issue_tuple + asset_class_issue_tuple,
         instrument_types={kind.value: kind.value for kind in InstrumentType},
+        labels={"unknown_asset_class": "Unknown asset class"},
     )
     account_metric = _allocation_metric(
         {
