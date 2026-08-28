@@ -13,6 +13,7 @@ import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
+import { RiskAllocationPage } from "../pages/RiskAllocationPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
@@ -31,6 +32,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="analytics/risk-allocation" element={<RiskAllocationPage />} />
             <Route path="freshness" element={<FreshnessProvenancePage />} />
             <Route path="reconciliation" element={<ReconciliationCenterPage />} />
             <Route path="months" element={<MonthsPage />} />

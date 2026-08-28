@@ -1,0 +1,476 @@
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import { formatApiError } from "../api/client";
+import {
+  getRiskAllocation,
+  type RiskAllocationMetric,
+  type RiskConcentrationMetric,
+  type RiskMetricSupport,
+  type RiskMoneyValue,
+  type RiskSupportIssue,
+  type RiskSupportStatus,
+} from "../api/riskAllocation";
+import { listMonths } from "../api/months";
+import type { ReportingMonth } from "../api/types";
+import {
+  Badge,
+  DataValue,
+  EmptyState,
+  ErrorState,
+  Field,
+  LoadingState,
+  Panel,
+  Select,
+  Table,
+  Td,
+  Th,
+} from "../components/ui";
+import { queryKeys } from "../queryClient";
+import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
+import { labelOf } from "../lib/labels";
+
+const ASSET_CLASS_LABELS: Record<string, string> = {
+  cash: "Наличные",
+  deposits: "Депозиты",
+  stock: "Акции",
+  bond: "Облигации",
+  fund: "Фонды",
+  currency: "Валюта",
+  gold: "Золото",
+  other: "Прочее",
+  unknown_asset_class: "Неизвестный класс активов",
+  unassigned_cash: "Наличные без привязки к счёту",
+};
+
+const SUPPORT_LABELS: Record<string, string> = {
+  asset_class: "Класс активов",
+  account: "Счета",
+  issuer: "Эмитент",
+  currency: "Валюта",
+  maturity: "Погашение / срок",
+  broker: "Брокер",
+  bank: "Банк",
+  top_positions: "Top-N позиций",
+  payout: "Выплаты",
+  redemption: "Погашения",
+};
+
+const REASON_LABELS: Record<string, string> = {
+  bank_identity_not_persisted: "банк не хранится в текущей схеме",
+  broker_identity_not_persisted: "брокер не хранится в текущей схеме",
+  cash_not_account_linked: "наличные не связаны со счётом",
+  currency_conversion_not_supported: "конвертация валюты не поддерживается",
+  currency_not_persisted: "валюта не сохранена",
+  deposit_forecast_not_concentratable: "оценка депозита не имеет датированного события",
+  instrument_not_persisted: "инструмент не сохранён для события",
+  instrument_type_not_authoritative: "класс инструмента не подтверждён сохранённым enum",
+  issuer_not_persisted: "эмитент не хранится в текущей схеме",
+  maturity_not_persisted: "срок погашения не хранится в текущей схеме",
+  no_dated_payouts: "датированных событий в окне нет",
+  unsupported_position_valuation: "оценка позиции непригодна для расчёта",
+};
+
+function sortMonths(months: ReportingMonth[]): ReportingMonth[] {
+  return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id);
+}
+
+function statusLabel(status: RiskSupportStatus): string {
+  return labelOf(
+    { supported: "Поддерживается", unavailable: "Недоступно", unknown: "Неизвестно" },
+    status,
+  );
+}
+
+function statusTone(status: RiskSupportStatus): "ok" | "missing" | "unknown" {
+  if (status === "supported") return "ok";
+  return status === "unavailable" ? "missing" : "unknown";
+}
+
+function money(value: RiskMoneyValue): string {
+  return formatMoney(value.amount, { currency: value.currency === "RUB" ? "₽" : value.currency });
+}
+
+function percent(value: string | null): string {
+  return formatPercent(value, { digits: 2 });
+}
+
+function supportReason(reason: string): string {
+  return REASON_LABELS[reason] ?? reason;
+}
+
+function SupportBadge({ support }: { support: RiskMetricSupport }) {
+  return <Badge tone={statusTone(support.status)}>{statusLabel(support.status)}</Badge>;
+}
+
+function SupportReasons({ reasons }: { reasons: string[] }) {
+  if (reasons.length === 0) return null;
+  return (
+    <ul className="risk-allocation__reasons">
+      {reasons.map((reason) => (
+        <li key={reason}>
+          <code>{reason}</code> — {supportReason(reason)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ExcludedIssues({ issues }: { issues: RiskSupportIssue[] }) {
+  if (issues.length === 0) return null;
+  return (
+    <details className="risk-allocation__excluded">
+      <summary>Исключённые строки: {issues.length}</summary>
+      <ul className="risk-allocation__reasons">
+        {issues.map((issue) => (
+          <li
+            key={`${issue.source_kind}-${issue.source_id ?? "none"}-${issue.status}-${issue.reason_codes.join("|")}`}
+          >
+            <Badge tone={statusTone(issue.status)}>{statusLabel(issue.status)}</Badge>{" "}
+            {issue.source_kind}
+            {issue.source_id == null ? "" : ` #${issue.source_id}`} —{" "}
+            {issue.reason_codes.map(supportReason).join(", ")}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function MetricSummary({
+  metric,
+  kind,
+}: {
+  metric: RiskAllocationMetric | RiskConcentrationMetric;
+  kind: "allocation" | "concentration";
+}) {
+  const concentration = kind === "concentration" ? (metric as RiskConcentrationMetric) : null;
+  const allocation = kind === "allocation" ? (metric as RiskAllocationMetric) : null;
+  return (
+    <div className="risk-allocation__metric-summary">
+      <DataValue label="Деноминатор" meta="authoritative RUB" value={money(metric.denominator)} />
+      {concentration ? (
+        <>
+          <DataValue
+            label={`Top-${concentration.top_n}`}
+            meta="сумма выбранных строк"
+            value={money(concentration.top_amount)}
+          />
+          <DataValue
+            label="Доля top-N"
+            meta="из ответа backend"
+            value={percent(concentration.top_share_pct)}
+          />
+        </>
+      ) : allocation ? (
+        <>
+          <DataValue
+            label="Покрыто"
+            meta="классифицировано / связано"
+            value={money(allocation.covered_amount)}
+          />
+          <DataValue
+            label="Покрытие"
+            meta="из ответа backend"
+            value={percent(allocation.coverage_pct)}
+          />
+          <DataValue
+            label="Не распределено"
+            meta="не добавлено к известным классам"
+            value={money(allocation.unallocated_amount)}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function AllocationMetricPanel({
+  title,
+  metric,
+  account,
+}: {
+  title: string;
+  metric: RiskAllocationMetric;
+  account?: boolean;
+}) {
+  return (
+    <Panel action={<SupportBadge support={metric.support} />} label="Распределение" title={title}>
+      <MetricSummary kind="allocation" metric={metric} />
+      <SupportReasons reasons={metric.support.reason_codes} />
+      {metric.items.length === 0 ? (
+        <EmptyState
+          description="В выбранном месяце нет строк для этого среза."
+          inline
+          title="Нет данных"
+        />
+      ) : (
+        <Table>
+          <caption className="visually-hidden">{title}</caption>
+          <thead>
+            <tr>
+              <Th>{account ? "Счёт" : "Класс"}</Th>
+              <Th numeric>Сумма</Th>
+              <Th numeric>Доля</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {metric.items.map((item) => (
+              <tr key={item.key}>
+                <Td>{account ? item.label : labelOf(ASSET_CLASS_LABELS, item.key)}</Td>
+                <Td numeric>{money(item.amount)}</Td>
+                <Td numeric>{percent(item.share_pct)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <ExcludedIssues issues={metric.excluded} />
+    </Panel>
+  );
+}
+
+function ConcentrationPanel({
+  title,
+  label,
+  metric,
+}: {
+  title: string;
+  label: string;
+  metric: RiskConcentrationMetric;
+}) {
+  return (
+    <Panel action={<SupportBadge support={metric.support} />} label={label} title={title}>
+      <MetricSummary kind="concentration" metric={metric} />
+      {metric.is_approximate ? (
+        <p className="risk-allocation__approximate">
+          Есть приблизительные строки — признак пришёл из backend.
+        </p>
+      ) : null}
+      <SupportReasons reasons={metric.support.reason_codes} />
+      {metric.items.length === 0 ? (
+        <EmptyState
+          description="В выбранном окне нет концентрируемых датированных событий."
+          inline
+          title="Нет событий"
+        />
+      ) : (
+        <Table>
+          <caption className="visually-hidden">{title}</caption>
+          <thead>
+            <tr>
+              <Th>Получатель / позиция</Th>
+              <Th numeric>Сумма</Th>
+              <Th numeric>Доля</Th>
+              <Th numeric>Событий</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {metric.items.map((item) => (
+              <tr key={item.key}>
+                <Td>
+                  {item.label}
+                  {item.is_approximate ? (
+                    <span className="risk-allocation__row-note"> · приблизительно</span>
+                  ) : null}
+                </Td>
+                <Td numeric>{money(item.amount)}</Td>
+                <Td numeric>{percent(item.share_pct)}</Td>
+                <Td numeric>{item.event_count ?? "—"}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <ExcludedIssues issues={metric.excluded} />
+    </Panel>
+  );
+}
+
+function SupportMatrix({ support }: { support: Record<string, RiskMetricSupport> }) {
+  const keys = ["currency", "issuer", "maturity", "broker", "bank"];
+  return (
+    <Panel label="Ограничения контракта" title="Что backend поддерживает сейчас">
+      <div className="risk-allocation__support-grid">
+        {keys.map((key) => {
+          const value = support[key];
+          if (!value) return null;
+          return (
+            <div className="risk-allocation__support-item" key={key}>
+              <div className="risk-allocation__support-heading">
+                <strong>{SUPPORT_LABELS[key]}</strong>
+                <SupportBadge support={value} />
+              </div>
+              <SupportReasons reasons={value.reason_codes} />
+            </div>
+          );
+        })}
+      </div>
+      <p className="muted risk-allocation__support-note">
+        Состояния описывают доступность данных, а не уровень риска. Сохранённая RUB-оценка позиции
+        не исключается из ликвидного капитала из-за недоступной метаинформации.
+      </p>
+    </Panel>
+  );
+}
+
+export function RiskAllocationPage() {
+  const [months, setMonths] = useState<ReportingMonth[]>([]);
+  const [selectedMonthId, setSelectedMonthId] = useState<number | null>(null);
+  const [monthsLoading, setMonthsLoading] = useState(true);
+  const [monthsError, setMonthsError] = useState<string | null>(null);
+  const topN = 5;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setMonthsLoading(true);
+    void listMonths(controller.signal)
+      .then((rows) => {
+        if (controller.signal.aborted) return;
+        const sorted = sortMonths(rows);
+        setMonths(sorted);
+        setSelectedMonthId((previous) =>
+          previous != null && sorted.some((month) => month.id === previous)
+            ? previous
+            : (sorted[0]?.id ?? null),
+        );
+        setMonthsError(null);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setMonths([]);
+          setSelectedMonthId(null);
+          setMonthsError(formatApiError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setMonthsLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const selectedMonth = useMemo(
+    () => months.find((month) => month.id === selectedMonthId) ?? null,
+    [months, selectedMonthId],
+  );
+  const riskQuery = useQuery({
+    queryKey: queryKeys.riskAllocation(selectedMonthId, topN),
+    queryFn: ({ signal }) => getRiskAllocation(selectedMonthId as number, topN, "v1", signal),
+    enabled: selectedMonthId != null,
+  });
+  const data = riskQuery.data?.reporting_month_id === selectedMonthId ? riskQuery.data : null;
+  const hasPortfolioRows = data
+    ? data.allocation_by_asset_class.items.length > 0 ||
+      data.allocation_by_account.items.length > 0 ||
+      data.top_positions.items.length > 0
+    : false;
+
+  return (
+    <section className="risk-allocation-page stack-18">
+      <header className="page-header risk-allocation-page__header">
+        <p className="eyebrow">Аналитика</p>
+        <h1>Распределение и концентрация</h1>
+        <p className="page-header__description">
+          Owner-facing срез по ликвидному портфелю. Все суммы, доли и состояния поддержки показаны
+          из выбранного backend-снимка; недвижимость сюда не входит.
+        </p>
+      </header>
+
+      <Panel label="Отчётный месяц" title="Какой срез смотрим">
+        {monthsLoading ? (
+          <LoadingState description="Загружаем месяцы…" inline />
+        ) : monthsError ? (
+          <ErrorState description={monthsError} inline title="Не удалось загрузить месяцы" />
+        ) : months.length === 0 ? (
+          <EmptyState
+            description="Сначала создай хотя бы один отчётный месяц."
+            inline
+            title="Нет месяцев"
+          />
+        ) : (
+          <Field htmlFor="risk-allocation-month" label="Месяц">
+            <Select
+              id="risk-allocation-month"
+              onChange={(event) => setSelectedMonthId(Number(event.target.value))}
+              value={selectedMonthId ?? ""}
+            >
+              {months.map((month) => (
+                <option key={month.id} value={month.id}>
+                  {formatMonth(month.year, month.month)} ·{" "}
+                  {month.status === "closed" ? "утверждён" : "черновик"}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+      </Panel>
+
+      {selectedMonth ? (
+        <section className="risk-allocation__snapshot" aria-label="Сведения о выбранном снимке">
+          <DataValue
+            label="Снимок"
+            value={formatMonth(selectedMonth.year, selectedMonth.month)}
+            meta={`ID ${selectedMonth.id}`}
+          />
+          <DataValue
+            label="Дата снимка"
+            value={formatDate(data?.as_of_date ?? selectedMonth.snapshot_date)}
+            meta="as_of_date"
+          />
+          <DataValue
+            label="Ликвидные активы"
+            value={data ? money(data.liquid_assets_total) : "—"}
+            meta={data ? `база ${data.base_currency}` : "ожидаем данные"}
+            size="lg"
+          />
+        </section>
+      ) : null}
+
+      {selectedMonthId != null && riskQuery.isPending ? (
+        <LoadingState description="Загружаем распределение выбранного месяца…" />
+      ) : null}
+      {riskQuery.isError ? (
+        <ErrorState
+          description={formatApiError(riskQuery.error)}
+          title="Не удалось загрузить распределение"
+        />
+      ) : null}
+
+      {data ? (
+        <>
+          {!hasPortfolioRows ? (
+            <EmptyState
+              description="В выбранном месяце нет ликвидных активов и позиций для отображения."
+              title="Портфель пуст"
+            />
+          ) : null}
+          <div className="risk-allocation__grid">
+            <AllocationMetricPanel
+              metric={data.allocation_by_asset_class}
+              title="По классам активов"
+            />
+            <AllocationMetricPanel account metric={data.allocation_by_account} title="По счетам" />
+          </div>
+          <ConcentrationPanel
+            label="Позиции"
+            metric={data.top_positions}
+            title={`Top-${data.top_positions.top_n} позиций`}
+          />
+          <div className="risk-allocation__grid">
+            <ConcentrationPanel
+              label="Будущие денежные события"
+              metric={data.payout_concentration}
+              title="Концентрация выплат"
+            />
+            <ConcentrationPanel
+              label="Будущие денежные события"
+              metric={data.redemption_concentration}
+              title="Концентрация погашений"
+            />
+          </div>
+          <SupportMatrix support={data.support} />
+        </>
+      ) : null}
+    </section>
+  );
+}
