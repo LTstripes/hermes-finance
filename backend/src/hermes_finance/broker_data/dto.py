@@ -18,6 +18,7 @@ ALFA_PRO_PROVIDER = "alfa_pro"
 
 class SnapshotStatus(StrEnum):
     COMPLETE = "complete"
+    STALE = "stale"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     AUTH_UNRESOLVED = "auth_unresolved"
     AUTH_NOT_AUTHORIZED = "auth_not_authorized"
