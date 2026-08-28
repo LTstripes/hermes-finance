@@ -5,6 +5,17 @@ from hermes_finance.domain.cash_flows import ExpectedCashFlowType, InvestmentCas
 from hermes_finance.domain.debts import DebtType
 from hermes_finance.domain.deposits import DepositType
 from hermes_finance.domain.expenses import ExpenseType
+from hermes_finance.domain.external_flows import (
+    BoundaryFlowDirection,
+    BoundaryFlowKind,
+    ExternalFlowClassification,
+    ExternalFlowDirection,
+    ExternalFlowKind,
+    ExternalFlowScope,
+    ExternalFlowScopeMembership,
+    ExternalTransferStatus,
+    TransferLinkStatus,
+)
 from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
 from hermes_finance.domain.incomes import IncomeType
@@ -22,7 +33,15 @@ __all__ = [
     "AccountStatus",
     "AccountType",
     "DebtType",
+    "BoundaryFlowDirection",
+    "BoundaryFlowKind",
     "ExpectedCashFlowType",
+    "ExternalFlowClassification",
+    "ExternalFlowDirection",
+    "ExternalFlowKind",
+    "ExternalFlowScope",
+    "ExternalFlowScopeMembership",
+    "ExternalTransferStatus",
     "DepositType",
     "ExpenseType",
     "GoalType",
@@ -36,4 +55,5 @@ __all__ = [
     "ReportingMonthStatus",
     "RubleAmount",
     "TaxBenefitStatus",
+    "TransferLinkStatus",
 ]

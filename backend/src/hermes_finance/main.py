@@ -24,6 +24,7 @@ from hermes_finance.api.errors import register_error_handlers
 from hermes_finance.api.expected_flows import router as expected_flows_router
 from hermes_finance.api.expenses import router as expenses_router
 from hermes_finance.api.exports import router as exports_router
+from hermes_finance.api.external_flows import router as external_flows_router
 from hermes_finance.api.freshness_provenance import router as freshness_provenance_router
 from hermes_finance.api.goals import router as goals_router
 from hermes_finance.api.iis import router as iis_router
@@ -110,6 +111,7 @@ def create_app(
     application.include_router(cash_flow_ladder_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)
+    application.include_router(external_flows_router)
     application.include_router(expected_flows_router)
     application.include_router(expenses_router)
     application.include_router(savings_router)
