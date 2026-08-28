@@ -1,8 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { createQueryClient } from "../queryClient";
 import { DashboardPage } from "./DashboardPage";
 
 vi.mock("../components/charts/CapitalChart", () => ({
@@ -110,9 +112,11 @@ function setupDashboard(
   });
   vi.stubGlobal("fetch", fetchMock);
   render(
-    <MemoryRouter>
-      <DashboardPage />
-    </MemoryRouter>,
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   return fetchMock;
 }
@@ -129,7 +133,7 @@ describe("DashboardPage R03-04 semantics", () => {
     const user = userEvent.setup();
 
     const selector = await screen.findByLabelText("Отчётный месяц");
-    expect(selector).toHaveValue("2");
+    await waitFor(() => expect(selector).toHaveValue("2"));
     expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
 
     const overview = screen.getByRole("region", { name: "Ключевое состояние" });
@@ -209,5 +213,74 @@ describe("DashboardPage R03-04 semantics", () => {
     expect(
       await within(overview).findByText(/Учтено 6 закрытых месяцев из 12/),
     ).toBeInTheDocument();
+  });
+
+  it("keeps dashboard cache entries separate and revalidates when returning", async () => {
+    const fetchMock = setupDashboard((monthId) => jsonResponse(dashboard(monthId)));
+    const user = userEvent.setup();
+    const selector = await screen.findByLabelText("Отчётный месяц");
+    await screen.findByText(/4\s*820\s*500\s*₽/);
+
+    await user.selectOptions(selector, "1");
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/months/1/dashboard"),
+      ).toHaveLength(1);
+    });
+    await user.selectOptions(selector, "2");
+    await waitFor(() => expect(selector).toHaveValue("2"));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/months/2/dashboard"),
+      ).toHaveLength(2);
+    });
+
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input) === "/api/months/2/dashboard"),
+    ).toHaveLength(2);
+  });
+
+  it("cancels the previous selected-month request and ignores a late response", async () => {
+    const requests = new Map<
+      number,
+      { resolve: (response: Response) => void; signal?: AbortSignal }
+    >();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/months") return Promise.resolve(jsonResponse(months));
+      const match = /\/api\/months\/(\d+)\/dashboard$/.exec(url);
+      if (!match) return Promise.resolve(jsonResponse({ error: "not found" }, 404));
+      const monthId = Number(match[1]);
+      return new Promise<Response>((resolve) => {
+        requests.set(monthId, { resolve, signal: init?.signal ?? undefined });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const selector = await screen.findByLabelText("Отчётный месяц");
+    await waitFor(() => expect(requests.get(2)).toBeDefined());
+    const oldRequest = requests.get(2);
+    const user = userEvent.setup();
+    await user.selectOptions(selector, "1");
+    await waitFor(() => expect(oldRequest?.signal?.aborted).toBe(true));
+
+    const current = dashboard(1);
+    current.kpis.liquid_capital_net.amount = "111.00";
+    requests.get(1)?.resolve(jsonResponse(current));
+    expect(await screen.findByText(/111\s*₽/)).toBeInTheDocument();
+
+    const stale = dashboard(2);
+    stale.kpis.liquid_capital_net.amount = "222.00";
+    oldRequest?.resolve(jsonResponse(stale));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText(/111\s*₽/)).toBeInTheDocument();
+    expect(screen.queryByText(/222\s*₽/)).toBeNull();
   });
 });

@@ -35,6 +35,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/payouts", label: "Автовыплаты", icon: "◌" },
       { to: "/goals", label: "Цели", icon: "◎" },
+      { to: "/tax-iis-planner", label: "Налоги и ИИС", icon: "₽" },
     ],
   },
   {

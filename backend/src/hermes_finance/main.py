@@ -10,6 +10,7 @@ from hermes_finance.api.accounts import router as accounts_router
 from hermes_finance.api.ai_analysis_bundle import router as ai_analysis_bundle_router
 from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
+from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
 from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
@@ -42,6 +43,7 @@ from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
 from hermes_finance.api.statement_import import router as statement_import_router
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
+from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
 from hermes_finance.database import Database
 from hermes_finance.security import LocalhostSecurityMiddleware
 from hermes_finance.settings import Settings
@@ -92,6 +94,7 @@ def create_app(
     application.include_router(quote_apply_router)
     application.include_router(payouts_router)
     application.include_router(broker_snapshot_router)
+    application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
@@ -110,6 +113,7 @@ def create_app(
     application.include_router(expenses_router)
     application.include_router(savings_router)
     application.include_router(salary_tax_router)
+    application.include_router(tax_iis_planner_router)
     application.include_router(debts_router)
     application.include_router(properties_router)
     application.include_router(provider_capabilities_router)

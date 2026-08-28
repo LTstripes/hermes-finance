@@ -1,3 +1,5 @@
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router";
 
 import { AppLayout } from "../components/AppLayout";
@@ -11,24 +13,35 @@ import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
+import { createQueryClient } from "../queryClient";
 
-export function App() {
+type AppProps = {
+  queryClient?: QueryClient;
+};
+
+export function App({ queryClient: providedQueryClient }: AppProps = {}) {
+  const [queryClient] = useState(() => providedQueryClient ?? createQueryClient());
+
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="freshness" element={<FreshnessProvenancePage />} />
-          <Route path="months" element={<MonthsPage />} />
-          <Route path="months/:monthId" element={<MonthDetailPage />} />
-          <Route path="payouts" element={<PayoutsPage />} />
-          <Route path="accounts" element={<AccountsPage />} />
-          <Route path="goals" element={<GoalsPage />} />
-          <Route path="export" element={<ExportPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="freshness" element={<FreshnessProvenancePage />} />
+            <Route path="months" element={<MonthsPage />} />
+            <Route path="months/:monthId" element={<MonthDetailPage />} />
+            <Route path="payouts" element={<PayoutsPage />} />
+            <Route path="accounts" element={<AccountsPage />} />
+            <Route path="goals" element={<GoalsPage />} />
+            <Route path="tax-iis-planner" element={<TaxIisPlannerPage />} />
+            <Route path="export" element={<ExportPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
