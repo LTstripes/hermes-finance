@@ -20,6 +20,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/", label: "Дашборд", icon: "◫", end: true },
       { to: "/analytics", label: "Аналитика", icon: "⌁" },
+      { to: "/analytics/risk-allocation", label: "Распределение и концентрация", icon: "◈" },
       { to: "/freshness", label: "Актуальность данных", icon: "◷" },
     ],
   },

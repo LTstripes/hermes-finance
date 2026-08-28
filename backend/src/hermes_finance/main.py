@@ -19,6 +19,7 @@ from hermes_finance.api.comments import router as comments_router
 from hermes_finance.api.dashboard import router as dashboard_router
 from hermes_finance.api.debts import router as debts_router
 from hermes_finance.api.deposits import router as deposits_router
+from hermes_finance.api.deterministic_insights import router as deterministic_insights_router
 from hermes_finance.api.errors import register_error_handlers
 from hermes_finance.api.expected_flows import router as expected_flows_router
 from hermes_finance.api.expenses import router as expenses_router
@@ -120,6 +121,7 @@ def create_app(
     application.include_router(properties_router)
     application.include_router(provider_capabilities_router)
     application.include_router(risk_allocation_router)
+    application.include_router(deterministic_insights_router)
     application.include_router(comments_router)
     application.include_router(exports_router)
     application.include_router(ai_analysis_bundle_router)
