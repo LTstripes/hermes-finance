@@ -10,6 +10,7 @@ from hermes_finance.api.accounts import router as accounts_router
 from hermes_finance.api.ai_analysis_bundle import router as ai_analysis_bundle_router
 from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
+from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
 from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
@@ -92,6 +93,7 @@ def create_app(
     application.include_router(quote_apply_router)
     application.include_router(payouts_router)
     application.include_router(broker_snapshot_router)
+    application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)

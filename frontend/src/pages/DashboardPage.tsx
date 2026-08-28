@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { formatApiError } from "../api/client";
@@ -25,6 +26,7 @@ import {
 import { formatMoney, formatMoneyDelta, formatMonth, formatPercent } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
+import { queryKeys } from "../queryClient";
 
 function deltaToneFromAmount(amount: string | null | undefined): "up" | "down" | "neutral" {
   if (
@@ -45,74 +47,46 @@ function pctLabel(value: string | null | undefined): string {
 }
 
 export function DashboardPage() {
-  const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardSlice | null>(null);
-  const [loadingMonths, setLoadingMonths] = useState(true);
-  const [loadingDash, setLoadingDash] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const monthsQuery = useQuery({
+    queryKey: queryKeys.months,
+    queryFn: ({ signal }) => listMonths(signal),
+    select: (rows: ReportingMonth[]) =>
+      [...rows].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year)),
+  });
+  const months = monthsQuery.data ?? [];
 
-  const loadMonths = useCallback(async (signal?: AbortSignal) => {
-    setLoadingMonths(true);
-    setError(null);
-    try {
-      const rows = await listMonths(signal);
-      if (signal?.aborted) return;
-      const sorted = [...rows].sort((a, b) =>
-        a.year === b.year ? b.month - a.month : b.year - a.year,
-      );
-      setMonths(sorted);
-      setSelectedId((previous) => {
-        if (previous != null && sorted.some((month) => month.id === previous)) return previous;
-        return sorted[0]?.id ?? null;
-      });
-    } catch (loadError) {
-      if (!signal?.aborted) {
-        setError(formatApiError(loadError));
-        setMonths([]);
-        setSelectedId(null);
+  useEffect(() => {
+    setSelectedId((previous) => {
+      if (previous != null && months.some((month) => month.id === previous)) return previous;
+      return months[0]?.id ?? null;
+    });
+  }, [months]);
+
+  const dashboardQuery = useQuery<DashboardSlice, Error>({
+    enabled: selectedId != null,
+    placeholderData: (previousData: DashboardSlice | undefined) => previousData,
+    queryKey: queryKeys.dashboard(selectedId),
+    queryFn: async ({ signal }): Promise<DashboardSlice> => {
+      if (selectedId == null) {
+        return Promise.reject(new Error("Dashboard month is not selected"));
       }
-    } finally {
-      if (!signal?.aborted) setLoadingMonths(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadMonths(controller.signal);
-    return () => controller.abort();
-  }, [loadMonths]);
-
-  useEffect(() => {
-    if (selectedId == null) {
-      setDashboard(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setLoadingDash(true);
-    setError(null);
-    void getDashboard(selectedId, controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setDashboard(data);
-      })
-      .catch((loadError) => {
-        if (!controller.signal.aborted) {
-          setError(formatApiError(loadError));
-          setDashboard(null);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingDash(false);
-      });
-
-    return () => controller.abort();
-  }, [selectedId]);
+      return getDashboard(selectedId, signal);
+    },
+  });
 
   const selectedMonth = useMemo(
     () => months.find((month) => month.id === selectedId) ?? null,
     [months, selectedId],
   );
+  const loadingMonths = monthsQuery.isPending;
+  const loadingDash = selectedId != null && dashboardQuery.isFetching;
+  const error = monthsQuery.error
+    ? formatApiError(monthsQuery.error)
+    : dashboardQuery.error
+      ? formatApiError(dashboardQuery.error)
+      : null;
+  const dashboard: DashboardSlice | null = error ? null : (dashboardQuery.data ?? null);
   const kpis = dashboard?.kpis ?? null;
 
   return (

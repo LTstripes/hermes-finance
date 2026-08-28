@@ -175,9 +175,7 @@ def _salary_tax_context(
             warning_codes=(TAX_BRACKETS_UNAVAILABLE,),
         )
     if not snapshot.history_complete:
-        warning_codes = tuple(
-            sorted(set(snapshot.warning_codes) | {SALARY_TAX_HISTORY_INCOMPLETE})
-        )
+        warning_codes = tuple(sorted(set(snapshot.warning_codes) | {SALARY_TAX_HISTORY_INCOMPLETE}))
         return SalaryTaxPlannerSnapshot(
             tax_year=snapshot.tax_year,
             history_complete=False,
