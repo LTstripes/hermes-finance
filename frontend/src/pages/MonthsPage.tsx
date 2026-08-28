@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { formatApiError } from "../api/client";
@@ -25,6 +26,7 @@ import {
 import { formatDate, formatMonth } from "../lib/format";
 import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import { lastDayOfMonth } from "../lib/period";
+import { queryKeys } from "../queryClient";
 
 const MONTH_LABELS = [
   "Январь",
@@ -158,45 +160,33 @@ function ManualCreateDialog({
 
 export function MonthsPage() {
   const navigate = useNavigate();
-  const [months, setMonths] = useState<ReportingMonth[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState(defaultCreateDraft);
   const [manualCreateOpen, setManualCreateOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ReportingMonth | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [cloneSource, setCloneSource] = useState<ReportingMonth | null>(null);
+  const queryClient = useQueryClient();
+  const monthsQuery = useQuery({
+    queryKey: queryKeys.months,
+    queryFn: ({ signal }) => listMonths(signal),
+    select: (rows: ReportingMonth[]) =>
+      [...rows].sort((a, b) => b.year - a.year || b.month - a.month),
+  });
+  const months = monthsQuery.data ?? [];
+  const loading = monthsQuery.isPending;
+  const error = monthsQuery.error ? formatApiError(monthsQuery.error) : null;
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await listMonths(signal);
-      if (signal?.aborted) {
-        return;
-      }
-      setMonths([...data].sort((a, b) => b.year - a.year || b.month - a.month));
-    } catch (err) {
-      if (signal?.aborted) {
-        return;
-      }
-      setError(formatApiError(err));
-      setMonths([]);
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+  const createMutation = useMutation({
+    mutationFn: (payload: Parameters<typeof createMonth>[0]) => createMonth(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.months }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (monthId: number) => deleteMonth(monthId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.months }),
+  });
+  const creating = createMutation.isPending;
+  const deleting = deleteMutation.isPending;
 
   const monthOptions = useMemo(
     () =>
@@ -213,9 +203,8 @@ export function MonthsPage() {
     event.preventDefault();
     setFormError(null);
     setActionError(null);
-    setCreating(true);
     try {
-      await createMonth({
+      await createMutation.mutateAsync({
         year: draft.year,
         month: draft.month,
         snapshot_date: draft.snapshot_date,
@@ -223,11 +212,8 @@ export function MonthsPage() {
       });
       setDraft(defaultCreateDraft());
       setManualCreateOpen(false);
-      await load();
     } catch (err) {
       setFormError(formatApiError(err));
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -235,17 +221,13 @@ export function MonthsPage() {
     if (!pendingDelete) {
       return;
     }
-    setDeleting(true);
     setActionError(null);
     try {
-      await deleteMonth(pendingDelete.id);
+      await deleteMutation.mutateAsync(pendingDelete.id);
       setPendingDelete(null);
-      await load();
     } catch (err) {
       setActionError(formatApiError(err));
       setPendingDelete(null);
-    } finally {
-      setDeleting(false);
     }
   }
 
@@ -285,7 +267,7 @@ export function MonthsPage() {
         <Button
           disabled={loading}
           onClick={() => {
-            void load();
+            void monthsQuery.refetch();
           }}
           type="button"
           variant="ghost"
@@ -411,6 +393,7 @@ export function MonthsPage() {
         onCancel={() => setCloneSource(null)}
         onCloned={(cloned) => {
           setCloneSource(null);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.months });
           navigate(`/months/${cloned.id}`);
         }}
         open={cloneSource !== null}
