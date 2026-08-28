@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState
 from hermes_finance.broker_data.dto import SnapshotStatus
 
 
@@ -38,6 +39,16 @@ class PositionRowStatus(StrEnum):
     PROVIDER_ONLY = "provider_only"
     HERMES_ONLY = "hermes_only"
     CONFLICT = "conflict"
+
+
+class NormalizedRowState(StrEnum):
+    """Canonical position state for the R07-08 reconciliation read model."""
+
+    MATCHED = "matched"
+    DIFFERS = "differs"
+    MISSING_LOCAL = "missing_local"
+    MISSING_PROVIDER = "missing_provider"
+    UNRESOLVED = "unresolved"
 
 
 class CashRowStatus(StrEnum):
@@ -191,3 +202,76 @@ class ReconciliationPreview:
     cash: tuple[CashReconciliationRow, ...]
     warnings: tuple[str, ...]
     conflict_count: int
+
+
+COMPARISON_ONLY_PROVIDER_FIELDS = (
+    "provider_broker_unit_price",
+    "provider_accounting_price",
+    "provider_market_value",
+    "provider_accrued_interest_nkd",
+    "provider_unrealized_result",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedReconciliationRow:
+    """One safe, provider-vs-Hermes position row.
+
+    Provider valuation fields are observations only. They are deliberately
+    carried alongside their ``non_comparable`` markers and never become
+    write instructions or replacements for Hermes values.
+    """
+
+    state: NormalizedRowState
+    account_id: int | None
+    instrument_id: int | None
+    account_name: str | None
+    instrument_name: str | None
+    instrument_isin: str | None
+    instrument_ticker: str | None
+    provider_account_id: str | None
+    provider_instrument_id: str | None
+    hermes_quantity: Decimal | None
+    provider_quantity: Decimal | None
+    quantity_difference: Decimal | None
+    quantity_equal: bool | None
+    hermes_market_price_per_unit_kopecks: int | None
+    provider_broker_unit_price: Decimal | None
+    provider_accounting_price: Decimal | None
+    provider_market_value: Decimal | None
+    price_comparable: ValueComparability
+    hermes_accrued_interest_kopecks: int | None
+    provider_accrued_interest_nkd: Decimal | None
+    nkd_comparable: ValueComparability
+    hermes_unrealized_result_kopecks: int | None
+    provider_unrealized_result: Decimal | None
+    unrealized_comparable: ValueComparability
+    reason: str | None
+    warnings: tuple[str, ...]
+    comparison_only_fields: tuple[str, ...] = COMPARISON_ONLY_PROVIDER_FIELDS
+    fingerprint: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedReconciliationResult:
+    """Normalized read-only reconciliation result for one reporting month."""
+
+    status: ReconciliationStatus
+    provider: str
+    source_as_of: datetime | None
+    captured_at: datetime
+    snapshot_status: SnapshotStatus
+    compatibility_state: AlfaCompatibilityState
+    compatibility_fingerprint: str | None
+    month_id: int
+    month_status: str
+    month_closed: bool
+    rows: tuple[NormalizedReconciliationRow, ...]
+    accounts: tuple[AccountReconciliationRow, ...]
+    instruments: tuple[InstrumentReconciliationRow, ...]
+    cash: tuple[CashReconciliationRow, ...]
+    warnings: tuple[str, ...]
+    snapshot_fingerprint: str | None
+    stale: bool = False
+    read_only: bool = True
+    eligible_for_apply: bool = False
