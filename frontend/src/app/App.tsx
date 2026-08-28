@@ -13,6 +13,7 @@ import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
 
 type AppProps = {
@@ -35,6 +36,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
             <Route path="payouts" element={<PayoutsPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="goals" element={<GoalsPage />} />
+            <Route path="tax-iis-planner" element={<TaxIisPlannerPage />} />
             <Route path="export" element={<ExportPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
