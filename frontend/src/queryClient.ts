@@ -3,6 +3,8 @@ import { QueryClient } from "@tanstack/react-query";
 export const queryKeys = {
   months: ["months"] as const,
   dashboard: (monthId: number | null) => ["dashboard", monthId] as const,
+  riskAllocation: (monthId: number | null, topN = 5, forecastVersion = "v1") =>
+    ["risk-allocation", monthId, topN, forecastVersion] as const,
 };
 
 export function createQueryClient(): QueryClient {
