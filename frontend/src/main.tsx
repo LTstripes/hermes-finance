@@ -12,6 +12,7 @@ import "./styles/goals-v03.css";
 import "./styles/month-workspace-v03.css";
 import "./styles/analytics-v03.css";
 import "./styles/tax-iis-planner.css";
+import "./styles/reconciliation-center.css";
 
 const root = document.getElementById("root");
 

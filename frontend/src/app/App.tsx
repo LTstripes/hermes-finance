@@ -1,4 +1,4 @@
-import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router";
 
@@ -12,6 +12,7 @@ import { GoalsPage } from "../pages/GoalsPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
+import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
@@ -31,6 +32,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
             <Route index element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="freshness" element={<FreshnessProvenancePage />} />
+            <Route path="reconciliation" element={<ReconciliationCenterPage />} />
             <Route path="months" element={<MonthsPage />} />
             <Route path="months/:monthId" element={<MonthDetailPage />} />
             <Route path="payouts" element={<PayoutsPage />} />

@@ -39,6 +39,10 @@ describe("AppLayout", () => {
     const nav = screen.getByRole("navigation", { name: "Основная навигация" });
     expect(within(nav).getByRole("link", { name: /Дашборд/i })).toBeInTheDocument();
     const analytics = within(nav).getByRole("link", { name: /Аналитика/i });
+    expect(within(nav).getByRole("link", { name: /Сверка портфеля/i })).toHaveAttribute(
+      "href",
+      "/reconciliation",
+    );
     expect(within(nav).getByRole("link", { name: /Месяцы/i })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Счета и инструменты/i })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Цели/i })).toBeInTheDocument();
