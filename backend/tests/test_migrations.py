@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0034_observed_valuation_boundaries"
+REVISION = "0035_broker_identity_mappings"
 PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
 
@@ -581,7 +581,8 @@ def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> N
 
     assert downgraded.returncode != 0
     assert "while boundary evidence exists" in downgraded.stderr
-    assert revision_rows(database_path) == [REVISION]
+    # 0035 can drop an empty mapping registry; 0034 must refuse while evidence exists.
+    assert revision_rows(database_path) == ["0034_observed_valuation_boundaries"]
 
 
 def test_goal_main_selection_migration_backfills_legacy_settings_goal(tmp_path: Path) -> None:
@@ -1678,5 +1679,72 @@ def test_statement_retract_migration_preserves_v061_active_events(tmp_path: Path
             "AND name = 'applied_statement_event_revisions'"
         ).fetchone()[0]
         assert "retract" in revision_sql
+    finally:
+        connection.close()
+
+
+def test_broker_identity_mappings_migration_is_additive_and_empty(tmp_path: Path) -> None:
+    database_path = tmp_path / "broker-identity-mappings.db"
+    previous = run_alembic(database_path, "upgrade", "0034_observed_valuation_boundaries")
+    assert previous.returncode == 0, previous.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_identity_mappings" not in tables
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(broker_identity_mappings)")
+        ] == [
+            "id",
+            "provider",
+            "subject_kind",
+            "provider_identity",
+            "hermes_account_id",
+            "hermes_instrument_id",
+            "status",
+            "observed_isin",
+            "confirmed_at",
+            "source_as_of",
+            "captured_at",
+            "predecessor_mapping_id",
+            "successor_mapping_id",
+            "revoked_at",
+            "revoke_reason",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM broker_identity_mappings").fetchone() == (
+            0,
+        )
+        index_sql = " ".join(
+            row[0]
+            for row in connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' "
+                "AND tbl_name = 'broker_identity_mappings' AND sql IS NOT NULL"
+            )
+        )
+        assert "uq_broker_identity_mappings_effective_forward" in index_sql
+        assert "uq_broker_identity_mappings_effective_instrument_reverse" in index_sql
+        assert "status = 'effective'" in index_sql
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0034_observed_valuation_boundaries")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_identity_mappings" not in tables
     finally:
         connection.close()

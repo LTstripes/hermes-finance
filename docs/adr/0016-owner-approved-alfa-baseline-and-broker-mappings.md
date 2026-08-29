@@ -1,6 +1,6 @@
 # ADR 0016 — Owner-approved Alfa current-state baseline and reusable broker mappings
 
-- **Status:** Proposed (contract-first for issue #201; not implemented)
+- **Status:** Accepted
 - **Date:** 2026-08-29
 - **Release line:** `r07` / Reconciliation Center track
 - **Source task:** R07-D05 / issue #201

@@ -25,7 +25,8 @@ from hermes_finance.api.broker_snapshot import (
     BrokerSnapshotDiagnosticsOut,
     _mapping,
     _provider,
-    account_row_out,
+    classified_account_rows,
+    classified_instrument_rows,
 )
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.broker_data.dto import BrokerSnapshot, SnapshotStatus
@@ -33,6 +34,10 @@ from hermes_finance.broker_data.reconciliation.dto import (
     NormalizedReconciliationResult,
     NormalizedReconciliationRow,
     ReconciliationStatus,
+)
+from hermes_finance.services.broker_identity_mappings import (
+    classify_preview_identities,
+    compose_owner_mapping,
 )
 from hermes_finance.services.broker_reconciliation import (
     build_normalized_reconciliation_for_snapshot,
@@ -231,6 +236,7 @@ def _response(
     *,
     snapshot: BrokerSnapshot,
     result: NormalizedReconciliationResult,
+    identity_labels=None,
 ) -> BrokerReconciliationResponse:
     diagnostics = _diagnostics(snapshot=snapshot, result=result)
     return BrokerReconciliationResponse(
@@ -248,19 +254,8 @@ def _response(
         captured_at=result.captured_at,
         month_status=result.month_status,
         month_closed=result.month_closed,
-        accounts=[account_row_out(row) for row in result.accounts],
-        instruments=[
-            BrokerInstrumentRowOut(
-                provider_instrument_id=row.provider_instrument_id,
-                isin=row.isin,
-                ticker=row.ticker,
-                display_name=row.display_name,
-                hermes_instrument_id=row.hermes_instrument_id,
-                status=row.status.value,
-                reason=row.reason,
-            )
-            for row in result.instruments
-        ],
+        accounts=classified_account_rows(result.accounts, identity_labels),
+        instruments=classified_instrument_rows(result.instruments, identity_labels),
         rows=[_row_out(row) for row in result.rows],
         cash=[
             BrokerCashRowOut(
@@ -344,12 +339,21 @@ def broker_reconciliation_preview_endpoint(
     except ValueError as error:
         # The request is invalid, but no provider or database state is changed.
         raise HTTPException(status_code=422, detail=str(error)) from error
+    request_mapping = _mapping(payload)
+    mapping = compose_owner_mapping(session, provider=snapshot.provider, request=request_mapping)
     result = build_normalized_reconciliation_for_snapshot(
         session,
         snapshot=snapshot,
         hermes=hermes,
-        mapping=_mapping(payload),
+        mapping=mapping,
         expected_row_fingerprints=expected_rows,
         expected_snapshot_fingerprint=payload.expected_snapshot_fingerprint,
     )
-    return _response(snapshot=snapshot, result=result)
+    identity_labels = classify_preview_identities(
+        snapshot=snapshot,
+        account_rows=result.accounts,
+        instrument_rows=result.instruments,
+        session=session,
+        request=request_mapping,
+    )
+    return _response(snapshot=snapshot, result=result, identity_labels=identity_labels)

@@ -75,9 +75,10 @@ but must retain explicit owner selection, stale-preview revalidation and the
 existing CLOSED-month/apply safeguards. It must not infer mappings or promote
 comparison-only provider values into Hermes state.
 
-Persistent broker-identity mappings and an owner-approved current-state
-baseline are specified by
-[`docs/adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md`](adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md).
-This endpoint stays read-only and request-mapped until those implementation
-slices compose registry rows into the existing mapping input. The matcher
-and comparison-only field list in this document remain authoritative.
+Persistent broker-identity mappings are specified by
+[`docs/adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md`](adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md)
+Slice A. This endpoint remains read-only: it composes `effective` registry
+rows with the request mapping, labels reused/new/conflict identities, and
+still never writes quantity or comparison-only fields. Unique ISIN matching
+does not persist a mapping. The matcher and comparison-only field list in
+this document remain authoritative.

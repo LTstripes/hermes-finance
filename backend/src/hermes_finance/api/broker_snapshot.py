@@ -23,11 +23,18 @@ from hermes_finance.broker_data.dto import SnapshotStatus
 from hermes_finance.broker_data.protocol import BrokerSnapshotProvider
 from hermes_finance.broker_data.reconciliation.dto import (
     AccountReconciliationRow,
+    InstrumentReconciliationRow,
     OwnerMappingInput,
 )
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.persistence import PositionSnapshot
+from hermes_finance.services.broker_identity_mappings import (
+    IdentityClassification,
+    PreviewIdentityLabels,
+    classify_preview_identities,
+    compose_owner_mapping,
+)
 from hermes_finance.services.broker_reconciliation import load_hermes_state_for_month
 from hermes_finance.services.broker_snapshot_apply import (
     AccruedInterestDecision,
@@ -114,16 +121,26 @@ class BrokerAccountRowOut(BaseModel):
     hermes_account_id: int | None
     status: str
     reason: str | None
+    classification: str
     section_codes: list[str] = Field(default_factory=list)
     observed_instruments: list[BrokerAccountObservedInstrumentOut] = Field(default_factory=list)
 
 
-def account_row_out(row: AccountReconciliationRow) -> BrokerAccountRowOut:
+def account_row_out(
+    row: AccountReconciliationRow,
+    classification: str | IdentityClassification = IdentityClassification.NEW,
+) -> BrokerAccountRowOut:
+    label = (
+        classification.value
+        if isinstance(classification, IdentityClassification)
+        else classification
+    )
     return BrokerAccountRowOut(
         provider_account_id=row.provider_account_id,
         hermes_account_id=row.hermes_account_id,
         status=row.status.value,
         reason=row.reason,
+        classification=label,
         section_codes=list(row.section_codes),
         observed_instruments=[
             BrokerAccountObservedInstrumentOut(
@@ -146,6 +163,74 @@ class BrokerInstrumentRowOut(BaseModel):
     hermes_instrument_id: int | None
     status: str
     reason: str | None
+    classification: str
+
+
+def instrument_row_out(
+    row: InstrumentReconciliationRow,
+    classification: str | IdentityClassification = IdentityClassification.NEW,
+) -> BrokerInstrumentRowOut:
+    label = (
+        classification.value
+        if isinstance(classification, IdentityClassification)
+        else classification
+    )
+    return BrokerInstrumentRowOut(
+        provider_instrument_id=row.provider_instrument_id,
+        isin=row.isin,
+        ticker=row.ticker,
+        display_name=row.display_name,
+        hermes_instrument_id=row.hermes_instrument_id,
+        status=row.status.value,
+        reason=row.reason,
+        classification=label,
+    )
+
+
+def _account_classification(
+    row: AccountReconciliationRow, identity_labels: PreviewIdentityLabels | None
+) -> IdentityClassification:
+    if identity_labels is None:
+        return IdentityClassification.NEW
+    return identity_labels.accounts.get(row.provider_account_id, IdentityClassification.NEW)
+
+
+def _instrument_classification(
+    row: InstrumentReconciliationRow, identity_labels: PreviewIdentityLabels | None
+) -> IdentityClassification:
+    if identity_labels is None or row.provider_instrument_id is None:
+        if row.reason == "exact unique ISIN match":
+            return IdentityClassification.DETERMINISTIC_ISIN
+        if row.status.value == "ambiguous":
+            return IdentityClassification.AMBIGUOUS
+        if row.status.value == "conflict":
+            return IdentityClassification.CONFLICT
+        if row.status.value == "matched":
+            return IdentityClassification.EXPLICIT
+        return IdentityClassification.NEW
+    return identity_labels.instruments.get(row.provider_instrument_id, IdentityClassification.NEW)
+
+
+def classified_account_rows(
+    preview_accounts,
+    identity_labels: PreviewIdentityLabels | None,
+) -> list[BrokerAccountRowOut]:
+    rows = list(preview_accounts)
+    if identity_labels is not None:
+        rows.extend(identity_labels.absent_accounts)
+    return [account_row_out(row, _account_classification(row, identity_labels)) for row in rows]
+
+
+def classified_instrument_rows(
+    preview_instruments,
+    identity_labels: PreviewIdentityLabels | None,
+) -> list[BrokerInstrumentRowOut]:
+    rows = list(preview_instruments)
+    if identity_labels is not None:
+        rows.extend(identity_labels.absent_instruments)
+    return [
+        instrument_row_out(row, _instrument_classification(row, identity_labels)) for row in rows
+    ]
 
 
 class BrokerPositionRowOut(BaseModel):
@@ -313,6 +398,7 @@ def _preview_response(
     fingerprint_mapping: OwnerMappingInput,
     session: Session,
     snapshot: object,
+    identity_labels: PreviewIdentityLabels | None = None,
 ) -> BrokerSnapshotPreviewResponse:
     hermes = load_hermes_state_for_month(session, preview.month_id or 0)
     account_names = {account.account_id: account.name for account in hermes.accounts}
@@ -404,19 +490,8 @@ def _preview_response(
         month_closed=preview.month_closed,
         would_touch_closed_month=preview.would_touch_closed_month,
         conflict_count=preview.conflict_count,
-        accounts=[account_row_out(row) for row in preview.accounts],
-        instruments=[
-            BrokerInstrumentRowOut(
-                provider_instrument_id=row.provider_instrument_id,
-                isin=row.isin,
-                ticker=row.ticker,
-                display_name=row.display_name,
-                hermes_instrument_id=row.hermes_instrument_id,
-                status=row.status.value,
-                reason=row.reason,
-            )
-            for row in preview.instruments
-        ],
+        accounts=classified_account_rows(preview.accounts, identity_labels),
+        instruments=classified_instrument_rows(preview.instruments, identity_labels),
         positions=positions,
         cash=[
             BrokerCashRowOut(
@@ -497,7 +572,7 @@ def broker_snapshot_preview_endpoint(
     request: Request,
     session: Session = Depends(session_for_request),
 ) -> BrokerSnapshotPreviewResponse:
-    mapping = _mapping(payload)
+    request_mapping = _mapping(payload)
     hermes = load_hermes_state_for_month(session, month_id)
     try:
         snapshot = _provider(request).fetch_snapshot()
@@ -530,12 +605,25 @@ def broker_snapshot_preview_endpoint(
             error_code="provider_error",
             message="Broker snapshot refresh failed",
         )
+    mapping = compose_owner_mapping(
+        session, provider=getattr(snapshot, "provider", ""), request=request_mapping
+    )
     preview = build_reconciliation_preview(snapshot=snapshot, hermes=hermes, mapping=mapping)
+    identity_labels = None
+    if hasattr(snapshot, "provider") and hasattr(snapshot, "accounts"):
+        identity_labels = classify_preview_identities(
+            snapshot=snapshot,
+            account_rows=preview.accounts,
+            instrument_rows=preview.instruments,
+            session=session,
+            request=request_mapping,
+        )
     return _preview_response(
         preview,
         fingerprint_mapping=mapping,
         session=session,
         snapshot=snapshot,
+        identity_labels=identity_labels,
     )
 
 
