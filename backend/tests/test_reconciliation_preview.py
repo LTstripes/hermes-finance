@@ -11,6 +11,7 @@ from hermes_finance.broker_data.dto import (
     BrokerAccount,
     BrokerCashBalance,
     BrokerPosition,
+    BrokerSection,
     BrokerSnapshot,
     SnapshotProvenance,
     SnapshotStatus,
@@ -61,6 +62,7 @@ def _complete_snapshot(
     accounts=(),
     positions=(),
     cash=(),
+    sections=(),
     eligible: bool = True,
     compatibility_state: AlfaCompatibilityState = AlfaCompatibilityState.COMPATIBLE,
     status: SnapshotStatus = SnapshotStatus.COMPLETE,
@@ -72,7 +74,7 @@ def _complete_snapshot(
         source_as_of=source_as_of,
         accounts=tuple(accounts),
         subaccounts=(),
-        sections=(),
+        sections=tuple(sections),
         positions=tuple(positions),
         cash_balances=tuple(cash),
         warnings=(),
@@ -916,3 +918,55 @@ def test_b5_explicit_mapping_without_isin_evidence_not_contradicted() -> None:
     preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
     assert preview.instruments[0].status is InstrumentMatchStatus.MATCHED
     assert preview.eligible_for_apply is True
+
+
+def test_unmatched_account_carries_owner_readable_observations_without_auto_mapping() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        sections=[
+            BrokerSection(
+                provider_section_id="SEC1",
+                provider_account_id="PA1",
+                provider_subaccount_id=None,
+                section_group=1,
+                section_code="MICEX",
+            )
+        ],
+        positions=[
+            BrokerPosition(
+                provider_account_id="PA1",
+                provider_subaccount_id=None,
+                provider_section_id="SEC1",
+                provider_instrument_id="PO1",
+                isin="ru000syn00001",
+                ticker="SYN",
+                display_name="Synthetic provider bond",
+                quantity=Decimal("10"),
+                broker_unit_price=None,
+                market_value=None,
+                accounting_price=None,
+                accrued_interest_nkd=None,
+                unrealized_result=None,
+                is_money=False,
+                mapped_fields=(),
+            )
+        ],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "Synthetic brokerage", "brokerage", None, "active"),),
+        instruments=(
+            HermesInstrumentView(10, "Synthetic equity", "stock", "RU000OTHER0001", "OTH"),
+        ),
+    )
+    preview = build_reconciliation_preview(
+        snapshot=snap, hermes=hermes, mapping=OwnerMappingInput()
+    )
+    assert preview.accounts[0].status is AccountMatchStatus.UNMATCHED
+    assert preview.accounts[0].hermes_account_id is None
+    assert preview.accounts[0].reason == "no explicit owner mapping for provider account"
+    assert preview.accounts[0].section_codes == ("MICEX",)
+    assert preview.accounts[0].observed_instruments[0].display_name == "Synthetic provider bond"
+    assert preview.accounts[0].observed_instruments[0].isin == "RU000SYN00001"
+    assert preview.accounts[0].observed_instruments[0].ticker == "SYN"
+    assert preview.instruments[0].status is InstrumentMatchStatus.UNMATCHED
+    assert preview.eligible_for_apply is False

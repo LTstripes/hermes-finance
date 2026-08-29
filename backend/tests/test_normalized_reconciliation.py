@@ -13,6 +13,7 @@ from hermes_finance.broker_data.dto import (
     ALFA_PRO_PROVIDER,
     BrokerAccount,
     BrokerPosition,
+    BrokerSection,
     BrokerSnapshot,
     SnapshotProvenance,
     SnapshotStatus,
@@ -334,3 +335,74 @@ def test_normalized_api_stale_expected_row_fails_closed_without_mutation(tmp_pat
     assert body["eligible_for_apply"] is False
     assert body["rows"][0]["state"] == "unresolved"
     assert "stale" in body["rows"][0]["reason"]
+
+
+def test_normalized_api_exposes_owner_readable_account_identity_without_mapping(
+    tmp_path: Path,
+) -> None:
+    database, month_id, _account_id, _instrument_id, position_id = _api_context(tmp_path)
+    snapshot = BrokerSnapshot(
+        provider=ALFA_PRO_PROVIDER,
+        status=SnapshotStatus.COMPLETE,
+        source_as_of=datetime(2026, 8, 28, 10, 0, tzinfo=UTC),
+        accounts=(BrokerAccount(provider_account_id=SYN_PROVIDER_ACCOUNT),),
+        subaccounts=(),
+        sections=(
+            BrokerSection(
+                provider_section_id="SYN-SECTION-001",
+                provider_account_id=SYN_PROVIDER_ACCOUNT,
+                provider_subaccount_id=None,
+                section_group=1,
+                section_code="MICEX",
+            ),
+        ),
+        positions=(
+            BrokerPosition(
+                provider_account_id=SYN_PROVIDER_ACCOUNT,
+                provider_subaccount_id=None,
+                provider_section_id="SYN-SECTION-001",
+                provider_instrument_id=SYN_PROVIDER_INSTRUMENT,
+                isin=SYN_ISIN,
+                ticker="SYN",
+                display_name="Synthetic provider position",
+                quantity=Decimal("10"),
+                broker_unit_price=Decimal("101.25"),
+                market_value=Decimal("1012.50"),
+                accounting_price=Decimal("99.50"),
+                accrued_interest_nkd=Decimal("1.25"),
+                unrealized_result=Decimal("17.50"),
+                is_money=False,
+                mapped_fields=("quantity=TorgPos",),
+            ),
+        ),
+        cash_balances=(),
+        warnings=(),
+        provenance=_provenance(),
+    )
+    provider = _StaticSnapshotProvider(snapshot)
+    application = create_app(database, broker_snapshot_provider=provider)
+    with TestClient(application) as client:
+        response = client.post(
+            f"/api/months/{month_id}/broker-reconciliation-preview",
+            json={"accounts": [], "instruments": []},
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    account = body["accounts"][0]
+    assert account["provider_account_id"] == SYN_PROVIDER_ACCOUNT
+    assert account["status"] == "unmatched"
+    assert account["hermes_account_id"] is None
+    assert account["section_codes"] == ["MICEX"]
+    assert account["observed_instruments"] == [
+        {
+            "display_name": "Synthetic provider position",
+            "isin": SYN_ISIN,
+            "ticker": "SYN",
+        }
+    ]
+    assert body["eligible_for_apply"] is False
+    session = database.session_factory()
+    try:
+        assert session.get(PositionSnapshot, position_id).quantity == Decimal("10.000000")
+    finally:
+        session.close()

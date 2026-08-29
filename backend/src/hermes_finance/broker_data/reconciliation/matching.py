@@ -12,10 +12,12 @@ strip() + upper(). Empty/whitespace-only ISIN is treated as absent.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 
 from hermes_finance.broker_data.dto import BrokerSnapshot
 from hermes_finance.broker_data.reconciliation.dto import (
     AccountMatchStatus,
+    AccountObservedInstrument,
     AccountReconciliationRow,
     HermesInstrumentView,
     HermesStateView,
@@ -23,6 +25,66 @@ from hermes_finance.broker_data.reconciliation.dto import (
     InstrumentReconciliationRow,
     OwnerMappingInput,
 )
+
+
+def _unique_nonempty(values: Iterable[str | None]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return tuple(result)
+
+
+def _account_identity(
+    snapshot: BrokerSnapshot, provider_account_id: str
+) -> tuple[tuple[str, ...], tuple[AccountObservedInstrument, ...]]:
+    """Collect accepted snapshot observations for owner display only."""
+
+    section_codes = _unique_nonempty(
+        section.section_code
+        for section in snapshot.sections
+        if section.provider_account_id == provider_account_id
+    )
+    observed: list[AccountObservedInstrument] = []
+    seen: set[tuple[str | None, str | None, str | None]] = set()
+    for position in snapshot.positions:
+        if position.provider_account_id != provider_account_id:
+            continue
+        item = AccountObservedInstrument(
+            display_name=position.display_name or None,
+            isin=_normalize_isin(position.isin),
+            ticker=position.ticker or None,
+        )
+        if item.display_name is None and item.isin is None and item.ticker is None:
+            continue
+        key = (item.display_name, item.isin, item.ticker)
+        if key in seen:
+            continue
+        seen.add(key)
+        observed.append(item)
+    return section_codes, tuple(observed)
+
+
+def _account_row(
+    *,
+    provider_account_id: str,
+    hermes_account_id: int | None,
+    status: AccountMatchStatus,
+    reason: str | None,
+    section_codes: tuple[str, ...],
+    observed_instruments: tuple[AccountObservedInstrument, ...],
+) -> AccountReconciliationRow:
+    return AccountReconciliationRow(
+        provider_account_id=provider_account_id,
+        hermes_account_id=hermes_account_id,
+        status=status,
+        reason=reason,
+        section_codes=section_codes,
+        observed_instruments=observed_instruments,
+    )
 
 
 def _normalize_isin(isin: str | None) -> str | None:
@@ -95,10 +157,11 @@ def reconcile_accounts(
         pid = account.provider_account_id
         first_seen = pid not in seen_providers
         seen_providers.add(pid)
+        section_codes, observed_instruments = _account_identity(snapshot, pid)
 
         if pid in conflicting:
             rows.append(
-                AccountReconciliationRow(
+                _account_row(
                     provider_account_id=pid,
                     hermes_account_id=None,
                     status=AccountMatchStatus.CONFLICT,
@@ -106,16 +169,20 @@ def reconcile_accounts(
                         "conflicting explicit owner mapping: provider account id "
                         "mapped to multiple Hermes accounts"
                     ),
+                    section_codes=section_codes,
+                    observed_instruments=observed_instruments,
                 )
             )
             continue
         if not first_seen:
             rows.append(
-                AccountReconciliationRow(
+                _account_row(
                     provider_account_id=pid,
                     hermes_account_id=None,
                     status=AccountMatchStatus.CONFLICT,
                     reason="duplicate provider account identifier in snapshot",
+                    section_codes=section_codes,
+                    observed_instruments=observed_instruments,
                 )
             )
             continue
@@ -123,29 +190,35 @@ def reconcile_accounts(
             hid = explicit[pid]
             if hid in hermes_ids:
                 rows.append(
-                    AccountReconciliationRow(
+                    _account_row(
                         provider_account_id=pid,
                         hermes_account_id=hid,
                         status=AccountMatchStatus.MATCHED,
                         reason=None,
+                        section_codes=section_codes,
+                        observed_instruments=observed_instruments,
                     )
                 )
             else:
                 rows.append(
-                    AccountReconciliationRow(
+                    _account_row(
                         provider_account_id=pid,
                         hermes_account_id=hid,
                         status=AccountMatchStatus.CONFLICT,
                         reason="explicit mapping targets a Hermes account id that does not exist",
+                        section_codes=section_codes,
+                        observed_instruments=observed_instruments,
                     )
                 )
         else:
             rows.append(
-                AccountReconciliationRow(
+                _account_row(
                     provider_account_id=pid,
                     hermes_account_id=None,
                     status=AccountMatchStatus.UNMATCHED,
                     reason="no explicit owner mapping for provider account",
+                    section_codes=section_codes,
+                    observed_instruments=observed_instruments,
                 )
             )
     return tuple(rows)

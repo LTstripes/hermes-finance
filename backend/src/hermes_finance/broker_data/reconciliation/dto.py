@@ -134,11 +134,26 @@ class OwnerMappingInput:
 
 
 @dataclass(frozen=True, slots=True)
+class AccountObservedInstrument:
+    """Display-only instrument observations attached to a provider account.
+
+    These values never participate in identity matching. They exist so an owner
+    can recognize an unmatched account without inspecting another table.
+    """
+
+    display_name: str | None
+    isin: str | None
+    ticker: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class AccountReconciliationRow:
     provider_account_id: str
     hermes_account_id: int | None
     status: AccountMatchStatus
     reason: str | None
+    section_codes: tuple[str, ...] = ()
+    observed_instruments: tuple[AccountObservedInstrument, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

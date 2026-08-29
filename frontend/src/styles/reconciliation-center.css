@@ -99,7 +99,8 @@
   font-size: var(--text-md);
 }
 
-.reconciliation-center__mapping-reason {
+.reconciliation-center__mapping-reason,
+.reconciliation-center__mapping-source {
   display: block;
   margin-top: 5px;
   color: var(--muted);

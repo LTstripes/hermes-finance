@@ -21,7 +21,10 @@ from hermes_finance.api.settings import session_for_request
 from hermes_finance.broker_data.alfa_pro import AlfaProBrokerSnapshotProvider
 from hermes_finance.broker_data.dto import SnapshotStatus
 from hermes_finance.broker_data.protocol import BrokerSnapshotProvider
-from hermes_finance.broker_data.reconciliation.dto import OwnerMappingInput
+from hermes_finance.broker_data.reconciliation.dto import (
+    AccountReconciliationRow,
+    OwnerMappingInput,
+)
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.persistence import PositionSnapshot
@@ -96,6 +99,14 @@ class BrokerSnapshotApplyRequest(BaseModel):
     selections: list[BrokerApplySelectionIn] = Field(min_length=1, max_length=2_000)
 
 
+class BrokerAccountObservedInstrumentOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = None
+    isin: str | None = None
+    ticker: str | None = None
+
+
 class BrokerAccountRowOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -103,6 +114,26 @@ class BrokerAccountRowOut(BaseModel):
     hermes_account_id: int | None
     status: str
     reason: str | None
+    section_codes: list[str] = Field(default_factory=list)
+    observed_instruments: list[BrokerAccountObservedInstrumentOut] = Field(default_factory=list)
+
+
+def account_row_out(row: AccountReconciliationRow) -> BrokerAccountRowOut:
+    return BrokerAccountRowOut(
+        provider_account_id=row.provider_account_id,
+        hermes_account_id=row.hermes_account_id,
+        status=row.status.value,
+        reason=row.reason,
+        section_codes=list(row.section_codes),
+        observed_instruments=[
+            BrokerAccountObservedInstrumentOut(
+                display_name=item.display_name,
+                isin=item.isin,
+                ticker=item.ticker,
+            )
+            for item in row.observed_instruments
+        ],
+    )
 
 
 class BrokerInstrumentRowOut(BaseModel):
@@ -373,15 +404,7 @@ def _preview_response(
         month_closed=preview.month_closed,
         would_touch_closed_month=preview.would_touch_closed_month,
         conflict_count=preview.conflict_count,
-        accounts=[
-            BrokerAccountRowOut(
-                provider_account_id=row.provider_account_id,
-                hermes_account_id=row.hermes_account_id,
-                status=row.status.value,
-                reason=row.reason,
-            )
-            for row in preview.accounts
-        ],
+        accounts=[account_row_out(row) for row in preview.accounts],
         instruments=[
             BrokerInstrumentRowOut(
                 provider_instrument_id=row.provider_instrument_id,

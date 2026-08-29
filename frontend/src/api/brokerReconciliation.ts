@@ -40,11 +40,19 @@ export type ReconciliationRow = {
   fingerprint: string | null;
 };
 
+export type ReconciliationAccountObservedInstrument = {
+  display_name: string | null;
+  isin: string | null;
+  ticker: string | null;
+};
+
 export type ReconciliationAccount = {
   provider_account_id: string;
   hermes_account_id: number | null;
   status: string;
   reason: string | null;
+  section_codes?: string[];
+  observed_instruments?: ReconciliationAccountObservedInstrument[];
 };
 
 export type ReconciliationInstrument = {

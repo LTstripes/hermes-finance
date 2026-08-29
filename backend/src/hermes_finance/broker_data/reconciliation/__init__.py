@@ -11,6 +11,7 @@ from hermes_finance.broker_data.reconciliation.dto import (
     COMPARISON_ONLY_PROVIDER_FIELDS,
     AccountMappingInput,
     AccountMatchStatus,
+    AccountObservedInstrument,
     AccountReconciliationRow,
     CashReconciliationRow,
     CashRowStatus,
@@ -44,6 +45,7 @@ from hermes_finance.services.broker_reconciliation import load_hermes_state_for_
 __all__ = [
     "AccountMappingInput",
     "AccountMatchStatus",
+    "AccountObservedInstrument",
     "AccountReconciliationRow",
     "CashReconciliationRow",
     "CashRowStatus",
