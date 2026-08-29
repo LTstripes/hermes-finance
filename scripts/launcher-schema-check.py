@@ -22,7 +22,8 @@ def revision_is_ancestor(script: ScriptDirectory, current: str, heads: tuple[str
     for head in heads:
         try:
             if any(
-                revision.revision == current for revision in script.iterate_revisions(head, current)
+                revision.revision == current
+                for revision in script.iterate_revisions(head, current, inclusive=True)
             ):
                 return True
         except RangeNotAncestorError:
