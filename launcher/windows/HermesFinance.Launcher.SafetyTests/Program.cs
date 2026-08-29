@@ -228,14 +228,16 @@ static void AcceptsAnnotatedReleaseTag()
         CreateRuntimeLayout(root);
         Directory.CreateDirectory(dataDir);
         RunGit(root, "init");
+        RunGit(root, "config", "--local", "user.name", "Hermes Safety Test");
+        RunGit(root, "config", "--local", "user.email", "hermes-safety-test");
         RunGit(root, "add", ".");
-        RunGit(root, "-c", "user.name=Hermes Safety Test", "-c", "user.email=hermes-safety-test", "commit", "-m", "initial synthetic runtime");
+        RunGit(root, "commit", "-m", "initial synthetic runtime");
         var firstCommit = RunGit(root, "rev-parse", "HEAD");
         RunGit(root, "tag", "-a", "annotated-old", "-m", "old synthetic release", firstCommit);
 
         File.WriteAllText(Path.Combine(root, "identity-marker.txt"), "synthetic second commit");
         RunGit(root, "add", ".");
-        RunGit(root, "-c", "user.name=Hermes Safety Test", "-c", "user.email=hermes-safety-test", "commit", "-m", "current synthetic runtime");
+        RunGit(root, "commit", "-m", "current synthetic runtime");
         var head = RunGit(root, "rev-parse", "HEAD");
         var branch = RunGit(root, "symbolic-ref", "--short", "HEAD");
         RunGit(root, "tag", "lightweight-current");
