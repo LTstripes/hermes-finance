@@ -162,7 +162,9 @@ function result(
   };
 }
 
-function unresolvedMappingResult(): BrokerReconciliationResponse {
+function unresolvedMappingResult(
+  overrides: Partial<BrokerReconciliationResponse> = {},
+): BrokerReconciliationResponse {
   return result({
     status: "non_applicable",
     accounts: [
@@ -193,6 +195,18 @@ function unresolvedMappingResult(): BrokerReconciliationResponse {
       },
     ],
     rows: [row("unresolved", { reason: "account_mapping_unresolved" })],
+    ...overrides,
+  });
+}
+
+function manyObservedInstruments(count: number) {
+  return Array.from({ length: count }, (_, index) => {
+    const n = String(index + 1).padStart(2, "0");
+    return {
+      display_name: `Synthetic bond ${n}`,
+      isin: `RU000SYN000${n}`,
+      ticker: `SYN${n}`,
+    };
   });
 }
 
@@ -285,12 +299,8 @@ describe("ReconciliationCenterPage", () => {
     await user.selectOptions(monthSelect, "7");
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
 
-    const accountSelect = await screen.findByLabelText(
-      "Раздел MICEX · Synthetic provider bond · RU000SYN00001 · SYN",
-    );
-    const instrumentSelect = screen.getByLabelText(
-      "Synthetic provider bond · RU000SYN00001 · SYN",
-    );
+    const accountSelect = await screen.findByLabelText("Раздел MICEX · Synthetic provider bond");
+    const instrumentSelect = screen.getByLabelText("Synthetic provider bond · RU000SYN00001 · SYN");
     expect(screen.getByText("Нельзя считать сопоставление безопасным")).toBeInTheDocument();
     await user.selectOptions(accountSelect, "1");
     await user.selectOptions(instrumentSelect, "10");
@@ -316,7 +326,7 @@ describe("ReconciliationCenterPage", () => {
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
 
     expect(
-      await screen.findByLabelText("Раздел MICEX · Synthetic provider bond · RU000SYN00001 · SYN"),
+      await screen.findByLabelText("Раздел MICEX · Synthetic provider bond"),
     ).toBeInTheDocument();
     expect(
       screen.getByLabelText("Synthetic provider bond · RU000SYN00001 · SYN"),
@@ -331,6 +341,39 @@ describe("ReconciliationCenterPage", () => {
       screen.queryByText(/no explicit owner mapping for provider account/i),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/no Hermes instrument with this ISIN/i)).not.toBeInTheDocument();
+  });
+
+  it("bounds a long account identity and keeps the provider id on its own line", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerReconciliation).mockResolvedValue(
+      unresolvedMappingResult({
+        accounts: [
+          {
+            provider_account_id: "SYN-ACCOUNT-001",
+            hermes_account_id: null,
+            status: "unmatched",
+            reason: "no explicit owner mapping for provider account",
+            section_codes: ["MICEX"],
+            observed_instruments: manyObservedInstruments(8),
+          },
+        ],
+      }),
+    );
+
+    renderPage();
+    const monthSelect = await screen.findByLabelText("Отчётный месяц");
+    await screen.findByRole("option", { name: /Август/ });
+    await user.selectOptions(monthSelect, "7");
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+
+    expect(
+      await screen.findByLabelText(
+        "Раздел MICEX · Synthetic bond 01 · Synthetic bond 02 · Synthetic bond 03 · ещё 5",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Источник: SYN-ACCOUNT-001")).toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic bond 04/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic bond 08/)).not.toBeInTheDocument();
   });
 
   it.each([

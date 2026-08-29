@@ -202,12 +202,12 @@ function joinIdentityParts(parts: Array<string | null | undefined>): string {
   return parts.filter((part): part is string => Boolean(part?.trim())).join(" · ");
 }
 
-function observedInstrumentLabel(item: {
+function observedInstrumentShortLabel(item: {
   display_name: string | null;
   isin: string | null;
   ticker: string | null;
 }): string {
-  return joinIdentityParts([item.display_name, item.isin, item.ticker]);
+  return item.display_name?.trim() || item.isin?.trim() || item.ticker?.trim() || "";
 }
 
 function instrumentMappingLabel(row: ReconciliationInstrument): string {
@@ -215,12 +215,17 @@ function instrumentMappingLabel(row: ReconciliationInstrument): string {
   return readable || `Источник: ${row.provider_instrument_id ?? "—"}`;
 }
 
+const ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS = 3;
+
 function accountMappingLabel(row: ReconciliationAccount): string {
   const sections = (row.section_codes ?? []).map((code) => `Раздел ${code}`);
   const instruments = (row.observed_instruments ?? [])
-    .map(observedInstrumentLabel)
-    .filter(Boolean);
-  const readable = [...sections, ...instruments].join(" · ");
+    .map(observedInstrumentShortLabel)
+    .filter((label) => label !== "");
+  const visible = instruments.slice(0, ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS);
+  const hiddenCount = instruments.length - visible.length;
+  const extra = hiddenCount > 0 ? [`ещё ${hiddenCount}`] : [];
+  const readable = [...sections, ...visible, ...extra].join(" · ");
   return readable || `Источник: ${row.provider_account_id}`;
 }
 
