@@ -19,6 +19,7 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     AccountPerformanceScopeMembership,
     Base,
+    ExternalFlowBoundaryGroupMember,
     ObservedValuationPoint,
 )
 from hermes_finance.services.accounts import create_account
@@ -296,6 +297,73 @@ def test_scope_specific_boundary_groups_can_share_one_external_flow(tmp_path: Pa
         assert [
             boundary.boundary_group_id for boundary in portfolio_result.external_flow_boundaries
         ] == [portfolio_group.id]
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        selected_flow = _flow(session, february_id, account_id)
+        unselected_flow = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="25.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_out_of_scope",
+        )
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[selected_flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        session.add(
+            ExternalFlowBoundaryGroupMember(
+                boundary_group_id=group.id,
+                external_flow_id=unselected_flow.id,
+            )
+        )
+        session.commit()
+        for relation, total_value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1200.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value=total_value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_invalid_group_membership",
+                relation=relation,
+                boundary_group_id=group.id,
+            )
+        _close_interval(session, january_id, february_id)
+
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert not result.twrr.is_available
+        assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert len(result.external_flow_boundaries) == 1
+        boundary = result.external_flow_boundaries[0]
+        assert boundary.flow_ids == tuple(sorted((selected_flow.id, unselected_flow.id)))
+        assert boundary.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert not boundary.is_available
     finally:
         session.close()
         database.engine.dispose()
