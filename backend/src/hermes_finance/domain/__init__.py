@@ -33,6 +33,14 @@ from hermes_finance.domain.performance_availability import (
 )
 from hermes_finance.domain.positions import PriceSource
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
+from hermes_finance.domain.twrr import (
+    TwrrAvailabilityStatus,
+    TwrrBoundary,
+    TwrrQuality,
+    TwrrReasonCode,
+    TwrrResult,
+    calculate_twrr,
+)
 from hermes_finance.domain.valuation_boundaries import (
     ExternalFlowBoundaryEvidence,
     ObservedValuationEvidence,
@@ -110,6 +118,12 @@ __all__ = [
     "XirrReasonCode",
     "XirrResult",
     "calculate_xirr",
+    "TwrrAvailabilityStatus",
+    "TwrrBoundary",
+    "TwrrQuality",
+    "TwrrReasonCode",
+    "TwrrResult",
+    "calculate_twrr",
     "ComponentStatus",
     "CoverageStatus",
     "PerformanceScope",

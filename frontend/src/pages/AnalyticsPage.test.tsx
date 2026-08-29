@@ -6,14 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCapitalComposition } from "../api/analytics";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
-import { getPortfolioXirr } from "../api/performance";
+import { getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
 import { rub } from "../lib/money";
 import { AnalyticsPage } from "./AnalyticsPage";
 
 vi.mock("../api/analytics", () => ({ getCapitalComposition: vi.fn() }));
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
 vi.mock("../api/months", () => ({ listMonths: vi.fn() }));
-vi.mock("../api/performance", () => ({ getPortfolioXirr: vi.fn() }));
+vi.mock("../api/performance", () => ({ getPortfolioTwrr: vi.fn(), getPortfolioXirr: vi.fn() }));
 
 const capitalHistory = {
   asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
@@ -38,6 +38,18 @@ const capitalHistory = {
 };
 
 beforeEach(() => {
+  vi.mocked(getPortfolioTwrr).mockResolvedValue({
+    metric: "twrr",
+    scope: "portfolio",
+    performance_currency: "RUB",
+    value: null,
+    value_unit: "percentage_points",
+    annualized: false,
+    period: { start_date: "2031-01-31", end_date: "2031-02-28" },
+    availability: "not_computable",
+    quality: "unavailable",
+    reason_codes: ["not_computable_valuation_boundary_missing"],
+  });
   vi.mocked(getCapitalComposition).mockResolvedValue(capitalHistory);
   vi.mocked(listMonths).mockResolvedValue([
     {
@@ -130,6 +142,10 @@ describe("AnalyticsPage", () => {
     expect(screen.queryByText("10,00%")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(getPortfolioXirr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
+    );
+    expect(screen.getByText("TWRR недоступен")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getPortfolioTwrr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
     );
   });
 });

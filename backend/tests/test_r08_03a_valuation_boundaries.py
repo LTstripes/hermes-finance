@@ -19,6 +19,7 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     AccountPerformanceScopeMembership,
     Base,
+    ExternalFlowBoundaryGroup,
     ExternalFlowBoundaryGroupMember,
     ObservedValuationPoint,
 )
@@ -227,6 +228,86 @@ def test_same_day_group_is_deterministic_and_uses_group_observations(tmp_path: P
             group.id
         ]
         assert result.external_flow_boundaries[0].flow_ids == tuple(sorted((first.id, second.id)))
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_multiple_same_day_boundary_groups_are_order_unknown(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        first = _flow(session, february_id, account_id, amount="100.00")
+        second = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="50.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            scope_membership="stable_in_scope",
+        )
+        first_group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[first.id],
+            scope="account",
+            account_id=account_id,
+        )
+        # Bypass the write-service uniqueness guard to model persisted
+        # corruption that the read path must reject conservatively.
+        second_group = ExternalFlowBoundaryGroup(
+            reporting_month_id=february_id,
+            scope="account",
+            account_id=account_id,
+            boundary_date=FLOW_DATE,
+        )
+        session.add(second_group)
+        session.flush()
+        session.add(
+            ExternalFlowBoundaryGroupMember(
+                boundary_group_id=second_group.id,
+                external_flow_id=second.id,
+            )
+        )
+        session.commit()
+        for group_id, value_pair in (
+            (first_group.id, ("1100.00", "1200.00")),
+            (second_group.id, ("1200.00", "1150.00")),
+        ):
+            for relation, total_value in zip(
+                (
+                    ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
+                    ValuationBoundaryRelation.POST_EXTERNAL_FLOW,
+                ),
+                value_pair,
+            ):
+                create_observed_valuation_point(
+                    session,
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value=total_value,
+                    performance_currency="RUB",
+                    provenance_kind="synthetic_multiple_group_corruption",
+                    relation=relation,
+                    boundary_group_id=group_id,
+                )
+        _close_interval(session, january_id, february_id)
+
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert not result.twrr.is_available
+        assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert len(result.external_flow_boundaries) == 2
     finally:
         session.close()
         database.engine.dispose()

@@ -109,6 +109,22 @@ export type PortfolioXirr = {
   reason_codes: string[];
 };
 
+export type PortfolioTwrr = {
+  metric: "twrr";
+  scope: "portfolio";
+  performance_currency: string;
+  value: string | null;
+  value_unit: "percentage_points";
+  annualized: false;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  reason_codes: string[];
+};
+
 export type IncomeType = "salary" | "bonus" | "side_income" | "cashback" | "other" | string;
 
 export type IncomeEntry = {
