@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import (
@@ -32,6 +32,7 @@ from hermes_finance.persistence import (
     APP_SETTINGS_ID,
     DEFAULT_BASE_CURRENCY,
     Account,
+    AccountPerformanceScopeMembership,
     AppSettings,
     CashBalance,
     DepositSnapshot,
@@ -91,25 +92,52 @@ def _selected_accounts(
     *,
     scope: PerformanceScope,
     account_id: int | None,
-) -> tuple[list[Account], tuple[str, ...]]:
+    valuation_date: date | None,
+) -> tuple[list[Account], tuple[int, ...], tuple[str, ...]]:
+    def membership_rows(account: Account) -> list[AccountPerformanceScopeMembership]:
+        if valuation_date is None:
+            return []
+        return list(
+            session.scalars(
+                select(AccountPerformanceScopeMembership)
+                .where(
+                    AccountPerformanceScopeMembership.account_id == account.id,
+                    AccountPerformanceScopeMembership.effective_from <= valuation_date,
+                    or_(
+                        AccountPerformanceScopeMembership.effective_to.is_(None),
+                        AccountPerformanceScopeMembership.effective_to >= valuation_date,
+                    ),
+                )
+                .order_by(
+                    AccountPerformanceScopeMembership.effective_from,
+                    AccountPerformanceScopeMembership.id,
+                )
+            )
+        )
+
     if scope is PerformanceScope.ACCOUNT:
         if account_id is None:
             raise ValueError("account_id is required for account performance scope")
         account = session.get(Account, account_id)
         if account is None:
             raise ValueError(f"account {account_id} was not found")
-        if not account.include_in_returns:
-            return [], (ValuationReasonCode.SCOPE_COVERAGE_INCOMPLETE.value,)
-        return [account], ()
+        rows = membership_rows(account)
+        if len(rows) != 1:
+            return [account], (account.id,), ()
+        if not rows[0].include_in_returns:
+            return [account], (), (ValuationReasonCode.SCOPE_COVERAGE_INCOMPLETE.value,)
+        return [account], (), ()
 
-    accounts = list(
-        session.scalars(
-            select(Account).where(Account.include_in_returns.is_(True)).order_by(Account.id)
-        )
-    )
-    if not accounts:
-        return [], (ValuationReasonCode.SCOPE_COVERAGE_INCOMPLETE.value,)
-    return accounts, ()
+    accounts = list(session.scalars(select(Account).order_by(Account.id)))
+    selected: list[Account] = []
+    unknown_membership_ids: list[int] = []
+    for account in accounts:
+        rows = membership_rows(account)
+        if len(rows) != 1:
+            unknown_membership_ids.append(account.id)
+        elif rows[0].include_in_returns:
+            selected.append(account)
+    return selected, tuple(unknown_membership_ids), ()
 
 
 def _scope_membership_coverage(
@@ -192,13 +220,28 @@ def valuation_point_for_month(
     performance_currency = (
         settings.base_currency.strip().upper() if settings is not None else DEFAULT_BASE_CURRENCY
     )
-    selected_accounts, scope_reasons = _selected_accounts(
-        session, scope=normalized_scope, account_id=account_id
+    selected_accounts, unknown_membership_ids, scope_reasons = _selected_accounts(
+        session,
+        scope=normalized_scope,
+        account_id=account_id,
+        valuation_date=month.snapshot_date,
     )
     selected_account_ids = {account.id for account in selected_accounts}
     components: list[ValuationComponent] = []
     provenance: list[ValuationProvenance] = []
     extra_reasons = set(scope_reasons)
+
+    if unknown_membership_ids:
+        components.append(
+            _component(
+                "scope_membership_history",
+                status=ComponentStatus.UNKNOWN,
+                amount=None,
+                source_kind="account_performance_scope_membership",
+                source_ids=unknown_membership_ids,
+                reason_codes=(ValuationReasonCode.SCOPE_MEMBERSHIP_HISTORY_MISSING.value,),
+            )
+        )
 
     if month.status != "closed":
         extra_reasons.add(ValuationReasonCode.REPORTING_MONTH_NOT_CLOSED.value)

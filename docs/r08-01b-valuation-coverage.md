@@ -10,7 +10,8 @@ issue #190. It does not define or implement XIRR, TWRR, or R08-01C.
 The accepted #145 v2 contract is normative, including its explicit
 `not_computable_*` outcomes. Accepted #179 semantics are preserved:
 `ExternalFlow.scope_membership=unknown` is not evidence, and the present
-`Account.include_in_returns` flag must not reclassify a historical flow.
+`Account.include_in_returns` flag must not reclassify a historical flow or
+historical valuation-point scope.
 
 The valuation service derives a point from one persisted reporting-month
 snapshot. It never fills a missing component from another month, a month
@@ -25,18 +26,19 @@ persisted total only when its selected account components are authoritative.
 | Position value | `position_snapshots.market_value_kopecks`, backend-recomputed per month/account/instrument. | Authoritative for selected `include_in_returns` accounts when rows are present and values are valid. | Authoritative for the explicit in-scope account when rows are present and values are valid. | Missing account component is `unknown`; invalid persisted value is unavailable. The stored value is the existing RUB valuation; no FX is invented from `Instrument.currency`. |
 | Deposit value | `deposit_snapshots.balance_kopecks`, account-linked and base-currency-denominated by the existing schema. | Authoritative for selected accounts when rows are present and valid. | Authoritative for the explicit account when rows are present and valid. | Missing account component is `unknown`; values are treated as base currency under #145 v2. |
 | Performance cash | `cash_balances.amount_kopecks` and explicit `currency`; baseline has no account identity. | A legacy `NULL account_id` row cannot be assigned to the portfolio without guessing. | A legacy `NULL account_id` row cannot be assigned to an account. | Existing unlinked rows are `not_computable_scope_cash_unclassified`. The additive nullable account linkage introduced by R08-01B is authoritative only when populated; non-RUB rows are unavailable without an accepted conversion. |
-| Scope membership evidence | `external_flows.scope_membership` from accepted #179; transfer identity/status comes from R08-01A. | `unknown` is non-authoritative; unresolved transfer identity remains unresolved. | Same, with account boundary classification from explicit account identity. | These states are reported in coverage metadata and never converted to zero. Current `include_in_returns` is not used to rewrite historical flow classification. |
+| Scope membership evidence | `account_performance_scope_memberships` is effective-dated point-scope evidence; `external_flows.scope_membership` and transfer identity/status come from accepted #179/R08-01A. | Every account must have one unambiguous membership row at the valuation date. | Same for the explicit account. | Missing/overlapping membership is `not_computable_scope_membership_history_missing`; current `include_in_returns` is never used for historical selection. Flow membership remains separate coverage and is never converted to zero. |
 | Quote/provenance/freshness | `PositionSnapshot.price_date`/`price_source`, optional immutable `PositionQuoteProvenance`, and read-only R07 freshness service. | Provenance is attached to position components. | Same. | No refresh/network call. Existing persisted valuation remains the source; freshness/quality is metadata, not a replacement value. |
 | Excluded sources | `expected_cash_flows`/provider payout rows are forecast/calendar data; legacy `investment_cash_flows` are not boundary proof. Debts and property are outside gross performance valuation. | Never added to the valuation total. | Never added to the valuation total. | Excluded by contract; no double counting of internal interest, coupons, dividends, redemptions, fees, or taxes. |
 
 ## Deliberate implementation boundary
 
-The baseline has no trusted top-level portfolio valuation row and no account
-identity for cash. Therefore the smallest additive solution is a nullable
-`cash_balances.account_id` link. Existing rows remain unclassified and keep
-their current liquid-capital behavior; the new performance service fails
-closed when such a row could affect the selected scope. No legacy cash row is
-backfilled or inferred from `name`, `include_in_capital`, or account flags.
+The baseline has no trusted top-level portfolio valuation row, no account
+identity for cash, and no effective-dated scope history. Therefore the
+smallest additive solution is a nullable `cash_balances.account_id` link plus
+explicit effective-dated account scope membership evidence. Existing cash and
+membership history remain unclassified: no row is backfilled or inferred from
+`name`, `include_in_capital`, or present-state account flags. The performance
+service fails closed when either evidence set is incomplete.
 
 Valuation points are derived read-only DTOs. They report exact RUB totals only
 for authoritative selected components, with component coverage, provenance,

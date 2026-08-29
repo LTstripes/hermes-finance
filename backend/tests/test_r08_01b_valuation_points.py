@@ -16,7 +16,13 @@ from hermes_finance.domain import (
     ValuationPointStatus,
     ValuationQuality,
 )
-from hermes_finance.persistence import Account, Base, CashBalance, ReportingMonth
+from hermes_finance.persistence import (
+    Account,
+    AccountPerformanceScopeMembership,
+    Base,
+    CashBalance,
+    ReportingMonth,
+)
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.deposits import create_deposit_snapshot
@@ -27,7 +33,9 @@ from hermes_finance.services.reporting_months import close_reporting_month, crea
 from hermes_finance.services.valuation_points import valuation_point_for_month
 
 
-def _environment(tmp_path: Path) -> tuple[Session, object, int, int, int]:
+def _environment(
+    tmp_path: Path, *, with_membership_history: bool = True
+) -> tuple[Session, object, int, int, int]:
     database = create_database(tmp_path / "r08-01b.db")
     Base.metadata.create_all(database.engine)
     session = database.session_factory()
@@ -66,6 +74,22 @@ def _environment(tmp_path: Path) -> tuple[Session, object, int, int, int]:
         name="Synthetic Broker Cash",
         amount="300.00",
     )
+    if with_membership_history:
+        session.add_all(
+            [
+                AccountPerformanceScopeMembership(
+                    account_id=account.id,
+                    effective_from=date(2030, 1, 1),
+                    include_in_returns=True,
+                ),
+                AccountPerformanceScopeMembership(
+                    account_id=other_account.id,
+                    effective_from=date(2030, 1, 1),
+                    include_in_returns=False,
+                ),
+            ]
+        )
+        session.commit()
     return session, database, month.id, account.id, other_account.id
 
 
@@ -98,19 +122,32 @@ def test_complete_valuation_point_has_exact_total_and_provenance(tmp_path: Path)
         database.engine.dispose()
 
 
-def test_missing_account_component_is_unknown_not_zero(tmp_path: Path) -> None:
-    session, database, month_id, _account_id, other_account_id = _environment(tmp_path)
+def test_current_include_flag_does_not_rewrite_old_trusted_valuation(tmp_path: Path) -> None:
+    session, database, month_id, account_id, other_account_id = _environment(tmp_path)
     try:
+        close_reporting_month(session, month_id)
+        portfolio_before = valuation_point_for_month(session, month_id)
+        before = valuation_point_for_month(
+            session, month_id, scope=PerformanceScope.ACCOUNT, account_id=account_id
+        )
         other_account = session.get(Account, other_account_id)
         assert other_account is not None
         other_account.include_in_returns = True
+        account = session.get(Account, account_id)
+        assert account is not None
+        account.include_in_returns = False
         session.commit()
-        close_reporting_month(session, month_id)
-        point = valuation_point_for_month(session, month_id)
+        after = valuation_point_for_month(
+            session, month_id, scope=PerformanceScope.ACCOUNT, account_id=account_id
+        )
+        portfolio_after = valuation_point_for_month(session, month_id)
 
-        assert point.status is ValuationPointStatus.UNKNOWN
-        assert point.total_value is None
-        assert "not_computable_scope_coverage_incomplete" in point.coverage.reason_codes
+        assert portfolio_before.status is ValuationPointStatus.AVAILABLE
+        assert portfolio_after.status is ValuationPointStatus.AVAILABLE
+        assert portfolio_after.total_value == portfolio_before.total_value
+        assert before.status is ValuationPointStatus.AVAILABLE
+        assert after.status is ValuationPointStatus.AVAILABLE
+        assert after.total_value == before.total_value
     finally:
         session.close()
         database.engine.dispose()
@@ -156,12 +193,40 @@ def test_unknown_historical_flow_membership_is_reported_separately_from_valuatio
         close_reporting_month(session, month_id)
         point = valuation_point_for_month(session, month_id)
 
-        assert point.status is ValuationPointStatus.AVAILABLE
+        assert point.status is ValuationPointStatus.UNKNOWN
+        assert point.total_value is None
         assert point.coverage.scope_membership_status is CoverageStatus.UNKNOWN
         assert (
             "not_computable_scope_membership_history_missing"
             in point.coverage.scope_membership_reason_codes
         )
+        assert "not_computable_scope_membership_history_missing" in point.coverage.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_missing_scope_membership_stays_unknown_after_current_flag_toggle(tmp_path: Path) -> None:
+    session, database, month_id, account_id, other_account_id = _environment(
+        tmp_path, with_membership_history=False
+    )
+    try:
+        close_reporting_month(session, month_id)
+        before = valuation_point_for_month(session, month_id)
+        account = session.get(Account, account_id)
+        other_account = session.get(Account, other_account_id)
+        assert account is not None
+        assert other_account is not None
+        account.include_in_returns = False
+        other_account.include_in_returns = True
+        session.commit()
+        after = valuation_point_for_month(session, month_id)
+
+        assert before.status is ValuationPointStatus.UNKNOWN
+        assert after.status is ValuationPointStatus.UNKNOWN
+        assert before.total_value is None
+        assert after.total_value is None
+        assert "not_computable_scope_membership_history_missing" in after.coverage.reason_codes
     finally:
         session.close()
         database.engine.dispose()

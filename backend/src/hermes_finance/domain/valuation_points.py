@@ -129,15 +129,24 @@ def build_valuation_point(
         reasons.update(component.reason_codes)
 
     statuses = {component.status for component in component_tuple}
-    if ComponentStatus.UNAVAILABLE in statuses:
+    hard_reasons = {
+        ValuationReasonCode.SNAPSHOT_DATE_MISSING.value,
+        ValuationReasonCode.REPORTING_MONTH_NOT_CLOSED.value,
+        ValuationReasonCode.CURRENCY_CONVERSION_INCOMPLETE.value,
+    }
+    if ComponentStatus.UNAVAILABLE in statuses or reasons & hard_reasons:
         status = ValuationPointStatus.UNAVAILABLE
         quality = ValuationQuality.UNAVAILABLE
         coverage_status = CoverageStatus.UNAVAILABLE
-    elif not component_tuple or ComponentStatus.UNKNOWN in statuses:
+    elif (
+        not component_tuple
+        or ComponentStatus.UNKNOWN in statuses
+        or scope_membership_status is CoverageStatus.UNKNOWN
+    ):
         status = ValuationPointStatus.UNKNOWN
         quality = ValuationQuality.UNKNOWN
         coverage_status = CoverageStatus.UNKNOWN
-    elif reasons:
+    elif scope_membership_status is CoverageStatus.UNAVAILABLE or reasons:
         status = ValuationPointStatus.UNAVAILABLE
         quality = ValuationQuality.UNAVAILABLE
         coverage_status = CoverageStatus.UNAVAILABLE
@@ -152,6 +161,8 @@ def build_valuation_point(
             sum(component.amount.kopecks for component in component_tuple if component.amount)
         )
 
+    membership_reasons = set(scope_membership_reason_codes)
+    reasons.update(membership_reasons)
     coverage = ValuationCoverage(
         status=coverage_status,
         components=component_tuple,
