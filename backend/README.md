@@ -46,4 +46,6 @@ Conversions to the nearest kopeck or basis point use `ROUND_HALF_UP`, so exact h
 uv run python -I -m pytest
 ```
 
+Для targeted semantic lanes и правил ownership см. [руководство по test suite](../docs/TEST_SUITE_GUIDE.md).
+
 The repository root [README](../README.md) contains the full development notes and privacy requirements.

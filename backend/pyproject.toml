@@ -45,6 +45,21 @@ packages = ["src/hermes_finance"]
 addopts = "-ra --strict-config --strict-markers"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "domain: pure financial/domain invariants and exact boundary rules",
+    "api: HTTP, DTO, status, and error contract coverage",
+    "service: application service orchestration and cross-entity behavior",
+    "persistence: database and persisted-state contract coverage",
+    "migration: schema upgrade, downgrade, and data-preservation coverage",
+    "integration: provider, quote, payout, and reconciliation boundaries",
+    "import_export: statement, export, bundle, seed, and interchange paths",
+    "legacy: supported legacy compatibility and migration paths",
+    "runtime: startup, local security, settings, and launcher runtime behavior",
+    "release: release-safety and task acceptance contract coverage",
+    "benchmark: explicit performance or long-history measurement lanes",
+    "windows: Windows-specific path, timezone, and launcher behavior",
+    "network_free: synthetic tests that assert or require offline behavior",
+]
 
 [tool.ruff]
 line-length = 100

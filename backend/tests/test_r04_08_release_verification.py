@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import sqlite3
-import subprocess
-import sys
 from pathlib import Path
 
 import httpx2
+from _migration_helpers import REVISION, revision_rows, run_alembic
+from _network_helpers import ForbiddenTransport
+from _release_helpers import (
+    run_isolated_startup_script,
+)
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from t_invest_mapping_fixtures import accept_t_invest_mapping
-from test_migrations import REVISION, revision_rows, run_alembic
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import InstrumentType
@@ -21,16 +22,8 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.settings import Settings
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-STARTUP_GUARD_SCRIPT = Path(__file__).resolve().parent / "startup_network_guard.py"
-
 STABLE_REVISION = "0023_passive_income_history_eligibility"
 STOCK_UID = "11111111-1111-1111-1111-111111111111"
-
-
-class ForbiddenTransport(httpx2.BaseTransport):
-    def handle_request(self, request: httpx2.Request) -> httpx2.Response:
-        raise AssertionError(f"authenticated network must not be called: {request.url}")
 
 
 def _connect(database_path: Path) -> sqlite3.Connection:
@@ -458,33 +451,15 @@ def test_manual_snapshot_with_existing_provenance_downgrade_fails_closed(
         connection.close()
 
 
-def _run_isolated_startup_script(*arguments: str) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment["PYTHONIOENCODING"] = "utf-8"
-    environment.pop("PYTHONPATH", None)
-    environment.pop("PYTHONHOME", None)
-    environment.pop("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", None)
-    return subprocess.run(
-        [sys.executable, "-I", str(STARTUP_GUARD_SCRIPT), *arguments],
-        cwd=BACKEND_ROOT,
-        env=environment,
-        capture_output=True,
-        check=False,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-
 def test_import_and_page_load_do_not_construct_market_clients(tmp_path: Path) -> None:
     database_path = tmp_path / "r04-08-startup.db"
-    probed = _run_isolated_startup_script("probe", str(database_path))
+    probed = run_isolated_startup_script("probe", str(database_path))
     assert probed.returncode == 0, probed.stdout + probed.stderr
     assert "ok" in probed.stdout
 
 
 def test_startup_network_guard_fails_closed_on_external_attempt() -> None:
-    proved = _run_isolated_startup_script("prove-guard")
+    proved = run_isolated_startup_script("prove-guard")
     assert proved.returncode == 0, proved.stdout + proved.stderr
     assert "guard-ok" in proved.stdout
 

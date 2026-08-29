@@ -3,9 +3,9 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _migration_helpers import run_alembic
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from test_migrations import run_alembic
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import (
