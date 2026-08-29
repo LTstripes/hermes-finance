@@ -737,18 +737,16 @@ def _twrr_boundary_reasons(
         for target in targets
     ]
 
-    # Separate same-day flow rows have no proven order.  Only an explicit
-    # persisted group can turn them into one deterministic boundary unit.
-    same_day_counts: dict[date, int] = defaultdict(int)
+    # A same-date group is deterministic only when it is the sole boundary
+    # target for that selected scope.  A leftover standalone flow, a second
+    # group, or duplicated/corrupt group membership leaves inter-boundary
+    # ordering unproven; IDs and query order are not financial evidence.
+    same_day_target_counts: dict[date, int] = defaultdict(int)
     for target in targets:
-        if not target.explicit_group:
-            same_day_counts[target.event_date] += 1
+        same_day_target_counts[target.event_date] += 1
     reasons: set[str] = set()
     for target_evidence in evidence:
-        if (
-            same_day_counts[target_evidence.event_date] > 1
-            and target_evidence.boundary_group_id is None
-        ):
+        if same_day_target_counts[target_evidence.event_date] > 1:
             reasons.add(_TWRR_ONLY_REASON)
         reasons.update(target_evidence.reason_codes)
     return tuple(evidence), reasons

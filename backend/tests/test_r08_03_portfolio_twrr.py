@@ -28,7 +28,10 @@ from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.portfolio_twrr import portfolio_twrr_for_interval
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
-from hermes_finance.services.valuation_boundaries import create_observed_valuation_point
+from hermes_finance.services.valuation_boundaries import (
+    create_external_flow_boundary_group,
+    create_observed_valuation_point,
+)
 
 START = date(2030, 1, 31)
 FIRST_FLOW_DATE = date(2030, 2, 10)
@@ -196,6 +199,78 @@ def test_portfolio_twrr_is_flat_or_negative_without_flow(tmp_path: Path) -> None
 
         assert result.availability is TwrrAvailabilityStatus.AVAILABLE
         assert result.value == Decimal("-10")
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_portfolio_twrr_flat_period_is_exact_zero(tmp_path: Path) -> None:
+    session, database, january_id, february_id, _ = _environment(tmp_path, closing_value="1000.00")
+    try:
+        _close_interval(session, january_id, february_id)
+        result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+
+        assert result.availability is TwrrAvailabilityStatus.AVAILABLE
+        assert result.quality is TwrrQuality.EXACT
+        assert result.value == Decimal("0")
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_portfolio_twrr_group_plus_standalone_same_day_fails_closed(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        grouped = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        standalone = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="50.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+        )
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FIRST_FLOW_DATE,
+            flow_ids=[grouped.id],
+            scope="portfolio",
+        )
+        for relation, value, boundary_kwargs in (
+            ("pre_external_flow", "1100.00", {"boundary_group_id": group.id}),
+            ("post_external_flow", "1200.00", {"boundary_group_id": group.id}),
+            ("pre_external_flow", "1200.00", {"external_flow_id": standalone.id}),
+            ("post_external_flow", "1150.00", {"external_flow_id": standalone.id}),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="portfolio",
+                observed_date=FIRST_FLOW_DATE,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_same_day_order_regression",
+                relation=relation,
+                **boundary_kwargs,
+            )
+        _close_interval(session, january_id, february_id)
+
+        result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+
+        assert result.availability is TwrrAvailabilityStatus.NOT_COMPUTABLE
+        assert result.quality is TwrrQuality.UNAVAILABLE
+        assert result.value is None
+        assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
     finally:
         session.close()
         database.engine.dispose()
