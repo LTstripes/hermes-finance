@@ -113,7 +113,7 @@ describe("AnalyticsPage", () => {
       period: { start_date: "2031-01-31", end_date: "2031-02-28" },
       availability: "not_computable",
       quality: "unavailable",
-      reason_codes: ["not_computable_xirr_no_valid_root"],
+      reason_codes: ["not_computable_xirr_root_ambiguity"],
     });
 
     render(
@@ -122,8 +122,11 @@ describe("AnalyticsPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText(/нет единственного допустимого корня/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/однозначность корня для этой истории не подтверждена/),
+    ).toBeInTheDocument();
     expect(screen.getByText("XIRR недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("not_computable_xirr_root_ambiguity", { exact: true })).toBeNull();
     expect(screen.queryByText("10,00%")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(getPortfolioXirr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),

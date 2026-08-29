@@ -139,6 +139,21 @@ const capitalComposition = {
     })),
 };
 
+export const syntheticXirrReasonCode = "not_computable_xirr_root_ambiguity";
+
+const portfolioXirr = {
+  metric: "xirr",
+  scope: "portfolio",
+  performance_currency: "RUB",
+  value: null,
+  value_unit: "percentage_points",
+  annualized: true,
+  period: { start_date: "2031-10-28", end_date: "2031-11-28" },
+  availability: "not_computable",
+  quality: "unavailable",
+  reason_codes: [syntheticXirrReasonCode],
+};
+
 const support = (status = "supported", reasonCodes: string[] = []) => ({
   status,
   reason_codes: reasonCodes,
@@ -509,6 +524,7 @@ export function syntheticApiResponse(
   }
   if (path === "/api/analytics/capital-composition") return { json: capitalComposition };
   if (path === "/api/analytics/risk-allocation") return { json: riskAllocation };
+  if (path === "/api/performance/xirr" && method === "GET") return { json: portfolioXirr };
   if (path === "/api/accounts" && method === "GET") {
     return { json: state === "empty" ? [] : syntheticAccounts };
   }

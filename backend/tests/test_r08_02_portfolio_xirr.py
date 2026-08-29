@@ -196,7 +196,7 @@ def test_xirr_solver_fails_closed_for_multiple_roots_and_convergence_limit() -> 
         )
     )
     assert multiple_roots.availability is XirrAvailabilityStatus.NOT_COMPUTABLE
-    assert multiple_roots.reason_codes == (XirrReasonCode.MULTIPLE_ROOTS.value,)
+    assert multiple_roots.reason_codes == (XirrReasonCode.ROOT_AMBIGUITY.value,)
 
     convergence = calculate_xirr(
         (
@@ -219,7 +219,7 @@ def test_xirr_solver_rejects_multiple_roots_hidden_inside_scan_cell() -> None:
         )
     )
     assert hidden_multiple_roots.availability is XirrAvailabilityStatus.NOT_COMPUTABLE
-    assert hidden_multiple_roots.reason_codes == (XirrReasonCode.MULTIPLE_ROOTS.value,)
+    assert hidden_multiple_roots.reason_codes == (XirrReasonCode.ROOT_AMBIGUITY.value,)
 
 
 def test_portfolio_xirr_applies_contribution_and_withdrawal_signs(tmp_path: Path) -> None:

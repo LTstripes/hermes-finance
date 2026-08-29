@@ -37,12 +37,12 @@ function portfolioXirrUnavailableMessage(reasonCodes: string[]): string {
     return "Расчёт недоступен: история внешних пополнений и снятий неполна.";
   }
   if (reasonCodes.some((code) => code.includes("root"))) {
-    return "Расчёт недоступен: для этой истории нет единственного допустимого корня.";
+    return "Расчёт недоступен: однозначность корня для этой истории не подтверждена.";
   }
   if (reasonCodes.some((code) => code.includes("membership") || code.includes("scope"))) {
     return "Расчёт недоступен: не подтверждён состав портфеля на всём периоде.";
   }
-  return "Расчёт недоступен: backend не подтвердил достаточность данных для XIRR.";
+  return "Расчёт недоступен: не удалось подтвердить достаточность данных для XIRR.";
 }
 
 export function AnalyticsPage() {
@@ -304,11 +304,8 @@ export function AnalyticsPage() {
             <p>
               {portfolioXirr
                 ? portfolioXirrUnavailableMessage(portfolioXirr.reason_codes)
-                : "Backend не вернул подтверждённый результат для выбранного периода."}
+                : "Не удалось получить подтверждённый результат для выбранного периода."}
             </p>
-            {portfolioXirr?.reason_codes.length ? (
-              <code>{portfolioXirr.reason_codes.join(", ")}</code>
-            ) : null}
           </div>
         )}
       </Panel>

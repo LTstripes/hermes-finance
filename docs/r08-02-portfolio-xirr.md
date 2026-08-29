@@ -56,7 +56,7 @@ response is unavailable with one of:
 ```text
 not_computable_xirr_no_valid_root
 not_computable_xirr_convergence_failed
-not_computable_xirr_multiple_roots
+not_computable_xirr_root_ambiguity
 ```
 
 Same-day ordering remains a TWRR-only limitation under the accepted #145 v2

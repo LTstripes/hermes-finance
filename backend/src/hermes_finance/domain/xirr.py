@@ -43,7 +43,7 @@ class XirrReasonCode(StrEnum):
 
     NO_VALID_ROOT = "not_computable_xirr_no_valid_root"
     CONVERGENCE_FAILED = "not_computable_xirr_convergence_failed"
-    MULTIPLE_ROOTS = "not_computable_xirr_multiple_roots"
+    ROOT_AMBIGUITY = "not_computable_xirr_root_ambiguity"
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,7 +244,7 @@ def calculate_xirr(
     if not any(amount < 0 for amount in amounts) or not any(amount > 0 for amount in amounts):
         return _unavailable(XirrReasonCode.NO_VALID_ROOT)
     if _sign_variation_count(amounts) > 1:
-        return _unavailable(XirrReasonCode.MULTIPLE_ROOTS)
+        return _unavailable(XirrReasonCode.ROOT_AMBIGUITY)
 
     first_date = normalised[0][0]
     cash_flows_with_time = tuple(
@@ -288,7 +288,7 @@ def calculate_xirr(
                 )
             if len(unique_roots) > 1:
                 return _unavailable(
-                    XirrReasonCode.MULTIPLE_ROOTS,
+                    XirrReasonCode.ROOT_AMBIGUITY,
                     iterations=total_iterations,
                 )
 
