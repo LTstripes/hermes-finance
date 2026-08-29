@@ -8,6 +8,7 @@ valuation/flow from another date.
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -16,19 +17,23 @@ from sqlalchemy.orm import Session
 from hermes_finance.domain import (
     AvailabilityReasonCode,
     CoverageStatus,
+    ExternalFlowBoundaryEvidence,
     ExternalFlowClassification,
     ExternalFlowCoverage,
     ExternalFlowEvidence,
     ExternalFlowScope,
     ExternalFlowScopeMembership,
     ExternalTransferStatus,
+    ObservedValuationEvidence,
     PerformanceAvailability,
     PerformanceAvailabilityStatus,
     PerformanceMetricPrerequisites,
     PerformanceScope,
     ScopeMembershipCoverage,
     ValuationBoundaryEvidence,
+    ValuationBoundaryRelation,
     ValuationPointStatus,
+    ValuationQuality,
 )
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
@@ -37,13 +42,17 @@ from hermes_finance.persistence import (
     AccountPerformanceScopeMembership,
     AppSettings,
     ExternalFlow,
+    ExternalFlowBoundaryGroup,
+    ExternalFlowBoundaryGroupMember,
     InvestmentCashFlow,
+    ObservedValuationPoint,
     ReportingMonth,
 )
 from hermes_finance.services.external_flows import (
     classify_external_flow,
     external_flow_transfer_status,
 )
+from hermes_finance.services.valuation_boundaries import to_observed_valuation_evidence
 from hermes_finance.services.valuation_points import valuation_point_for_month
 
 _LEGACY_BOUNDARY_FLOW_TYPES = ("deposit", "withdrawal")
@@ -473,39 +482,268 @@ def _boundary_point_for_date(
     return evidence
 
 
+@dataclass(frozen=True, slots=True)
+class _BoundaryTarget:
+    """One explicit flow or same-date group requiring pre/post evidence."""
+
+    boundary_group_id: int | None
+    flow_ids: tuple[int, ...]
+    event_date: date
+    explicit_group: bool
+    invalid_group_membership: bool = False
+
+
+def _external_flow_boundary_targets(
+    session: Session,
+    *,
+    flows: ExternalFlowCoverage,
+    scope: PerformanceScope,
+    account_id: int | None,
+) -> tuple[_BoundaryTarget, ...]:
+    """Resolve deterministic explicit groups without treating same-day IDs as order."""
+
+    external_flows = [
+        flow
+        for flow in flows.flows
+        if flow.classification
+        in {
+            ExternalFlowClassification.EXTERNAL_CONTRIBUTION,
+            ExternalFlowClassification.EXTERNAL_WITHDRAWAL,
+        }
+    ]
+    if not external_flows:
+        return ()
+
+    external_flow_ids = {flow.id for flow in external_flows}
+    group_rows = session.execute(
+        select(ExternalFlowBoundaryGroup, ExternalFlowBoundaryGroupMember)
+        .join(
+            ExternalFlowBoundaryGroupMember,
+            ExternalFlowBoundaryGroupMember.boundary_group_id == ExternalFlowBoundaryGroup.id,
+        )
+        .where(ExternalFlowBoundaryGroupMember.external_flow_id.in_(external_flow_ids))
+        .order_by(ExternalFlowBoundaryGroup.boundary_date, ExternalFlowBoundaryGroup.id)
+    )
+    groups: dict[int, ExternalFlowBoundaryGroup] = {}
+    for group, _member in group_rows:
+        groups[group.id] = group
+
+    assigned_flow_ids: set[int] = set()
+    targets: list[_BoundaryTarget] = []
+    for group_id in sorted(
+        groups,
+        key=lambda candidate: (groups[candidate].boundary_date, candidate),
+    ):
+        group = groups[group_id]
+        all_member_ids = set(
+            session.scalars(
+                select(ExternalFlowBoundaryGroupMember.external_flow_id).where(
+                    ExternalFlowBoundaryGroupMember.boundary_group_id == group_id
+                )
+            )
+        )
+        selected_member_ids = all_member_ids & external_flow_ids
+        if not selected_member_ids:
+            continue
+        invalid_membership = (
+            group.scope != scope.value
+            or group.account_id != (account_id if scope is PerformanceScope.ACCOUNT else None)
+            or not all_member_ids.issubset(external_flow_ids)
+        )
+        targets.append(
+            _BoundaryTarget(
+                boundary_group_id=group_id,
+                flow_ids=tuple(sorted(all_member_ids)),
+                event_date=group.boundary_date,
+                explicit_group=True,
+                invalid_group_membership=invalid_membership,
+            )
+        )
+        assigned_flow_ids.update(selected_member_ids)
+
+    flow_by_id = {flow.id: flow for flow in external_flows}
+    for flow_id in sorted(external_flow_ids - assigned_flow_ids):
+        flow = flow_by_id[flow_id]
+        targets.append(
+            _BoundaryTarget(
+                boundary_group_id=None,
+                flow_ids=(flow_id,),
+                event_date=flow.event_date,
+                explicit_group=False,
+            )
+        )
+
+    return tuple(
+        sorted(
+            targets,
+            key=lambda target: (
+                target.event_date,
+                target.boundary_group_id is None,
+                target.boundary_group_id or target.flow_ids[0],
+            ),
+        )
+    )
+
+
+def _observed_points_for_target(
+    session: Session,
+    *,
+    target: _BoundaryTarget,
+    scope: PerformanceScope,
+    account_id: int | None,
+) -> list[ObservedValuationPoint]:
+    statement = select(ObservedValuationPoint).where(
+        ObservedValuationPoint.scope == scope.value,
+    )
+    if scope is PerformanceScope.ACCOUNT:
+        statement = statement.where(ObservedValuationPoint.account_id == account_id)
+    else:
+        statement = statement.where(ObservedValuationPoint.account_id.is_(None))
+    if target.boundary_group_id is None:
+        statement = statement.where(
+            ObservedValuationPoint.external_flow_id == target.flow_ids[0],
+            ObservedValuationPoint.boundary_group_id.is_(None),
+        )
+    else:
+        statement = statement.where(
+            ObservedValuationPoint.boundary_group_id == target.boundary_group_id,
+            ObservedValuationPoint.external_flow_id.is_(None),
+        )
+    return list(
+        session.scalars(
+            statement.order_by(
+                ObservedValuationPoint.relation,
+                ObservedValuationPoint.observed_date,
+                ObservedValuationPoint.id,
+            )
+        )
+    )
+
+
+def _observed_boundary_for_target(
+    session: Session,
+    *,
+    target: _BoundaryTarget,
+    scope: PerformanceScope,
+    account_id: int | None,
+    performance_currency: str,
+    boundary_cache: dict[date, ValuationBoundaryEvidence],
+) -> ExternalFlowBoundaryEvidence:
+    rows = _observed_points_for_target(
+        session,
+        target=target,
+        scope=scope,
+        account_id=account_id,
+    )
+    reasons: set[str] = set()
+    pre_rows = [
+        row for row in rows if row.relation == ValuationBoundaryRelation.PRE_EXTERNAL_FLOW.value
+    ]
+    post_rows = [
+        row for row in rows if row.relation == ValuationBoundaryRelation.POST_EXTERNAL_FLOW.value
+    ]
+
+    pre: ObservedValuationEvidence | None = None
+    post: ObservedValuationEvidence | None = None
+    pre_ambiguous = len(pre_rows) > 1
+    post_ambiguous = len(post_rows) > 1
+    if len(pre_rows) == 1:
+        pre = to_observed_valuation_evidence(pre_rows[0])
+    elif pre_ambiguous:
+        reasons.add(_TWRR_ONLY_REASON)
+    if len(post_rows) == 1:
+        post = to_observed_valuation_evidence(post_rows[0])
+    elif post_ambiguous:
+        reasons.add(_TWRR_ONLY_REASON)
+
+    if target.invalid_group_membership:
+        reasons.add(_TWRR_ONLY_REASON)
+
+    for evidence in (pre, post):
+        if evidence is None:
+            continue
+        if evidence.relation is ValuationBoundaryRelation.PRE_EXTERNAL_FLOW:
+            if evidence.observed_date > target.event_date:
+                reasons.add(_TWRR_ONLY_REASON)
+        elif evidence.observed_date < target.event_date:
+            reasons.add(_TWRR_ONLY_REASON)
+        if evidence.performance_currency != performance_currency:
+            reasons.add(AvailabilityReasonCode.CURRENCY_CONVERSION_INCOMPLETE.value)
+        if evidence.coverage is not CoverageStatus.COMPLETE:
+            reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+        if evidence.quality is not ValuationQuality.EXACT:
+            reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_MISSING.value)
+
+    if not rows:
+        derived = _boundary_point_for_date(
+            session,
+            observed_date=target.event_date,
+            scope=scope,
+            account_id=account_id,
+            cache=boundary_cache,
+        )
+        if derived.point is not None and derived.point.status is ValuationPointStatus.AVAILABLE:
+            # A monthly/date-only observation on the flow date does not prove
+            # whether it is pre- or post-flow under the accepted contract.
+            reasons.add(_TWRR_ONLY_REASON)
+        else:
+            reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_MISSING.value)
+            reasons.update(derived.reason_codes)
+    elif (pre is None and not pre_ambiguous) or (post is None and not post_ambiguous):
+        reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_MISSING.value)
+
+    return ExternalFlowBoundaryEvidence(
+        boundary_group_id=target.boundary_group_id,
+        flow_ids=target.flow_ids,
+        event_date=target.event_date,
+        pre_external_flow=pre,
+        post_external_flow=post,
+        reason_codes=tuple(sorted(reasons)),
+    )
+
+
 def _twrr_boundary_reasons(
     session: Session,
     *,
     scope: PerformanceScope,
     account_id: int | None,
     flows: ExternalFlowCoverage,
+    performance_currency: str,
     boundary_cache: dict[date, ValuationBoundaryEvidence],
-) -> set[str]:
-    reasons: set[str] = set()
-    for flow in flows.flows:
-        if flow.classification not in {
-            ExternalFlowClassification.EXTERNAL_CONTRIBUTION,
-            ExternalFlowClassification.EXTERNAL_WITHDRAWAL,
-        }:
-            continue
-        boundary = _boundary_point_for_date(
+) -> tuple[tuple[ExternalFlowBoundaryEvidence, ...], set[str]]:
+    targets = _external_flow_boundary_targets(
+        session,
+        flows=flows,
+        scope=scope,
+        account_id=account_id,
+    )
+    evidence = [
+        _observed_boundary_for_target(
             session,
-            observed_date=flow.event_date,
+            target=target,
             scope=scope,
             account_id=account_id,
-            cache=boundary_cache,
+            performance_currency=performance_currency,
+            boundary_cache=boundary_cache,
         )
-        if boundary.is_available:
-            # The persisted model is date-only and carries no explicit
-            # pre/post-flow relation.  A same-day observation is therefore
-            # not enough for exact TWRR, even when it is otherwise trusted.
+        for target in targets
+    ]
+
+    # Separate same-day flow rows have no proven order.  Only an explicit
+    # persisted group can turn them into one deterministic boundary unit.
+    same_day_counts: dict[date, int] = defaultdict(int)
+    for target in targets:
+        if not target.explicit_group:
+            same_day_counts[target.event_date] += 1
+    reasons: set[str] = set()
+    for target_evidence in evidence:
+        if (
+            same_day_counts[target_evidence.event_date] > 1
+            and target_evidence.boundary_group_id is None
+        ):
             reasons.add(_TWRR_ONLY_REASON)
-        else:
-            reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_MISSING.value)
-            reasons.update(
-                reason for reason in boundary.reason_codes if reason != _TWRR_ONLY_REASON
-            )
-    return reasons
+        reasons.update(target_evidence.reason_codes)
+    return tuple(evidence), reasons
 
 
 def _metric(
@@ -587,15 +825,15 @@ def performance_availability_for_interval(
 
     xirr = _metric("xirr", xirr_reasons)
     twrr_reasons = set(xirr_reasons)
-    twrr_reasons.update(
-        _twrr_boundary_reasons(
-            session,
-            scope=normalized_scope,
-            account_id=account_id,
-            flows=flows,
-            boundary_cache=boundary_cache,
-        )
+    external_flow_boundaries, boundary_reasons = _twrr_boundary_reasons(
+        session,
+        scope=normalized_scope,
+        account_id=account_id,
+        flows=flows,
+        performance_currency=performance_currency,
+        boundary_cache=boundary_cache,
     )
+    twrr_reasons.update(boundary_reasons)
     twrr = _metric("twrr", twrr_reasons)
 
     all_reasons = set(xirr_reasons) | set(twrr.reason_codes)
@@ -616,6 +854,7 @@ def performance_availability_for_interval(
         closing_valuation=closing,
         scope_membership=membership,
         external_flows=flows,
+        external_flow_boundaries=external_flow_boundaries,
         xirr=xirr,
         twrr=twrr,
     )

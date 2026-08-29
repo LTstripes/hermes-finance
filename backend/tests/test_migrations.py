@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0033_account_scope_membership_history"
+REVISION = "0034_observed_valuation_boundaries"
 PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
 
@@ -229,6 +229,42 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "updated_at",
             "scope_membership",
         ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(external_flow_boundary_groups)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "scope",
+            "account_id",
+            "boundary_date",
+            "created_at",
+            "updated_at",
+        ]
+        assert [
+            row[1]
+            for row in connection.execute("PRAGMA table_info(external_flow_boundary_group_members)")
+        ] == ["boundary_group_id", "external_flow_id"]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(observed_valuation_points)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "scope",
+            "account_id",
+            "observed_date",
+            "total_value_kopecks",
+            "performance_currency",
+            "coverage_status",
+            "quality",
+            "provenance_kind",
+            "provenance_reference",
+            "relation",
+            "external_flow_id",
+            "boundary_group_id",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expected_cash_flows)")] == [
             "id",
             "reporting_month_id",
@@ -440,6 +476,111 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
     upgraded_again = run_alembic(database_path, "upgrade", "head")
 
     assert upgraded_again.returncode == 0, upgraded_again.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+
+def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> None:
+    database_path = tmp_path / "boundary-downgrade.db"
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2031,
+                6,
+                "2031-06-01",
+                "2031-06-30",
+                "2031-06-30",
+                "draft",
+                "manual",
+                "2031-06-30 00:00:00",
+                "2031-06-30 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts "
+            "(name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Boundary Migration Account", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO external_flows "
+            "(reporting_month_id, account_id, event_date, boundary_amount_kopecks, "
+            "direction, kind, currency, transfer_link_id, source, notes, created_at, "
+            "updated_at, scope_membership) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "2031-06-15",
+                10_000,
+                "contribution",
+                "external_contribution",
+                "RUB",
+                None,
+                "synthetic_migration",
+                None,
+                "2031-06-15 00:00:00",
+                "2031-06-15 00:00:00",
+                "stable_in_scope",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO external_flow_boundary_groups "
+            "(reporting_month_id, scope, account_id, boundary_date, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                "account",
+                1,
+                "2031-06-15",
+                "2031-06-15 00:00:00",
+                "2031-06-15 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO external_flow_boundary_group_members "
+            "(boundary_group_id, external_flow_id) VALUES (?, ?)",
+            (1, 1),
+        )
+        connection.execute(
+            "INSERT INTO observed_valuation_points "
+            "(reporting_month_id, scope, account_id, observed_date, total_value_kopecks, "
+            "performance_currency, coverage_status, quality, provenance_kind, "
+            "provenance_reference, relation, external_flow_id, boundary_group_id, notes, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                "account",
+                1,
+                "2031-06-15",
+                100_000,
+                "RUB",
+                "complete",
+                "exact",
+                "synthetic_migration",
+                "migration-test",
+                "pre_external_flow",
+                None,
+                1,
+                "synthetic",
+                "2031-06-15 00:00:00",
+                "2031-06-15 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0033_account_scope_membership_history")
+
+    assert downgraded.returncode != 0
+    assert "while boundary evidence exists" in downgraded.stderr
     assert revision_rows(database_path) == [REVISION]
 
 

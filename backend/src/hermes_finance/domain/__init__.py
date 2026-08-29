@@ -33,6 +33,12 @@ from hermes_finance.domain.performance_availability import (
 )
 from hermes_finance.domain.positions import PriceSource
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
+from hermes_finance.domain.valuation_boundaries import (
+    ExternalFlowBoundaryEvidence,
+    ObservedValuationEvidence,
+    ObservedValuationPoint,
+    ValuationBoundaryRelation,
+)
 from hermes_finance.domain.valuation_points import (
     ComponentStatus,
     CoverageStatus,
@@ -81,6 +87,10 @@ __all__ = [
     "PerformanceMetricPrerequisites",
     "ScopeMembershipCoverage",
     "ValuationBoundaryEvidence",
+    "ExternalFlowBoundaryEvidence",
+    "ObservedValuationEvidence",
+    "ObservedValuationPoint",
+    "ValuationBoundaryRelation",
     "PercentageRate",
     "PriceSource",
     "ReportingMonthSource",
