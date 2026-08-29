@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCapitalComposition } from "../api/analytics";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
+import { getPortfolioXirr } from "../api/performance";
 import { rub } from "../lib/money";
 import { AnalyticsPage } from "./AnalyticsPage";
 
 vi.mock("../api/analytics", () => ({ getCapitalComposition: vi.fn() }));
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
 vi.mock("../api/months", () => ({ listMonths: vi.fn() }));
+vi.mock("../api/performance", () => ({ getPortfolioXirr: vi.fn() }));
 
 const capitalHistory = {
   asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
@@ -79,6 +81,55 @@ describe("AnalyticsPage", () => {
     expect(screen.getByRole("button", { name: "Сумма ₽" })).toHaveAttribute(
       "aria-pressed",
       "false",
+    );
+  });
+
+  it("shows backend XIRR unavailability without calculating a value", async () => {
+    vi.mocked(listMonths).mockResolvedValue([
+      {
+        id: 2,
+        year: 2031,
+        month: 2,
+        status: "closed",
+        snapshot_date: "2031-02-28",
+        source: "manual",
+      },
+      {
+        id: 1,
+        year: 2031,
+        month: 1,
+        status: "closed",
+        snapshot_date: "2031-01-31",
+        source: "manual",
+      },
+    ]);
+    vi.mocked(getPortfolioXirr).mockResolvedValue({
+      metric: "xirr",
+      scope: "portfolio",
+      performance_currency: "RUB",
+      value: null,
+      value_unit: "percentage_points",
+      annualized: true,
+      period: { start_date: "2031-01-31", end_date: "2031-02-28" },
+      availability: "not_computable",
+      quality: "unavailable",
+      reason_codes: ["not_computable_xirr_root_ambiguity"],
+    });
+
+    render(
+      <MemoryRouter>
+        <AnalyticsPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText(/однозначность корня для этой истории не подтверждена/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("XIRR недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("not_computable_xirr_root_ambiguity", { exact: true })).toBeNull();
+    expect(screen.queryByText("10,00%")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(getPortfolioXirr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
     );
   });
 });

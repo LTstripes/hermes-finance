@@ -50,6 +50,14 @@ from hermes_finance.domain.values import (
     PercentageRate,
     RubleAmount,
 )
+from hermes_finance.domain.xirr import (
+    XirrAvailabilityStatus,
+    XirrCashFlow,
+    XirrQuality,
+    XirrReasonCode,
+    XirrResult,
+    calculate_xirr,
+)
 
 __all__ = [
     "FINANCIAL_ROUNDING",
@@ -86,6 +94,12 @@ __all__ = [
     "ReportingMonthSource",
     "ReportingMonthStatus",
     "RubleAmount",
+    "XirrAvailabilityStatus",
+    "XirrCashFlow",
+    "XirrQuality",
+    "XirrReasonCode",
+    "XirrResult",
+    "calculate_xirr",
     "ComponentStatus",
     "CoverageStatus",
     "PerformanceScope",

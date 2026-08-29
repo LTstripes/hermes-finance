@@ -29,6 +29,42 @@
   min-width: 0;
 }
 
+.analytics-v03__xirr-panel {
+  min-width: 0;
+}
+
+.analytics-v03__xirr-result,
+.analytics-v03__xirr-unavailable {
+  display: grid;
+  gap: 6px;
+}
+
+.analytics-v03__xirr-value {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-v03__xirr-meta,
+.analytics-v03__xirr-period,
+.analytics-v03__xirr-unavailable p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.analytics-v03__xirr-unavailable strong {
+  color: var(--ink);
+}
+
+.analytics-v03__xirr-unavailable code {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
 .capital-composition-chart {
   min-width: 0;
 }

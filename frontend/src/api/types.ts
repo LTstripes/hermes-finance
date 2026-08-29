@@ -93,6 +93,22 @@ export type HealthResponse = {
   version: string;
 };
 
+export type PortfolioXirr = {
+  metric: "xirr";
+  scope: "portfolio";
+  performance_currency: string;
+  value: string | null;
+  value_unit: "percentage_points";
+  annualized: true;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  reason_codes: string[];
+};
+
 export type IncomeType = "salary" | "bonus" | "side_income" | "cashback" | "other" | string;
 
 export type IncomeEntry = {

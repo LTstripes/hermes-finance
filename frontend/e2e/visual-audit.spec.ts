@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { type AuditState, syntheticApiResponse } from "./visual-fixtures";
+import { syntheticApiResponse, syntheticXirrReasonCode, type AuditState } from "./visual-fixtures";
 
 type AuditRoute = {
   slug: string;
@@ -55,6 +55,7 @@ const forbiddenVisibleCopy = [
   /broker_identity_not_persisted/i,
   /bank_identity_not_persisted/i,
   /instrument_mapping_unresolved/i,
+  new RegExp(syntheticXirrReasonCode, "i"),
   /mapping_unresolved/i,
   /\bowner-facing\b/i,
   /\bbackend\b/i,
@@ -198,6 +199,10 @@ for (const route of routes) {
     await expect(page.locator("h1").first()).toBeVisible();
     if (route.prepare) await route.prepare(page);
     await page.waitForTimeout(150);
+    if (route.slug === "analytics") {
+      await expect(page.getByText("XIRR недоступен")).toBeVisible();
+      await expect(page.getByText(syntheticXirrReasonCode, { exact: true })).toHaveCount(0);
+    }
     await assertAuditState(page, unhandled, pageErrors);
 
     const screenshotDir = path.resolve(".visual-audit", testInfo.project.name);
