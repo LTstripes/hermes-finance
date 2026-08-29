@@ -22,6 +22,18 @@ from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.instruments import InstrumentType, MarketMappingState
 from hermes_finance.domain.positions import PriceSource
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
+from hermes_finance.domain.valuation_points import (
+    ComponentStatus,
+    CoverageStatus,
+    PerformanceScope,
+    ValuationComponent,
+    ValuationPoint,
+    ValuationPointStatus,
+    ValuationProvenance,
+    ValuationQuality,
+    ValuationReasonCode,
+    build_valuation_point,
+)
 from hermes_finance.domain.values import (
     FINANCIAL_ROUNDING,
     PercentageRate,
@@ -54,6 +66,16 @@ __all__ = [
     "ReportingMonthSource",
     "ReportingMonthStatus",
     "RubleAmount",
+    "ComponentStatus",
+    "CoverageStatus",
+    "PerformanceScope",
+    "ValuationComponent",
+    "ValuationPoint",
+    "ValuationPointStatus",
+    "ValuationProvenance",
+    "ValuationQuality",
+    "ValuationReasonCode",
+    "build_valuation_point",
     "TaxBenefitStatus",
     "TransferLinkStatus",
 ]

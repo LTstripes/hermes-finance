@@ -487,6 +487,9 @@ class CashBalance(Base):
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(
