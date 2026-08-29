@@ -555,3 +555,136 @@ def test_confirm_api_rejects_isin_conflict_without_writing(tmp_path: Path) -> No
     session = database.session_factory()
     assert list_effective_mappings(session, provider=ALFA_PRO_PROVIDER) == []
     session.close()
+
+
+def test_same_pair_confirm_rejects_contradictory_isin(tmp_path: Path) -> None:
+    database, ids = _context(tmp_path)
+    session = database.session_factory()
+    original = confirm_mapping(
+        session,
+        provider=ALFA_PRO_PROVIDER,
+        subject_kind=BrokerIdentitySubjectKind.INSTRUMENT,
+        provider_identity=SYN_INSTRUMENT,
+        hermes_target_id=ids["instrument_id"],
+        observed_isin=SYN_ISIN,
+    )
+    original_id = original.id
+    original_confirmed_at = original.confirmed_at
+    try:
+        confirm_mapping(
+            session,
+            provider=ALFA_PRO_PROVIDER,
+            subject_kind=BrokerIdentitySubjectKind.INSTRUMENT,
+            provider_identity=SYN_INSTRUMENT,
+            hermes_target_id=ids["instrument_id"],
+            observed_isin=SYN_ISIN_OTHER,
+        )
+        raise AssertionError("same-pair confirm with contradictory ISIN must fail closed")
+    except BrokerIdentityMappingConflictError as error:
+        assert "ISIN" in str(error)
+    stored = session.get(BrokerIdentityMapping, original_id)
+    assert stored is not None
+    assert stored.status == "effective"
+    assert stored.observed_isin == SYN_ISIN
+    assert stored.confirmed_at == original_confirmed_at
+    assert session.scalar(select(func.count()).select_from(BrokerIdentityMapping)) == 1
+    session.close()
+
+
+def test_same_target_remap_rejects_contradictory_isin(tmp_path: Path) -> None:
+    database, ids = _context(tmp_path)
+    session = database.session_factory()
+    original = confirm_mapping(
+        session,
+        provider=ALFA_PRO_PROVIDER,
+        subject_kind=BrokerIdentitySubjectKind.INSTRUMENT,
+        provider_identity=SYN_INSTRUMENT,
+        hermes_target_id=ids["instrument_id"],
+        observed_isin=SYN_ISIN,
+    )
+    try:
+        remap_mapping(
+            session,
+            original.id,
+            hermes_target_id=ids["instrument_id"],
+            observed_isin=SYN_ISIN_OTHER,
+        )
+        raise AssertionError("same-target remap with contradictory ISIN must fail closed")
+    except BrokerIdentityMappingConflictError as error:
+        assert "ISIN" in str(error)
+    stored = session.get(BrokerIdentityMapping, original.id)
+    assert stored is not None
+    assert stored.status == "effective"
+    assert stored.successor_mapping_id is None
+    assert stored.observed_isin == SYN_ISIN
+    assert session.scalar(select(func.count()).select_from(BrokerIdentityMapping)) == 1
+    session.close()
+
+
+def _assert_not_found(response) -> None:
+    assert response.status_code == 404, response.text
+    body = response.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "not_found"
+    assert isinstance(body["error"]["message"], str)
+
+
+def test_mapping_api_returns_404_for_missing_mapping_and_hermes_targets(
+    tmp_path: Path,
+) -> None:
+    database, ids = _context(tmp_path)
+    application = create_app(database)
+    missing_mapping = 99_999
+    missing_target = 99_999
+    with TestClient(application) as client:
+        _assert_not_found(client.get(f"/api/broker-identity-mappings/{missing_mapping}"))
+        _assert_not_found(
+            client.post(
+                f"/api/broker-identity-mappings/{missing_mapping}/revoke",
+                json={},
+            )
+        )
+        _assert_not_found(
+            client.post(
+                f"/api/broker-identity-mappings/{missing_mapping}/remap",
+                json={"hermes_target_id": ids["instrument_id"]},
+            )
+        )
+        _assert_not_found(
+            client.post(
+                "/api/broker-identity-mappings",
+                json={
+                    "provider": ALFA_PRO_PROVIDER,
+                    "subject_kind": "account",
+                    "provider_identity": SYN_ACCOUNT,
+                    "hermes_target_id": missing_target,
+                },
+            )
+        )
+        _assert_not_found(
+            client.post(
+                "/api/broker-identity-mappings",
+                json={
+                    "provider": ALFA_PRO_PROVIDER,
+                    "subject_kind": "instrument",
+                    "provider_identity": SYN_INSTRUMENT,
+                    "hermes_target_id": missing_target,
+                },
+            )
+        )
+        created = client.post(
+            "/api/broker-identity-mappings",
+            json={
+                "provider": ALFA_PRO_PROVIDER,
+                "subject_kind": "account",
+                "provider_identity": SYN_ACCOUNT,
+                "hermes_target_id": ids["account_id"],
+            },
+        )
+        assert created.status_code == 200, created.text
+        _assert_not_found(
+            client.post(
+                f"/api/broker-identity-mappings/{created.json()['mapping_id']}/remap",
+                json={"hermes_target_id": missing_target},
+            )
+        )

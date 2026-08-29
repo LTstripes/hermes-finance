@@ -220,6 +220,9 @@ def confirm_mapping(
             raise BrokerIdentityMappingConflictError(
                 "provider identity already has an effective mapping to a different Hermes target"
             )
+        if kind is BrokerIdentitySubjectKind.INSTRUMENT:
+            instrument = _require_instrument(session, hermes_target_id)
+            _reject_instrument_isin_conflict(instrument, isin)
         return existing
 
     account_id: int | None = None
@@ -300,6 +303,9 @@ def remap_mapping(
     if kind is BrokerIdentitySubjectKind.ACCOUNT and isin is not None:
         raise ValueError("observed_isin is only valid for instrument mappings")
     if current.hermes_target_id == hermes_target_id:
+        if kind is BrokerIdentitySubjectKind.INSTRUMENT:
+            instrument = _require_instrument(session, hermes_target_id)
+            _reject_instrument_isin_conflict(instrument, isin)
         return current
 
     account_id: int | None = None

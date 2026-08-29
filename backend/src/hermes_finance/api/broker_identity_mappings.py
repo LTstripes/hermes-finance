@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.persistence import BrokerIdentityMapping
+from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.broker_identity_mappings import (
     BrokerIdentityMappingConflictError,
+    BrokerIdentityMappingNotFoundError,
     BrokerIdentitySubjectKind,
     confirm_mapping,
     get_mapping,
@@ -19,6 +21,7 @@ from hermes_finance.services.broker_identity_mappings import (
     remap_mapping,
     revoke_mapping,
 )
+from hermes_finance.services.instruments import InstrumentNotFoundError
 
 router = APIRouter(prefix="/api/broker-identity-mappings", tags=["broker-identity-mappings"])
 
@@ -91,6 +94,11 @@ def _out(row: BrokerIdentityMapping) -> BrokerIdentityMappingOut:
 def _raise_service_error(error: Exception) -> None:
     if isinstance(error, BrokerIdentityMappingConflictError):
         raise HTTPException(status_code=409, detail=str(error)) from error
+    if isinstance(
+        error,
+        (BrokerIdentityMappingNotFoundError, AccountNotFoundError, InstrumentNotFoundError),
+    ):
+        raise HTTPException(status_code=404, detail=str(error)) from error
     if isinstance(error, ValueError):
         raise HTTPException(status_code=422, detail=str(error)) from error
     raise error
@@ -125,7 +133,13 @@ def confirm_broker_identity_mapping_endpoint(
             source_as_of=payload.source_as_of,
             captured_at=payload.captured_at,
         )
-    except (BrokerIdentityMappingConflictError, ValueError) as error:
+    except (
+        BrokerIdentityMappingConflictError,
+        BrokerIdentityMappingNotFoundError,
+        AccountNotFoundError,
+        InstrumentNotFoundError,
+        ValueError,
+    ) as error:
         _raise_service_error(error)
         raise
     return _out(row)
@@ -139,7 +153,11 @@ def revoke_broker_identity_mapping_endpoint(
 ) -> BrokerIdentityMappingOut:
     try:
         row = revoke_mapping(session, mapping_id, reason=payload.reason)
-    except (BrokerIdentityMappingConflictError, ValueError) as error:
+    except (
+        BrokerIdentityMappingConflictError,
+        BrokerIdentityMappingNotFoundError,
+        ValueError,
+    ) as error:
         _raise_service_error(error)
         raise
     return _out(row)
@@ -160,7 +178,13 @@ def remap_broker_identity_mapping_endpoint(
             source_as_of=payload.source_as_of,
             captured_at=payload.captured_at,
         )
-    except (BrokerIdentityMappingConflictError, ValueError) as error:
+    except (
+        BrokerIdentityMappingConflictError,
+        BrokerIdentityMappingNotFoundError,
+        AccountNotFoundError,
+        InstrumentNotFoundError,
+        ValueError,
+    ) as error:
         _raise_service_error(error)
         raise
     return _out(row)
@@ -171,4 +195,8 @@ def get_broker_identity_mapping_endpoint(
     mapping_id: int,
     session: Session = Depends(session_for_request),
 ) -> BrokerIdentityMappingOut:
-    return _out(get_mapping(session, mapping_id))
+    try:
+        return _out(get_mapping(session, mapping_id))
+    except BrokerIdentityMappingNotFoundError as error:
+        _raise_service_error(error)
+        raise
