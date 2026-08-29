@@ -197,9 +197,15 @@ def _scope_membership_coverage(
 
     if reasons_unavailable:
         return CoverageStatus.UNAVAILABLE, tuple(sorted(reasons_unavailable | reasons_unknown))
-    if relevant_flow_seen and reasons_unknown:
+    # A date-only same-day flow is a TWRR ordering limitation, not a reason to
+    # discard an otherwise observed valuation for XIRR.  R08-01C reports this
+    # code on the TWRR assessment while retaining the exact point total.
+    non_boundary_unknown_reasons = reasons_unknown - {
+        ValuationReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value
+    }
+    if relevant_flow_seen and non_boundary_unknown_reasons:
         return CoverageStatus.UNKNOWN, tuple(sorted(reasons_unknown))
-    return CoverageStatus.COMPLETE, ()
+    return CoverageStatus.COMPLETE, tuple(sorted(reasons_unknown))
 
 
 def valuation_point_for_month(

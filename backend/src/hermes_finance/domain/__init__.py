@@ -20,6 +20,17 @@ from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
 from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.instruments import InstrumentType, MarketMappingState
+from hermes_finance.domain.performance_availability import (
+    AvailabilityReasonCode,
+    ExternalFlowCoverage,
+    ExternalFlowEvidence,
+    PerformanceAvailability,
+    PerformanceAvailabilityReasonCode,
+    PerformanceAvailabilityStatus,
+    PerformanceMetricPrerequisites,
+    ScopeMembershipCoverage,
+    ValuationBoundaryEvidence,
+)
 from hermes_finance.domain.positions import PriceSource
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
 from hermes_finance.domain.valuation_points import (
@@ -61,6 +72,15 @@ __all__ = [
     "IncomeType",
     "InstrumentType",
     "MarketMappingState",
+    "AvailabilityReasonCode",
+    "ExternalFlowCoverage",
+    "ExternalFlowEvidence",
+    "PerformanceAvailability",
+    "PerformanceAvailabilityReasonCode",
+    "PerformanceAvailabilityStatus",
+    "PerformanceMetricPrerequisites",
+    "ScopeMembershipCoverage",
+    "ValuationBoundaryEvidence",
     "PercentageRate",
     "PriceSource",
     "ReportingMonthSource",
