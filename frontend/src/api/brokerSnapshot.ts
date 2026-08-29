@@ -22,6 +22,9 @@ export type BrokerPositionRow = {
   provider_broker_unit_price: string | null;
   provider_accrued_interest_nkd: string | null;
   provider_unrealized_result: string | null;
+  is_money?: boolean | null;
+  provider_account_id?: string | null;
+  provider_instrument_id?: string | null;
   [key: string]: unknown;
 };
 
@@ -82,6 +85,8 @@ export type BrokerSnapshotPreview = {
     reason: string | null;
     classification?: string;
   }[];
+  month_closed?: boolean;
+  month_status?: string;
   cash: unknown[];
   warnings: string[];
   diagnostics: BrokerSnapshotDiagnostics;
@@ -118,26 +123,46 @@ export function previewBrokerSnapshot(
   });
 }
 
+export type BrokerApplyResult = {
+  success: boolean;
+  selected_count: number;
+  items: {
+    action: string;
+    position_snapshot_id: number;
+    account_id: number;
+    instrument_id: number;
+  }[];
+  error_code: string | null;
+  message: string | null;
+  baseline_date?: string | null;
+  provenance_id?: number | null;
+};
+
 export function applyBrokerSnapshot(
   monthId: number,
   mapping: BrokerMapping,
   selections: BrokerApplySelection[],
   signal?: AbortSignal,
 ) {
-  return apiRequest<{
-    success: boolean;
-    selected_count: number;
-    items: {
-      action: string;
-      position_snapshot_id: number;
-      account_id: number;
-      instrument_id: number;
-    }[];
-    error_code: string | null;
-    message: string | null;
-  }>(`/api/months/${monthId}/broker-snapshot-apply`, {
+  return apiRequest<BrokerApplyResult>(`/api/months/${monthId}/broker-snapshot-apply`, {
     method: "POST",
     body: { mapping, selections },
+    signal,
+  });
+}
+
+export function applyBrokerBaseline(
+  monthId: number,
+  payload: {
+    baseline_date: string;
+    mapping: BrokerMapping;
+    selections: BrokerApplySelection[];
+  },
+  signal?: AbortSignal,
+) {
+  return apiRequest<BrokerApplyResult>(`/api/months/${monthId}/broker-baseline-apply`, {
+    method: "POST",
+    body: payload,
     signal,
   });
 }

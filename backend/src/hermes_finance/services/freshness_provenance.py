@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import PriceSource
@@ -27,6 +27,8 @@ from hermes_finance.persistence import (
     AppliedProviderPayout,
     AppliedStatementEvent,
     AppliedStatementEventRevision,
+    BrokerBaselineApply,
+    BrokerBaselineApplyItem,
     CashBalance,
     DepositSnapshot,
     ExpectedCashFlow,
@@ -81,6 +83,8 @@ class FreshnessReasonCode(StrEnum):
     PAYOUT_NONE_FOR_MONTH = "payout_none_for_month"
     PAYOUT_NOT_FRESHNESS_CLASSIFIED = "payout_not_freshness_classified"
     ALFA_PRO_OBSERVATION_NOT_PERSISTED = "alfa_pro_observation_not_persisted"
+    ALFA_PRO_BASELINE_PRESENT = "alfa_pro_baseline_present"
+    ALFA_PRO_OBSERVATION_NOT_FRESHNESS_CLASSIFIED = "alfa_pro_observation_not_freshness_classified"
     STATEMENT_EVENT_PRESENT = "statement_event_present"
     STATEMENT_NONE_FOR_MONTH = "statement_none_for_month"
     STATEMENT_NOT_FRESHNESS_CLASSIFIED = "statement_not_freshness_classified"
@@ -99,6 +103,7 @@ class SourceTimestampKind(StrEnum):
     EVENT_DATE = "event_date"
     RECORD_DATE = "record_date"
     FETCHED_AT = "fetched_at"
+    SOURCE_AS_OF = "source_as_of"
     UNAVAILABLE = "unavailable"
     NOT_APPLICABLE = "not_applicable"
 
@@ -127,6 +132,12 @@ _REASON_TEXT: dict[FreshnessReasonCode, str] = {
     FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED: (
         "Hermes не сохраняет время наблюдения Alfa PRO после apply, поэтому актуальность "
         "этой семьи нельзя честно классифицировать."
+    ),
+    FreshnessReasonCode.ALFA_PRO_BASELINE_PRESENT: (
+        "В месяце есть подтверждённый владельцем текущий срез Alfa PRO."
+    ),
+    FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_FRESHNESS_CLASSIFIED: (
+        "Время наблюдения Alfa PRO сохранено; confirmed_at — время применения, не актуальность."
     ),
     FreshnessReasonCode.STATEMENT_EVENT_PRESENT: "В месяце есть принятые события выписки Alfa.",
     FreshnessReasonCode.STATEMENT_NONE_FOR_MONTH: "В месяце нет принятых событий выписки Alfa.",
@@ -566,25 +577,78 @@ def _build_t_invest_payouts(session: Session, *, month_id: int) -> FreshnessFami
     )
 
 
-def _build_alfa_pro_positions() -> FreshnessFamily:
-    """Alfa PRO family without claiming a provider from capability alone.
+def _latest_baseline_apply(session: Session, month_id: int) -> BrokerBaselineApply | None:
+    return session.scalar(
+        select(BrokerBaselineApply)
+        .where(BrokerBaselineApply.reporting_month_id == month_id)
+        .order_by(BrokerBaselineApply.confirmed_at.desc(), BrokerBaselineApply.id.desc())
+    )
 
-    Quantity apply does not persist a month-scoped Alfa observation or source
-    marker. Until such evidence exists, ``providers`` stays empty so this family
-    cannot create a false ``MULTIPLE_PROVIDERS`` signal.
+
+def _build_alfa_pro_positions(session: Session, *, month_id: int) -> FreshnessFamily:
+    """Alfa PRO family from persisted baseline provenance (ADR 0016 §8).
+
+    ``source_as_of`` is the observation clock. ``confirmed_at`` is apply time and
+    is never used as freshness. Capability/configuration alone must not list
+    ``alfa_pro`` or contribute it to ``multiple_providers``.
     """
 
+    latest = _latest_baseline_apply(session, month_id)
+    if latest is None:
+        return FreshnessFamily(
+            family_id=FreshnessFamilyId.ALFA_PRO_POSITIONS,
+            title="Позиции Alfa PRO",
+            status=FreshnessStatus.UNKNOWN,
+            providers=(),
+            coverage=FreshnessCoverage(row_count=0, unknown_count=1),
+            reasons=(
+                _reason(
+                    FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED,
+                    FreshnessSeverity.INFO,
+                ),
+                _reason(FreshnessReasonCode.SOURCE_TIMESTAMP_UNAVAILABLE, FreshnessSeverity.INFO),
+            ),
+            items=(),
+        )
+
+    item_count = (
+        session.scalar(
+            select(func.count())
+            .select_from(BrokerBaselineApplyItem)
+            .where(BrokerBaselineApplyItem.baseline_apply_id == latest.id)
+        )
+        or 0
+    )
+    source_as_of = _utc(latest.source_as_of)
+    captured_at = _utc(latest.captured_at)
+    confirmed_at = _utc(latest.confirmed_at)
+    item = FreshnessItem(
+        item_kind="alfa_pro_baseline",
+        label="Текущий срез Alfa PRO",
+        freshness_status=FreshnessStatus.NOT_APPLICABLE,
+        source_kind=latest.provider,
+        source_timestamp_kind=SourceTimestampKind.SOURCE_AS_OF,
+        source_date=source_as_of.date() if source_as_of is not None else None,
+        source_datetime=source_as_of,
+        fetched_at=captured_at,
+        import_apply_time=confirmed_at,
+        local_edit_time=None,
+        reason_codes=(FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_FRESHNESS_CLASSIFIED,),
+    )
     return FreshnessFamily(
         family_id=FreshnessFamilyId.ALFA_PRO_POSITIONS,
         title="Позиции Alfa PRO",
-        status=FreshnessStatus.UNKNOWN,
-        providers=(),
-        coverage=FreshnessCoverage(row_count=0, unknown_count=1),
+        status=FreshnessStatus.NOT_APPLICABLE,
+        providers=_iso_providers({latest.provider}),
+        coverage=FreshnessCoverage(row_count=item_count, provider_count=item_count),
         reasons=(
-            _reason(FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED, FreshnessSeverity.INFO),
-            _reason(FreshnessReasonCode.SOURCE_TIMESTAMP_UNAVAILABLE, FreshnessSeverity.INFO),
+            _reason(FreshnessReasonCode.ALFA_PRO_BASELINE_PRESENT, FreshnessSeverity.INFO),
+            _reason(
+                FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_FRESHNESS_CLASSIFIED,
+                FreshnessSeverity.INFO,
+            ),
         ),
-        items=(),
+        items=(item,),
     )
 
 
@@ -841,7 +905,7 @@ def build_freshness_provenance_summary(
     families = (
         _build_market_quotes(session, month_id=month.id, target_date=target_date),
         _build_t_invest_payouts(session, month_id=month.id),
-        _build_alfa_pro_positions(),
+        _build_alfa_pro_positions(session, month_id=month.id),
         _build_alfa_statements(session, month_id=month.id),
         _build_manual_month_data(session, month_id=month.id),
         _build_deposit_cash(session, month_id=month.id),

@@ -2,14 +2,23 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyBrokerSnapshot, previewBrokerSnapshot } from "../api/brokerSnapshot";
+import {
+  listBrokerIdentityMappings,
+  revokeBrokerIdentityMapping,
+} from "../api/brokerIdentityMappings";
+import { applyBrokerBaseline, previewBrokerSnapshot } from "../api/brokerSnapshot";
 import { listMonths } from "../api/months";
 import type { Account, Instrument } from "../api/types";
 import { BrokerSnapshotPanel } from "./BrokerSnapshotPanel";
 
 vi.mock("../api/brokerSnapshot", () => ({
-  applyBrokerSnapshot: vi.fn(),
+  applyBrokerBaseline: vi.fn(),
   previewBrokerSnapshot: vi.fn(),
+}));
+
+vi.mock("../api/brokerIdentityMappings", () => ({
+  listBrokerIdentityMappings: vi.fn(),
+  revokeBrokerIdentityMapping: vi.fn(),
 }));
 
 vi.mock("../api/months", () => ({
@@ -84,6 +93,23 @@ function preview(overrides: Record<string, unknown> = {}) {
 describe("BrokerSnapshotPanel explicit owner decisions", () => {
   beforeEach(() => {
     vi.mocked(previewBrokerSnapshot).mockResolvedValue(preview());
+    vi.mocked(listBrokerIdentityMappings).mockResolvedValue([]);
+    vi.mocked(revokeBrokerIdentityMapping).mockResolvedValue({
+      mapping_id: 1,
+      provider: "alfa_pro",
+      subject_kind: "instrument",
+      provider_identity: "needs-owner",
+      hermes_target_id: 10,
+      status: "revoked",
+      observed_isin: null,
+      confirmed_at: "2026-08-31T12:00:00Z",
+      source_as_of: null,
+      captured_at: null,
+      predecessor_mapping_id: null,
+      successor_mapping_id: null,
+      revoked_at: "2026-08-31T12:00:00Z",
+      revoke_reason: null,
+    });
     vi.mocked(listMonths).mockResolvedValue([
       {
         id: 7,
@@ -94,7 +120,7 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
         source: "manual",
       },
     ]);
-    vi.mocked(applyBrokerSnapshot).mockResolvedValue({
+    vi.mocked(applyBrokerBaseline).mockResolvedValue({
       success: true,
       selected_count: 1,
       items: [],
@@ -114,19 +140,19 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     expect(screen.getByText("ID: 1:10")).toBeInTheDocument();
     const checkbox = screen.getByRole("checkbox", { name: /Выбрать позицию/ });
     expect(checkbox).not.toBeChecked();
-    expect(screen.getByRole("button", { name: "Применить выбранное" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeDisabled();
 
     await user.click(checkbox);
-    expect(screen.getByRole("button", { name: "Применить выбранное" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeDisabled();
     for (const label of ["Решение средней стоимости", "Решение рыночной цены", "Решение НКД"]) {
       await user.selectOptions(screen.getByLabelText(new RegExp(label)), "keep_existing");
     }
-    expect(screen.getByRole("button", { name: "Применить выбранное" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeEnabled();
   });
 
   it("clears review state on preview_changed and sends only confirmed selections", async () => {
     const user = userEvent.setup();
-    vi.mocked(applyBrokerSnapshot).mockResolvedValueOnce({
+    vi.mocked(applyBrokerBaseline).mockResolvedValueOnce({
       success: false,
       selected_count: 0,
       items: [],
@@ -140,9 +166,13 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     for (const label of ["Решение средней стоимости", "Решение рыночной цены", "Решение НКД"]) {
       await user.selectOptions(screen.getByLabelText(new RegExp(label)), "keep_existing");
     }
-    await user.click(screen.getByRole("button", { name: "Применить выбранное" }));
-    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
-    await waitFor(() => expect(applyBrokerSnapshot).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Применить выбранный базовый срез" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить базовый срез" }));
+    await waitFor(() => expect(applyBrokerBaseline).toHaveBeenCalledTimes(1));
+    expect(applyBrokerBaseline).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ baseline_date: "2026-08-31" }),
+    );
     expect(screen.queryByRole("checkbox", { name: /Выбрать позицию/ })).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("preview changed");
   });
@@ -187,7 +217,7 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
         "Не удалось подключиться к Альфа PRO. Убедитесь, что терминал запущен и выполнен вход.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Инструменты, требующие сопоставления")).toBeInTheDocument();
+    expect(screen.getByText("Инструменты Alfa → Hermes")).toBeInTheDocument();
     expect(screen.getByLabelText(/needs-owner/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/already-resolved/)).toBeNull();
     expect(screen.queryByText("Provider evidence")).toBeNull();
@@ -230,7 +260,56 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
         "Не удалось однозначно распознать формат данных Альфа PRO. Применение отключено; передайте безопасную диагностику разработчику.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Применить выбранное" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeDisabled();
+  });
+
+  it("shows reused mappings and disables IsMoney rows", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        accounts: [
+          {
+            provider_account_id: "SYN-ACCOUNT-001",
+            hermes_account_id: 1,
+            status: "matched",
+            reason: null,
+            classification: "reused",
+          },
+        ],
+        positions: [
+          { ...matched, is_money: true, fingerprint: "fp-money", provider_quantity: "1000" },
+        ],
+      }),
+    );
+    vi.mocked(listBrokerIdentityMappings).mockResolvedValue([
+      {
+        mapping_id: 9,
+        provider: "alfa_pro",
+        subject_kind: "account",
+        provider_identity: "SYN-ACCOUNT-001",
+        hermes_target_id: 1,
+        status: "effective",
+        observed_isin: null,
+        confirmed_at: "2026-08-31T12:00:00Z",
+        source_as_of: null,
+        captured_at: null,
+        predecessor_mapping_id: null,
+        successor_mapping_id: null,
+        revoked_at: null,
+        revoke_reason: null,
+      },
+    ]);
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    expect(await screen.findByText("Уже подтверждено")).toBeInTheDocument();
+    expect(screen.getByText("Дата базового среза")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("2026-08-31")).toBeInTheDocument();
+    expect(screen.getByText(/Денежная строка Alfa/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Выбрать позицию/ })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Отозвать сопоставление счёта" }),
+    ).toBeInTheDocument();
   });
 
   it("shows and copies the safe diagnostic artifact", async () => {

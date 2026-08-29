@@ -17,9 +17,11 @@ from enum import StrEnum
 
 from sqlalchemy.orm import Session
 
-from hermes_finance.broker_data.dto import BrokerSnapshot, SnapshotStatus
+from hermes_finance.broker_data.dto import BrokerPosition, BrokerSnapshot, SnapshotStatus
 from hermes_finance.broker_data.protocol import BrokerSnapshotProvider
 from hermes_finance.broker_data.reconciliation.dto import (
+    AccountMatchStatus,
+    InstrumentMatchStatus,
     OwnerMappingInput,
     PositionReconciliationRow,
     PositionRowStatus,
@@ -200,6 +202,14 @@ class _ApplyPlan:
     no_op: bool
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedBrokerSnapshotApply:
+    snapshot: BrokerSnapshot
+    preview: ReconciliationPreview
+    mapping: OwnerMappingInput
+    plans: tuple[_ApplyPlan, ...]
+
+
 _APPLYABLE_STATUSES = {PositionRowStatus.MATCHED, PositionRowStatus.PROVIDER_ONLY}
 
 
@@ -246,15 +256,61 @@ def position_apply_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def apply_broker_snapshot_preview(
+def provider_positions_for_identity(
+    snapshot: BrokerSnapshot,
+    preview: ReconciliationPreview,
+    *,
+    account_id: int,
+    instrument_id: int,
+) -> tuple[BrokerPosition, ...]:
+    """Provider rows that resolved to one Hermes (account, instrument) pair."""
+
+    account_ids = {
+        row.provider_account_id
+        for row in preview.accounts
+        if row.status is AccountMatchStatus.MATCHED and row.hermes_account_id == account_id
+    }
+    instrument_ids = {
+        row.provider_instrument_id
+        for row in preview.instruments
+        if row.status is InstrumentMatchStatus.MATCHED
+        and row.hermes_instrument_id == instrument_id
+        and row.provider_instrument_id
+    }
+    return tuple(
+        position
+        for position in snapshot.positions
+        if isinstance(position, BrokerPosition)
+        and position.provider_account_id in account_ids
+        and position.provider_instrument_id in instrument_ids
+    )
+
+
+def row_is_money(
+    snapshot: BrokerSnapshot,
+    preview: ReconciliationPreview,
+    row: PositionReconciliationRow,
+) -> bool:
+    return any(
+        position.is_money is True
+        for position in provider_positions_for_identity(
+            snapshot,
+            preview,
+            account_id=row.account_id,
+            instrument_id=row.instrument_id,
+        )
+    )
+
+
+def prepare_broker_snapshot_apply(
     session: Session,
     *,
     provider: BrokerSnapshotProvider,
     reporting_month_id: int,
     mapping: OwnerMappingInput,
     selections: tuple[BrokerSnapshotApplySelection, ...],
-) -> BrokerSnapshotApplyResult:
-    """Re-fetch, rebuild R06-04 preview, and atomically apply the selected set."""
+) -> PreparedBrokerSnapshotApply | BrokerSnapshotApplyResult:
+    """Re-fetch and plan the R06-05 quantity write without committing."""
 
     selected_count = len(selections)
     if not selections:
@@ -327,36 +383,74 @@ def apply_broker_snapshot_preview(
     plan_result = _build_apply_plan(
         session,
         reporting_month_id=reporting_month_id,
+        snapshot=snapshot,
         preview=fresh_preview,
         mapping=mapping,
         selections=selections,
     )
     if isinstance(plan_result, BrokerSnapshotApplyResult):
         return plan_result
-    plans = plan_result
+    return PreparedBrokerSnapshotApply(
+        snapshot=snapshot,
+        preview=fresh_preview,
+        mapping=mapping,
+        plans=plan_result,
+    )
+
+
+def stage_quantity_plans(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    plans: tuple[_ApplyPlan, ...],
+) -> list[BrokerSnapshotApplyItemResult]:
+    """Stage R06-05 quantity writes. Caller owns the transaction."""
 
     item_results: list[BrokerSnapshotApplyItemResult] = []
+    for plan in plans:
+        if plan.no_op:
+            assert plan.snapshot is not None
+            item_results.append(
+                _item_from_snapshot(plan.snapshot, BrokerSnapshotApplyItemAction.UNCHANGED)
+            )
+            continue
+        if plan.selection.action is BrokerSnapshotApplyAction.CREATE:
+            created = _stage_create(session, reporting_month_id, plan)
+            item_results.append(_item_from_snapshot(created, BrokerSnapshotApplyItemAction.CREATED))
+        else:
+            updated = _stage_update(session, plan)
+            item_results.append(_item_from_snapshot(updated, BrokerSnapshotApplyItemAction.UPDATED))
+    return item_results
+
+
+def apply_broker_snapshot_preview(
+    session: Session,
+    *,
+    provider: BrokerSnapshotProvider,
+    reporting_month_id: int,
+    mapping: OwnerMappingInput,
+    selections: tuple[BrokerSnapshotApplySelection, ...],
+) -> BrokerSnapshotApplyResult:
+    """Re-fetch, rebuild R06-04 preview, and atomically apply the selected set."""
+
+    selected_count = len(selections)
+    prepared = prepare_broker_snapshot_apply(
+        session,
+        provider=provider,
+        reporting_month_id=reporting_month_id,
+        mapping=mapping,
+        selections=selections,
+    )
+    if isinstance(prepared, BrokerSnapshotApplyResult):
+        return prepared
+
     try:
-        wrote = False
-        for plan in plans:
-            if plan.no_op:
-                assert plan.snapshot is not None
-                item_results.append(
-                    _item_from_snapshot(plan.snapshot, BrokerSnapshotApplyItemAction.UNCHANGED)
-                )
-                continue
-            if plan.selection.action is BrokerSnapshotApplyAction.CREATE:
-                created = _stage_create(session, reporting_month_id, plan)
-                item_results.append(
-                    _item_from_snapshot(created, BrokerSnapshotApplyItemAction.CREATED)
-                )
-            else:
-                updated = _stage_update(session, plan)
-                item_results.append(
-                    _item_from_snapshot(updated, BrokerSnapshotApplyItemAction.UPDATED)
-                )
-            wrote = True
-        if wrote:
+        item_results = stage_quantity_plans(
+            session,
+            reporting_month_id=reporting_month_id,
+            plans=prepared.plans,
+        )
+        if any(not plan.no_op for plan in prepared.plans):
             session.commit()
     except Exception:
         session.rollback()
@@ -373,10 +467,10 @@ def apply_broker_snapshot_preview(
         success=True,
         selected_count=selected_count,
         items=tuple(item_results),
-        source_as_of=fresh_preview.source_as_of,
-        captured_at=fresh_preview.captured_at,
-        snapshot_status=fresh_preview.snapshot_status.value,
-        fingerprint=_preview_evidence_fingerprint(fresh_preview),
+        source_as_of=prepared.preview.source_as_of,
+        captured_at=prepared.preview.captured_at,
+        snapshot_status=prepared.preview.snapshot_status.value,
+        fingerprint=preview_evidence_fingerprint(prepared.preview),
     )
 
 
@@ -384,6 +478,7 @@ def _build_apply_plan(
     session: Session,
     *,
     reporting_month_id: int,
+    snapshot: BrokerSnapshot,
     preview: ReconciliationPreview,
     mapping: OwnerMappingInput,
     selections: tuple[BrokerSnapshotApplySelection, ...],
@@ -418,6 +513,12 @@ def _build_apply_plan(
                 selected_count,
                 BrokerSnapshotApplyFailureCode.VALIDATION_ERROR,
                 "selected position is not applyable",
+            )
+        if row_is_money(snapshot, preview, row):
+            return _failure(
+                selected_count,
+                BrokerSnapshotApplyFailureCode.VALIDATION_ERROR,
+                "IsMoney rows are not quantity-baseline eligible",
             )
 
         try:
@@ -652,7 +753,7 @@ def _local_fingerprint_state(snapshot: PositionSnapshot | None) -> dict[str, obj
     }
 
 
-def _preview_evidence_fingerprint(preview: ReconciliationPreview) -> str:
+def preview_evidence_fingerprint(preview: ReconciliationPreview) -> str:
     payload = {
         "provider": preview.provider,
         "snapshot_status": preview.snapshot_status.value,

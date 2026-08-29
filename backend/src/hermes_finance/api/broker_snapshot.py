@@ -19,7 +19,7 @@ from hermes_finance.alfa_pro_diagnostics import (
 )
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.broker_data.alfa_pro import AlfaProBrokerSnapshotProvider
-from hermes_finance.broker_data.dto import SnapshotStatus
+from hermes_finance.broker_data.dto import BrokerSnapshot, SnapshotStatus
 from hermes_finance.broker_data.protocol import BrokerSnapshotProvider
 from hermes_finance.broker_data.reconciliation.dto import (
     AccountReconciliationRow,
@@ -29,6 +29,7 @@ from hermes_finance.broker_data.reconciliation.dto import (
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.persistence import PositionSnapshot
+from hermes_finance.services.broker_baseline_apply import apply_owner_approved_baseline
 from hermes_finance.services.broker_identity_mappings import (
     IdentityClassification,
     PreviewIdentityLabels,
@@ -45,6 +46,8 @@ from hermes_finance.services.broker_snapshot_apply import (
     MarketPriceDecision,
     apply_broker_snapshot_preview,
     position_apply_fingerprint,
+    provider_positions_for_identity,
+    row_is_money,
 )
 
 router = APIRouter(tags=["broker-snapshot"])
@@ -102,6 +105,14 @@ class BrokerApplySelectionIn(BaseModel):
 class BrokerSnapshotApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    mapping: BrokerMappingIn
+    selections: list[BrokerApplySelectionIn] = Field(min_length=1, max_length=2_000)
+
+
+class BrokerBaselineApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_date: date
     mapping: BrokerMappingIn
     selections: list[BrokerApplySelectionIn] = Field(min_length=1, max_length=2_000)
 
@@ -258,6 +269,9 @@ class BrokerPositionRowOut(BaseModel):
     reason: str | None
     warnings: list[str]
     fingerprint: str | None = None
+    is_money: bool | None = None
+    provider_account_id: str | None = None
+    provider_instrument_id: str | None = None
 
 
 class BrokerCashRowOut(BaseModel):
@@ -355,6 +369,12 @@ class BrokerApplyResponse(BaseModel):
     fingerprint: str | None
 
 
+class BrokerBaselineApplyResponse(BrokerApplyResponse):
+    baseline_date: date | None = None
+    provenance_id: int | None = None
+    confirmed_at: datetime | None = None
+
+
 def _mapping(payload: BrokerMappingIn) -> OwnerMappingInput:
     from hermes_finance.broker_data.reconciliation.dto import (
         AccountMappingInput,
@@ -415,7 +435,25 @@ def _preview_response(
         )
     }
     positions = []
+    snapshot_dto = snapshot if isinstance(snapshot, BrokerSnapshot) else None
     for row in preview.positions:
+        provider_rows = (
+            provider_positions_for_identity(
+                snapshot_dto,
+                preview,
+                account_id=row.account_id,
+                instrument_id=row.instrument_id,
+            )
+            if snapshot_dto is not None
+            else ()
+        )
+        is_money = row_is_money(snapshot_dto, preview, row) if snapshot_dto is not None else False
+        provider_account_id = (
+            provider_rows[0].provider_account_id if len(provider_rows) == 1 else None
+        )
+        provider_instrument_id = (
+            provider_rows[0].provider_instrument_id if len(provider_rows) == 1 else None
+        )
         fingerprint = (
             position_apply_fingerprint(
                 preview=preview,
@@ -423,7 +461,7 @@ def _preview_response(
                 mapping=fingerprint_mapping,
                 snapshot=snapshots.get((row.account_id, row.instrument_id)),
             )
-            if row.status.value in {"matched", "provider_only"}
+            if row.status.value in {"matched", "provider_only"} and not is_money
             else None
         )
         positions.append(
@@ -458,6 +496,9 @@ def _preview_response(
                 reason=row.reason,
                 warnings=list(row.warnings),
                 fingerprint=fingerprint,
+                is_money=is_money,
+                provider_account_id=provider_account_id,
+                provider_instrument_id=provider_instrument_id,
             )
         )
     diagnostics = getattr(snapshot, "diagnostics", AlfaDiagnosticReport())
@@ -644,28 +685,66 @@ def broker_snapshot_apply_endpoint(
     return BrokerApplyResponse(
         success=result.success,
         selected_count=result.selected_count,
-        items=[
-            BrokerApplyItemOut(
-                action=item.action.value,
-                position_snapshot_id=item.position_snapshot_id,
-                account_id=item.account_id,
-                instrument_id=item.instrument_id,
-                quantity=format(item.quantity, "f"),
-                average_cost_per_unit_kopecks=item.average_cost_per_unit_kopecks,
-                market_price_per_unit_kopecks=item.market_price_per_unit_kopecks,
-                accrued_interest_kopecks=item.accrued_interest_kopecks,
-                market_value_kopecks=item.market_value_kopecks,
-                cost_basis_kopecks=item.cost_basis_kopecks,
-                unrealized_result_kopecks=item.unrealized_result_kopecks,
-                price_date=item.price_date,
-                price_source=item.price_source,
-            )
-            for item in result.items
-        ],
+        items=_apply_items_out(result),
         error_code=result.error_code.value if result.error_code is not None else None,
         message=result.message,
         source_as_of=result.source_as_of,
         captured_at=result.captured_at,
         snapshot_status=result.snapshot_status,
         fingerprint=result.fingerprint,
+    )
+
+
+def _apply_items_out(result) -> list[BrokerApplyItemOut]:
+    return [
+        BrokerApplyItemOut(
+            action=item.action.value,
+            position_snapshot_id=item.position_snapshot_id,
+            account_id=item.account_id,
+            instrument_id=item.instrument_id,
+            quantity=format(item.quantity, "f"),
+            average_cost_per_unit_kopecks=item.average_cost_per_unit_kopecks,
+            market_price_per_unit_kopecks=item.market_price_per_unit_kopecks,
+            accrued_interest_kopecks=item.accrued_interest_kopecks,
+            market_value_kopecks=item.market_value_kopecks,
+            cost_basis_kopecks=item.cost_basis_kopecks,
+            unrealized_result_kopecks=item.unrealized_result_kopecks,
+            price_date=item.price_date,
+            price_source=item.price_source,
+        )
+        for item in result.items
+    ]
+
+
+@router.post(
+    "/api/months/{month_id}/broker-baseline-apply",
+    response_model=BrokerBaselineApplyResponse,
+)
+def broker_baseline_apply_endpoint(
+    month_id: int,
+    payload: BrokerBaselineApplyRequest,
+    request: Request,
+    session: Session = Depends(session_for_request),
+) -> BrokerBaselineApplyResponse:
+    result = apply_owner_approved_baseline(
+        session,
+        provider=_provider(request),
+        reporting_month_id=month_id,
+        baseline_date=payload.baseline_date,
+        mapping=_mapping(payload.mapping),
+        selections=tuple(_selection(row) for row in payload.selections),
+    )
+    return BrokerBaselineApplyResponse(
+        success=result.success,
+        selected_count=result.selected_count,
+        items=_apply_items_out(result),
+        error_code=result.error_code.value if result.error_code is not None else None,
+        message=result.message,
+        source_as_of=result.source_as_of,
+        captured_at=result.captured_at,
+        snapshot_status=result.snapshot_status,
+        fingerprint=result.fingerprint,
+        baseline_date=result.baseline_date,
+        provenance_id=result.provenance_id,
+        confirmed_at=result.confirmed_at,
     )

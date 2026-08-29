@@ -198,6 +198,7 @@ def confirm_mapping(
     observed_isin: str | None = None,
     source_as_of: datetime | None = None,
     captured_at: datetime | None = None,
+    commit: bool = True,
 ) -> BrokerIdentityMapping:
     provider_name = _normalize_token(provider, field="provider", max_length=32)
     kind = _normalize_kind(subject_kind)
@@ -255,8 +256,10 @@ def confirm_mapping(
         captured_at=captured_at,
     )
     session.add(row)
-    session.commit()
-    session.refresh(row)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(row)
     return row
 
 

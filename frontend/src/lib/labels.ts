@@ -29,6 +29,7 @@ export const SOURCE_TIMESTAMP_KIND_LABELS: Record<string, string> = {
   event_date: "Дата события",
   record_date: "Дата фиксации",
   fetched_at: "Время запроса к провайдеру",
+  source_as_of: "Время наблюдения провайдера",
   unavailable: "Нет времени наблюдения",
   not_applicable: "Не применяется",
 };

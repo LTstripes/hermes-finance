@@ -449,6 +449,73 @@ class BrokerIdentityMapping(Base):
         return self.hermes_instrument_id
 
 
+class BrokerBaselineApply(Base):
+    """Month-scoped owner-approved current-state baseline provenance (ADR 0016 §8).
+
+    Append-only evidence of a committed baseline apply. Does not store provider
+    prices, NKD, P&L, cash, tickers, names, or raw snapshots.
+    """
+
+    __tablename__ = "broker_baseline_applies"
+    __table_args__ = (
+        Index(
+            "ix_broker_baseline_applies_month_confirmed",
+            "reporting_month_id",
+            "confirmed_at",
+        ),
+        CheckConstraint(
+            "length(trim(provider)) > 0",
+            name="ck_broker_baseline_applies_provider_present",
+        ),
+        CheckConstraint(
+            "length(trim(apply_fingerprint)) > 0",
+            name="ck_broker_baseline_applies_fingerprint_present",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    baseline_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    compatibility_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    apply_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class BrokerBaselineApplyItem(Base):
+    """Selected-row evidence for one committed baseline apply (ADR 0016 §8)."""
+
+    __tablename__ = "broker_baseline_apply_items"
+    __table_args__ = (
+        Index("ix_broker_baseline_apply_items_apply_id", "baseline_apply_id"),
+        CheckConstraint(
+            "action IN ('created', 'updated', 'unchanged')",
+            name="ck_broker_baseline_apply_items_action",
+        ),
+        CheckConstraint(
+            "quantity > 0",
+            name="ck_broker_baseline_apply_items_quantity_positive",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    baseline_apply_id: Mapped[int] = mapped_column(
+        ForeignKey("broker_baseline_applies.id", ondelete="CASCADE"), nullable=False
+    )
+    position_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("position_snapshots.id", ondelete="RESTRICT"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+
+
 class PositionSnapshot(Base):
     __tablename__ = "position_snapshots"
     __table_args__ = (
