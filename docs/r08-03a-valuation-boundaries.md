@@ -33,7 +33,9 @@ transfers cannot create a boundary group.
 entry contains the deterministic flow ID tuple, event date, availability,
 both observed sides when present, exact values/provenance, and stable reason
 codes. A side is usable only when its relation/date, coverage, quality and
-performance currency are valid. Missing sides fail closed with
+performance currency are valid. For either explicit relation, `observed_date`
+must equal the flow or group `boundary_date`; an earlier PRE or later POST is
+not exact boundary evidence. Missing sides fail closed with
 `not_computable_valuation_boundary_missing`; ambiguous or unproven same-day
 ordering fails closed with
 `not_computable_valuation_boundary_order_unknown`.

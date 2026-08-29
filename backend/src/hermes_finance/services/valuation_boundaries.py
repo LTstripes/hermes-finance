@@ -445,11 +445,10 @@ def stage_create_observed_valuation_point(
 
     _require_date_in_month(month, normalized_observed_date, field="observed_date")
 
-    if normalized_relation is ValuationBoundaryRelation.PRE_EXTERNAL_FLOW:
-        if normalized_observed_date > boundary_date:
-            raise ValueError("pre_external_flow observed_date must be on or before the flow date")
-    elif normalized_observed_date < boundary_date:
-        raise ValueError("post_external_flow observed_date must be on or after the flow date")
+    if normalized_observed_date != boundary_date:
+        raise ValueError(
+            f"{normalized_relation.value} observed_date must equal the flow boundary date"
+        )
 
     point = ObservedValuationPoint(
         reporting_month_id=month.id,

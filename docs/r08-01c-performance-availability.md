@@ -91,10 +91,10 @@ Exact TWRR additionally requires an explicit observed valuation boundary around
 every external flow. R08-03A persists an observed point with an exact
 performance-currency value, complete coverage, provenance and quality, and
 relates it explicitly to one flow or same-date flow group as
-`pre_external_flow` or `post_external_flow`. The read-only response exposes
-both sides under `external_flow_boundaries`; a boundary is available only when
-both sides are present, exact, complete and in the requested performance
-currency.
+`pre_external_flow` or `post_external_flow`. Each side's `observed_date` must
+equal the flow or group boundary date. The read-only response exposes both
+sides under `external_flow_boundaries`; a boundary is available only when both
+sides are present, exact, complete and in the requested performance currency.
 
 An interior flow without an observed boundary is
 `not_computable_valuation_boundary_missing`; an otherwise available same-day

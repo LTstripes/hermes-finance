@@ -662,10 +662,7 @@ def _observed_boundary_for_target(
     for evidence in (pre, post):
         if evidence is None:
             continue
-        if evidence.relation is ValuationBoundaryRelation.PRE_EXTERNAL_FLOW:
-            if evidence.observed_date > target.event_date:
-                reasons.add(_TWRR_ONLY_REASON)
-        elif evidence.observed_date < target.event_date:
+        if evidence.observed_date != target.event_date:
             reasons.add(_TWRR_ONLY_REASON)
         if evidence.performance_currency != performance_currency:
             reasons.add(AvailabilityReasonCode.CURRENCY_CONVERSION_INCOMPLETE.value)

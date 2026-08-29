@@ -16,7 +16,11 @@ from hermes_finance.domain import (
     ValuationBoundaryRelation,
 )
 from hermes_finance.main import create_app
-from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
+from hermes_finance.persistence import (
+    AccountPerformanceScopeMembership,
+    Base,
+    ObservedValuationPoint,
+)
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.deposits import create_deposit_snapshot
@@ -121,7 +125,7 @@ def test_explicit_flow_pre_post_observations_make_twrr_boundary_available(
             reporting_month_id=february_id,
             scope="account",
             account_id=account_id,
-            observed_date=date(2030, 2, 14),
+            observed_date=FLOW_DATE,
             total_value="1100.00",
             performance_currency="RUB",
             coverage="complete",
@@ -192,7 +196,7 @@ def test_same_day_group_is_deterministic_and_uses_group_observations(tmp_path: P
             account_id=account_id,
         )
         for relation, observed_date, value in (
-            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, date(2030, 2, 14), "1100.00"),
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, FLOW_DATE, "1100.00"),
             (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, FLOW_DATE, "1150.00"),
         ):
             create_observed_valuation_point(
@@ -236,7 +240,7 @@ def test_partial_or_unrelated_boundary_evidence_remains_fail_closed(tmp_path: Pa
             reporting_month_id=february_id,
             scope="account",
             account_id=account_id,
-            observed_date=date(2030, 2, 14),
+            observed_date=FLOW_DATE,
             total_value="1100.00",
             performance_currency="RUB",
             provenance_kind="synthetic_partial_observation",
@@ -291,6 +295,91 @@ def test_same_day_flows_without_explicit_group_are_order_unknown(tmp_path: Path)
         assert [boundary.flow_ids for boundary in result.external_flow_boundaries] == sorted(
             [boundary.flow_ids for boundary in result.external_flow_boundaries]
         )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_observed_boundary_requires_exact_flow_date(tmp_path: Path) -> None:
+    session, database, _january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        for relation, observed_date in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, date(2030, 2, 14)),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, date(2030, 2, 16)),
+        ):
+            with pytest.raises(ValueError, match="must equal the flow boundary date"):
+                create_observed_valuation_point(
+                    session,
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=observed_date,
+                    total_value="1100.00",
+                    performance_currency="RUB",
+                    provenance_kind="synthetic_invalid_boundary_date",
+                    relation=relation,
+                    external_flow_id=flow.id,
+                )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_availability_rejects_non_boundary_observation_dates(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=date(2030, 2, 14),
+                    total_value_kopecks=110_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_persisted_legacy",
+                    relation="pre_external_flow",
+                    external_flow_id=flow.id,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=date(2030, 2, 16),
+                    total_value_kopecks=120_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_persisted_legacy",
+                    relation="post_external_flow",
+                    external_flow_id=flow.id,
+                ),
+            )
+        )
+        session.commit()
+        _close_interval(session, january_id, february_id)
+
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert not result.twrr.is_available
+        assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        boundary = result.external_flow_boundaries[0]
+        assert not boundary.is_available
+        assert boundary.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert boundary.pre_external_flow is not None
+        assert boundary.post_external_flow is not None
+        assert boundary.pre_external_flow.observed_date == date(2030, 2, 14)
+        assert boundary.post_external_flow.observed_date == date(2030, 2, 16)
     finally:
         session.close()
         database.engine.dispose()
@@ -396,7 +485,7 @@ def test_availability_api_exposes_observed_boundary_evidence(tmp_path: Path) -> 
             reporting_month_id=february_id,
             scope="account",
             account_id=account_id,
-            observed_date=date(2030, 2, 14),
+            observed_date=FLOW_DATE,
             total_value="1100.00",
             performance_currency="RUB",
             provenance_kind="synthetic_api_observation",
