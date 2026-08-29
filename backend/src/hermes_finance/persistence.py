@@ -735,6 +735,172 @@ class ExternalFlow(Base):
         return self.transfer_link_id
 
 
+class ExternalFlowBoundaryGroup(Base):
+    """Explicit same-date external-flow group used by observed boundaries."""
+
+    __tablename__ = "external_flow_boundary_groups"
+    __table_args__ = (
+        Index(
+            "ix_external_flow_boundary_groups_month_date",
+            "reporting_month_id",
+            "boundary_date",
+        ),
+        CheckConstraint(
+            "scope IN ('portfolio', 'account')",
+            name="ck_external_flow_boundary_groups_scope",
+        ),
+        CheckConstraint(
+            "(scope = 'portfolio' AND account_id IS NULL) OR "
+            "(scope = 'account' AND account_id IS NOT NULL)",
+            name="ck_external_flow_boundary_groups_scope_account",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
+    boundary_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class ExternalFlowBoundaryGroupMember(Base):
+    """Explicit membership of an external flow in a same-date boundary group."""
+
+    __tablename__ = "external_flow_boundary_group_members"
+    __table_args__ = (
+        Index(
+            "ix_external_flow_boundary_group_members_flow",
+            "external_flow_id",
+        ),
+    )
+
+    boundary_group_id: Mapped[int] = mapped_column(
+        ForeignKey("external_flow_boundary_groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    external_flow_id: Mapped[int] = mapped_column(
+        ForeignKey("external_flows.id", ondelete="RESTRICT"), primary_key=True
+    )
+
+
+class ObservedValuationPoint(Base):
+    """Owner/provider-captured valuation observation adjacent to an external flow."""
+
+    __tablename__ = "observed_valuation_points"
+    __table_args__ = (
+        Index(
+            "ix_observed_valuation_points_scope_date",
+            "scope",
+            "account_id",
+            "observed_date",
+        ),
+        Index(
+            "ix_observed_valuation_points_flow",
+            "external_flow_id",
+        ),
+        Index(
+            "ix_observed_valuation_points_boundary_group",
+            "boundary_group_id",
+        ),
+        CheckConstraint(
+            "scope IN ('portfolio', 'account')",
+            name="ck_observed_valuation_points_scope",
+        ),
+        CheckConstraint(
+            "(scope = 'portfolio' AND account_id IS NULL) OR "
+            "(scope = 'account' AND account_id IS NOT NULL)",
+            name="ck_observed_valuation_points_scope_account",
+        ),
+        CheckConstraint(
+            "total_value_kopecks >= 0",
+            name="ck_observed_valuation_points_value_nonnegative",
+        ),
+        CheckConstraint(
+            "length(trim(performance_currency)) = 3",
+            name="ck_observed_valuation_points_currency_length",
+        ),
+        CheckConstraint(
+            "coverage_status IN ('complete', 'unavailable', 'unknown')",
+            name="ck_observed_valuation_points_coverage",
+        ),
+        CheckConstraint(
+            "quality IN ('exact', 'unavailable', 'unknown')",
+            name="ck_observed_valuation_points_quality",
+        ),
+        CheckConstraint(
+            "length(trim(provenance_kind)) > 0",
+            name="ck_observed_valuation_points_provenance_kind",
+        ),
+        CheckConstraint(
+            "relation IN ('pre_external_flow', 'post_external_flow')",
+            name="ck_observed_valuation_points_relation",
+        ),
+        CheckConstraint(
+            "(external_flow_id IS NOT NULL AND boundary_group_id IS NULL) OR "
+            "(external_flow_id IS NULL AND boundary_group_id IS NOT NULL)",
+            name="ck_observed_valuation_points_single_boundary_target",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
+    observed_date: Mapped[date] = mapped_column(Date, nullable=False)
+    total_value_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    performance_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    coverage_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    quality: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    relation: Mapped[str] = mapped_column(String(24), nullable=False)
+    external_flow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("external_flows.id", ondelete="RESTRICT"), nullable=True
+    )
+    boundary_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("external_flow_boundary_groups.id", ondelete="RESTRICT"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    @property
+    def value_kopecks(self) -> int:
+        """Compatibility spelling for callers using generic valuation wording."""
+
+        return self.total_value_kopecks
+
+
+# Public vocabulary aliases keep the implementation discoverable for the
+# observed-point and boundary-group terminology used by downstream tasks.
+ValuationBoundaryGroup = ExternalFlowBoundaryGroup
+ValuationBoundaryGroupMember = ExternalFlowBoundaryGroupMember
+ObservedValuationBoundary = ObservedValuationPoint
+
+
 # Public vocabulary aliases for callers that use the contract's
 # ``boundary-flow`` / ``transfer-link`` terminology.
 ExternalBoundaryFlow = ExternalFlow

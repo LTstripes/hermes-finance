@@ -16,6 +16,7 @@ from hermes_finance.domain.external_flows import (
     ExternalFlowScopeMembership,
     ExternalTransferStatus,
 )
+from hermes_finance.domain.valuation_boundaries import ExternalFlowBoundaryEvidence
 from hermes_finance.domain.valuation_points import (
     PerformanceScope,
     ValuationPoint,
@@ -140,8 +141,15 @@ class PerformanceAvailability:
     closing_valuation: ValuationBoundaryEvidence
     scope_membership: ScopeMembershipCoverage
     external_flows: ExternalFlowCoverage
+    external_flow_boundaries: tuple[ExternalFlowBoundaryEvidence, ...]
     xirr: PerformanceMetricPrerequisites
     twrr: PerformanceMetricPrerequisites
+
+    @property
+    def valuation_boundaries(self) -> tuple[ExternalFlowBoundaryEvidence, ...]:
+        """Compatibility spelling for consumers using valuation-boundary terminology."""
+
+        return self.external_flow_boundaries
 
     @property
     def is_available(self) -> bool:

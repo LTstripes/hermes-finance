@@ -9,7 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.domain import PerformanceAvailability, PerformanceScope, RubleAmount
+from hermes_finance.domain import (
+    ExternalFlowBoundaryEvidence,
+    ObservedValuationEvidence,
+    PerformanceAvailability,
+    PerformanceScope,
+    RubleAmount,
+)
 from hermes_finance.domain.performance_availability import ValuationBoundaryEvidence
 from hermes_finance.domain.valuation_points import ValuationPoint
 from hermes_finance.services.performance_availability import (
@@ -118,6 +124,36 @@ class ExternalFlowCoverageOut(BaseModel):
     reason_codes: list[str]
 
 
+class ObservedValuationEvidenceOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    scope: str
+    account_id: int | None
+    observed_date: date
+    total_value: ExactMoneyOut
+    performance_currency: str
+    coverage: str
+    quality: str
+    provenance_kind: str
+    provenance_reference: str | None
+    relation: str
+    external_flow_id: int | None
+    boundary_group_id: int | None
+
+
+class ExternalFlowBoundaryOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    boundary_group_id: int | None
+    flow_ids: list[int]
+    event_date: date
+    availability: str
+    pre_external_flow: ObservedValuationEvidenceOut | None
+    post_external_flow: ObservedValuationEvidenceOut | None
+    reason_codes: list[str]
+
+
 class PerformanceMetricPrerequisitesOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -140,6 +176,7 @@ class PerformanceAvailabilityResponse(BaseModel):
     closing_valuation: ValuationBoundaryOut
     scope_membership: ScopeMembershipCoverageOut
     external_flows: ExternalFlowCoverageOut
+    external_flow_boundaries: list[ExternalFlowBoundaryOut]
     xirr: PerformanceMetricPrerequisitesOut
     twrr: PerformanceMetricPrerequisitesOut
 
@@ -225,6 +262,48 @@ def _valuation_boundary(
     )
 
 
+def _observed_valuation_evidence(
+    evidence: ObservedValuationEvidence,
+) -> ObservedValuationEvidenceOut:
+    return ObservedValuationEvidenceOut(
+        id=evidence.id,
+        scope=evidence.scope.value,
+        account_id=evidence.account_id,
+        observed_date=evidence.observed_date,
+        total_value=_money(evidence.total_value.kopecks, evidence.performance_currency),
+        performance_currency=evidence.performance_currency,
+        coverage=evidence.coverage.value,
+        quality=evidence.quality.value,
+        provenance_kind=evidence.provenance_kind,
+        provenance_reference=evidence.provenance_reference,
+        relation=evidence.relation.value,
+        external_flow_id=evidence.external_flow_id,
+        boundary_group_id=evidence.boundary_group_id,
+    )
+
+
+def _external_flow_boundary(
+    evidence: ExternalFlowBoundaryEvidence,
+) -> ExternalFlowBoundaryOut:
+    return ExternalFlowBoundaryOut(
+        boundary_group_id=evidence.boundary_group_id,
+        flow_ids=list(evidence.flow_ids),
+        event_date=evidence.event_date,
+        availability=("available" if evidence.is_available else "not_computable"),
+        pre_external_flow=(
+            None
+            if evidence.pre_external_flow is None
+            else _observed_valuation_evidence(evidence.pre_external_flow)
+        ),
+        post_external_flow=(
+            None
+            if evidence.post_external_flow is None
+            else _observed_valuation_evidence(evidence.post_external_flow)
+        ),
+        reason_codes=list(evidence.reason_codes),
+    )
+
+
 def _response(result: PerformanceAvailability) -> PerformanceAvailabilityResponse:
     return PerformanceAvailabilityResponse(
         scope=result.scope.value,
@@ -274,6 +353,9 @@ def _response(result: PerformanceAvailability) -> PerformanceAvailabilityRespons
             legacy_unclassified_flow_ids=list(result.external_flows.legacy_unclassified_flow_ids),
             reason_codes=list(result.external_flows.reason_codes),
         ),
+        external_flow_boundaries=[
+            _external_flow_boundary(evidence) for evidence in result.external_flow_boundaries
+        ],
         xirr=PerformanceMetricPrerequisitesOut(
             metric=result.xirr.metric,
             availability=result.xirr.availability.value,

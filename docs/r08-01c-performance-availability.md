@@ -32,6 +32,9 @@ The response contains:
   interval;
 - `external_flows` with sanitized exact flow metadata, classification,
   transfer status, legacy unclassified row IDs and coverage reasons;
+- `external_flow_boundaries` with deterministic pre/post observed valuation
+  evidence for each selected-scope external flow or explicit same-date flow
+  group;
 - `xirr` and `twrr` prerequisite availability, each with stable reason codes.
 
 No return value, return percentage, inferred valuation or converted foreign
@@ -85,13 +88,19 @@ Date-only same-day ordering is not an XIRR blocker under the accepted #145 v2
 contract.
 
 Exact TWRR additionally requires an explicit observed valuation boundary around
-every external flow. The current persisted model has date-only snapshots and no
-`pre_external_flow`/`post_external_flow` relation. Therefore an interior flow
-without an observed boundary is
+every external flow. R08-03A persists an observed point with an exact
+performance-currency value, complete coverage, provenance and quality, and
+relates it explicitly to one flow or same-date flow group as
+`pre_external_flow` or `post_external_flow`. Each side's `observed_date` must
+equal the flow or group boundary date. The read-only response exposes both
+sides under `external_flow_boundaries`; a boundary is available only when both
+sides are present, exact, complete and in the requested performance currency.
+
+An interior flow without an observed boundary is
 `not_computable_valuation_boundary_missing`; an otherwise available same-day
-observation is
-`not_computable_valuation_boundary_order_unknown`. No interpolation or assumed
-start/end-of-day convention is exact.
+observation without an explicit relation, or multiple ungrouped same-day
+flows, is `not_computable_valuation_boundary_order_unknown`. No interpolation,
+timestamp-only ordering assumption or start/end-of-day convention is exact.
 
 ## Stable reason codes
 
