@@ -231,6 +231,76 @@ def test_same_day_group_is_deterministic_and_uses_group_observations(tmp_path: P
         database.engine.dispose()
 
 
+def test_scope_specific_boundary_groups_can_share_one_external_flow(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        account_group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        portfolio_group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id],
+            scope="portfolio",
+        )
+        for scope, selected_account_id, group_id in (
+            ("account", account_id, account_group.id),
+            ("portfolio", None, portfolio_group.id),
+        ):
+            for relation, total_value in (
+                (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+                (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1200.00"),
+            ):
+                create_observed_valuation_point(
+                    session,
+                    reporting_month_id=february_id,
+                    scope=scope,
+                    account_id=selected_account_id,
+                    observed_date=FLOW_DATE,
+                    total_value=total_value,
+                    performance_currency="RUB",
+                    provenance_kind=f"synthetic_{scope}_group_observation",
+                    relation=relation,
+                    boundary_group_id=group_id,
+                )
+        _close_interval(session, january_id, february_id)
+
+        account_result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        portfolio_result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="portfolio",
+        )
+
+        assert account_result.availability is PerformanceAvailabilityStatus.AVAILABLE
+        assert account_result.twrr.is_available
+        assert [
+            boundary.boundary_group_id for boundary in account_result.external_flow_boundaries
+        ] == [account_group.id]
+        assert portfolio_result.availability is PerformanceAvailabilityStatus.AVAILABLE
+        assert portfolio_result.twrr.is_available
+        assert [
+            boundary.boundary_group_id for boundary in portfolio_result.external_flow_boundaries
+        ] == [portfolio_group.id]
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_partial_or_unrelated_boundary_evidence_remains_fail_closed(tmp_path: Path) -> None:
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:

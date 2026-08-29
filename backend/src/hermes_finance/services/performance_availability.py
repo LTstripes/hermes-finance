@@ -515,14 +515,25 @@ def _external_flow_boundary_targets(
         return ()
 
     external_flow_ids = {flow.id for flow in external_flows}
-    group_rows = session.execute(
+    group_statement = (
         select(ExternalFlowBoundaryGroup, ExternalFlowBoundaryGroupMember)
         .join(
             ExternalFlowBoundaryGroupMember,
             ExternalFlowBoundaryGroupMember.boundary_group_id == ExternalFlowBoundaryGroup.id,
         )
-        .where(ExternalFlowBoundaryGroupMember.external_flow_id.in_(external_flow_ids))
-        .order_by(ExternalFlowBoundaryGroup.boundary_date, ExternalFlowBoundaryGroup.id)
+        .where(
+            ExternalFlowBoundaryGroupMember.external_flow_id.in_(external_flow_ids),
+            ExternalFlowBoundaryGroup.scope == scope.value,
+        )
+    )
+    if scope is PerformanceScope.ACCOUNT:
+        group_statement = group_statement.where(ExternalFlowBoundaryGroup.account_id == account_id)
+    else:
+        group_statement = group_statement.where(ExternalFlowBoundaryGroup.account_id.is_(None))
+    group_rows = session.execute(
+        group_statement.order_by(
+            ExternalFlowBoundaryGroup.boundary_date, ExternalFlowBoundaryGroup.id
+        )
     )
     groups: dict[int, ExternalFlowBoundaryGroup] = {}
     for group, _member in group_rows:

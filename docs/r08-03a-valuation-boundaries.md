@@ -27,6 +27,10 @@ snapshots, legacy investment cash flows, historical scope membership and
 current account flags are not backfilled or reinterpreted. Portfolio-internal
 transfers cannot create a boundary group.
 
+Boundary groups and observed points are scope-specific. Availability considers
+only groups matching the requested scope and account; one external flow may
+therefore have separate valid account- and portfolio-scope groups and evidence.
+
 ## Read-only availability
 
 `GET /api/performance/availability` exposes `external_flow_boundaries`. Each
