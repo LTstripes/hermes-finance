@@ -12,6 +12,7 @@ var tests = new (string Name, Action Run)[]
     ("rejects preview aliases to the production database before startup", RejectsUnsafeTupleAliases),
     ("rejects preview hardlinks to the production database", RejectsProductionHardlink),
     ("rejects an existing preview database with the wrong sidecar", RejectsWrongPreviewSidecar),
+    ("uses the bundled schema probe for a legacy checkout", UsesBundledSchemaProbeForLegacyCheckout),
     ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
@@ -146,6 +147,32 @@ static void RejectsWrongPreviewSidecar()
     finally
     {
         Directory.Delete(root, recursive: true);
+    }
+}
+
+static void UsesBundledSchemaProbeForLegacyCheckout()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-legacy-schema-{Guid.NewGuid():N}");
+    var legacyCheckout = Path.Combine(root, "stable-v063");
+    var database = Path.Combine(root, "stable-data", "finance.db");
+    try
+    {
+        CreateRuntimeLayout(legacyCheckout);
+        var legacyProbe = Path.Combine(legacyCheckout, "scripts", "launcher-schema-check.py");
+        var bundledProbe = Path.Combine(AppContext.BaseDirectory, "launcher-schema-check.py");
+        Assert(!File.Exists(legacyProbe), "The legacy Stable fixture must not contain the current schema probe.");
+        Assert(File.Exists(bundledProbe), "The current launcher must package its schema probe.");
+
+        var command = ProfileValidator.BuildSchemaCheckCommand(legacyCheckout, database);
+        Assert(command.WorkingDirectory == Path.Combine(legacyCheckout, "backend"), "Schema probing must run in the selected checkout backend.");
+        Assert(
+            command.ArgumentList.ToArray().SequenceEqual(
+            ["run", "--locked", "python", bundledProbe, "--database", database, "--checkout", legacyCheckout]),
+            "Schema probing must use the bundled helper and pass the selected checkout graph.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
     }
 }
 

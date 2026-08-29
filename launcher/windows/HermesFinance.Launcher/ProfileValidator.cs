@@ -123,6 +123,29 @@ public static class ProfileValidator
         return command;
     }
 
+    internal static ProcessStartInfo BuildSchemaCheckCommand(string checkout, string database)
+    {
+        var script = ResolveBundledSchemaCheckScript();
+        var command = new ProcessStartInfo
+        {
+            FileName = "uv",
+            WorkingDirectory = Path.Combine(checkout, "backend"),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        command.ArgumentList.Add("run");
+        command.ArgumentList.Add("--locked");
+        command.ArgumentList.Add("python");
+        command.ArgumentList.Add(script);
+        command.ArgumentList.Add("--database");
+        command.ArgumentList.Add(database);
+        command.ArgumentList.Add("--checkout");
+        command.ArgumentList.Add(checkout);
+        return command;
+    }
+
     public static void WriteMissingSidecar(ValidatedProfile profile)
     {
         var sidecarPath = Path.Combine(profile.DataDir, SidecarName);
@@ -251,19 +274,10 @@ public static class ProfileValidator
             return;
         }
 
-        var script = Path.Combine(checkout, "scripts", "launcher-schema-check.py");
-        if (!File.Exists(script))
-        {
-            throw new LauncherValidationException("Schema compatibility check is unavailable.");
-        }
-
         ProcessOutput output;
         try
         {
-            output = RunProcess(
-                "uv",
-                Path.Combine(checkout, "backend"),
-                "run", "--locked", "python", script, "--database", database);
+            output = RunProcess(BuildSchemaCheckCommand(checkout, database));
         }
         catch (Win32Exception exception)
         {
@@ -288,6 +302,16 @@ public static class ProfileValidator
         {
             throw new LauncherValidationException($"Schema compatibility result is invalid: {exception.Message}");
         }
+    }
+
+    private static string ResolveBundledSchemaCheckScript()
+    {
+        var script = Path.Combine(AppContext.BaseDirectory, "launcher-schema-check.py");
+        if (!File.Exists(script))
+        {
+            throw new LauncherValidationException("Schema compatibility check is unavailable: launcher probe is missing.");
+        }
+        return script;
     }
 
     private static void AssertPortAvailable()
@@ -406,7 +430,12 @@ public static class ProfileValidator
         {
             startInfo.ArgumentList.Add(argument);
         }
-        using var process = Process.Start(startInfo) ?? throw new LauncherValidationException($"Could not start '{fileName}'.");
+        return RunProcess(startInfo);
+    }
+
+    private static ProcessOutput RunProcess(ProcessStartInfo startInfo)
+    {
+        using var process = Process.Start(startInfo) ?? throw new LauncherValidationException($"Could not start '{startInfo.FileName}'.");
         var standardOutput = process.StandardOutput.ReadToEnd();
         var standardError = process.StandardError.ReadToEnd();
         process.WaitForExit();

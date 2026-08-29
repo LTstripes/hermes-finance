@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\HermesFinance.Launcher\HermesFinance.Launcher.csproj" />
     <None Include="..\config.example.json" Link="config.example.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\scripts\launcher-schema-check.py" Link="launcher-schema-check.py" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -34,6 +34,11 @@ def revision_is_ancestor(script: ScriptDirectory, current: str, heads: tuple[str
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", type=Path, required=True)
+    parser.add_argument(
+        "--checkout",
+        type=Path,
+        help="Hermes checkout whose backend Alembic graph must be inspected",
+    )
     args = parser.parse_args()
     database = args.database.resolve()
     if not database.is_file():
@@ -50,7 +55,11 @@ def main() -> int:
         return result("invalid", f"SQLite cannot be read: {error}")
 
     current = tuple(row[0] for row in rows)
-    config = Config(str(Path(__file__).resolve().parents[1] / "backend" / "alembic.ini"))
+    checkout = (args.checkout or Path(__file__).resolve().parents[1]).resolve()
+    config_path = checkout / "backend" / "alembic.ini"
+    if not config_path.is_file():
+        return result("invalid", "selected checkout Alembic configuration is missing")
+    config = Config(str(config_path))
     script = ScriptDirectory.from_config(config)
     heads = tuple(script.get_heads())
     if not current:
