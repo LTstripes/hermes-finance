@@ -341,6 +341,114 @@ class InstrumentMarketMapping(Base):
     )
 
 
+class BrokerIdentityMapping(Base):
+    """Owner-confirmed broker account/instrument identity mapping (ADR 0016).
+
+    Separate from market-data mappings and statement-import mappings.
+    Append-only lifecycle: confirm, revoke, remap. No silent backfill.
+    """
+
+    __tablename__ = "broker_identity_mappings"
+    __table_args__ = (
+        Index("ix_broker_identity_mappings_provider_status", "provider", "status"),
+        Index(
+            "uq_broker_identity_mappings_effective_forward",
+            "provider",
+            "subject_kind",
+            "provider_identity",
+            unique=True,
+            sqlite_where=text("status = 'effective'"),
+        ),
+        Index(
+            "uq_broker_identity_mappings_effective_instrument_reverse",
+            "provider",
+            "hermes_instrument_id",
+            unique=True,
+            sqlite_where=text("status = 'effective' AND subject_kind = 'instrument'"),
+        ),
+        CheckConstraint(
+            "subject_kind IN ('account', 'instrument')",
+            name="ck_broker_identity_mappings_subject_kind",
+        ),
+        CheckConstraint(
+            "status IN ('effective', 'revoked', 'superseded')",
+            name="ck_broker_identity_mappings_status",
+        ),
+        CheckConstraint(
+            "length(trim(provider)) > 0",
+            name="ck_broker_identity_mappings_provider_present",
+        ),
+        CheckConstraint(
+            "length(trim(provider_identity)) > 0",
+            name="ck_broker_identity_mappings_identity_present",
+        ),
+        CheckConstraint(
+            "("
+            "subject_kind = 'account' "
+            "AND hermes_account_id IS NOT NULL "
+            "AND hermes_instrument_id IS NULL"
+            ") OR ("
+            "subject_kind = 'instrument' "
+            "AND hermes_instrument_id IS NOT NULL "
+            "AND hermes_account_id IS NULL"
+            ")",
+            name="ck_broker_identity_mappings_target_shape",
+        ),
+        CheckConstraint(
+            "subject_kind = 'instrument' OR observed_isin IS NULL",
+            name="ck_broker_identity_mappings_isin_instruments_only",
+        ),
+        CheckConstraint(
+            "("
+            "status = 'revoked' AND revoked_at IS NOT NULL"
+            ") OR ("
+            "status != 'revoked' AND revoked_at IS NULL AND revoke_reason IS NULL"
+            ")",
+            name="ck_broker_identity_mappings_revoke_clock",
+        ),
+        CheckConstraint(
+            "("
+            "status = 'superseded' AND successor_mapping_id IS NOT NULL"
+            ") OR ("
+            "status != 'superseded'"
+            ")",
+            name="ck_broker_identity_mappings_superseded_successor",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    hermes_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
+    hermes_instrument_id: Mapped[int | None] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    observed_isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    predecessor_mapping_id: Mapped[int | None] = mapped_column(
+        ForeignKey("broker_identity_mappings.id", ondelete="RESTRICT"), nullable=True
+    )
+    successor_mapping_id: Mapped[int | None] = mapped_column(
+        ForeignKey("broker_identity_mappings.id", ondelete="RESTRICT"), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    @property
+    def hermes_target_id(self) -> int:
+        if self.subject_kind == "account":
+            assert self.hermes_account_id is not None
+            return self.hermes_account_id
+        assert self.hermes_instrument_id is not None
+        return self.hermes_instrument_id
+
+
 class PositionSnapshot(Base):
     __tablename__ = "position_snapshots"
     __table_args__ = (

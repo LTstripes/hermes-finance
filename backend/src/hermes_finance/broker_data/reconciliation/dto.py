@@ -123,10 +123,11 @@ class InstrumentMappingInput:
 
 @dataclass(frozen=True, slots=True)
 class OwnerMappingInput:
-    """Explicit, owner-controlled transient reconciliation mapping only.
+    """Explicit, owner-controlled reconciliation mapping fed to the matcher.
 
     Never inferred from names, IIAType, ticker, section codes or numeric
-    similarity. Persisted mappings are out of scope for R06-04.
+    similarity. Callers may compose persisted registry rows with the request;
+    the matcher itself does not persist.
     """
 
     accounts: tuple[AccountMappingInput, ...] = ()

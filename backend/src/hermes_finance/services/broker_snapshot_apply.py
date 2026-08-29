@@ -29,6 +29,7 @@ from hermes_finance.broker_data.reconciliation.preview import build_reconciliati
 from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.persistence import PositionSnapshot
 from hermes_finance.services._guard import require_editable_reporting_month
+from hermes_finance.services.broker_identity_mappings import compose_owner_mapping
 from hermes_finance.services.broker_reconciliation import load_hermes_state_for_month
 from hermes_finance.services.positions import (
     get_position_snapshot_by_key,
@@ -311,6 +312,7 @@ def apply_broker_snapshot_preview(
         )
 
     hermes = load_hermes_state_for_month(session, reporting_month_id)
+    mapping = compose_owner_mapping(session, provider=snapshot.provider, request=mapping)
     fresh_preview = build_reconciliation_preview(
         snapshot=snapshot,
         hermes=hermes,

@@ -70,6 +70,7 @@ export type BrokerSnapshotPreview = {
     hermes_account_id: number | null;
     status: string;
     reason: string | null;
+    classification?: string;
   }[];
   instruments: {
     provider_instrument_id: string | null;
@@ -79,6 +80,7 @@ export type BrokerSnapshotPreview = {
     hermes_instrument_id: number | null;
     status: string;
     reason: string | null;
+    classification?: string;
   }[];
   cash: unknown[];
   warnings: string[];
