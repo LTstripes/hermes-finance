@@ -293,7 +293,7 @@ A partial/incomplete snapshot is not eligible for selective apply unless a later
 - complete operation-history retention/pagination contract;
 - read behavior with naturally occurring `ReadyToSign=false`;
 - behavior while terminal is unauthenticated/offline and during reconnect beyond the documented state model;
-- persistent-storage permission/terms for Alfa-derived private broker data;
+- persistent-storage permission/terms for Alfa-derived private broker data (narrowly addressed for owner-confirmed mapping identity, selected quantity, and baseline provenance by [ADR 0016](0016-owner-approved-alfa-baseline-and-broker-mappings.md); raw payloads remain forbidden);
 - provider-ID stability across terminal upgrades/reinstall/provider-side migrations.
 
 These are recorded as unknowns and must not be guessed by R06-03.
@@ -301,6 +301,10 @@ These are recorded as unknowns and must not be guessed by R06-03.
 ## Relationship to ADR 0010
 
 ADR 0010 remains accepted for the broader market-data versus broker-data provider strategy. This ADR supersedes its Alfa-specific “future broker provider” uncertainty where R06-01 now supplies live evidence and defines the normative 0.6 snapshot/security boundary.
+
+## Relationship to ADR 0016
+
+ADR 0016 is the contract-first follow-up for persistent broker-identity mappings and an owner-approved current-state quantity baseline. Until its implementation slices land, production mapping remains request-scoped and transient as specified here. ADR 0016 does not reopen trading channels, operation-history import, or raw-payload persistence.
 
 ## References
 

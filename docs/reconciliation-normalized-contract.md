@@ -74,3 +74,10 @@ The UI/selective-action slice may consume `rows[]` and the per-row fingerprints,
 but must retain explicit owner selection, stale-preview revalidation and the
 existing CLOSED-month/apply safeguards. It must not infer mappings or promote
 comparison-only provider values into Hermes state.
+
+Persistent broker-identity mappings and an owner-approved current-state
+baseline are specified by
+[`docs/adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md`](adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md).
+This endpoint stays read-only and request-mapped until those implementation
+slices compose registry rows into the existing mapping input. The matcher
+and comparison-only field list in this document remain authoritative.

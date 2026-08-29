@@ -55,8 +55,11 @@ Active applied T-Invest payout events for the month.
 
 ### `alfa_pro_positions`
 
-Alfa PRO snapshot observations are **transient**. Hermes does not persist `source_as_of`
+Alfa PRO snapshot observations are **transient** on current `r07`. Hermes does not persist `source_as_of`
 or broker-snapshot provenance after quantity apply (ADR 0013 persistence gate).
+[ADR 0016](adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md) specifies the future
+minimum baseline provenance; this family must keep `unknown` /
+`alfa_pro_observation_not_persisted` until that implementation slice lands.
 
 - Family status is always `unknown`.
 - Reason `alfa_pro_observation_not_persisted`.
