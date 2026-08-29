@@ -1,3 +1,13 @@
+.reconciliation-center {
+  min-width: 0;
+}
+
+.reconciliation-center > *,
+.reconciliation-center .panel,
+.reconciliation-center .table-wrap {
+  min-width: 0;
+}
+
 .reconciliation-center__action-copy,
 .reconciliation-center__mapping-copy,
 .reconciliation-center__read-only-note {
@@ -237,6 +247,23 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+.reconciliation-center__diagnostic-disclosure {
+  min-width: 0;
+}
+
+.reconciliation-center__diagnostic-disclosure > summary {
+  width: fit-content;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reconciliation-center__diagnostic-disclosure > .panel {
+  min-width: 0;
+  margin-top: var(--space-3);
 }
 
 .reconciliation-center__diagnostic-grid .data-value {

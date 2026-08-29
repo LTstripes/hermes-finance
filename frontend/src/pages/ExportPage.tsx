@@ -280,12 +280,11 @@ export function ExportPage() {
       <Panel label="AI Analysis Bundle" title="Полный анализ для ассистента">
         <div className="stack-12">
           <p>
-            Bundle собирает всю доступную историю Hermes Finance, а не только выбранный отчётный
+            Файл собирает всю доступную историю Hermes Finance, а не только выбранный отчётный
             месяц.
           </p>
           <p className="muted">
-            Схема: <code>hermes.finance.ai_analysis_bundle</code> v1.0.0. Дата as-of фиксируется
-            backend при генерации и указана в скачанном файле как <code>metadata.as_of_date</code>.
+            Дата среза фиксируется приложением при создании и указана внутри скачанного файла.
           </p>
           <div className="inline-alert inline-alert--warn" role="note">
             <strong>Внимание:</strong> файл содержит финансовые данные. Проверь его перед ручной
@@ -312,9 +311,7 @@ export function ExportPage() {
               type="button"
               variant="primary"
             >
-              {bundleDownloading === "json"
-                ? "Готовим bundle…"
-                : "Скачать AI Analysis Bundle (JSON)"}
+              {bundleDownloading === "json" ? "Готовим файл…" : "Скачать AI Analysis Bundle (JSON)"}
             </Button>
             <Button
               disabled={downloading !== null || bundleDownloading !== null}
@@ -368,7 +365,7 @@ export function ExportPage() {
                 {restoreSuccess}
               </div>
             ) : null}
-            <Table>
+            <Table className="backup-table">
               <thead>
                 <tr>
                   <Th>Имя</Th>

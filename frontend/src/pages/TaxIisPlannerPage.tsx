@@ -67,7 +67,7 @@ function benefitTone(status: string): "draft" | "info" | "ok" | "missing" {
 
 function warningText(code: string): string {
   if (code === SALARY_TAX_HISTORY_INCOMPLETE) {
-    return "История зарплатного НДФЛ неполна: gross YTD, текущая ступень и расстояние до порога недоступны.";
+    return "История зарплатного НДФЛ неполна: накопленный облагаемый доход, текущая ступень и расстояние до порога недоступны.";
   }
   if (code === TAX_BRACKETS_UNAVAILABLE) {
     return "Полная шкала налоговых ступеней недоступна: текущая ступень и порог не определяются.";
@@ -75,7 +75,7 @@ function warningText(code: string): string {
   if (code === "salary_tax_context_unavailable") {
     return "Нет отчётного месяца, на который можно опереть зарплатный контекст.";
   }
-  return code;
+  return "Есть дополнительное ограничение данных. Обнови страницу или проверь настройки НДФЛ.";
 }
 
 export function TaxIisPlannerPage() {
@@ -193,7 +193,7 @@ export function TaxIisPlannerPage() {
       ) : null}
 
       {plannerLoading && !planner ? (
-        <LoadingState description="Собираем текущий налоговый и IIS-контекст…" />
+        <LoadingState description="Собираем текущий налоговый контекст и данные ИИС…" />
       ) : plannerError ? (
         <ErrorState description={plannerError} title="Не удалось загрузить планировщик" />
       ) : planner ? (
@@ -219,7 +219,7 @@ function PlannerContent({
         {reportingMonth
           ? `Срез ${formatMonth(reportingMonth.year, reportingMonth.month)} · ${labelOf(MONTH_STATUS_LABELS, reportingMonth.status)} · снимок ${formatDate(reportingMonth.snapshot_date)}`
           : selectedMonth
-            ? `Выбран ${formatMonth(selectedMonth.year, selectedMonth.month)}, но backend не вернул отчётный срез.`
+            ? `Выбран ${formatMonth(selectedMonth.year, selectedMonth.month)}, но приложение не получило отчётный срез.`
             : "Нет отчётного месяца; зарплатный контекст недоступен."}
       </p>
 
@@ -227,7 +227,7 @@ function PlannerContent({
         <div className="tax-iis-planner-page__warnings" role="status">
           {planner.warnings.map((warning) => (
             <div className="inline-alert inline-alert--warn" key={warning}>
-              <strong>{warning}</strong> — {warningText(warning)}
+              {warningText(warning)}
             </div>
           ))}
         </div>
@@ -236,7 +236,7 @@ function PlannerContent({
       <Panel label="НДФЛ" title="Текущий зарплатный контекст">
         <div className="tax-iis-planner-page__salary-grid">
           <DataValue
-            label="Облагаемый gross YTD"
+            label="Облагаемый доход с начала года"
             meta={
               salary.available
                 ? "Накоплено в текущем налоговом году"
@@ -247,10 +247,8 @@ function PlannerContent({
             value={formatMoney(salary.taxable_gross_ytd?.amount)}
           />
           <DataValue
-            label="Текущая marginal ступень"
-            meta={
-              salary.current_marginal_bracket ? "По настроенной шкале backend" : "Не определена"
-            }
+            label="Текущая предельная ступень"
+            meta={salary.current_marginal_bracket ? "По настроенной шкале НДФЛ" : "Не определена"}
             value={formatBracket(salary.current_marginal_bracket)}
           />
           <DataValue
@@ -281,9 +279,7 @@ function PlannerContent({
         {salary.warning_codes.length > 0 ? (
           <div className="tax-iis-planner-page__warning-codes" role="status">
             {salary.warning_codes.map((warning) => (
-              <span key={warning}>
-                <code>{warning}</code>: {warningText(warning)}
-              </span>
+              <span key={warning}>{warningText(warning)}</span>
             ))}
           </div>
         ) : null}
