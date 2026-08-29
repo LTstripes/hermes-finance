@@ -170,6 +170,31 @@ class Account(Base):
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
+class AccountPerformanceScopeMembership(Base):
+    """Effective-dated historical performance-scope membership evidence."""
+
+    __tablename__ = "account_performance_scope_memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "effective_from",
+            name="uq_account_scope_memberships_account_effective_from",
+        ),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to >= effective_from",
+            name="ck_account_scope_memberships_effective_range",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    include_in_returns: Mapped[bool] = mapped_column(nullable=False)
+
+
 class IisProfile(Base):
     __tablename__ = "iis_profiles"
     __table_args__ = (UniqueConstraint("account_id", name="uq_iis_profiles_account_id"),)
@@ -486,6 +511,9 @@ class CashBalance(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)

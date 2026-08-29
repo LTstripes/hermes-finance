@@ -126,6 +126,7 @@ def _copy_cash(session: Session, *, source_id: int, target_id: int) -> None:
         session.add(
             CashBalance(
                 reporting_month_id=target_id,
+                account_id=row.account_id,
                 name=row.name,
                 amount_kopecks=row.amount_kopecks,
                 currency=row.currency,

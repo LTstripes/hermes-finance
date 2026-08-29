@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import RubleAmount
-from hermes_finance.persistence import CashBalance
+from hermes_finance.persistence import Account, CashBalance
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
@@ -11,6 +11,9 @@ from hermes_finance.services._guard import (
 
 class CashBalanceNotFoundError(LookupError):
     pass
+
+
+_UNSET = object()
 
 
 def _normalize_name(name: str) -> str:
@@ -72,6 +75,7 @@ def create_cash_balance(
     session: Session,
     *,
     reporting_month_id: int,
+    account_id: int | None = None,
     name: str,
     amount: RubleAmount | str,
     currency: str = "RUB",
@@ -79,8 +83,11 @@ def create_cash_balance(
     notes: str | None = None,
 ) -> CashBalance:
     require_editable_reporting_month(session, reporting_month_id)
+    if account_id is not None and session.get(Account, account_id) is None:
+        raise ValueError(f"account {account_id} was not found")
     balance = CashBalance(
         reporting_month_id=reporting_month_id,
+        account_id=account_id,
         name=_normalize_name(name),
         amount_kopecks=_normalize_amount(amount),
         currency=_normalize_currency(currency),
@@ -97,6 +104,7 @@ def update_cash_balance(
     session: Session,
     balance_id: int,
     *,
+    account_id: int | None | object = _UNSET,
     name: str | None = None,
     amount: RubleAmount | str | None = None,
     currency: str | None = None,
@@ -105,6 +113,10 @@ def update_cash_balance(
 ) -> CashBalance:
     balance = get_cash_balance(session, balance_id)
     require_editable_child_month(session, balance)
+    if account_id is not _UNSET:
+        if account_id is not None and session.get(Account, account_id) is None:
+            raise ValueError(f"account {account_id} was not found")
+        balance.account_id = account_id  # type: ignore[assignment]
     if name is not None:
         balance.name = _normalize_name(name)
     if amount is not None:
