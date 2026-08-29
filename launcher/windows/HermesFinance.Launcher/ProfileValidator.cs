@@ -175,10 +175,10 @@ public static class ProfileValidator
         }
     }
 
-    private static string AssertGitIdentity(LauncherProfile profile, string checkout, string canonicalCheckout)
+    internal static string AssertGitIdentity(LauncherProfile profile, string checkout, string canonicalCheckout)
     {
         var head = RunGit(checkout, "rev-parse", "HEAD");
-        var expected = RunGit(checkout, "rev-parse", profile.ExpectedRef);
+        var expected = RunGit(checkout, "rev-parse", "--verify", profile.ExpectedRef + "^{commit}");
         if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase))
         {
             throw new LauncherValidationException("Checkout identity does not match this profile.");
