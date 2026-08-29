@@ -44,6 +44,7 @@ node_modules/
 dist/
 coverage/
 .vite/
+.visual-audit/
 
 # Editors and operating systems
 .vscode/

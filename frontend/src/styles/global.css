@@ -697,6 +697,16 @@ a.btn {
   gap: 14px;
 }
 
+.editor-grid > *,
+.editor-grid :where(.field, .input, .select) {
+  min-width: 0;
+}
+
+.editor-grid :where(.input, .select) {
+  width: 100%;
+  max-width: 100%;
+}
+
 .input--money {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
@@ -1056,6 +1066,7 @@ a.btn {
 }
 
 .panel {
+  min-width: 0;
   min-height: 0;
   padding: 22px 24px;
   border: 1px solid var(--line);
@@ -1337,6 +1348,26 @@ a.btn {
   padding: 12px 0;
   border-bottom: 1px solid var(--line-soft);
   vertical-align: middle;
+}
+
+.backup-table th,
+.backup-table td {
+  padding-inline: 10px;
+}
+
+.backup-table th:first-child,
+.backup-table td:first-child {
+  padding-left: 0;
+}
+
+.backup-table th:last-child,
+.backup-table td:last-child {
+  padding-right: 0;
+}
+
+.backup-table td:first-child,
+.backup-table td:nth-child(4) {
+  overflow-wrap: anywhere;
 }
 
 .table tr:last-child td {
@@ -1641,6 +1672,11 @@ th.num {
 .stack-18 {
   display: grid;
   gap: 18px;
+  min-width: 0;
+}
+
+.stack-18 > * {
+  min-width: 0;
 }
 
 .muted {

@@ -51,7 +51,7 @@ const SUPPORT_LABELS: Record<string, string> = {
   maturity: "Погашение / срок",
   broker: "Брокер",
   bank: "Банк",
-  top_positions: "Top-N позиций",
+  top_positions: "Крупнейшие позиции",
   payout: "Выплаты",
   redemption: "Погашения",
 };
@@ -64,7 +64,7 @@ const REASON_LABELS: Record<string, string> = {
   currency_not_persisted: "валюта не сохранена",
   deposit_forecast_not_concentratable: "оценка депозита не имеет датированного события",
   instrument_not_persisted: "инструмент не сохранён для события",
-  instrument_type_not_authoritative: "класс инструмента не подтверждён сохранённым enum",
+  instrument_type_not_authoritative: "класс инструмента не подтверждён сохранёнными данными",
   issuer_not_persisted: "эмитент не хранится в текущей схеме",
   maturity_not_persisted: "срок погашения не хранится в текущей схеме",
   no_dated_payouts: "датированных событий в окне нет",
@@ -96,7 +96,20 @@ function percent(value: string | null): string {
 }
 
 function supportReason(reason: string): string {
-  return REASON_LABELS[reason] ?? reason;
+  return REASON_LABELS[reason] ?? "дополнительное ограничение данных";
+}
+
+const SOURCE_KIND_LABELS: Record<string, string> = {
+  cash_balance: "Денежный остаток",
+  deposit: "Депозит",
+  expected_flow: "Ожидаемая выплата",
+  payout: "Выплата",
+  position: "Позиция",
+  property: "Недвижимость",
+};
+
+function sourceKindLabel(value: string): string {
+  return SOURCE_KIND_LABELS[value] ?? "Исключённая строка";
 }
 
 function SupportBadge({ support }: { support: RiskMetricSupport }) {
@@ -108,9 +121,7 @@ function SupportReasons({ reasons }: { reasons: string[] }) {
   return (
     <ul className="risk-allocation__reasons">
       {reasons.map((reason) => (
-        <li key={reason}>
-          <code>{reason}</code> — {supportReason(reason)}
-        </li>
+        <li key={reason}>{supportReason(reason)}</li>
       ))}
     </ul>
   );
@@ -127,8 +138,7 @@ function ExcludedIssues({ issues }: { issues: RiskSupportIssue[] }) {
             key={`${issue.source_kind}-${issue.source_id ?? "none"}-${issue.status}-${issue.reason_codes.join("|")}`}
           >
             <Badge tone={statusTone(issue.status)}>{statusLabel(issue.status)}</Badge>{" "}
-            {issue.source_kind}
-            {issue.source_id == null ? "" : ` #${issue.source_id}`} —{" "}
+            {sourceKindLabel(issue.source_kind)} —{" "}
             {issue.reason_codes.map(supportReason).join(", ")}
           </li>
         ))}
@@ -148,17 +158,21 @@ function MetricSummary({
   const allocation = kind === "allocation" ? (metric as RiskAllocationMetric) : null;
   return (
     <div className="risk-allocation__metric-summary">
-      <DataValue label="Деноминатор" meta="authoritative RUB" value={money(metric.denominator)} />
+      <DataValue
+        label="Расчётная база"
+        meta="точная сумма в рублях"
+        value={money(metric.denominator)}
+      />
       {concentration ? (
         <>
           <DataValue
-            label={`Top-${concentration.top_n}`}
+            label={`Крупнейшие ${concentration.top_n}`}
             meta="сумма выбранных строк"
             value={money(concentration.top_amount)}
           />
           <DataValue
-            label="Доля top-N"
-            meta="из ответа backend"
+            label="Доля крупнейших"
+            meta="по расчёту приложения"
             value={percent(concentration.top_share_pct)}
           />
         </>
@@ -171,7 +185,7 @@ function MetricSummary({
           />
           <DataValue
             label="Покрытие"
-            meta="из ответа backend"
+            meta="по расчёту приложения"
             value={percent(allocation.coverage_pct)}
           />
           <DataValue
@@ -244,7 +258,7 @@ function ConcentrationPanel({
       <MetricSummary kind="concentration" metric={metric} />
       {metric.is_approximate ? (
         <p className="risk-allocation__approximate">
-          Есть приблизительные строки — признак пришёл из backend.
+          Некоторые строки приблизительные — это отмечено в сохранённых данных.
         </p>
       ) : null}
       <SupportReasons reasons={metric.support.reason_codes} />
@@ -290,7 +304,7 @@ function ConcentrationPanel({
 function SupportMatrix({ support }: { support: Record<string, RiskMetricSupport> }) {
   const keys = ["currency", "issuer", "maturity", "broker", "bank"];
   return (
-    <Panel label="Ограничения контракта" title="Что backend поддерживает сейчас">
+    <Panel label="Полнота данных" title="Какие срезы доступны сейчас">
       <div className="risk-allocation__support-grid">
         {keys.map((key) => {
           const value = support[key];
@@ -307,8 +321,8 @@ function SupportMatrix({ support }: { support: Record<string, RiskMetricSupport>
         })}
       </div>
       <p className="muted risk-allocation__support-note">
-        Состояния описывают доступность данных, а не уровень риска. Сохранённая RUB-оценка позиции
-        не исключается из ликвидного капитала из-за недоступной метаинформации.
+        Состояния описывают доступность данных, а не уровень риска. Сохранённая оценка позиции в
+        рублях не исключается из ликвидного капитала из-за недоступной метаинформации.
       </p>
     </Panel>
   );
@@ -371,8 +385,8 @@ export function RiskAllocationPage() {
         <p className="eyebrow">Аналитика</p>
         <h1>Распределение и концентрация</h1>
         <p className="page-header__description">
-          Owner-facing срез по ликвидному портфелю. Все суммы, доли и состояния поддержки показаны
-          из выбранного backend-снимка; недвижимость сюда не входит.
+          Срез ликвидного портфеля для владельца. Все суммы, доли и состояния доступности относятся
+          к выбранному снимку; недвижимость сюда не входит.
         </p>
       </header>
 
@@ -410,12 +424,12 @@ export function RiskAllocationPage() {
           <DataValue
             label="Снимок"
             value={formatMonth(selectedMonth.year, selectedMonth.month)}
-            meta={`ID ${selectedMonth.id}`}
+            meta={selectedMonth.status === "closed" ? "Утверждён" : "Черновик"}
           />
           <DataValue
             label="Дата снимка"
             value={formatDate(data?.as_of_date ?? selectedMonth.snapshot_date)}
-            meta="as_of_date"
+            meta="Дата, на которую рассчитан срез"
           />
           <DataValue
             label="Ликвидные активы"
@@ -454,7 +468,7 @@ export function RiskAllocationPage() {
           <ConcentrationPanel
             label="Позиции"
             metric={data.top_positions}
-            title={`Top-${data.top_positions.top_n} позиций`}
+            title={`${data.top_positions.top_n} крупнейших позиций`}
           />
           <div className="risk-allocation__grid">
             <ConcentrationPanel

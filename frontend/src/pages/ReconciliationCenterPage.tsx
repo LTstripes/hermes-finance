@@ -110,7 +110,7 @@ function resultStatusTone(status: string): BadgeTone {
 
 function reasonLabel(reason: string | null): string {
   if (!reason) return "—";
-  return REASON_LABELS[reason] ?? reason;
+  return REASON_LABELS[reason] ?? "Требуется дополнительная проверка данных";
 }
 
 function valueOrDash(value: string | null | undefined): string {
@@ -235,12 +235,12 @@ function mappingSourceLine(providerId: string, label: string): string | null {
 }
 
 function accountDisplay(account: Account): string {
-  return `${account.name} · #${account.id}`;
+  return account.name;
 }
 
 function instrumentDisplay(instrument: Instrument): string {
   const identity = instrument.isin ?? instrument.ticker;
-  return `${instrument.name}${identity ? ` · ${identity}` : ""} · #${instrument.id}`;
+  return `${instrument.name}${identity ? ` · ${identity}` : ""}`;
 }
 
 function MappingPanel({
@@ -277,8 +277,8 @@ function MappingPanel({
   return (
     <Panel label="Сопоставление" title="Требуется явное решение владельца">
       <p className="reconciliation-center__mapping-copy">
-        Выбери существующий локальный счёт или инструмент только для строк, которые backend отметил
-        как нерешённые. Эти значения временные: сохранения и автосопоставления здесь нет.
+        Выбери существующий локальный счёт или инструмент только для строк, которые приложение
+        отметило как нерешённые. Эти значения временные: сохранения и автосопоставления здесь нет.
       </p>
       <div className="reconciliation-center__mapping-grid">
         {accountRows.length > 0 ? (
@@ -389,15 +389,12 @@ function IdentityCell({ row }: { row: ReconciliationRow }) {
       <strong>{row.account_name ?? "Счёт не сопоставлен"}</strong>
       <span>{row.instrument_name ?? "Инструмент не сопоставлен"}</span>
       {instrumentIdentity ? <span className="muted">{instrumentIdentity}</span> : null}
-      <span className="reconciliation-center__identity-meta">
-        Локально: {row.account_id == null ? "—" : `счёт #${row.account_id}`} ·{" "}
-        {row.instrument_id == null ? "инструмент —" : `инструмент #${row.instrument_id}`}
-      </span>
       <span className="reconciliation-center__identity-provider">
-        Источник: {valueOrDash(row.provider_account_id)} / {valueOrDash(row.provider_instrument_id)}
+        Идентификаторы источника: {valueOrDash(row.provider_account_id)} /{" "}
+        {valueOrDash(row.provider_instrument_id)}
       </span>
       <details className="reconciliation-center__fingerprint">
-        <summary>Fingerprint</summary>
+        <summary>Технический ключ строки</summary>
         <code>{valueOrDash(row.fingerprint)}</code>
       </details>
     </div>
@@ -492,7 +489,7 @@ function ReconciliationTable({
         <EmptyState
           description={
             result.rows.length === 0
-              ? "Backend не вернул сравнимых строк для этого результата. Проверь причины и диагностику ниже."
+              ? "Приложение не получило сравнимых строк. Проверь причины и при необходимости открой диагностику ниже."
               : "В выбранном фильтре строк нет."
           }
           inline
@@ -517,7 +514,6 @@ function ReconciliationTable({
                 <Td>
                   <div className="reconciliation-center__state">
                     <Badge tone={rowStateTone(row.state)}>{rowStateLabel(row.state)}</Badge>
-                    <code>{row.state}</code>
                   </div>
                 </Td>
                 <Td>
@@ -538,7 +534,7 @@ function ReconciliationTable({
                     {row.warnings.length > 0 ? (
                       <ul>
                         {row.warnings.map((warning) => (
-                          <li key={warning}>{warning}</li>
+                          <li key={warning}>{reasonLabel(warning)}</li>
                         ))}
                       </ul>
                     ) : null}
@@ -576,91 +572,96 @@ function DiagnosticPanel({ result }: { result: BrokerReconciliationResponse }) {
   }
 
   return (
-    <Panel label="Диагностика" title="Совместимость, fingerprint и свежесть">
-      <div className="reconciliation-center__diagnostic-grid">
-        <DataValue label="Провайдер" value={valueOrDash(result.provider)} />
-        <DataValue label="Статус снимка" value={valueOrDash(result.snapshot_status)} />
-        <DataValue
-          label="Снимок устарел"
-          value={result.stale ? "Да" : "Нет"}
-          className={result.stale ? "reconciliation-center__diagnostic-value--bad" : ""}
-        />
-        <DataValue label="Совместимость" value={valueOrDash(result.compatibility_state)} />
-        <DataValue
-          label="Compatibility fingerprint"
-          value={valueOrDash(result.compatibility_fingerprint)}
-        />
-        <DataValue label="Snapshot fingerprint" value={valueOrDash(result.snapshot_fingerprint)} />
-        <DataValue label="Источник наблюдения" value={formatDateTime(result.source_as_of)} />
-        <DataValue label="Получено" value={formatDateTime(result.captured_at)} />
-        <DataValue label="API doc version" value={valueOrDash(diagnostic.api_doc_version)} />
-        <DataValue
-          label="Alfa PRO version"
-          value={valueOrDash(diagnostic.observed_alfa_pro_version)}
-        />
-        <DataValue
-          label="Observed API version"
-          value={valueOrDash(diagnostic.observed_api_version)}
-        />
-        <DataValue
-          label="Observed protocol version"
-          value={valueOrDash(diagnostic.observed_protocol_version)}
-        />
-        <DataValue
-          label="Protocol / layout"
-          value={`${diagnostic.protocol_family} / ${diagnostic.layout_family}`}
-        />
-        <DataValue label="Класс сбоя" value={valueOrDash(diagnostic.failure_class)} />
-        <DataValue
-          label="Безопасный артефакт"
-          value={diagnostic.safe_artifact ? "Да" : "Нет"}
-          className={diagnostic.safe_artifact ? "" : "reconciliation-center__diagnostic-value--bad"}
-        />
-      </div>
-
-      <div className="reconciliation-center__diagnostic-reasons">
-        <div>
-          <strong>Коды причин</strong>
-          <p>
-            {diagnostic.failure_codes.length > 0 ? diagnostic.failure_codes.join(" · ") : "Нет"}
-          </p>
+    <details className="reconciliation-center__diagnostic-disclosure">
+      <summary>Техническая диагностика</summary>
+      <Panel label="По запросу" title="Совместимость и технические сведения">
+        <div className="reconciliation-center__diagnostic-grid">
+          <DataValue label="Источник" value={valueOrDash(result.provider)} />
+          <DataValue
+            label="Технический статус снимка"
+            value={valueOrDash(result.snapshot_status)}
+          />
+          <DataValue
+            label="Снимок устарел"
+            value={result.stale ? "Да" : "Нет"}
+            className={result.stale ? "reconciliation-center__diagnostic-value--bad" : ""}
+          />
+          <DataValue label="Совместимость" value={valueOrDash(result.compatibility_state)} />
+          <DataValue
+            label="Ключ совместимости"
+            value={valueOrDash(result.compatibility_fingerprint)}
+          />
+          <DataValue label="Ключ снимка" value={valueOrDash(result.snapshot_fingerprint)} />
+          <DataValue label="Источник наблюдения" value={formatDateTime(result.source_as_of)} />
+          <DataValue label="Получено" value={formatDateTime(result.captured_at)} />
+          <DataValue label="Версия описания API" value={valueOrDash(diagnostic.api_doc_version)} />
+          <DataValue
+            label="Версия Alfa PRO"
+            value={valueOrDash(diagnostic.observed_alfa_pro_version)}
+          />
+          <DataValue label="Версия API" value={valueOrDash(diagnostic.observed_api_version)} />
+          <DataValue
+            label="Версия протокола"
+            value={valueOrDash(diagnostic.observed_protocol_version)}
+          />
+          <DataValue
+            label="Семейство протокола и структуры"
+            value={`${diagnostic.protocol_family} / ${diagnostic.layout_family}`}
+          />
+          <DataValue label="Класс сбоя" value={valueOrDash(diagnostic.failure_class)} />
+          <DataValue
+            label="Безопасный артефакт"
+            value={diagnostic.safe_artifact ? "Да" : "Нет"}
+            className={
+              diagnostic.safe_artifact ? "" : "reconciliation-center__diagnostic-value--bad"
+            }
+          />
         </div>
-        <div>
-          <strong>Наблюдения по сущностям</strong>
-          <p>
-            {diagnostic.entity_status.length > 0 ? diagnostic.entity_status.join(" · ") : "Нет"}
-            {diagnostic.entity_counts.length > 0
-              ? ` · ${diagnostic.entity_counts.join(" · ")}`
-              : ""}
-          </p>
-        </div>
-      </div>
 
-      <details className="reconciliation-center__diagnostic-details">
-        <summary>Показать безопасный диагностический текст</summary>
-        {safeToCopy ? (
-          <>
-            <p className="muted">
-              Здесь только принятые sanitised-поля. Сырые payload, credentials и runtime paths не
-              показываются.
+        <div className="reconciliation-center__diagnostic-reasons">
+          <div>
+            <strong>Коды причин</strong>
+            <p>
+              {diagnostic.failure_codes.length > 0 ? diagnostic.failure_codes.join(" · ") : "Нет"}
             </p>
-            <pre>{result.diagnostic_report}</pre>
-            <Button onClick={() => void copyDiagnostic()} size="sm" type="button">
-              {copied ? "Скопировано" : "Скопировать диагностику"}
-            </Button>
-            {copyError ? (
-              <span className="reconciliation-center__copy-error" role="alert">
-                Не удалось скопировать. Выдели текст вручную.
-              </span>
-            ) : null}
-          </>
-        ) : (
-          <p className="muted">
-            Диагностический текст скрыт: backend не подтвердил безопасный артефакт.
-          </p>
-        )}
-      </details>
-    </Panel>
+          </div>
+          <div>
+            <strong>Наблюдения по сущностям</strong>
+            <p>
+              {diagnostic.entity_status.length > 0 ? diagnostic.entity_status.join(" · ") : "Нет"}
+              {diagnostic.entity_counts.length > 0
+                ? ` · ${diagnostic.entity_counts.join(" · ")}`
+                : ""}
+            </p>
+          </div>
+        </div>
+
+        <details className="reconciliation-center__diagnostic-details">
+          <summary>Показать безопасный диагностический текст</summary>
+          {safeToCopy ? (
+            <>
+              <p className="muted">
+                Здесь только очищенные технические поля. Сырые ответы, учётные данные и локальные
+                пути не показываются.
+              </p>
+              <pre>{result.diagnostic_report}</pre>
+              <Button onClick={() => void copyDiagnostic()} size="sm" type="button">
+                {copied ? "Скопировано" : "Скопировать диагностику"}
+              </Button>
+              {copyError ? (
+                <span className="reconciliation-center__copy-error" role="alert">
+                  Не удалось скопировать. Выдели текст вручную.
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <p className="muted">
+              Диагностический текст скрыт: приложение не подтвердило безопасность данных.
+            </p>
+          )}
+        </details>
+      </Panel>
+    </details>
   );
 }
 
@@ -721,19 +722,19 @@ function ResultView({
           </Badge>
         }
         label="Результат"
-        title="Read-only сверка"
+        title="Сверка без изменений данных"
       >
         <ResultSummary result={result} />
         <p className="reconciliation-center__read-only-note">
           <strong>Только чтение.</strong> Результат не сохраняется и не содержит операций
           применения. Цена брокера, учётная цена, оценка, НКД и P&amp;L показаны только как
-          comparison-only наблюдения.
+          наблюдения только для сравнения.
         </p>
         {unavailableMessage ? (
           <div className="reconciliation-center__gate" role="status">
             <Badge tone="stale">Сверка неприменима</Badge>
             <div>
-              <strong>Сверка закрыта fail-closed</strong>
+              <strong>Сверка остановлена из соображений безопасности</strong>
               <p>{unavailableMessage}</p>
             </div>
           </div>
@@ -741,15 +742,15 @@ function ResultView({
         {mappingDirty && !unavailable ? (
           <div className="inline-alert" role="status">
             Сопоставление изменилось. Повтори явную проверку, чтобы увидеть результат для нового
-            mapping.
+            сопоставления.
           </div>
         ) : null}
         {result.warnings.length > 0 ? (
           <div className="reconciliation-center__warnings">
-            <strong>Предупреждения backend</strong>
+            <strong>Предупреждения источника</strong>
             <ul>
               {result.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
+                <li key={warning}>{reasonLabel(warning)}</li>
               ))}
             </ul>
           </div>
@@ -860,14 +861,14 @@ export function ReconciliationCenterPage() {
         <h1>Сверка портфеля</h1>
         <p className="page-header__description">
           Нормализованное сравнение локального среза с наблюдением брокера. Открытие страницы не
-          вызывает provider: запрос выполняется только по явной кнопке владельца.
+          обращается к внешнему источнику: запрос выполняется только по явной кнопке владельца.
         </p>
       </header>
 
-      <Panel label="Owner action" title="Запросить read-only снимок">
+      <Panel label="Явное действие" title="Запросить снимок только для чтения">
         <p className="reconciliation-center__action-copy">
-          Выбери отчётный месяц и нажми кнопку. Используется существующий accepted reconciliation
-          path; база данных не изменяется, фонового refresh нет.
+          Выбери отчётный месяц и нажми кнопку. Используется проверенный сценарий сверки; база
+          данных не изменяется, фонового обновления нет.
         </p>
         <div className="reconciliation-center__action-grid">
           <Field htmlFor="reconciliation-month" label="Отчётный месяц">
@@ -934,9 +935,9 @@ export function ReconciliationCenterPage() {
       ) : (
         <Panel label="Результат" title="Сверка ещё не запрашивалась">
           <EmptyState
-            description="Страница готова. Выбери месяц и запусти owner-triggered проверку, когда понадобится. Простое открытие не обращается к provider."
+            description="Страница готова. Выбери месяц и запусти проверку, когда понадобится. Простое открытие не обращается к внешнему источнику."
             inline
-            title="Нет provider-снимка"
+            title="Нет снимка источника"
           />
         </Panel>
       )}

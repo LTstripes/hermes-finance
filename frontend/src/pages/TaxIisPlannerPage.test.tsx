@@ -124,10 +124,13 @@ describe("TaxIisPlannerPage", () => {
 
     render(<TaxIisPlannerPage />);
 
-    expect(await screen.findAllByText(/salary_tax_history_incomplete/)).not.toHaveLength(0);
     expect(
-      screen.getAllByText(/gross YTD, текущая ступень и расстояние до порога недоступны/i),
+      await screen.findAllByText(
+        /Накопленный облагаемый доход, текущая ступень и расстояние до порога недоступны/i,
+      ),
     ).not.toHaveLength(0);
+    expect(screen.queryByText(/salary_tax_history_incomplete/)).toBeNull();
+    expect(screen.queryByText(/gross YTD|marginal|backend/i)).toBeNull();
     expect(screen.getByText("Synthetic IIS")).toBeInTheDocument();
     expect(screen.queryByText(/2\s*500\s*000/)).toBeNull();
   });

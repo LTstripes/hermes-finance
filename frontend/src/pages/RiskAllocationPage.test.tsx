@@ -174,7 +174,9 @@ describe("RiskAllocationPage", () => {
   it("renders backend amounts, percentages, partial coverage and support states", async () => {
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Top-5 позиций" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "5 крупнейших позиций" }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/75\s*000\s*₽/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("75,00%").length).toBeGreaterThan(0);
     expect(screen.getByText("Неизвестный класс активов")).toBeInTheDocument();
@@ -183,6 +185,8 @@ describe("RiskAllocationPage", () => {
     expect(screen.getAllByText("Недоступно").length).toBeGreaterThan(0);
     expect(screen.getByText("Валюта")).toBeInTheDocument();
     expect(screen.getByText("Неизвестно")).toBeInTheDocument();
+    expect(screen.queryAllByText(/issuer_not_persisted|currency_not_persisted/)).toHaveLength(0);
+    expect(screen.queryByText(/owner-facing|backend|as_of_date|ID 2/i)).toBeNull();
     expect(getRiskAllocation).toHaveBeenCalledWith(2, 5, "v1", expect.any(AbortSignal));
   });
 

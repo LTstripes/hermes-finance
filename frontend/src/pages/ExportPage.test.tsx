@@ -78,6 +78,8 @@ describe("ExportPage", () => {
     expect(
       screen.getByText("Скачай отчёт в Markdown или JSON для выбранного отчётного месяца."),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Дата среза фиксируется приложением/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/backend|metadata\.as_of_date|Готовим bundle/i);
     expect(await screen.findByRole("button", { name: "Скачать Markdown" })).toBeEnabled();
     await user.selectOptions(screen.getByLabelText("Месяц отчёта"), "1");
     await user.click(screen.getByRole("button", { name: "Скачать Markdown" }));

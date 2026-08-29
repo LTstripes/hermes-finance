@@ -283,6 +283,11 @@ describe("ReconciliationCenterPage", () => {
     expect(screen.getAllByText("Оценка брокера:").length).toBeGreaterThan(0);
     expect(screen.getAllByText("только сравнение").length).toBeGreaterThan(0);
     expect(screen.getByText("Нельзя считать сопоставление безопасным")).toBeInTheDocument();
+    expect(screen.queryByText("matched")).toBeNull();
+    expect(screen.queryByText(/Локально: счёт #1/)).toBeNull();
+    expect(screen.getByText("Техническая диагностика")).toBeVisible();
+    expect(screen.getByText("Версия API", { exact: true })).not.toBeVisible();
+    expect(screen.queryByText(/Owner action|Read-only|comparison-only|Backend/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /Применить/i })).not.toBeInTheDocument();
     expect(previewBrokerReconciliation).toHaveBeenCalledWith(7, { accounts: [], instruments: [] });
   });
@@ -404,7 +409,7 @@ describe("ReconciliationCenterPage", () => {
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
 
     expect(await screen.findByText("Не применяется")).toBeInTheDocument();
-    expect(screen.getByText("Сверка закрыта fail-closed")).toBeInTheDocument();
+    expect(screen.getByText("Сверка остановлена из соображений безопасности")).toBeInTheDocument();
     expect(screen.getByText(message)).toBeInTheDocument();
   });
 });
