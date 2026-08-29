@@ -55,18 +55,18 @@ Active applied T-Invest payout events for the month.
 
 ### `alfa_pro_positions`
 
-Alfa PRO snapshot observations are **transient** on current `r07`. Hermes does not persist `source_as_of`
-or broker-snapshot provenance after quantity apply (ADR 0013 persistence gate).
-[ADR 0016](adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md) specifies the future
-minimum baseline provenance; this family must keep `unknown` /
-`alfa_pro_observation_not_persisted` until that implementation slice lands.
+Reads persisted owner-approved baseline provenance (ADR 0016 §8). `source_as_of` is the
+observation clock. `confirmed_at` is import/apply time and is **not** freshness.
+`baseline_date`, `snapshot_date`, and `updated_at` are not freshness clocks.
 
-- Family status is always `unknown`.
-- Reason `alfa_pro_observation_not_persisted`.
-- `providers` is empty unless a persisted month-scoped audit marker already proves
-  Alfa PRO participation. Capability/configuration alone must not list `alfa_pro`
-  or contribute it to `multiple_providers`.
-- Do not substitute `snapshot_date`, `updated_at`, or apply time as Alfa PRO freshness.
+- No persisted baseline for the month → family status `unknown`, reason
+  `alfa_pro_observation_not_persisted`. `providers` stays empty so capability alone
+  cannot list `alfa_pro` or create `multiple_providers`.
+- Persisted baseline present → family status `not_applicable` (holdings observation is
+  not quote-stale). Reasons `alfa_pro_baseline_present` and
+  `alfa_pro_observation_not_freshness_classified`. `providers` lists the baseline
+  provider (`alfa_pro`).
+- Do not classify this family current/stale/unavailable by the quote 8/30-day window.
 
 ### `alfa_statement_payouts`
 
@@ -125,6 +125,8 @@ informational vs warning only. This endpoint never promotes a warning to a close
 | `payout_none_for_month` | info | No applied T-Invest payouts in this month |
 | `payout_not_freshness_classified` | info | Payout events are not quote-stale |
 | `alfa_pro_observation_not_persisted` | info | Cannot classify Alfa PRO observation time |
+| `alfa_pro_baseline_present` | info | Owner-approved Alfa PRO current-state baseline is persisted for the month |
+| `alfa_pro_observation_not_freshness_classified` | info | Persisted `source_as_of` is observation time, not quote freshness |
 | `statement_event_present` | info | Active statement events exist for the month |
 | `statement_none_for_month` | info | No active statement events in this month |
 | `statement_not_freshness_classified` | info | Statement events are not quote-stale |

@@ -6,7 +6,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0035_broker_identity_mappings"
+REVISION = "0036_broker_baseline_provenance"
 PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
 
@@ -1746,5 +1746,84 @@ def test_broker_identity_mappings_migration_is_additive_and_empty(tmp_path: Path
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         assert "broker_identity_mappings" not in tables
+    finally:
+        connection.close()
+
+
+def test_broker_baseline_provenance_migration_is_additive_and_empty(tmp_path: Path) -> None:
+    database_path = tmp_path / "broker-baseline-provenance.db"
+    previous = run_alembic(database_path, "upgrade", "0035_broker_identity_mappings")
+    assert previous.returncode == 0, previous.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_baseline_applies" not in tables
+        assert "broker_baseline_apply_items" not in tables
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(broker_baseline_applies)")
+        ] == [
+            "id",
+            "provider",
+            "reporting_month_id",
+            "baseline_date",
+            "source_as_of",
+            "captured_at",
+            "confirmed_at",
+            "compatibility_fingerprint",
+            "apply_fingerprint",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(broker_baseline_apply_items)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "baseline_apply_id",
+            "position_snapshot_id",
+            "action",
+            "quantity",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM broker_baseline_applies").fetchone() == (0,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM broker_baseline_apply_items"
+        ).fetchone() == (0,)
+        apply_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'broker_baseline_applies'"
+        ).fetchone()[0]
+        item_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'broker_baseline_apply_items'"
+        ).fetchone()[0]
+        assert "Price" not in apply_sql
+        assert "UchPrice" not in apply_sql
+        assert "NKD" not in apply_sql
+        assert "ticker" not in item_sql.lower()
+        assert "REFERENCES position_snapshots" not in item_sql
+        item_fks = list(connection.execute("PRAGMA foreign_key_list(broker_baseline_apply_items)"))
+        assert {row[2] for row in item_fks} == {"reporting_months", "broker_baseline_applies"}
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0035_broker_identity_mappings")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_baseline_applies" not in tables
+        assert "broker_baseline_apply_items" not in tables
+        assert "broker_identity_mappings" in tables
     finally:
         connection.close()
