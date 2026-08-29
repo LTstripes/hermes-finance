@@ -15,6 +15,7 @@ var tests = new (string Name, Action Run)[]
     ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
+    ("accepts an annotated release tag that peels to HEAD", AcceptsAnnotatedReleaseTag),
 };
 
 var failures = 0;
@@ -236,6 +237,54 @@ static void BindsValidatedDatabaseToChildProcess()
     }
 }
 
+static void AcceptsAnnotatedReleaseTag()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-git-identity-{Guid.NewGuid():N}");
+    var dataDir = Path.Combine(root, "data");
+    var database = Path.Combine(dataDir, "finance.db");
+    try
+    {
+        CreateRuntimeLayout(root);
+        Directory.CreateDirectory(dataDir);
+        RunGit(root, "init");
+        RunGit(root, "config", "--local", "user.name", "Hermes Safety Test");
+        RunGit(root, "config", "--local", "user.email", "hermes-safety-test");
+        RunGit(root, "add", ".");
+        RunGit(root, "commit", "-m", "initial synthetic runtime");
+        var firstCommit = RunGit(root, "rev-parse", "HEAD");
+        RunGit(root, "tag", "-a", "annotated-old", "-m", "old synthetic release", firstCommit);
+
+        File.WriteAllText(Path.Combine(root, "identity-marker.txt"), "synthetic second commit");
+        RunGit(root, "add", ".");
+        RunGit(root, "commit", "-m", "current synthetic runtime");
+        var head = RunGit(root, "rev-parse", "HEAD");
+        var branch = RunGit(root, "symbolic-ref", "--short", "HEAD");
+        RunGit(root, "tag", "lightweight-current");
+        RunGit(root, "tag", "-a", "v0.6.3", "-m", "current synthetic release");
+
+        foreach (var expectedRef in new[]
+        {
+            branch,
+            "refs/tags/lightweight-current",
+            "refs/tags/v0.6.3",
+        })
+        {
+            var profile = StableProfile(root, dataDir, database, expectedRef);
+            var resolvedHead = ProfileValidator.AssertGitIdentity(profile, root, root);
+            Assert(resolvedHead.Equals(head, StringComparison.OrdinalIgnoreCase), $"Expected {expectedRef} to resolve to HEAD.");
+        }
+
+        var mismatched = StableProfile(root, dataDir, database, "refs/tags/annotated-old");
+        AssertThrowsMessage(
+            () => ProfileValidator.AssertGitIdentity(mismatched, root, root),
+            "Checkout identity does not match this profile.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
 static LauncherConfig Config(string firstType, string secondType) => new()
 {
     Version = 1,
@@ -245,6 +294,18 @@ static LauncherConfig Config(string firstType, string secondType) => new()
         new LauncherProfile { Id = "first", DisplayName = "First", Type = firstType, Checkout = "C:\\stable", ExpectedRef = "HEAD", DataDir = "C:\\stable\\data", Database = "C:\\stable\\data\\finance.db", OpenBrowser = false },
         new LauncherProfile { Id = "second", DisplayName = "Second", Type = secondType, Checkout = "C:\\preview", ExpectedRef = "HEAD", DataDir = "C:\\preview\\data", Database = "C:\\preview\\data\\finance.db", OpenBrowser = false },
     ],
+};
+
+static LauncherProfile StableProfile(string checkout, string dataDir, string database, string expectedRef) => new()
+{
+    Id = "stable",
+    DisplayName = "Stable",
+    Type = "stable",
+    Checkout = checkout,
+    ExpectedRef = expectedRef,
+    DataDir = dataDir,
+    Database = database,
+    OpenBrowser = false,
 };
 
 static LauncherProfile PreviewProfile(string dataDir, string database) => new()
@@ -306,6 +367,44 @@ static void CreateRuntimeLayout(string root)
     File.WriteAllText(Path.Combine(root, "backend", "pyproject.toml"), "[project]");
     File.WriteAllText(Path.Combine(root, "frontend", "package.json"), "{}");
     File.WriteAllText(Path.Combine(root, ".gitignore"), "data/\n");
+}
+
+static string RunGit(string workingDirectory, params string[] arguments)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = "git",
+        WorkingDirectory = workingDirectory,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    foreach (var argument in arguments)
+    {
+        startInfo.ArgumentList.Add(argument);
+    }
+
+    using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start synthetic git process.");
+    var standardOutput = process.StandardOutput.ReadToEnd();
+    var standardError = process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    Assert(process.ExitCode == 0, $"Synthetic git command failed: {standardError.Trim()} {standardOutput.Trim()}".Trim());
+    return standardOutput.Trim();
+}
+
+static void DeleteSyntheticTree(string root)
+{
+    if (!Directory.Exists(root))
+    {
+        return;
+    }
+
+    foreach (var entry in new DirectoryInfo(root).EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+    {
+        entry.Attributes = FileAttributes.Normal;
+    }
+    Directory.Delete(root, recursive: true);
 }
 
 static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
