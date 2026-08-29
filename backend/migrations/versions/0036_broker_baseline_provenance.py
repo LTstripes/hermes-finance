@@ -56,6 +56,7 @@ def upgrade() -> None:
         sa.Column("reporting_month_id", sa.Integer(), nullable=False),
         sa.Column("baseline_apply_id", sa.Integer(), nullable=False),
         sa.Column("position_snapshot_id", sa.Integer(), nullable=False),
+        # Historical applied id only: no FK, so draft PositionSnapshot delete stays allowed.
         sa.Column("action", sa.String(length=16), nullable=False),
         sa.Column("quantity", sa.Numeric(18, 6), nullable=False),
         sa.CheckConstraint(
@@ -75,11 +76,6 @@ def upgrade() -> None:
             ["baseline_apply_id"],
             ["broker_baseline_applies.id"],
             ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["position_snapshot_id"],
-            ["position_snapshots.id"],
-            ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id"),
     )

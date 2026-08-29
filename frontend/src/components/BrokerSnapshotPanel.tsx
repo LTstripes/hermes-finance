@@ -124,9 +124,14 @@ function completeDecision(row: BrokerPositionRow, decision: LocalDecision | unde
   const replaceAverage = decision.averageCost === "replace";
   const replaceMarket = decision.marketPrice === "replace";
   const replaceAccrued = decision.accruedInterest === "replace";
-  if (!decision.averageCost || !decision.marketPrice || !decision.accruedInterest) return false;
-  if (row.status === "provider_only" && (!replaceAverage || !replaceMarket || !replaceAccrued))
+  const create = row.status === "provider_only";
+  if (!decision.averageCost || !decision.marketPrice) return false;
+  if (create) {
+    if (!replaceAverage || !replaceMarket) return false;
+    if (decision.accruedInterest === "keep_existing") return false;
+  } else if (!decision.accruedInterest) {
     return false;
+  }
   if (replaceAverage && !validAmount(decision.averageValue)) return false;
   if (
     replaceMarket &&
@@ -155,7 +160,9 @@ function selectionFor(row: BrokerPositionRow, decision: LocalDecision): BrokerAp
             price_source: decision.marketSource,
           }
         : { action: "keep_existing" },
-    accrued_interest: amount(decision.accruedInterest, decision.accruedValue),
+    ...(decision.accruedInterest
+      ? { accrued_interest: amount(decision.accruedInterest, decision.accruedValue) }
+      : {}),
   } as BrokerApplySelection;
 }
 
@@ -732,8 +739,12 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                                 })
                               }
                             >
-                              <option value="">— выбери —</option>
-                              <option value="keep_existing">Оставить текущую</option>
+                              <option value="">
+                                {row.status === "provider_only" ? "— не задавать —" : "— выбери —"}
+                              </option>
+                              {row.status === "provider_only" ? null : (
+                                <option value="keep_existing">Оставить текущую</option>
+                              )}
                               <option value="replace">Заменить локальным значением</option>
                             </select>
                           </label>
@@ -764,7 +775,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
         open={confirmOpen}
         busy={busy}
         title="Применить базовый срез?"
-        description={`В черновик месяца на ${baselineDate || "дату месяца"} будут записаны только ${selectedRows.length} выбранных количеств. Цена, НКД и P&L брокера не копируются.`}
+        description={`В черновик месяца на ${baselineDate || "дату месяца"} будут записаны только ${selectedRows.length} выбранных количеств. Новые сопоставления выбранных строк сохранятся вместе с количествами. Цена, НКД и P&L брокера не копируются.`}
         confirmLabel="Подтвердить базовый срез"
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => {

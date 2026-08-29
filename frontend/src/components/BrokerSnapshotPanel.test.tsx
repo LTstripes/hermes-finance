@@ -92,6 +92,9 @@ function preview(overrides: Record<string, unknown> = {}) {
 
 describe("BrokerSnapshotPanel explicit owner decisions", () => {
   beforeEach(() => {
+    vi.mocked(previewBrokerSnapshot).mockReset();
+    vi.mocked(applyBrokerBaseline).mockReset();
+    vi.mocked(listBrokerIdentityMappings).mockReset();
     vi.mocked(previewBrokerSnapshot).mockResolvedValue(preview());
     vi.mocked(listBrokerIdentityMappings).mockResolvedValue([]);
     vi.mocked(revokeBrokerIdentityMapping).mockResolvedValue({
@@ -261,6 +264,55 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeDisabled();
+  });
+
+  it("allows provider-only create without accrued interest and states mapping persist", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        positions: [
+          {
+            ...matched,
+            status: "provider_only",
+            hermes_quantity: null,
+            fingerprint: "fp-create",
+          },
+        ],
+      }),
+    );
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    await user.click(await screen.findByRole("checkbox", { name: /Выбрать позицию/ }));
+    await user.selectOptions(screen.getByLabelText(/Решение средней стоимости/), "replace");
+    await user.type(screen.getByLabelText(/Локальная средняя стоимость/), "100.00");
+    await user.selectOptions(screen.getByLabelText(/Решение рыночной цены/), "replace");
+    await user.type(screen.getByLabelText(/Локальная рыночная цена/), "150.00");
+    await user.type(screen.getByLabelText(/Дата локальной цены/), "2026-08-31");
+    await user.selectOptions(screen.getByLabelText(/Источник локальной цены/), "manual");
+    const accrued = screen.getByLabelText(/Решение НКД/) as HTMLSelectElement;
+    expect(Array.from(accrued.options, (option) => option.value)).toEqual(["", "replace"]);
+    expect(accrued).toHaveDisplayValue("— не задавать —");
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Применить выбранный базовый срез" }));
+    expect(
+      screen.getByText(/Новые сопоставления выбранных строк сохранятся вместе с количествами/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Подтвердить базовый срез" }));
+    await waitFor(() => expect(applyBrokerBaseline).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(applyBrokerBaseline).mock.calls[0][1];
+    expect(payload.selections).toHaveLength(1);
+    expect(payload.selections[0]).toMatchObject({
+      action: "create",
+      average_cost: { action: "replace", value: "100.00" },
+      market_price: {
+        action: "replace",
+        market_price_per_unit: "150.00",
+        price_date: "2026-08-31",
+        price_source: "manual",
+      },
+    });
+    expect(payload.selections[0].accrued_interest).toBeUndefined();
   });
 
   it("shows reused mappings and disables IsMoney rows", async () => {

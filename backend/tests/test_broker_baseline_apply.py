@@ -69,7 +69,10 @@ from hermes_finance.services.freshness_provenance import (
     build_freshness_provenance_summary,
 )
 from hermes_finance.services.instruments import create_instrument
-from hermes_finance.services.positions import get_position_snapshot_by_key
+from hermes_finance.services.positions import (
+    delete_position_snapshot,
+    get_position_snapshot_by_key,
+)
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 SYN_ACCOUNT = "SYN-ACCOUNT-001"
@@ -688,6 +691,55 @@ def test_new_unmapped_instrument_is_not_created(tmp_path: Path) -> None:
     assert preview.positions == ()
     assert all(row.status.value != "matched" for row in preview.instruments)
     assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 0
+    session.close()
+
+
+def test_draft_position_delete_keeps_baseline_provenance_queryable(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    ids = _context(session)
+    snapshot = _snapshot()
+    mapping = account_mapping(ids["account_id"])
+    fingerprint = reviewed_fingerprint(
+        session,
+        snapshot,
+        month_id=ids["month_id"],
+        request=mapping,
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+    )
+    result = apply_baseline(
+        session,
+        FakeSnapshotProvider(snapshot),
+        month_id=ids["month_id"],
+        mapping=mapping,
+        selections=(selection_create(ids["account_id"], ids["instrument_id"], fingerprint),),
+    )
+    assert result.success is True
+    snapshot_id = result.items[0].position_snapshot_id
+    provenance_id = result.provenance_id
+    assert provenance_id is not None
+    delete_position_snapshot(session, snapshot_id)
+    assert session.get(PositionSnapshot, snapshot_id) is None
+    header = session.get(BrokerBaselineApply, provenance_id)
+    assert header is not None
+    item = session.scalar(
+        select(BrokerBaselineApplyItem).where(
+            BrokerBaselineApplyItem.baseline_apply_id == provenance_id
+        )
+    )
+    assert item is not None
+    assert item.position_snapshot_id == snapshot_id
+    summary = build_freshness_provenance_summary(
+        session,
+        ids["month_id"],
+        today=date(2026, 8, 31),
+        generated_at=datetime(2026, 8, 31, 18, tzinfo=UTC),
+    )
+    family = next(
+        row for row in summary.families if row.family_id is FreshnessFamilyId.ALFA_PRO_POSITIONS
+    )
+    assert family.status is FreshnessStatus.NOT_APPLICABLE
+    assert family.providers == (ALFA_PRO_PROVIDER,)
     session.close()
 
 

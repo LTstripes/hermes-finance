@@ -1808,6 +1808,9 @@ def test_broker_baseline_provenance_migration_is_additive_and_empty(tmp_path: Pa
         assert "UchPrice" not in apply_sql
         assert "NKD" not in apply_sql
         assert "ticker" not in item_sql.lower()
+        assert "REFERENCES position_snapshots" not in item_sql
+        item_fks = list(connection.execute("PRAGMA foreign_key_list(broker_baseline_apply_items)"))
+        assert {row[2] for row in item_fks} == {"reporting_months", "broker_baseline_applies"}
     finally:
         connection.close()
 

@@ -487,7 +487,12 @@ class BrokerBaselineApply(Base):
 
 
 class BrokerBaselineApplyItem(Base):
-    """Selected-row evidence for one committed baseline apply (ADR 0016 §8)."""
+    """Selected-row evidence for one committed baseline apply (ADR 0016 §8).
+
+    ``position_snapshot_id`` is the applied snapshot id at commit time. It is
+    not a live FK: provenance must not block ordinary draft PositionSnapshot
+    delete/replace.
+    """
 
     __tablename__ = "broker_baseline_apply_items"
     __table_args__ = (
@@ -509,9 +514,7 @@ class BrokerBaselineApplyItem(Base):
     baseline_apply_id: Mapped[int] = mapped_column(
         ForeignKey("broker_baseline_applies.id", ondelete="CASCADE"), nullable=False
     )
-    position_snapshot_id: Mapped[int] = mapped_column(
-        ForeignKey("position_snapshots.id", ondelete="RESTRICT"), nullable=False
-    )
+    position_snapshot_id: Mapped[int] = mapped_column(Integer, nullable=False)
     action: Mapped[str] = mapped_column(String(16), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
 
