@@ -6,6 +6,7 @@ using System.Text;
 
 var tests = new (string Name, Action Run)[]
 {
+    ("loads the canonical config example", LoadsCanonicalConfigExample),
     ("rejects unknown config fields", RejectsUnknownConfigFields),
     ("requires exactly one stable profile", RequiresExactlyOneStableProfile),
     ("rejects preview aliases to the production database before startup", RejectsUnsafeTupleAliases),
@@ -38,6 +39,24 @@ static void RejectsUnknownConfigFields()
         {"version":1,"canonical_production":{"checkout":"C:\\stable","data_dir":"C:\\stable\\data","database":"C:\\stable\\data\\finance.db"},"profiles":[],"token":"forbidden"}
         """;
     AssertThrows<JsonException>(() => JsonSerializer.Deserialize<LauncherConfig>(json, LauncherConfig.JsonOptions));
+}
+
+static void LoadsCanonicalConfigExample()
+{
+    var configPath = Path.Combine(AppContext.BaseDirectory, "config.example.json");
+    var config = LauncherConfig.Load(configPath);
+
+    Assert(config.Version == 1, "The canonical config example must declare schema version 1.");
+    Assert(config.CanonicalProduction.Checkout == "<absolute-stable-checkout>", "The canonical production checkout must use the documented JSON name.");
+    Assert(config.CanonicalProduction.DataDir == "<absolute-stable-data-dir>", "The canonical production data directory must use the documented JSON name.");
+    Assert(config.CanonicalProduction.Database == "<absolute-stable-database>", "The canonical production database must use the documented JSON name.");
+    Assert(config.Profiles.Count == 2, "The canonical config example must load both documented profiles.");
+    Assert(config.Profiles[0].Id == "stable", "The stable profile id must use the documented JSON name.");
+    Assert(config.Profiles[0].DisplayName == "Hermes Finance — Stable", "The stable profile display name must load from the canonical example.");
+    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.6.3", "The stable profile expected ref must use the documented JSON name.");
+    Assert(config.Profiles[0].DataDir == "<absolute-stable-data-dir>", "The stable profile data directory must use the documented JSON name.");
+    Assert(config.Profiles[0].Database == "<absolute-stable-database>", "The stable profile database must use the documented JSON name.");
+    Assert(config.Profiles[0].OpenBrowser, "The stable profile browser setting must use the documented JSON name.");
 }
 
 static void RequiresExactlyOneStableProfile()

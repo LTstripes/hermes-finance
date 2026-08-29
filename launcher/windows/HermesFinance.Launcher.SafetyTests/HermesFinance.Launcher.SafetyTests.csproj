@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\HermesFinance.Launcher\HermesFinance.Launcher.csproj" />
+    <None Include="..\config.example.json" Link="config.example.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
