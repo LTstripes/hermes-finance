@@ -56,6 +56,30 @@ const REASON_LABELS: Record<string, string> = {
   instrument_mapping_unresolved: "Сопоставление инструмента не завершено",
   position_mapping_conflict: "Конфликт идентичности позиции",
   compatibility_unknown: "Совместимость протокола неизвестна",
+  "no explicit owner mapping for provider account":
+    "Нет явного сопоставления владельца для счёта брокера",
+  "no Hermes instrument with this ISIN": "Нет локального инструмента с этим ISIN",
+  "no ISIN and no explicit mapping; ticker/name/provider id are not identity":
+    "Нет ISIN и нет явного сопоставления; тикер, имя и ID провайдера не являются идентичностью",
+  "multiple Hermes instruments share this ISIN": "Несколько локальных инструментов имеют этот ISIN",
+  "conflicting explicit owner mapping: provider account id mapped to multiple Hermes accounts":
+    "Конфликт: один счёт брокера сопоставлен с несколькими локальными счетами",
+  "duplicate provider account identifier in snapshot":
+    "В снимке повторяется идентификатор счёта брокера",
+  "explicit mapping targets a Hermes account id that does not exist":
+    "Явное сопоставление указывает на несуществующий локальный счёт",
+  "conflicting explicit owner mapping: provider instrument id mapped to multiple Hermes instruments":
+    "Конфликт: один инструмент брокера сопоставлен с несколькими локальными инструментами",
+  "explicit mapping contradicts provider ISIN evidence":
+    "Явное сопоставление противоречит ISIN брокера",
+  "explicit mapping targets a Hermes instrument id that does not exist":
+    "Явное сопоставление указывает на несуществующий локальный инструмент",
+  "explicit owner mapping": "Явное сопоставление владельца",
+  "exact unique ISIN match": "Точное уникальное совпадение ISIN",
+  "conflicting metadata for the same provider instrument identifier":
+    "Конфликт метаданных для одного идентификатора инструмента брокера",
+  "provider account mapping is unresolved": "Сопоставление счёта брокера не завершено",
+  "provider instrument mapping is unresolved": "Сопоставление инструмента брокера не завершено",
 };
 
 const COMPARISON_FIELD_LABELS: Record<string, string> = {
@@ -174,6 +198,42 @@ function instrumentMappingValue(row: ReconciliationInstrument, values: MappingVa
   );
 }
 
+function joinIdentityParts(parts: Array<string | null | undefined>): string {
+  return parts.filter((part): part is string => Boolean(part?.trim())).join(" · ");
+}
+
+function observedInstrumentShortLabel(item: {
+  display_name: string | null;
+  isin: string | null;
+  ticker: string | null;
+}): string {
+  return item.display_name?.trim() || item.isin?.trim() || item.ticker?.trim() || "";
+}
+
+function instrumentMappingLabel(row: ReconciliationInstrument): string {
+  const readable = joinIdentityParts([row.display_name, row.isin, row.ticker]);
+  return readable || `Источник: ${row.provider_instrument_id ?? "—"}`;
+}
+
+const ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS = 3;
+
+function accountMappingLabel(row: ReconciliationAccount): string {
+  const sections = (row.section_codes ?? []).map((code) => `Раздел ${code}`);
+  const instruments = (row.observed_instruments ?? [])
+    .map(observedInstrumentShortLabel)
+    .filter((label) => label !== "");
+  const visible = instruments.slice(0, ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS);
+  const hiddenCount = instruments.length - visible.length;
+  const extra = hiddenCount > 0 ? [`ещё ${hiddenCount}`] : [];
+  const readable = [...sections, ...visible, ...extra].join(" · ");
+  return readable || `Источник: ${row.provider_account_id}`;
+}
+
+function mappingSourceLine(providerId: string, label: string): string | null {
+  if (label === `Источник: ${providerId}`) return null;
+  return `Источник: ${providerId}`;
+}
+
 function accountDisplay(account: Account): string {
   return `${account.name} · #${account.id}`;
 }
@@ -231,31 +291,38 @@ function MappingPanel({
               <ErrorState description={accountsError} inline title="Не удалось загрузить счета" />
             ) : null}
             {!accountsLoading && !accountsError
-              ? accountRows.map((row, index) => (
-                  <Field
-                    key={row.provider_account_id}
-                    htmlFor={`reconciliation-account-${index}`}
-                    label={`Источник: ${row.provider_account_id}`}
-                  >
-                    <Select
-                      id={`reconciliation-account-${index}`}
-                      value={accountMappingValue(row, accountValues)}
-                      onChange={(event) =>
-                        onAccountChange(row.provider_account_id, event.target.value)
-                      }
+              ? accountRows.map((row, index) => {
+                  const label = accountMappingLabel(row);
+                  const sourceLine = mappingSourceLine(row.provider_account_id, label);
+                  return (
+                    <Field
+                      key={row.provider_account_id}
+                      htmlFor={`reconciliation-account-${index}`}
+                      label={label}
                     >
-                      <option value="">— выбрать локальный счёт —</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {accountDisplay(account)}
-                        </option>
-                      ))}
-                    </Select>
-                    <span className="reconciliation-center__mapping-reason">
-                      Причина: {reasonLabel(row.reason)}
-                    </span>
-                  </Field>
-                ))
+                      <Select
+                        id={`reconciliation-account-${index}`}
+                        value={accountMappingValue(row, accountValues)}
+                        onChange={(event) =>
+                          onAccountChange(row.provider_account_id, event.target.value)
+                        }
+                      >
+                        <option value="">— выбрать локальный счёт —</option>
+                        {accounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {accountDisplay(account)}
+                          </option>
+                        ))}
+                      </Select>
+                      {sourceLine ? (
+                        <span className="reconciliation-center__mapping-source">{sourceLine}</span>
+                      ) : null}
+                      <span className="reconciliation-center__mapping-reason">
+                        Причина: {reasonLabel(row.reason)}
+                      </span>
+                    </Field>
+                  );
+                })
               : null}
           </div>
         ) : null}
@@ -276,11 +343,13 @@ function MappingPanel({
             {!instrumentsLoading && !instrumentsError
               ? instrumentRows.map((row, index) => {
                   const providerId = row.provider_instrument_id as string;
+                  const label = instrumentMappingLabel(row);
+                  const sourceLine = mappingSourceLine(providerId, label);
                   return (
                     <Field
                       key={providerId}
                       htmlFor={`reconciliation-instrument-${index}`}
-                      label={`Источник: ${providerId}`}
+                      label={label}
                     >
                       <Select
                         id={`reconciliation-instrument-${index}`}
@@ -294,6 +363,9 @@ function MappingPanel({
                           </option>
                         ))}
                       </Select>
+                      {sourceLine ? (
+                        <span className="reconciliation-center__mapping-source">{sourceLine}</span>
+                      ) : null}
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
                       </span>

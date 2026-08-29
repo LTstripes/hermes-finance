@@ -162,6 +162,54 @@ function result(
   };
 }
 
+function unresolvedMappingResult(
+  overrides: Partial<BrokerReconciliationResponse> = {},
+): BrokerReconciliationResponse {
+  return result({
+    status: "non_applicable",
+    accounts: [
+      {
+        provider_account_id: "SYN-ACCOUNT-001",
+        hermes_account_id: null,
+        status: "unmatched",
+        reason: "no explicit owner mapping for provider account",
+        section_codes: ["MICEX"],
+        observed_instruments: [
+          {
+            display_name: "Synthetic provider bond",
+            isin: "RU000SYN00001",
+            ticker: "SYN",
+          },
+        ],
+      },
+    ],
+    instruments: [
+      {
+        provider_instrument_id: "SYN-INSTRUMENT-001",
+        isin: "RU000SYN00001",
+        ticker: "SYN",
+        display_name: "Synthetic provider bond",
+        hermes_instrument_id: null,
+        status: "unmatched",
+        reason: "no Hermes instrument with this ISIN",
+      },
+    ],
+    rows: [row("unresolved", { reason: "account_mapping_unresolved" })],
+    ...overrides,
+  });
+}
+
+function manyObservedInstruments(count: number) {
+  return Array.from({ length: count }, (_, index) => {
+    const n = String(index + 1).padStart(2, "0");
+    return {
+      display_name: `Synthetic bond ${n}`,
+      isin: `RU000SYN000${n}`,
+      ticker: `SYN${n}`,
+    };
+  });
+}
+
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -242,31 +290,7 @@ describe("ReconciliationCenterPage", () => {
   it("keeps unresolved mapping visibly unsafe and sends owner mapping only on the next explicit check", async () => {
     const user = userEvent.setup();
     vi.mocked(previewBrokerReconciliation)
-      .mockResolvedValueOnce(
-        result({
-          status: "non_applicable",
-          accounts: [
-            {
-              provider_account_id: "SYN-ACCOUNT-001",
-              hermes_account_id: null,
-              status: "unmatched",
-              reason: "account_mapping_unresolved",
-            },
-          ],
-          instruments: [
-            {
-              provider_instrument_id: "SYN-INSTRUMENT-001",
-              isin: null,
-              ticker: "SYN",
-              display_name: "Synthetic provider bond",
-              hermes_instrument_id: null,
-              status: "unmatched",
-              reason: "instrument_mapping_unresolved",
-            },
-          ],
-          rows: [row("unresolved", { reason: "account_mapping_unresolved" })],
-        }),
-      )
+      .mockResolvedValueOnce(unresolvedMappingResult())
       .mockResolvedValueOnce(result());
 
     renderPage();
@@ -275,8 +299,8 @@ describe("ReconciliationCenterPage", () => {
     await user.selectOptions(monthSelect, "7");
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
 
-    const accountSelect = await screen.findByLabelText("Источник: SYN-ACCOUNT-001");
-    const instrumentSelect = screen.getByLabelText("Источник: SYN-INSTRUMENT-001");
+    const accountSelect = await screen.findByLabelText("Раздел MICEX · Synthetic provider bond");
+    const instrumentSelect = screen.getByLabelText("Synthetic provider bond · RU000SYN00001 · SYN");
     expect(screen.getByText("Нельзя считать сопоставление безопасным")).toBeInTheDocument();
     await user.selectOptions(accountSelect, "1");
     await user.selectOptions(instrumentSelect, "10");
@@ -289,6 +313,67 @@ describe("ReconciliationCenterPage", () => {
       accounts: [{ hermes_account_id: 1, provider_account_id: "SYN-ACCOUNT-001" }],
       instruments: [{ hermes_instrument_id: 10, provider_instrument_id: "SYN-INSTRUMENT-001" }],
     });
+  });
+
+  it("makes unresolved mapping rows owner-identifiable without raw English reasons", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerReconciliation).mockResolvedValue(unresolvedMappingResult());
+
+    renderPage();
+    const monthSelect = await screen.findByLabelText("Отчётный месяц");
+    await screen.findByRole("option", { name: /Август/ });
+    await user.selectOptions(monthSelect, "7");
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+
+    expect(
+      await screen.findByLabelText("Раздел MICEX · Synthetic provider bond"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Synthetic provider bond · RU000SYN00001 · SYN"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Источник: SYN-ACCOUNT-001")).toBeInTheDocument();
+    expect(screen.getByText("Источник: SYN-INSTRUMENT-001")).toBeInTheDocument();
+    expect(
+      screen.getByText("Причина: Нет явного сопоставления владельца для счёта брокера"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Причина: Нет локального инструмента с этим ISIN")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/no explicit owner mapping for provider account/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/no Hermes instrument with this ISIN/i)).not.toBeInTheDocument();
+  });
+
+  it("bounds a long account identity and keeps the provider id on its own line", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerReconciliation).mockResolvedValue(
+      unresolvedMappingResult({
+        accounts: [
+          {
+            provider_account_id: "SYN-ACCOUNT-001",
+            hermes_account_id: null,
+            status: "unmatched",
+            reason: "no explicit owner mapping for provider account",
+            section_codes: ["MICEX"],
+            observed_instruments: manyObservedInstruments(8),
+          },
+        ],
+      }),
+    );
+
+    renderPage();
+    const monthSelect = await screen.findByLabelText("Отчётный месяц");
+    await screen.findByRole("option", { name: /Август/ });
+    await user.selectOptions(monthSelect, "7");
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+
+    expect(
+      await screen.findByLabelText(
+        "Раздел MICEX · Synthetic bond 01 · Synthetic bond 02 · Synthetic bond 03 · ещё 5",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Источник: SYN-ACCOUNT-001")).toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic bond 04/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic bond 08/)).not.toBeInTheDocument();
   });
 
   it.each([

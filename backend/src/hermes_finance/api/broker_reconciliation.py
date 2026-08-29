@@ -25,6 +25,7 @@ from hermes_finance.api.broker_snapshot import (
     BrokerSnapshotDiagnosticsOut,
     _mapping,
     _provider,
+    account_row_out,
 )
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.broker_data.dto import BrokerSnapshot, SnapshotStatus
@@ -247,15 +248,7 @@ def _response(
         captured_at=result.captured_at,
         month_status=result.month_status,
         month_closed=result.month_closed,
-        accounts=[
-            BrokerAccountRowOut(
-                provider_account_id=row.provider_account_id,
-                hermes_account_id=row.hermes_account_id,
-                status=row.status.value,
-                reason=row.reason,
-            )
-            for row in result.accounts
-        ],
+        accounts=[account_row_out(row) for row in result.accounts],
         instruments=[
             BrokerInstrumentRowOut(
                 provider_instrument_id=row.provider_instrument_id,
