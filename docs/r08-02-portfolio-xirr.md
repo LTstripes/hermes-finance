@@ -45,8 +45,13 @@ unresolved transfer is injected or reclassified.
 ## Fail-closed calculation
 
 The solver uses the date-only XIRR equation with a 365-day year and a
-deterministic bracketed Decimal search.  It returns a value only when exactly
-one root converges.  Otherwise the response is unavailable with one of:
+deterministic bracketed Decimal search.  Before accepting a visible bracket,
+it applies an exact sign-variation certificate: with
+`z = (1 + rate) ** (1 / 365)`, the equation is a polynomial in positive `z`.
+Histories with more than one coefficient sign change cannot prove a unique
+positive root and remain unavailable.  A value is returned only when this
+certificate permits at most one root and that root converges.  Otherwise the
+response is unavailable with one of:
 
 ```text
 not_computable_xirr_no_valid_root

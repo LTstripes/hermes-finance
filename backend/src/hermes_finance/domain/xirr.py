@@ -125,6 +125,20 @@ def _normalise_cash_flows(
     )
 
 
+def _sign_variation_count(amounts: tuple[int, ...]) -> int:
+    """Count non-zero coefficient sign changes in chronological cash flows.
+
+    With ``z = (1 + rate) ** (1 / 365) > 0``, multiplying the date-only XIRR
+    equation by a positive power of ``z`` turns it into a polynomial whose
+    coefficients are these amounts in reverse order.  Descartes' rule of
+    signs therefore bounds the number of positive roots by this count.  More
+    than one variation cannot prove a unique root, so callers must fail
+    closed instead of trusting a coarse scan.
+    """
+
+    return sum((left < 0) != (right < 0) for left, right in zip(amounts, amounts[1:]))
+
+
 def _scaled_npv(
     log_growth: Decimal,
     cash_flows: tuple[tuple[int, Decimal], ...],
@@ -229,6 +243,8 @@ def calculate_xirr(
     amounts = tuple(amount for _, amount in normalised)
     if not any(amount < 0 for amount in amounts) or not any(amount > 0 for amount in amounts):
         return _unavailable(XirrReasonCode.NO_VALID_ROOT)
+    if _sign_variation_count(amounts) > 1:
+        return _unavailable(XirrReasonCode.MULTIPLE_ROOTS)
 
     first_date = normalised[0][0]
     cash_flows_with_time = tuple(

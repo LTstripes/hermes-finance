@@ -35,6 +35,8 @@ from hermes_finance.services.reporting_months import (
 START = date(2030, 1, 31)
 MID = date(2031, 1, 31)
 END = date(2032, 1, 31)
+# Three exact 365-day steps; the 2032 leap day makes this January 30.
+END_PLUS_YEAR = date(2033, 1, 30)
 
 
 def _history(
@@ -205,6 +207,19 @@ def test_xirr_solver_fails_closed_for_multiple_roots_and_convergence_limit() -> 
     )
     assert convergence.availability is XirrAvailabilityStatus.NOT_COMPUTABLE
     assert convergence.reason_codes == (XirrReasonCode.CONVERGENCE_FAILED.value,)
+
+
+def test_xirr_solver_rejects_multiple_roots_hidden_inside_scan_cell() -> None:
+    hidden_multiple_roots = calculate_xirr(
+        (
+            XirrCashFlow(START, -72_000),
+            XirrCashFlow(MID, 530_000),
+            XirrCashFlow(END, -950_000),
+            XirrCashFlow(END_PLUS_YEAR, 500_000),
+        )
+    )
+    assert hidden_multiple_roots.availability is XirrAvailabilityStatus.NOT_COMPUTABLE
+    assert hidden_multiple_roots.reason_codes == (XirrReasonCode.MULTIPLE_ROOTS.value,)
 
 
 def test_portfolio_xirr_applies_contribution_and_withdrawal_signs(tmp_path: Path) -> None:
