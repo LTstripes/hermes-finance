@@ -15,7 +15,7 @@ import {
 import { formatApiError } from "../api/client";
 import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
-import { formatMonth } from "../lib/format";
+import { formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
@@ -39,6 +39,17 @@ const EMPTY_DECISION: LocalDecision = {
   marketDate: "",
   marketSource: "",
   accruedInterest: "",
+  accruedValue: "",
+};
+
+const MATCHED_DEFAULT_DECISION: LocalDecision = {
+  averageCost: "keep_existing",
+  averageValue: "",
+  marketPrice: "keep_existing",
+  marketValue: "",
+  marketDate: "",
+  marketSource: "",
+  accruedInterest: "keep_existing",
   accruedValue: "",
 };
 
@@ -112,6 +123,43 @@ function previewErrorMessage(next: BrokerSnapshotPreview): string | null {
 
 function rowKey(row: BrokerPositionRow): string {
   return `${row.account_id}:${row.instrument_id}`;
+}
+
+function initialDecision(row: BrokerPositionRow): LocalDecision {
+  return row.status === "matched" ? MATCHED_DEFAULT_DECISION : EMPTY_DECISION;
+}
+
+function joinIdentityParts(parts: Array<string | null | undefined>): string {
+  return parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
+function instrumentMappingLabel(row: BrokerSnapshotPreview["instruments"][number]): string {
+  return joinIdentityParts([row.display_name, row.isin, row.ticker]) || "Инструмент без описания";
+}
+
+function observedInstrumentLabel(item: {
+  display_name: string | null;
+  isin: string | null;
+  ticker: string | null;
+}): string {
+  return joinIdentityParts([item.display_name, item.isin, item.ticker]);
+}
+
+const ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS = 3;
+
+function accountMappingLabel(row: BrokerSnapshotPreview["accounts"][number]): string {
+  const sections = (row.section_codes ?? []).map((code) => `Раздел ${code}`);
+  const observed = (row.observed_instruments ?? [])
+    .map(observedInstrumentLabel)
+    .filter((label) => label !== "");
+  const visible = observed.slice(0, ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS);
+  const hiddenCount = observed.length - visible.length;
+  const hints = visible.length > 0 ? [`Инструменты: ${visible.join(" · ")}`] : [];
+  if (hiddenCount > 0) hints.push(`ещё ${hiddenCount}`);
+  return [...sections, ...hints].join(" · ") || "Счёт без наблюдений";
 }
 
 function validAmount(value: string): boolean {
@@ -304,12 +352,33 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
     }
   }
 
-  function updateDecision(key: string, patch: Partial<LocalDecision>) {
+  function updateDecision(row: BrokerPositionRow, patch: Partial<LocalDecision>) {
+    const key = rowKey(row);
     setDecisions((current) => ({
       ...current,
-      [key]: { ...(current[key] ?? EMPTY_DECISION), ...patch },
+      [key]: { ...initialDecision(row), ...(current[key] ?? {}), ...patch },
     }));
   }
+
+  const moneyProviderInstrumentIds = new Set(
+    (preview?.positions ?? [])
+      .filter((row) => row.is_money === true && row.provider_instrument_id)
+      .map((row) => row.provider_instrument_id as string),
+  );
+  const moneyInstrumentRows =
+    preview?.instruments.filter(
+      (row) =>
+        row.is_money === true ||
+        (row.provider_instrument_id !== null &&
+          moneyProviderInstrumentIds.has(row.provider_instrument_id)),
+    ) ?? [];
+  const instrumentMappingRows =
+    preview?.instruments.filter(
+      (row) =>
+        Boolean(row.provider_instrument_id) &&
+        row.is_money !== true &&
+        !moneyProviderInstrumentIds.has(row.provider_instrument_id as string),
+    ) ?? [];
 
   const applyReady = Boolean(
     preview?.eligible_for_apply &&
@@ -317,7 +386,9 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
       !monthClosed &&
       Boolean(baselineDate) &&
       selectedRows.length > 0 &&
-      selectedRows.every((row) => completeDecision(row, decisions[rowKey(row)])),
+      selectedRows.every((row) =>
+        completeDecision(row, decisions[rowKey(row)] ?? initialDecision(row)),
+      ),
   );
 
   async function apply() {
@@ -329,7 +400,9 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
       const result = await applyBrokerBaseline(Number(monthId), {
         baseline_date: baselineDate,
         mapping: mapping(),
-        selections: selectedRows.map((row) => selectionFor(row, decisions[rowKey(row)])),
+        selections: selectedRows.map((row) =>
+          selectionFor(row, decisions[rowKey(row)] ?? initialDecision(row)),
+        ),
       });
       if (!result.success) {
         if (result.error_code === "preview_changed") clearReview();
@@ -448,10 +521,14 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                 const classification = row.classification ?? "";
                 const stored = effectiveMapping("account", row.provider_account_id);
                 const showSelect = needsMappingSelect(row.status, classification);
+                const label = accountMappingLabel(row);
                 return (
                   <div key={row.provider_account_id} className="stack-8">
                     <div className="toolbar">
-                      <strong>{row.provider_account_id}</strong>
+                      <div className="stack-8">
+                        <strong>{label}</strong>
+                        <span className="muted tiny">Источник: {row.provider_account_id}</span>
+                      </div>
                       <Badge tone={classificationTone(classification)}>
                         {identityLabel(classification, row.status)}
                       </Badge>
@@ -459,7 +536,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                     {showSelect ? (
                       <Field
                         htmlFor={`broker-map-account-${row.provider_account_id}`}
-                        label={row.provider_account_id}
+                        label={label}
                       >
                         <Select
                           id={`broker-map-account-${row.provider_account_id}`}
@@ -503,76 +580,79 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
               })}
             </Panel>
           ) : null}
-          {preview.instruments.length > 0 ? (
+          {moneyInstrumentRows.length > 0 ? (
+            <p className="muted">
+              Денежные строки Alfa не требуют сопоставления инструмента и не участвуют в базовом
+              срезе.
+            </p>
+          ) : null}
+          {instrumentMappingRows.length > 0 ? (
             <Panel label="Сопоставление" title="Инструменты Alfa → Hermes">
               <p className="muted">
                 Уже подтверждённые и однозначные ISIN не нужно вводить заново. Новые и спорные
                 строки сопоставляются с существующим инструментом Hermes; новые инструменты здесь не
                 создаются.
               </p>
-              {preview.instruments
-                .filter((row) => row.provider_instrument_id)
-                .map((row) => {
-                  const providerId = row.provider_instrument_id as string;
-                  const classification = row.classification ?? "";
-                  const stored = effectiveMapping("instrument", providerId);
-                  const showSelect = needsMappingSelect(row.status, classification);
-                  return (
-                    <div key={providerId} className="stack-8">
-                      <div className="toolbar">
-                        <strong>
-                          {providerId} · {row.isin ?? row.display_name ?? "без ISIN"}
-                        </strong>
-                        <Badge tone={classificationTone(classification)}>
-                          {identityLabel(classification, row.status)}
-                        </Badge>
+              {instrumentMappingRows.map((row) => {
+                const providerId = row.provider_instrument_id as string;
+                const classification = row.classification ?? "";
+                const stored = effectiveMapping("instrument", providerId);
+                const showSelect = needsMappingSelect(row.status, classification);
+                const label = instrumentMappingLabel(row);
+                return (
+                  <div key={providerId} className="stack-8">
+                    <div className="toolbar">
+                      <div className="stack-8">
+                        <strong>{label}</strong>
+                        <span className="muted tiny">Источник: {providerId}</span>
                       </div>
-                      {showSelect ? (
-                        <Field
-                          htmlFor={`broker-map-instrument-${providerId}`}
-                          label={`${providerId} · ${row.isin ?? row.display_name ?? "без ISIN"}`}
-                        >
-                          <Select
-                            id={`broker-map-instrument-${providerId}`}
-                            value={instrumentMappings[providerId] ?? ""}
-                            onChange={(event) => {
-                              setInstrumentMappings((current) => ({
-                                ...current,
-                                [providerId]: event.target.value,
-                              }));
-                              setMappingDirty(true);
-                            }}
-                          >
-                            <option value="">— выбери существующий инструмент —</option>
-                            {instruments.map((instrument) => (
-                              <option key={instrument.id} value={instrument.id}>
-                                {instrument.name}
-                                {instrument.isin ? ` · ${instrument.isin}` : ""}
-                              </option>
-                            ))}
-                          </Select>
-                        </Field>
-                      ) : (
-                        <p className="muted">
-                          {row.hermes_instrument_id
-                            ? `Локальный инструмент #${row.hermes_instrument_id}`
-                            : "Инструмент не сопоставлен"}
-                        </p>
-                      )}
-                      {stored ? (
-                        <Button
-                          size="sm"
-                          type="button"
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() => void revokeIdentity(stored.mapping_id)}
-                        >
-                          Отозвать сопоставление инструмента
-                        </Button>
-                      ) : null}
+                      <Badge tone={classificationTone(classification)}>
+                        {identityLabel(classification, row.status)}
+                      </Badge>
                     </div>
-                  );
-                })}
+                    {showSelect ? (
+                      <Field htmlFor={`broker-map-instrument-${providerId}`} label={label}>
+                        <Select
+                          id={`broker-map-instrument-${providerId}`}
+                          value={instrumentMappings[providerId] ?? ""}
+                          onChange={(event) => {
+                            setInstrumentMappings((current) => ({
+                              ...current,
+                              [providerId]: event.target.value,
+                            }));
+                            setMappingDirty(true);
+                          }}
+                        >
+                          <option value="">— выбери существующий инструмент —</option>
+                          {instruments.map((instrument) => (
+                            <option key={instrument.id} value={instrument.id}>
+                              {instrument.name}
+                              {instrument.isin ? ` · ${instrument.isin}` : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    ) : (
+                      <p className="muted">
+                        {row.hermes_instrument_id
+                          ? `Локальный инструмент #${row.hermes_instrument_id}`
+                          : "Инструмент не сопоставлен"}
+                      </p>
+                    )}
+                    {stored ? (
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => void revokeIdentity(stored.mapping_id)}
+                      >
+                        Отозвать сопоставление инструмента
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              })}
             </Panel>
           ) : null}
           {mappingDirty ? (
@@ -594,7 +674,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
             <tbody>
               {preview.positions.map((row) => {
                 const key = rowKey(row);
-                const decision = decisions[key] ?? EMPTY_DECISION;
+                const decision = decisions[key] ?? initialDecision(row);
                 const applyable =
                   Boolean(row.fingerprint) &&
                   !row.is_money &&
@@ -626,21 +706,25 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                     <Td>
                       <div className="stack-8">
                         <span>
-                          Количество: {row.provider_quantity ?? "—"}
-                          {row.hermes_quantity != null ? ` vs локально ${row.hermes_quantity}` : ""}
+                          Количество: {formatQuantity(row.provider_quantity)}
+                          {row.hermes_quantity != null
+                            ? ` vs локально ${formatQuantity(row.hermes_quantity)}`
+                            : ""}
                         </span>
                         {row.is_money ? (
                           <span className="muted">Денежная строка Alfa, не позиция</span>
                         ) : null}
                         <span>
-                          Цена брокера (только сравнение): {row.provider_broker_unit_price ?? "—"}
+                          Цена брокера (только сравнение):{" "}
+                          {formatMoney(row.provider_broker_unit_price)}
                         </span>
                         <span>
-                          НКД брокера (только сравнение): {row.provider_accrued_interest_nkd ?? "—"}
+                          НКД брокера (только сравнение):{" "}
+                          {formatMoney(row.provider_accrued_interest_nkd)}
                         </span>
                         <span>
                           P&amp;L брокера (только сравнение):{" "}
-                          {row.provider_unrealized_result ?? "—"}
+                          {formatMoney(row.provider_unrealized_result)}
                         </span>
                       </div>
                     </Td>
@@ -654,13 +738,15 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                               value={decision.averageCost}
                               disabled={!selected[key]}
                               onChange={(event) =>
-                                updateDecision(key, {
+                                updateDecision(row, {
                                   averageCost: event.target.value as DecisionAction,
                                 })
                               }
                             >
                               <option value="">— выбери —</option>
-                              <option value="keep_existing">Оставить текущую</option>
+                              {row.status === "matched" ? (
+                                <option value="keep_existing">Оставить локальную</option>
+                              ) : null}
                               <option value="replace">Заменить локальным значением</option>
                             </select>
                           </label>
@@ -669,7 +755,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                               aria-label={`Локальная средняя стоимость ${key}`}
                               value={decision.averageValue}
                               onChange={(event) =>
-                                updateDecision(key, { averageValue: event.target.value })
+                                updateDecision(row, { averageValue: event.target.value })
                               }
                               placeholder="Сумма в RUB"
                               disabled={!selected[key]}
@@ -682,13 +768,15 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                               value={decision.marketPrice}
                               disabled={!selected[key]}
                               onChange={(event) =>
-                                updateDecision(key, {
+                                updateDecision(row, {
                                   marketPrice: event.target.value as DecisionAction,
                                 })
                               }
                             >
                               <option value="">— выбери —</option>
-                              <option value="keep_existing">Оставить текущую</option>
+                              {row.status === "matched" ? (
+                                <option value="keep_existing">Оставить локальную</option>
+                              ) : null}
                               <option value="replace">Заменить локальным значением</option>
                             </select>
                           </label>
@@ -698,7 +786,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                                 aria-label={`Локальная рыночная цена ${key}`}
                                 value={decision.marketValue}
                                 onChange={(event) =>
-                                  updateDecision(key, { marketValue: event.target.value })
+                                  updateDecision(row, { marketValue: event.target.value })
                                 }
                                 placeholder="Цена в RUB"
                                 disabled={!selected[key]}
@@ -708,7 +796,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                                 type="date"
                                 value={decision.marketDate}
                                 onChange={(event) =>
-                                  updateDecision(key, { marketDate: event.target.value })
+                                  updateDecision(row, { marketDate: event.target.value })
                                 }
                                 disabled={!selected[key]}
                               />
@@ -716,7 +804,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                                 aria-label={`Источник локальной цены ${key}`}
                                 value={decision.marketSource}
                                 onChange={(event) =>
-                                  updateDecision(key, { marketSource: event.target.value })
+                                  updateDecision(row, { marketSource: event.target.value })
                                 }
                                 disabled={!selected[key]}
                               >
@@ -734,7 +822,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                               value={decision.accruedInterest}
                               disabled={!selected[key]}
                               onChange={(event) =>
-                                updateDecision(key, {
+                                updateDecision(row, {
                                   accruedInterest: event.target.value as DecisionAction,
                                 })
                               }
@@ -743,7 +831,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                                 {row.status === "provider_only" ? "— не задавать —" : "— выбери —"}
                               </option>
                               {row.status === "provider_only" ? null : (
-                                <option value="keep_existing">Оставить текущую</option>
+                                <option value="keep_existing">Оставить локальную</option>
                               )}
                               <option value="replace">Заменить локальным значением</option>
                             </select>
@@ -753,7 +841,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
                               aria-label={`Локальный НКД ${key}`}
                               value={decision.accruedValue}
                               onChange={(event) =>
-                                updateDecision(key, { accruedValue: event.target.value })
+                                updateDecision(row, { accruedValue: event.target.value })
                               }
                               placeholder="НКД в RUB"
                               disabled={!selected[key]}

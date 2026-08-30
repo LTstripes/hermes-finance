@@ -28,6 +28,12 @@ export type BrokerPositionRow = {
   [key: string]: unknown;
 };
 
+export type BrokerAccountObservedInstrument = {
+  display_name: string | null;
+  isin: string | null;
+  ticker: string | null;
+};
+
 export type BrokerSnapshotDiagnostics = {
   schema_version: string;
   provider: string;
@@ -74,6 +80,8 @@ export type BrokerSnapshotPreview = {
     status: string;
     reason: string | null;
     classification?: string;
+    section_codes?: string[];
+    observed_instruments?: BrokerAccountObservedInstrument[];
   }[];
   instruments: {
     provider_instrument_id: string | null;
@@ -84,6 +92,7 @@ export type BrokerSnapshotPreview = {
     status: string;
     reason: string | null;
     classification?: string;
+    is_money?: boolean | null;
   }[];
   month_closed?: boolean;
   month_status?: string;
