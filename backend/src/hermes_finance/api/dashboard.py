@@ -312,6 +312,7 @@ class DashboardOut(BaseModel):
     summary: MonthlySummaryOut
     historical_series: list[HistoricalPointOut]
     asset_allocation: list[AssetClassSliceOut]
+    asset_allocation_delta: list[AssetClassSliceOut]
     result_by_account: list[AccountResultOut]
     result_by_instrument_class: list[InstrumentClassResultOut]
     expected_payments: list[ExpectedPaymentOut]
@@ -508,6 +509,10 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         asset_allocation=[
             AssetClassSliceOut(asset_class=item.asset_class, amount=_money(item.amount))
             for item in dashboard.asset_allocation
+        ],
+        asset_allocation_delta=[
+            AssetClassSliceOut(asset_class=item.asset_class, amount=_money(item.amount))
+            for item in dashboard.asset_allocation_delta
         ],
         result_by_account=[
             AccountResultOut(

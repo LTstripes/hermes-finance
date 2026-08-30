@@ -102,6 +102,13 @@ const dashboard = {
     { asset_class: "bonds", amount: rub("456789012.34") },
     { asset_class: "gold_other", amount: rub("56789012.34") },
   ],
+  asset_allocation_delta: [
+    { asset_class: "cash", amount: rub("1234567.89") },
+    { asset_class: "deposits", amount: rub("-2345678.90") },
+    { asset_class: "stocks", amount: rub("3456789.01") },
+    { asset_class: "bonds", amount: rub("0.00") },
+    { asset_class: "gold_other", amount: rub("56789.12") },
+  ],
   result_by_account: syntheticAccounts.slice(0, 6).map((account, index) => ({
     account_id: account.id,
     account_name: account.name,

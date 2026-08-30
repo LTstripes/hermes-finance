@@ -76,12 +76,6 @@ export function CashFlowLadder({ ladder }: { ladder: CashFlowLadderModel }) {
       <div className="cash-flow-ladder__note">
         <strong>На {formatDate(ladder.as_of_date)}</strong> · погашение — возврат капитала, не
         пассивный доход.
-        {ladder.warnings.map((warning) => (
-          <span className="muted" key={warning}>
-            {" "}
-            {warning}
-          </span>
-        ))}
       </div>
 
       <Table className="cash-flow-ladder__table">
@@ -118,8 +112,19 @@ export function CashFlowLadder({ ladder }: { ladder: CashFlowLadderModel }) {
       </Table>
 
       <details className="field-details">
-        <summary>Источники и provenance</summary>
+        <summary>Подробнее о данных</summary>
+        {ladder.warnings.length > 0 ? (
+          <div className="cash-flow-ladder__warnings">
+            <strong>Примечания</strong>
+            <ul>
+              {ladder.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="cash-flow-ladder__provenance">
+          <strong>Источники событий</strong>
           {ladder.months
             .flatMap((month) => month.items)
             .map((event) => (

@@ -147,6 +147,32 @@ function ExcludedIssues({ issues }: { issues: RiskSupportIssue[] }) {
   );
 }
 
+function MetricSupportDetails({
+  metric,
+}: {
+  metric: RiskAllocationMetric | RiskConcentrationMetric;
+}) {
+  const isApproximate = "is_approximate" in metric && metric.is_approximate;
+  const hasDetails =
+    isApproximate || metric.support.reason_codes.length > 0 || metric.excluded.length > 0;
+  if (!hasDetails) return null;
+
+  return (
+    <details className="risk-allocation__metric-details">
+      <summary>
+        Ограничения данных <SupportBadge support={metric.support} />
+      </summary>
+      {isApproximate ? (
+        <p className="risk-allocation__approximate">
+          Некоторые строки приблизительные — это отмечено в сохранённых данных.
+        </p>
+      ) : null}
+      <SupportReasons reasons={metric.support.reason_codes} />
+      <ExcludedIssues issues={metric.excluded} />
+    </details>
+  );
+}
+
 function MetricSummary({
   metric,
   kind,
@@ -158,41 +184,20 @@ function MetricSummary({
   const allocation = kind === "allocation" ? (metric as RiskAllocationMetric) : null;
   return (
     <div className="risk-allocation__metric-summary">
-      <DataValue
-        label="Расчётная база"
-        meta="точная сумма в рублях"
-        value={money(metric.denominator)}
-      />
+      <DataValue label="Всего в срезе" value={money(metric.denominator)} />
       {concentration ? (
         <>
           <DataValue
             label={`Крупнейшие ${concentration.top_n}`}
-            meta="сумма выбранных строк"
             value={money(concentration.top_amount)}
           />
-          <DataValue
-            label="Доля крупнейших"
-            meta="по расчёту приложения"
-            value={percent(concentration.top_share_pct)}
-          />
+          <DataValue label="Доля крупнейших" value={percent(concentration.top_share_pct)} />
         </>
       ) : allocation ? (
         <>
-          <DataValue
-            label="Покрыто"
-            meta="классифицировано / связано"
-            value={money(allocation.covered_amount)}
-          />
-          <DataValue
-            label="Покрытие"
-            meta="по расчёту приложения"
-            value={percent(allocation.coverage_pct)}
-          />
-          <DataValue
-            label="Не распределено"
-            meta="не добавлено к известным классам"
-            value={money(allocation.unallocated_amount)}
-          />
+          <DataValue label="Покрыто" value={money(allocation.covered_amount)} />
+          <DataValue label="Покрытие" value={percent(allocation.coverage_pct)} />
+          <DataValue label="Не распределено" value={money(allocation.unallocated_amount)} />
         </>
       ) : null}
     </div>
@@ -209,9 +214,8 @@ function AllocationMetricPanel({
   account?: boolean;
 }) {
   return (
-    <Panel action={<SupportBadge support={metric.support} />} label="Распределение" title={title}>
+    <Panel label="Распределение" title={title}>
       <MetricSummary kind="allocation" metric={metric} />
-      <SupportReasons reasons={metric.support.reason_codes} />
       {metric.items.length === 0 ? (
         <EmptyState
           description="В выбранном месяце нет строк для этого среза."
@@ -239,7 +243,7 @@ function AllocationMetricPanel({
           </tbody>
         </Table>
       )}
-      <ExcludedIssues issues={metric.excluded} />
+      <MetricSupportDetails metric={metric} />
     </Panel>
   );
 }
@@ -254,14 +258,8 @@ function ConcentrationPanel({
   metric: RiskConcentrationMetric;
 }) {
   return (
-    <Panel action={<SupportBadge support={metric.support} />} label={label} title={title}>
+    <Panel label={label} title={title}>
       <MetricSummary kind="concentration" metric={metric} />
-      {metric.is_approximate ? (
-        <p className="risk-allocation__approximate">
-          Некоторые строки приблизительные — это отмечено в сохранённых данных.
-        </p>
-      ) : null}
-      <SupportReasons reasons={metric.support.reason_codes} />
       {metric.items.length === 0 ? (
         <EmptyState
           description="В выбранном окне нет концентрируемых датированных событий."
@@ -296,7 +294,7 @@ function ConcentrationPanel({
           </tbody>
         </Table>
       )}
-      <ExcludedIssues issues={metric.excluded} />
+      <MetricSupportDetails metric={metric} />
     </Panel>
   );
 }
@@ -304,27 +302,30 @@ function ConcentrationPanel({
 function SupportMatrix({ support }: { support: Record<string, RiskMetricSupport> }) {
   const keys = ["currency", "issuer", "maturity", "broker", "bank"];
   return (
-    <Panel label="Полнота данных" title="Какие срезы доступны сейчас">
-      <div className="risk-allocation__support-grid">
-        {keys.map((key) => {
-          const value = support[key];
-          if (!value) return null;
-          return (
-            <div className="risk-allocation__support-item" key={key}>
-              <div className="risk-allocation__support-heading">
-                <strong>{SUPPORT_LABELS[key]}</strong>
-                <SupportBadge support={value} />
+    <details className="risk-allocation__support-details">
+      <summary>Ограничения данных и полнота</summary>
+      <Panel label="Полнота данных" title="Какие срезы доступны сейчас">
+        <div className="risk-allocation__support-grid">
+          {keys.map((key) => {
+            const value = support[key];
+            if (!value) return null;
+            return (
+              <div className="risk-allocation__support-item" key={key}>
+                <div className="risk-allocation__support-heading">
+                  <strong>{SUPPORT_LABELS[key]}</strong>
+                  <SupportBadge support={value} />
+                </div>
+                <SupportReasons reasons={value.reason_codes} />
               </div>
-              <SupportReasons reasons={value.reason_codes} />
-            </div>
-          );
-        })}
-      </div>
-      <p className="muted risk-allocation__support-note">
-        Состояния описывают доступность данных, а не уровень риска. Сохранённая оценка позиции в
-        рублях не исключается из ликвидного капитала из-за недоступной метаинформации.
-      </p>
-    </Panel>
+            );
+          })}
+        </div>
+        <p className="muted risk-allocation__support-note">
+          Состояния описывают доступность данных, а не уровень риска. Сохранённая оценка позиции в
+          рублях не исключается из ликвидного капитала из-за недоступной метаинформации.
+        </p>
+      </Panel>
+    </details>
   );
 }
 
@@ -429,12 +430,10 @@ export function RiskAllocationPage() {
           <DataValue
             label="Дата снимка"
             value={formatDate(data?.as_of_date ?? selectedMonth.snapshot_date)}
-            meta="Дата, на которую рассчитан срез"
           />
           <DataValue
             label="Ликвидные активы"
             value={data ? money(data.liquid_assets_total) : "—"}
-            meta={data ? `база ${data.base_currency}` : "ожидаем данные"}
             size="lg"
           />
         </section>
@@ -458,6 +457,13 @@ export function RiskAllocationPage() {
               title="Портфель пуст"
             />
           ) : null}
+          <div className="risk-allocation__event-window">
+            <strong>Окно будущих событий</strong>
+            <span>
+              Датированные выплаты и погашения: с {formatDate(data.as_of_date)} · следующие 12
+              месяцев.
+            </span>
+          </div>
           <div className="risk-allocation__grid">
             <AllocationMetricPanel
               metric={data.allocation_by_asset_class}

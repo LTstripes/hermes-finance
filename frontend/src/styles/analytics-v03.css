@@ -34,9 +34,36 @@
 }
 
 .analytics-v03__xirr-result,
-.analytics-v03__xirr-unavailable {
+.analytics-v03__performance-unavailable {
   display: grid;
   gap: 6px;
+}
+
+.analytics-v03__performance-unavailable {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.analytics-v03__performance-details {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.analytics-v03__performance-details summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.analytics-v03__performance-details > div {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.analytics-v03__performance-details p {
+  margin: 0;
 }
 
 .analytics-v03__xirr-value {
@@ -135,6 +162,28 @@
 
 .analytics-v03__drilldown .panel {
   min-width: 0;
+}
+
+.analytics-v03__result-panel {
+  grid-column: 1 / -1;
+}
+
+.analytics-v03 .investment-result__tables {
+  overflow: visible;
+}
+
+.analytics-v03 .investment-result__table {
+  table-layout: fixed;
+}
+
+.analytics-v03 .investment-result__table th,
+.analytics-v03 .investment-result__table td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.analytics-v03 .investment-result__table .num {
+  white-space: normal;
 }
 
 @media (max-width: 900px) {

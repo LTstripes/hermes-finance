@@ -62,6 +62,42 @@ function portfolioTwrrUnavailableMessage(reasonCodes: string[]): string {
   return "Расчёт недоступен: не удалось подтвердить достаточность данных для TWRR.";
 }
 
+function PerformanceDetails({
+  kind,
+  currency,
+  startDate,
+  endDate,
+}: {
+  kind: "XIRR" | "TWRR";
+  currency: string;
+  startDate: string;
+  endDate: string;
+}) {
+  return (
+    <details className="analytics-v03__performance-details">
+      <summary>Подробнее о расчёте</summary>
+      <div>
+        <p>{kind === "XIRR" ? "Годовая доходность" : "Доходность за период"} · точный расчёт</p>
+        <p>
+          {formatDate(startDate)} — {formatDate(endDate)} · {currency}
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function PerformanceUnavailable({ kind, message }: { kind: "XIRR" | "TWRR"; message: string }) {
+  return (
+    <div className="analytics-v03__performance-unavailable" role="status">
+      <strong>{kind} недоступен</strong>
+      <details className="analytics-v03__performance-details">
+        <summary>Почему недоступно</summary>
+        <p>{message}</p>
+      </details>
+    </div>
+  );
+}
+
 export function AnalyticsPage() {
   const [history, setHistory] = useState<CapitalCompositionHistory | null>(null);
   const [months, setMonths] = useState<ReportingMonth[]>([]);
@@ -323,78 +359,6 @@ export function AnalyticsPage() {
         )}
       </Panel>
 
-      <Panel className="analytics-v03__xirr-panel" label="Доходность" title="XIRR портфеля">
-        {portfolioXirrLoading ? (
-          <LoadingState description="Проверяем подтверждённые данные периода…" inline />
-        ) : portfolioXirrError ? (
-          <ErrorState description={portfolioXirrError} inline title="Не удалось загрузить XIRR" />
-        ) : !xirrPeriod ? (
-          <EmptyState
-            description="Нужны два закрытых среза с хронологичными датами снимка. Черновики и неполную историю не используем."
-            inline
-            title="XIRR недоступен"
-          />
-        ) : portfolioXirr?.availability === "available" && portfolioXirr.value !== null ? (
-          <div className="analytics-v03__xirr-result">
-            <p className="analytics-v03__xirr-value">
-              {formatPercent(portfolioXirr.value, { digits: 2, signed: true })}
-            </p>
-            <p className="analytics-v03__xirr-meta">
-              Годовая доходность · Точный расчёт · {portfolioXirr.performance_currency}
-            </p>
-            <p className="analytics-v03__xirr-period">
-              {formatDate(portfolioXirr.period.start_date)} —{" "}
-              {formatDate(portfolioXirr.period.end_date)}
-            </p>
-          </div>
-        ) : (
-          <div className="analytics-v03__xirr-unavailable" role="status">
-            <strong>XIRR недоступен</strong>
-            <p>
-              {portfolioXirr
-                ? portfolioXirrUnavailableMessage(portfolioXirr.reason_codes)
-                : "Не удалось получить подтверждённый результат для выбранного периода."}
-            </p>
-          </div>
-        )}
-      </Panel>
-
-      <Panel className="analytics-v03__xirr-panel" label="Доходность" title="TWRR портфеля">
-        {portfolioTwrrLoading ? (
-          <LoadingState description="Проверяем подтверждённые границы периода…" inline />
-        ) : portfolioTwrrError ? (
-          <ErrorState description={portfolioTwrrError} inline title="Не удалось загрузить TWRR" />
-        ) : !xirrPeriod ? (
-          <EmptyState
-            description="Нужны два закрытых среза с хронологичными датами снимка."
-            inline
-            title="TWRR недоступен"
-          />
-        ) : portfolioTwrr?.availability === "available" && portfolioTwrr.value !== null ? (
-          <div className="analytics-v03__xirr-result">
-            <p className="analytics-v03__xirr-value">
-              {formatPercent(portfolioTwrr.value, { digits: 2, signed: true })}
-            </p>
-            <p className="analytics-v03__xirr-meta">
-              Доходность за период · Точный расчёт · {portfolioTwrr.performance_currency}
-            </p>
-            <p className="analytics-v03__xirr-period">
-              {formatDate(portfolioTwrr.period.start_date)} —{" "}
-              {formatDate(portfolioTwrr.period.end_date)}
-            </p>
-          </div>
-        ) : (
-          <div className="analytics-v03__xirr-unavailable" role="status">
-            <strong>TWRR недоступен</strong>
-            <p>
-              {portfolioTwrr
-                ? portfolioTwrrUnavailableMessage(portfolioTwrr.reason_codes)
-                : "Не удалось получить подтверждённый результат для выбранного периода."}
-            </p>
-          </div>
-        )}
-      </Panel>
-
       <section aria-label="Подробности текущего среза" className="analytics-v03__drilldown">
         <Panel label="Структура" title="Текущее распределение">
           {dashboardLoading ? (
@@ -412,7 +376,11 @@ export function AnalyticsPage() {
           )}
         </Panel>
 
-        <Panel label="Результат" title="Результат инвестиций">
+        <Panel
+          className="analytics-v03__result-panel"
+          label="Результат"
+          title="Результат инвестиций"
+        >
           {dashboardLoading ? (
             <LoadingState description="Загружаем результат…" inline />
           ) : dashboardError ? (
@@ -435,6 +403,74 @@ export function AnalyticsPage() {
           )}
         </Panel>
       </section>
+
+      <Panel className="analytics-v03__xirr-panel" label="Доходность" title="XIRR портфеля">
+        {portfolioXirrLoading ? (
+          <LoadingState description="Проверяем подтверждённые данные периода…" inline />
+        ) : portfolioXirrError ? (
+          <ErrorState description={portfolioXirrError} inline title="Не удалось загрузить XIRR" />
+        ) : !xirrPeriod ? (
+          <PerformanceUnavailable
+            kind="XIRR"
+            message="Нужны два закрытых среза с хронологичными датами снимка. Черновики и неполную историю не используем."
+          />
+        ) : portfolioXirr?.availability === "available" && portfolioXirr.value !== null ? (
+          <div className="analytics-v03__xirr-result">
+            <p className="analytics-v03__xirr-value">
+              {formatPercent(portfolioXirr.value, { digits: 2, signed: true })}
+            </p>
+            <PerformanceDetails
+              currency={portfolioXirr.performance_currency}
+              endDate={portfolioXirr.period.end_date}
+              kind="XIRR"
+              startDate={portfolioXirr.period.start_date}
+            />
+          </div>
+        ) : (
+          <PerformanceUnavailable
+            kind="XIRR"
+            message={
+              portfolioXirr
+                ? portfolioXirrUnavailableMessage(portfolioXirr.reason_codes)
+                : "Не удалось получить подтверждённый результат для выбранного периода."
+            }
+          />
+        )}
+      </Panel>
+
+      <Panel className="analytics-v03__xirr-panel" label="Доходность" title="TWRR портфеля">
+        {portfolioTwrrLoading ? (
+          <LoadingState description="Проверяем подтверждённые границы периода…" inline />
+        ) : portfolioTwrrError ? (
+          <ErrorState description={portfolioTwrrError} inline title="Не удалось загрузить TWRR" />
+        ) : !xirrPeriod ? (
+          <PerformanceUnavailable
+            kind="TWRR"
+            message="Нужны два закрытых среза с хронологичными датами снимка."
+          />
+        ) : portfolioTwrr?.availability === "available" && portfolioTwrr.value !== null ? (
+          <div className="analytics-v03__xirr-result">
+            <p className="analytics-v03__xirr-value">
+              {formatPercent(portfolioTwrr.value, { digits: 2, signed: true })}
+            </p>
+            <PerformanceDetails
+              currency={portfolioTwrr.performance_currency}
+              endDate={portfolioTwrr.period.end_date}
+              kind="TWRR"
+              startDate={portfolioTwrr.period.start_date}
+            />
+          </div>
+        ) : (
+          <PerformanceUnavailable
+            kind="TWRR"
+            message={
+              portfolioTwrr
+                ? portfolioTwrrUnavailableMessage(portfolioTwrr.reason_codes)
+                : "Не удалось получить подтверждённый результат для выбранного периода."
+            }
+          />
+        )}
+      </Panel>
     </section>
   );
 }

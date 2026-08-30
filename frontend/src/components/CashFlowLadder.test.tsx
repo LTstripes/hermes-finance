@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { CashFlowLadder } from "../api/types";
 import { rub } from "../lib/money";
@@ -84,7 +85,8 @@ function ladder(): CashFlowLadder {
 }
 
 describe("CashFlowLadder", () => {
-  it("shows compact windows, all twelve months, capital redemption and provenance", () => {
+  it("shows compact windows, all twelve months, capital redemption and deferred details", async () => {
+    const user = userEvent.setup();
     render(<CashFlowLadderView ladder={ladder()} />);
 
     expect(screen.getByRole("heading", { name: "Ближайшие 14 дней" })).toBeInTheDocument();
@@ -92,6 +94,11 @@ describe("CashFlowLadder", () => {
     expect(screen.getByText("12-месячная лестница ожидаемых денежных потоков")).toBeInTheDocument();
     expect(screen.getAllByText("есть оценка")).toHaveLength(1);
     expect(screen.getByText("Погашение")).toBeInTheDocument();
+    const details = screen.getByText("Подробнее о данных").closest("details");
+    expect(details).not.toBeNull();
+    if (!details) throw new Error("Cash-flow details were not rendered");
+    expect(details).not.toHaveAttribute("open");
+    await user.click(screen.getByText("Подробнее о данных"));
     expect(screen.getByText(/Проценты по вкладам/)).toBeInTheDocument();
     expect(screen.getAllByText(/Synthetic Bond/).length).toBeGreaterThan(0);
   });

@@ -182,11 +182,15 @@ describe("RiskAllocationPage", () => {
     expect(screen.getByText("Неизвестный класс активов")).toBeInTheDocument();
     expect(screen.getAllByText("Не распределено").length).toBeGreaterThan(0);
     expect(screen.getByText("Эмитент")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Датированные выплаты и погашения: с 28\.02\.2031/),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Недоступно").length).toBeGreaterThan(0);
     expect(screen.getByText("Валюта")).toBeInTheDocument();
     expect(screen.getByText("Неизвестно")).toBeInTheDocument();
     expect(screen.queryAllByText(/issuer_not_persisted|currency_not_persisted/)).toHaveLength(0);
     expect(screen.queryByText(/owner-facing|backend|as_of_date|ID 2/i)).toBeNull();
+    expect(screen.getByText("Ограничения данных и полнота")).toBeInTheDocument();
     expect(getRiskAllocation).toHaveBeenCalledWith(2, 5, "v1", expect.any(AbortSignal));
   });
 

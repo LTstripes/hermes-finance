@@ -6,6 +6,7 @@ import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
 import type {
+  AssetAllocationPoint,
   DashboardForecast,
   DashboardKpis,
   DashboardSlice,
@@ -45,6 +46,14 @@ function pctLabel(value: string | null | undefined): string {
   if (value == null || value === "") return "—";
   return formatPercent(value, { digits: 1 });
 }
+
+const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
+  cash: { label: "Наличные", color: "#9db9a7" },
+  deposits: { label: "Депозиты", color: "#d1ad72" },
+  stocks: { label: "Акции", color: "#8ca9d8" },
+  bonds: { label: "Облигации", color: "#b79bd4" },
+  gold_other: { label: "Золото и прочее", color: "#d48c68" },
+};
 
 export function DashboardPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -139,7 +148,12 @@ export function DashboardPage() {
       ) : null}
 
       <section className="dashboard-overview-grid" aria-label="Ключевое состояние">
-        <CapitalOverviewCard kpis={kpis} loading={loadingDash} />
+        <CapitalOverviewCard
+          allocation={dashboard?.asset_allocation}
+          allocationDelta={dashboard?.asset_allocation_delta}
+          kpis={kpis}
+          loading={loadingDash}
+        />
         <PassiveIncomeOverviewCard kpis={kpis} loading={loadingDash} />
         <ForecastOverviewCard
           forecast={dashboard?.summary?.forecast ?? null}
@@ -184,11 +198,7 @@ export function DashboardPage() {
         )}
       </Panel>
 
-      <Panel
-        action={<span className="muted tiny">manual · provider · deposit snapshots</span>}
-        label="Казначейство"
-        title="Ближайшие события и денежная лестница"
-      >
+      <Panel label="Казначейство" title="Ближайшие события и денежная лестница">
         {loadingDash ? (
           <LoadingState description="Загружаем ожидаемые потоки…" inline />
         ) : dashboard?.cash_flow_ladder ? (
@@ -205,7 +215,17 @@ export function DashboardPage() {
   );
 }
 
-function CapitalOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; loading: boolean }) {
+function CapitalOverviewCard({
+  allocation,
+  allocationDelta,
+  kpis,
+  loading,
+}: {
+  allocation?: AssetAllocationPoint[];
+  allocationDelta?: AssetAllocationPoint[];
+  kpis: DashboardKpis | null;
+  loading: boolean;
+}) {
   const delta = moneyAmount(kpis?.liquid_capital_delta);
   const tone = deltaToneFromAmount(delta);
 
@@ -221,6 +241,39 @@ function CapitalOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; lo
           {loading || !kpis ? "…" : kpis.liquid_capital_delta ? formatMoneyDelta(delta) : "—"}
         </strong>
       </div>
+      {!loading && allocation?.length ? (
+        <div className="overview-card__breakdown">
+          <div className="overview-card__breakdown-heading">
+            <span>По классам</span>
+            <span>Сейчас</span>
+            <span>К месяцу ранее</span>
+          </div>
+          {allocation.map((item) => {
+            const meta = ASSET_CLASS_META[item.asset_class] ?? {
+              label: "Прочее",
+              color: "#a6a6a6",
+            };
+            const previousDelta = allocationDelta?.find(
+              (candidate) => candidate.asset_class === item.asset_class,
+            );
+            const deltaAmount = moneyAmount(previousDelta?.amount);
+            return (
+              <div className="overview-card__breakdown-row" key={item.asset_class}>
+                <span className="overview-card__breakdown-label">
+                  <i aria-hidden="true" style={{ backgroundColor: meta.color }} />
+                  {meta.label}
+                </span>
+                <strong>{formatMoney(moneyAmount(item.amount))}</strong>
+                <strong
+                  className={`overview-card__breakdown-delta overview-card__delta--${deltaToneFromAmount(deltaAmount)}`}
+                >
+                  {previousDelta ? formatMoneyDelta(deltaAmount) : "—"}
+                </strong>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -239,37 +292,33 @@ function PassiveIncomeOverviewCard({
   return (
     <article className="overview-card">
       <div className="overview-card__label">Пассивный доход · факт</div>
-      <div className="semantic-label semantic-label--fact">Факт · выбранный месяц</div>
       <div className="overview-card__value">
         {ready ? formatMoney(moneyAmount(kpis.passive_income_actual)) : "…"}
       </div>
       <div className="overview-card__context overview-card__context--with-help">
         {ready ? (
-          completeWindow ? (
-            <span>12 закрытых месяцев из 12</span>
-          ) : (
-            <>
-              <span>{countMonths} закрытых месяцев из 12</span>
-              <HelpTip label="Почему среднее пока неполное" align="start">
-                Среднее рассчитано по закрытым месяцам в окне до 12 месяцев. По мере закрытия новых
-                месяцев окно обновляется.
-              </HelpTip>
-            </>
-          )
+          <>
+            <span>
+              {completeWindow
+                ? "12 закрытых месяцев из 12"
+                : `${countMonths} закрытых месяцев из 12`}
+            </span>
+            <HelpTip label="Подробнее о периоде" align="start">
+              {!completeWindow ? (
+                <p>Среднее рассчитано по закрытым месяцам в окне до 12 месяцев.</p>
+              ) : null}
+              <p>
+                {kpis.passive_income_history_start_month
+                  ? `Доступная история для среднего начинается с ${kpis.passive_income_history_start_month}.`
+                  : "Для среднего используется вся доступная история."}
+              </p>
+              {!completeWindow ? <p>По мере закрытия новых месяцев окно обновляется.</p> : null}
+            </HelpTip>
+          </>
         ) : (
           <span>Фактические закрытые месяцы</span>
         )}
       </div>
-      {ready ? (
-        <p className="overview-card__context muted tiny">
-          {completeWindow
-            ? "Учтено полное окно из 12 месяцев"
-            : `Учтено ${countMonths} закрытых месяцев из 12`}
-          {kpis.passive_income_history_start_month
-            ? ` · учёт с ${kpis.passive_income_history_start_month}`
-            : " · вся доступная история"}
-        </p>
-      ) : null}
       <div className="overview-card__supporting">
         <span>Среднее за закрытые месяцы</span>
         <strong>{ready ? formatMoney(moneyAmount(kpis.passive_income_average)) : "…"}</strong>
@@ -302,7 +351,6 @@ function ForecastOverviewCard({
   return (
     <article className="overview-card">
       <div className="overview-card__label">Прогноз · 12 месяцев</div>
-      <div className="semantic-label semantic-label--forecast">Прогноз · эквивалент за месяц</div>
       <div className="overview-card__value">
         {ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}
       </div>
@@ -367,13 +415,15 @@ function ForecastBreakdown({ forecast }: { forecast: DashboardForecast | null })
           поэтому не вводи один и тот же процент дважды. Купоны берутся только из локального
           применённого календаря выплат. Дивидендный компонент построен по фактической истории;
           погашения исключены.
+          {forecast.warnings.length > 0 ? (
+            <ul className="overview-card__help-list">
+              {forecast.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
         </HelpTip>
       </div>
-      {forecast.warnings.map((warning) => (
-        <p className="overview-card__context muted tiny" key={warning}>
-          {warning}
-        </p>
-      ))}
     </>
   );
 }
@@ -384,7 +434,6 @@ function CoverageOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; l
   return (
     <article className="overview-card">
       <div className="overview-card__label">Покрытие расходов</div>
-      <div className="semantic-label semantic-label--fact">Факт · среднее</div>
       <div className="overview-card__value">
         {ready ? pctLabel(kpis.actual_mandatory_expense_coverage_pct) : "…"}
       </div>

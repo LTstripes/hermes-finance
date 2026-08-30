@@ -243,7 +243,8 @@ describe("App", () => {
 
     expect(await screen.findByText(/4\s*820\s*500\s*₽/)).toBeInTheDocument();
     expect(screen.getByText("Изменение за месяц")).toBeInTheDocument();
-    expect(screen.getByText("Факт · среднее")).toBeInTheDocument();
+    expect(screen.queryByText("Факт · среднее")).not.toBeInTheDocument();
+    expect(screen.getByText("Среднее за закрытые месяцы")).toBeInTheDocument();
     expect(screen.getByText("Прогноз / цель")).toBeInTheDocument();
     expect(screen.getByText("Обязательные расходы")).toBeInTheDocument();
     expect(screen.getByText("Покрытие расходов")).toBeInTheDocument();
