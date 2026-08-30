@@ -243,6 +243,8 @@ Set-Location ..
 
 Перед новой задачей в чистом development clone синхронизируйтесь с каноническим `main` так, как описано в [`AGENTS.md`](AGENTS.md). Не делайте `switch`/`reset`/`pull` поверх незаконченной task-работы.
 
+Карта semantic test lanes, ownership и правило добавления новых регрессий описаны в [`docs/TEST_SUITE_GUIDE.md`](docs/TEST_SUITE_GUIDE.md).
+
 Backend:
 
 ```powershell

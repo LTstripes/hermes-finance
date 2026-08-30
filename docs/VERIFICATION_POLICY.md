@@ -11,10 +11,25 @@
 
 Явные требования task-card, ADR, release gate или владельца имеют приоритет над этой политикой и могут требовать более строгих проверок.
 
+## 1.1. Semantic lanes и ownership
+
+Backend pytest регистрирует semantic markers в `backend/pyproject.toml`, а
+`backend/tests/conftest.py` добавляет их по устойчивому пути теста. Полная
+карта владельцев, путей и frontend/external lanes находится в
+[`TEST_SUITE_GUIDE.md`](TEST_SUITE_GUIDE.md).
+
+При реализации регрессии сначала ищи существующий semantic owner и запускай
+его marker-lane. Новый `test_rXX_*` файл допустим только для отдельного
+release/version/compatibility gate или task-acceptance contract; issue ID сам
+по себе не является ownership-категорией. Markers additive и не исключают
+тесты из обычного полного suite. Существующие немаркированные файлы остаются
+частью полного suite и классифицируются при следующем осмысленном изменении,
+без массового переименования.
+
 ## 2. Implementation loop
 
 1. Для bugfix/regression-задачи сначала добавь или найди targeted regression test и, когда это практически осмысленно, подтверди RED на старом поведении.
-2. Во время разработки повторно запускай только affected/targeted tests и относящиеся к изменённым файлам lint/format checks.
+2. Во время разработки повторно запускай только affected/targeted tests — по возможности через semantic marker или явный test path — и относящиеся к изменённым файлам lint/format checks.
 3. Не запускай full backend/frontend suite после каждой небольшой правки.
 4. Если targeted test падает вне заявленного scope, остановись и разберись с причиной; не расширяй scope автоматически.
 5. После стабилизации implementation переходи к финальному local verification gate ниже.

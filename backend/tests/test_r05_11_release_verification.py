@@ -8,12 +8,18 @@ from decimal import Decimal
 from pathlib import Path
 
 import httpx2
+from _migration_helpers import PREVIOUS_REVISION, REVISION, revision_rows, run_alembic
+from _network_helpers import ForbiddenTransport
+from _release_helpers import (
+    STARTUP_GUARD_SCRIPT,
+    manual_flow_fingerprint,
+    position_fingerprint,
+    run_isolated_startup_script,
+)
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from sqlalchemy import func, select
 from t_invest_mapping_fixtures import accept_t_invest_mapping
-from test_migrations import PREVIOUS_REVISION, REVISION, revision_rows, run_alembic
-from test_r04_08_release_verification import STARTUP_GUARD_SCRIPT, _run_isolated_startup_script
 
 from hermes_finance import __version__
 from hermes_finance.database import create_database
@@ -37,11 +43,6 @@ from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.settings import Settings
 
 UID = "77777777-7777-4777-8777-777777777777"
-
-
-class ForbiddenTransport(httpx2.BaseTransport):
-    def handle_request(self, request: httpx2.Request) -> httpx2.Response:
-        raise AssertionError(f"authenticated network must not be called: {request.url}")
 
 
 class RecordingPayoutProvider:
@@ -70,30 +71,6 @@ class RecordingPayoutProvider:
                 ),
             ),
         )
-
-
-def _manual_flow_fingerprint(database_path: Path) -> list[tuple[object, ...]]:
-    connection = sqlite3.connect(database_path)
-    try:
-        return connection.execute(
-            "SELECT id, reporting_month_id, account_id, instrument_id, flow_type, "
-            "expected_date, gross_amount_kopecks, expected_tax_amount_kopecks, "
-            "expected_net_amount_kopecks, source, notes FROM expected_cash_flows "
-            "ORDER BY id"
-        ).fetchall()
-    finally:
-        connection.close()
-
-
-def _position_fingerprint(database_path: Path) -> list[tuple[object, ...]]:
-    connection = sqlite3.connect(database_path)
-    try:
-        return connection.execute(
-            "SELECT id, reporting_month_id, quantity, market_price_per_unit_kopecks, "
-            "price_source, notes FROM position_snapshots ORDER BY id"
-        ).fetchall()
-    finally:
-        connection.close()
 
 
 def test_pre_05_schema_upgrades_without_rewriting_owner_rows(tmp_path: Path) -> None:
@@ -185,14 +162,14 @@ def test_pre_05_schema_upgrades_without_rewriting_owner_rows(tmp_path: Path) -> 
     finally:
         connection.close()
 
-    before_positions = _position_fingerprint(database_path)
-    before_flows = _manual_flow_fingerprint(database_path)
+    before_positions = position_fingerprint(database_path)
+    before_flows = manual_flow_fingerprint(database_path)
 
     migrated = run_alembic(database_path, "upgrade", "head")
     assert migrated.returncode == 0, migrated.stderr
     assert revision_rows(database_path) == [REVISION]
-    assert _position_fingerprint(database_path) == before_positions
-    assert _manual_flow_fingerprint(database_path) == before_flows
+    assert position_fingerprint(database_path) == before_positions
+    assert manual_flow_fingerprint(database_path) == before_flows
 
     connection = sqlite3.connect(database_path)
     try:
@@ -223,7 +200,7 @@ def test_health_version_is_current_release() -> None:
 
 def test_startup_and_page_reads_stay_offline(tmp_path: Path) -> None:
     database_path = tmp_path / "r05-11-startup.db"
-    probed = _run_isolated_startup_script("probe", str(database_path))
+    probed = run_isolated_startup_script("probe", str(database_path))
     assert probed.returncode == 0, probed.stdout + probed.stderr
     assert "ok" in probed.stdout
     assert STARTUP_GUARD_SCRIPT.is_file()

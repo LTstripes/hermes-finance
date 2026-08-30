@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from test_migrations import run_alembic
+from _migration_helpers import run_alembic
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_CHECK = BACKEND_ROOT.parent / "scripts" / "launcher-schema-check.py"
