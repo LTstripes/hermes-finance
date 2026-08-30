@@ -33,7 +33,7 @@ Release preparation for the accepted R07 tree. This entry synchronizes the 0.7.0
 
 - owner UAT for issue #201 is recorded as `PASS` on 2026-08-30;
 - final accepted selective-apply integration is merge `d51427989bbe7a195668208318d1eaa2316da6f1`;
-- launcher owner-controls integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f1`.
+- launcher owner-controls integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
 
 ### Not changed
 

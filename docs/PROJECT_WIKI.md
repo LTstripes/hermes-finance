@@ -39,7 +39,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 Опубликованная стабильная product identity — **0.6.3**. Annotated tag `v0.6.3` peel'ится в exact released main SHA `366b4a7c37265de5e62feb639060f88afaba54fc`; canonical exact-main CI #331 для этого SHA завершился `success`, GitHub Release опубликован 2026-08-25. Канонический Alembic head — `0029_statement_event_retract`.
 
-Issue #231 подготавливает release-prep identity `0.7.0` на exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f1` в ветке `docs-r07-release-sync`. В этой ветке документируется принятый R07 tree с каноническим Alembic head `0036_broker_baseline_provenance`; tag, GitHub Release и Stable promotion этой задачей не выполняются.
+Issue #231 подготавливает release-prep identity `0.7.0` на exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f` в ветке `docs-r07-release-sync`. В этой ветке документируется принятый R07 tree с каноническим Alembic head `0036_broker_baseline_provenance`; tag, GitHub Release и Stable promotion этой задачей не выполняются.
 
 После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
 
@@ -381,12 +381,12 @@ HYG-04 is repository infrastructure only; it does not change the published 0.6.3
 
 Issue #231 (`R07-REL`) фиксирует release-prep identity `0.7.0` для принятого R07 tree.
 
-- **Exact baseline:** `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f1`.
+- **Exact baseline:** `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
 - **Task branch:** `docs-r07-release-sync`.
 - **Canonical Alembic head:** `0036_broker_baseline_provenance`.
 - **Owner UAT:** issue #201 — `PASS`, 2026-08-30.
 - **Selective apply evidence:** final accepted merge `d51427989bbe7a195668208318d1eaa2316da6f1`.
-- **Launcher evidence:** owner Start/Stop integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f1`.
+- **Launcher evidence:** owner Start/Stop integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
 
 ### Current R07/R08 surface
 

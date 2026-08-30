@@ -30,7 +30,7 @@ Hermes Finance 0.7.0 records the accepted R07 tree and synchronizes its release 
 
 - Owner UAT for issue #201: `PASS`, 2026-08-30.
 - Final accepted selective-apply integration: `d51427989bbe7a195668208318d1eaa2316da6f1`.
-- Launcher owner-controls integration: `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f1`.
+- Launcher owner-controls integration: `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
 
 ## Deferred
 
@@ -43,4 +43,4 @@ Hermes Finance 0.7.0 records the accepted R07 tree and synchronizes its release 
 
 ## Publication boundary
 
-This task is prepared from exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f1` on branch `docs-r07-release-sync`. It does not perform a PR, merge, tag, GitHub Release, production-runtime operation or Preview-to-Stable promotion. Publication, if later authorized, must use the guarded release process and an independently verified accepted `origin/main` SHA.
+This task is prepared from exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f` on branch `docs-r07-release-sync`. It does not perform a PR, merge, tag, GitHub Release, production-runtime operation or Preview-to-Stable promotion. Publication, if later authorized, must use the guarded release process and an independently verified accepted `origin/main` SHA.
