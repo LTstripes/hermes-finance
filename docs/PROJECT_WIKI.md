@@ -37,13 +37,13 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Опубликованная стабильная product identity — **0.6.3**. Annotated tag `v0.6.3` peel'ится в exact released main SHA `366b4a7c37265de5e62feb639060f88afaba54fc`; canonical exact-main CI #331 для этого SHA завершился `success`, GitHub Release опубликован 2026-08-25. Канонический Alembic head — `0029_statement_event_retract`.
+Опубликованная стабильная product identity — **0.7.0**. Annotated tag `v0.7.0` peel'ится в exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`; canonical exact-main CI #425 (run `33325251688`) для этого SHA завершился `success`, GitHub Release опубликован 2026-08-30. Канонический Alembic head — `0036_broker_baseline_provenance`.
 
-Issue #231 подготавливает release-prep identity `0.7.0` на exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f` в ветке `docs-r07-release-sync`. В этой ветке документируется принятый R07 tree с каноническим Alembic head `0036_broker_baseline_provenance`; tag, GitHub Release и Stable promotion этой задачей не выполняются.
+Историческая подготовка публикации в issue #231 подготовила принятый R07 tree; post-release sync issue #234 фиксирует, что его опубликованная identity — `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`. Owner Stable promotion для 0.7.0 подтверждён как `PASS` 2026-08-30. Операционное наблюдение о разовой установке frontend-зависимостей при первом Stable start не меняет release identity или финансовую семантику.
 
 После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
 
-Принятый R07 tree расширяет текущую продуктовую поверхность owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Подробная release-prep фиксация находится в разделе 20 и `docs/releases/0.7.0.md`; это не означает, что `0.7.0` уже опубликован.
+Опубликованный R07 tree расширяет текущую продуктовую поверхность owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Подробная release фиксация находится в разделе 20 и `docs/releases/0.7.0.md`; 0.6.3 остаётся исторической предыдущей стабильной линией.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -377,13 +377,16 @@ Safety contract 0.6.3: deposit forecast is approximate and not maturity-aware; T
 
 HYG-04 is repository infrastructure only; it does not change the published 0.6.3 product identity or product semantics.
 
-## 20. Линия 0.7.0 / R07 release preparation
+## 20. Линия 0.7.0 / R07 published release
 
-Issue #231 (`R07-REL`) фиксирует release-prep identity `0.7.0` для принятого R07 tree.
+Issue #234 (`R07-POST`) фиксирует post-release identity `0.7.0` для принятого и опубликованного R07 tree. Историческая подготовка релиза выполнена в issue #231.
 
-- **Exact baseline:** `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
-- **Task branch:** `docs-r07-release-sync`.
+- **Published release:** `v0.7.0` @ exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`.
+- **Exact-main CI:** #425 / run `33325251688` — `success`.
+- **Published:** `2026-08-30`.
 - **Canonical Alembic head:** `0036_broker_baseline_provenance`.
+- **Previous stable:** `v0.6.3` @ `366b4a7c37265de5e62feb639060f88afaba54fc` (historical).
+- **Owner Stable promotion:** `PASS`, 2026-08-30.
 - **Owner UAT:** issue #201 — `PASS`, 2026-08-30.
 - **Selective apply evidence:** final accepted merge `d51427989bbe7a195668208318d1eaa2316da6f1`.
 - **Launcher evidence:** owner Start/Stop integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
@@ -405,4 +408,4 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 - #202 residual workspace/ACL cleanup;
 - #229 owner workflow/Alfa UX consolidation.
 
-Эта запись не является публикацией: issue #231 не выполняет PR, merge, tag, GitHub Release или Stable promotion. Опубликованная стабильная identity остаётся `0.6.3` до отдельного авторизованного release шага.
+Эта запись фиксирует уже выполненную публикацию и owner Stable promotion. Post-release docs sync issue #234 не меняет product code, migrations, tag, release identity или финансовую семантику. Операционное наблюдение о разовой установке frontend-зависимостей при первом Stable start сохранено как follow-up без private runtime details.

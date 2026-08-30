@@ -445,16 +445,16 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
-# 0.7.0 release preparation
+# 0.7.0 publication and post-release documentation
 
-### R07-REL — 0.7.0 release metadata and documentation sync
+### R07-REL — 0.7.0 release metadata and documentation sync (historical preparation)
 
-- Recorded: 2026-08-30 as release-prep context from issue #231. This is not an accept/integrate verdict and not a published release.
+- Recorded: 2026-08-30 as pre-publication context from issue #231. This is not an accept/integrate verdict; the publication state is recorded below.
 - Issue: #231
 - Exact baseline: `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`
 - Task branch: `docs-r07-release-sync`
 - Scope: synchronize the 0.7.0 product/package identity, generated lock metadata, health/release expectations, CHANGELOG, public notes, release record, README, Project Wiki and execution history. No product-code or financial-semantic change.
-- Canonical Alembic head: `0036_broker_baseline_provenance`; this release-prep task adds no migration.
+- Canonical Alembic head: `0036_broker_baseline_provenance`; this pre-publication task adds no migration.
 - Documented accepted surface: AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder / upcoming treasury events, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR, exact TWRR with persisted observed valuation boundaries, guarded Windows Stable/Preview launcher owner Start/Stop controls, Alfa compatibility/mapping/baseline provenance, row-scoped selective apply, UI/visual-audit polish and semantic test-taxonomy/verification work.
 - Safety: provider Price/UchPrice/NKD/P&L remain comparison-only; provider/Alfa actions remain explicit; unavailable evidence fails closed; Windows-first loopback/no-cloud/no-auth and private-data boundaries remain unchanged; backend CI timeout is 15 minutes.
 - Owner UAT: issue #201 PASS, 2026-08-30.
@@ -462,6 +462,19 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - Deferred: #141 Scenario Lab; #142 projection expansion beyond current-state Tax/IIS v1; #143 Insights UI/AI-bundle integration beyond deterministic backend v1; #203 Phase 2B test rehome/dedupe; #202 residual workspace/ACL cleanup; #229 owner workflow/Alfa UX consolidation.
 - Not done in this task: PR; merge; tag `v0.7.0`; GitHub Release; production-runtime use; Preview-to-Stable promotion.
 - References: issue #231, `docs/releases/0.7.0.md`, `docs/release-notes-0.7.0.md`, `CHANGELOG.md`
+
+### R07-POST — published 0.7.0 publication-state sync
+
+- Recorded: 2026-08-30 after successful owner Stable promotion, from issue #234.
+- Published stable identity: tag `v0.7.0` @ exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`.
+- Exact-main CI: #425 / run `33325251688` — `success`.
+- Canonical Alembic head: `0036_broker_baseline_provenance`; previous stable `v0.6.3` remains historical.
+- Owner Stable promotion: `PASS`, 2026-08-30; owner UAT remains recorded as issue #201 `PASS`, 2026-08-30.
+- Scope: synchronize tracked publication-state documentation only. No product code, migrations, tag, release identity or financial semantics changed.
+- Operational note: the first 0.7.0 Stable start required a one-time frontend dependency install because the existing runtime dependencies were from 0.6.3; this is not a release rollback or financial defect.
+- Deferred remains: #141 Scenario Lab; #142 projection expansion beyond current-state Tax/IIS v1; #143 Insights UI and AI-bundle integration beyond deterministic backend v1; #203 Phase 2B test rehome/dedupe; #202 residual workspace/ACL cleanup; #229 owner workflow/Alfa UX consolidation.
+- GitHub Release body was not edited by this worker branch; `docs/release-notes-0.7.0.md` is synchronized for the authorized publication record.
+- References: issue #234, `docs/releases/0.7.0.md`, `docs/release-notes-0.7.0.md`, `CHANGELOG.md`, `README.md`, `docs/PROJECT_WIKI.md`
 
 ---
 

@@ -4,7 +4,7 @@
 
 ## [0.7.0] — 2026-08-30
 
-Release preparation for the accepted R07 tree. This entry synchronizes the 0.7.0 release identity and records already integrated product work; it does not change product code, financial semantics, provider write behavior or publication state.
+Published 0.7.0 for the accepted R07 tree. This entry records already integrated product work and the post-release identity; it does not change product code, financial semantics or provider write behavior.
 
 ### Added
 
@@ -31,6 +31,9 @@ Release preparation for the accepted R07 tree. This entry synchronizes the 0.7.0
 
 ### Release evidence
 
+- published stable identity: `v0.7.0` @ exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`;
+- exact-main CI #425 (run `33325251688`) completed successfully; published 2026-08-30;
+- owner Stable promotion for 0.7.0: `PASS`, 2026-08-30;
 - owner UAT for issue #201 is recorded as `PASS` on 2026-08-30;
 - final accepted selective-apply integration is merge `d51427989bbe7a195668208318d1eaa2316da6f1`;
 - launcher owner-controls integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
