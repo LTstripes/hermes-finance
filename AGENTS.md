@@ -121,6 +121,13 @@ Do not put machine-specific absolute local paths into tracked repository docs.
 - Owner-only live/probe workspaces use the designated local `owner-probes/` root and are never agent workspaces. Development agents must not access, inspect or reuse them while they contain owner/live data.
 - Machine-specific workspace-root paths and local placement remain untracked local configuration.
 
+For future local task placement, use the portable hierarchy `workspaces/<agent>/<task>/`.
+An agent root groups that client's task workspaces but is not itself a shared mutable
+working tree. Temporary verification artifacts belong under assigned scratch roots:
+`scratch/pytest/`, `scratch/verification/`, or `scratch/uv-cache/`. Remove a task
+workspace only after its final Git state has been verified and the cleanup is
+owner/integrator controlled.
+
 ## Product and privacy invariants
 
 Keep these permanent. Detailed financial semantics live in `MASTER_SPEC.md` and accepted ADRs; do not re-derive them here.
