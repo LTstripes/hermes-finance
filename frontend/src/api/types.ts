@@ -363,6 +363,7 @@ export type DashboardSlice = {
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];
   asset_allocation?: AssetAllocationPoint[];
+  asset_allocation_delta?: AssetAllocationPoint[];
   result_by_account?: AccountResultPoint[];
   result_by_instrument_class?: InstrumentClassResultPoint[];
   warnings?: string[];

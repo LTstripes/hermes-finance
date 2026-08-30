@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -97,6 +97,7 @@ describe("AnalyticsPage", () => {
   });
 
   it("shows backend XIRR unavailability without calculating a value", async () => {
+    const user = userEvent.setup();
     vi.mocked(listMonths).mockResolvedValue([
       {
         id: 2,
@@ -134,8 +135,14 @@ describe("AnalyticsPage", () => {
       </MemoryRouter>,
     );
 
+    const xirrHeading = await screen.findByRole("heading", { name: "XIRR портфеля" });
+    const xirrPanel = xirrHeading.closest("section");
+    expect(xirrPanel).not.toBeNull();
+    if (!xirrPanel) throw new Error("XIRR panel was not rendered");
+    expect(within(xirrPanel).queryByText(/однозначность корня/)).toBeNull();
+    await user.click(within(xirrPanel).getByText("Почему недоступно"));
     expect(
-      await screen.findByText(/однозначность корня для этой истории не подтверждена/),
+      await within(xirrPanel).findByText(/однозначность корня для этой истории не подтверждена/),
     ).toBeInTheDocument();
     expect(screen.getByText("XIRR недоступен")).toBeInTheDocument();
     expect(screen.queryByText("not_computable_xirr_root_ambiguity", { exact: true })).toBeNull();
@@ -144,6 +151,11 @@ describe("AnalyticsPage", () => {
       expect(getPortfolioXirr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
     );
     expect(screen.getByText("TWRR недоступен")).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("heading", { name: "Результат инвестиций" })
+        .compareDocumentPosition(xirrHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     await waitFor(() =>
       expect(getPortfolioTwrr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
     );

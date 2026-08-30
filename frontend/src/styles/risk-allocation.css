@@ -21,6 +21,24 @@
   box-shadow: var(--shadow-soft);
 }
 
+.risk-allocation__event-window {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.risk-allocation__event-window strong {
+  color: var(--ink);
+}
+
+.risk-allocation__event-window span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
 .risk-allocation__metric-summary {
   margin: 0 0 18px;
   padding: 14px;
@@ -69,6 +87,44 @@
 .risk-allocation__excluded summary {
   cursor: pointer;
   font-weight: 650;
+}
+
+.risk-allocation__metric-details {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+}
+
+.risk-allocation__metric-details summary,
+.risk-allocation__support-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.risk-allocation__metric-details[open] > summary,
+.risk-allocation__support-details[open] > summary {
+  margin-bottom: 4px;
+}
+
+.risk-allocation__metric-details .risk-allocation__reasons {
+  margin-top: 8px;
+}
+
+.risk-allocation__metric-details .risk-allocation__excluded {
+  margin-top: 10px;
+}
+
+.risk-allocation__support-details > summary {
+  color: var(--muted);
+}
+
+.risk-allocation__support-details > .panel {
+  margin-top: 12px;
 }
 
 .risk-allocation__support-grid {

@@ -88,7 +88,20 @@ function dashboard(
       gap: { amount: "7629500.00", currency: "RUB" },
     },
     historical_series: [],
-    asset_allocation: [],
+    asset_allocation: [
+      { asset_class: "cash", amount: { amount: "1000000.00", currency: "RUB" } },
+      { asset_class: "deposits", amount: { amount: "2000000.00", currency: "RUB" } },
+      { asset_class: "stocks", amount: { amount: "1000000.00", currency: "RUB" } },
+      { asset_class: "bonds", amount: { amount: "700000.00", currency: "RUB" } },
+      { asset_class: "gold_other", amount: { amount: "120500.00", currency: "RUB" } },
+    ],
+    asset_allocation_delta: [
+      { asset_class: "cash", amount: { amount: "100000.00", currency: "RUB" } },
+      { asset_class: "deposits", amount: { amount: "-20000.00", currency: "RUB" } },
+      { asset_class: "stocks", amount: { amount: "0.00", currency: "RUB" } },
+      { asset_class: "bonds", amount: { amount: "40000.00", currency: "RUB" } },
+      { asset_class: "gold_other", amount: { amount: "0.00", currency: "RUB" } },
+    ],
     result_by_account: [],
     result_by_instrument_class: [],
     warnings: warning ? [warning] : [],
@@ -139,14 +152,24 @@ describe("DashboardPage R03-04 semantics", () => {
     const overview = screen.getByRole("region", { name: "Ключевое состояние" });
     expect(within(overview).getAllByRole("article")).toHaveLength(4);
     expect(within(overview).getByText("Изменение за месяц")).toBeInTheDocument();
-    expect(within(overview).getByText("Факт · выбранный месяц")).toBeInTheDocument();
-    expect(within(overview).getByText("Прогноз · эквивалент за месяц")).toBeInTheDocument();
+    expect(within(overview).queryByText("Факт · выбранный месяц")).toBeNull();
+    expect(within(overview).queryByText("Прогноз · эквивалент за месяц")).toBeNull();
+    expect(within(overview).getByText("Пассивный доход · факт")).toBeInTheDocument();
+    expect(within(overview).getByText("Прогноз · 12 месяцев")).toBeInTheDocument();
     expect(within(overview).getByText("Прогноз / цель")).toBeInTheDocument();
     expect(within(overview).getByText("Вклады")).toBeInTheDocument();
     expect(within(overview).getByText("Купоны")).toBeInTheDocument();
     expect(within(overview).getByText("Дивиденды")).toBeInTheDocument();
     expect(within(overview).getByText("Прочее")).toBeInTheDocument();
     expect(within(overview).getByText("Часть прогноза оценочная")).toBeInTheDocument();
+    expect(within(overview).getByText("Наличные")).toBeInTheDocument();
+    expect(within(overview).getByText("Депозиты")).toBeInTheDocument();
+    expect(within(overview).getByText("Акции")).toBeInTheDocument();
+    expect(within(overview).getByText("Облигации")).toBeInTheDocument();
+    expect(within(overview).getByText("Золото и прочее")).toBeInTheDocument();
+    expect(within(overview).getByText(/\+100\s*000\s*₽/)).toBeInTheDocument();
+    expect(within(overview).getByText(/−20\s*000\s*₽/)).toBeInTheDocument();
+    expect(screen.queryByText("manual · provider · deposit snapshots")).toBeNull();
     await user.click(within(overview).getByRole("button", { name: "Как составлен прогноз" }));
     expect(screen.getByText(/Ручной процент складывается с этой оценкой/)).toBeInTheDocument();
     expect(within(overview).getByText("6 закрытых месяцев из 12")).toBeInTheDocument();
@@ -162,9 +185,7 @@ describe("DashboardPage R03-04 semantics", () => {
 
     expect(screen.queryByText("Среднее доступно за 6 месяцев")).toBeNull();
     expect(screen.queryByText(/По мере закрытия новых месяцев окно обновляется/)).toBeNull();
-    await user.click(
-      within(overview).getByRole("button", { name: "Почему среднее пока неполное" }),
-    );
+    await user.click(within(overview).getByRole("button", { name: "Подробнее о периоде" }));
     expect(screen.getByText(/По мере закрытия новых месяцев окно обновляется/)).toBeInTheDocument();
 
     expect(screen.queryByText("Результат по классам и счетам")).toBeNull();
@@ -207,12 +228,15 @@ describe("DashboardPage R03-04 semantics", () => {
 
   it("presents backend-provided passive-income coverage and boundary metadata", async () => {
     setupDashboard(() => jsonResponse(dashboard(2, null, "2031-05")));
+    const user = userEvent.setup();
 
     const overview = await screen.findByRole("region", { name: "Ключевое состояние" });
-    expect(await within(overview).findByText(/2031-05/)).toBeInTheDocument();
+    expect(within(overview).queryByText(/2031-05/)).toBeNull();
     expect(
-      await within(overview).findByText(/Учтено 6 закрытых месяцев из 12/),
+      await within(overview).findByText(/6\s*закрытых\s*месяцев\s*из\s*12/),
     ).toBeInTheDocument();
+    await user.click(within(overview).getByRole("button", { name: "Подробнее о периоде" }));
+    expect(within(overview).getByText(/2031-05/)).toBeInTheDocument();
   });
 
   it("keeps dashboard cache entries separate and revalidates when returning", async () => {
