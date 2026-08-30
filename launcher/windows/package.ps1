@@ -9,6 +9,8 @@ $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $PSScriptRoot "artifacts\\win-x64"
 }
+$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 $project = Join-Path $PSScriptRoot "HermesFinance.Launcher\\HermesFinance.Launcher.csproj"
 $tests = Join-Path $PSScriptRoot "HermesFinance.Launcher.SafetyTests\\HermesFinance.Launcher.SafetyTests.csproj"
@@ -42,8 +44,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $executable = Join-Path $OutputDirectory "HermesFinance.Launcher.exe"
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "assets\hermes-finance-cat.ico") -Destination (Join-Path $OutputDirectory "hermes-finance-cat.ico") -Force
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Packaging did not produce HermesFinance.Launcher.exe."
+}
+foreach ($asset in @("hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-schema-check.py")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $OutputDirectory $asset) -PathType Leaf)) {
+        throw "Packaging did not include required launcher asset '$asset'."
+    }
 }
 
 Write-Host "Packaged launcher: $executable" -ForegroundColor Green

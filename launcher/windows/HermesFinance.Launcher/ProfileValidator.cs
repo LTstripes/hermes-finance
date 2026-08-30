@@ -13,7 +13,8 @@ public sealed record ValidatedProfile(
     string DataDir,
     string Database,
     string Head,
-    string SidecarKind);
+    string SidecarKind,
+    DependencyStatus? Dependencies = null);
 
 public static class ProfileValidator
 {
@@ -45,9 +46,10 @@ public static class ProfileValidator
         var head = AssertGitIdentity(profile, checkout, canonicalCheckout);
         var sidecarKind = AssertSidecar(profile, dataDir, database);
         AssertSchemaCompatibility(checkout, database, profile.Type);
+        var dependencies = DependencyValidator.Check(checkout);
         AssertPortAvailable();
 
-        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind);
+        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies);
     }
 
     public static void ValidateConfiguration(LauncherConfig config)

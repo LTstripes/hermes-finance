@@ -11,5 +11,8 @@
     <ProjectReference Include="..\HermesFinance.Launcher\HermesFinance.Launcher.csproj" />
     <None Include="..\config.example.json" Link="config.example.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\scripts\launcher-schema-check.py" Link="launcher-schema-check.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\scripts\prepare-runtime-dependencies.ps1" Link="prepare-runtime-dependencies.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\assets\hermes-finance-cat.ico" Link="hermes-finance-cat.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\install.ps1" Link="install.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -48,6 +48,8 @@ Launcher:
 4. проверяет `/api/health`, `/api/months` и HTML-интерфейс;
 5. освобождает порт после остановки.
 
+Для owner-facing Desktop/Start-menu shortcut используйте `launcher\windows\install.ps1`. Скрипт размещает packaged launcher в `%LOCALAPPDATA%\HermesFinance\launcher`, поэтому shortcut не зависит от ephemeral checkout/workspace и использует branded Hermes Finance cat icon. При обычном Stable запуске launcher сначала проверяет exact release/tag, DB/Alembic и locked frontend/backend dependencies; `uv sync --locked` и `npm ci` выполняются только если dependency check обнаружил missing/stale окружение.
+
 После готовности откройте:
 
 ```text
@@ -199,19 +201,14 @@ Export read-only и не изменяет месяц. Файлы могут со
 
 1. Создайте backup.
 2. Остановите приложение.
-3. Выполните:
+3. Подготовьте отдельный Stable checkout на неизменяемом release tag; launcher сам Git не меняет.
+4. Для подготовки packaged launcher и shortcut выполните из подготовленного checkout:
 
 ```powershell
-git pull --ff-only
-Set-Location backend
-uv sync --group dev
-Set-Location ..\frontend
-npm ci
-Set-Location ..
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-Launcher сам применит Alembic migrations перед readiness-check.
+5. Запустите Stable shortcut. Launcher сам подготовит только missing/stale locked dependencies, повторно проверит release/tag и DB/Alembic, а затем применит Alembic migrations перед readiness-check.
 
 ## Известные ограничения 0.7.0
 

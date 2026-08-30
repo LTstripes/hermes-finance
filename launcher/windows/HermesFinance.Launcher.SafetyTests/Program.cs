@@ -13,6 +13,9 @@ var tests = new (string Name, Action Run)[]
     ("rejects preview hardlinks to the production database", RejectsProductionHardlink),
     ("rejects an existing preview database with the wrong sidecar", RejectsWrongPreviewSidecar),
     ("uses the bundled schema probe for a legacy checkout", UsesBundledSchemaProbeForLegacyCheckout),
+    ("uses the bundled dependency preparation helper", UsesBundledDependencyPreparationHelper),
+    ("packages the branded cat icon", PackagesBrandedCatIcon),
+    ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
     ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
@@ -174,6 +177,45 @@ static void UsesBundledSchemaProbeForLegacyCheckout()
     {
         DeleteSyntheticTree(root);
     }
+}
+
+static void UsesBundledDependencyPreparationHelper()
+{
+    var helper = Path.Combine(AppContext.BaseDirectory, "prepare-runtime-dependencies.ps1");
+    Assert(File.Exists(helper), "The launcher must package its dependency preparation helper.");
+    var source = File.ReadAllText(helper);
+    Assert(source.Contains("uv sync --locked", StringComparison.Ordinal), "The helper must use the locked uv sync command.");
+    Assert(source.Contains("npm ci", StringComparison.Ordinal), "The helper must use npm ci for the locked frontend tree.");
+    Assert(!System.Text.RegularExpressions.Regex.IsMatch(source, @"git\s+(pull|switch|checkout|reset)", System.Text.RegularExpressions.RegexOptions.IgnoreCase), "The dependency helper must not mutate Git state.");
+
+    var checkout = "C:\\Stable Runtime With Spaces";
+    var command = DependencyValidator.BuildPreparationCommand(checkout);
+    Assert(command.WorkingDirectory == checkout, "Dependency preparation must run in the selected checkout.");
+    Assert(
+        command.ArgumentList.ToArray().SequenceEqual(
+        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-Checkout", checkout, "-Prepare"]),
+        "Dependency preparation must pass the selected checkout as one argument and request preparation explicitly.");
+}
+
+static void PackagesBrandedCatIcon()
+{
+    var icon = Path.Combine(AppContext.BaseDirectory, "hermes-finance-cat.ico");
+    Assert(File.Exists(icon), "The launcher must package the branded cat icon.");
+    using var stream = File.OpenRead(icon);
+    Span<byte> header = stackalloc byte[4];
+    Assert(stream.Read(header) == header.Length, "The packaged icon must have a complete ICO header.");
+    Assert(header.SequenceEqual(new byte[] { 0, 0, 1, 0 }), "The packaged launcher icon must be a valid ICO file.");
+}
+
+static void InstallsShortcutsBesideStableLauncher()
+{
+    var installer = Path.Combine(AppContext.BaseDirectory, "install.ps1");
+    var source = File.ReadAllText(installer);
+    Assert(source.Contains("LocalApplicationData", StringComparison.Ordinal), "The installer must default to per-user local app storage.");
+    Assert(source.Contains("HermesFinance\\launcher", StringComparison.Ordinal), "The installer must use the stable launcher location.");
+    Assert(source.Contains("TargetPath = $executable", StringComparison.Ordinal), "The shortcut must target the installed launcher executable.");
+    Assert(source.Contains("IconLocation = \"$executable,0\"", StringComparison.Ordinal), "The shortcut must use the installed branded executable icon.");
+    Assert(!System.Text.RegularExpressions.Regex.IsMatch(source, @"git\s+(pull|switch|checkout|reset)", System.Text.RegularExpressions.RegexOptions.IgnoreCase), "The installer must not mutate Git state.");
 }
 
 static void FailsClosedOnReadySidecarFailure()

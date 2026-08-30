@@ -7,9 +7,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ApplicationIcon>..\assets\hermes-finance-cat.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="..\..\..\scripts\launcher-schema-check.py" Link="launcher-schema-check.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\assets\hermes-finance-cat.ico" Link="hermes-finance-cat.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\..\scripts\prepare-runtime-dependencies.ps1" Link="prepare-runtime-dependencies.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
