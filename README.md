@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Это дерево содержит содержимое релиза **0.6.3**. Опубликованная идентичность релиза определяется неизменяемым Git-тегом и GitHub Release. `0.6.3` — maintenance поверх `0.6.2`: dashboard information architecture и payout readability, approximate deposit-interest forecast completeness и explicit T-Invest batch refresh / payout-calendar UX.
+Это дерево содержит release-prep содержимое **0.7.0** для принятого R07 tree. Публикуемая идентичность релиза будет определяться неизменяемым Git-тегом и GitHub Release после отдельного owner/integrator шага; эта задача tag/release не создаёт. `0.7.0` фиксирует уже интегрированные R07/R08 owner workflows, точные return-контракты, guarded Windows launcher и release documentation, без изменения product code или финансовой семантики.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -76,18 +76,18 @@ Frontend будет на `127.0.0.1:5173`, `/api` проксируется в л
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Для 0.6.3 ожидается:
+Для 0.7.0 ожидается:
 
 ```json
 {
   "status": "ok",
-  "version": "0.6.3"
+  "version": "0.7.0"
 }
 ```
 
-## Что доступно в 0.6.3
+## Что доступно в 0.7.0
 
-Maintenance `0.6.3` фиксирует уже интегрированные M06-07/M06-08/M06-09. Dashboard разделяет fact/forecast/coverage, депозитный forecast включает явно approximate component из selected-month snapshot, а T-Invest batch refresh остаётся explicit owner-triggered без background refresh. Продуктовый scope `0.6.0` не расширяется новой линейкой. Доступны:
+Release-prep `0.7.0` фиксирует принятый R07 tree поверх уже интегрированных R07/R08 workstreams. Все provider- и owner-triggered действия остаются явными, а вычисления и финансовые границы — backend-authoritative. Доступны:
 
 - **Дашборд** — KPI, графики капитала/пассивного дохода, распределение активов, инвестиционный результат и основная цель;
 - **Месяцы** — draft/closed lifecycle, клонирование, ввод данных, reopen/close и безопасное удаление draft вместе с его месячными данными;
@@ -97,8 +97,19 @@ Maintenance `0.6.3` фиксирует уже интегрированные M06
 - **Настройки** — базовые настройки и управление годовой шкалой НДФЛ с защитой истории закрытых месяцев;
 - **Рыночные котировки** — явная привязка инструмента к T-Invest, preview по кнопке владельца и выборочный apply с неизменяемой историей provenance;
 - **Автоматические выплаты** — явная загрузка купонов/дивидендов/погашений из T-Invest, preview, выборочный apply и объединённый календарь с ручными ожидаемыми выплатами;
-- **Снимок Alfa PRO** — явная кнопка владельца, только локальный loopback терминала, transient-сопоставление счетов/инструментов, выборочный apply; Price/UchPrice/NKD/P&L остаются сравнением, а не молчаливой записью;
+- **Снимок Alfa PRO** — явная кнопка владельца, только локальный loopback терминала, persistent owner-confirmed registry счетов/инструментов и owner-approved baseline quantity apply с provenance; Price/UchPrice/NKD/P&L остаются сравнением, а выборочный apply безопасного поднабора не блокируется unrelated unresolved/conflicting rows;
 - **PDF выплат Alfa** — только принятый депозитарный отчёт `Отчет о произведенных выплатах доходов по ценным бумагам`: Inspect → mapping → Prepare → явный selected Apply, без OCR и без generic import; ошибочно применённую строку можно auditable-отменить (`Отменить импорт` / `Отвязать выписку`) без молчаливого уничтожения provenance.
+- **AI Analysis Bundle** — schema-valid read-only JSON для явного owner download; он не вызывает LLM/cloud, не пишет в базу и не заменяет финансовые формулы.
+- **Monthly Close Cockpit** — серверный checklist из blockers, warnings и context; `can_close` следует hard guards закрытия, а advisory warnings не превращаются в блокировки.
+- **Cash-flow Ladder / upcoming treasury events** — читаемая лестница ближайших датированных выплат и других treasury events; redemption principal остаётся капиталом, а не passive income.
+- **Risk & Allocation** — allocation выбранного месяца по persisted RUB valuation и явным asset-class/account/top-position с концентрацией payout/redemption; отсутствие metadata остаётся unavailable state, а не risk score или рекомендацией.
+- **Freshness & Provenance Center** — persisted source/freshness clocks и reason codes без universal score и без background refresh.
+- **Reconciliation Center** — explicit read-only snapshot preview с normalized row states и compatibility diagnostics; provider Price/UchPrice/NKD/P&L — comparison-only и не перезаписывают Hermes.
+- **Tax/IIS Planner** — current-state v1 для фактических и текущих налоговых данных; расширение projection scope отложено.
+- **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; полного UI/AI-bundle integration в 0.7.0 не заявляется.
+- **XIRR и exact TWRR** — XIRR доступен для whole portfolio при однозначном валидном корне; TWRR использует persisted observed valuation boundaries и pre/post observations для потоков. Missing/gapped evidence, неизвестный порядок событий и неоднозначный XIRR root fail closed.
+- **Windows Stable/Preview launcher** — guarded runtime profiles и owner Start/Stop controls; launcher не перечисляет и не меняет Git branches/state и не смешивает Stable с Preview.
+- **UI и verification** — visual-audit polish, semantic test-taxonomy work и backend CI с timeout 15 минут входят в release evidence, не расширяя финансовую семантику.
 
 В редакторе месяца доступны зарплата и прочие доходы, депозиты/cash, позиции, фактические и ожидаемые investment flows, расходы/savings, долги/недвижимость, ИИС и комментарии.
 
@@ -129,13 +140,17 @@ Maintenance `0.6.3` фиксирует уже интегрированные M06
 
 ### Календарь ожидаемых выплат
 
-В **0.6.3** календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest; раскрытие месяца очевидно, а expanded rows показывают instrument/company первично, account вторично, source/provenance, amount и redemption-as-capital context. `Ручные ожидаемые выплаты` остаются manual-only/additive и стоят после merged calendar в DOM. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
+В **0.7.0** календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest; раскрытие месяца очевидно, а expanded rows показывают instrument/company первично, account вторично, source/provenance, amount и redemption-as-capital context. `Ручные ожидаемые выплаты` остаются manual-only/additive и стоят после merged calendar в DOM. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
 
 - количество для провайдерской выплаты берётся из локального `PositionSnapshot`, не из брокерского портфеля;
 - apply не редактирует и не удаляет ручные `expected_cash_flows`;
 - неразрешённый дубль считается только вручную, пока владелец явно не выберет `keep_both`, `count_manual` или `count_provider`;
 - применённые купоны провайдера входят в прогноз C04; объявленные дивиденды видны в календаре, но не заменяют исторический dividend component; погашение — денежный поток, не пассивный доход;
 - наступление даты события не создаёт фактическую инвестиционную выплату.
+
+### Cash-flow Ladder
+
+Cash-flow Ladder показывает ближайшие датированные upcoming treasury events поверх локальных данных и различает income events и возврат капитала. Отсутствующие дата, scope или provenance не заполняются догадкой; reconciliation и provider comparison остаются отдельными явными путями.
 
 ## Приватный seed
 
@@ -198,16 +213,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps
 
 Launcher сам применит Alembic migrations перед readiness-check.
 
-## Известные ограничения 0.6.3
+## Известные ограничения 0.7.0
 
 - только один локальный пользователь, без auth/cloud/VPS/HTTPS;
 - котировки и выплаты T-Invest только после явного preview/apply владельца; изменение количества позиции не запускает background refresh, polling или startup-сеть; MOEX не является production fallback;
 - снимок Alfa PRO только после явной кнопки и только к локальному терминалу; нет background refresh, browser → Alfa WebSocket и trading/order/signing API;
 - PDF-импорт Alfa — только принятое семейство депозитарного отчёта о выплатах доходов, text layer, без OCR; это не generic import брокерского портфеля, сделок или банковских транзакций;
-- persistent mapping счетов/инструментов Alfa нет; account/instrument/month из провайдера или PDF автоматически не создаются;
+- Alfa account/instrument mapping хранится только после owner confirmation; account/instrument/month из провайдера или PDF автоматически не создаются, а baseline quantity apply требует отдельного owner approval и сохраняет provenance;
 - суммы провайдера могут оставаться приблизительными, если нет личной налоговой/net-уверенности;
-- точная time-weighted/Money-weighted доходность с датированными внешними потоками отложена;
+- XIRR/TWRR не вычисляются при неполной persisted evidence, пропущенной valuation boundary, неизвестном same-day order или неоднозначном XIRR root; первая TWRR API-поверхность ограничена whole portfolio;
 - приложение не является бухгалтерской, налоговой или торговой системой.
+
+### Явно отложено за пределы 0.7.0
+
+- #141 Scenario Lab;
+- #142 projection expansion за пределы current-state Tax/IIS v1;
+- #143 Insights UI и AI Analysis Bundle integration за пределами deterministic backend v1;
+- #203 Phase 2B test rehome/dedupe;
+- #202 residual workspace/ACL cleanup;
+- #229 owner workflow/Alfa UX consolidation.
 
 ## Типовые проблемы
 
@@ -280,12 +304,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-rel
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
-  -Version 0.6.3 `
+  -Version 0.7.0 `
   -ExpectedMainSha <полный-40-символьный-sha-принятого-origin/main> `
-  -ReleaseNotes .\docs\release-notes-0.6.3.md
+  -ReleaseNotes .\docs\release-notes-0.7.0.md
 ```
 
 Хелпер не двигает ветки, не делает force-update тега, не создаёт коммиты и не читает `.env`.
+
+В release line 0.7.0 backend CI job имеет timeout 15 минут. Это не меняет локальный loopback/no-cloud/no-auth safety boundary.
 
 Verification policy: [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md).
 
@@ -301,8 +327,10 @@ Active:
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — журнал исполнения;
 - [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения;
-- [`docs/releases/0.6.3.md`](docs/releases/0.6.3.md) — 0.6.3 maintenance release record;
-- [`docs/release-notes-0.6.3.md`](docs/release-notes-0.6.3.md) — публичные notes для позднего guarded release helper.
+- [`docs/releases/0.7.0.md`](docs/releases/0.7.0.md) — 0.7.0 R07 release-prep record;
+- [`docs/release-notes-0.7.0.md`](docs/release-notes-0.7.0.md) — публичные notes для позднего guarded release helper.
+
+Исторические release records 0.6.3 и старше остаются без переписывания.
 
 Historical:
 

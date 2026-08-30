@@ -445,6 +445,26 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.7.0 release preparation
+
+### R07-REL — 0.7.0 release metadata and documentation sync
+
+- Recorded: 2026-08-30 as release-prep context from issue #231. This is not an accept/integrate verdict and not a published release.
+- Issue: #231
+- Exact baseline: `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`
+- Task branch: `docs-r07-release-sync`
+- Scope: synchronize the 0.7.0 product/package identity, generated lock metadata, health/release expectations, CHANGELOG, public notes, release record, README, Project Wiki and execution history. No product-code or financial-semantic change.
+- Canonical Alembic head: `0036_broker_baseline_provenance`; this release-prep task adds no migration.
+- Documented accepted surface: AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder / upcoming treasury events, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR, exact TWRR with persisted observed valuation boundaries, guarded Windows Stable/Preview launcher owner Start/Stop controls, Alfa compatibility/mapping/baseline provenance, row-scoped selective apply, UI/visual-audit polish and semantic test-taxonomy/verification work.
+- Safety: provider Price/UchPrice/NKD/P&L remain comparison-only; provider/Alfa actions remain explicit; unavailable evidence fails closed; Windows-first loopback/no-cloud/no-auth and private-data boundaries remain unchanged; backend CI timeout is 15 minutes.
+- Owner UAT: issue #201 PASS, 2026-08-30.
+- Integration evidence: final accepted selective-apply merge `d51427989bbe7a195668208318d1eaa2316da6f1`; launcher owner-controls baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
+- Deferred: #141 Scenario Lab; #142 projection expansion beyond current-state Tax/IIS v1; #143 Insights UI/AI-bundle integration beyond deterministic backend v1; #203 Phase 2B test rehome/dedupe; #202 residual workspace/ACL cleanup; #229 owner workflow/Alfa UX consolidation.
+- Not done in this task: PR; merge; tag `v0.7.0`; GitHub Release; production-runtime use; Preview-to-Stable promotion.
+- References: issue #231, `docs/releases/0.7.0.md`, `docs/release-notes-0.7.0.md`, `CHANGELOG.md`
+
+---
+
 ## Historical backfill
 
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.

@@ -39,7 +39,11 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 Опубликованная стабильная product identity — **0.6.3**. Annotated tag `v0.6.3` peel'ится в exact released main SHA `366b4a7c37265de5e62feb639060f88afaba54fc`; canonical exact-main CI #331 для этого SHA завершился `success`, GitHub Release опубликован 2026-08-25. Канонический Alembic head — `0029_statement_event_retract`.
 
+Issue #231 подготавливает release-prep identity `0.7.0` на exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f` в ветке `docs-r07-release-sync`. В этой ветке документируется принятый R07 tree с каноническим Alembic head `0036_broker_baseline_provenance`; tag, GitHub Release и Stable promotion этой задачей не выполняются.
+
 После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
+
+Принятый R07 tree расширяет текущую продуктовую поверхность owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Подробная release-prep фиксация находится в разделе 20 и `docs/releases/0.7.0.md`; это не означает, что `0.7.0` уже опубликован.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -53,7 +57,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 - owner live smoke, включая T-Invest, пройден;
 - линия R05 закрыта; новых R05-задач нет.
 
-В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0. `0.6.2` добавляет auditable retract ошибочно применённых statement payouts и polish layout. `0.6.3` фиксирует M06-07/M06-08/M06-09; deposit forecast остаётся approximate, T-Invest refresh — explicit owner-triggered, parser/provider/trading семантика не меняется.
+В 0.4 появились явные T-Invest котировки (mapping → preview → selective apply, append-only provenance). В 0.5 добавлен owner-controlled календарь купонов/дивидендов/погашений с тем же явным lifecycle. В 0.6 добавляются owner-triggered Alfa PRO snapshot и узкий Alfa depository income-payment PDF import. `0.6.1` не расширяет эти пути — только UX review/edit поверх уже принятого 0.6.0. `0.6.2` добавляет auditable retract ошибочно применённых statement payouts и polish layout. `0.6.3` фиксирует M06-07/M06-08/M06-09; deposit forecast остаётся approximate, T-Invest refresh — explicit owner-triggered, parser/provider/trading семантика не меняется. R07/R08 добавляют описанную выше read-only owner surface, persisted provenance, exact return contracts и launcher controls без изменения финансовых инвариантов.
 
 Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, провайдер только read-only, сеть только после явного действия владельца. Нет cloud/auth/telemetry, background refresh или trading API.
 
@@ -72,7 +76,19 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - фактические инвестиционные выплаты и ручные ожидаемые потоки;
 - T-Invest котировки по явной кнопке владельца;
 - T-Invest календарь выплат (preview/apply) поверх локальных позиций Hermes;
-- Alfa PRO current snapshot по явной кнопке, только local loopback, transient mapping, selected apply;
+- Alfa PRO current snapshot по явной кнопке, только local loopback, persistent owner-confirmed account/instrument mapping, owner-approved baseline quantity apply с provenance и selected apply;
+- AI Analysis Bundle — schema-valid read-only owner download без LLM/cloud, persistence или formula duplication;
+- Monthly Close Cockpit — server-derived blockers, advisory warnings и context;
+- Cash-flow Ladder / upcoming treasury events с явным income/capital-return distinction;
+- Risk & Allocation по selected-month persisted RUB valuation, explicit allocation и payout/redemption concentration;
+- Freshness & Provenance Center с persisted clocks/reason codes без universal score и background refresh;
+- Reconciliation Center с normalized row states и compatibility diagnostics; Price/UchPrice/NKD/P&L — comparison-only;
+- current-state Tax/IIS Planner v1;
+- deterministic Insights backend v1 на persisted evidence без full UI/AI-bundle integration;
+- XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed gaps/order/root states;
+- guarded Windows Stable/Preview launcher с owner Start/Stop controls, без Git branch/state mutation;
+- row-scoped selective apply: unrelated unresolved/conflicting rows не блокируют safe selected subset, selected unsafe/stale rows fail closed;
+- UI/visual-audit polish, semantic test-taxonomy/verification work и backend CI timeout 15 минут;
 - импорт принятого Alfa депозитарного PDF о выплатах доходов: Inspect → mapping → Prepare → selected Apply;
 - Goals и основная цель;
 - Dashboard и графики;
@@ -90,7 +106,8 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - фоновое обновление котировок или выплат;
 - production fallback на MOEX;
 - универсальный импорт любого Excel/PDF;
-- точная доходность с датированными внешними потоками до отдельного контракта.
+- полный Insights UI и AI Analysis Bundle integration beyond deterministic backend v1;
+- projection expansion beyond current-state Tax/IIS Planner v1;
 
 ## 5. Технический контур
 
@@ -227,7 +244,7 @@ GitHub Actions включает backend, frontend, privacy guard, Windows produc
 - агент не видит и не линкует production `.env`, DB, backups, `private/` или owner payloads;
 - owner preview/UAT и experiment runtimes тоже не являются agent workspace.
 
-Будущий Windows launcher (контракт ADR 0014, реализация — issue #144) выбирает **runtime profile**: отдельный checkout + идентичность кода + данные, а не `git checkout` поверх одной `finance.db`. Stable может открыть только production runtime/data. Preview и Experiment не могут открыть production DB. v1 — один процесс на `127.0.0.1:8000`. Исполняемого launcher в текущем дереве ещё нет; daily start по-прежнему `scripts/start-local.ps1`.
+Windows launcher в принятом R07 tree уже выбирает **runtime profile**: отдельный checkout + идентичность кода + данные, а не `git checkout` поверх одной `finance.db`. Stable может открыть только production runtime/data. Preview и Experiment не могут открыть production DB. Owner Start/Stop controls управляют профилем; launcher не перечисляет и не меняет Git branches/state, а Preview не копируется в Stable. v1 — один процесс на `127.0.0.1:8000`; daily start остаётся `scripts/start-local.ps1`.
 
 Перед новой задачей чистый clone синхронизируется с каноническим `main`. Несколько писателей в одном scope не работают. Machine-specific абсолютные пути — локальная конфигурация, не архитектура репозитория.
 
@@ -359,3 +376,33 @@ Safety contract 0.6.3: deposit forecast is approximate and not maturity-aware; T
 - **Privacy boundary:** GitHub-native integration and Actions never imply access to production `.env`, finance DB, backups, `private/`, owner exports or live provider credentials.
 
 HYG-04 is repository infrastructure only; it does not change the published 0.6.3 product identity or product semantics.
+
+## 20. Линия 0.7.0 / R07 release preparation
+
+Issue #231 (`R07-REL`) фиксирует release-prep identity `0.7.0` для принятого R07 tree.
+
+- **Exact baseline:** `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
+- **Task branch:** `docs-r07-release-sync`.
+- **Canonical Alembic head:** `0036_broker_baseline_provenance`.
+- **Owner UAT:** issue #201 — `PASS`, 2026-08-30.
+- **Selective apply evidence:** final accepted merge `d51427989bbe7a195668208318d1eaa2316da6f1`.
+- **Launcher evidence:** owner Start/Stop integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
+
+### Current R07/R08 surface
+
+В accepted tree документированы AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder / upcoming treasury events, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed missing/gapped evidence.
+
+Alfa compatibility diagnostics, persistent owner-confirmed account/instrument identity mappings и owner-approved baseline quantity apply с provenance остаются явными owner-controlled действиями. Provider Price/UchPrice/NKD/P&L — comparison-only. Row-scoped selective apply не блокируется unrelated unresolved/conflicting rows, но selected unsafe/stale rows fail closed.
+
+Windows Stable/Preview launcher имеет guarded runtime profiles и owner Start/Stop controls. Он не меняет Git branches/state, не переносит Preview data в Stable и сохраняет Windows-first loopback/no-cloud/no-auth boundary. UI/visual-audit polish, semantic test-taxonomy/verification work и backend CI timeout 15 минут входят в release evidence.
+
+### Deferred
+
+- #141 Scenario Lab;
+- #142 projection expansion beyond current-state Tax/IIS v1;
+- #143 Insights UI and AI Analysis Bundle integration beyond deterministic backend v1;
+- #203 Phase 2B test rehome/dedupe;
+- #202 residual workspace/ACL cleanup;
+- #229 owner workflow/Alfa UX consolidation.
+
+Эта запись не является публикацией: issue #231 не выполняет PR, merge, tag, GitHub Release или Stable promotion. Опубликованная стабильная identity остаётся `0.6.3` до отдельного авторизованного release шага.
