@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listAccounts } from "../api/accounts";
+import { listEffectiveBrokerIdentityMappings } from "../api/brokerIdentityMappings";
 import { ApiClientError } from "../api/client";
 import { getSettings, updateSettings } from "../api/settings";
 import { SettingsPage } from "./SettingsPage";
@@ -10,6 +12,17 @@ import { SettingsPage } from "./SettingsPage";
 vi.mock("../api/settings", () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+}));
+
+vi.mock("../api/accounts", () => ({
+  listAccounts: vi.fn(),
+}));
+
+vi.mock("../api/brokerIdentityMappings", () => ({
+  confirmBrokerIdentityMapping: vi.fn(),
+  listEffectiveBrokerIdentityMappings: vi.fn(),
+  remapBrokerIdentityMapping: vi.fn(),
+  revokeBrokerIdentityMapping: vi.fn(),
 }));
 
 vi.mock("../components/TaxBracketsPanel", () => ({
@@ -27,6 +40,8 @@ const settings = {
 
 const getSettingsMock = vi.mocked(getSettings);
 const updateSettingsMock = vi.mocked(updateSettings);
+const listAccountsMock = vi.mocked(listAccounts);
+const listEffectiveMappingsMock = vi.mocked(listEffectiveBrokerIdentityMappings);
 
 function renderSettings() {
   return render(
@@ -41,6 +56,8 @@ describe("SettingsPage", () => {
     vi.clearAllMocks();
     getSettingsMock.mockResolvedValue(settings);
     updateSettingsMock.mockResolvedValue(settings);
+    listAccountsMock.mockResolvedValue([]);
+    listEffectiveMappingsMock.mockResolvedValue([]);
   });
 
   it("loads settings and keeps financial goal read-only", async () => {
@@ -88,7 +105,7 @@ describe("SettingsPage", () => {
     await user.click(save);
 
     await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledWith({ locale: "en-US" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Настройки сохранены");
+    expect(await screen.findByText("Настройки сохранены.")).toBeInTheDocument();
   });
 
   it("blocks invalid locale before PUT", async () => {
