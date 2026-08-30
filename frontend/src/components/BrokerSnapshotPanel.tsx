@@ -125,6 +125,26 @@ function rowKey(row: BrokerPositionRow): string {
   return `${row.account_id}:${row.instrument_id}`;
 }
 
+function isApplyablePositionRow(row: BrokerPositionRow): boolean {
+  return (
+    Boolean(row.fingerprint) &&
+    !row.is_money &&
+    (row.status === "matched" || row.status === "provider_only")
+  );
+}
+
+function previewStatusLabel(next: BrokerSnapshotPreview): string {
+  if (next.status === "conflicts" && next.eligible_for_apply) {
+    return "Есть нерешённые строки; безопасные доступны";
+  }
+  return labelOf(PREVIEW_STATUS_LABELS, next.status);
+}
+
+function previewTone(next: BrokerSnapshotPreview): BadgeTone {
+  if (next.status === "conflicts") return "info";
+  return next.eligible_for_apply ? "ok" : "closed";
+}
+
 function initialDecision(row: BrokerPositionRow): LocalDecision {
   return row.status === "matched" ? MATCHED_DEFAULT_DECISION : EMPTY_DECISION;
 }
@@ -260,8 +280,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
   const baselineDate = selectedMonth?.snapshot_date ?? "";
   const monthClosed = selectedMonth?.status === "closed" || Boolean(preview?.month_closed);
   const selectedRows =
-    preview?.positions.filter((row) => selected[rowKey(row)] && row.fingerprint && !row.is_money) ??
-    [];
+    preview?.positions.filter((row) => selected[rowKey(row)] && isApplyablePositionRow(row)) ?? [];
 
   function effectiveMapping(subjectKind: "account" | "instrument", providerIdentity: string) {
     return identityMappings.find(
@@ -493,10 +512,14 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
       {preview ? (
         <div className="stack-12">
           <div className="toolbar">
-            <Badge tone={preview.eligible_for_apply ? "ok" : "closed"}>
-              {labelOf(PREVIEW_STATUS_LABELS, preview.status)}
-            </Badge>
+            <Badge tone={previewTone(preview)}>{previewStatusLabel(preview)}</Badge>
           </div>
+          {preview.status === "conflicts" && preview.eligible_for_apply ? (
+            <div className="inline-alert" role="status">
+              Есть нерешённые или спорные строки. Выбирайте только полностью сопоставленные строки;
+              остальные останутся без изменений.
+            </div>
+          ) : null}
           <details>
             <summary>Безопасная диагностика для поддержки</summary>
             <div className="stack-8">
@@ -675,10 +698,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, onApplied }: Props)
               {preview.positions.map((row) => {
                 const key = rowKey(row);
                 const decision = decisions[key] ?? initialDecision(row);
-                const applyable =
-                  Boolean(row.fingerprint) &&
-                  !row.is_money &&
-                  (row.status === "matched" || row.status === "provider_only");
+                const applyable = isApplyablePositionRow(row);
                 return (
                   <tr key={key}>
                     <Td>

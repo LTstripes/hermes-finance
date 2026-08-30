@@ -70,8 +70,10 @@ from hermes_finance.services.freshness_provenance import (
 )
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import (
+    create_position_snapshot,
     delete_position_snapshot,
     get_position_snapshot_by_key,
+    update_position_snapshot,
 )
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
@@ -471,6 +473,223 @@ def test_e2_reused_mapping_updates_quantity_only(tmp_path: Path) -> None:
     assert position.average_cost_per_unit_kopecks == 10_000
     assert position.market_price_per_unit_kopecks == 15_000
     assert _effective_count(session) == 2
+    session.close()
+
+
+def _snapshot_with_unrelated_conflict() -> BrokerSnapshot:
+    return _snapshot(
+        positions=(
+            _position(quantity="10"),
+            _position(instrument_id=SYN_INSTRUMENT_B, isin=SYN_ISIN_B, quantity="4"),
+            _position(instrument_id=SYN_INSTRUMENT_B, isin=SYN_ISIN_B, quantity="5"),
+        )
+    )
+
+
+def test_selective_baseline_applies_safe_matched_row_with_unrelated_conflict(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    ids = _context(session, second_instrument=True)
+    position = create_position_snapshot(
+        session,
+        reporting_month_id=ids["month_id"],
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+        quantity="9",
+        average_cost_per_unit=LOCAL_AVERAGE,
+        market_price_per_unit=LOCAL_MARKET,
+        accrued_interest="0.00",
+        price_date=BASELINE_DATE,
+        price_source=PriceSource.MANUAL,
+    )
+    snapshot = _snapshot_with_unrelated_conflict()
+    mapping = account_mapping(ids["account_id"])
+    hermes = load_hermes_state_for_month(session, ids["month_id"])
+    composed = compose_owner_mapping(session, provider=ALFA_PRO_PROVIDER, request=mapping)
+    preview = build_reconciliation_preview(snapshot=snapshot, hermes=hermes, mapping=composed)
+    assert preview.status.value == "conflicts"
+    assert preview.eligible_for_apply is True
+    assert {row.status.value for row in preview.positions} == {"matched", "conflict"}
+    fingerprint = reviewed_fingerprint(
+        session,
+        snapshot,
+        month_id=ids["month_id"],
+        request=mapping,
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+    )
+
+    result = apply_baseline(
+        session,
+        FakeSnapshotProvider(snapshot),
+        month_id=ids["month_id"],
+        mapping=mapping,
+        selections=(selection_update(ids["account_id"], ids["instrument_id"], fingerprint),),
+    )
+
+    assert result.success is True
+    assert result.selected_count == 1
+    assert result.items[0].action is BrokerSnapshotApplyItemAction.UPDATED
+    session.refresh(position)
+    assert Decimal(position.quantity) == Decimal("10")
+    assert (
+        get_position_snapshot_by_key(
+            session,
+            reporting_month_id=ids["month_id"],
+            account_id=ids["account_id"],
+            instrument_id=ids["instrument_b_id"],
+        )
+        is None
+    )
+    assert _effective_count(session) == 2
+    session.close()
+
+
+def test_conflicted_position_cannot_be_selected_or_applied(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    ids = _context(session, second_instrument=True)
+    position = create_position_snapshot(
+        session,
+        reporting_month_id=ids["month_id"],
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+        quantity="9",
+        average_cost_per_unit=LOCAL_AVERAGE,
+        market_price_per_unit=LOCAL_MARKET,
+        accrued_interest="0.00",
+        price_date=BASELINE_DATE,
+        price_source=PriceSource.MANUAL,
+    )
+    snapshot = _snapshot_with_unrelated_conflict()
+    mapping = account_mapping(ids["account_id"])
+    fingerprint = reviewed_fingerprint(
+        session,
+        snapshot,
+        month_id=ids["month_id"],
+        request=mapping,
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_b_id"],
+    )
+
+    result = apply_baseline(
+        session,
+        FakeSnapshotProvider(snapshot),
+        month_id=ids["month_id"],
+        mapping=mapping,
+        selections=(selection_create(ids["account_id"], ids["instrument_b_id"], fingerprint),),
+    )
+
+    assert result.success is False
+    assert result.error_code is BrokerBaselineApplyFailureCode.VALIDATION_ERROR
+    assert result.message == "selected position is not applyable"
+    session.refresh(position)
+    assert Decimal(position.quantity) == Decimal("9")
+    assert (
+        get_position_snapshot_by_key(
+            session,
+            reporting_month_id=ids["month_id"],
+            account_id=ids["account_id"],
+            instrument_id=ids["instrument_b_id"],
+        )
+        is None
+    )
+    assert _effective_count(session) == 0
+    assert session.scalar(select(func.count()).select_from(BrokerBaselineApply)) == 0
+    session.close()
+
+
+def test_selected_position_conflict_after_preview_fails_closed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    ids = _context(session, second_instrument=True)
+    position = create_position_snapshot(
+        session,
+        reporting_month_id=ids["month_id"],
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+        quantity="9",
+        average_cost_per_unit=LOCAL_AVERAGE,
+        market_price_per_unit=LOCAL_MARKET,
+        accrued_interest="0.00",
+        price_date=BASELINE_DATE,
+        price_source=PriceSource.MANUAL,
+    )
+    reviewed = _snapshot_with_unrelated_conflict()
+    mapping = account_mapping(ids["account_id"])
+    fingerprint = reviewed_fingerprint(
+        session,
+        reviewed,
+        month_id=ids["month_id"],
+        request=mapping,
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+    )
+    changed = _snapshot(
+        positions=(
+            _position(quantity="10"),
+            _position(quantity="11"),
+            _position(instrument_id=SYN_INSTRUMENT_B, isin=SYN_ISIN_B, quantity="4"),
+        )
+    )
+
+    result = apply_baseline(
+        session,
+        FakeSnapshotProvider(changed),
+        month_id=ids["month_id"],
+        mapping=mapping,
+        selections=(selection_update(ids["account_id"], ids["instrument_id"], fingerprint),),
+    )
+
+    assert result.success is False
+    assert result.error_code is BrokerBaselineApplyFailureCode.PREVIEW_CHANGED
+    session.refresh(position)
+    assert Decimal(position.quantity) == Decimal("9")
+    assert _effective_count(session) == 0
+    assert session.scalar(select(func.count()).select_from(BrokerBaselineApply)) == 0
+    session.close()
+
+
+def test_selected_position_stale_fingerprint_still_fails_closed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    ids = _context(session, second_instrument=True)
+    position = create_position_snapshot(
+        session,
+        reporting_month_id=ids["month_id"],
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+        quantity="9",
+        average_cost_per_unit=LOCAL_AVERAGE,
+        market_price_per_unit=LOCAL_MARKET,
+        accrued_interest="0.00",
+        price_date=BASELINE_DATE,
+        price_source=PriceSource.MANUAL,
+    )
+    snapshot = _snapshot_with_unrelated_conflict()
+    mapping = account_mapping(ids["account_id"])
+    fingerprint = reviewed_fingerprint(
+        session,
+        snapshot,
+        month_id=ids["month_id"],
+        request=mapping,
+        account_id=ids["account_id"],
+        instrument_id=ids["instrument_id"],
+    )
+    update_position_snapshot(session, position.id, quantity="8")
+
+    result = apply_baseline(
+        session,
+        FakeSnapshotProvider(snapshot),
+        month_id=ids["month_id"],
+        mapping=mapping,
+        selections=(selection_update(ids["account_id"], ids["instrument_id"], fingerprint),),
+    )
+
+    assert result.success is False
+    assert result.error_code is BrokerBaselineApplyFailureCode.PREVIEW_CHANGED
+    session.refresh(position)
+    assert Decimal(position.quantity) == Decimal("8")
+    assert _effective_count(session) == 0
+    assert session.scalar(select(func.count()).select_from(BrokerBaselineApply)) == 0
     session.close()
 
 
