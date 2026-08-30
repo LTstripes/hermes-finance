@@ -1,8 +1,10 @@
 # Hermes Finance 0.7.0
 
-> **Status:** release preparation only. This document does not publish a tag or GitHub Release.
+> **Status:** RELEASED
+> **Published:** 2026-08-30
+> **Published identity:** `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`
 
-Hermes Finance 0.7.0 records the accepted R07 tree and synchronizes its release identity. The release-prep change is limited to release metadata and documentation; product code and financial semantics are unchanged.
+Hermes Finance 0.7.0 records the accepted and published R07 tree. This document is the public release-notes body for the already published release; the post-release documentation sync changes no product code or financial semantics.
 
 ## Included product surface
 
@@ -28,6 +30,8 @@ Hermes Finance 0.7.0 records the accepted R07 tree and synchronizes its release 
 
 ## Evidence
 
+- Exact-main CI #425 / run `33325251688`: `success`.
+- Owner Stable promotion: `PASS`, 2026-08-30.
 - Owner UAT for issue #201: `PASS`, 2026-08-30.
 - Final accepted selective-apply integration: `d51427989bbe7a195668208318d1eaa2316da6f1`.
 - Launcher owner-controls integration: `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
@@ -41,6 +45,6 @@ Hermes Finance 0.7.0 records the accepted R07 tree and synchronizes its release 
 - #202 residual workspace/ACL cleanup;
 - #229 owner workflow/Alfa UX consolidation.
 
-## Publication boundary
+## Publication record
 
-This task is prepared from exact baseline `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f` on branch `docs-r07-release-sync`. It does not perform a PR, merge, tag, GitHub Release, production-runtime operation or Preview-to-Stable promotion. Publication, if later authorized, must use the guarded release process and an independently verified accepted `origin/main` SHA.
+The immutable published identity is `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`, with exact-main CI #425 / run `33325251688` successful and owner Stable promotion confirmed `PASS` on 2026-08-30. These notes are suitable as the GitHub Release body for that published identity.

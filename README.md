@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Это дерево содержит release-prep содержимое **0.7.0** для принятого R07 tree. Публикуемая идентичность релиза будет определяться неизменяемым Git-тегом и GitHub Release после отдельного owner/integrator шага; эта задача tag/release не создаёт. `0.7.0` фиксирует уже интегрированные R07/R08 owner workflows, точные return-контракты, guarded Windows launcher и release documentation, без изменения product code или финансовой семантики.
+Опубликованная стабильная идентичность **0.7.0** — неизменяемый Git-тег `v0.7.0`, указывающий на exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`; exact-main CI #425 (run `33325251688`) завершился успешно, публикация состоялась 2026-08-30. Owner Stable promotion для 0.7.0 подтверждён как PASS в тот же день. Этот post-release docs sync фиксирует уже опубликованное состояние и не меняет product code или финансовую семантику.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -89,7 +89,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health
 
 ## Что доступно в 0.7.0
 
-Release-prep `0.7.0` фиксирует принятый R07 tree поверх уже интегрированных R07/R08 workstreams. Все provider- и owner-triggered действия остаются явными, а вычисления и финансовые границы — backend-authoritative. Доступны:
+Released `0.7.0` фиксирует принятый R07 tree поверх уже интегрированных R07/R08 workstreams. Все provider- и owner-triggered действия остаются явными, а вычисления и финансовые границы — backend-authoritative. Доступны:
 
 - **Дашборд** — KPI, графики капитала/пассивного дохода, распределение активов, инвестиционный результат и основная цель;
 - **Месяцы** — draft/closed lifecycle, клонирование, ввод данных, reopen/close и безопасное удаление draft вместе с его месячными данными;
@@ -297,7 +297,7 @@ python .\scripts\privacy_check.py
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
 ```
 
-Публикация релиза — только после явного решения владельца и только с exact `origin/main` SHA:
+Публикация `0.7.0` выполнена через guarded release process; её immutable identity и exact-main CI зафиксированы выше. Для будущих релизов применяется тот же процесс с exact `origin/main` SHA:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
@@ -324,8 +324,8 @@ Active:
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — журнал исполнения;
 - [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения;
-- [`docs/releases/0.7.0.md`](docs/releases/0.7.0.md) — 0.7.0 R07 release-prep record;
-- [`docs/release-notes-0.7.0.md`](docs/release-notes-0.7.0.md) — публичные notes для позднего guarded release helper.
+- [`docs/releases/0.7.0.md`](docs/releases/0.7.0.md) — опубликованный 0.7.0 release record;
+- [`docs/release-notes-0.7.0.md`](docs/release-notes-0.7.0.md) — public notes опубликованного 0.7.0.
 
 Исторические release records 0.6.3 и старше остаются без переписывания.
 
