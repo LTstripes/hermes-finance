@@ -192,6 +192,72 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("preview changed");
   });
 
+  it("keeps safe rows selectable when another row is conflicted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        status: "conflicts",
+        eligible_for_apply: true,
+        positions: [
+          matched,
+          {
+            ...matched,
+            instrument_id: 20,
+            instrument_name: "Спорный инструмент",
+            status: "conflict",
+            fingerprint: "must-not-apply",
+            reason: "duplicate provider rows map to the same canonical position",
+          },
+        ],
+      }),
+    );
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(
+      await screen.findByText("Есть нерешённые строки; безопасные доступны"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/остальные останутся без изменений/)).toBeInTheDocument();
+    const safeCheckbox = screen.getByRole("checkbox", { name: "Выбрать позицию 1:10" });
+    const conflictedCheckbox = screen.getByRole("checkbox", { name: "Выбрать позицию 1:20" });
+    expect(safeCheckbox).toBeEnabled();
+    expect(conflictedCheckbox).toBeDisabled();
+
+    await user.click(safeCheckbox);
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Применить выбранный базовый срез" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить базовый срез" }));
+    await waitFor(() => expect(applyBrokerBaseline).toHaveBeenCalledTimes(1));
+    const selections = vi.mocked(applyBrokerBaseline).mock.calls[0][1].selections;
+    expect(selections).toHaveLength(1);
+    expect(selections[0]).toMatchObject({ account_id: 1, instrument_id: 10 });
+  });
+
+  it("keeps baseline apply blocked for a closed month", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMonths).mockResolvedValueOnce([
+      {
+        id: 7,
+        year: 2026,
+        month: 8,
+        status: "closed",
+        snapshot_date: "2026-08-31",
+        source: "manual",
+      },
+    ]);
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    expect(
+      await screen.findByText("Утверждённый месяц нельзя менять. Сначала откройте его заново."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    const checkbox = await screen.findByRole("checkbox", { name: "Выбрать позицию 1:10" });
+    await user.click(checkbox);
+    expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeDisabled();
+    expect(applyBrokerBaseline).not.toHaveBeenCalled();
+  });
+
   it("uses owner-facing availability and mapping labels", async () => {
     const user = userEvent.setup();
     vi.mocked(previewBrokerSnapshot).mockResolvedValue({

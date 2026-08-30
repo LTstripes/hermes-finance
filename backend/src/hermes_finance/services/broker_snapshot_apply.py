@@ -26,6 +26,7 @@ from hermes_finance.broker_data.reconciliation.dto import (
     PositionReconciliationRow,
     PositionRowStatus,
     ReconciliationPreview,
+    ReconciliationStatus,
 )
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.domain import PriceSource, RubleAmount
@@ -374,9 +375,13 @@ def prepare_broker_snapshot_apply(
         hermes=hermes,
         mapping=mapping,
     )
+    # Snapshot completeness remains a global prerequisite. Preview
+    # eligibility is row-scoped once the snapshot is complete, so let the
+    # planner reject an explicitly selected unsafe row with its precise
+    # validation error instead of masking it as a stale preview.
     if (
         fresh_preview.snapshot_status is not SnapshotStatus.COMPLETE
-        or not fresh_preview.eligible_for_apply
+        or fresh_preview.status is ReconciliationStatus.NON_APPLICABLE
     ):
         return _preview_changed(selected_count)
 

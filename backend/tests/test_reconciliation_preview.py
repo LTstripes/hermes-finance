@@ -725,6 +725,37 @@ def test_b2_conflicts_preview_not_eligible_for_apply() -> None:
     assert preview.eligible_for_apply is False  # preview not eligible
 
 
+def test_b2_partial_conflict_keeps_safe_position_applyable() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[
+            _pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("7")),
+            _pos("PA1", "PO2", isin="US1234567891", quantity=Decimal("8")),
+            _pos("PA1", "PO2", isin="US1234567891", quantity=Decimal("9")),
+        ],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(
+            HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),
+            HermesInstrumentView(11, "Share B", "stock", "US1234567891", "SHB"),
+        ),
+        positions=(HermesPositionView(1, 10, Decimal("6"), 1000, None, 6000, 0),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+
+    assert preview.status is ReconciliationStatus.CONFLICTS
+    assert preview.eligible_for_apply is True
+    assert {row.status for row in preview.positions} == {
+        PositionRowStatus.MATCHED,
+        PositionRowStatus.CONFLICT,
+    }
+
+
 def test_b2_non_applicable_preview_not_eligible() -> None:
     snap = _complete_snapshot(
         accounts=[BrokerAccount(provider_account_id="PA1")],
