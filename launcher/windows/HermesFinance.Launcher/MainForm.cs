@@ -18,6 +18,14 @@ public sealed class MainForm : Form
         ScrollBars = ScrollBars.Vertical,
         Font = new Font(FontFamily.GenericMonospace, 9),
     };
+    private readonly Label _lastLaunch = new()
+    {
+        Text = "Последний запуск: ещё не выполнялся",
+        Dock = DockStyle.Top,
+        Height = 30,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Padding = new Padding(8, 0, 8, 0),
+    };
     private LauncherConfig? _config;
     private Process? _launcherProcess;
 
@@ -26,7 +34,9 @@ public sealed class MainForm : Form
         Text = "Hermes Finance";
         MinimumSize = new Size(620, 460);
         StartPosition = FormStartPosition.CenterScreen;
+        TrySetApplicationIcon();
         Controls.Add(_status);
+        Controls.Add(_lastLaunch);
         Controls.Add(_stop);
         Controls.Add(_start);
         Controls.Add(_profiles);
@@ -48,6 +58,7 @@ public sealed class MainForm : Form
             _profiles.DisplayMember = nameof(LauncherProfile.DisplayName);
             AppendStatus($"Loaded {configPath}");
             AppendStatus("Select a configured profile, then click Запустить. No Git branch selection is available.");
+            AppendStatus("Start checks release/tag, DB/Alembic, and locked frontend/backend dependencies before boot.");
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or JsonException)
         {
@@ -74,13 +85,30 @@ public sealed class MainForm : Form
         {
             AppendStatus($"Validating {profile.DisplayName}…");
             var validated = await Task.Run(() => ProfileValidator.Validate(_config, profile));
-            AppendStatus($"Validation passed: {validated.Profile.DisplayName} at {validated.Head[..Math.Min(12, validated.Head.Length)]}.");
+            AppendStatus($"Release/tag check: passed ({validated.Profile.ExpectedRef} → {validated.Head[..Math.Min(12, validated.Head.Length)]}).");
+            AppendStatus("DB/Alembic check: passed (selected database is compatible with this checkout).");
+            AppendStatus($"Dependency check: backend {validated.Dependencies?.BackendDetail ?? "not checked"}; frontend {validated.Dependencies?.FrontendDetail ?? "not checked"}.");
+            if (validated.Dependencies?.RequiresPreparation == true)
+            {
+                AppendStatus("Preparing only the missing or stale locked dependencies; repeat launches skip this step when they are ready…");
+                await PrepareDependenciesAsync(validated.Checkout);
+                validated = await Task.Run(() => ProfileValidator.Validate(_config, profile));
+                AppendStatus($"Dependency check after preparation: backend {validated.Dependencies?.BackendDetail}; frontend {validated.Dependencies?.FrontendDetail}.");
+            }
+
+            if (validated.Dependencies?.Ready == false)
+            {
+                throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after preparation.");
+            }
+
             AppendStatus("Starting existing guarded startup and waiting for its health probes…");
+            SetLastLaunchStatus($"Последний запуск: стартует {profile.DisplayName}");
             StartProcess(validated);
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
         {
             AppendStatus($"Start blocked: {exception.Message}");
+            SetLastLaunchStatus($"Последний запуск: заблокирован — {exception.Message}");
             _start.Enabled = true;
             _stop.Enabled = false;
         }
@@ -95,6 +123,7 @@ public sealed class MainForm : Form
         process.Exited += (_, _) => BeginInvoke(() =>
         {
             AppendStatus($"Guarded startup exited with code {process.ExitCode}. See details above.");
+            SetLastLaunchStatus($"Последний запуск: завершён с кодом {process.ExitCode}");
             if (ReferenceEquals(_launcherProcess, process))
             {
                 _launcherProcess = null;
@@ -147,6 +176,7 @@ public sealed class MainForm : Form
                 }
                 AppendStatus(line);
                 AppendStatus("Health checks passed. Hermes Finance is ready on loopback. Click Остановить to stop this profile.");
+                SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
                 if (profile.Profile.OpenBrowser)
                 {
                     Process.Start(new ProcessStartInfo("http://127.0.0.1:8000") { UseShellExecute = true });
@@ -177,6 +207,7 @@ public sealed class MainForm : Form
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
             AppendStatus(successMessage);
+            SetLastLaunchStatus("Последний запуск: остановлен");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
@@ -189,4 +220,51 @@ public sealed class MainForm : Form
     }
 
     private void AppendStatus(string message) => _status.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+
+    private async Task PrepareDependenciesAsync(string checkout)
+    {
+        using var process = new Process
+        {
+            StartInfo = DependencyValidator.BuildPreparationCommand(checkout),
+        };
+        if (!process.Start())
+        {
+            throw new LauncherValidationException("Could not start the dependency preparation helper.");
+        }
+
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await outputTask;
+        var error = await errorTask;
+        foreach (var line in output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            AppendStatus($"deps: {line}");
+        }
+        foreach (var line in error.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            AppendStatus($"deps error: {line}");
+        }
+        if (process.ExitCode != 0)
+        {
+            throw new LauncherValidationException($"Dependency preparation failed with exit code {process.ExitCode}.");
+        }
+    }
+
+    private void SetLastLaunchStatus(string message) => _lastLaunch.Text = message;
+
+    private void TrySetApplicationIcon()
+    {
+        try
+        {
+            if (Environment.ProcessPath is { } processPath)
+            {
+                Icon = Icon.ExtractAssociatedIcon(processPath);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or ArgumentException)
+        {
+            AppendStatus($"Application icon could not be loaded: {exception.Message}");
+        }
+    }
 }
