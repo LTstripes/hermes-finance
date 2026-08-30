@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 
@@ -8,6 +9,7 @@ public sealed class MainForm : Form
     private const string ReadyMarker = "Hermes Finance is ready: http://127.0.0.1:8000";
     private readonly ListBox _profiles = new() { Dock = DockStyle.Top, Height = 130 };
     private readonly Button _start = new() { Text = "Запустить", Dock = DockStyle.Top, Height = 36 };
+    private readonly Button _stop = new() { Text = "Остановить", Dock = DockStyle.Top, Height = 36, Enabled = false };
     private readonly TextBox _status = new()
     {
         Dock = DockStyle.Fill,
@@ -22,12 +24,14 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "Hermes Finance";
-        MinimumSize = new Size(620, 420);
+        MinimumSize = new Size(620, 460);
         StartPosition = FormStartPosition.CenterScreen;
         Controls.Add(_status);
+        Controls.Add(_stop);
         Controls.Add(_start);
         Controls.Add(_profiles);
         _start.Click += async (_, _) => await StartSelectedAsync();
+        _stop.Click += (_, _) => StopLaunchedStack("Hermes Finance stopped by owner.");
         Load += (_, _) => LoadConfig();
     }
 
@@ -74,26 +78,34 @@ public sealed class MainForm : Form
             AppendStatus("Starting existing guarded startup and waiting for its health probes…");
             StartProcess(validated);
         }
-        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
         {
             AppendStatus($"Start blocked: {exception.Message}");
             _start.Enabled = true;
+            _stop.Enabled = false;
         }
     }
 
     private void StartProcess(ValidatedProfile profile)
     {
-        _launcherProcess = new Process { StartInfo = ProfileValidator.BuildStartCommand(profile), EnableRaisingEvents = true };
-        _launcherProcess.OutputDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
-        _launcherProcess.ErrorDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
-        _launcherProcess.Exited += (_, _) => BeginInvoke(() =>
+        var process = new Process { StartInfo = ProfileValidator.BuildStartCommand(profile), EnableRaisingEvents = true };
+        _launcherProcess = process;
+        process.OutputDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
+        process.ErrorDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
+        process.Exited += (_, _) => BeginInvoke(() =>
         {
-            AppendStatus($"Guarded startup exited with code {_launcherProcess?.ExitCode}. See details above.");
+            AppendStatus($"Guarded startup exited with code {process.ExitCode}. See details above.");
+            if (ReferenceEquals(_launcherProcess, process))
+            {
+                _launcherProcess = null;
+            }
+            _stop.Enabled = false;
             _start.Enabled = true;
         });
-        _launcherProcess.Start();
-        _launcherProcess.BeginOutputReadLine();
-        _launcherProcess.BeginErrorReadLine();
+        process.Start();
+        _stop.Enabled = true;
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
     }
 
     internal static bool TryCompleteReady(
@@ -130,10 +142,11 @@ public sealed class MainForm : Form
                         message => AppendStatus(message)))
                 {
                     _start.Enabled = true;
+                    _stop.Enabled = false;
                     return;
                 }
                 AppendStatus(line);
-                AppendStatus("Health checks passed. Hermes Finance is ready on loopback.");
+                AppendStatus("Health checks passed. Hermes Finance is ready on loopback. Click Остановить to stop this profile.");
                 if (profile.Profile.OpenBrowser)
                 {
                     Process.Start(new ProcessStartInfo("http://127.0.0.1:8000") { UseShellExecute = true });
@@ -146,23 +159,32 @@ public sealed class MainForm : Form
         });
     }
 
-    private void StopLaunchedStack()
+    private void StopLaunchedStack() =>
+        StopLaunchedStack("Launched stack stopped because its data identity could not be established.");
+
+    private void StopLaunchedStack(string successMessage)
     {
         var process = _launcherProcess;
         if (process is null || process.HasExited)
         {
+            _stop.Enabled = false;
             return;
         }
 
+        _stop.Enabled = false;
         try
         {
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
-            AppendStatus("Launched stack stopped because its data identity could not be established.");
+            AppendStatus(successMessage);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
             AppendStatus($"BLOCKING ERROR: could not stop the launched stack automatically. {exception.Message}");
+            if (!process.HasExited)
+            {
+                _stop.Enabled = true;
+            }
         }
     }
 
