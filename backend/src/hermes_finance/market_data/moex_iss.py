@@ -10,6 +10,10 @@ from typing import Final
 import httpx2
 
 from hermes_finance.domain import InstrumentType
+from hermes_finance.market_data.capabilities import (
+    MOEX_ISS_CAPABILITIES,
+    ProviderCapabilities,
+)
 from hermes_finance.market_data.dto import (
     MOEX_ISS_PROVIDER,
     DiscoverCandidate,
@@ -96,6 +100,10 @@ class MoexIssClient:
     def close(self) -> None:
         if self._owns_client:
             self._http.close()
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return MOEX_ISS_CAPABILITIES
 
     def __enter__(self) -> MoexIssClient:
         return self

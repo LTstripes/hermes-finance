@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type BadgeTone = "neutral" | "ok" | "draft" | "closed" | "info";
+type BadgeTone = "neutral" | "ok" | "draft" | "closed" | "info" | "stale" | "unknown" | "missing";
 
 const toneClass: Record<BadgeTone, string> = {
   neutral: "chip",
@@ -8,6 +8,9 @@ const toneClass: Record<BadgeTone, string> = {
   draft: "badge badge--draft",
   closed: "badge badge--closed",
   info: "badge badge--info",
+  stale: "chip chip--stale",
+  unknown: "chip chip--unknown",
+  missing: "chip chip--missing",
 };
 
 type BadgeProps = {

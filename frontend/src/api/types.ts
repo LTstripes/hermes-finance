@@ -51,6 +51,25 @@ export type ReportingMonthUpdate = {
   source?: ReportingMonthSource;
 };
 
+export type CloseReadinessSeverity = "hard_blocker" | "warning" | "info";
+
+export type CloseReadinessItem = {
+  severity: CloseReadinessSeverity;
+  code: string;
+  message: string;
+  context: Record<string, unknown>;
+};
+
+export type CloseReadiness = {
+  year: number;
+  month: number;
+  status: ReportingMonthStatus;
+  snapshot_date: string | null;
+  source: ReportingMonthSource;
+  can_close: boolean;
+  items: CloseReadinessItem[];
+};
+
 export type BackupSource = {
   name: string;
   size_bytes: number;
@@ -72,6 +91,38 @@ export type RestoreResponse = {
 export type HealthResponse = {
   status: "ok";
   version: string;
+};
+
+export type PortfolioXirr = {
+  metric: "xirr";
+  scope: "portfolio";
+  performance_currency: string;
+  value: string | null;
+  value_unit: "percentage_points";
+  annualized: true;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  reason_codes: string[];
+};
+
+export type PortfolioTwrr = {
+  metric: "twrr";
+  scope: "portfolio";
+  performance_currency: string;
+  value: string | null;
+  value_unit: "percentage_points";
+  annualized: false;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  reason_codes: string[];
 };
 
 export type IncomeType = "salary" | "bonus" | "side_income" | "cashback" | "other" | string;
@@ -182,6 +233,68 @@ export type DashboardForecast = {
   warnings: string[];
 };
 
+export type CashFlowLadderEvent = {
+  source_kind: "manual" | "provider" | "deposit_forecast" | string;
+  source_id: number;
+  expected_date: string;
+  flow_type: string;
+  component:
+    | "coupon"
+    | "dividend"
+    | "deposit_interest"
+    | "other_capital_income"
+    | "redemption_principal"
+    | string;
+  account_id: number;
+  account_name: string;
+  instrument_id: number | null;
+  instrument_name: string | null;
+  expected_net_amount: MoneyValue;
+  is_approximate: boolean;
+  source: string;
+  provider: string | null;
+  provider_instrument_uid: string | null;
+  provider_identity_key: string | null;
+  reconciliation_id: number | null;
+  counting_decision: string | null;
+  linked_manual_id: number | null;
+  linked_provider_payout_id: number | null;
+  source_as_of_date: string | null;
+};
+
+export type CashFlowLadderMonth = {
+  year: number;
+  month: number;
+  coupon: MoneyValue;
+  dividend: MoneyValue;
+  deposit_interest: MoneyValue;
+  other_capital_income: MoneyValue;
+  redemption_principal: MoneyValue;
+  passive_income: MoneyValue;
+  total_cash_flow: MoneyValue;
+  is_approximate: boolean;
+  items: CashFlowLadderEvent[];
+};
+
+export type UpcomingEventsWindow = {
+  days: number;
+  from_date: string;
+  to_date: string;
+  passive_income: MoneyValue;
+  redemption_principal: MoneyValue;
+  total_cash_flow: MoneyValue;
+  items: CashFlowLadderEvent[];
+};
+
+export type CashFlowLadder = {
+  as_of_date: string;
+  forecast_version: string;
+  months: CashFlowLadderMonth[];
+  upcoming_14_days: UpcomingEventsWindow;
+  upcoming_30_days: UpcomingEventsWindow;
+  warnings: string[];
+};
+
 export type DashboardMonthRef = {
   id: number;
   year: number;
@@ -250,10 +363,12 @@ export type DashboardSlice = {
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];
   asset_allocation?: AssetAllocationPoint[];
+  asset_allocation_delta?: AssetAllocationPoint[];
   result_by_account?: AccountResultPoint[];
   result_by_instrument_class?: InstrumentClassResultPoint[];
   warnings?: string[];
   calculation_version?: string;
+  cash_flow_ladder?: CashFlowLadder | null;
 };
 
 export type Account = {
@@ -745,4 +860,122 @@ export type TaxBenefit = {
   amount: MoneyValue;
   received_at: string | null;
   notes: string | null;
+};
+
+export type TaxIisPlannerBracket = {
+  threshold_from: MoneyValue;
+  threshold_to: MoneyValue | null;
+  rate_bps: number;
+};
+
+export type TaxIisPlannerSalaryTax = {
+  tax_year: number | null;
+  history_complete: boolean;
+  history_coverage: "complete" | "unavailable";
+  available: boolean;
+  opening_context_available: boolean;
+  taxable_gross_ytd: MoneyValue | null;
+  current_marginal_bracket: TaxIisPlannerBracket | null;
+  current_marginal_rate_bps: number | null;
+  next_threshold: MoneyValue | null;
+  distance_to_next_threshold: MoneyValue | null;
+  tax_bracket_source: string | null;
+  warning_codes: string[];
+};
+
+export type TaxIisPlannerContribution = {
+  tax_year: number;
+  amount: MoneyValue;
+  is_target_reached: boolean;
+};
+
+export type TaxIisPlannerBenefitTotals = {
+  planned: MoneyValue;
+  submitted: MoneyValue;
+  received: MoneyValue;
+  rejected: MoneyValue;
+};
+
+export type TaxIisPlannerAccount = {
+  account_id: number;
+  account_name: string;
+  iis_type: string;
+  opened_at: string;
+  eligible_close_at: string | null;
+  contributions_by_tax_year: TaxIisPlannerContribution[];
+  tax_benefits: TaxIisPlannerBenefitTotals;
+};
+
+export type TaxIisPlanner = {
+  contract_version: string;
+  tax_year: number | null;
+  as_of: {
+    reporting_month: ReportingMonth | null;
+    selection_reason: string;
+  };
+  salary_tax: TaxIisPlannerSalaryTax;
+  iis_accounts: TaxIisPlannerAccount[];
+  warnings: string[];
+};
+
+export type FreshnessStatus =
+  | "current"
+  | "stale"
+  | "mixed"
+  | "unavailable"
+  | "unknown"
+  | "not_applicable"
+  | "missing";
+
+export type FreshnessReason = {
+  code: string;
+  severity: "info" | "warning" | string;
+  message: string;
+};
+
+export type FreshnessCoverage = {
+  row_count: number;
+  current_count: number;
+  stale_count: number;
+  unavailable_count: number;
+  unknown_count: number;
+  missing_count: number;
+  manual_count: number;
+  provider_count: number;
+};
+
+export type FreshnessItem = {
+  item_kind: string;
+  label: string;
+  freshness_status: FreshnessStatus;
+  source_kind: string;
+  source_timestamp_kind: string;
+  source_date: string | null;
+  source_datetime: string | null;
+  fetched_at: string | null;
+  import_apply_time: string | null;
+  local_edit_time: string | null;
+  reason_codes: string[];
+  account_name: string | null;
+  instrument_name: string | null;
+};
+
+export type FreshnessFamily = {
+  family_id: string;
+  title: string;
+  status: FreshnessStatus;
+  providers: string[];
+  coverage: FreshnessCoverage;
+  reasons: FreshnessReason[];
+  items: FreshnessItem[];
+};
+
+export type FreshnessProvenanceSummary = {
+  reporting_month: ReportingMonth;
+  evaluated_on: string;
+  quote_valuation_target_date: string;
+  generated_at: string;
+  families: FreshnessFamily[];
+  reasons: FreshnessReason[];
+  providers: string[];
 };

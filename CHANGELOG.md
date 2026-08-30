@@ -2,6 +2,55 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.7.0] — 2026-08-30
+
+Release preparation for the accepted R07 tree. This entry synchronizes the 0.7.0 release identity and records already integrated product work; it does not change product code, financial semantics, provider write behavior or publication state.
+
+### Added
+
+- AI Analysis Bundle: schema-valid, explicit owner-downloadable, read-only JSON without LLM/cloud calls, persistence or formula duplication;
+- Monthly Close Cockpit with server-derived blockers, advisory warnings and context;
+- Cash-flow Ladder for upcoming dated treasury events, keeping redemption principal separate from passive income;
+- Risk & Allocation for selected-month persisted RUB valuation, explicit allocation and payout/redemption concentration;
+- Freshness & Provenance Center with persisted clocks and reason codes;
+- Reconciliation Center with normalized row states and compatibility diagnostics;
+- current-state Tax/IIS Planner v1;
+- deterministic Insights backend v1 over persisted evidence, without claiming full UI or AI Analysis Bundle integration;
+- XIRR and exact TWRR contracts with persisted evidence and fail-closed unavailable states;
+- guarded Windows Stable/Preview launcher owner Start/Stop controls, without Git branch/state mutation;
+- persistent owner-confirmed Alfa account/instrument mapping registry and owner-approved baseline quantity apply with provenance;
+- row-scoped selective apply: unrelated unresolved/conflicting rows do not block a safe selected subset, while selected unsafe/stale rows fail closed;
+- UI/visual-audit polish and semantic test-taxonomy/verification work.
+
+### Changed
+
+- product/package identity is synchronized to `0.7.0` in backend/frontend metadata, generated lock metadata, health/release expectations and Windows smoke expectations;
+- backend CI timeout is 15 minutes;
+- provider Price/UchPrice/NKD/P&L remain comparison-only and never silently overwrite Hermes;
+- canonical Alembic head for the accepted tree is `0036_broker_baseline_provenance`.
+
+### Release evidence
+
+- owner UAT for issue #201 is recorded as `PASS` on 2026-08-30;
+- final accepted selective-apply integration is merge `d51427989bbe7a195668208318d1eaa2316da6f1`;
+- launcher owner-controls integration is baseline commit `72dabb27ffeac3ba59b90ba7aad67e40ac61b79f`.
+
+### Not changed
+
+- no cloud, auth, telemetry, trading or provider write path;
+- no Preview → Stable data copy and no private account IDs, balances, tokens, databases or UAT payloads in the repository;
+- XIRR/TWRR never infer missing historical membership, valuation boundaries, cash-flow order or roots; ambiguous or incomplete evidence remains unavailable;
+- local runtime remains Windows-first and loopback-only at `127.0.0.1:8000`.
+
+### Deferred
+
+- #141 Scenario Lab;
+- #142 projection expansion beyond current-state Tax/IIS v1;
+- #143 Insights UI and AI Analysis Bundle integration beyond deterministic backend v1;
+- #203 Phase 2B test rehome/dedupe;
+- #202 residual workspace/ACL cleanup;
+- #229 owner workflow/Alfa UX consolidation.
+
 ## [0.6.3] — 2026-08-25
 
 Maintenance on top of 0.6.2: dashboard information architecture and payout readability, approximate deposit-interest forecast completeness, and explicit T-Invest batch refresh with clearer payout-calendar UX. No new product line, provider write or trading semantics.

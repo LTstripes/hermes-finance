@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState
 from hermes_finance.broker_data.dto import (
     ALFA_PRO_PROVIDER,
     BrokerAccount,
     BrokerCashBalance,
     BrokerPosition,
+    BrokerSection,
     BrokerSnapshot,
     SnapshotProvenance,
     SnapshotStatus,
@@ -36,7 +38,10 @@ from hermes_finance.broker_data.reconciliation.dto import (
 )
 
 
-def _provenance(eligible: bool = True) -> SnapshotProvenance:
+def _provenance(
+    eligible: bool = True,
+    compatibility_state: AlfaCompatibilityState = AlfaCompatibilityState.COMPATIBLE,
+) -> SnapshotProvenance:
     return SnapshotProvenance(
         provider=ALFA_PRO_PROVIDER,
         api_doc_version="v2.1",
@@ -47,6 +52,8 @@ def _provenance(eligible: bool = True) -> SnapshotProvenance:
         channels_invoked=("#Data.Query",),
         entity_query_status=("ClientAccountEntity:ok",),
         eligible_for_apply=eligible,
+        compatibility_state=compatibility_state,
+        compatibility_fingerprint="a" * 64,
     )
 
 
@@ -55,7 +62,9 @@ def _complete_snapshot(
     accounts=(),
     positions=(),
     cash=(),
+    sections=(),
     eligible: bool = True,
+    compatibility_state: AlfaCompatibilityState = AlfaCompatibilityState.COMPATIBLE,
     status: SnapshotStatus = SnapshotStatus.COMPLETE,
     source_as_of: datetime | None = datetime(2026, 8, 20, 11, 0, tzinfo=timezone.utc),
 ) -> BrokerSnapshot:
@@ -65,11 +74,11 @@ def _complete_snapshot(
         source_as_of=source_as_of,
         accounts=tuple(accounts),
         subaccounts=(),
-        sections=(),
+        sections=tuple(sections),
         positions=tuple(positions),
         cash_balances=tuple(cash),
         warnings=(),
-        provenance=_provenance(eligible=eligible),
+        provenance=_provenance(eligible=eligible, compatibility_state=compatibility_state),
     )
 
 
@@ -174,6 +183,21 @@ def test_complete_but_not_eligible_is_non_applicable() -> None:
         snapshot=snap, hermes=hermes, mapping=OwnerMappingInput()
     )
     assert preview.status is ReconciliationStatus.NON_APPLICABLE
+
+
+def test_unknown_alfa_compatibility_is_non_applicable_even_when_snapshot_is_complete() -> None:
+    snap = _complete_snapshot(
+        compatibility_state=AlfaCompatibilityState.UNKNOWN,
+        accounts=[BrokerAccount("PA1")],
+    )
+    hermes = _hermes(accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),))
+    preview = build_reconciliation_preview(
+        snapshot=snap, hermes=hermes, mapping=OwnerMappingInput()
+    )
+
+    assert preview.status is ReconciliationStatus.NON_APPLICABLE
+    assert preview.eligible_for_apply is False
+    assert "compatibility is not confirmed" in preview.warnings[0]
 
 
 # --- 3. missing account mapping => unmatched/conflict, never inferred ---
@@ -701,6 +725,37 @@ def test_b2_conflicts_preview_not_eligible_for_apply() -> None:
     assert preview.eligible_for_apply is False  # preview not eligible
 
 
+def test_b2_partial_conflict_keeps_safe_position_applyable() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        positions=[
+            _pos("PA1", "PO1", isin="US1234567890", quantity=Decimal("7")),
+            _pos("PA1", "PO2", isin="US1234567891", quantity=Decimal("8")),
+            _pos("PA1", "PO2", isin="US1234567891", quantity=Decimal("9")),
+        ],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "B", "brokerage", None, "active"),),
+        instruments=(
+            HermesInstrumentView(10, "Share A", "stock", "US1234567890", "SHA"),
+            HermesInstrumentView(11, "Share B", "stock", "US1234567891", "SHB"),
+        ),
+        positions=(HermesPositionView(1, 10, Decimal("6"), 1000, None, 6000, 0),),
+    )
+    mapping = OwnerMappingInput(
+        accounts=(AccountMappingInput(hermes_account_id=1, provider_account_id="PA1"),)
+    )
+
+    preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
+
+    assert preview.status is ReconciliationStatus.CONFLICTS
+    assert preview.eligible_for_apply is True
+    assert {row.status for row in preview.positions} == {
+        PositionRowStatus.MATCHED,
+        PositionRowStatus.CONFLICT,
+    }
+
+
 def test_b2_non_applicable_preview_not_eligible() -> None:
     snap = _complete_snapshot(
         accounts=[BrokerAccount(provider_account_id="PA1")],
@@ -894,3 +949,55 @@ def test_b5_explicit_mapping_without_isin_evidence_not_contradicted() -> None:
     preview = build_reconciliation_preview(snapshot=snap, hermes=hermes, mapping=mapping)
     assert preview.instruments[0].status is InstrumentMatchStatus.MATCHED
     assert preview.eligible_for_apply is True
+
+
+def test_unmatched_account_carries_owner_readable_observations_without_auto_mapping() -> None:
+    snap = _complete_snapshot(
+        accounts=[BrokerAccount(provider_account_id="PA1")],
+        sections=[
+            BrokerSection(
+                provider_section_id="SEC1",
+                provider_account_id="PA1",
+                provider_subaccount_id=None,
+                section_group=1,
+                section_code="MICEX",
+            )
+        ],
+        positions=[
+            BrokerPosition(
+                provider_account_id="PA1",
+                provider_subaccount_id=None,
+                provider_section_id="SEC1",
+                provider_instrument_id="PO1",
+                isin="ru000syn00001",
+                ticker="SYN",
+                display_name="Synthetic provider bond",
+                quantity=Decimal("10"),
+                broker_unit_price=None,
+                market_value=None,
+                accounting_price=None,
+                accrued_interest_nkd=None,
+                unrealized_result=None,
+                is_money=False,
+                mapped_fields=(),
+            )
+        ],
+    )
+    hermes = _hermes(
+        accounts=(HermesAccountView(1, "Synthetic brokerage", "brokerage", None, "active"),),
+        instruments=(
+            HermesInstrumentView(10, "Synthetic equity", "stock", "RU000OTHER0001", "OTH"),
+        ),
+    )
+    preview = build_reconciliation_preview(
+        snapshot=snap, hermes=hermes, mapping=OwnerMappingInput()
+    )
+    assert preview.accounts[0].status is AccountMatchStatus.UNMATCHED
+    assert preview.accounts[0].hermes_account_id is None
+    assert preview.accounts[0].reason == "no explicit owner mapping for provider account"
+    assert preview.accounts[0].section_codes == ("MICEX",)
+    assert preview.accounts[0].observed_instruments[0].display_name == "Synthetic provider bond"
+    assert preview.accounts[0].observed_instruments[0].isin == "RU000SYN00001"
+    assert preview.accounts[0].observed_instruments[0].ticker == "SYN"
+    assert preview.instruments[0].status is InstrumentMatchStatus.UNMATCHED
+    assert preview.eligible_for_apply is False

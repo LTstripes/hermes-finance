@@ -1,49 +1,15 @@
-import os
 import sqlite3
-import subprocess
-import sys
 from pathlib import Path
 
+from _migration_helpers import (
+    PREVIOUS_REVISION,
+    REVISION,
+    STATEMENT_PREVIOUS_REVISION,
+    revision_rows,
+    run_alembic,
+)
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0029_statement_event_retract"
-PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
-STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
-
-
-def run_alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment["HERMES_FINANCE_DATABASE_PATH"] = str(database_path)
-    environment["PYTHONIOENCODING"] = "utf-8"
-    environment.pop("PYTHONPATH", None)
-    environment.pop("PYTHONHOME", None)
-
-    return subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            "-m",
-            "alembic",
-            "-c",
-            str(ALEMBIC_CONFIG),
-            *arguments,
-        ],
-        cwd=BACKEND_ROOT,
-        env=environment,
-        capture_output=True,
-        check=False,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-
-def revision_rows(database_path: Path) -> list[str]:
-    connection = sqlite3.connect(database_path)
-    try:
-        return [row[0] for row in connection.execute("SELECT version_num FROM alembic_version")]
-    finally:
-        connection.close()
 
 
 def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) -> None:
@@ -170,6 +136,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "currency",
             "include_in_capital",
             "notes",
+            "account_id",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(income_entries)")] == [
             "id",
@@ -201,6 +168,68 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "currency",
             "source",
             "notes",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(external_transfer_links)")
+        ] == [
+            "id",
+            "transfer_key",
+            "status",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(external_flows)")] == [
+            "id",
+            "reporting_month_id",
+            "account_id",
+            "event_date",
+            "boundary_amount_kopecks",
+            "direction",
+            "kind",
+            "currency",
+            "transfer_link_id",
+            "source",
+            "notes",
+            "created_at",
+            "updated_at",
+            "scope_membership",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(external_flow_boundary_groups)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "scope",
+            "account_id",
+            "boundary_date",
+            "created_at",
+            "updated_at",
+        ]
+        assert [
+            row[1]
+            for row in connection.execute("PRAGMA table_info(external_flow_boundary_group_members)")
+        ] == ["boundary_group_id", "external_flow_id"]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(observed_valuation_points)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "scope",
+            "account_id",
+            "observed_date",
+            "total_value_kopecks",
+            "performance_currency",
+            "coverage_status",
+            "quality",
+            "provenance_kind",
+            "provenance_reference",
+            "relation",
+            "external_flow_id",
+            "boundary_group_id",
+            "notes",
+            "created_at",
+            "updated_at",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expected_cash_flows)")] == [
             "id",
@@ -414,6 +443,112 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
 
     assert upgraded_again.returncode == 0, upgraded_again.stderr
     assert revision_rows(database_path) == [REVISION]
+
+
+def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> None:
+    database_path = tmp_path / "boundary-downgrade.db"
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(year, month, period_start, period_end, snapshot_date, status, source, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                2031,
+                6,
+                "2031-06-01",
+                "2031-06-30",
+                "2031-06-30",
+                "draft",
+                "manual",
+                "2031-06-30 00:00:00",
+                "2031-06-30 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO accounts "
+            "(name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Synthetic Boundary Migration Account", "brokerage", "active", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO external_flows "
+            "(reporting_month_id, account_id, event_date, boundary_amount_kopecks, "
+            "direction, kind, currency, transfer_link_id, source, notes, created_at, "
+            "updated_at, scope_membership) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "2031-06-15",
+                10_000,
+                "contribution",
+                "external_contribution",
+                "RUB",
+                None,
+                "synthetic_migration",
+                None,
+                "2031-06-15 00:00:00",
+                "2031-06-15 00:00:00",
+                "stable_in_scope",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO external_flow_boundary_groups "
+            "(reporting_month_id, scope, account_id, boundary_date, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                "account",
+                1,
+                "2031-06-15",
+                "2031-06-15 00:00:00",
+                "2031-06-15 00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO external_flow_boundary_group_members "
+            "(boundary_group_id, external_flow_id) VALUES (?, ?)",
+            (1, 1),
+        )
+        connection.execute(
+            "INSERT INTO observed_valuation_points "
+            "(reporting_month_id, scope, account_id, observed_date, total_value_kopecks, "
+            "performance_currency, coverage_status, quality, provenance_kind, "
+            "provenance_reference, relation, external_flow_id, boundary_group_id, notes, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                "account",
+                1,
+                "2031-06-15",
+                100_000,
+                "RUB",
+                "complete",
+                "exact",
+                "synthetic_migration",
+                "migration-test",
+                "pre_external_flow",
+                None,
+                1,
+                "synthetic",
+                "2031-06-15 00:00:00",
+                "2031-06-15 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0033_account_scope_membership_history")
+
+    assert downgraded.returncode != 0
+    assert "while boundary evidence exists" in downgraded.stderr
+    # 0035 can drop an empty mapping registry; 0034 must refuse while evidence exists.
+    assert revision_rows(database_path) == ["0034_observed_valuation_boundaries"]
 
 
 def test_goal_main_selection_migration_backfills_legacy_settings_goal(tmp_path: Path) -> None:
@@ -1510,5 +1645,151 @@ def test_statement_retract_migration_preserves_v061_active_events(tmp_path: Path
             "AND name = 'applied_statement_event_revisions'"
         ).fetchone()[0]
         assert "retract" in revision_sql
+    finally:
+        connection.close()
+
+
+def test_broker_identity_mappings_migration_is_additive_and_empty(tmp_path: Path) -> None:
+    database_path = tmp_path / "broker-identity-mappings.db"
+    previous = run_alembic(database_path, "upgrade", "0034_observed_valuation_boundaries")
+    assert previous.returncode == 0, previous.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_identity_mappings" not in tables
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(broker_identity_mappings)")
+        ] == [
+            "id",
+            "provider",
+            "subject_kind",
+            "provider_identity",
+            "hermes_account_id",
+            "hermes_instrument_id",
+            "status",
+            "observed_isin",
+            "confirmed_at",
+            "source_as_of",
+            "captured_at",
+            "predecessor_mapping_id",
+            "successor_mapping_id",
+            "revoked_at",
+            "revoke_reason",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM broker_identity_mappings").fetchone() == (
+            0,
+        )
+        index_sql = " ".join(
+            row[0]
+            for row in connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' "
+                "AND tbl_name = 'broker_identity_mappings' AND sql IS NOT NULL"
+            )
+        )
+        assert "uq_broker_identity_mappings_effective_forward" in index_sql
+        assert "uq_broker_identity_mappings_effective_instrument_reverse" in index_sql
+        assert "status = 'effective'" in index_sql
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0034_observed_valuation_boundaries")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_identity_mappings" not in tables
+    finally:
+        connection.close()
+
+
+def test_broker_baseline_provenance_migration_is_additive_and_empty(tmp_path: Path) -> None:
+    database_path = tmp_path / "broker-baseline-provenance.db"
+    previous = run_alembic(database_path, "upgrade", "0035_broker_identity_mappings")
+    assert previous.returncode == 0, previous.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_baseline_applies" not in tables
+        assert "broker_baseline_apply_items" not in tables
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(broker_baseline_applies)")
+        ] == [
+            "id",
+            "provider",
+            "reporting_month_id",
+            "baseline_date",
+            "source_as_of",
+            "captured_at",
+            "confirmed_at",
+            "compatibility_fingerprint",
+            "apply_fingerprint",
+        ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(broker_baseline_apply_items)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "baseline_apply_id",
+            "position_snapshot_id",
+            "action",
+            "quantity",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM broker_baseline_applies").fetchone() == (0,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM broker_baseline_apply_items"
+        ).fetchone() == (0,)
+        apply_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'broker_baseline_applies'"
+        ).fetchone()[0]
+        item_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'broker_baseline_apply_items'"
+        ).fetchone()[0]
+        assert "Price" not in apply_sql
+        assert "UchPrice" not in apply_sql
+        assert "NKD" not in apply_sql
+        assert "ticker" not in item_sql.lower()
+        assert "REFERENCES position_snapshots" not in item_sql
+        item_fks = list(connection.execute("PRAGMA foreign_key_list(broker_baseline_apply_items)"))
+        assert {row[2] for row in item_fks} == {"reporting_months", "broker_baseline_applies"}
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0035_broker_identity_mappings")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "broker_baseline_applies" not in tables
+        assert "broker_baseline_apply_items" not in tables
+        assert "broker_identity_mappings" in tables
     finally:
         connection.close()

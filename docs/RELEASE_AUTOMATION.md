@@ -57,6 +57,7 @@ The combined path requires all of the following before publication:
 - canonical `docs/release-notes-X.Y.Z.md` exists and is non-empty;
 - fetched `origin/main` still equals the expected SHA;
 - canonical `ci.yml` has a completed successful exact-main `push` run for that SHA;
+- that exact-main `ci.yml` run includes the required synthetic visual-audit job;
 - existing local/remote tag state is compatible with the same annotated tag at the same commit;
 - existing GitHub Release state is compatible with a published stable release.
 
@@ -120,12 +121,18 @@ An integrator can independently verify the same state through GitHub by reading 
 
 ## Synthetic safety verification
 
-Canonical PR/main CI includes a Windows `Release safety` job. It runs:
+Canonical PR/main CI includes a conditional `Synthetic visual audit` job and a
+Windows `Release safety` job. The visual audit runs for UI-relevant pull
+requests and for every push to `main`; the `main` run is therefore part of the
+exact-main CI gate checked before release publication. The path filter is
+covered by deterministic regression tests, and the release-safety job checks
+the tracked workflow contract. The release safety job runs:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-request.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-workflow.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-visual-audit-workflow.ps1
 ```
 
 `test-release.ps1` exercises the publication contract through an injected fake command runner, including successful publication semantics and fail-closed cases such as missing/failed/wrong-kind CI and conflicting tags/releases. It does not create a real tag or GitHub Release.
@@ -135,6 +142,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-rel
 `test-release-workflow.ps1` parses the real automation entrypoint with the Windows PowerShell parser and verifies the tracked workflow contract: narrow trigger, control issue binding, owner gates, built-in token use and minimal permissions. It performs no network or publication calls.
 
 No HYG-04 acceptance test publishes a throwaway real Hermes Finance tag or release.
+
+The visual audit itself remains synthetic-only: its Playwright fixtures are
+local deterministic data, and CI does not start the backend or use Preview,
+production runtime, `.env`, an owner database, or live provider data.
 
 ## Manual fallback
 

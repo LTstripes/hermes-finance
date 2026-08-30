@@ -336,6 +336,21 @@ a {
   background: var(--green-soft);
 }
 
+.chip--stale {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.chip--unknown {
+  color: var(--muted);
+  background: #eaede8;
+}
+
+.chip--missing {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
 .badge--draft {
   color: var(--amber);
   background: var(--amber-soft);
@@ -680,6 +695,16 @@ a.btn {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.editor-grid > *,
+.editor-grid :where(.field, .input, .select) {
+  min-width: 0;
+}
+
+.editor-grid :where(.input, .select) {
+  width: 100%;
+  max-width: 100%;
 }
 
 .input--money {
@@ -1041,6 +1066,7 @@ a.btn {
 }
 
 .panel {
+  min-width: 0;
   min-height: 0;
   padding: 22px 24px;
   border: 1px solid var(--line);
@@ -1140,6 +1166,59 @@ a.btn {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.86rem;
+}
+
+.broker-mappings-table {
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+.broker-mappings-table th:nth-child(1),
+.broker-mappings-table td:nth-child(1) {
+  width: 24%;
+}
+
+.broker-mappings-table th:nth-child(2),
+.broker-mappings-table td:nth-child(2) {
+  width: 20%;
+}
+
+.broker-mappings-table th:nth-child(3),
+.broker-mappings-table td:nth-child(3) {
+  width: 12%;
+}
+
+.broker-mappings-table th:nth-child(4),
+.broker-mappings-table td:nth-child(4) {
+  width: 44%;
+}
+
+.broker-mappings__form {
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.broker-mappings__identity,
+.broker-mappings__target,
+.broker-mappings__actions {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.broker-mappings__identity strong,
+.broker-mappings__target strong {
+  overflow-wrap: anywhere;
+}
+
+.broker-mappings__actions {
+  gap: 8px;
+  min-width: 220px;
+}
+
+.broker-mappings__actions-select {
+  width: 100%;
+  max-width: 100%;
 }
 
 .month-editor-table,
@@ -1322,6 +1401,26 @@ a.btn {
   padding: 12px 0;
   border-bottom: 1px solid var(--line-soft);
   vertical-align: middle;
+}
+
+.backup-table th,
+.backup-table td {
+  padding-inline: 10px;
+}
+
+.backup-table th:first-child,
+.backup-table td:first-child {
+  padding-left: 0;
+}
+
+.backup-table th:last-child,
+.backup-table td:last-child {
+  padding-right: 0;
+}
+
+.backup-table td:first-child,
+.backup-table td:nth-child(4) {
+  overflow-wrap: anywhere;
 }
 
 .table tr:last-child td {
@@ -1626,6 +1725,11 @@ th.num {
 .stack-18 {
   display: grid;
   gap: 18px;
+  min-width: 0;
+}
+
+.stack-18 > * {
+  min-width: 0;
 }
 
 .muted {
@@ -2048,4 +2152,28 @@ a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 8px;
+}
+
+.freshness-clocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.freshness-family__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.freshness-reason-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.freshness-reason-list li {
+  margin: 0 0 var(--space-2);
 }

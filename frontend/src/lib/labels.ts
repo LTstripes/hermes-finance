@@ -8,6 +8,30 @@ export const SOURCE_LABELS: Record<string, string> = {
   excel_migration: "Импорт из Excel",
   alfa_pdf: "Выписка Альфа-Банка",
   alfa_depository_income_report: "Выписка Альфа-Банка",
+  t_invest: "T-Invest",
+  moex: "MOEX",
+  alfa_pro: "Alfa PRO",
+};
+
+export const FRESHNESS_STATUS_LABELS: Record<string, string> = {
+  current: "Актуально",
+  stale: "Устарело",
+  mixed: "Смешанно",
+  unavailable: "Вне окна",
+  unknown: "Неизвестно",
+  not_applicable: "Вручную / не оценивается",
+  missing: "Нет данных",
+};
+
+export const SOURCE_TIMESTAMP_KIND_LABELS: Record<string, string> = {
+  price_date: "Дата котировки",
+  payment_date: "Дата выплаты",
+  event_date: "Дата события",
+  record_date: "Дата фиксации",
+  fetched_at: "Время запроса к провайдеру",
+  source_as_of: "Время наблюдения провайдера",
+  unavailable: "Нет времени наблюдения",
+  not_applicable: "Не применяется",
 };
 
 export const ACCOUNT_TYPE_LABELS: Record<string, string> = {

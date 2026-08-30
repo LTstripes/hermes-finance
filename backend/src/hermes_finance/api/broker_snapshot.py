@@ -10,14 +10,32 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.alfa_pro_diagnostics import (
+    DEFAULT_API_DOC_VERSION,
+    AlfaCompatibilityState,
+    AlfaDiagnosticFailureClass,
+    AlfaDiagnosticReport,
+    diagnostic_for_failure,
+)
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.broker_data.alfa_pro import AlfaProBrokerSnapshotProvider
-from hermes_finance.broker_data.dto import SnapshotStatus
+from hermes_finance.broker_data.dto import BrokerSnapshot, SnapshotStatus
 from hermes_finance.broker_data.protocol import BrokerSnapshotProvider
-from hermes_finance.broker_data.reconciliation.dto import OwnerMappingInput
+from hermes_finance.broker_data.reconciliation.dto import (
+    AccountReconciliationRow,
+    InstrumentReconciliationRow,
+    OwnerMappingInput,
+)
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.persistence import PositionSnapshot
+from hermes_finance.services.broker_baseline_apply import apply_owner_approved_baseline
+from hermes_finance.services.broker_identity_mappings import (
+    IdentityClassification,
+    PreviewIdentityLabels,
+    classify_preview_identities,
+    compose_owner_mapping,
+)
 from hermes_finance.services.broker_reconciliation import load_hermes_state_for_month
 from hermes_finance.services.broker_snapshot_apply import (
     AccruedInterestDecision,
@@ -28,6 +46,8 @@ from hermes_finance.services.broker_snapshot_apply import (
     MarketPriceDecision,
     apply_broker_snapshot_preview,
     position_apply_fingerprint,
+    provider_positions_for_identity,
+    row_is_money,
 )
 
 router = APIRouter(tags=["broker-snapshot"])
@@ -89,6 +109,22 @@ class BrokerSnapshotApplyRequest(BaseModel):
     selections: list[BrokerApplySelectionIn] = Field(min_length=1, max_length=2_000)
 
 
+class BrokerBaselineApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_date: date
+    mapping: BrokerMappingIn
+    selections: list[BrokerApplySelectionIn] = Field(min_length=1, max_length=2_000)
+
+
+class BrokerAccountObservedInstrumentOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = None
+    isin: str | None = None
+    ticker: str | None = None
+
+
 class BrokerAccountRowOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +132,36 @@ class BrokerAccountRowOut(BaseModel):
     hermes_account_id: int | None
     status: str
     reason: str | None
+    classification: str
+    section_codes: list[str] = Field(default_factory=list)
+    observed_instruments: list[BrokerAccountObservedInstrumentOut] = Field(default_factory=list)
+
+
+def account_row_out(
+    row: AccountReconciliationRow,
+    classification: str | IdentityClassification = IdentityClassification.NEW,
+) -> BrokerAccountRowOut:
+    label = (
+        classification.value
+        if isinstance(classification, IdentityClassification)
+        else classification
+    )
+    return BrokerAccountRowOut(
+        provider_account_id=row.provider_account_id,
+        hermes_account_id=row.hermes_account_id,
+        status=row.status.value,
+        reason=row.reason,
+        classification=label,
+        section_codes=list(row.section_codes),
+        observed_instruments=[
+            BrokerAccountObservedInstrumentOut(
+                display_name=item.display_name,
+                isin=item.isin,
+                ticker=item.ticker,
+            )
+            for item in row.observed_instruments
+        ],
+    )
 
 
 class BrokerInstrumentRowOut(BaseModel):
@@ -108,6 +174,74 @@ class BrokerInstrumentRowOut(BaseModel):
     hermes_instrument_id: int | None
     status: str
     reason: str | None
+    classification: str
+
+
+def instrument_row_out(
+    row: InstrumentReconciliationRow,
+    classification: str | IdentityClassification = IdentityClassification.NEW,
+) -> BrokerInstrumentRowOut:
+    label = (
+        classification.value
+        if isinstance(classification, IdentityClassification)
+        else classification
+    )
+    return BrokerInstrumentRowOut(
+        provider_instrument_id=row.provider_instrument_id,
+        isin=row.isin,
+        ticker=row.ticker,
+        display_name=row.display_name,
+        hermes_instrument_id=row.hermes_instrument_id,
+        status=row.status.value,
+        reason=row.reason,
+        classification=label,
+    )
+
+
+def _account_classification(
+    row: AccountReconciliationRow, identity_labels: PreviewIdentityLabels | None
+) -> IdentityClassification:
+    if identity_labels is None:
+        return IdentityClassification.NEW
+    return identity_labels.accounts.get(row.provider_account_id, IdentityClassification.NEW)
+
+
+def _instrument_classification(
+    row: InstrumentReconciliationRow, identity_labels: PreviewIdentityLabels | None
+) -> IdentityClassification:
+    if identity_labels is None or row.provider_instrument_id is None:
+        if row.reason == "exact unique ISIN match":
+            return IdentityClassification.DETERMINISTIC_ISIN
+        if row.status.value == "ambiguous":
+            return IdentityClassification.AMBIGUOUS
+        if row.status.value == "conflict":
+            return IdentityClassification.CONFLICT
+        if row.status.value == "matched":
+            return IdentityClassification.EXPLICIT
+        return IdentityClassification.NEW
+    return identity_labels.instruments.get(row.provider_instrument_id, IdentityClassification.NEW)
+
+
+def classified_account_rows(
+    preview_accounts,
+    identity_labels: PreviewIdentityLabels | None,
+) -> list[BrokerAccountRowOut]:
+    rows = list(preview_accounts)
+    if identity_labels is not None:
+        rows.extend(identity_labels.absent_accounts)
+    return [account_row_out(row, _account_classification(row, identity_labels)) for row in rows]
+
+
+def classified_instrument_rows(
+    preview_instruments,
+    identity_labels: PreviewIdentityLabels | None,
+) -> list[BrokerInstrumentRowOut]:
+    rows = list(preview_instruments)
+    if identity_labels is not None:
+        rows.extend(identity_labels.absent_instruments)
+    return [
+        instrument_row_out(row, _instrument_classification(row, identity_labels)) for row in rows
+    ]
 
 
 class BrokerPositionRowOut(BaseModel):
@@ -135,6 +269,9 @@ class BrokerPositionRowOut(BaseModel):
     reason: str | None
     warnings: list[str]
     fingerprint: str | None = None
+    is_money: bool | None = None
+    provider_account_id: str | None = None
+    provider_instrument_id: str | None = None
 
 
 class BrokerCashRowOut(BaseModel):
@@ -146,6 +283,33 @@ class BrokerCashRowOut(BaseModel):
     provider_amount: str | None
     status: str
     reason: str | None
+
+
+class BrokerSnapshotDiagnosticsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    provider: str
+    snapshot_status: str
+    eligible_for_apply: bool
+    compatibility_state: str
+    compatibility_fingerprint: str | None
+    api_doc_version: str
+    observed_alfa_pro_version: str | None
+    observed_api_version: str | None
+    observed_protocol_version: str | None
+    protocol_family: str
+    layout_family: str
+    capabilities: list[str]
+    failure_class: str
+    failure_codes: list[str]
+    entity_status: list[str]
+    entity_counts: list[str]
+    observed_fields: list[str]
+    safe_artifact: bool
+    raw_payload_saved: bool
+    private_values_included: bool
+    credentials_included: bool
 
 
 class BrokerSnapshotPreviewResponse(BaseModel):
@@ -167,6 +331,8 @@ class BrokerSnapshotPreviewResponse(BaseModel):
     positions: list[BrokerPositionRowOut]
     cash: list[BrokerCashRowOut]
     warnings: list[str]
+    diagnostics: BrokerSnapshotDiagnosticsOut
+    diagnostic_report: str
     error_code: str | None = None
     message: str | None = None
 
@@ -201,6 +367,12 @@ class BrokerApplyResponse(BaseModel):
     captured_at: datetime | None
     snapshot_status: str | None
     fingerprint: str | None
+
+
+class BrokerBaselineApplyResponse(BrokerApplyResponse):
+    baseline_date: date | None = None
+    provenance_id: int | None = None
+    confirmed_at: datetime | None = None
 
 
 def _mapping(payload: BrokerMappingIn) -> OwnerMappingInput:
@@ -241,7 +413,12 @@ def _decimal(value: Decimal | None) -> str | None:
 
 
 def _preview_response(
-    preview, *, fingerprint_mapping: OwnerMappingInput, session: Session
+    preview,
+    *,
+    fingerprint_mapping: OwnerMappingInput,
+    session: Session,
+    snapshot: object,
+    identity_labels: PreviewIdentityLabels | None = None,
 ) -> BrokerSnapshotPreviewResponse:
     hermes = load_hermes_state_for_month(session, preview.month_id or 0)
     account_names = {account.account_id: account.name for account in hermes.accounts}
@@ -258,7 +435,25 @@ def _preview_response(
         )
     }
     positions = []
+    snapshot_dto = snapshot if isinstance(snapshot, BrokerSnapshot) else None
     for row in preview.positions:
+        provider_rows = (
+            provider_positions_for_identity(
+                snapshot_dto,
+                preview,
+                account_id=row.account_id,
+                instrument_id=row.instrument_id,
+            )
+            if snapshot_dto is not None
+            else ()
+        )
+        is_money = row_is_money(snapshot_dto, preview, row) if snapshot_dto is not None else False
+        provider_account_id = (
+            provider_rows[0].provider_account_id if len(provider_rows) == 1 else None
+        )
+        provider_instrument_id = (
+            provider_rows[0].provider_instrument_id if len(provider_rows) == 1 else None
+        )
         fingerprint = (
             position_apply_fingerprint(
                 preview=preview,
@@ -266,7 +461,7 @@ def _preview_response(
                 mapping=fingerprint_mapping,
                 snapshot=snapshots.get((row.account_id, row.instrument_id)),
             )
-            if row.status.value in {"matched", "provider_only"}
+            if row.status.value in {"matched", "provider_only"} and not is_money
             else None
         )
         positions.append(
@@ -301,8 +496,29 @@ def _preview_response(
                 reason=row.reason,
                 warnings=list(row.warnings),
                 fingerprint=fingerprint,
+                is_money=is_money,
+                provider_account_id=provider_account_id,
+                provider_instrument_id=provider_instrument_id,
             )
         )
+    diagnostics = getattr(snapshot, "diagnostics", AlfaDiagnosticReport())
+    if not isinstance(diagnostics, AlfaDiagnosticReport):
+        diagnostics = AlfaDiagnosticReport()
+    mapping_failure_codes = _mapping_failure_codes(preview)
+    if (
+        mapping_failure_codes
+        and diagnostics.compatibility_state is AlfaCompatibilityState.COMPATIBLE
+        and diagnostics.failure_class
+        in {AlfaDiagnosticFailureClass.NONE, AlfaDiagnosticFailureClass.MAPPING}
+    ):
+        diagnostics = diagnostics.with_failure(
+            AlfaDiagnosticFailureClass.MAPPING, *mapping_failure_codes
+        )
+    diagnostics = diagnostics.with_snapshot(
+        status=preview.snapshot_status.value,
+        eligible_for_apply=preview.eligible_for_apply,
+    )
+    diagnostics_out = BrokerSnapshotDiagnosticsOut(**diagnostics.to_dict())
     return BrokerSnapshotPreviewResponse(
         reporting_month_id=preview.month_id or 0,
         provider=preview.provider,
@@ -315,27 +531,8 @@ def _preview_response(
         month_closed=preview.month_closed,
         would_touch_closed_month=preview.would_touch_closed_month,
         conflict_count=preview.conflict_count,
-        accounts=[
-            BrokerAccountRowOut(
-                provider_account_id=row.provider_account_id,
-                hermes_account_id=row.hermes_account_id,
-                status=row.status.value,
-                reason=row.reason,
-            )
-            for row in preview.accounts
-        ],
-        instruments=[
-            BrokerInstrumentRowOut(
-                provider_instrument_id=row.provider_instrument_id,
-                isin=row.isin,
-                ticker=row.ticker,
-                display_name=row.display_name,
-                hermes_instrument_id=row.hermes_instrument_id,
-                status=row.status.value,
-                reason=row.reason,
-            )
-            for row in preview.instruments
-        ],
+        accounts=classified_account_rows(preview.accounts, identity_labels),
+        instruments=classified_instrument_rows(preview.instruments, identity_labels),
         positions=positions,
         cash=[
             BrokerCashRowOut(
@@ -349,7 +546,24 @@ def _preview_response(
             for row in preview.cash
         ],
         warnings=list(preview.warnings),
+        diagnostics=diagnostics_out,
+        diagnostic_report=diagnostics.to_text(),
     )
+
+
+def _mapping_failure_codes(preview) -> tuple[str, ...]:
+    codes: list[str] = []
+    if any(row.status.value != "matched" for row in preview.accounts):
+        codes.append("account_mapping_unresolved")
+    if any(row.status.value != "matched" for row in preview.instruments):
+        codes.append("instrument_mapping_unresolved")
+    if any(row.status.value == "conflict" for row in preview.positions):
+        codes.append("position_mapping_conflict")
+    if preview.status.value == "conflicts":
+        codes.append("mapping_conflict")
+    elif preview.status.value == "non_applicable" and preview.snapshot_status.value == "complete":
+        codes.append("mapping_unresolved")
+    return tuple(dict.fromkeys(codes))
 
 
 def _amount(value: str | None) -> RubleAmount | None:
@@ -399,11 +613,17 @@ def broker_snapshot_preview_endpoint(
     request: Request,
     session: Session = Depends(session_for_request),
 ) -> BrokerSnapshotPreviewResponse:
-    mapping = _mapping(payload)
+    request_mapping = _mapping(payload)
     hermes = load_hermes_state_for_month(session, month_id)
     try:
         snapshot = _provider(request).fetch_snapshot()
     except Exception:
+        diagnostics = diagnostic_for_failure(
+            api_doc_version=DEFAULT_API_DOC_VERSION,
+            failure_class=AlfaDiagnosticFailureClass.CONNECTION,
+            failure_code="provider_fetch_failed",
+            snapshot_status=SnapshotStatus.MALFORMED_RESPONSE.value,
+        )
         return BrokerSnapshotPreviewResponse(
             reporting_month_id=month_id,
             provider="alfa_pro",
@@ -421,11 +641,31 @@ def broker_snapshot_preview_endpoint(
             positions=[],
             cash=[],
             warnings=["broker snapshot refresh failed"],
+            diagnostics=BrokerSnapshotDiagnosticsOut(**diagnostics.to_dict()),
+            diagnostic_report=diagnostics.to_text(),
             error_code="provider_error",
             message="Broker snapshot refresh failed",
         )
+    mapping = compose_owner_mapping(
+        session, provider=getattr(snapshot, "provider", ""), request=request_mapping
+    )
     preview = build_reconciliation_preview(snapshot=snapshot, hermes=hermes, mapping=mapping)
-    return _preview_response(preview, fingerprint_mapping=mapping, session=session)
+    identity_labels = None
+    if hasattr(snapshot, "provider") and hasattr(snapshot, "accounts"):
+        identity_labels = classify_preview_identities(
+            snapshot=snapshot,
+            account_rows=preview.accounts,
+            instrument_rows=preview.instruments,
+            session=session,
+            request=request_mapping,
+        )
+    return _preview_response(
+        preview,
+        fingerprint_mapping=mapping,
+        session=session,
+        snapshot=snapshot,
+        identity_labels=identity_labels,
+    )
 
 
 @router.post("/api/months/{month_id}/broker-snapshot-apply", response_model=BrokerApplyResponse)
@@ -445,28 +685,66 @@ def broker_snapshot_apply_endpoint(
     return BrokerApplyResponse(
         success=result.success,
         selected_count=result.selected_count,
-        items=[
-            BrokerApplyItemOut(
-                action=item.action.value,
-                position_snapshot_id=item.position_snapshot_id,
-                account_id=item.account_id,
-                instrument_id=item.instrument_id,
-                quantity=format(item.quantity, "f"),
-                average_cost_per_unit_kopecks=item.average_cost_per_unit_kopecks,
-                market_price_per_unit_kopecks=item.market_price_per_unit_kopecks,
-                accrued_interest_kopecks=item.accrued_interest_kopecks,
-                market_value_kopecks=item.market_value_kopecks,
-                cost_basis_kopecks=item.cost_basis_kopecks,
-                unrealized_result_kopecks=item.unrealized_result_kopecks,
-                price_date=item.price_date,
-                price_source=item.price_source,
-            )
-            for item in result.items
-        ],
+        items=_apply_items_out(result),
         error_code=result.error_code.value if result.error_code is not None else None,
         message=result.message,
         source_as_of=result.source_as_of,
         captured_at=result.captured_at,
         snapshot_status=result.snapshot_status,
         fingerprint=result.fingerprint,
+    )
+
+
+def _apply_items_out(result) -> list[BrokerApplyItemOut]:
+    return [
+        BrokerApplyItemOut(
+            action=item.action.value,
+            position_snapshot_id=item.position_snapshot_id,
+            account_id=item.account_id,
+            instrument_id=item.instrument_id,
+            quantity=format(item.quantity, "f"),
+            average_cost_per_unit_kopecks=item.average_cost_per_unit_kopecks,
+            market_price_per_unit_kopecks=item.market_price_per_unit_kopecks,
+            accrued_interest_kopecks=item.accrued_interest_kopecks,
+            market_value_kopecks=item.market_value_kopecks,
+            cost_basis_kopecks=item.cost_basis_kopecks,
+            unrealized_result_kopecks=item.unrealized_result_kopecks,
+            price_date=item.price_date,
+            price_source=item.price_source,
+        )
+        for item in result.items
+    ]
+
+
+@router.post(
+    "/api/months/{month_id}/broker-baseline-apply",
+    response_model=BrokerBaselineApplyResponse,
+)
+def broker_baseline_apply_endpoint(
+    month_id: int,
+    payload: BrokerBaselineApplyRequest,
+    request: Request,
+    session: Session = Depends(session_for_request),
+) -> BrokerBaselineApplyResponse:
+    result = apply_owner_approved_baseline(
+        session,
+        provider=_provider(request),
+        reporting_month_id=month_id,
+        baseline_date=payload.baseline_date,
+        mapping=_mapping(payload.mapping),
+        selections=tuple(_selection(row) for row in payload.selections),
+    )
+    return BrokerBaselineApplyResponse(
+        success=result.success,
+        selected_count=result.selected_count,
+        items=_apply_items_out(result),
+        error_code=result.error_code.value if result.error_code is not None else None,
+        message=result.message,
+        source_as_of=result.source_as_of,
+        captured_at=result.captured_at,
+        snapshot_status=result.snapshot_status,
+        fingerprint=result.fingerprint,
+        baseline_date=result.baseline_date,
+        provenance_id=result.provenance_id,
+        confirmed_at=result.confirmed_at,
     )

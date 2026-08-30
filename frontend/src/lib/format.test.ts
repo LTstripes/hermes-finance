@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatDate,
+  formatDateTime,
   formatMoney,
   formatMoneyDelta,
   formatMonth,
@@ -48,6 +49,14 @@ describe("formatDate", () => {
     expect(formatDate("2026-07-31")).toBe("31.07.2026");
     expect(formatDate(new Date(2026, 5, 30))).toBe("30.06.2026");
     expect(formatDate("")).toBe("—");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("keeps the UTC clock from the ISO timestamp", () => {
+    expect(formatDateTime("2026-08-21T11:00:00+00:00")).toBe("21.08.2026\u00a011:00\u00a0UTC");
+    expect(formatDateTime("2026-08-10")).toBe("10.08.2026");
+    expect(formatDateTime(null)).toBe("—");
   });
 });
 

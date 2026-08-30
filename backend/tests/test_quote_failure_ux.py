@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from _network_helpers import ForbiddenTransport
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from t_invest_mapping_fixtures import accept_t_invest_mapping
@@ -43,11 +44,6 @@ STOCK_IDENTITY = MarketIdentity(
     provider_instrument_id=STOCK_UID,
     provider_venue_id=None,
 )
-
-
-class ForbiddenTransport(httpx2.BaseTransport):
-    def handle_request(self, request: httpx2.Request) -> httpx2.Response:
-        raise AssertionError(f"authenticated network must not be called: {request.url}")
 
 
 class ScriptedProvider:

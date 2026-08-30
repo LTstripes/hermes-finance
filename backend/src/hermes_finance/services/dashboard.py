@@ -26,9 +26,16 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.asset_allocation import AssetClassSlice, asset_allocation_for_month
-from hermes_finance.services.liquid_capital import liquid_capital_for_month
+from hermes_finance.services.cash_flow_ladder import (
+    CashFlowLadderResult,
+    build_cash_flow_ladder,
+)
+from hermes_finance.services.liquid_capital import (
+    liquid_capital_for_month,
+    liquid_capital_for_months,
+)
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
-from hermes_finance.services.passive_income import passive_income_for_month
+from hermes_finance.services.passive_income import passive_income_for_months
 from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.properties import mortgage_coverage, total_mortgage_balance
 from hermes_finance.services.reporting_months import get_reporting_month
@@ -112,6 +119,8 @@ class DashboardResult:
     expected_payments: tuple[ExpectedPaymentItem, ...]
     mortgage: MortgageCoverageSlice
     warnings: tuple[str, ...]
+    cash_flow_ladder: CashFlowLadderResult | None = None
+    asset_allocation_delta: tuple[AssetClassSlice, ...] = ()
 
 
 def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
@@ -122,10 +131,13 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
             .order_by(ReportingMonth.year, ReportingMonth.month)
         )
     )
+    month_ids = [month.id for month in months]
+    liquid_by_month = liquid_capital_for_months(session, month_ids)
+    passive_by_month = passive_income_for_months(session, month_ids)
     points: list[HistoricalPoint] = []
     for month in months:
-        liquid = liquid_capital_for_month(session, month.id)
-        passive = passive_income_for_month(session, month.id)
+        liquid = liquid_by_month[month.id]
+        passive = passive_by_month[month.id]
         points.append(
             HistoricalPoint(
                 year=month.year,
@@ -136,6 +148,41 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
             )
         )
     return tuple(points)
+
+
+def _previous_reporting_month(session: Session, *, year: int, month: int) -> ReportingMonth | None:
+    return session.scalar(
+        select(ReportingMonth)
+        .where(
+            (ReportingMonth.year < year)
+            | ((ReportingMonth.year == year) & (ReportingMonth.month < month))
+        )
+        .order_by(ReportingMonth.year.desc(), ReportingMonth.month.desc())
+        .limit(1)
+    )
+
+
+def _asset_allocation_delta(
+    session: Session,
+    *,
+    month: ReportingMonth,
+    allocation: tuple[AssetClassSlice, ...],
+) -> tuple[AssetClassSlice, ...]:
+    """Return class deltas against the same previous-month source used by KPIs."""
+    previous = _previous_reporting_month(session, year=month.year, month=month.month)
+    if previous is None:
+        return ()
+
+    previous_liquid = liquid_capital_for_month(session, previous.id)
+    previous_allocation = asset_allocation_for_month(session, previous.id, previous_liquid)
+    previous_by_class = {item.asset_class: item.amount.kopecks for item in previous_allocation}
+    return tuple(
+        AssetClassSlice(
+            item.asset_class,
+            RubleAmount(item.amount.kopecks - previous_by_class.get(item.asset_class, 0)),
+        )
+        for item in allocation
+    )
 
 
 def _instrument_class_results(
@@ -301,6 +348,7 @@ def build_dashboard(
     summary = monthly_summary(session, reporting_month_id, forecast_version=forecast_version)
     liquid = summary.liquid_capital
     allocation = asset_allocation_for_month(session, reporting_month_id, liquid)
+    allocation_delta = _asset_allocation_delta(session, month=month, allocation=allocation)
     by_account = _account_results(session, reporting_month_id)
     mortgage_balance = total_mortgage_balance(session, reporting_month_id)
     coverage_pct, gap = mortgage_coverage(session, reporting_month_id, liquid.liquid_capital_net)
@@ -322,4 +370,10 @@ def build_dashboard(
             gap=gap,
         ),
         warnings=summary.warnings,
+        cash_flow_ladder=build_cash_flow_ladder(
+            session,
+            reporting_month_id,
+            forecast_version=forecast_version,
+        ),
+        asset_allocation_delta=allocation_delta,
     )

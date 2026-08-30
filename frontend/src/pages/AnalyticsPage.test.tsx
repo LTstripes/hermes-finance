@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCapitalComposition } from "../api/analytics";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
+import { getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
 import { rub } from "../lib/money";
 import { AnalyticsPage } from "./AnalyticsPage";
 
 vi.mock("../api/analytics", () => ({ getCapitalComposition: vi.fn() }));
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
 vi.mock("../api/months", () => ({ listMonths: vi.fn() }));
+vi.mock("../api/performance", () => ({ getPortfolioTwrr: vi.fn(), getPortfolioXirr: vi.fn() }));
 
 const capitalHistory = {
   asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
@@ -36,6 +38,18 @@ const capitalHistory = {
 };
 
 beforeEach(() => {
+  vi.mocked(getPortfolioTwrr).mockResolvedValue({
+    metric: "twrr",
+    scope: "portfolio",
+    performance_currency: "RUB",
+    value: null,
+    value_unit: "percentage_points",
+    annualized: false,
+    period: { start_date: "2031-01-31", end_date: "2031-02-28" },
+    availability: "not_computable",
+    quality: "unavailable",
+    reason_codes: ["not_computable_valuation_boundary_missing"],
+  });
   vi.mocked(getCapitalComposition).mockResolvedValue(capitalHistory);
   vi.mocked(listMonths).mockResolvedValue([
     {
@@ -79,6 +93,71 @@ describe("AnalyticsPage", () => {
     expect(screen.getByRole("button", { name: "Сумма ₽" })).toHaveAttribute(
       "aria-pressed",
       "false",
+    );
+  });
+
+  it("shows backend XIRR unavailability without calculating a value", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMonths).mockResolvedValue([
+      {
+        id: 2,
+        year: 2031,
+        month: 2,
+        status: "closed",
+        snapshot_date: "2031-02-28",
+        source: "manual",
+      },
+      {
+        id: 1,
+        year: 2031,
+        month: 1,
+        status: "closed",
+        snapshot_date: "2031-01-31",
+        source: "manual",
+      },
+    ]);
+    vi.mocked(getPortfolioXirr).mockResolvedValue({
+      metric: "xirr",
+      scope: "portfolio",
+      performance_currency: "RUB",
+      value: null,
+      value_unit: "percentage_points",
+      annualized: true,
+      period: { start_date: "2031-01-31", end_date: "2031-02-28" },
+      availability: "not_computable",
+      quality: "unavailable",
+      reason_codes: ["not_computable_xirr_root_ambiguity"],
+    });
+
+    render(
+      <MemoryRouter>
+        <AnalyticsPage />
+      </MemoryRouter>,
+    );
+
+    const xirrHeading = await screen.findByRole("heading", { name: "XIRR портфеля" });
+    const xirrPanel = xirrHeading.closest("section");
+    expect(xirrPanel).not.toBeNull();
+    if (!xirrPanel) throw new Error("XIRR panel was not rendered");
+    expect(within(xirrPanel).queryByText(/однозначность корня/)).toBeNull();
+    await user.click(within(xirrPanel).getByText("Почему недоступно"));
+    expect(
+      await within(xirrPanel).findByText(/однозначность корня для этой истории не подтверждена/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("XIRR недоступен")).toBeInTheDocument();
+    expect(screen.queryByText("not_computable_xirr_root_ambiguity", { exact: true })).toBeNull();
+    expect(screen.queryByText("10,00%")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(getPortfolioXirr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
+    );
+    expect(screen.getByText("TWRR недоступен")).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("heading", { name: "Результат инвестиций" })
+        .compareDocumentPosition(xirrHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(getPortfolioTwrr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
     );
   });
 });

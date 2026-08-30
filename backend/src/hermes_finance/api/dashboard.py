@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.cash_flow_ladder import CashFlowLadderOut, cash_flow_ladder_to_out
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
@@ -311,12 +312,14 @@ class DashboardOut(BaseModel):
     summary: MonthlySummaryOut
     historical_series: list[HistoricalPointOut]
     asset_allocation: list[AssetClassSliceOut]
+    asset_allocation_delta: list[AssetClassSliceOut]
     result_by_account: list[AccountResultOut]
     result_by_instrument_class: list[InstrumentClassResultOut]
     expected_payments: list[ExpectedPaymentOut]
     mortgage: MortgageOut
     warnings: list[str]
     calculation_version: str
+    cash_flow_ladder: CashFlowLadderOut | None = None
 
 
 def _liquid_out(result: object) -> LiquidCapitalOut:
@@ -507,6 +510,10 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
             AssetClassSliceOut(asset_class=item.asset_class, amount=_money(item.amount))
             for item in dashboard.asset_allocation
         ],
+        asset_allocation_delta=[
+            AssetClassSliceOut(asset_class=item.asset_class, amount=_money(item.amount))
+            for item in dashboard.asset_allocation_delta
+        ],
         result_by_account=[
             AccountResultOut(
                 account_id=item.account_id,
@@ -560,6 +567,11 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         ),
         warnings=list(dashboard.warnings),
         calculation_version=dashboard.summary.calculation_version,
+        cash_flow_ladder=(
+            cash_flow_ladder_to_out(dashboard.cash_flow_ladder)
+            if dashboard.cash_flow_ladder is not None
+            else None
+        ),
     )
 
 

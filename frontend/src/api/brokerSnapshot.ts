@@ -22,7 +22,49 @@ export type BrokerPositionRow = {
   provider_broker_unit_price: string | null;
   provider_accrued_interest_nkd: string | null;
   provider_unrealized_result: string | null;
+  is_money?: boolean | null;
+  provider_account_id?: string | null;
+  provider_instrument_id?: string | null;
   [key: string]: unknown;
+};
+
+export type BrokerAccountObservedInstrument = {
+  display_name: string | null;
+  isin: string | null;
+  ticker: string | null;
+};
+
+export type BrokerSnapshotDiagnostics = {
+  schema_version: string;
+  provider: string;
+  snapshot_status: string;
+  eligible_for_apply: boolean;
+  compatibility_state: "compatible" | "unknown" | "unsupported" | string;
+  compatibility_fingerprint: string | null;
+  api_doc_version: string;
+  observed_alfa_pro_version: string | null;
+  observed_api_version: string | null;
+  observed_protocol_version: string | null;
+  protocol_family: string;
+  layout_family: string;
+  capabilities: string[];
+  failure_class:
+    | "none"
+    | "connection"
+    | "auth"
+    | "routing"
+    | "protocol"
+    | "layout"
+    | "mapping"
+    | string;
+  failure_codes: string[];
+  entity_status: string[];
+  entity_counts: string[];
+  observed_fields: string[];
+  safe_artifact: boolean;
+  raw_payload_saved: boolean;
+  private_values_included: boolean;
+  credentials_included: boolean;
 };
 
 export type BrokerSnapshotPreview = {
@@ -37,6 +79,9 @@ export type BrokerSnapshotPreview = {
     hermes_account_id: number | null;
     status: string;
     reason: string | null;
+    classification?: string;
+    section_codes?: string[];
+    observed_instruments?: BrokerAccountObservedInstrument[];
   }[];
   instruments: {
     provider_instrument_id: string | null;
@@ -46,9 +91,15 @@ export type BrokerSnapshotPreview = {
     hermes_instrument_id: number | null;
     status: string;
     reason: string | null;
+    classification?: string;
+    is_money?: boolean | null;
   }[];
+  month_closed?: boolean;
+  month_status?: string;
   cash: unknown[];
   warnings: string[];
+  diagnostics: BrokerSnapshotDiagnostics;
+  diagnostic_report: string;
   error_code: string | null;
   message: string | null;
   [key: string]: unknown;
@@ -81,26 +132,46 @@ export function previewBrokerSnapshot(
   });
 }
 
+export type BrokerApplyResult = {
+  success: boolean;
+  selected_count: number;
+  items: {
+    action: string;
+    position_snapshot_id: number;
+    account_id: number;
+    instrument_id: number;
+  }[];
+  error_code: string | null;
+  message: string | null;
+  baseline_date?: string | null;
+  provenance_id?: number | null;
+};
+
 export function applyBrokerSnapshot(
   monthId: number,
   mapping: BrokerMapping,
   selections: BrokerApplySelection[],
   signal?: AbortSignal,
 ) {
-  return apiRequest<{
-    success: boolean;
-    selected_count: number;
-    items: {
-      action: string;
-      position_snapshot_id: number;
-      account_id: number;
-      instrument_id: number;
-    }[];
-    error_code: string | null;
-    message: string | null;
-  }>(`/api/months/${monthId}/broker-snapshot-apply`, {
+  return apiRequest<BrokerApplyResult>(`/api/months/${monthId}/broker-snapshot-apply`, {
     method: "POST",
     body: { mapping, selections },
+    signal,
+  });
+}
+
+export function applyBrokerBaseline(
+  monthId: number,
+  payload: {
+    baseline_date: string;
+    mapping: BrokerMapping;
+    selections: BrokerApplySelection[];
+  },
+  signal?: AbortSignal,
+) {
+  return apiRequest<BrokerApplyResult>(`/api/months/${monthId}/broker-baseline-apply`, {
+    method: "POST",
+    body: payload,
     signal,
   });
 }

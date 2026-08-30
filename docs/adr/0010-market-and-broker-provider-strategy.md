@@ -149,7 +149,7 @@ If/when a broker adapter is implemented:
 
 - T-Invest market data may be used as the selected private market source under the researched official API/storage model; no redistribution/public service is introduced.
 - Direct MOEX ISS production use remains gated unless an applicable agreement/permission is recorded.
-- Alfa private persistence remains `NEEDS_CONFIRMATION` before a production broker-data import is accepted.
+- Alfa private persistence of raw payloads remains forbidden. Owner-confirmed minimum persistence of broker identity mappings, selected current quantity, and baseline provenance is specified by [ADR 0016](0016-owner-approved-alfa-baseline-and-broker-mappings.md) and is not implemented until that ADR’s slices land.
 - External data never silently overwrites a monthly snapshot.
 
 ## Consequences for existing R04 work

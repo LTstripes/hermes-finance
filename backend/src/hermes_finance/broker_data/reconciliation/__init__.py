@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from hermes_finance.broker_data.reconciliation.cash import reconcile_cash
 from hermes_finance.broker_data.reconciliation.dto import (
+    COMPARISON_ONLY_PROVIDER_FIELDS,
     AccountMappingInput,
     AccountMatchStatus,
+    AccountObservedInstrument,
     AccountReconciliationRow,
     CashReconciliationRow,
     CashRowStatus,
@@ -21,6 +23,9 @@ from hermes_finance.broker_data.reconciliation.dto import (
     InstrumentMappingInput,
     InstrumentMatchStatus,
     InstrumentReconciliationRow,
+    NormalizedReconciliationResult,
+    NormalizedReconciliationRow,
+    NormalizedRowState,
     OwnerMappingInput,
     PositionReconciliationRow,
     PositionRowStatus,
@@ -32,6 +37,7 @@ from hermes_finance.broker_data.reconciliation.matching import (
     reconcile_accounts,
     reconcile_instruments,
 )
+from hermes_finance.broker_data.reconciliation.normalized import build_normalized_reconciliation
 from hermes_finance.broker_data.reconciliation.positions import reconcile_positions
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
 from hermes_finance.services.broker_reconciliation import load_hermes_state_for_month
@@ -39,9 +45,11 @@ from hermes_finance.services.broker_reconciliation import load_hermes_state_for_
 __all__ = [
     "AccountMappingInput",
     "AccountMatchStatus",
+    "AccountObservedInstrument",
     "AccountReconciliationRow",
     "CashReconciliationRow",
     "CashRowStatus",
+    "COMPARISON_ONLY_PROVIDER_FIELDS",
     "HermesAccountView",
     "HermesCashView",
     "HermesInstrumentView",
@@ -50,6 +58,9 @@ __all__ = [
     "InstrumentMappingInput",
     "InstrumentMatchStatus",
     "InstrumentReconciliationRow",
+    "NormalizedReconciliationResult",
+    "NormalizedReconciliationRow",
+    "NormalizedRowState",
     "OwnerMappingInput",
     "PositionReconciliationRow",
     "PositionRowStatus",
@@ -57,6 +68,7 @@ __all__ = [
     "ReconciliationStatus",
     "ValueComparability",
     "build_reconciliation_preview",
+    "build_normalized_reconciliation",
     "load_hermes_state_for_month",
     "reconcile_accounts",
     "reconcile_cash",

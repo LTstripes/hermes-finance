@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
 import type {
+  AssetAllocationPoint,
   DashboardForecast,
   DashboardKpis,
   DashboardSlice,
@@ -12,6 +14,7 @@ import type {
 } from "../api/types";
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
+import { CashFlowLadder } from "../components/CashFlowLadder";
 import {
   EmptyState,
   ErrorState,
@@ -24,6 +27,7 @@ import {
 import { formatMoney, formatMoneyDelta, formatMonth, formatPercent } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { moneyAmount } from "../lib/money";
+import { queryKeys } from "../queryClient";
 
 function deltaToneFromAmount(amount: string | null | undefined): "up" | "down" | "neutral" {
   if (
@@ -43,75 +47,55 @@ function pctLabel(value: string | null | undefined): string {
   return formatPercent(value, { digits: 1 });
 }
 
+const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
+  cash: { label: "Наличные", color: "#9db9a7" },
+  deposits: { label: "Депозиты", color: "#d1ad72" },
+  stocks: { label: "Акции", color: "#8ca9d8" },
+  bonds: { label: "Облигации", color: "#b79bd4" },
+  gold_other: { label: "Золото и прочее", color: "#d48c68" },
+};
+
 export function DashboardPage() {
-  const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardSlice | null>(null);
-  const [loadingMonths, setLoadingMonths] = useState(true);
-  const [loadingDash, setLoadingDash] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const monthsQuery = useQuery({
+    queryKey: queryKeys.months,
+    queryFn: ({ signal }) => listMonths(signal),
+    select: (rows: ReportingMonth[]) =>
+      [...rows].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year)),
+  });
+  const months = monthsQuery.data ?? [];
 
-  const loadMonths = useCallback(async (signal?: AbortSignal) => {
-    setLoadingMonths(true);
-    setError(null);
-    try {
-      const rows = await listMonths(signal);
-      if (signal?.aborted) return;
-      const sorted = [...rows].sort((a, b) =>
-        a.year === b.year ? b.month - a.month : b.year - a.year,
-      );
-      setMonths(sorted);
-      setSelectedId((previous) => {
-        if (previous != null && sorted.some((month) => month.id === previous)) return previous;
-        return sorted[0]?.id ?? null;
-      });
-    } catch (loadError) {
-      if (!signal?.aborted) {
-        setError(formatApiError(loadError));
-        setMonths([]);
-        setSelectedId(null);
+  useEffect(() => {
+    setSelectedId((previous) => {
+      if (previous != null && months.some((month) => month.id === previous)) return previous;
+      return months[0]?.id ?? null;
+    });
+  }, [months]);
+
+  const dashboardQuery = useQuery<DashboardSlice, Error>({
+    enabled: selectedId != null,
+    placeholderData: (previousData: DashboardSlice | undefined) => previousData,
+    queryKey: queryKeys.dashboard(selectedId),
+    queryFn: async ({ signal }): Promise<DashboardSlice> => {
+      if (selectedId == null) {
+        return Promise.reject(new Error("Dashboard month is not selected"));
       }
-    } finally {
-      if (!signal?.aborted) setLoadingMonths(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadMonths(controller.signal);
-    return () => controller.abort();
-  }, [loadMonths]);
-
-  useEffect(() => {
-    if (selectedId == null) {
-      setDashboard(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setLoadingDash(true);
-    setError(null);
-    void getDashboard(selectedId, controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setDashboard(data);
-      })
-      .catch((loadError) => {
-        if (!controller.signal.aborted) {
-          setError(formatApiError(loadError));
-          setDashboard(null);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingDash(false);
-      });
-
-    return () => controller.abort();
-  }, [selectedId]);
+      return getDashboard(selectedId, signal);
+    },
+  });
 
   const selectedMonth = useMemo(
     () => months.find((month) => month.id === selectedId) ?? null,
     [months, selectedId],
   );
+  const loadingMonths = monthsQuery.isPending;
+  const loadingDash = selectedId != null && dashboardQuery.isFetching;
+  const error = monthsQuery.error
+    ? formatApiError(monthsQuery.error)
+    : dashboardQuery.error
+      ? formatApiError(dashboardQuery.error)
+      : null;
+  const dashboard: DashboardSlice | null = error ? null : (dashboardQuery.data ?? null);
   const kpis = dashboard?.kpis ?? null;
 
   return (
@@ -164,7 +148,12 @@ export function DashboardPage() {
       ) : null}
 
       <section className="dashboard-overview-grid" aria-label="Ключевое состояние">
-        <CapitalOverviewCard kpis={kpis} loading={loadingDash} />
+        <CapitalOverviewCard
+          allocation={dashboard?.asset_allocation}
+          allocationDelta={dashboard?.asset_allocation_delta}
+          kpis={kpis}
+          loading={loadingDash}
+        />
         <PassiveIncomeOverviewCard kpis={kpis} loading={loadingDash} />
         <ForecastOverviewCard
           forecast={dashboard?.summary?.forecast ?? null}
@@ -208,11 +197,35 @@ export function DashboardPage() {
           <EmptyState description="Нет данных для графика." inline title="Пусто" />
         )}
       </Panel>
+
+      <Panel label="Казначейство" title="Ближайшие события и денежная лестница">
+        {loadingDash ? (
+          <LoadingState description="Загружаем ожидаемые потоки…" inline />
+        ) : dashboard?.cash_flow_ladder ? (
+          <CashFlowLadder ladder={dashboard.cash_flow_ladder} />
+        ) : (
+          <EmptyState
+            description="Нет данных о будущих денежных потоках для выбранного месяца."
+            inline
+            title="Лестница недоступна"
+          />
+        )}
+      </Panel>
     </section>
   );
 }
 
-function CapitalOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; loading: boolean }) {
+function CapitalOverviewCard({
+  allocation,
+  allocationDelta,
+  kpis,
+  loading,
+}: {
+  allocation?: AssetAllocationPoint[];
+  allocationDelta?: AssetAllocationPoint[];
+  kpis: DashboardKpis | null;
+  loading: boolean;
+}) {
   const delta = moneyAmount(kpis?.liquid_capital_delta);
   const tone = deltaToneFromAmount(delta);
 
@@ -228,6 +241,39 @@ function CapitalOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; lo
           {loading || !kpis ? "…" : kpis.liquid_capital_delta ? formatMoneyDelta(delta) : "—"}
         </strong>
       </div>
+      {!loading && allocation?.length ? (
+        <div className="overview-card__breakdown">
+          <div className="overview-card__breakdown-heading">
+            <span>По классам</span>
+            <span>Сейчас</span>
+            <span>К месяцу ранее</span>
+          </div>
+          {allocation.map((item) => {
+            const meta = ASSET_CLASS_META[item.asset_class] ?? {
+              label: "Прочее",
+              color: "#a6a6a6",
+            };
+            const previousDelta = allocationDelta?.find(
+              (candidate) => candidate.asset_class === item.asset_class,
+            );
+            const deltaAmount = moneyAmount(previousDelta?.amount);
+            return (
+              <div className="overview-card__breakdown-row" key={item.asset_class}>
+                <span className="overview-card__breakdown-label">
+                  <i aria-hidden="true" style={{ backgroundColor: meta.color }} />
+                  {meta.label}
+                </span>
+                <strong>{formatMoney(moneyAmount(item.amount))}</strong>
+                <strong
+                  className={`overview-card__breakdown-delta overview-card__delta--${deltaToneFromAmount(deltaAmount)}`}
+                >
+                  {previousDelta ? formatMoneyDelta(deltaAmount) : "—"}
+                </strong>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -246,37 +292,33 @@ function PassiveIncomeOverviewCard({
   return (
     <article className="overview-card">
       <div className="overview-card__label">Пассивный доход · факт</div>
-      <div className="semantic-label semantic-label--fact">Факт · выбранный месяц</div>
       <div className="overview-card__value">
         {ready ? formatMoney(moneyAmount(kpis.passive_income_actual)) : "…"}
       </div>
       <div className="overview-card__context overview-card__context--with-help">
         {ready ? (
-          completeWindow ? (
-            <span>12 закрытых месяцев из 12</span>
-          ) : (
-            <>
-              <span>{countMonths} закрытых месяцев из 12</span>
-              <HelpTip label="Почему среднее пока неполное" align="start">
-                Среднее рассчитано по закрытым месяцам в окне до 12 месяцев. По мере закрытия новых
-                месяцев окно обновляется.
-              </HelpTip>
-            </>
-          )
+          <>
+            <span>
+              {completeWindow
+                ? "12 закрытых месяцев из 12"
+                : `${countMonths} закрытых месяцев из 12`}
+            </span>
+            <HelpTip label="Подробнее о периоде" align="start">
+              {!completeWindow ? (
+                <p>Среднее рассчитано по закрытым месяцам в окне до 12 месяцев.</p>
+              ) : null}
+              <p>
+                {kpis.passive_income_history_start_month
+                  ? `Доступная история для среднего начинается с ${kpis.passive_income_history_start_month}.`
+                  : "Для среднего используется вся доступная история."}
+              </p>
+              {!completeWindow ? <p>По мере закрытия новых месяцев окно обновляется.</p> : null}
+            </HelpTip>
+          </>
         ) : (
           <span>Фактические закрытые месяцы</span>
         )}
       </div>
-      {ready ? (
-        <p className="overview-card__context muted tiny">
-          {completeWindow
-            ? "Учтено полное окно из 12 месяцев"
-            : `Учтено ${countMonths} закрытых месяцев из 12`}
-          {kpis.passive_income_history_start_month
-            ? ` · учёт с ${kpis.passive_income_history_start_month}`
-            : " · вся доступная история"}
-        </p>
-      ) : null}
       <div className="overview-card__supporting">
         <span>Среднее за закрытые месяцы</span>
         <strong>{ready ? formatMoney(moneyAmount(kpis.passive_income_average)) : "…"}</strong>
@@ -309,7 +351,6 @@ function ForecastOverviewCard({
   return (
     <article className="overview-card">
       <div className="overview-card__label">Прогноз · 12 месяцев</div>
-      <div className="semantic-label semantic-label--forecast">Прогноз · эквивалент за месяц</div>
       <div className="overview-card__value">
         {ready ? formatMoney(moneyAmount(kpis.forecast_monthly_passive_income)) : "…"}
       </div>
@@ -374,13 +415,15 @@ function ForecastBreakdown({ forecast }: { forecast: DashboardForecast | null })
           поэтому не вводи один и тот же процент дважды. Купоны берутся только из локального
           применённого календаря выплат. Дивидендный компонент построен по фактической истории;
           погашения исключены.
+          {forecast.warnings.length > 0 ? (
+            <ul className="overview-card__help-list">
+              {forecast.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
         </HelpTip>
       </div>
-      {forecast.warnings.map((warning) => (
-        <p className="overview-card__context muted tiny" key={warning}>
-          {warning}
-        </p>
-      ))}
     </>
   );
 }
@@ -391,7 +434,6 @@ function CoverageOverviewCard({ kpis, loading }: { kpis: DashboardKpis | null; l
   return (
     <article className="overview-card">
       <div className="overview-card__label">Покрытие расходов</div>
-      <div className="semantic-label semantic-label--fact">Факт · среднее</div>
       <div className="overview-card__value">
         {ready ? pctLabel(kpis.actual_mandatory_expense_coverage_pct) : "…"}
       </div>

@@ -20,6 +20,9 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/", label: "Дашборд", icon: "◫", end: true },
       { to: "/analytics", label: "Аналитика", icon: "⌁" },
+      { to: "/analytics/risk-allocation", label: "Распределение и концентрация", icon: "◈" },
+      { to: "/freshness", label: "Актуальность данных", icon: "◷" },
+      { to: "/reconciliation", label: "Сверка портфеля", icon: "⇄" },
     ],
   },
   {
@@ -34,6 +37,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/payouts", label: "Автовыплаты", icon: "◌" },
       { to: "/goals", label: "Цели", icon: "◎" },
+      { to: "/tax-iis-planner", label: "Налоги и ИИС", icon: "₽" },
     ],
   },
   {

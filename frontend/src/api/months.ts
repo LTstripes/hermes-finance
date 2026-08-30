@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import type {
+  CloseReadiness,
   HealthResponse,
   ReportingMonth,
   ReportingMonthClone,
@@ -17,6 +18,13 @@ export function listMonths(signal?: AbortSignal): Promise<ReportingMonth[]> {
 
 export function getMonth(monthId: number, signal?: AbortSignal): Promise<ReportingMonth> {
   return apiRequest<ReportingMonth>(`/api/months/${monthId}`, { method: "GET", signal });
+}
+
+export function getCloseReadiness(monthId: number, signal?: AbortSignal): Promise<CloseReadiness> {
+  return apiRequest<CloseReadiness>(`/api/months/${monthId}/close-readiness`, {
+    method: "GET",
+    signal,
+  });
 }
 
 export function closeMonth(monthId: number, signal?: AbortSignal): Promise<ReportingMonth> {

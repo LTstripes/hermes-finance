@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HermesFinance.Launcher\HermesFinance.Launcher.csproj" />
+    <None Include="..\config.example.json" Link="config.example.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\scripts\launcher-schema-check.py" Link="launcher-schema-check.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

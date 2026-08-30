@@ -17,6 +17,23 @@ class ClosedReportingMonthError(ValueError):
     pass
 
 
+CLOSE_SNAPSHOT_DATE_REQUIRED_CODE = "snapshot_date_required"
+CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE = "snapshot_date is required before closing a reporting month"
+
+
+def close_hard_guards(reporting_month: ReportingMonth) -> tuple[tuple[str, str], ...]:
+    """Return ``(code, message)`` pairs that the authoritative close already rejects.
+
+    Close has no financial-data completeness gate. The HTTP close path only
+    rejects a missing snapshot date after the month has been loaded. Do not
+    invent additional hard blockers here.
+    """
+    snapshot_date = getattr(reporting_month, "snapshot_date", None)
+    if snapshot_date is None:
+        return ((CLOSE_SNAPSHOT_DATE_REQUIRED_CODE, CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE),)
+    return ()
+
+
 def _period_bounds(year: int, month: int) -> tuple[date, date]:
     try:
         period_start = date(year, month, 1)
@@ -157,6 +174,14 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         for table in _reporting_month_owned_tables():
             reporting_month_id = table.c.reporting_month_id
             session.execute(delete(table).where(reporting_month_id == month_id))
+        # External transfer links are intentionally independent of a month and
+        # survive draft deletion. Reconcile their status after bulk-deleting
+        # month-owned external-flow rows.
+        from hermes_finance.services.external_flows import (
+            refresh_external_transfer_link_statuses,
+        )
+
+        refresh_external_transfer_link_statuses(session)
         session.delete(reporting_month)
         session.commit()
     except Exception:

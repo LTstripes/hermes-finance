@@ -1,10 +1,12 @@
-import { render, screen, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMonth, deleteMonth, listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
+import { createQueryClient } from "../queryClient";
 import { MonthsPage } from "./MonthsPage";
 
 vi.mock("../api/months", async (importOriginal) => {
@@ -33,11 +35,13 @@ const deleteMonthMock = vi.mocked(deleteMonth);
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={["/months"]}>
-      <Routes>
-        <Route element={<MonthsPage />} path="/months" />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={["/months"]}>
+        <Routes>
+          <Route element={<MonthsPage />} path="/months" />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -95,5 +99,22 @@ describe("MonthsPage R03-05", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/secondary-действие/i)).toBeNull();
+  });
+
+  it("invalidates the shared months query after creating a period", async () => {
+    const createdMonth = { ...draftMonth, id: 3, month: 8 };
+    listMonthsMock
+      .mockResolvedValueOnce([draftMonth, closedMonth])
+      .mockResolvedValueOnce([createdMonth, draftMonth, closedMonth]);
+    createMonthMock.mockResolvedValueOnce(createdMonth);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Создать другой период" }));
+    const dialog = screen.getByRole("dialog", { name: "Создать месяц" });
+    await user.click(within(dialog).getByRole("button", { name: "Создать месяц" }));
+
+    await waitFor(() => expect(listMonthsMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(/Август/)).toBeInTheDocument();
   });
 });

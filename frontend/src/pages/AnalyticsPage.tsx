@@ -5,7 +5,14 @@ import { formatApiError } from "../api/client";
 import { getCapitalComposition } from "../api/analytics";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
-import type { CapitalCompositionHistory, DashboardSlice, ReportingMonth } from "../api/types";
+import { getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
+import type {
+  CapitalCompositionHistory,
+  DashboardSlice,
+  PortfolioXirr,
+  PortfolioTwrr,
+  ReportingMonth,
+} from "../api/types";
 import { AssetAllocationChart } from "../components/charts/AssetAllocationChart";
 import {
   CapitalCompositionChart,
@@ -13,7 +20,7 @@ import {
 } from "../components/charts/CapitalCompositionChart";
 import { InvestmentResultChart } from "../components/charts/InvestmentResultChart";
 import { EmptyState, ErrorState, Field, LoadingState, Panel, Select } from "../components/ui";
-import { formatMonth } from "../lib/format";
+import { formatDate, formatMonth, formatPercent } from "../lib/format";
 
 function sortMonths(months: ReportingMonth[]): ReportingMonth[] {
   return [...months].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year));
@@ -21,6 +28,74 @@ function sortMonths(months: ReportingMonth[]): ReportingMonth[] {
 
 function monthOptionLabel(month: ReportingMonth): string {
   return `${formatMonth(month.year, month.month)} · ${month.status === "closed" ? "закрыт" : "черновик"}`;
+}
+
+function portfolioXirrUnavailableMessage(reasonCodes: string[]): string {
+  if (reasonCodes.some((code) => code.includes("valuation"))) {
+    return "Расчёт недоступен: нет полного набора подтверждённых оценок на границах периода.";
+  }
+  if (reasonCodes.some((code) => code.includes("flow"))) {
+    return "Расчёт недоступен: история внешних пополнений и снятий неполна.";
+  }
+  if (reasonCodes.some((code) => code.includes("root"))) {
+    return "Расчёт недоступен: однозначность корня для этой истории не подтверждена.";
+  }
+  if (reasonCodes.some((code) => code.includes("membership") || code.includes("scope"))) {
+    return "Расчёт недоступен: не подтверждён состав портфеля на всём периоде.";
+  }
+  return "Расчёт недоступен: не удалось подтвердить достаточность данных для XIRR.";
+}
+
+function portfolioTwrrUnavailableMessage(reasonCodes: string[]): string {
+  if (reasonCodes.some((code) => code.includes("valuation_boundary"))) {
+    return "Расчёт недоступен: не подтверждены наблюдения до и после внешних операций.";
+  }
+  if (reasonCodes.some((code) => code.includes("flow"))) {
+    return "Расчёт недоступен: история внешних пополнений и снятий неполна.";
+  }
+  if (reasonCodes.some((code) => code.includes("denominator"))) {
+    return "Расчёт недоступен: один из периодов не имеет положительной базы расчёта.";
+  }
+  if (reasonCodes.some((code) => code.includes("membership") || code.includes("scope"))) {
+    return "Расчёт недоступен: не подтверждён состав портфеля на всём периоде.";
+  }
+  return "Расчёт недоступен: не удалось подтвердить достаточность данных для TWRR.";
+}
+
+function PerformanceDetails({
+  kind,
+  currency,
+  startDate,
+  endDate,
+}: {
+  kind: "XIRR" | "TWRR";
+  currency: string;
+  startDate: string;
+  endDate: string;
+}) {
+  return (
+    <details className="analytics-v03__performance-details">
+      <summary>Подробнее о расчёте</summary>
+      <div>
+        <p>{kind === "XIRR" ? "Годовая доходность" : "Доходность за период"} · точный расчёт</p>
+        <p>
+          {formatDate(startDate)} — {formatDate(endDate)} · {currency}
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function PerformanceUnavailable({ kind, message }: { kind: "XIRR" | "TWRR"; message: string }) {
+  return (
+    <div className="analytics-v03__performance-unavailable" role="status">
+      <strong>{kind} недоступен</strong>
+      <details className="analytics-v03__performance-details">
+        <summary>Почему недоступно</summary>
+        <p>{message}</p>
+      </details>
+    </div>
+  );
 }
 
 export function AnalyticsPage() {
@@ -32,6 +107,12 @@ export function AnalyticsPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [monthsLoading, setMonthsLoading] = useState(true);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [portfolioXirr, setPortfolioXirr] = useState<PortfolioXirr | null>(null);
+  const [portfolioTwrr, setPortfolioTwrr] = useState<PortfolioTwrr | null>(null);
+  const [portfolioXirrLoading, setPortfolioXirrLoading] = useState(false);
+  const [portfolioTwrrLoading, setPortfolioTwrrLoading] = useState(false);
+  const [portfolioXirrError, setPortfolioXirrError] = useState<string | null>(null);
+  const [portfolioTwrrError, setPortfolioTwrrError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [monthsError, setMonthsError] = useState<string | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -118,6 +199,79 @@ export function AnalyticsPage() {
     () => months.find((month) => month.id === selectedMonthId) ?? null,
     [months, selectedMonthId],
   );
+
+  const xirrPeriod = useMemo(() => {
+    const closedMonths = months.filter((month) => month.status === "closed");
+    if (closedMonths.length < 2) return null;
+
+    const endCandidate = selectedMonth?.status === "closed" ? selectedMonth : closedMonths[0];
+    const endIndex = closedMonths.findIndex((month) => month.id === endCandidate.id);
+    const endMonth = closedMonths[endIndex] ?? closedMonths[0];
+    const startMonth = closedMonths[endIndex + 1];
+    if (!startMonth || startMonth.snapshot_date >= endMonth.snapshot_date) return null;
+    return { startDate: startMonth.snapshot_date, endDate: endMonth.snapshot_date };
+  }, [months, selectedMonth]);
+  const xirrStartDate = xirrPeriod?.startDate ?? null;
+  const xirrEndDate = xirrPeriod?.endDate ?? null;
+
+  useEffect(() => {
+    if (xirrStartDate == null || xirrEndDate == null) {
+      setPortfolioXirr(null);
+      setPortfolioXirrError(null);
+      setPortfolioXirrLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPortfolioXirrLoading(true);
+    void getPortfolioXirr(xirrStartDate, xirrEndDate, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setPortfolioXirr(data);
+          setPortfolioXirrError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPortfolioXirr(null);
+          setPortfolioXirrError(formatApiError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPortfolioXirrLoading(false);
+      });
+    return () => controller.abort();
+  }, [xirrEndDate, xirrStartDate]);
+
+  useEffect(() => {
+    if (xirrStartDate == null || xirrEndDate == null) {
+      setPortfolioTwrr(null);
+      setPortfolioTwrrError(null);
+      setPortfolioTwrrLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPortfolioTwrrLoading(true);
+    void getPortfolioTwrr(xirrStartDate, xirrEndDate, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setPortfolioTwrr(data);
+          setPortfolioTwrrError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPortfolioTwrr(null);
+          setPortfolioTwrrError(formatApiError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPortfolioTwrrLoading(false);
+      });
+    return () => controller.abort();
+  }, [xirrEndDate, xirrStartDate]);
+
   const error = historyError ?? monthsError;
 
   return (
@@ -222,7 +376,11 @@ export function AnalyticsPage() {
           )}
         </Panel>
 
-        <Panel label="Результат" title="Результат инвестиций">
+        <Panel
+          className="analytics-v03__result-panel"
+          label="Результат"
+          title="Результат инвестиций"
+        >
           {dashboardLoading ? (
             <LoadingState description="Загружаем результат…" inline />
           ) : dashboardError ? (
@@ -245,6 +403,74 @@ export function AnalyticsPage() {
           )}
         </Panel>
       </section>
+
+      <Panel className="analytics-v03__xirr-panel" label="Доходность" title="XIRR портфеля">
+        {portfolioXirrLoading ? (
+          <LoadingState description="Проверяем подтверждённые данные периода…" inline />
+        ) : portfolioXirrError ? (
+          <ErrorState description={portfolioXirrError} inline title="Не удалось загрузить XIRR" />
+        ) : !xirrPeriod ? (
+          <PerformanceUnavailable
+            kind="XIRR"
+            message="Нужны два закрытых среза с хронологичными датами снимка. Черновики и неполную историю не используем."
+          />
+        ) : portfolioXirr?.availability === "available" && portfolioXirr.value !== null ? (
+          <div className="analytics-v03__xirr-result">
+            <p className="analytics-v03__xirr-value">
+              {formatPercent(portfolioXirr.value, { digits: 2, signed: true })}
+            </p>
+            <PerformanceDetails
+              currency={portfolioXirr.performance_currency}
+              endDate={portfolioXirr.period.end_date}
+              kind="XIRR"
+              startDate={portfolioXirr.period.start_date}
+            />
+          </div>
+        ) : (
+          <PerformanceUnavailable
+            kind="XIRR"
+            message={
+              portfolioXirr
+                ? portfolioXirrUnavailableMessage(portfolioXirr.reason_codes)
+                : "Не удалось получить подтверждённый результат для выбранного периода."
+            }
+          />
+        )}
+      </Panel>
+
+      <Panel className="analytics-v03__xirr-panel" label="Доходность" title="TWRR портфеля">
+        {portfolioTwrrLoading ? (
+          <LoadingState description="Проверяем подтверждённые границы периода…" inline />
+        ) : portfolioTwrrError ? (
+          <ErrorState description={portfolioTwrrError} inline title="Не удалось загрузить TWRR" />
+        ) : !xirrPeriod ? (
+          <PerformanceUnavailable
+            kind="TWRR"
+            message="Нужны два закрытых среза с хронологичными датами снимка."
+          />
+        ) : portfolioTwrr?.availability === "available" && portfolioTwrr.value !== null ? (
+          <div className="analytics-v03__xirr-result">
+            <p className="analytics-v03__xirr-value">
+              {formatPercent(portfolioTwrr.value, { digits: 2, signed: true })}
+            </p>
+            <PerformanceDetails
+              currency={portfolioTwrr.performance_currency}
+              endDate={portfolioTwrr.period.end_date}
+              kind="TWRR"
+              startDate={portfolioTwrr.period.start_date}
+            />
+          </div>
+        ) : (
+          <PerformanceUnavailable
+            kind="TWRR"
+            message={
+              portfolioTwrr
+                ? portfolioTwrrUnavailableMessage(portfolioTwrr.reason_codes)
+                : "Не удалось получить подтверждённый результат для выбранного периода."
+            }
+          />
+        )}
+      </Panel>
     </section>
   );
 }

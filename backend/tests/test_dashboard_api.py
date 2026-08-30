@@ -180,6 +180,15 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     )
     assert dash["kpis"]["mortgage_balance"] == _rub("4000000.00")
     assert dash["kpis"]["goal_target"] == _rub("100000.00")
+    ladder = dash["cash_flow_ladder"]
+    assert ladder["forecast_version"] == "v1"
+    assert len(ladder["months"]) == 12
+    assert ladder["months"][0]["month"] == 2
+    assert ladder["months"][0]["deposit_interest"] == _rub("1000.00")
+    assert ladder["months"][1]["coupon"] == _rub("870.00")
+    ladder_response = client.get(f"/api/months/{m2_id}/cash-flow-ladder")
+    assert ladder_response.status_code == 200, ladder_response.text
+    assert ladder_response.json() == ladder
     # one closed month → incomplete 12-month passive-income history
     assert dash["kpis"]["passive_income_average_months"] == 1
     assert dash["kpis"]["passive_income_average_complete"] is False
@@ -199,6 +208,11 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert allocation["stocks"] == _rub("0.00")
     assert allocation["bonds"] == _rub("11000.00")
     assert allocation["gold_other"] == _rub("0.00")
+    allocation_delta = {
+        item["asset_class"]: item["amount"] for item in dash["asset_allocation_delta"]
+    }
+    assert set(allocation_delta) == set(allocation)
+    assert all(amount == _rub("0.00") for amount in allocation_delta.values())
     assert any(item["instrument_type"] == "bond" for item in dash["result_by_instrument_class"])
     bond_class = next(
         item for item in dash["result_by_instrument_class"] if item["instrument_type"] == "bond"
@@ -224,6 +238,32 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert dash["expected_payments"][0]["expected_net_amount"] == _rub("870.00")
     assert dash["mortgage"]["mortgage_balance"] == _rub("4000000.00")
     assert dash["calculation_version"] == "v2"
+
+
+def test_dashboard_asset_allocation_delta_uses_current_and_previous_classes(
+    client: TestClient,
+) -> None:
+    _m1_id, m2_id = _seed_two_months(client)
+
+    cash = client.post(
+        "/api/cash-balances",
+        json={
+            "reporting_month_id": m2_id,
+            "name": "Резерв",
+            "amount": _rub("500.00"),
+            "currency": "RUB",
+        },
+    )
+    assert cash.status_code == 201, cash.text
+
+    dashboard = client.get(f"/api/months/{m2_id}/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    delta = {
+        item["asset_class"]: item["amount"] for item in dashboard.json()["asset_allocation_delta"]
+    }
+    assert delta["cash"] == _rub("500.00")
+    assert delta["deposits"] == _rub("0.00")
+    assert delta["bonds"] == _rub("0.00")
 
 
 def test_historical_series_grows_when_draft_closes(client: TestClient) -> None:

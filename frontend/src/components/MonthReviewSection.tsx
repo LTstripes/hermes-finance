@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
 import { listGoalSummary, type GoalSummary } from "../api/goals";
-import { closeMonth, reopenMonth } from "../api/months";
-import type { DashboardKpis } from "../api/types";
+import { closeMonth, getCloseReadiness, reopenMonth } from "../api/months";
+import type { CloseReadiness, CloseReadinessItem, DashboardKpis } from "../api/types";
 import { formatMoney, formatPercent } from "../lib/format";
 import { moneyAmount } from "../lib/money";
 import { Badge, Button, ConfirmDialog, ErrorState, LoadingState, Panel } from "./ui";
@@ -18,9 +18,43 @@ type Props = {
   onStatusChanged: () => void;
 };
 
+const GROUP_META: {
+  severity: CloseReadinessItem["severity"];
+  title: string;
+  empty: string;
+  tone: "closed" | "draft" | "info";
+}[] = [
+  {
+    severity: "hard_blocker",
+    title: "Блокирует закрытие",
+    empty: "Нет причин, из-за которых сервер отклонит закрытие.",
+    tone: "closed",
+  },
+  {
+    severity: "warning",
+    title: "Стоит проверить",
+    empty: "Предупреждений нет.",
+    tone: "draft",
+  },
+  {
+    severity: "info",
+    title: "Контекст",
+    empty: "Дополнительного контекста нет.",
+    tone: "info",
+  },
+];
+
+function itemsFor(
+  readiness: CloseReadiness | null,
+  severity: CloseReadinessItem["severity"],
+): CloseReadinessItem[] {
+  return (readiness?.items ?? []).filter((item) => item.severity === severity);
+}
+
 export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusChanged }: Props) {
   const [previewKpis, setPreviewKpis] = useState<DashboardKpis | null>(null);
   const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
+  const [readiness, setReadiness] = useState<CloseReadiness | null>(null);
   const [mainGoal, setMainGoal] = useState<GoalSummary | null>(null);
   const [pendingAction, setPendingAction] = useState<"close" | "reopen" | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,14 +67,16 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
       setLoading(true);
       setError(null);
       try {
-        const [dashboard, goals] = await Promise.all([
+        const [dashboard, goals, closeReadiness] = await Promise.all([
           getDashboard(monthId, signal).catch(() => null),
           listGoalSummary(monthId, {}, signal).catch(() => []),
+          getCloseReadiness(monthId, signal),
         ]);
         if (signal?.aborted) return;
         setPreviewKpis(dashboard?.kpis ?? null);
         setPreviewWarnings(dashboard?.warnings ?? []);
         setMainGoal(goals.find((goal) => goal.is_main) ?? null);
+        setReadiness(closeReadiness);
       } catch (err) {
         if (!signal?.aborted) setError(formatApiError(err));
       } finally {
@@ -56,8 +92,15 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
     return () => controller.abort();
   }, [load]);
 
+  const blockers = useMemo(() => itemsFor(readiness, "hard_blocker"), [readiness]);
+  const warnings = useMemo(() => itemsFor(readiness, "warning"), [readiness]);
+  const infos = useMemo(() => itemsFor(readiness, "info"), [readiness]);
+  const closeBlocked = readiness == null || !readiness.can_close;
+  const closeDisabled = busy || readOnly || dirty || closeBlocked || status !== "draft";
+
   async function confirmAction() {
     if (!pendingAction) return;
+    if (pendingAction === "close" && closeDisabled) return;
     setBusy(true);
     setActionError(null);
     try {
@@ -74,6 +117,11 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
 
   if (loading) return <LoadingState description="Готовим проверку месяца…" inline />;
   if (error) return <ErrorState description={error} inline title="Не удалось проверить месяц" />;
+
+  const closeDescription =
+    warnings.length > 0
+      ? "Есть предупреждения, но они не блокируют закрытие. Закрыть месяц? Данные будут зафиксированы до явного повторного открытия."
+      : "Закрыть месяц? Данные будут зафиксированы до явного повторного открытия.";
 
   return (
     <div className="stack-18">
@@ -120,23 +168,71 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
           <p className="muted">Краткие показатели временно недоступны.</p>
         )}
 
-        {previewWarnings.length === 0 ? (
-          <div className="inline-alert inline-alert--ok" role="status">
-            Существенных предупреждений нет. Месяц можно закрыть после финальной проверки данных.
+        <div className="close-cockpit" data-testid="close-cockpit">
+          {GROUP_META.map((group) => {
+            const grouped = { hard_blocker: blockers, warning: warnings, info: infos };
+            const items = grouped[group.severity];
+            return (
+              <section
+                aria-label={group.title}
+                className={`close-cockpit__group close-cockpit__group--${group.severity}`}
+                key={group.severity}
+              >
+                <div className="close-cockpit__group-heading">
+                  <h3>{group.title}</h3>
+                  <Badge tone={group.tone}>{items.length}</Badge>
+                </div>
+                {group.severity === "warning" ? (
+                  <p className="muted close-cockpit__hint">
+                    Предупреждения не блокируют закрытие. Их стоит посмотреть до финального шага.
+                  </p>
+                ) : null}
+                {group.severity === "hard_blocker" ? (
+                  <p className="muted close-cockpit__hint">
+                    Кнопка «Закрыть месяц» отключается только этими пунктами — тем, что сервер и так
+                    отклонит.
+                  </p>
+                ) : null}
+                {items.length === 0 ? (
+                  <p className="muted">{group.empty}</p>
+                ) : (
+                  <ul className="close-cockpit__items">
+                    {items.map((item) => (
+                      <li key={`${item.severity}:${item.code}:${item.message}`}>
+                        <span className="close-cockpit__code">{item.code}</span>
+                        <span>{item.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </div>
+
+        <section
+          aria-label="Расчётные уведомления"
+          className="close-cockpit-notices"
+          data-testid="dashboard-calculation-notices"
+        >
+          <div className="close-cockpit__group-heading">
+            <h3>Расчётные уведомления</h3>
+            <Badge tone="draft">{previewWarnings.length}</Badge>
           </div>
-        ) : (
-          <div className="inline-alert inline-alert--warn" role="status">
-            Есть детали, которые стоит проверить перед закрытием.
-            <details className="field-details">
-              <summary>Показать предупреждения ({previewWarnings.length})</summary>
-              <ul className="closeout-warnings">
-                {previewWarnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </details>
-          </div>
-        )}
+          <p className="muted close-cockpit__hint">
+            Это расчётные уведомления дашборда. Они не входят в чеклист закрытия и не блокируют
+            закрытие месяца.
+          </p>
+          {previewWarnings.length === 0 ? (
+            <p className="muted">Расчётных уведомлений нет.</p>
+          ) : (
+            <ul className="closeout-warnings">
+              {previewWarnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {status === "closed" ? (
           <p className="muted">
@@ -153,9 +249,15 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
           </Button>
         ) : (
           <Button
-            disabled={busy || readOnly || dirty}
+            disabled={closeDisabled}
             onClick={() => setPendingAction("close")}
-            title={dirty ? "Сначала сохрани изменения" : undefined}
+            title={
+              dirty
+                ? "Сначала сохрани изменения"
+                : closeBlocked
+                  ? "Закрытие сейчас отклонит сервер"
+                  : undefined
+            }
             type="button"
             variant="primary"
           >
@@ -198,7 +300,7 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
         danger={pendingAction === "close"}
         description={
           pendingAction === "close"
-            ? "Закрыть месяц? Данные будут зафиксированы до явного повторного открытия."
+            ? closeDescription
             : "Открыть месяц заново? Данные снова станут редактируемыми."
         }
         onCancel={() => setPendingAction(null)}

@@ -7,18 +7,28 @@ from starlette.responses import FileResponse
 
 from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
+from hermes_finance.api.ai_analysis_bundle import router as ai_analysis_bundle_router
 from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
+from hermes_finance.api.broker_identity_mappings import (
+    router as broker_identity_mappings_router,
+)
+from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
+from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
+from hermes_finance.api.close_readiness import router as close_readiness_router
 from hermes_finance.api.comments import router as comments_router
 from hermes_finance.api.dashboard import router as dashboard_router
 from hermes_finance.api.debts import router as debts_router
 from hermes_finance.api.deposits import router as deposits_router
+from hermes_finance.api.deterministic_insights import router as deterministic_insights_router
 from hermes_finance.api.errors import register_error_handlers
 from hermes_finance.api.expected_flows import router as expected_flows_router
 from hermes_finance.api.expenses import router as expenses_router
 from hermes_finance.api.exports import router as exports_router
+from hermes_finance.api.external_flows import router as external_flows_router
+from hermes_finance.api.freshness_provenance import router as freshness_provenance_router
 from hermes_finance.api.goals import router as goals_router
 from hermes_finance.api.iis import router as iis_router
 from hermes_finance.api.incomes import router as incomes_router
@@ -27,15 +37,21 @@ from hermes_finance.api.instruments import router as instruments_router
 from hermes_finance.api.investment_flows import router as investment_flows_router
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.payouts import router as payouts_router
+from hermes_finance.api.performance_availability import router as performance_availability_router
+from hermes_finance.api.portfolio_twrr import router as portfolio_twrr_router
+from hermes_finance.api.portfolio_xirr import router as portfolio_xirr_router
 from hermes_finance.api.positions import router as positions_router
 from hermes_finance.api.properties import router as properties_router
+from hermes_finance.api.provider_capabilities import router as provider_capabilities_router
 from hermes_finance.api.quote_apply import router as quote_apply_router
 from hermes_finance.api.quote_preview import router as quote_preview_router
+from hermes_finance.api.risk_allocation import router as risk_allocation_router
 from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.settings import router as settings_router
 from hermes_finance.api.statement_import import router as statement_import_router
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
+from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
 from hermes_finance.database import Database
 from hermes_finance.security import LocalhostSecurityMiddleware
 from hermes_finance.settings import Settings
@@ -80,10 +96,17 @@ def create_app(
     application.include_router(settings_router)
     application.include_router(tax_brackets_router)
     application.include_router(months_router)
+    application.include_router(close_readiness_router)
+    application.include_router(freshness_provenance_router)
     application.include_router(quote_preview_router)
     application.include_router(quote_apply_router)
     application.include_router(payouts_router)
+    application.include_router(performance_availability_router)
+    application.include_router(portfolio_xirr_router)
+    application.include_router(portfolio_twrr_router)
     application.include_router(broker_snapshot_router)
+    application.include_router(broker_identity_mappings_router)
+    application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
@@ -95,16 +118,23 @@ def create_app(
     application.include_router(positions_router)
     application.include_router(deposits_router)
     application.include_router(cash_router)
+    application.include_router(cash_flow_ladder_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)
+    application.include_router(external_flows_router)
     application.include_router(expected_flows_router)
     application.include_router(expenses_router)
     application.include_router(savings_router)
     application.include_router(salary_tax_router)
+    application.include_router(tax_iis_planner_router)
     application.include_router(debts_router)
     application.include_router(properties_router)
+    application.include_router(provider_capabilities_router)
+    application.include_router(risk_allocation_router)
+    application.include_router(deterministic_insights_router)
     application.include_router(comments_router)
     application.include_router(exports_router)
+    application.include_router(ai_analysis_bundle_router)
     application.include_router(goals_router)
 
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])

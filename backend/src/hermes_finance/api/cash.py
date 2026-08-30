@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import RubleAmount
 from hermes_finance.services.cash import (
+    _UNSET,
     create_cash_balance,
     delete_cash_balance,
     get_cash_balance,
@@ -28,6 +29,7 @@ class CashBalanceCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reporting_month_id: int
+    account_id: int | None = None
     name: str = Field(min_length=1, max_length=128)
     amount: MoneyValue
     currency: str = Field(default="RUB", min_length=3, max_length=3)
@@ -39,6 +41,7 @@ class CashBalanceUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
+    account_id: int | None = None
     amount: MoneyValue | None = None
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     include_in_capital: bool | None = None
@@ -50,6 +53,7 @@ class CashBalanceResponse(BaseModel):
 
     id: int
     reporting_month_id: int
+    account_id: int | None
     name: str
     amount: MoneyValue
     currency: str
@@ -77,6 +81,7 @@ def _response(balance: object) -> CashBalanceResponse:
     return CashBalanceResponse(
         id=balance.id,
         reporting_month_id=balance.reporting_month_id,
+        account_id=balance.account_id,
         name=balance.name,
         amount=_money(balance.amount_kopecks, balance.currency),
         currency=balance.currency,
@@ -116,6 +121,7 @@ def create_cash_balance_endpoint(
     balance = create_cash_balance(
         session,
         reporting_month_id=payload.reporting_month_id,
+        account_id=payload.account_id,
         name=payload.name,
         amount=_amount(payload.amount),
         currency=payload.currency,
@@ -142,6 +148,7 @@ def update_cash_balance_endpoint(
     balance = update_cash_balance(
         session,
         balance_id,
+        account_id=(payload.account_id if "account_id" in payload.model_fields_set else _UNSET),
         name=payload.name,
         amount=_amount(payload.amount) if payload.amount is not None else None,
         currency=payload.currency,
