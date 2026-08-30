@@ -1168,6 +1168,59 @@ a.btn {
   font-size: 0.86rem;
 }
 
+.broker-mappings-table {
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+.broker-mappings-table th:nth-child(1),
+.broker-mappings-table td:nth-child(1) {
+  width: 24%;
+}
+
+.broker-mappings-table th:nth-child(2),
+.broker-mappings-table td:nth-child(2) {
+  width: 20%;
+}
+
+.broker-mappings-table th:nth-child(3),
+.broker-mappings-table td:nth-child(3) {
+  width: 12%;
+}
+
+.broker-mappings-table th:nth-child(4),
+.broker-mappings-table td:nth-child(4) {
+  width: 44%;
+}
+
+.broker-mappings__form {
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.broker-mappings__identity,
+.broker-mappings__target,
+.broker-mappings__actions {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.broker-mappings__identity strong,
+.broker-mappings__target strong {
+  overflow-wrap: anywhere;
+}
+
+.broker-mappings__actions {
+  gap: 8px;
+  min-width: 220px;
+}
+
+.broker-mappings__actions-select {
+  width: 100%;
+  max-width: 100%;
+}
+
 .month-editor-table,
 .month-positions-table,
 .month-deposits-table,

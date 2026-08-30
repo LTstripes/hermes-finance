@@ -552,6 +552,9 @@ export function syntheticApiResponse(
   if (path === "/api/instruments" && method === "GET") {
     return { json: state === "empty" ? [] : syntheticInstruments };
   }
+  if (path === "/api/broker-identity-mappings" && method === "GET") {
+    return { json: [] };
+  }
   if (/^\/api\/instruments\/\d+\/market-mapping$/.test(path)) {
     const instrumentId = Number(path.split("/")[3]);
     return {

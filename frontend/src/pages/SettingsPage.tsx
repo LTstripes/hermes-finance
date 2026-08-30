@@ -8,6 +8,7 @@ import {
   getSettings,
   updateSettings,
 } from "../api/settings";
+import { BrokerIdentityMappingsPanel } from "../components/BrokerIdentityMappingsPanel";
 import { DiagnosticsPanel } from "../components/RuntimeStatus";
 import { TaxBracketsPanel } from "../components/TaxBracketsPanel";
 import { Badge, Button, ErrorState, Field, Input, LoadingState, Panel } from "../components/ui";
@@ -263,6 +264,8 @@ export function SettingsPage() {
           </div>
         </Panel>
       </form>
+
+      <BrokerIdentityMappingsPanel />
 
       <TaxBracketsPanel />
 
