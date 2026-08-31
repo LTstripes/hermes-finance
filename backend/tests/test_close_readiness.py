@@ -18,6 +18,15 @@ from hermes_finance.domain import (
     InstrumentType,
     PriceSource,
 )
+from hermes_finance.domain.month_close_workflow import (
+    GuidedCloseApplicability,
+    GuidedCloseGate,
+    GuidedCloseStep,
+    GuidedCloseStepId,
+    GuidedCloseStepState,
+    derive_step_state,
+    recommended_step_id,
+)
 from hermes_finance.main import create_app
 from hermes_finance.market_data.payout import PayoutEventKind
 from hermes_finance.persistence import Base, PositionQuoteProvenance, PositionSnapshot
@@ -44,6 +53,7 @@ from hermes_finance.services.reporting_months import (
     close_hard_guards,
     close_reporting_month,
     create_reporting_month,
+    reopen_reporting_month,
 )
 
 TODAY = date(2026, 8, 27)
@@ -453,3 +463,124 @@ def test_readiness_does_not_perform_network_calls(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("socket.getaddrinfo", boom)
     result = build_close_readiness(session, month.id, today=TODAY)
     assert result.can_close is True
+
+
+def test_workflow_state_table_observes_normative_precedence() -> None:
+    assert (
+        derive_step_state(
+            hard_blocked=True,
+            not_applicable=True,
+            stale_or_partial=True,
+            completed=True,
+            ready=True,
+        )
+        is GuidedCloseStepState.BLOCKED
+    )
+    assert (
+        derive_step_state(not_applicable=True, stale_or_partial=True, completed=True)
+        is GuidedCloseStepState.SKIPPED
+    )
+    assert (
+        derive_step_state(stale_or_partial=True, completed=True, ready=True)
+        is GuidedCloseStepState.WARNING
+    )
+    assert derive_step_state(completed=True, ready=True) is GuidedCloseStepState.COMPLETED
+    assert derive_step_state(ready=True) is GuidedCloseStepState.READY
+    assert derive_step_state() is GuidedCloseStepState.NOT_STARTED
+
+    blocked = GuidedCloseStep(
+        id=GuidedCloseStepId.MONTH_SETUP,
+        order=1,
+        title="setup",
+        state=GuidedCloseStepState.BLOCKED,
+        applicability=GuidedCloseApplicability.MANDATORY,
+        gate=GuidedCloseGate.MUST_RESOLVE,
+        affects_close=True,
+        why="blocked",
+    )
+    warning = GuidedCloseStep(
+        id=GuidedCloseStepId.READINESS,
+        order=2,
+        title="readiness",
+        state=GuidedCloseStepState.WARNING,
+        applicability=GuidedCloseApplicability.MANDATORY,
+        gate=GuidedCloseGate.ADVISORY,
+        affects_close=False,
+        why="warning",
+    )
+    assert recommended_step_id((warning, blocked)) == "month_setup"
+
+
+class _FailIfCalledProvider:
+    def __getattr__(self, name: str):
+        raise AssertionError(f"workflow GET must not resolve provider method {name}")
+
+
+def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    older = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
+    requested = create_reporting_month(session, year=2031, month=5, snapshot_date=date(2031, 5, 31))
+    before_month_statuses = [older.status, requested.status]
+    application = create_app(
+        database,
+        market_data_provider=_FailIfCalledProvider(),
+        payout_provider=_FailIfCalledProvider(),
+        broker_snapshot_provider=_FailIfCalledProvider(),
+    )
+    application.state.quote_preview_clock = lambda: date(2031, 5, 31)
+    application.state.freshness_generated_at = lambda: datetime(
+        2031, 5, 31, 12, 0, tzinfo=timezone.utc
+    )
+
+    client = TestClient(application)
+    response = client.get(f"/api/months/{requested.id}/close-workflow")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "monthly_close_workflow_v1"
+    assert body["month"] == {
+        "id": requested.id,
+        "year": 2031,
+        "month": 5,
+        "status": "draft",
+        "snapshot_date": "2031-05-31",
+        "source": "manual",
+    }
+    assert body["recommended_step_id"] == "alfa_baseline"
+    assert [step["order"] for step in body["steps"]] == list(range(1, 10))
+    assert body["steps"][0]["state"] == "completed"
+    assert body["steps"][0]["completion_basis"] == "domain_fact"
+    assert body["steps"][1]["evidence_summary"]["available"] is False
+    assert body["readiness"]["can_close"] is True
+    assert body["readiness"]["warning_count"] == 1
+    assert body["freshness"]["available"] is True
+    assert body["final_review"]["available"] is False
+    assert body["outlook"] is None
+    assert body["links"]["close_readiness"].endswith(f"/api/months/{requested.id}/close-readiness")
+
+    assert [older.status, requested.status] == before_month_statuses
+    assert client.get("/api/months/999/close-workflow").status_code == 404
+
+
+def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
+    close_reporting_month(session, month.id)
+    application = create_app(database)
+    application.state.quote_preview_clock = lambda: TODAY
+    client = TestClient(application)
+
+    closed = client.get(f"/api/months/{month.id}/close-workflow").json()
+    assert closed["month"]["id"] == month.id
+    assert closed["month"]["status"] == "closed"
+    assert closed["recommended_step_id"] is None
+    assert (
+        next(step for step in closed["steps"] if step["id"] == "final_review_close")["state"]
+        == "completed"
+    )
+    assert all(action is None for step in closed["steps"] for action in [step["primary_action"]])
+
+    reopen_reporting_month(session, month.id)
+    reopened = client.get(f"/api/months/{month.id}/close-workflow").json()
+    assert reopened["month"]["status"] == "draft"
+    assert reopened["month"]["id"] == month.id
+    assert reopened["recommended_step_id"] == "alfa_baseline"

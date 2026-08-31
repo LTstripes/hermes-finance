@@ -20,6 +20,22 @@ from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
 from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.instruments import InstrumentType, MarketMappingState
+from hermes_finance.domain.month_close_workflow import (
+    GuidedCloseAction,
+    GuidedCloseActionId,
+    GuidedCloseActionTarget,
+    GuidedCloseApplicability,
+    GuidedCloseCompletionBasis,
+    GuidedCloseEvidenceScope,
+    GuidedCloseGate,
+    GuidedCloseReasonCode,
+    GuidedCloseStale,
+    GuidedCloseStep,
+    GuidedCloseStepId,
+    GuidedCloseStepState,
+    derive_step_state,
+    recommended_step_id,
+)
 from hermes_finance.domain.performance_availability import (
     AvailabilityReasonCode,
     ExternalFlowCoverage,
@@ -94,6 +110,20 @@ __all__ = [
     "IncomeType",
     "InstrumentType",
     "MarketMappingState",
+    "GuidedCloseAction",
+    "GuidedCloseActionId",
+    "GuidedCloseActionTarget",
+    "GuidedCloseApplicability",
+    "GuidedCloseCompletionBasis",
+    "GuidedCloseEvidenceScope",
+    "GuidedCloseGate",
+    "GuidedCloseReasonCode",
+    "GuidedCloseStale",
+    "GuidedCloseStep",
+    "GuidedCloseStepId",
+    "GuidedCloseStepState",
+    "derive_step_state",
+    "recommended_step_id",
     "AvailabilityReasonCode",
     "ExternalFlowCoverage",
     "ExternalFlowEvidence",
