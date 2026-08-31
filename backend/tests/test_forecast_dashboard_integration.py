@@ -1,4 +1,4 @@
-"""R05-10 integration coverage for C04 and dashboard payout projections."""
+"""Cross-layer forecast/dashboard integration coverage, originally R05-10."""
 
 from __future__ import annotations
 

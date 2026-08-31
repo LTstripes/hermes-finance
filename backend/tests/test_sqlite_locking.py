@@ -1,3 +1,5 @@
+"""SQLite locking regression coverage, originally recorded as R02-10."""
+
 from __future__ import annotations
 
 import threading
