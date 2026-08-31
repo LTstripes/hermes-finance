@@ -1151,7 +1151,10 @@ a.btn {
 
 .table-wrap {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
 }
 
 .statement-import .table-wrap {
@@ -1239,6 +1242,8 @@ a.btn {
 .month-deposits-table td,
 .month-cash-table th,
 .month-cash-table td,
+.month-budget-table th,
+.month-budget-table td,
 .month-debts-table th,
 .month-debts-table td,
 .month-property-table th,
@@ -1250,9 +1255,20 @@ a.btn {
 
 .month-positions-table td,
 .month-deposits-table td,
+.month-cash-table td,
 .month-budget-table td,
 .month-flows-table td {
   overflow-wrap: break-word;
+}
+
+.month-positions-table td:not(.num):not(.month-positions-table__actions),
+.month-deposits-table td:not(.num):not(.month-deposits-table__actions),
+.month-cash-table td:not(.num):not(.month-cash-table__actions),
+.month-budget-table td:not(.num):not(.month-budget-table__actions),
+.month-debts-table td:not(.num):not(.month-debts-table__actions),
+.month-property-table td:not(.num):not(.month-property-table__actions),
+.month-flows-table td:not(.num):not(.month-flows-table__actions) {
+  overflow-wrap: anywhere;
 }
 
 .month-flows-table__party {
@@ -1383,7 +1399,17 @@ a.btn {
 .month-flows-table th:first-child,
 .month-flows-table td:first-child,
 .month-flows-table__date {
-  padding-left: 12px;
+  padding-inline-start: 18px;
+}
+
+.month-notes-table th:first-child,
+.month-notes-table td:first-child {
+  width: 3.25rem;
+  white-space: nowrap;
+}
+
+.month-notes-table td:nth-child(2) {
+  overflow-wrap: anywhere;
 }
 
 .table th {

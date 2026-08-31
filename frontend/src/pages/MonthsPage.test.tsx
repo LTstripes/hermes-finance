@@ -66,14 +66,14 @@ describe("MonthsPage R03-05", () => {
     expect(within(draftRow).getByRole("link", { name: "Открыть" })).toHaveClass("btn--primary");
 
     await user.click(within(draftRow).getByRole("button", { name: /Действия для Июль/ }));
-    expect(within(draftRow).getByRole("menuitem", { name: "Копировать данные" })).toBeVisible();
-    expect(within(draftRow).getByRole("menuitem", { name: "Удалить черновик" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Копировать данные" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Удалить черновик" })).toBeVisible();
 
     const closedRow = within(table).getByText(/Июнь/).closest("tr");
     if (!closedRow) throw new Error("closed row not found");
     await user.keyboard("{Escape}");
     await user.click(within(closedRow).getByRole("button", { name: /Действия для Июнь/ }));
-    expect(within(closedRow).queryByRole("menuitem", { name: "Удалить черновик" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Удалить черновик" })).toBeNull();
   });
 
   it("opens manual create in a keyboard-dismissible dialog", async () => {
