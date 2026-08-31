@@ -143,9 +143,10 @@ internal static class DependencyValidator
 
     private static DependencyCommandResult RunCommand(string fileName, string workingDirectory, params string[] arguments)
     {
+        var resolvedFileName = ResolveCommand(fileName, workingDirectory);
         var command = new ProcessStartInfo
         {
-            FileName = fileName,
+            FileName = resolvedFileName,
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -160,7 +161,7 @@ internal static class DependencyValidator
         try
         {
             using var process = Process.Start(command)
-                ?? throw new LauncherValidationException($"Could not start '{fileName}'.");
+                ?? throw new LauncherValidationException($"Could not start dependency '{fileName}'.");
             var standardOutput = process.StandardOutput.ReadToEnd();
             var standardError = process.StandardError.ReadToEnd();
             process.WaitForExit();
@@ -169,8 +170,70 @@ internal static class DependencyValidator
         catch (Win32Exception exception)
         {
             throw new LauncherValidationException(
-                $"Dependency check cannot run '{fileName}': {exception.Message}");
+                $"Dependency check cannot run '{fileName}' resolved as '{resolvedFileName}': {exception.Message}");
         }
+    }
+
+    internal static string ResolveCommand(string fileName, string workingDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw new LauncherValidationException("Dependency command name is empty.");
+        }
+
+        if (Path.IsPathRooted(fileName))
+        {
+            if (File.Exists(fileName))
+            {
+                return Path.GetFullPath(fileName);
+            }
+
+            throw MissingDependency(fileName);
+        }
+
+        var searchDirectories = new List<string> { workingDirectory };
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            searchDirectories.AddRange(path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        var extensions = CommandExtensions(fileName);
+        foreach (var directory in searchDirectories)
+        {
+            foreach (var extension in extensions)
+            {
+                var candidate = Path.Combine(directory, fileName + extension);
+                if (File.Exists(candidate))
+                {
+                    return Path.GetFullPath(candidate);
+                }
+            }
+        }
+
+        throw MissingDependency(fileName);
+    }
+
+    private static string[] CommandExtensions(string fileName)
+    {
+        if (!OperatingSystem.IsWindows() || !string.IsNullOrEmpty(Path.GetExtension(fileName)))
+        {
+            return [string.Empty];
+        }
+
+        var pathExtensions = Environment.GetEnvironmentVariable("PATHEXT");
+        return string.IsNullOrWhiteSpace(pathExtensions)
+            ? [".COM", ".EXE", ".BAT", ".CMD"]
+            : pathExtensions.Split(';', StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static LauncherValidationException MissingDependency(string fileName)
+    {
+        var hint = fileName.Equals("npm.cmd", StringComparison.OrdinalIgnoreCase)
+            ? "Install Node.js and ensure npm.cmd is on PATH."
+            : $"Install '{fileName}' and ensure it is on PATH.";
+        return new LauncherValidationException(
+            $"Missing dependency '{fileName}' required for {(fileName.Equals("npm.cmd", StringComparison.OrdinalIgnoreCase) ? "frontend" : "backend")} dependency validation. {hint}");
     }
 
     private static void RequireFile(string path, string message)

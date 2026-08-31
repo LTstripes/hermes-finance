@@ -14,6 +14,8 @@ var tests = new (string Name, Action Run)[]
     ("rejects an existing preview database with the wrong sidecar", RejectsWrongPreviewSidecar),
     ("uses the bundled schema probe for a legacy checkout", UsesBundledSchemaProbeForLegacyCheckout),
     ("uses the bundled dependency preparation helper", UsesBundledDependencyPreparationHelper),
+    ("resolves PATH commands outside the selected checkout", ResolvesPathCommandsOutsideSelectedCheckout),
+    ("fails closed when npm is missing", FailsClosedWhenNpmIsMissing),
     ("packages the branded cat icon", PackagesBrandedCatIcon),
     ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
     ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
@@ -195,6 +197,72 @@ static void UsesBundledDependencyPreparationHelper()
         command.ArgumentList.ToArray().SequenceEqual(
         ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-Checkout", checkout, "-Prepare"]),
         "Dependency preparation must pass the selected checkout as one argument and request preparation explicitly.");
+}
+
+static void ResolvesPathCommandsOutsideSelectedCheckout()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-npm-resolution-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "Selected Checkout With Spaces");
+    var frontend = Path.Combine(checkout, "frontend");
+    var toolDirectory = Path.Combine(root, "External Node Install With Spaces");
+    var observedWorkingDirectory = Path.Combine(root, "observed-working-directory.txt");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(toolDirectory);
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "uv.cmd"),
+            "@echo off\r\nexit /b 0\r\n");
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "npm.cmd"),
+            $"@echo off\r\n> {BatchQuote(observedWorkingDirectory)} echo %CD%\r\necho {{\"name\":\"hermes-finance-frontend\",\"version\":\"0.0.0\"}}\r\nexit /b 0\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory);
+
+        var resolvedNpm = DependencyValidator.ResolveCommand("npm.cmd", frontend);
+        Assert(Path.IsPathFullyQualified(resolvedNpm), "Resolved npm command must be an absolute path.");
+        Assert(
+            string.Equals(Path.GetFullPath(resolvedNpm), Path.GetFullPath(Path.Combine(toolDirectory, "npm.cmd")), StringComparison.OrdinalIgnoreCase),
+            "Dependency validation must resolve npm.cmd from PATH, outside the selected checkout.");
+        Assert(!resolvedNpm.StartsWith(frontend, StringComparison.OrdinalIgnoreCase), "Resolved npm command must not be derived from frontend.");
+
+        var status = DependencyValidator.Check(checkout);
+        Assert(status.Ready, "Synthetic PATH-resolved dependency commands must report ready dependencies.");
+        Assert(
+            File.ReadAllText(observedWorkingDirectory).Trim().Equals(frontend, StringComparison.OrdinalIgnoreCase),
+            "The PATH-resolved npm command must retain the selected frontend as its working directory.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void FailsClosedWhenNpmIsMissing()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-missing-npm-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "Selected Checkout With Spaces");
+    var toolDirectory = Path.Combine(root, "External uv Install With Spaces");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(toolDirectory);
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "uv.cmd"),
+            "@echo off\r\nexit /b 0\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory);
+
+        AssertThrowsMessage(
+            () => DependencyValidator.Check(checkout),
+            "Missing dependency 'npm.cmd' required for frontend dependency validation. Install Node.js and ensure npm.cmd is on PATH.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        DeleteSyntheticTree(root);
+    }
 }
 
 static void PackagesBrandedCatIcon()
@@ -437,6 +505,22 @@ static void CreateRuntimeLayout(string root)
     File.WriteAllText(Path.Combine(root, "frontend", "package.json"), "{}");
     File.WriteAllText(Path.Combine(root, ".gitignore"), "data/\n");
 }
+
+static void CreateDependencyValidationLayout(string checkout)
+{
+    CreateRuntimeLayout(checkout);
+    File.WriteAllText(Path.Combine(checkout, "backend", "uv.lock"), "version = 1\n");
+    File.WriteAllText(Path.Combine(checkout, "frontend", "package-lock.json"), "{\"name\":\"hermes-finance-frontend\",\"lockfileVersion\":3}\n");
+    File.WriteAllText(Path.Combine(checkout, "frontend", "package.json"), "{\"name\":\"hermes-finance-frontend\",\"version\":\"0.0.0\"}\n");
+    Directory.CreateDirectory(Path.Combine(checkout, "frontend", "node_modules"));
+}
+
+static void WriteCommandShim(string path, string contents)
+{
+    File.WriteAllText(path, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+}
+
+static string BatchQuote(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
 
 static string RunGit(string workingDirectory, params string[] arguments)
 {
