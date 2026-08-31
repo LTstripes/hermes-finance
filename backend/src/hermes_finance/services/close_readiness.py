@@ -346,6 +346,7 @@ def build_close_readiness(
     *,
     today: date,
     latest_backup: CloseReadinessBackup | None = None,
+    freshness_summary: FreshnessProvenanceSummary | None = None,
 ) -> CloseReadiness:
     """Assemble a deterministic close-readiness checklist. Read-only."""
 
@@ -353,8 +354,11 @@ def build_close_readiness(
         month = get_reporting_month(session, month_id)
         items = _hard_blocker_items(month)
         items.extend(_salary_tax_items(session, month))
-        freshness = build_freshness_provenance_summary(session, month.id, today=today)
-        items.extend(_freshness_items(freshness))
+        if month.snapshot_date is not None:
+            freshness = freshness_summary or build_freshness_provenance_summary(
+                session, month.id, today=today
+            )
+            items.extend(_freshness_items(freshness))
         items.extend(_unresolved_payout_items(session, month))
         items.extend(_backup_items(latest_backup))
         items.extend(_closed_month_items(month.status))
