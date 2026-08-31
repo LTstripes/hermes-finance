@@ -328,7 +328,7 @@ def build_month_close_workflow(
             )
             steps = (
                 first,
-                *(_closed_read_only_step(step_id) for step_id, _title in _STEP_DEFINITIONS[1:7]),
+                *(_closed_read_only_step(step_id) for step_id, _title in _STEP_DEFINITIONS[1:6]),
                 _step(
                     step_id=GuidedCloseStepId.READINESS,
                     state=derive_step_state(completed=True),

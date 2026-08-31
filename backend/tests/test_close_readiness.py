@@ -61,6 +61,17 @@ FETCHED_AT = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
 APPLIED_AT = datetime(2026, 8, 21, 11, 0, tzinfo=timezone.utc)
 STOCK_UID = "11111111-1111-1111-1111-111111111111"
 BOND_UID = "33333333-3333-3333-3333-333333333333"
+EXPECTED_WORKFLOW_STEP_IDS = [
+    "month_setup",
+    "alfa_baseline",
+    "market_quotes",
+    "actual_payouts",
+    "future_payouts",
+    "broker_reconciliation",
+    "readiness",
+    "final_review_close",
+    "next_month_outlook",
+]
 
 
 def session_for(tmp_path: Path):
@@ -547,6 +558,9 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
     }
     assert body["recommended_step_id"] == "alfa_baseline"
     assert [step["order"] for step in body["steps"]] == list(range(1, 10))
+    draft_step_ids = [step["id"] for step in body["steps"]]
+    assert draft_step_ids == EXPECTED_WORKFLOW_STEP_IDS
+    assert len(draft_step_ids) == len(set(draft_step_ids))
     assert body["steps"][0]["state"] == "completed"
     assert body["steps"][0]["completion_basis"] == "domain_fact"
     assert body["steps"][1]["evidence_summary"]["available"] is False
@@ -573,6 +587,10 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
     assert closed["month"]["id"] == month.id
     assert closed["month"]["status"] == "closed"
     assert closed["recommended_step_id"] is None
+    closed_step_ids = [step["id"] for step in closed["steps"]]
+    assert closed_step_ids == EXPECTED_WORKFLOW_STEP_IDS
+    assert len(closed_step_ids) == len(set(closed_step_ids))
+    assert [step["order"] for step in closed["steps"]] == list(range(1, 10))
     assert (
         next(step for step in closed["steps"] if step["id"] == "final_review_close")["state"]
         == "completed"
