@@ -738,15 +738,182 @@ flowchart TD
     RC -. transient result .-> UI
     UI -- explicit final confirmation --> CL[Existing POST /close]
     CL --> M
+
+    style G fill:#e8f5e9,stroke:#2e7d32
+    style BP fill:#fff3e0,stroke:#ef6c00
+    style QT fill:#fff3e0,stroke:#ef6c00
+    style PDF fill:#fff3e0,stroke:#ef6c00
+    style TP fill:#fff3e0,stroke:#ef6c00
+    style RC fill:#fff3e0,stroke:#ef6c00
 ```
+
+The solid GET path terminates at persisted/read-only services. Orange provider/import commands are reachable only from explicit owner actions; no edge exists from the workflow assembler to a provider.
 
 ## Implementation slices
 
-The implementation slices proposed by the design are: #236-A workflow contract/core, #236-B persisted provider evidence and staleness adapters, #236-C final-review/outlook composition, #236-D month-scoped shell/navigation, #236-E1 Alfa baseline/reconciliation, #236-E2 T-Invest quotes/future payouts, #236-E3 Alfa PDF, #236-F manual/final UI, #236-G explicit close/outlook, and #236-H cross-cutting verification/UAT. Each slice is intended for an isolated agent workspace with contract-first sequencing and shared-code ownership boundaries.
+The slices below are intentionally small enough for isolated agent workspaces. They freeze contracts before UI breadth, keep provider commands in their current owners and avoid a migration. File names are proposed, not implementation committed by this design.
+
+### #236-A — Workflow contract and provider-free core
+
+- **Scope:** add stable step/state/reason/action enums, DTOs and the read-only `GET /api/months/{id}/close-workflow`; initially compose month identity/status, deterministic applicability scaffolding, existing Close Cockpit/freshness and links. Add the router and query-count/performance guardrails appropriate to the current personal-data scale.
+- **Dependencies:** none beyond accepted current services; this freezes the shared contract for all later slices.
+- **Expected files/layers:** new `domain/month_close_workflow.py`, `services/month_close_workflow.py`, `api/month_close_workflow.py`; app router registration; backend tests in the existing monthly-close/read-model semantic lane rather than an issue-number-only test island.
+- **Acceptance criteria:** opening the endpoint performs no writes and no provider resolution; stable precedence produces exactly one `recommended_step_id`; missing optional sections are `unavailable`, not zero; hard/advisory severity exactly matches Close Cockpit; closed/reopened/old months are scoped by requested ID.
+- **Targeted verification:** domain state-table unit tests; API tests for draft/closed/missing month; provider clients replaced with fail-if-called sentinels; query-count sanity; Ruff on touched files. Final shared-contract gate follows `VERIFICATION_POLICY`.
+- **Risk:** **medium** — a composite read model can accidentally become a second readiness authority.
+- **Parallelism:** contract/fixtures must land first; frontend shell #236-D may then proceed against its frozen fixture while #236-B/#236-C run.
+
+### #236-B — Persisted provider evidence and narrow staleness adapters
+
+- **Scope:** derive the four provider/import step summaries from existing persisted evidence; add only narrow read helpers for selected Alfa apply items versus current position ID/quantity/baseline date, statement-linked-flow material, and T-Invest payout frozen-position/mapping dependencies. Preserve the distinction between positive selected evidence and unknown full coverage.
+- **Dependencies:** #236-A contract.
+- **Expected files/layers:** `services/month_close_workflow.py`; narrowly named helpers beside `broker_baseline_apply`, `applied_payouts`, `instrument_mappings` or freshness services; DTO additions only within the frozen v1 envelope; targeted backend tests.
+- **Acceptance criteria:** selected Alfa evidence can become stale after the selected position ID/quantity or month baseline date changes, while later remapping does not rewrite historical evidence; quantity change stales frozen payout totals but **not** a per-unit quote; retracted evidence is not positive; zero-result and live-reconciliation absence remain `ready` after restart; no raw payload/file/provider private identifiers are persisted or returned; no wording claims complete provider coverage.
+- **Targeted verification:** state matrix for no rows/positive apply/selective apply/baseline remap preserving history/current quote-or-payout mapping mismatch/retracted event/changed quantity/changed quote target; current baseline, quote, payout, statement and freshness regression lanes; fail-if-provider-called API test.
+- **Risk:** **high** — this is the easiest place to overstate financial/provider completeness.
+- **Parallelism:** can run with #236-C and #236-D after #236-A; should own backend provider-evidence helpers exclusively.
+
+### #236-C — Final-review and next-outlook composition
+
+- **Scope:** compose `FinalMonthReviewOut` and closed-source `NextMonthOutlookOut` from existing monthly summary/dashboard, manual entity summaries, payout calendar/cash-flow ladder, freshness and readiness services. No new formula and no future-month materialization.
+- **Dependencies:** #236-A; it can use placeholder provider-summary fields until #236-B merges.
+- **Expected files/layers:** read-only workflow/final-review service modules, existing read-service adapters where a compact projection is missing, API DTOs, backend tests.
+- **Acceptance criteria:** KPI/money values exactly equal their authoritative existing DTOs; redemption principal is separate from passive income; every optional section has availability metadata; no known events is not represented as measured zero income; outlook GET performs no writes/network calls and creates no reporting month or expected-flow row.
+- **Targeted verification:** equality tests against existing dashboard/summary/readiness/calendar outputs; unavailable-section tests; closed August → September bucket test; no-event and redemption-only cases; query-count sanity; Ruff.
+- **Risk:** **high** — silent formula duplication or misleading zero fallback would violate core contracts.
+- **Parallelism:** can run with #236-B/#236-D after #236-A; should own backend final-review/outlook composition.
+
+### #236-D — Month-scoped shell and return-navigation contract
+
+- **Scope:** add `/monthly-close` and `/months/:monthId/close`, the compact next-action shell, TanStack Query hook/key, whitelisted action routing, month preselection and the persistent return bar. Do not embed provider mutations yet.
+- **Dependencies:** frozen #236-A DTO or an exact fixture generated from it.
+- **Expected files/layers:** `App.tsx`, `pages/MonthlyCloseLandingPage.tsx`, `pages/MonthlyCloseWorkflowPage.tsx`, `api/monthCloseWorkflow.ts`, query keys/hooks, `components/month-close/*`, narrow changes to existing pages for enumerated `from/step/monthId` parameters.
+- **Acceptance criteria:** refresh and app restart keep the requested month; an old month never falls back to newest; one primary CTA is exposed; arbitrary return URLs/methods are rejected; focus/return refetches; current owner screens still work directly outside the wizard; no frontend progress/local-storage store is introduced.
+- **Targeted verification:** route/loader/component tests for draft/closed/old/missing month, safe return parameters and one-primary-action rule; frontend lint/format and production build at the slice gate.
+- **Risk:** **medium** — global pages currently own independent month selectors.
+- **Parallelism:** can run with #236-B/#236-C after contract freeze; owns routes/navigation/query foundation.
+
+### #236-E1 — Alfa baseline and live reconciliation orchestration
+
+- **Scope:** connect the wizard Alfa step to the existing `BrokerSnapshotPanel`, mapping and selective-apply flow; connect the later reconciliation step to the existing normalized read-only preview. Add compact success/partial/error summaries and deterministic return behavior, not a second preview implementation.
+- **Dependencies:** #236-B and #236-D; #229 primitives are a UX-quality dependency, but the slice must remain functional with current panels if #229 intentionally waits for August Stable UAT.
+- **Expected files/layers:** existing Alfa frontend API/panels plus thin month-close adapters; workflow components/tests; no new provider backend endpoint unless #236-B exposes a missing read-only summary.
+- **Acceptance criteria:** provider calls occur only on the labelled owner click; Apply is a second explicit action; safe selected rows remain independently applicable; comparison-only Price/UchPrice/NKD/P&L/cash never become writes; transient reconciliation disappears honestly on restart; raw IDs stay under diagnostics.
+- **Targeted verification:** component tests with synthetic matched/provider-only/unresolved/partial/stale/closed/provider-error fixtures; existing Alfa preview/apply and reconciliation regression lanes; visual/a11y check of compact/expanded states.
+- **Risk:** **high** — provider safety, selective apply and transient evidence.
+- **Parallelism:** can run in parallel with #236-E2 and #236-E3 with explicit component/file ownership.
+
+### #236-E2 — T-Invest quotes and future payouts orchestration
+
+- **Scope:** reuse quote preview/apply and batch payout preview/apply in their wizard steps; expose compact row/position outcomes, accepted stale-quote choice, duplicate counting decisions and refresh-status remediation.
+- **Dependencies:** #236-B and #236-D.
+- **Expected files/layers:** existing quote/payout API modules and panels, thin month-close adapters/components, targeted frontend tests; backend changes only if a contract bug is found and separately scoped.
+- **Acceptance criteria:** no provider fetch on mount/refetch; preview and Apply remain separate; partial success is visible; zero-event preview is session-only; stale quote follows accepted target/date semantics; changed position quantity refreshes frozen payout totals without labelling the quote stale; manual expected flows remain untouched.
+- **Targeted verification:** component/integration tests for fresh/stale/unavailable quote, no mapping, explicit exclusion, mixed payout batch, zero events, duplicate decisions, provider error and closed month; existing quote/payout regression lanes.
+- **Risk:** **high** — two explicit lifecycles and different staleness semantics share local positions.
+- **Parallelism:** parallel with #236-E1/#236-E3 after shared contracts; owns quote and T-Invest payout UI adapters.
+
+### #236-E3 — Alfa payout PDF orchestration
+
+- **Scope:** embed/deep-link the existing Inspect → mapping → Prepare → selected Apply/retract workflow with a compact month-close result and stable return behavior.
+- **Dependencies:** #236-B and #236-D.
+- **Expected files/layers:** existing statement-import API/panel plus thin wizard adapter/result component and frontend tests; no raw-document persistence or new generic import session.
+- **Acceptance criteria:** file selection is always explicit; server reparses/hash-validates at Apply; exact duplicates are non-selectable; revision/link/create-separate decisions stay explicit; safe rows can proceed despite unrelated unresolved rows; zero relevant rows are clearly session-only; restart never claims the PDF was reviewed.
+- **Targeted verification:** synthetic-only component/API contract fixtures for exact duplicate, revision, manual candidate, unsupported row, partial selection, zero rows, retraction, changed file and closed month; privacy scan for paths/raw text/beneficiary data.
+- **Risk:** **high** — local private document handling and idempotency/revision semantics.
+- **Parallelism:** parallel with #236-E1/#236-E2 after shared contracts; owns statement adapter only.
+
+### #236-F — Compact manual review and final-month screen
+
+- **Scope:** render backend final-review facts, six manual cards, attention/remediation links, inline reuse for a deliberately small set of common editors and deep-link/return for the rest. Do not create a second full month editor.
+- **Dependencies:** #236-C and #236-D; provider summaries improve when #236-E* are present but can render independently.
+- **Expected files/layers:** `FinalMonthReview`, `ManualReviewCard`, availability/warning components; selected reusable month editor components and tests; shared month-query invalidation helper.
+- **Acceptance criteria:** all displayed totals come directly from backend DTOs; optional empty sections are not blockers; technical codes are collapsed; every warning has one owning remediation route; successful edit refetches all affected queries and can visibly move the workflow backward; unsaved drafts never count as progress.
+- **Targeted verification:** component tests for populated/empty/unavailable/blocked/warning cases; exact DTO rendering; edit-return-invalidation integration tests; responsive/keyboard/visual audit using synthetic data.
+- **Risk:** **medium-high** — visual convenience can tempt frontend joins and invented completeness rules.
+- **Parallelism:** may begin after #236-C/#236-D; can overlap late #236-E* with stable provider-summary fixtures.
+
+### #236-G — Explicit close and post-close outlook
+
+- **Scope:** add the refetch-before-confirmation dialog, unchanged existing close command handling, closed-state transition and immediate next-month outlook with explicit clone/deep-link secondary actions.
+- **Dependencies:** #236-C, #236-D and #236-F.
+- **Expected files/layers:** final workflow page, close confirmation, `NextMonthOutlook`, existing month API client/query invalidation, targeted tests.
+- **Acceptance criteria:** no optimistic close; modal sends no computed totals/override/evidence token; existing `422`/`404` refetches and routes appropriately; successful response must contain persisted closed state; outlook makes no network-provider call/write; clone is separately confirmed and no forecast row is copied implicitly; reopen returns to a recomputed draft workflow.
+- **Targeted verification:** close race/change/blocker/warning/closed/reopen component and API integration tests; no-write outlook backend tests from #236-C; route tests for clone as secondary action.
+- **Risk:** **high** — lifecycle immutability and false readiness.
+- **Parallelism:** mostly serial after final review; test preparation can overlap #236-F.
+
+### #236-H — Cross-cutting verification, owner UAT and rollout polish
+
+- **Scope:** integration/e2e hardening, Russian owner copy, diagnostics demotion, accessibility/responsive states, documented Preview/Stable UAT procedure and telemetry-free performance check. No new semantics.
+- **Dependencies:** #236-A through #236-G and the owner’s timing decision for #229/first real August close.
+- **Expected files/layers:** existing semantic tests, targeted Playwright/visual-audit paths, public docs/help copy only if separately tracked by implementation task; no private fixtures.
+- **Acceptance criteria:** complete synthetic August journey works across restart/partial failures/old month/reopen; no implicit provider requests are observed; only one runtime/database is used; owner UAT runs on an explicit Preview copy, never production as test workspace; Stable promotion is a later explicit owner action.
+- **Targeted verification:** targeted backend/frontend suites during work, then one final full suite for each changed layer plus frontend production build per `VERIFICATION_POLICY`; dynamic child-owned local server and synthetic fixtures for e2e; privacy/tracked-files check; exact implementation HEAD CI/read-back only when that future task explicitly includes delivery.
+- **Risk:** **medium** technically, **high** operationally if runtime/profile boundaries are unclear.
+- **Parallelism:** final integration slice; individual visual/a11y/test-matrix audits can be delegated in parallel after feature freeze.
+
+### Slice dependency summary
+
+```mermaid
+flowchart LR
+    A[#236-A contract/core] --> B[#236-B provider evidence]
+    A --> C[#236-C final review/outlook]
+    A --> D[#236-D shell/navigation]
+    B --> E1[#236-E1 Alfa]
+    D --> E1
+    B --> E2[#236-E2 quotes/payouts]
+    D --> E2
+    B --> E3[#236-E3 PDF]
+    D --> E3
+    C --> F[#236-F manual/final UI]
+    D --> F
+    C --> G[#236-G close/outlook]
+    F --> G
+    E1 --> H[#236-H integrated verification/UAT]
+    E2 --> H
+    E3 --> H
+    G --> H
+```
 
 ## Edge cases / red team
 
-The design explicitly covers partially configured Alfa mappings, provider outage/auth/timeout, partial selective apply, stale quotes, duplicate payout import, no investment account, no payouts, reopened closed month, edits after completion, browser restart, Preview vs Stable, old months, and already-prepared months. The red-team conclusion is that workflow completion must mean only “current persisted evidence for this narrowly named action,” never global financial completeness.
+### Required scenarios
+
+| Scenario | Derived state and owner experience | Safety conclusion |
+|---|---|---|
+| **Partially configured Alfa mappings** | Explicit preview shows mapped/safe, provider-only, missing-local and unresolved counts. Safe rows remain selectable; selected Apply is atomic and may succeed. The current-session result stays `warning` with one CTA to resolve/recheck. After restart only selected persisted apply evidence and current mappings resume; unselected live coverage is unknown, so copy says `Выбранные позиции применены`, never `Портфель синхронизирован`. | Do not block unrelated safe rows, silently create identities, or persist the transient snapshot. |
+| **Provider unavailable/auth/timeout** | The clicked step shows a sanitized `warning`, Retry as primary and `Перейти к итогам` as a session-only secondary action. No automatic retry, fallback or later background call occurs. Existing Close Cockpit still decides whether the month can close. | Availability of an optional read-only provider is not a new financial hard blocker. Unknown response is not zero events. |
+| **Partial selective apply** | Alfa: selected safe rows commit together; unsafe selected rows fail closed. T payouts: each position Apply is atomic, so a multi-position owner run may be partially successful. Refetch immediately exposes durable successful rows and keeps remaining live failures visible. | Preserve row/position scope and do not add a cross-provider “Apply all monthly data” transaction. |
+| **Stale quotes** | The backend computes target and age. 8–30-day quote needs explicit per-row `accept_stale`; over 30 days is unavailable and offers retry/manual-price remediation. Snapshot-date/price-date or mapping-identity change may alter state. Quantity-only edit recalculates values through existing backend facts but does not make the unit quote stale. | No UI age arithmetic and no blanket “portfolio stale” label. |
+| **Duplicate payout import** | Alfa PDF exact duplicate is non-selectable/idempotent; revision/link-existing/create-separate is explicit and append-only. T-Invest manual/provider duplicate remains manual-only counted until the exact accepted owner decision. Retraction/revision changes the workflow evidence on refetch. | No silent double-count, overwrite or generic flow delete that erases provenance. |
+| **No investment account** | Quote/T-payout action can be `skipped` only when there is no eligible local target and no surviving applied evidence. Alfa baseline/reconciliation remain optional `ready` because provider-only/missing-local rows are meaningful; Apply will fail safely until an accepted existing account/instrument identity exists. PDF also remains optional because a statement payout can follow disposal. | A blanket provider skip based on local emptiness is unsound. If durable provider non-use is desired, that is a separate product setting/contract. |
+| **No payouts** | A live structurally valid T batch or parsed PDF may say `Событий не найдено` and allow the owner to continue this session. It does not become measured zero future/actual income. With no receipt in v1, restart returns the step to `ready`; known calendar coverage remains visible separately. | Honest repeat is safer than a fake durable completion. Never infer provider absence from error/unknown coverage. |
+| **Reopened closed month** | Reopen explicitly flips the persisted month to draft; all steps and final facts refetch. Existing positive apply/event evidence remains, but current dependency comparisons may warn and `final_review_close` is ready again. The month immediately leaves salary known-history and eligible CLOSED passive-income history until reclosed, so KPI/history changes are expected and backend-owned. | No cached “already reviewed/closed” flag may survive reopen. |
+| **Underlying data edited after completion** | Selected Alfa position ID/quantity or snapshot-date change warns on baseline evidence; quote price target/source/mapping changes reevaluate quote evidence, but quantity alone does not stale it; quantity/snapshot changes warn on frozen T payout totals; statement-linked flow or payout-reconciliation target material changes warn through new read comparators; readiness/final totals always recompute. | Invalidate shared queries after every mutation; route backward only on a real dependency, not every local edit. |
+| **Browser closed halfway through** | Saved mappings/applies/manual edits resume. File bytes, provider previews, selections, live reconciliation and unsaved form drafts are gone. Exact month resumes from URL; zero-result/transient steps return to `ready` with `Предпросмотр нужно запустить снова`. | No localStorage completion, raw PDF cache or provider payload persistence. |
+| **Preview versus Stable** | The wizard uses only the currently running profile/database. A safe profile label is shown before Apply/Close only when supplied by launcher/runtime contract. Preview UAT uses an explicit one-way copy and never offers to publish/sync its rows into Stable. Same-origin/browser storage is not trusted for progress. | No profile discovery by path, cross-profile comparison or data transfer. Stable is never the automated-test workspace. |
+| **Old month** | Route ID is authoritative; global detail pages receive that same month explicitly and never default to newest. Quote target uses the old snapshot date. Current Alfa baseline into an old month is not proactively recommended because no accepted max source-as-of/baseline gap exists; existing backend eligibility remains the guard. Closed apply/edit stays disabled unless explicitly reopened. | Do not invent a historical Alfa rule or silently change selected month. |
+| **Already fully prepared month** | Provider-free GET derives positive persisted evidence, current freshness/readiness and jumps directly to the first real warning or `final_review_close`; it performs no “verification fetch” on mount. A closed prepared month lands on `next_month_outlook`. | Fast path is read-only and still uses Close POST as final authority. |
+
+### Additional adversarial cases
+
+- **Two tabs race:** provider Apply re-reads authoritative state and `preview_changed`/stale fingerprint clears the losing tab’s selection. Close refetches immediately before its modal and trusts only the returned persisted status, but the current Close endpoint has no expected-evidence concurrency token; #236 must not claim otherwise. Adding one would be a separate lifecycle/API decision.
+- **Snapshot date edited late:** quote valuation target and Alfa baseline-date evidence recompute; final review highlights changed sections through a new opaque response version. The snapshot-date hard guard is still enforced by Close, not merely the wizard.
+- **Month closed/deleted while a preview is open:** Apply re-read fails with current lifecycle/missing-month error and writes nothing; shell returns to the month landing/current closed view.
+- **T-Invest Apply re-fetch differs from Preview:** the Apply button copy discloses the provider recheck; `preview_changed` yields zero writes and a single fresh-preview CTA.
+- **Clock crosses a quote threshold while the page is open:** focus/refetch or pre-close refetch may move usable → stale/unavailable. That is expected evaluation-time change, not evidence corruption.
+- **Mapping changed after quote/payout apply:** historical provenance remains immutable. Current read-side dependency comparison warns only when current accepted identity no longer matches the evidence used for the active value/event; it never edits the past record.
+- **Applied payout survives position deletion:** retain and show the payout/calendar fact; do not auto-delete it or treat no current positions as proof of no payouts. Refresh remediation explains that the frozen source position is gone.
+- **Optional read model unavailable:** final section says `Недоступно` with reason. It must never substitute zero. Close is disabled only if month identity/Close Cockpit cannot be loaded or an existing hard guard blocks it.
+- **Backup restore changes the selected DB beneath the browser:** next refetch derives the restored state. No browser progress is merged into it; missing month returns to landing.
+- **No manual rows at all:** show compact `Не заполнено · не блокирует закрытие` for optional groups. Do not invent mandatory cash/debt/property/note rows or a zero-value fact.
+- **No safe runtime-profile label:** omit the badge and state that the active profile is not exposed; never guess from paths, ports or month IDs. Apply/Close remains available under the current runtime contract unless product separately requires the label.
+- **Huge diagnostics/provider errors:** default card keeps human summary/counts and truncates/sanitizes technical detail; raw payload, token, endpoint internals, file path and account/provider identifiers never dominate or enter logs/report DTOs.
+
+### Red-team verdict
+
+The design remains safe only if “workflow completion” is interpreted as current persisted evidence for a narrowly named action, not as global financial completeness. Provider checks are advisory unless the accepted backend already makes a condition a hard guard. The wizard can make missing or transient evidence conspicuous, but it cannot convert it into a new Close rule.
 
 ## Final recommendation
 
@@ -775,10 +942,14 @@ The late final review contains the single concise manual-data review requested b
 ### C. Minimal backend additions
 
 1. One provider-free composite GET and its domain/service/API DTOs.
-2. Read-only selected-evidence comparators for Alfa baseline, active Alfa statement material, T payout frozen position/mapping/reconciliation material, and quote provenance/current accepted identity.
+2. Read-only selected-evidence comparators for:
+   - Alfa baseline item ID/quantity/baseline date versus current position/month;
+   - active Alfa statement accepted material versus current linked flow;
+   - T payout frozen position/mapping and payout/manual reconciliation target material;
+   - quote provenance/current accepted identity where current mapping changed.
 3. Compact projections from existing manual, dashboard, freshness, readiness and payout-ladder read services, always preserving `available/unavailable` and current money DTOs.
 
-No migration, progress table, acknowledgement endpoint, provider aggregator, batch cross-position apply or new financial calculation is required.
+No migration, progress table, acknowledgement endpoint, provider aggregator, batch cross-position apply or new financial calculation is required. A sanitized exact-coverage receipt is a future option only if real UAT proves repeated zero-result checks unacceptable and a separate contract defines its identity/invalidation/profile-copy behavior.
 
 ### D. Frontend structure
 
@@ -792,45 +963,208 @@ No migration, progress table, acknowledgement endpoint, provider aggregator, bat
 
 ### E. Suggested implementation issues/slices
 
-Use #236-A through #236-H described in the full design. Freeze the shared contract first; then run provider evidence, final composition and shell/navigation in parallel. Split Alfa, T-Invest and PDF frontend orchestration into separate workspaces with exclusive component ownership. Finish with final review, Close/outlook and synthetic cross-cutting UAT. Do not bundle #229’s broad detail-page cleanup or #237’s export/AI handoff into these slices.
+Use #236-A through #236-H above. Freeze the shared contract first; then run provider evidence, final composition and shell/navigation in parallel. Split Alfa, T-Invest and PDF frontend orchestration into separate workspaces with exclusive component ownership. Finish with final review, Close/outlook and synthetic cross-cutting UAT. Do not bundle #229’s broad detail-page cleanup or #237’s export/AI handoff into these slices.
 
 ### F. Unresolved product decisions requiring owner input
 
-1. Accept repeat transient zero-result/reconciliation checks after restart in v1 rather than adding receipts/persistence.
-2. Do not persist provider non-use/applicability in v1.
-3. Keep live reconciliation advisory, not a Close gate.
-4. Do not proactively guide current Alfa snapshot into reopened historical months without an accepted date-gap rule.
-5. Show Stable/Preview badge only from a trustworthy safe runtime field.
-6. Respect the current #229 timing/UAT hold.
-7. Limit inline manual editors in v1 to the highest-frequency fields; deep-link the rest.
-8. Correct broad future-PDF wording in MASTER_SPEC as separate documentation debt rather than broadening #236.
+1. **Durable absence/non-use evidence:** is it acceptable that `no events`, live reconciliation and “I do not use this provider” return to `ready` after restart? Recommendation: yes for v1; decide on narrow receipts/settings only after real August UAT.
+2. **Provider applicability:** current persistence has no authoritative month-level `uses_alfa/uses_pdf` fact. Recommendation: do not infer non-use from empty positions/accounts; keep Alfa/PDF optional and repeatable. Add a provider-scope setting only as a separate product contract if the repetition is noisy.
+3. **Live reconciliation:** should it remain advisory as accepted, or become a close requirement? Recommendation: advisory; changing it requires an explicit close-semantics decision, not #236 UI logic.
+4. **Historical Alfa baseline:** no accepted maximum gap exists between current `source_as_of` and an old month’s baseline date. Recommendation: do not proactively guide current Alfa data into reopened old months; rely on current backend guards until a separate rule is accepted.
+5. **Runtime profile badge:** what trustworthy, non-sensitive API/launcher field supplies `Stable`/`Preview` to the web UI? Recommendation: add/consume a safe runtime label only; never derive it from a path/database/port.
+6. **#229 timing:** should cleaned Alfa grouping/bulk/technical-detail primitives land before the wizard provider slice or after the first Stable August close? Recommendation: follow the owner’s existing instruction—use current panels for functional #236 architecture and make #229 polish contingent on that UAT.
+7. **Inline manual editor scope:** which two or three high-frequency cards merit drawer reuse in v1? Recommendation: cash, deposits and debts first; deep-link everything else to avoid duplicating the month editor.
+8. **Normative PDF documentation debt:** the old broad `MASTER_SPEC` future-PDF paragraph conflicts with accepted current narrow scope. Recommendation: correct the documentation separately before implementation review; do not broaden #236.
 
 ### G. Tempting things that should not be built
 
-- generic wizard-progress persistence or browser-local completion state;
+- a generic `wizard_progress`, percent-complete or “last current step” table;
+- localStorage/sessionStorage completion keyed only by month ID;
 - implicit provider fetch/retry/poll on mount, Next, focus, startup or Close;
 - a single backend command that calls several providers or applies the whole month;
-- frontend financial/readiness/freshness formulas;
+- frontend KPI, freshness, reconciliation, payout-counting or close logic;
 - a universal freshness/data-quality score;
-- claims that partial applied rows mean total provider synchronization;
-- raw provider/PDF/private payloads or paths in workflow evidence;
+- blanket `no positions = no Alfa/PDF data` or `some rows applied = portfolio synchronized` claims;
+- raw snapshot/PDF/provider payload, file path, document text or account identifiers in workflow evidence;
 - automatic instrument/account creation or hidden mapping;
-- automatic creation of the next month or copying forecast/provider rows during Close;
-- cross-profile synchronization;
-- #237 export/LLM behavior inside #236.
+- cloning/creating September or copying forecast/provider rows during Close;
+- cross-profile Preview → Stable synchronization or browser-carried progress;
+- embedding a second full month editor or giant provider tables in the wizard;
+- turning advisory warnings, empty optional sections, backup age or provider outage into new Close blockers;
+- #237 package schema, automatic export/upload, LLM call or advice inside #236;
+- Tax/IIS/Insights current-state data relabelled as next-month projections.
 
 ## OWNER WALKTHROUGH
 
-The intended owner flow is: launch Hermes in the selected safe runtime profile; enter monthly close; create/clone August explicitly; see one next action; explicitly preview/apply Alfa baseline; explicitly preview/apply T-Invest quotes; explicitly choose/inspect/prepare/apply Alfa payout PDF; explicitly preview/apply T-Invest future payouts; run explicit read-only broker reconciliation; review local freshness/readiness; review one compact final-month screen with remaining manual corrections; explicitly close August; then immediately see known September facts without creating September. Every provider action remains owner-triggered and every mutation refetches the provider-free workflow/readiness state.
+The walkthrough below is the ideal real August close, using owner-facing Russian copy. It assumes a trustworthy `Stable` badge is available; if it is not, the badge is omitted rather than guessed.
+
+### 1. Launch and enter monthly close
+
+The owner launches Hermes through the normal guarded launcher and sees `Stable · локальные данные` in the application header. No other profile is scanned or opened. The Dashboard has one clear action: **`Закрыть месяц`**.
+
+`/monthly-close` opens locally and performs only ordinary database reads. It shows:
+
+> **Ежемесячное закрытие**
+> Последний закрытый: Июль 2026
+> Черновика за август пока нет.
+
+Primary CTA: **`Создать август из июля`**. Secondary: `Создать пустой месяц` and `Выбрать другой месяц`.
+
+The clone dialog names the exact target and snapshot date, then explains in two compact lists:
+
+- carried forward: positions, deposits, cash, mandatory expenses, savings, debts/property and recurring salary setup;
+- starts empty/reset: actual payouts, expected/manual event rows, non-recurring income, non-mandatory expenses and notes.
+
+It explicitly says: `Клонирование не подтверждает актуальность перенесённых сумм — вы проверите их перед закрытием.` The owner confirms **`Создать черновик августа`**. The existing atomic clone returns a persisted month ID and the app navigates to `/months/{augustId}/close`.
+
+### 2. See one next action
+
+The shell header shows `Август 2026 · Черновик · снимок 31.08.2026 · Stable`. Beneath it:
+
+> **Следующее действие: сверить состав портфеля Alfa**
+> Данных Alfa для выбранных позиций в этом месяце ещё нет. Ничего не будет загружено без вашего действия.
+
+Primary CTA: **`Получить данные Alfa PRO`**. The collapsed list shows all nine steps, with only short states/reasons. Technical IDs and fingerprints are absent.
+
+If the browser closes here, reopening the exact URL shows the same persisted August draft and the same recommended action.
+
+### 3. Alfa baseline: explicit preview, mapping and selected apply
+
+The owner clicks **`Получить данные Alfa PRO`**. Only now does Hermes make the one-shot loopback provider read. The result replaces the action card:
+
+> `Совпали безопасно: … · Только в Alfa: … · Нужна привязка: … · Денежные строки: только для сравнения`
+
+Owner names/account labels lead; provider row keys live under `Технические детали`. Safe rows are preselected. An unresolved row offers `Сопоставить счёт/инструмент`; no entity is created automatically. Provider Price/UchPrice/NKD/P&L/cash appear only in the expanded comparison.
+
+Primary CTA in this preview stage: **`Применить выбранные количества и перепроверить снимок`**. That wording discloses the provider re-read/fingerprint guard. After confirmation and successful Apply the shell refetches:
+
+> `Выбранные позиции применены: создано … · обновлено … · без изменений …`
+
+If unresolved rows remain in the live result, it says `Осталось проверить: …` and offers that remediation. It never says the whole portfolio is synchronized. On a later restart the selected apply evidence remains; transient unselected coverage does not.
+
+### 4. Market quotes: explicit preview and apply
+
+Next card:
+
+> **Обновить рыночные цены**
+> Целевая дата оценки: 31.08.2026 · подходящих позиций: …
+
+Primary CTA: **`Получить котировки T-Invest`**. Opening the card did not call T-Invest. The preview groups usable, stale, unavailable, excluded and unmapped rows. A stale row is not selected until the owner explicitly accepts it; an unavailable row offers Retry or manual-price edit.
+
+Primary preview CTA: **`Применить выбранные цены и перепроверить`**. Apply re-reads and writes only if identity/price/date still match. The compact result shows applied/skipped/error counts and the correct price dates. A changed quantity affects backend portfolio totals but does not turn the unit quote stale.
+
+### 5. Actual payouts from the Alfa PDF
+
+Next card:
+
+> **Проверить фактические выплаты**
+> Импорт поддерживает только депозитарный отчёт Alfa о выплатах доходов.
+
+Primary CTA: **`Выбрать PDF Alfa`**. The file picker never opens by itself. The reused flow performs Inspect, then mapping, then Prepare. The owner sees report period/type and rows labelled new/exact duplicate/revision/manual candidate. Exact duplicates are disabled; revision/link/create-separate choices are explicit.
+
+Primary prepared-stage CTA: **`Применить выбранные выплаты`**. The server reparses the same local upload and verifies the expected SHA before an atomic write. Result copy reports applied/unchanged/revised/linked counts. No raw PDF text/path/file bytes enter the wizard evidence.
+
+If the report contains no relevant August rows, the card says `В этом файле подходящих выплат за август не найдено` and offers **`Продолжить`** for this session. If the browser closes before an Apply, the file and preview are intentionally gone and must be selected again.
+
+### 6. Future T-Invest payouts
+
+Next card:
+
+> **Обновить будущие выплаты**
+> Проверка использует количества из снимка августа и горизонт от даты снимка на 12 месяцев.
+
+Primary CTA: **`Проверить все позиции T-Invest`**. The batch preview shows positions with events, without events, skipped and errored. Rows expand only when a duplicate decision or detail is needed. Manual expected flows remain intact.
+
+For each selected position the explicit Apply CTA says **`Применить выплаты и перепроверить T-Invest`**. Good positions can finish while another fails; the result preserves that partial shape. Coupon/dividend and redemption are labelled differently. A structurally valid no-event result is visible in the session but is not converted into zero future income or a durable receipt.
+
+### 7. Live broker reconciliation and correction loop
+
+Next card:
+
+> **Проверить портфель после обновлений**
+> Это новая одноразовая проверка Alfa; результат не изменит данные.
+
+Primary CTA: **`Проверить снимок Alfa`**. The compact result is `Совпало / Отличается / Нет в Hermes / Нет в Alfa / Не сопоставлено`. Price/accounting-price/NKD/P&L are diagnostic only.
+
+Suppose one quantity differs. The primary result CTA becomes **`Исправить позицию`**, opening the owning editor with `Август 2026 · Вернуться к закрытию`. After save, the return link restores the final scroll/step, invalidates month queries and refetches. The workflow may move back to Alfa baseline/future payouts if the changed quantity invalidated their selected/frozen evidence. The owner explicitly reruns reconciliation; no background retry occurs.
+
+### 8. Local readiness and freshness
+
+The next screen runs no provider. It composes persisted Close Cockpit and freshness:
+
+> **Можно закрыть с предупреждениями**
+> Блокеры: 0 · Предупреждения: …
+
+Families are compact: `Рыночные цены`, `Будущие выплаты`, `Alfa PRO`, `Выплаты из PDF`, `Ручные данные`. Each uses its accepted status/reason and names observation/import/local-edit clocks correctly. There is no blended score. Backup/freshness/provider warnings remain advisory unless the existing Cockpit says otherwise.
+
+Primary CTA: **`Перейти к итогам августа`**. If snapshot date were missing, the only primary CTA would be **`Указать дату снимка`** and Close would remain blocked by the existing backend guard.
+
+### 9. One compact final-month review and manual corrections
+
+The owner sees one screen, not a scavenger hunt:
+
+1. backend KPI row: liquid capital, current cash, investment value/result availability, actual passive income and debt total;
+2. `Требует внимания`: existing blocker/warning/remediation items;
+3. six compact manual cards: `Деньги сейчас`, `Вклады и накопления`, `Долги и недвижимость`, `Доходы и бюджет`, `Инвестиции вне интеграций`, `Заметка`;
+4. provider evidence/freshness and current-session reconciliation summary;
+5. important dated events ahead, with redemption principal separate.
+
+The owner notices that a cash balance, a deposit balance and card debt need correction. `Изменить` opens the reused drawer/editor for each. Every successful save returns to this screen, refetches backend totals/readiness/freshness and briefly highlights changed cards. Empty optional groups say `Не заполнено · не блокирует закрытие`; the app never fabricates “reviewed zero.”
+
+After corrections, the sticky single primary action is **`Закрыть август 2026`**. There is no separate “mark review complete” checkbox.
+
+### 10. Explicit Close
+
+Immediately before showing the modal, the shell refetches. If another tab changed evidence, changed cards are shown and the owner clicks Close again. Otherwise the modal says:
+
+> **Закрыть август 2026?**
+> Дата снимка: 31.08.2026 · Stable
+> Блокеры: 0 · Предупреждения: …
+> Месяц станет доступен только для чтения до явного повторного открытия.
+> Сентябрь не будет создан, прогнозные строки не будут скопированы.
+
+Primary CTA: **`Закрыть август`**. Secondary: `Вернуться к проверке`. The command is the existing `POST /api/months/{id}/close`; the browser sends no totals, `can_close`, evidence token or warning override. On the existing late `422` hard guard the modal closes, data refetches and the exact owning correction becomes primary; `404` returns to month selection. On success the UI waits for persisted `status=closed`—no optimistic close.
+
+### 11. Immediate September outlook without creating September
+
+The closed screen changes to:
+
+> **Август закрыт**
+> **Сентябрь: что уже известно**
+
+It shows dated next-calendar-month and 14/30-day facts from the existing merged payout calendar/cash-flow ladder, separated into income and redemption principal, plus coverage/as-of caveats. `Событий не известно` is allowed, but accompanied by mapping/coverage context and never labelled `Доход: 0 ₽` unless an authoritative backend fact actually says so.
+
+No September month exists yet. Secondary explicit actions are:
+
+- **`Создать сентябрь из августа`** — opens the ordinary clone confirmation;
+- `Открыть денежную лестницу`;
+- only after #237 is implemented, `Подготовить пакет для анализа`.
+
+Nothing is copied, fetched, exported or uploaded until the owner chooses one of those actions. If August is later explicitly reopened, the outlook disappears, history-dependent backend metrics recompute and the final review/Close cycle becomes active again.
 
 ## Open questions requiring owner input
 
-No unresolved item blocks freezing the recommended architecture. The implementation issue should record the following defaults explicitly: no new progress persistence in v1; no inferred provider non-use; reconciliation advisory; no proactive current-Alfa-to-old-month guidance; runtime badge only from a safe source; #229 timing follows the owner’s August-UAT hold; inline editor scope stays deliberately small; broad future-PDF wording is corrected separately.
+No unresolved item blocks freezing the recommended architecture. The implementation issue should record the following owner decisions explicitly rather than letting individual slices guess:
+
+| Decision | Recommended default for #236 v1 | When it matters |
+|---|---|---|
+| Repeat transient zero-result/reconciliation checks after restart? | **Yes; accept repeat. No new receipt/persistence.** | Revisit only after real August UAT shows material friction. |
+| Persist provider non-use/applicability? | **No.** Use surface-specific deterministic N/A; keep Alfa/PDF optional when absence is not provable. | Separate settings/domain contract if owner wants durable `Не использую`. |
+| Make live reconciliation a Close gate? | **No; advisory.** | Requires an explicit change to Close semantics/ADR. |
+| Guide current Alfa snapshot into reopened historical months? | **No proactive recommendation.** | Needs an accepted source-as-of versus baseline-date rule. |
+| Show Stable/Preview badge? | **Yes only from a trustworthy safe runtime field.** | Launcher/runtime API dependency before copy is relied upon in Apply/Close UX. |
+| Inline editors in first implementation? | **Cash, deposits and debts only; deep-link the rest.** | Final UI scope/reviewability. |
+| Sequence #229 polish relative to #236? | **Respect existing owner UAT hold; do not block functional shell on broad #229 work.** | Provider-detail UX slice planning. |
+| Correct broad future-PDF wording in `MASTER_SPEC`? | **Yes, as separate documentation debt before implementation acceptance.** | Prevents accidental generic holdings/price-import scope expansion. |
+
+If the owner chooses a non-default answer that changes persistence, provider applicability or Close gating, the workflow contract should be revised before any implementation workspace starts.
 
 ## Final verification and delivery boundary
 
-- Canonical GitHub `refs/heads/main` read back as `b520a7a4ab95f00e3e1fb971be148c1e8da41be4` on 2026-08-31, matching detached workspace `HEAD` and `origin/main` at investigation time.
+- Canonical GitHub `refs/heads/main` read back as `b520a7a4ab95f00e3e1fb971be148c1e8da41be4` on 2026-08-31, matching detached workspace `HEAD` and `origin/main`.
 - Issues #236/#229/#237 and current comments were re-read on 2026-08-31; no later owner direction superseded the cited scope/order.
-- Independent backend-contract and normative/red-team passes were incorporated.
+- Independent backend-contract and normative/red-team passes were incorporated. Material corrections included: zero-persistence v1, no blanket no-position Alfa/PDF skip, selective-evidence wording, quantity-not-quote-stale, historical Alfa remap preservation, advisory reconciliation and no Tax/IIS/Insights future-projection claim.
+- `git diff --no-index --check -- /dev/null ISSUE-236-ULTRA-DESIGN.md` reported no whitespace errors (only Git's line-ending notice for an untracked file).
 - Privacy scan found no credential/token/account-number/user-path patterns. The report uses only repository contracts, public issue links, source paths and synthetic owner-copy examples.
-- Per the docs/process-only lane of `VERIFICATION_POLICY`, no backend/frontend product suite was run. No product code, tracked project file, migration, branch, commit, push or PR was created by the Ultra design run itself.
+- Final Git read-back: detached `HEAD`; no staged or unstaged tracked diff; exactly one untracked report, `ISSUE-236-ULTRA-DESIGN.md`.
+- Per the docs/process-only lane of `VERIFICATION_POLICY`, no backend/frontend product suite was run. No product code, tracked project file, migration, branch, commit, push or PR was created.
