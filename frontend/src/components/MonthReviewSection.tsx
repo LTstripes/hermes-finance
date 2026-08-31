@@ -8,7 +8,14 @@ import { closeMonth, getCloseReadiness, reopenMonth } from "../api/months";
 import type { CloseReadiness, CloseReadinessItem, DashboardKpis } from "../api/types";
 import { formatMoney, formatPercent } from "../lib/format";
 import { moneyAmount } from "../lib/money";
+import { readinessCopy, readinessDiagnostic } from "../lib/ownerCopy";
 import { Badge, Button, ConfirmDialog, ErrorState, LoadingState, Panel } from "./ui";
+
+export type MonthReadinessSummary = {
+  blockerCount: number;
+  warningCount: number;
+  infoCount: number;
+};
 
 type Props = {
   dirty: boolean;
@@ -16,6 +23,7 @@ type Props = {
   readOnly: boolean;
   status: "draft" | "closed";
   onStatusChanged: () => void;
+  onReadinessSummaryChange?: (summary: MonthReadinessSummary | null) => void;
 };
 
 const GROUP_META: {
@@ -27,7 +35,7 @@ const GROUP_META: {
   {
     severity: "hard_blocker",
     title: "Блокирует закрытие",
-    empty: "Нет причин, из-за которых сервер отклонит закрытие.",
+    empty: "Активных условий, которые остановят закрытие, нет.",
     tone: "closed",
   },
   {
@@ -51,7 +59,14 @@ function itemsFor(
   return (readiness?.items ?? []).filter((item) => item.severity === severity);
 }
 
-export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusChanged }: Props) {
+export function MonthReviewSection({
+  dirty,
+  monthId,
+  readOnly,
+  status,
+  onStatusChanged,
+  onReadinessSummaryChange,
+}: Props) {
   const [previewKpis, setPreviewKpis] = useState<DashboardKpis | null>(null);
   const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
   const [readiness, setReadiness] = useState<CloseReadiness | null>(null);
@@ -77,13 +92,22 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
         setPreviewWarnings(dashboard?.warnings ?? []);
         setMainGoal(goals.find((goal) => goal.is_main) ?? null);
         setReadiness(closeReadiness);
+        onReadinessSummaryChange?.({
+          blockerCount: closeReadiness.items.filter((item) => item.severity === "hard_blocker")
+            .length,
+          warningCount: closeReadiness.items.filter((item) => item.severity === "warning").length,
+          infoCount: closeReadiness.items.filter((item) => item.severity === "info").length,
+        });
       } catch (err) {
-        if (!signal?.aborted) setError(formatApiError(err));
+        if (!signal?.aborted) {
+          onReadinessSummaryChange?.(null);
+          setError(formatApiError(err));
+        }
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [monthId],
+    [monthId, onReadinessSummaryChange],
   );
 
   useEffect(() => {
@@ -175,7 +199,7 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
             return (
               <section
                 aria-label={group.title}
-                className={`close-cockpit__group close-cockpit__group--${group.severity}`}
+                className={`close-cockpit__group close-cockpit__group--${group.severity}${items.length === 0 ? " close-cockpit__group--empty" : ""}`}
                 key={group.severity}
               >
                 <div className="close-cockpit__group-heading">
@@ -197,12 +221,21 @@ export function MonthReviewSection({ dirty, monthId, readOnly, status, onStatusC
                   <p className="muted">{group.empty}</p>
                 ) : (
                   <ul className="close-cockpit__items">
-                    {items.map((item) => (
-                      <li key={`${item.severity}:${item.code}:${item.message}`}>
-                        <span className="close-cockpit__code">{item.code}</span>
-                        <span>{item.message}</span>
-                      </li>
-                    ))}
+                    {items.map((item) => {
+                      const copy = readinessCopy(item);
+                      return (
+                        <li key={`${item.severity}:${item.code}:${item.message}`}>
+                          <div className="close-cockpit__item-copy">
+                            <strong>{copy.title}</strong>
+                            <span>{copy.message}</span>
+                          </div>
+                          <details className="close-cockpit__diagnostics">
+                            <summary>Подробности</summary>
+                            <pre>{readinessDiagnostic(item)}</pre>
+                          </details>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </section>

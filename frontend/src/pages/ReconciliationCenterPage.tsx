@@ -212,7 +212,7 @@ function observedInstrumentShortLabel(item: {
 
 function instrumentMappingLabel(row: ReconciliationInstrument): string {
   const readable = joinIdentityParts([row.display_name, row.isin, row.ticker]);
-  return readable || `Источник: ${row.provider_instrument_id ?? "—"}`;
+  return readable || "Инструмент без описания";
 }
 
 const ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS = 3;
@@ -226,12 +226,7 @@ function accountMappingLabel(row: ReconciliationAccount): string {
   const hiddenCount = instruments.length - visible.length;
   const extra = hiddenCount > 0 ? [`ещё ${hiddenCount}`] : [];
   const readable = [...sections, ...visible, ...extra].join(" · ");
-  return readable || `Источник: ${row.provider_account_id}`;
-}
-
-function mappingSourceLine(providerId: string, label: string): string | null {
-  if (label === `Источник: ${providerId}`) return null;
-  return `Источник: ${providerId}`;
+  return readable || "Счёт без описания";
 }
 
 function accountDisplay(account: Account): string {
@@ -293,7 +288,6 @@ function MappingPanel({
             {!accountsLoading && !accountsError
               ? accountRows.map((row, index) => {
                   const label = accountMappingLabel(row);
-                  const sourceLine = mappingSourceLine(row.provider_account_id, label);
                   return (
                     <Field
                       key={row.provider_account_id}
@@ -314,9 +308,10 @@ function MappingPanel({
                           </option>
                         ))}
                       </Select>
-                      {sourceLine ? (
-                        <span className="reconciliation-center__mapping-source">{sourceLine}</span>
-                      ) : null}
+                      <details className="reconciliation-center__mapping-details">
+                        <summary>Подробности источника</summary>
+                        <span>Идентификатор счёта Alfa PRO: {row.provider_account_id}</span>
+                      </details>
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
                       </span>
@@ -344,7 +339,6 @@ function MappingPanel({
               ? instrumentRows.map((row, index) => {
                   const providerId = row.provider_instrument_id as string;
                   const label = instrumentMappingLabel(row);
-                  const sourceLine = mappingSourceLine(providerId, label);
                   return (
                     <Field
                       key={providerId}
@@ -363,9 +357,10 @@ function MappingPanel({
                           </option>
                         ))}
                       </Select>
-                      {sourceLine ? (
-                        <span className="reconciliation-center__mapping-source">{sourceLine}</span>
-                      ) : null}
+                      <details className="reconciliation-center__mapping-details">
+                        <summary>Подробности источника</summary>
+                        <span>Идентификатор инструмента Alfa PRO: {providerId}</span>
+                      </details>
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
                       </span>
@@ -389,13 +384,15 @@ function IdentityCell({ row }: { row: ReconciliationRow }) {
       <strong>{row.account_name ?? "Счёт не сопоставлен"}</strong>
       <span>{row.instrument_name ?? "Инструмент не сопоставлен"}</span>
       {instrumentIdentity ? <span className="muted">{instrumentIdentity}</span> : null}
-      <span className="reconciliation-center__identity-provider">
-        Идентификаторы источника: {valueOrDash(row.provider_account_id)} /{" "}
-        {valueOrDash(row.provider_instrument_id)}
-      </span>
-      <details className="reconciliation-center__fingerprint">
-        <summary>Технический ключ строки</summary>
-        <code>{valueOrDash(row.fingerprint)}</code>
+      <details className="reconciliation-center__identity-details">
+        <summary>Подробности строки</summary>
+        <span className="reconciliation-center__identity-provider">
+          Идентификаторы Alfa PRO: {valueOrDash(row.provider_account_id)} /{" "}
+          {valueOrDash(row.provider_instrument_id)}
+        </span>
+        <span className="reconciliation-center__fingerprint">
+          Технический ключ: <code>{valueOrDash(row.fingerprint)}</code>
+        </span>
       </details>
     </div>
   );
@@ -404,35 +401,37 @@ function IdentityCell({ row }: { row: ReconciliationRow }) {
 function ValueComparisonCell({ row }: { row: ReconciliationRow }) {
   return (
     <div className="reconciliation-center__values">
+      <strong className="reconciliation-center__values-heading">Текущие данные Hermes</strong>
       <span>
         Локальная цена/ед.:{" "}
         <strong>{formatKopecks(row.hermes_market_price_per_unit_kopecks)}</strong>
       </span>
+      <strong className="reconciliation-center__values-heading">Данные Alfa PRO</strong>
       <span>
         Цена брокера: <strong>{formatProviderAmount(row.provider_broker_unit_price)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Учётная цена брокера: <strong>{formatProviderAmount(row.provider_accounting_price)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Оценка брокера: <strong>{formatProviderAmount(row.provider_market_value)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Локальный НКД: <strong>{formatKopecks(row.hermes_accrued_interest_kopecks)}</strong>
       </span>
       <span>
         НКД брокера: <strong>{formatProviderAmount(row.provider_accrued_interest_nkd)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Локальный P&amp;L: <strong>{formatKopecks(row.hermes_unrealized_result_kopecks)}</strong>
       </span>
       <span>
         P&amp;L брокера: <strong>{formatProviderAmount(row.provider_unrealized_result)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <details>
         <summary>Ограничения сравнения</summary>

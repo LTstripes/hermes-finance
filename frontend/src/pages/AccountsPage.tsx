@@ -609,6 +609,9 @@ export function AccountsPage() {
               await loadAccounts();
               await loadInstruments();
             }}
+            onInstrumentCreated={async () => {
+              await loadInstruments();
+            }}
           />
         </>
       ) : (
