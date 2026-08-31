@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { Instrument, MoneyValue } from "./types";
+import type { Instrument, InstrumentCleanup, MoneyValue } from "./types";
 
 export type InstrumentCreatePayload = {
   name: string;
@@ -68,6 +68,16 @@ export function updateInstrument(
 export function deleteInstrument(instrumentId: number, signal?: AbortSignal): Promise<void> {
   return apiRequest<void>(`/api/instruments/${instrumentId}`, {
     method: "DELETE",
+    signal,
+  });
+}
+
+export function getInstrumentCleanup(
+  instrumentId: number,
+  signal?: AbortSignal,
+): Promise<InstrumentCleanup> {
+  return apiRequest<InstrumentCleanup>(`/api/instruments/${instrumentId}/cleanup`, {
+    method: "GET",
     signal,
   });
 }
