@@ -115,7 +115,7 @@ export function MonthNoteSection({ monthId, readOnly, onDirtyChange }: Props) {
         {comments.length === 0 ? (
           <EmptyState description="Заметок пока нет." inline title="Пусто" />
         ) : (
-          <Table>
+          <Table className="month-notes-table">
             <thead>
               <tr>
                 <Th>#</Th>
@@ -126,7 +126,7 @@ export function MonthNoteSection({ monthId, readOnly, onDirtyChange }: Props) {
             <tbody>
               {comments.map((comment, index) => (
                 <tr key={comment.id}>
-                  <Td>{comment.position}</Td>
+                  <Td>{comment.position}.</Td>
                   <Td>{comment.text}</Td>
                   <Td>
                     <div className="row-actions">

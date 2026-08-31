@@ -236,7 +236,7 @@ describe("DashboardPage R03-04 semantics", () => {
       await within(overview).findByText(/6\s*закрытых\s*месяцев\s*из\s*12/),
     ).toBeInTheDocument();
     await user.click(within(overview).getByRole("button", { name: "Подробнее о периоде" }));
-    expect(within(overview).getByText(/2031-05/)).toBeInTheDocument();
+    expect(screen.getByText(/2031-05/)).toBeInTheDocument();
   });
 
   it("keeps dashboard cache entries separate and revalidates when returning", async () => {

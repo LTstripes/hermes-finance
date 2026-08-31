@@ -235,7 +235,7 @@ describe("GoalsPage R03-09 cards", () => {
     await user.click(
       within(card).getByRole("button", { name: "Действия для цели «Запасная цель»" }),
     );
-    await user.click(within(card).getByRole("menuitem", { name: "Сделать основной" }));
+    await user.click(screen.getByRole("menuitem", { name: "Сделать основной" }));
 
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(2, { is_main: true }));
   });
@@ -285,7 +285,7 @@ describe("GoalsPage R03-09 cards", () => {
         name: "Действия для цели «Запасная цель»",
       }),
     );
-    await user.click(within(refreshedCard).getByRole("menuitem", { name: "Удалить" }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить" }),
     );
@@ -305,7 +305,7 @@ describe("GoalsPage R03-09 cards", () => {
         name: "Действия для цели «Капитал потом»",
       }),
     );
-    await user.click(within(archivedCard).getByRole("menuitem", { name: "Активировать" }));
+    await user.click(screen.getByRole("menuitem", { name: "Активировать" }));
 
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(3, { is_active: true }));
   });

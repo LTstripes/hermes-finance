@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatMoneyInput,
   fromKopecks,
   isBlankMoney,
   moneySharePercent,
@@ -22,6 +23,19 @@ describe("normalizeMoneyInput", () => {
     expect(normalizeMoneyInput("")).toBeNull();
     expect(normalizeMoneyInput("abc")).toBeNull();
     expect(normalizeMoneyInput("123x45")).toBeNull();
+  });
+});
+
+describe("formatMoneyInput", () => {
+  it("groups exact decimal strings for owner-facing editing", () => {
+    expect(formatMoneyInput("450000.00")).toBe("450\u00a0000,00");
+    expect(formatMoneyInput("-1234567.8")).toBe("-1\u00a0234\u00a0567,80");
+    expect(formatMoneyInput("0.00")).toBe("0,00");
+  });
+
+  it("leaves incomplete input untouched for validation to handle", () => {
+    expect(formatMoneyInput("450000.")).toBe("450000.");
+    expect(formatMoneyInput("abc")).toBe("abc");
   });
 });
 
