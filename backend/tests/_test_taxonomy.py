@@ -42,7 +42,7 @@ _PERSISTENCE_FILES = frozenset(
         "test_month_clone.py",
         "test_month_guard.py",
         "test_positions.py",
-        "test_r02_10_sqlite_locking.py",
+        "test_sqlite_locking.py",
         "test_reporting_months.py",
     }
 )
@@ -57,6 +57,7 @@ _INTEGRATION_FILES = frozenset(
         "test_provider_capabilities.py",
         "test_reconciliation_preview.py",
         "test_risk_allocation.py",
+        "test_forecast_dashboard_integration.py",
     }
 )
 _RUNTIME_FILES = frozenset(
@@ -83,7 +84,7 @@ _RELEASE_FILES = frozenset(
 _BENCHMARK_FILES = frozenset(
     {
         "test_historical_batch_reads.py",
-        "test_r07_t02_long_history_benchmark.py",
+        "test_long_history_benchmark.py",
     }
 )
 _WINDOWS_FILES = frozenset(

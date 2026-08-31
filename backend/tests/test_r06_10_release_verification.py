@@ -12,19 +12,6 @@ from _release_helpers import (
     position_fingerprint,
     run_isolated_startup_script,
 )
-from fastapi.testclient import TestClient
-
-from hermes_finance import __version__
-
-
-def test_health_version_is_070() -> None:
-    from hermes_finance.main import app
-
-    assert __version__ == "0.7.0"
-    with TestClient(app) as client:
-        response = client.get("/api/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.7.0"}
 
 
 def test_pre_06_schema_upgrades_from_05_without_rewriting_owner_rows(tmp_path: Path) -> None:

@@ -188,6 +188,8 @@ def test_pre_05_schema_upgrades_without_rewriting_owner_rows(tmp_path: Path) -> 
         connection.close()
 
 
+# Canonical current-release health gate; the equivalent R06-10 node was removed
+# after exact node-level comparison proved it was a duplicate.
 def test_health_version_is_current_release() -> None:
     from hermes_finance.main import app
 
