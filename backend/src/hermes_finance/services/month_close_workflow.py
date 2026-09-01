@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.month_close_workflow import (
@@ -24,6 +25,8 @@ from hermes_finance.domain.month_close_workflow import (
     derive_step_state,
     recommended_step_id,
 )
+from hermes_finance.domain.monthly_summary import MonthlySummaryResult
+from hermes_finance.domain.values import RubleAmount
 from hermes_finance.market_data.dto import T_INVEST_PROVIDER
 from hermes_finance.persistence import (
     AppliedPayoutReconciliation,
@@ -32,18 +35,33 @@ from hermes_finance.persistence import (
     AppliedStatementEventRevision,
     BrokerBaselineApply,
     BrokerBaselineApplyItem,
+    CashBalance,
+    Debt,
+    DepositSnapshot,
     ExpectedCashFlow,
+    ExpenseEntry,
+    IncomeEntry,
     InstrumentMarketMapping,
     InvestmentCashFlow,
+    MonthlyComment,
     PositionQuoteProvenance,
     PositionSnapshot,
+    PropertySnapshot,
+    SavingAllocation,
 )
 from hermes_finance.services.applied_statement_events import StatementLinkMode
+from hermes_finance.services.cash import total_cash
+from hermes_finance.services.cash_flow_ladder import (
+    CashFlowLadderResult,
+    build_cash_flow_ladder,
+)
 from hermes_finance.services.close_readiness import (
     CloseReadiness,
     CloseReadinessBackup,
     build_close_readiness,
 )
+from hermes_finance.services.dashboard import DashboardResult, build_dashboard
+from hermes_finance.services.debts import total_debts
 from hermes_finance.services.freshness_provenance import (
     PROVIDER_PRICE_SOURCES,
     FreshnessFamily,
@@ -53,7 +71,9 @@ from hermes_finance.services.freshness_provenance import (
     FreshnessStatus,
     build_freshness_provenance_summary,
 )
+from hermes_finance.services.monthly_summary import monthly_summary
 from hermes_finance.services.payout_preview import _manual_candidates_for_applied
+from hermes_finance.services.properties import total_mortgage_balance, total_property_value
 from hermes_finance.services.reporting_months import get_reporting_month
 from hermes_finance.statement_import.dto import ALFA_DEPOSITORY_INCOME_PROVIDER
 
@@ -82,7 +102,37 @@ _ACTION_LABELS = {
     GuidedCloseActionId.OPEN_FINAL_REVIEW: "Перейти к итогам",
     GuidedCloseActionId.CONFIRM_CLOSE: "Закрыть месяц",
     GuidedCloseActionId.OPEN_CASH_FLOW_LADDER: "Открыть денежную лестницу",
+    GuidedCloseActionId.CLONE_NEXT_MONTH: "Создать следующий месяц",
 }
+
+
+@dataclass(frozen=True, slots=True)
+class FinalMonthReview:
+    """Read-only composition of the final review's existing authorities."""
+
+    summary: MonthlySummaryResult
+    dashboard: DashboardResult | None
+    cash_flow_ladder: CashFlowLadderResult | None
+    readiness: CloseReadiness
+    freshness: FreshnessProvenanceSummary | None
+    provider_summary: tuple[dict[str, object], ...]
+    reconciliation_availability: dict[str, object]
+    manual_review_cards: tuple[dict[str, object], ...]
+    manual_attention: tuple[dict[str, object], ...]
+    evidence_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class NextMonthOutlook:
+    """Closed-source, dated-facts-only outlook composition."""
+
+    available: bool
+    reason_code: str | None
+    source_month: object
+    cash_flow_ladder: CashFlowLadderResult | None
+    next_month: tuple[int, int] | None
+    known_event_count: int
+    evidence_version: str | None
 
 
 def _action(action_id: GuidedCloseActionId, target: GuidedCloseActionTarget) -> GuidedCloseAction:
@@ -729,8 +779,10 @@ def _step(
     why: str,
     reason_codes: tuple[str, ...] = (),
     primary_action: GuidedCloseAction | None = None,
+    secondary_actions: tuple[GuidedCloseAction, ...] = (),
     completion_basis: GuidedCloseCompletionBasis | None = None,
     evidence_scope: GuidedCloseEvidenceScope = GuidedCloseEvidenceScope.NONE,
+    evidence_version: str | None = None,
     evidence_summary: dict[str, object] | None = None,
     stale: GuidedCloseStale | None = None,
     diagnostics: dict[str, object] | None = None,
@@ -751,8 +803,10 @@ def _step(
         why=why,
         reason_codes=reason_codes,
         primary_action=primary_action,
+        secondary_actions=secondary_actions,
         completion_basis=completion_basis,
         evidence_scope=evidence_scope,
+        evidence_version=evidence_version,
         evidence_summary=evidence_summary or {},
         stale=stale or GuidedCloseStale(),
         diagnostics=diagnostics or {},
@@ -917,6 +971,361 @@ def _closed_read_only_step(step_id: GuidedCloseStepId) -> GuidedCloseStep:
     )
 
 
+def _count_rows(session: Session, model: type[object], month_id: int) -> int:
+    return int(
+        session.scalar(
+            select(func.count()).select_from(model).where(model.reporting_month_id == month_id)
+        )
+        or 0
+    )
+
+
+def _sum_rows(session: Session, model: type[object], column: object, month_id: int) -> RubleAmount:
+    total = session.scalar(
+        select(func.coalesce(func.sum(column), 0)).where(model.reporting_month_id == month_id)
+    )
+    return RubleAmount(int(total or 0))
+
+
+def _manual_review_cards(
+    session: Session, month: object, summary: MonthlySummaryResult
+) -> tuple[dict[str, object], ...]:
+    month_id = getattr(month, "id")
+    cash_total = total_cash(session, month_id)
+    deposit_rows = _count_rows(session, DepositSnapshot, month_id)
+    deposit_balance = summary.liquid_capital.breakdown.deposits
+    property_value = total_property_value(session, month_id)
+    mortgage_balance = total_mortgage_balance(session, month_id)
+    position_count = _count_rows(session, PositionSnapshot, month_id)
+    manual_position_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(PositionSnapshot)
+            .where(
+                PositionSnapshot.reporting_month_id == month_id,
+                PositionSnapshot.price_source == "manual",
+            )
+        )
+        or 0
+    )
+    cards = (
+        {
+            "id": "cash",
+            "title": "Деньги сейчас",
+            "available": True,
+            "reason_code": None,
+            "summary": {
+                "cash_total": cash_total,
+                "row_count": _count_rows(session, CashBalance, month_id),
+            },
+        },
+        {
+            "id": "deposits_savings",
+            "title": "Вклады и накопления",
+            "available": True,
+            "reason_code": None,
+            "summary": {
+                "balance": deposit_balance,
+                "deposit_row_count": deposit_rows,
+                "actual_interest_received": _sum_rows(
+                    session,
+                    DepositSnapshot,
+                    DepositSnapshot.actual_interest_received_kopecks,
+                    month_id,
+                ),
+                "savings_allocations": summary.cash_balance.breakdown.saving_allocations,
+            },
+        },
+        {
+            "id": "debts_property",
+            "title": "Долги и недвижимость",
+            "available": True,
+            "reason_code": None,
+            "summary": {
+                "debt_total": total_debts(session, month_id),
+                "property_value": property_value,
+                "mortgage_balance": mortgage_balance,
+                "debt_row_count": _count_rows(session, Debt, month_id),
+                "property_row_count": _count_rows(session, PropertySnapshot, month_id),
+            },
+        },
+        {
+            "id": "income_budget",
+            "title": "Доходы и бюджет",
+            "available": True,
+            "reason_code": None,
+            "summary": {
+                "cash_balance": summary.cash_balance.total,
+                "passive_income_actual": summary.passive_income_actual,
+                "salary_actual_net": summary.salary_actual_net,
+                "mandatory_expenses": summary.cash_balance.breakdown.mandatory_expenses,
+                "income_row_count": _count_rows(session, IncomeEntry, month_id),
+                "expense_row_count": _count_rows(session, ExpenseEntry, month_id),
+                "saving_allocation_count": _count_rows(session, SavingAllocation, month_id),
+            },
+        },
+        {
+            "id": "investments_outside_integrations",
+            "title": "Инвестиции вне интеграций",
+            "available": bool(position_count),
+            "reason_code": None if position_count else "no_position_snapshots",
+            "summary": {
+                "position_count": position_count,
+                "market_value": summary.liquid_capital.breakdown.securities,
+                "manual_price_count": manual_position_count,
+                "actual_flow_count": _count_rows(session, InvestmentCashFlow, month_id),
+                "future_flow_count": _count_rows(session, ExpectedCashFlow, month_id),
+            },
+        },
+        {
+            "id": "note",
+            "title": "Заметка",
+            "available": bool(_count_rows(session, MonthlyComment, month_id)),
+            "reason_code": None
+            if _count_rows(session, MonthlyComment, month_id)
+            else "optional_empty",
+            "summary": {"comment_count": _count_rows(session, MonthlyComment, month_id)},
+        },
+    )
+    return cards
+
+
+def _attention_card_id(code: str) -> str:
+    if code == "snapshot_date_required" or code.startswith("salary"):
+        return "income_budget"
+    if code.startswith("quote") or code.startswith("payout") or code.startswith("statement"):
+        return "investments_outside_integrations"
+    if code.startswith("freshness"):
+        return "investments_outside_integrations"
+    return "income_budget"
+
+
+def _manual_attention(readiness: CloseReadiness) -> tuple[dict[str, object], ...]:
+    return tuple(
+        {
+            "card_id": _attention_card_id(item.code),
+            "severity": item.severity.value,
+            "code": item.code,
+            "message": item.message,
+            "context": item.context,
+        }
+        for item in readiness.items
+        if item.severity.value in {"hard_blocker", "warning"}
+    )
+
+
+def _provider_summary(steps: tuple[GuidedCloseStep, ...]) -> tuple[dict[str, object], ...]:
+    provider_ids = {
+        GuidedCloseStepId.ALFA_BASELINE,
+        GuidedCloseStepId.MARKET_QUOTES,
+        GuidedCloseStepId.ACTUAL_PAYOUTS,
+        GuidedCloseStepId.FUTURE_PAYOUTS,
+    }
+    return tuple(
+        {
+            "step_id": step.id.value,
+            "state": step.state.value,
+            "evidence_scope": step.evidence_scope.value,
+            "reason_codes": list(step.reason_codes),
+            "evidence_summary": step.evidence_summary,
+        }
+        for step in steps
+        if step.id in provider_ids
+    )
+
+
+def _evidence_version(
+    month: object,
+    readiness: CloseReadiness,
+    freshness: FreshnessProvenanceSummary | None,
+    cards: tuple[dict[str, object], ...],
+    ladder: CashFlowLadderResult | None,
+) -> str:
+    material = [
+        getattr(month, "id"),
+        getattr(month, "status"),
+        getattr(month, "snapshot_date"),
+        getattr(month, "updated_at", None),
+        [(item.severity.value, item.code, item.message) for item in readiness.items],
+        [
+            (card["id"], card["available"], card["reason_code"], repr(card["summary"]))
+            for card in cards
+        ],
+    ]
+    if freshness is not None:
+        material.append(
+            [
+                (
+                    family.family_id.value,
+                    family.status.value,
+                    tuple(reason.code.value for reason in family.reasons),
+                )
+                for family in freshness.families
+            ]
+        )
+    if ladder is not None:
+        material.append(
+            [
+                (event.expected_date, event.flow_type, event.expected_net_amount.kopecks)
+                for month_bucket in ladder.months
+                for event in month_bucket.items
+            ]
+        )
+    return hashlib.sha256(repr(material).encode("utf-8")).hexdigest()
+
+
+def build_final_month_review(
+    session: Session,
+    month: object,
+    *,
+    readiness: CloseReadiness,
+    freshness: FreshnessProvenanceSummary | None,
+    steps: tuple[GuidedCloseStep, ...],
+) -> FinalMonthReview:
+    """Compose the final review from existing read models only."""
+    month_id = getattr(month, "id")
+    if getattr(month, "snapshot_date") is None:
+        summary = monthly_summary(session, month_id)
+        dashboard = None
+        ladder = None
+    else:
+        dashboard = build_dashboard(session, month_id)
+        summary = dashboard.summary
+        ladder = dashboard.cash_flow_ladder
+    cards = _manual_review_cards(session, month, summary)
+    return FinalMonthReview(
+        summary=summary,
+        dashboard=dashboard,
+        cash_flow_ladder=ladder,
+        readiness=readiness,
+        freshness=freshness,
+        provider_summary=_provider_summary(steps),
+        reconciliation_availability={
+            "available": False,
+            "reason_code": GuidedCloseReasonCode.RECONCILIATION_NOT_RUN.value,
+        },
+        manual_review_cards=cards,
+        manual_attention=_manual_attention(readiness),
+        evidence_version=_evidence_version(month, readiness, freshness, cards, ladder),
+    )
+
+
+def build_next_month_outlook(session: Session, month: object) -> NextMonthOutlook:
+    """Compose only dated, already-persisted facts after an explicit close."""
+    if getattr(month, "status") != "closed":
+        return NextMonthOutlook(
+            available=False,
+            reason_code=GuidedCloseReasonCode.OUTLOOK_NOT_AVAILABLE_UNTIL_CLOSED.value,
+            source_month=month,
+            cash_flow_ladder=None,
+            next_month=None,
+            known_event_count=0,
+            evidence_version=None,
+        )
+    if getattr(month, "snapshot_date") is None:
+        return NextMonthOutlook(
+            available=False,
+            reason_code=GuidedCloseReasonCode.OUTLOOK_SECTION_UNAVAILABLE.value,
+            source_month=month,
+            cash_flow_ladder=None,
+            next_month=None,
+            known_event_count=0,
+            evidence_version=None,
+        )
+    ladder = build_cash_flow_ladder(session, getattr(month, "id"))
+    next_year = getattr(month, "year") + (1 if getattr(month, "month") == 12 else 0)
+    next_month_number = 1 if getattr(month, "month") == 12 else getattr(month, "month") + 1
+    bucket = next(
+        (
+            item
+            for item in ladder.months
+            if (item.year, item.month) == (next_year, next_month_number)
+        ),
+        None,
+    )
+    if bucket is None:
+        return NextMonthOutlook(
+            available=False,
+            reason_code=GuidedCloseReasonCode.OUTLOOK_SECTION_UNAVAILABLE.value,
+            source_month=month,
+            cash_flow_ladder=ladder,
+            next_month=(next_year, next_month_number),
+            known_event_count=0,
+            evidence_version=None,
+        )
+    version = hashlib.sha256(
+        repr(
+            [
+                getattr(month, "id"),
+                (next_year, next_month_number),
+                [
+                    (event.expected_date, event.flow_type, event.expected_net_amount.kopecks)
+                    for event in bucket.items
+                ],
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
+    return NextMonthOutlook(
+        available=True,
+        reason_code=None if bucket.items else GuidedCloseReasonCode.NO_KNOWN_DATED_EVENTS.value,
+        source_month=month,
+        cash_flow_ladder=ladder,
+        next_month=(next_year, next_month_number),
+        known_event_count=len(bucket.items),
+        evidence_version=version,
+    )
+
+
+def _next_month_outlook_step(session: Session, month: object) -> GuidedCloseStep:
+    outlook = build_next_month_outlook(session, month)
+    if not outlook.available:
+        return _step(
+            step_id=GuidedCloseStepId.NEXT_MONTH_OUTLOOK,
+            state=GuidedCloseStepState.WARNING,
+            applicability=GuidedCloseApplicability.CONDITIONAL,
+            gate=GuidedCloseGate.NONE,
+            affects_close=False,
+            why="После закрытия read-only outlook недоступен.",
+            reason_codes=(
+                outlook.reason_code or GuidedCloseReasonCode.OUTLOOK_SECTION_UNAVAILABLE.value,
+            ),
+            primary_action=_action(
+                GuidedCloseActionId.OPEN_CASH_FLOW_LADDER, GuidedCloseActionTarget.INTERNAL_ROUTE
+            ),
+            evidence_summary=_unavailable_evidence(
+                outlook.reason_code or GuidedCloseReasonCode.OUTLOOK_SECTION_UNAVAILABLE.value
+            ),
+        )
+    bucket = next(
+        item
+        for item in outlook.cash_flow_ladder.months
+        if outlook.next_month == (item.year, item.month)
+    )
+    return _step(
+        step_id=GuidedCloseStepId.NEXT_MONTH_OUTLOOK,
+        state=GuidedCloseStepState.COMPLETED,
+        applicability=GuidedCloseApplicability.CONDITIONAL,
+        gate=GuidedCloseGate.NONE,
+        affects_close=False,
+        why="Закрытый месяц показывает только уже известные датированные события следующего месяца.",
+        reason_codes=(outlook.reason_code,) if outlook.reason_code else (),
+        primary_action=_action(
+            GuidedCloseActionId.OPEN_CASH_FLOW_LADDER, GuidedCloseActionTarget.INTERNAL_ROUTE
+        ),
+        secondary_actions=(
+            _action(GuidedCloseActionId.CLONE_NEXT_MONTH, GuidedCloseActionTarget.INTERNAL_ROUTE),
+        ),
+        completion_basis=GuidedCloseCompletionBasis.BACKEND_READ,
+        evidence_scope=GuidedCloseEvidenceScope.FULL_CURRENT_LOCAL_SCOPE,
+        evidence_version=outlook.evidence_version,
+        evidence_summary={
+            "available": True,
+            "known_event_count": outlook.known_event_count,
+            "next_month": {"year": bucket.year, "month": bucket.month},
+        },
+    )
+
+
 def build_month_close_workflow(
     session: Session,
     month_id: int,
@@ -985,16 +1394,7 @@ def build_month_close_workflow(
                     reason_codes=("month_closed_read_only",),
                     completion_basis=GuidedCloseCompletionBasis.MONTH_CLOSED,
                 ),
-                _step(
-                    step_id=GuidedCloseStepId.NEXT_MONTH_OUTLOOK,
-                    state=derive_step_state(not_applicable=True),
-                    applicability=GuidedCloseApplicability.NOT_APPLICABLE,
-                    gate=GuidedCloseGate.NONE,
-                    affects_close=False,
-                    why="Постзакрывающий outlook будет собран отдельной read-only композицией.",
-                    reason_codes=("outlook_section_unavailable",),
-                    evidence_summary=_unavailable_evidence("outlook_section_unavailable"),
-                ),
+                _next_month_outlook_step(session, month),
             )
         else:
             month_blocked = month.snapshot_date is None
@@ -1097,4 +1497,5 @@ def build_month_close_workflow(
                 ),
             )
         steps = tuple(steps)
-        return month, readiness, freshness, steps, recommended_step_id(steps), clock
+        recommended = GuidedCloseStepId.NEXT_MONTH_OUTLOOK if closed else recommended_step_id(steps)
+        return month, readiness, freshness, steps, recommended, clock

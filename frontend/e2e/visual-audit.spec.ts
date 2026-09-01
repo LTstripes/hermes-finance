@@ -27,6 +27,7 @@ const routes: AuditRoute[] = [
       ).toBeVisible();
     },
   },
+  { slug: "monthly-close", path: "/months/12/close" },
   { slug: "months", path: "/months" },
   { slug: "month-positions", path: "/months/12?section=positions" },
   { slug: "payouts", path: "/payouts" },

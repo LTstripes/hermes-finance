@@ -418,6 +418,73 @@ const reconciliation = {
   message: null,
 };
 
+const monthlyCloseWorkflow = {
+  contract_version: "monthly_close_workflow_v1",
+  generated_at: "2031-12-28T12:00:00+00:00",
+  month: syntheticMonths[0],
+  recommended_step_id: "alfa_baseline",
+  progress: { completed_or_skipped: 2, total_applicable: 8 },
+  steps: [
+    {
+      id: "alfa_baseline",
+      order: 2,
+      title: "Сверить состав портфеля Alfa",
+      state: "ready",
+      applicability: "conditional",
+      gate: "owner_decision",
+      affects_close: false,
+      why: "Сохранённого выбранного подтверждения нет; проверка запускается явным действием.",
+      reason_codes: ["baseline_not_applied"],
+      primary_action: {
+        id: "open_alfa_preview",
+        label: "Получить данные Alfa PRO",
+        target: "open_panel",
+      },
+      secondary_actions: [],
+      completion_basis: null,
+      evidence_scope: "none",
+      evidence_version: null,
+      evidence_summary: { available: false, reason_code: "baseline_not_applied" },
+      stale: { is_stale: false, reason_codes: [] },
+      diagnostics: {},
+    },
+    {
+      id: "broker_reconciliation",
+      order: 6,
+      title: "Проверить портфель после обновлений",
+      state: "ready",
+      applicability: "conditional",
+      gate: "owner_decision",
+      affects_close: false,
+      why: "Проверка Alfa доступна только по явной команде и не сохраняется этим экраном.",
+      reason_codes: ["reconciliation_not_run"],
+      primary_action: {
+        id: "open_reconciliation_preview",
+        label: "Проверить снимок Alfa",
+        target: "open_panel",
+      },
+      secondary_actions: [],
+      completion_basis: null,
+      evidence_scope: "none",
+      evidence_version: null,
+      evidence_summary: { available: false, reason_code: "reconciliation_not_run" },
+      stale: { is_stale: false, reason_codes: [] },
+      diagnostics: {},
+    },
+  ],
+  readiness: { can_close: false, hard_blocker_count: 1, warning_count: 0, reason_codes: [] },
+  freshness: {
+    available: true,
+    evaluated_on: "2031-12-28",
+    quote_valuation_target_date: "2031-12-28",
+    families: [],
+    reason_codes: [],
+  },
+  final_review: { available: false, reason_code: "not_available" },
+  outlook: null,
+  links: { month: "/months/12", close_readiness: "", freshness: "" },
+};
+
 const taxPlanner = {
   contract_version: "tax_iis_planner_v1",
   tax_year: 2031,
@@ -541,6 +608,9 @@ export function syntheticApiResponse(
   if (/^\/api\/months\/\d+\/freshness-provenance$/.test(path)) return { json: freshness };
   if (/^\/api\/months\/\d+\/broker-reconciliation-preview$/.test(path)) {
     return { json: reconciliation };
+  }
+  if (/^\/api\/months\/\d+\/close-workflow$/.test(path)) {
+    return { json: monthlyCloseWorkflow };
   }
   if (path === "/api/analytics/capital-composition") return { json: capitalComposition };
   if (path === "/api/analytics/risk-allocation") return { json: riskAllocation };

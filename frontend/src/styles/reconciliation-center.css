@@ -118,6 +118,20 @@
   line-height: 1.4;
 }
 
+.reconciliation-center__mapping-source summary {
+  color: var(--accent);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.reconciliation-center__mapping-source code {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
 .reconciliation-center__filter {
   display: inline-flex;
   align-items: center;
@@ -171,6 +185,19 @@
 .reconciliation-center__identity-provider {
   padding-top: 3px;
   border-top: 1px dashed var(--line-soft);
+}
+
+.reconciliation-center__identity-provider summary {
+  color: var(--accent);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.reconciliation-center__identity-provider > span {
+  display: block;
+  margin-top: 4px;
 }
 
 .reconciliation-center__fingerprint {
