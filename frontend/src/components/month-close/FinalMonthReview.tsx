@@ -1,14 +1,11 @@
-import { useState } from "react";
 import { Link } from "react-router";
 
-import { formatApiError } from "../../api/client";
 import type {
   FinalMonthReview as FinalMonthReviewModel,
   FinalMonthReviewUnavailable,
   ManualReviewCard,
   WorkflowMonth,
 } from "../../api/monthCloseWorkflow";
-import { closeMonth } from "../../api/months";
 import type {
   CashFlowLadderEvent,
   CloseReadinessItem,
@@ -16,7 +13,7 @@ import type {
   UpcomingEventsWindow,
 } from "../../api/types";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../../lib/format";
-import { Badge, Button, ConfirmDialog, DataValue, Panel } from "../ui";
+import { Badge, DataValue, Panel } from "../ui";
 import { withMonthlyCloseReturn } from "./navigation";
 
 const MANUAL_CARD_ORDER = [
@@ -458,42 +455,15 @@ function ManualCards({ review, month }: { review: FinalMonthReviewModel; month: 
 
 export function FinalMonthReview({
   review,
-  active = false,
-  onClosed,
 }: {
   review: FinalMonthReviewModel | FinalMonthReviewUnavailable;
-  active?: boolean;
-  onClosed: () => void;
 }) {
-  const [pendingClose, setPendingClose] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   if (!review.available) {
     return (
       <Panel label="Итоги месяца" title="Финальная проверка">
         <p className="muted">{reasonLabel(review.reason_code)}</p>
       </Panel>
     );
-  }
-
-  const finalReview = review;
-  const isClosed = finalReview.month_header.status === "closed";
-  const canClose = !isClosed && finalReview.close_readiness.can_close;
-
-  async function confirmClose() {
-    if (!canClose) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await closeMonth(finalReview.month_header.id);
-      setPendingClose(false);
-      onClosed();
-    } catch (closeError) {
-      setError(formatApiError(closeError));
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
@@ -503,8 +473,8 @@ export function FinalMonthReview({
           <p className="eyebrow">Финальный шаг</p>
           <h2>Итоги {formatMonth(review.month_header.year, review.month_header.month)}</h2>
         </div>
-        <Badge tone={isClosed ? "closed" : active ? "draft" : "info"}>
-          {isClosed ? "Месяц закрыт" : active ? "Можно подтвердить" : "Предпросмотр"}
+        <Badge tone={review.month_header.status === "closed" ? "closed" : "info"}>
+          {review.month_header.status === "closed" ? "Месяц закрыт" : "Финальная проверка"}
         </Badge>
       </header>
       <p className="final-review__lead">
@@ -555,49 +525,6 @@ export function FinalMonthReview({
       <ManualCards month={review.month_header} review={review} />
       <ReadinessDetails review={review} />
       <FutureEvents review={review} />
-
-      {error ? (
-        <div className="inline-alert inline-alert--error" role="alert">
-          {error}
-        </div>
-      ) : null}
-      {isClosed ? (
-        <p className="final-review__close-note">
-          Месяц закрыт. Данные доступны только для чтения до явного открытия.
-        </p>
-      ) : active ? (
-        <div className="final-review__close-action">
-          <p className="muted">
-            {canClose
-              ? "Проверь значения и подтверди закрытие. Сервер повторно проверит готовность."
-              : "Сначала исправь блокеры Close Cockpit — сервер не примет закрытие."}
-          </p>
-          <Button
-            disabled={!canClose || busy}
-            onClick={() => setPendingClose(true)}
-            type="button"
-            variant="primary"
-          >
-            Закрыть {formatMonth(review.month_header.year, review.month_header.month)}
-          </Button>
-        </div>
-      ) : (
-        <p className="muted">
-          Финальная кнопка появится, когда этот шаг станет следующим действием.
-        </p>
-      )}
-
-      <ConfirmDialog
-        busy={busy}
-        cancelLabel="Вернуться к проверке"
-        confirmLabel="Закрыть месяц"
-        danger
-        description={`Закрыть ${formatMonth(review.month_header.year, review.month_header.month)}? Данные станут доступны только для чтения до явного открытия. Будущий месяц не создаётся.`}
-        onCancel={() => setPendingClose(false)}
-        onConfirm={() => void confirmClose()}
-        open={pendingClose}
-        title={`Закрыть ${formatMonth(review.month_header.year, review.month_header.month)}?`}
-      />
     </section>
   );
 }

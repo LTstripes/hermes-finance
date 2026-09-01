@@ -1914,8 +1914,7 @@ th.num {
 
 .final-review__header,
 .final-review__card-heading,
-.final-review__event-heading,
-.final-review__close-action {
+.final-review__event-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1929,7 +1928,6 @@ th.num {
 }
 
 .final-review__lead,
-.final-review__close-note,
 .final-review__disclosure {
   margin: 0;
   color: var(--muted);
@@ -2065,18 +2063,6 @@ th.num {
   border-top: 1px solid var(--line-soft);
 }
 
-.final-review__close-action {
-  align-items: flex-end;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
-  border-radius: var(--radius-lg);
-  background: var(--surface-soft);
-}
-
-.final-review__close-action p {
-  margin: 0;
-}
-
 .monthly-close-return {
   position: sticky;
   z-index: 5;
@@ -2121,8 +2107,7 @@ th.num {
     grid-template-columns: 1fr;
   }
 
-  .final-review__header,
-  .final-review__close-action {
+  .final-review__header {
     align-items: flex-start;
     flex-direction: column;
   }

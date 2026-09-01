@@ -1,7 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { FinalMonthReview } from "../../api/monthCloseWorkflow";
 import { rub } from "../../lib/money";
@@ -174,7 +173,7 @@ describe("FinalMonthReview", () => {
   it("renders backend KPIs, all manual cards, unavailable data and separated future cash flows", () => {
     render(
       <MemoryRouter>
-        <FinalMonthReviewView active={false} onClosed={vi.fn()} review={review()} />
+        <FinalMonthReviewView review={review()} />
       </MemoryRouter>,
     );
 
@@ -191,16 +190,10 @@ describe("FinalMonthReview", () => {
     expect(screen.getAllByText("Не заполнено · не блокирует закрытие").length).toBeGreaterThan(0);
   });
 
-  it("links manual corrections back to the same wizard month and closes explicitly", async () => {
-    const user = userEvent.setup();
-    const onClosed = vi.fn();
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(new Response(JSON.stringify({ status: "closed" }))),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+  it("links manual corrections back to the same wizard month without a close mutation", () => {
     render(
       <MemoryRouter>
-        <FinalMonthReviewView active onClosed={onClosed} review={review()} />
+        <FinalMonthReviewView review={review()} />
       </MemoryRouter>,
     );
 
@@ -208,15 +201,6 @@ describe("FinalMonthReview", () => {
       "href",
       "/months/17?section=assets&from=monthly-close&step=final_review_close&monthId=17",
     );
-    await user.click(screen.getByRole("button", { name: "Закрыть Апрель 2025" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/months/17/close",
-      expect.objectContaining({ method: "POST" }),
-    );
-    expect(onClosed).toHaveBeenCalledOnce();
-    vi.unstubAllGlobals();
+    expect(screen.queryByRole("button", { name: /Закрыть/ })).toBeNull();
   });
 });

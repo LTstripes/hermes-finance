@@ -122,8 +122,6 @@ export function MonthlyCloseWorkflowPage() {
       )}
 
       <FinalMonthReview
-        active={finalReviewActive}
-        onClosed={() => void workflowQuery.refetch()}
         review={workflow.final_review}
       />
 
