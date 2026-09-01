@@ -2,7 +2,12 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { QuotePreview, QuotePreviewRow, QuotePreviewStatus } from "../api/types";
+import type {
+  QuoteApplyResult,
+  QuotePreview,
+  QuotePreviewRow,
+  QuotePreviewStatus,
+} from "../api/types";
 import { QuotePreviewPanel } from "./QuotePreviewPanel";
 
 const identity = {
@@ -56,6 +61,7 @@ function renderPanel(
     loading?: boolean;
     error?: string | null;
     closed?: boolean;
+    applyResult?: QuoteApplyResult | null;
     onApply?: (rows: unknown[]) => void;
   } = {},
 ) {
@@ -64,6 +70,7 @@ function renderPanel(
     <QuotePreviewPanel
       closedMonthHint={extras.closed ?? false}
       error={extras.error ?? null}
+      applyResult={extras.applyResult}
       loading={extras.loading ?? false}
       onApply={extras.onApply}
       onRefresh={onRefresh}
@@ -264,6 +271,99 @@ describe("QuotePreviewPanel", () => {
     expect(screen.getByText("Broken Stock")).toBeInTheDocument();
     expect(screen.getByText("Котировка получена")).toBeInTheDocument();
     expect(screen.getByText("Внешний источник временно недоступен")).toBeInTheDocument();
+  });
+
+  it("shows a compact provider-free summary for mixed quote outcomes", () => {
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 1,
+          instrument_id: 11,
+          instrument_name: "Current Stock",
+          status: "ok",
+        }),
+        row({
+          position_snapshot_id: 2,
+          instrument_id: 12,
+          instrument_name: "Old Stock",
+          status: "stale",
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 3,
+          instrument_id: 13,
+          instrument_name: "Unavailable Stock",
+          status: "unavailable",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 4,
+          instrument_id: 14,
+          instrument_name: "Unmapped Stock",
+          status: "unmapped",
+          identity: null,
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 5,
+          instrument_id: 15,
+          instrument_name: "Excluded Stock",
+          status: "excluded",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 6,
+          instrument_id: 16,
+          instrument_name: "Broken Stock",
+          status: "network_error",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+      ]),
+    );
+
+    const summary = screen.getByRole("status", { name: "Итог предпросмотра котировок" });
+    expect(summary).toHaveTextContent("6 строк");
+    expect(summary).toHaveTextContent("готово 1");
+    expect(summary).toHaveTextContent("старых 1");
+    expect(summary).toHaveTextContent("недоступно 1");
+    expect(summary).toHaveTextContent("без сопоставления 1");
+    expect(summary).toHaveTextContent("исключено 1");
+    expect(summary).toHaveTextContent("ошибок 1");
+    expect(summary).toHaveTextContent("13.08.2026");
+  });
+
+  it("shows a transient apply result without implying a new provider preview", () => {
+    renderPanel(null, {
+      applyResult: {
+        reporting_month_id: 7,
+        applied_count: 1,
+        rows: [
+          {
+            position_snapshot_id: 1,
+            market_price_per_unit: { amount: "215.50", currency: "RUB" },
+            market_value: { amount: "2155.00", currency: "RUB" },
+            unrealized_result: { amount: "155.00", currency: "RUB" },
+            accrued_interest: null,
+            price_date: "2026-08-12",
+            price_source: "t_invest",
+            freshness: "ok",
+          },
+        ],
+      },
+    });
+
+    const summary = screen.getByRole("status", { name: "Результат применения котировок" });
+    expect(summary).toHaveTextContent("Котировки применены: 1");
+    expect(summary).toHaveTextContent("Даты цен: 12.08.2026");
+    expect(summary).toHaveTextContent("Новый preview запускается отдельной кнопкой");
   });
 
   it("shows a batch warning without erasing rows", () => {
