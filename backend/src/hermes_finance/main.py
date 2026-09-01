@@ -39,6 +39,7 @@ from hermes_finance.api.month_close_workflow import router as month_close_workfl
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.payouts import router as payouts_router
 from hermes_finance.api.performance_availability import router as performance_availability_router
+from hermes_finance.api.portfolio_review_package import router as portfolio_review_package_router
 from hermes_finance.api.portfolio_twrr import router as portfolio_twrr_router
 from hermes_finance.api.portfolio_xirr import router as portfolio_xirr_router
 from hermes_finance.api.positions import router as positions_router
@@ -137,6 +138,7 @@ def create_app(
     application.include_router(comments_router)
     application.include_router(exports_router)
     application.include_router(ai_analysis_bundle_router)
+    application.include_router(portfolio_review_package_router)
     application.include_router(goals_router)
 
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])
