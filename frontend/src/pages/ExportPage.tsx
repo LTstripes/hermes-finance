@@ -10,6 +10,7 @@ import {
 } from "../api/exports";
 import { listMonths } from "../api/months";
 import type { BackupMetadata, ReportingMonth } from "../api/types";
+import { PortfolioReviewPackagePanel } from "../components/PortfolioReviewPackagePanel";
 import {
   Button,
   ConfirmDialog,
@@ -325,6 +326,8 @@ export function ExportPage() {
           </div>
         </div>
       </Panel>
+
+      <PortfolioReviewPackagePanel />
 
       <Panel
         action={
