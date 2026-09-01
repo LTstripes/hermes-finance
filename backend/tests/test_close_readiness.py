@@ -34,6 +34,7 @@ from hermes_finance.persistence import (
     Base,
     BrokerBaselineApply,
     BrokerBaselineApplyItem,
+    ExpectedCashFlow,
     InstrumentMarketMapping,
     PositionQuoteProvenance,
     PositionSnapshot,
@@ -586,7 +587,15 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
     assert body["readiness"]["can_close"] is True
     assert body["readiness"]["warning_count"] == 1
     assert body["freshness"]["available"] is True
-    assert body["final_review"]["available"] is False
+    assert body["final_review"]["available"] is True
+    assert [card["id"] for card in body["final_review"]["manual_review_cards"]] == [
+        "cash",
+        "deposits_savings",
+        "debts_property",
+        "income_budget",
+        "investments_outside_integrations",
+        "note",
+    ]
     assert body["outlook"] is None
     assert body["links"]["close_readiness"].endswith(f"/api/months/{requested.id}/close-readiness")
 
@@ -605,7 +614,7 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
     closed = client.get(f"/api/months/{month.id}/close-workflow").json()
     assert closed["month"]["id"] == month.id
     assert closed["month"]["status"] == "closed"
-    assert closed["recommended_step_id"] is None
+    assert closed["recommended_step_id"] == "next_month_outlook"
     closed_step_ids = [step["id"] for step in closed["steps"]]
     assert closed_step_ids == EXPECTED_WORKFLOW_STEP_IDS
     assert len(closed_step_ids) == len(set(closed_step_ids))
@@ -614,13 +623,20 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
         next(step for step in closed["steps"] if step["id"] == "final_review_close")["state"]
         == "completed"
     )
-    assert all(action is None for step in closed["steps"] for action in [step["primary_action"]])
+    outlook_step = next(step for step in closed["steps"] if step["id"] == "next_month_outlook")
+    assert outlook_step["state"] == "completed"
+    assert outlook_step["primary_action"]["id"] == "open_cash_flow_ladder"
+    assert closed["final_review"]["available"] is True
+    assert closed["outlook"]["available"] is True
+    assert closed["outlook"]["next_month"]["year"] == 2026
+    assert closed["outlook"]["next_month"]["month"] == 2
 
     reopen_reporting_month(session, month.id)
     reopened = client.get(f"/api/months/{month.id}/close-workflow").json()
     assert reopened["month"]["status"] == "draft"
     assert reopened["month"]["id"] == month.id
     assert reopened["recommended_step_id"] == "alfa_baseline"
+    assert reopened["outlook"] is None
 
 
 def _workflow_step(client: TestClient, month_id: int, step_id: str) -> dict:
@@ -1024,3 +1040,89 @@ def test_workflow_derives_future_payout_dependencies_without_provider_calls(tmp_
     duplicate_target = _workflow_step(client, month.id, "future_payouts")
     assert duplicate_target["state"] == "warning"
     assert "payout_reconciliation_changed" in duplicate_target["reason_codes"]
+
+
+def test_final_review_reuses_dashboard_authorities_and_keeps_optional_cards_explicit(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2031, month=5, snapshot_date=date(2031, 5, 31))
+    client = TestClient(
+        create_app(
+            database,
+            market_data_provider=_FailIfCalledProvider(),
+            payout_provider=_FailIfCalledProvider(),
+            broker_snapshot_provider=_FailIfCalledProvider(),
+        )
+    )
+
+    workflow = client.get(f"/api/months/{month.id}/close-workflow")
+    dashboard = client.get(f"/api/months/{month.id}/dashboard")
+    assert workflow.status_code == dashboard.status_code == 200
+    workflow_body = workflow.json()
+    dashboard_body = dashboard.json()
+
+    final_review = workflow_body["final_review"]
+    assert final_review["kpis"] == dashboard_body["kpis"]
+    assert (
+        final_review["actual_passive_income"] == dashboard_body["summary"]["passive_income_actual"]
+    )
+    assert final_review["important_future_events"]["available"] is True
+    assert final_review["important_future_events"]["next_month"]["has_known_events"] is False
+    assert final_review["important_future_events"]["next_month"]["passive_income"] is None
+    assert final_review["investments"]["available"] is False
+    assert final_review["investments"]["reason_code"] == "no_position_snapshots"
+    assert final_review["reconciliation_availability"] == {
+        "available": False,
+        "reason_code": "reconciliation_not_run",
+    }
+
+
+def test_closed_outlook_uses_next_calendar_month_and_separates_redemption_principal(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))
+    account = create_account(session, name="Synthetic broker", account_type=AccountType.BROKERAGE)
+    instrument = create_instrument(
+        session, name="Synthetic bond", instrument_type=InstrumentType.BOND
+    )
+    create_expected_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=account.id,
+        instrument_id=instrument.id,
+        flow_type=ExpectedCashFlowType.REDEMPTION,
+        expected_date=date(2026, 9, 15),
+        gross_amount="1234.56",
+        expected_tax_amount="0.00",
+        expected_net_amount="1234.56",
+        source="synthetic calendar",
+        source_as_of_date=month.snapshot_date,
+        forecast_version="v1",
+    )
+    session.commit()
+    close_reporting_month(session, month.id)
+    before_month_count = session.scalar(select(func.count()).select_from(type(month)))
+    before_flow_count = session.scalar(select(func.count()).select_from(ExpectedCashFlow))
+
+    client = TestClient(
+        create_app(
+            database,
+            market_data_provider=_FailIfCalledProvider(),
+            payout_provider=_FailIfCalledProvider(),
+            broker_snapshot_provider=_FailIfCalledProvider(),
+        )
+    )
+    body = client.get(f"/api/months/{month.id}/close-workflow").json()
+    outlook = body["outlook"]
+    bucket = outlook["next_month"]
+    assert outlook["available"] is True
+    assert outlook["reason_code"] is None
+    assert (bucket["year"], bucket["month"]) == (2026, 9)
+    assert bucket["known_event_count"] == 1
+    assert bucket["passive_income"] == {"amount": "0.00", "currency": "RUB"}
+    assert bucket["redemption_principal"] == {"amount": "1234.56", "currency": "RUB"}
+    assert bucket["total_cash_flow"] == {"amount": "1234.56", "currency": "RUB"}
+    assert session.scalar(select(func.count()).select_from(type(month))) == before_month_count
+    assert session.scalar(select(func.count()).select_from(ExpectedCashFlow)) == before_flow_count
