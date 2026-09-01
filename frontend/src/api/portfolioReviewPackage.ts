@@ -50,7 +50,12 @@ export type PortfolioReviewPackage = {
     reason_codes: string[];
     message: string;
   }>;
-  warnings: Array<{ code: string; severity: "info" | "warning" | "error"; scope: string; message: string }>;
+  warnings: Array<{
+    code: string;
+    severity: "info" | "warning" | "error";
+    scope: string;
+    message: string;
+  }>;
 };
 
 function packagePath(profile: PortfolioReviewProfile): string {
@@ -61,10 +66,13 @@ export function getPortfolioReviewPackage(
   profile: PortfolioReviewProfile,
   signal?: AbortSignal,
 ): Promise<PortfolioReviewPackage> {
-  return apiRequest<PortfolioReviewPackage>(`/api/export/portfolio-review-package${packagePath(profile)}`, {
-    method: "GET",
-    signal,
-  });
+  return apiRequest<PortfolioReviewPackage>(
+    `/api/export/portfolio-review-package${packagePath(profile)}`,
+    {
+      method: "GET",
+      signal,
+    },
+  );
 }
 
 export function downloadPortfolioReviewPackage(

@@ -209,14 +209,25 @@ def _markdown_period(value: object) -> str:
     period = _mapping(value, label="markdown period")
     year = period.get("year")
     month = period.get("month")
-    return f"{year:04d}-{month:02d}" if isinstance(year, int) and isinstance(month, int) else "неизвестно"
+    return (
+        f"{year:04d}-{month:02d}"
+        if isinstance(year, int) and isinstance(month, int)
+        else "неизвестно"
+    )
 
 
 def _markdown_money(value: object) -> str:
     source = value if isinstance(value, Mapping) else {}
     if source.get("availability") != "available":
         reasons = _reason_codes(source.get("reason_codes"))
-        reason = next((_MARKDOWN_REASON_LABELS.get(code) for code in reasons if code in _MARKDOWN_REASON_LABELS), None)
+        reason = next(
+            (
+                _MARKDOWN_REASON_LABELS.get(code)
+                for code in reasons
+                if code in _MARKDOWN_REASON_LABELS
+            ),
+            None,
+        )
         return f"недоступно ({reason or 'нет подтверждённого значения'})"
     money = source.get("value")
     if not isinstance(money, Mapping):
@@ -242,7 +253,10 @@ def _markdown_section_state(section: Mapping[str, object]) -> str:
     status = section.get("status")
     label = _MARKDOWN_STATUS_LABELS.get(str(status), "неизвестен")
     reasons = _reason_codes(section.get("reason_codes"))
-    readable = next((_MARKDOWN_REASON_LABELS.get(code) for code in reasons if code in _MARKDOWN_REASON_LABELS), None)
+    readable = next(
+        (_MARKDOWN_REASON_LABELS.get(code) for code in reasons if code in _MARKDOWN_REASON_LABELS),
+        None,
+    )
     return f"{label}{f' — {readable}' if readable else ''}"
 
 
@@ -252,13 +266,15 @@ def _markdown_positions(data: Mapping[str, object], lines: list[str]) -> None:
         for item in _list(data.get("instruments"), label="markdown instruments")
         if isinstance(item, Mapping)
     }
-    lines.extend([
-        f"- Счета: {len(_list(data.get('accounts'), label='markdown accounts'))}",
-        f"- Позиции: {len(_list(data.get('items'), label='markdown positions'))}",
-        "",
-        "| Счёт | Инструмент | Количество | Стоимость | Дата цены | Источник оценки |",
-        "| --- | --- | ---: | ---: | --- | --- |",
-    ])
+    lines.extend(
+        [
+            f"- Счета: {len(_list(data.get('accounts'), label='markdown accounts'))}",
+            f"- Позиции: {len(_list(data.get('items'), label='markdown positions'))}",
+            "",
+            "| Счёт | Инструмент | Количество | Стоимость | Дата цены | Источник оценки |",
+            "| --- | --- | ---: | ---: | --- | --- |",
+        ]
+    )
     for item in _list(data.get("items"), label="markdown positions"):
         source = _mapping(item, label="markdown position")
         instrument = instruments.get(source.get("instrument_ref")) or "инструмент без названия"
@@ -285,7 +301,7 @@ def render_portfolio_review_markdown(package: dict[str, object]) -> str:
         f"- Срез на: {metadata['as_of_date']}",
         f"- Сформирован: {metadata['generated_at']}",
         "",
-        "Этот локальный отчёт составлен из того же read-only DTO, что и JSON-пакет. Никакие данные не отправляются автоматически.",
+        "Этот локальный отчёт составлен из того же DTO без изменения учёта, что и JSON-пакет. Никакие данные не отправляются автоматически.",
         "",
         "## Состав пакета",
         "",
@@ -297,16 +313,18 @@ def render_portfolio_review_markdown(package: dict[str, object]) -> str:
 
     capital = sections["capital"].get("data")
     if isinstance(capital, Mapping):
-        lines.extend([
-            "## Капитал",
-            "",
-            f"- Ликвидные активы: {_markdown_money(capital.get('liquid_assets_total'))}",
-            f"- Долги, включённые в расчёт: {_markdown_money(capital.get('included_debts'))}",
-            f"- Чистый ликвидный капитал: {_markdown_money(capital.get('liquid_capital_net'))}",
-            f"- Капитал в недвижимости: {_markdown_money(capital.get('property_equity'))}",
-            f"- Совокупный капитал: {_markdown_money(capital.get('total_net_worth'))}",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Капитал",
+                "",
+                f"- Ликвидные активы: {_markdown_money(capital.get('liquid_assets_total'))}",
+                f"- Долги, включённые в расчёт: {_markdown_money(capital.get('included_debts'))}",
+                f"- Чистый ликвидный капитал: {_markdown_money(capital.get('liquid_capital_net'))}",
+                f"- Капитал в недвижимости: {_markdown_money(capital.get('property_equity'))}",
+                f"- Совокупный капитал: {_markdown_money(capital.get('total_net_worth'))}",
+                "",
+            ]
+        )
 
     positions = sections["positions"].get("data")
     if isinstance(positions, Mapping):
@@ -316,12 +334,14 @@ def render_portfolio_review_markdown(package: dict[str, object]) -> str:
 
     dynamics = sections["dynamics"].get("data")
     if isinstance(dynamics, Mapping):
-        lines.extend([
-            "## Динамика",
-            "",
-            "| Период | Статус | Чистый ликвидный капитал | Фактический пассивный доход | Доходность |",
-            "| --- | --- | ---: | ---: | ---: |",
-        ])
+        lines.extend(
+            [
+                "## Динамика",
+                "",
+                "| Период | Статус | Чистый ликвидный капитал | Фактический пассивный доход | Доходность |",
+                "| --- | --- | ---: | ---: | ---: |",
+            ]
+        )
         for item in _list(dynamics.get("history"), label="markdown dynamics"):
             point = _mapping(item, label="markdown dynamics point")
             lines.append(
@@ -338,36 +358,42 @@ def render_portfolio_review_markdown(package: dict[str, object]) -> str:
     if isinstance(passive, Mapping):
         rolling = _mapping(passive.get("rolling_actual_average"), label="markdown rolling income")
         forecast = _mapping(passive.get("forecast"), label="markdown income forecast")
-        lines.extend([
-            "## Пассивный доход",
-            "",
-            f"- Среднее фактическое значение: {_markdown_money(rolling.get('value'))}",
-            f"- Месяцев в среднем: {rolling.get('eligible_month_count')}",
-            f"- Прогноз в месяц: {_markdown_money(forecast.get('monthly_total'))}",
-            f"- Прогноз в год: {_markdown_money(forecast.get('annual_total'))}",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Пассивный доход",
+                "",
+                f"- Среднее фактическое значение: {_markdown_money(rolling.get('value'))}",
+                f"- Месяцев в среднем: {rolling.get('eligible_month_count')}",
+                f"- Прогноз в месяц: {_markdown_money(forecast.get('monthly_total'))}",
+                f"- Прогноз в год: {_markdown_money(forecast.get('annual_total'))}",
+                "",
+            ]
+        )
 
     future = sections["future_cash_flows"].get("data")
     if isinstance(future, Mapping):
-        lines.extend([
-            "## Будущие денежные потоки",
-            "",
-            f"- Всего по календарю: {_markdown_money(future.get('calendar_total'))}",
-            f"- Доходная часть без погашения: {_markdown_money(future.get('non_principal_calendar_amount_total'))}",
-            f"- Погашение основного капитала: {_markdown_money(future.get('principal_total'))}",
-            f"- Событий: {len(_list(future.get('items'), label='markdown future flows'))}",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Будущие денежные потоки",
+                "",
+                f"- Всего по календарю: {_markdown_money(future.get('calendar_total'))}",
+                f"- Доходная часть без погашения: {_markdown_money(future.get('non_principal_calendar_amount_total'))}",
+                f"- Погашение основного капитала: {_markdown_money(future.get('principal_total'))}",
+                f"- Событий: {len(_list(future.get('items'), label='markdown future flows'))}",
+                "",
+            ]
+        )
 
     freshness = sections["freshness"].get("data")
     if isinstance(freshness, Mapping):
-        lines.extend([
-            "## Актуальность данных",
-            "",
-            f"- Оценено на: {freshness.get('evaluated_on') or 'неизвестно'}",
-            f"- Целевая дата оценки котировок: {freshness.get('quote_valuation_target_date') or 'неизвестно'}",
-        ])
+        lines.extend(
+            [
+                "## Актуальность данных",
+                "",
+                f"- Оценено на: {freshness.get('evaluated_on') or 'неизвестно'}",
+                f"- Целевая дата оценки котировок: {freshness.get('quote_valuation_target_date') or 'неизвестно'}",
+            ]
+        )
         for family in _list(freshness.get("families"), label="markdown freshness families"):
             item = _mapping(family, label="markdown freshness family")
             lines.append(f"- {item.get('family_id')}: {item.get('status')}")
@@ -386,17 +412,21 @@ def render_portfolio_review_markdown(package: dict[str, object]) -> str:
 
     field_states = _list(package.get("field_states"), label="markdown field states")
     unavailable = sum(
-        1 for item in field_states if isinstance(item, Mapping) and item.get("status") == "unavailable"
+        1
+        for item in field_states
+        if isinstance(item, Mapping) and item.get("status") == "unavailable"
     )
     omitted = sum(
         1 for item in field_states if isinstance(item, Mapping) and item.get("status") == "omitted"
     )
-    lines.extend([
-        "## Ограничения",
-        "",
-        f"- Недоступных полей: {unavailable}",
-        f"- Полей, опущенных профилем: {omitted}",
-    ])
+    lines.extend(
+        [
+            "## Ограничения",
+            "",
+            f"- Недоступных полей: {unavailable}",
+            f"- Полей, опущенных профилем: {omitted}",
+        ]
+    )
     warnings = _list(package.get("warnings"), label="markdown warnings")
     if warnings:
         lines.extend(["", "### Предупреждения", ""])

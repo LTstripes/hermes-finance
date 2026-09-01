@@ -276,11 +276,14 @@ def test_json_download_has_a_profiled_filename_and_markdown_renderer_revalidates
     response, package = _package(client, "full")
 
     assert response.status_code == 200
-    assert portfolio_review_package_filename(
-        as_of_date=date.fromisoformat(package["metadata"]["as_of_date"]),
-        profile="full",
-        media="json",
-    ) == "hermes-portfolio-review-2026-04-30-full.json"
+    assert (
+        portfolio_review_package_filename(
+            as_of_date=date.fromisoformat(package["metadata"]["as_of_date"]),
+            profile="full",
+            media="json",
+        )
+        == "hermes-portfolio-review-2026-04-30-full.json"
+    )
     report = render_portfolio_review_markdown(package)
     assert "## Детерминированные сигналы" in report
     assert "## Ограничения" in report

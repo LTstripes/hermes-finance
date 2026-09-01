@@ -102,18 +102,19 @@ export function PortfolioReviewPackagePanel() {
   }
 
   const unavailableOrOmitted = packageData
-    ? (Object.entries(packageData.sections) as Array<[
-        PortfolioReviewSectionId,
-        PortfolioReviewPackage["sections"][PortfolioReviewSectionId],
-      ]>).filter(([, section]) => section.status === "unavailable" || section.status === "omitted")
+    ? (
+        Object.entries(packageData.sections) as Array<
+          [PortfolioReviewSectionId, PortfolioReviewPackage["sections"][PortfolioReviewSectionId]]
+        >
+      ).filter(([, section]) => section.status === "unavailable" || section.status === "omitted")
     : [];
 
   return (
     <Panel label="Локальная передача" title="Подготовить пакет для анализа">
       <div className="portfolio-review-package stack-12">
         <p>
-          Сформируй безопасный срез из текущих read-only данных Hermes. Пакет не загружается в
-          облако и не отправляется ассистенту автоматически.
+          Сформируй безопасный срез из локальных данных Hermes без изменения учёта. Пакет не
+          загружается в облако и не отправляется ассистенту автоматически.
         </p>
         <div className="portfolio-review-package__controls">
           <Field htmlFor="portfolio-review-profile" label="Профиль пакета">
@@ -131,7 +132,11 @@ export function PortfolioReviewPackagePanel() {
               <option value="full">Full — расширенный контекст</option>
             </Select>
           </Field>
-          <Button disabled={preparing || downloading !== null} onClick={() => void prepare()} variant="primary">
+          <Button
+            disabled={preparing || downloading !== null}
+            onClick={() => void prepare()}
+            variant="primary"
+          >
             {preparing ? "Готовим предпросмотр…" : "Подготовить пакет для анализа"}
           </Button>
         </div>
@@ -164,10 +169,14 @@ export function PortfolioReviewPackagePanel() {
             </div>
 
             <div className="portfolio-review-package__sections">
-              {(Object.entries(packageData.sections) as Array<[
-                PortfolioReviewSectionId,
-                PortfolioReviewPackage["sections"][PortfolioReviewSectionId],
-              ]>).map(([id, section]) => (
+              {(
+                Object.entries(packageData.sections) as Array<
+                  [
+                    PortfolioReviewSectionId,
+                    PortfolioReviewPackage["sections"][PortfolioReviewSectionId],
+                  ]
+                >
+              ).map(([id, section]) => (
                 <div className="portfolio-review-package__section" key={id}>
                   <span>{SECTION_LABELS[id]}</span>
                   <Badge tone={statusTone(section.status)}>{STATUS_LABELS[section.status]}</Badge>
@@ -202,9 +211,7 @@ export function PortfolioReviewPackagePanel() {
                 disabled={preparing || downloading !== null}
                 onClick={() => void download("markdown")}
               >
-                {downloading === "markdown"
-                  ? "Готовим Markdown-пакет…"
-                  : "Скачать пакет Markdown"}
+                {downloading === "markdown" ? "Готовим Markdown-пакет…" : "Скачать пакет Markdown"}
               </Button>
             </div>
           </section>

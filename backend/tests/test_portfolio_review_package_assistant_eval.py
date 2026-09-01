@@ -39,9 +39,7 @@ def test_synthetic_assistant_questions_have_expected_ground_truth() -> None:
         "passive_income_forecast": _amount(
             sections["passive_income"]["data"]["forecast"]["monthly_total"]
         ),
-        "future_calendar_total": _amount(
-            sections["future_cash_flows"]["data"]["calendar_total"]
-        ),
+        "future_calendar_total": _amount(sections["future_cash_flows"]["data"]["calendar_total"]),
         "redemption_semantics": "no"
         if next(
             item
