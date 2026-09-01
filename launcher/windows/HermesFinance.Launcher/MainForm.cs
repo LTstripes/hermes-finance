@@ -7,45 +7,509 @@ namespace HermesFinance.Launcher;
 public sealed class MainForm : Form
 {
     private const string ReadyMarker = "Hermes Finance is ready: http://127.0.0.1:8000";
-    private readonly ListBox _profiles = new() { Dock = DockStyle.Top, Height = 130 };
-    private readonly Button _start = new() { Text = "Запустить", Dock = DockStyle.Top, Height = 36 };
-    private readonly Button _stop = new() { Text = "Остановить", Dock = DockStyle.Top, Height = 36, Enabled = false };
+    private const string ReadyUrl = "http://127.0.0.1:8000";
+    private static readonly Color WindowBackground = Color.FromArgb(9, 17, 31);
+    private static readonly Color PanelBackground = Color.FromArgb(15, 27, 46);
+    private static readonly Color MutedText = Color.FromArgb(148, 161, 181);
+    private static readonly Color PrimaryText = Color.FromArgb(245, 248, 252);
+
+    private readonly TableLayoutPanel _root = new()
+    {
+        Dock = DockStyle.Fill,
+        ColumnCount = 1,
+        RowCount = 6,
+        Padding = new Padding(26, 22, 26, 20),
+        BackColor = WindowBackground,
+    };
+    private readonly TableLayoutPanel _header = new()
+    {
+        Dock = DockStyle.Fill,
+        ColumnCount = 2,
+        RowCount = 3,
+        BackColor = Color.Transparent,
+        Margin = new Padding(0, 0, 0, 8),
+    };
+    private readonly Label _brand = new()
+    {
+        Text = "HERMES FINANCE  /  LAUNCHER",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.BottomLeft,
+        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+        ForeColor = Color.FromArgb(102, 227, 190),
+        AutoSize = true,
+    };
+    private readonly Label _title = new()
+    {
+        Text = "Запуск локального Hermes",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = new Font("Segoe UI", 21F, FontStyle.Bold),
+        ForeColor = PrimaryText,
+        AutoSize = true,
+    };
+    private readonly Label _subtitle = new()
+    {
+        Text = "Выберите подготовленную среду  •  launcher не меняет Git и не смешивает данные",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.TopLeft,
+        Font = new Font("Segoe UI", 9.5F),
+        ForeColor = MutedText,
+        AutoSize = true,
+    };
+    private readonly Label _localPill = new()
+    {
+        Text = "LOCAL ONLY\r\n127.0.0.1:8000",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleCenter,
+        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+        ForeColor = Color.FromArgb(164, 190, 225),
+        BackColor = Color.FromArgb(22, 38, 64),
+        Margin = new Padding(0, 10, 0, 10),
+        Padding = new Padding(12, 0, 12, 0),
+    };
+    private readonly Label _profilesCaption = new()
+    {
+        Text = "ПОДГОТОВЛЕННЫЕ СРЕДЫ",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.BottomLeft,
+        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+        ForeColor = MutedText,
+        Margin = new Padding(0, 4, 0, 4),
+    };
+    private readonly FlowLayoutPanel _profiles = new()
+    {
+        Dock = DockStyle.Fill,
+        FlowDirection = FlowDirection.LeftToRight,
+        WrapContents = false,
+        AutoScroll = false,
+        BackColor = Color.Transparent,
+        Margin = new Padding(-6, 0, -6, 8),
+        Padding = new Padding(0),
+    };
+    private readonly Panel _selectedPanel = new()
+    {
+        Dock = DockStyle.Fill,
+        BackColor = PanelBackground,
+        Padding = new Padding(18, 14, 18, 14),
+        Margin = new Padding(0, 0, 0, 8),
+    };
+    private readonly TableLayoutPanel _selectedLayout = new()
+    {
+        Dock = DockStyle.Fill,
+        ColumnCount = 1,
+        RowCount = 4,
+        BackColor = Color.Transparent,
+    };
+    private readonly Label _selectedName = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = new Font("Segoe UI", 14F, FontStyle.Bold),
+        ForeColor = PrimaryText,
+        AutoEllipsis = true,
+    };
+    private readonly Label _selectedType = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleRight,
+        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+        ForeColor = MutedText,
+        AutoEllipsis = true,
+    };
+    private readonly Panel _readinessPanel = new()
+    {
+        Dock = DockStyle.Fill,
+        BackColor = Color.FromArgb(21, 35, 57),
+        Padding = new Padding(12, 8, 12, 8),
+        Margin = new Padding(0, 2, 0, 8),
+    };
+    private readonly Label _readinessDot = new()
+    {
+        Text = "●",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleCenter,
+        Font = new Font("Segoe UI", 17F, FontStyle.Bold),
+        ForeColor = MutedText,
+    };
+    private readonly Label _readinessTitle = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.BottomLeft,
+        Font = new Font("Segoe UI", 11.5F, FontStyle.Bold),
+        ForeColor = PrimaryText,
+        AutoEllipsis = true,
+    };
+    private readonly Label _readinessDescription = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.TopLeft,
+        Font = new Font("Segoe UI", 8.5F),
+        ForeColor = MutedText,
+        AutoEllipsis = false,
+    };
+    private readonly TableLayoutPanel _checks = new()
+    {
+        Dock = DockStyle.Fill,
+        ColumnCount = 3,
+        RowCount = 4,
+        BackColor = Color.Transparent,
+        Margin = new Padding(0),
+    };
+    private readonly Label _identityCheck = new();
+    private readonly Label _dataCheck = new();
+    private readonly Label _dependenciesCheck = new();
+    private readonly Label _serviceCheck = new();
+    private readonly TableLayoutPanel _actions = new()
+    {
+        Dock = DockStyle.Fill,
+        ColumnCount = 2,
+        RowCount = 1,
+        BackColor = Color.Transparent,
+        Margin = new Padding(0),
+    };
+    private readonly FlowLayoutPanel _actionButtons = new()
+    {
+        Dock = DockStyle.Fill,
+        FlowDirection = FlowDirection.LeftToRight,
+        WrapContents = false,
+        BackColor = Color.Transparent,
+        Margin = new Padding(-4, 0, 0, 0),
+        Padding = new Padding(0),
+    };
+    private readonly FlowLayoutPanel _secondaryButtons = new()
+    {
+        Dock = DockStyle.Fill,
+        FlowDirection = FlowDirection.LeftToRight,
+        WrapContents = false,
+        BackColor = Color.Transparent,
+        Margin = new Padding(-4, 0, 0, 0),
+        Padding = new Padding(0),
+    };
+    private readonly Button _start = new()
+    {
+        Text = "Запустить Hermes",
+        Width = 148,
+        Height = 40,
+        Enabled = false,
+        AccessibleName = "Запустить Hermes",
+    };
+    private readonly Button _stop = new()
+    {
+        Text = "Остановить",
+        Width = 112,
+        Height = 40,
+        Enabled = false,
+        AccessibleName = "Остановить Hermes",
+    };
+    private readonly Button _open = new()
+    {
+        Text = "Открыть Hermes",
+        Width = 132,
+        Height = 40,
+        Enabled = false,
+        AccessibleName = "Открыть Hermes",
+    };
+    private readonly Button _refresh = new()
+    {
+        Text = "Обновить проверку",
+        Width = 150,
+        Height = 40,
+        AccessibleName = "Обновить проверку",
+    };
+    private readonly Button _detailsToggle = new()
+    {
+        Text = "Диагностика и логи",
+        Width = 154,
+        Height = 40,
+        AccessibleName = "Показать диагностику и логи",
+    };
+    private readonly Label _lastLaunch = new()
+    {
+        Text = "Последний запуск: ещё не выполнялся",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleRight,
+        Font = new Font("Segoe UI", 8.5F),
+        ForeColor = MutedText,
+        AutoEllipsis = true,
+        Margin = new Padding(12, 0, 0, 0),
+    };
+    private readonly Panel _detailsPanel = new()
+    {
+        Dock = DockStyle.Fill,
+        BackColor = Color.FromArgb(11, 21, 37),
+        Padding = new Padding(12, 8, 12, 10),
+        Visible = false,
+        Margin = new Padding(0),
+    };
+    private readonly Label _detailsTitle = new()
+    {
+        Text = "Технический слой — raw logs и diagnostics",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+        ForeColor = Color.FromArgb(164, 190, 225),
+    };
     private readonly TextBox _status = new()
     {
         Dock = DockStyle.Fill,
         Multiline = true,
         ReadOnly = true,
         ScrollBars = ScrollBars.Vertical,
-        Font = new Font(FontFamily.GenericMonospace, 9),
+        BackColor = Color.FromArgb(7, 14, 25),
+        ForeColor = Color.FromArgb(174, 190, 213),
+        BorderStyle = BorderStyle.FixedSingle,
+        Font = new Font("Cascadia Mono", 8.5F),
+        Margin = new Padding(0),
     };
-    private readonly Label _lastLaunch = new()
-    {
-        Text = "Последний запуск: ещё не выполнялся",
-        Dock = DockStyle.Top,
-        Height = 30,
-        TextAlign = ContentAlignment.MiddleLeft,
-        Padding = new Padding(8, 0, 8, 0),
-    };
+    private readonly Dictionary<string, ProfileCard> _profileCards = new(StringComparer.OrdinalIgnoreCase);
     private LauncherConfig? _config;
+    private LauncherProfile? _selectedProfile;
+    private ValidatedProfile? _validatedProfile;
     private Process? _launcherProcess;
+    private long _validationGeneration;
+    private bool _detailsVisible;
+    private bool _ready;
 
     public MainForm()
+        : this(null, loadConfigOnLoad: true)
     {
-        Text = "Hermes Finance";
-        MinimumSize = new Size(620, 460);
-        StartPosition = FormStartPosition.CenterScreen;
-        TrySetApplicationIcon();
-        Controls.Add(_status);
-        Controls.Add(_lastLaunch);
-        Controls.Add(_stop);
-        Controls.Add(_start);
-        Controls.Add(_profiles);
-        _start.Click += async (_, _) => await StartSelectedAsync();
-        _stop.Click += (_, _) => StopLaunchedStack("Hermes Finance stopped by owner.");
-        Load += (_, _) => LoadConfig();
     }
 
-    private void LoadConfig()
+    internal MainForm(LauncherConfig config)
+        : this(config, loadConfigOnLoad: false)
+    {
+    }
+
+    private MainForm(LauncherConfig? config, bool loadConfigOnLoad)
+    {
+        Text = "Hermes Finance — Launcher";
+        MinimumSize = new Size(780, 600);
+        ClientSize = new Size(960, 660);
+        StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleMode = AutoScaleMode.Font;
+        BackColor = WindowBackground;
+        ForeColor = PrimaryText;
+        KeyPreview = true;
+        TrySetApplicationIcon();
+        BuildUi();
+
+        if (config is not null)
+        {
+            _config = config;
+            BindProfiles(runInitialPreflight: false);
+        }
+
+        if (loadConfigOnLoad)
+        {
+            Load += async (_, _) => await LoadConfigAsync();
+        }
+    }
+
+    internal static MainForm CreateSyntheticSmoke()
+    {
+        var stableCheckout = @"C:\synthetic\hermes-stable";
+        var previewCheckout = @"C:\synthetic\hermes-preview";
+        var stableData = Path.Combine(stableCheckout, "data");
+        var previewData = Path.Combine(previewCheckout, "data");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction
+            {
+                Checkout = stableCheckout,
+                DataDir = stableData,
+                Database = Path.Combine(stableData, "finance.db"),
+            },
+            Profiles =
+            [
+                new LauncherProfile
+                {
+                    Id = "stable",
+                    DisplayName = "Hermes Finance — Stable",
+                    Type = "stable",
+                    Checkout = stableCheckout,
+                    ExpectedRef = "refs/tags/v0.7.0",
+                    DataDir = stableData,
+                    Database = Path.Combine(stableData, "finance.db"),
+                    OpenBrowser = false,
+                },
+                new LauncherProfile
+                {
+                    Id = "preview-0.7",
+                    DisplayName = "0.7 Preview",
+                    Type = "preview",
+                    Checkout = previewCheckout,
+                    ExpectedRef = "refs/heads/preview-0.7",
+                    DataDir = previewData,
+                    Database = Path.Combine(previewData, "finance.db"),
+                    OpenBrowser = false,
+                },
+            ],
+        };
+        var form = new MainForm(config);
+        form.ApplySyntheticSmokePresentation();
+        return form;
+    }
+
+    private void BuildUi()
+    {
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+
+        _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148));
+        _header.Controls.Add(_brand, 0, 0);
+        _header.Controls.Add(_title, 0, 1);
+        _header.Controls.Add(_subtitle, 0, 2);
+        _header.Controls.Add(_localPill, 1, 0);
+        _header.SetRowSpan(_localPill, 3);
+
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var selectedHeader = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+        RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+        };
+        selectedHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        selectedHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        selectedHeader.Controls.Add(_selectedName, 0, 0);
+        selectedHeader.Controls.Add(_selectedType, 1, 0);
+        _selectedLayout.Controls.Add(selectedHeader, 0, 0);
+
+        BuildReadinessPanel();
+        _selectedLayout.Controls.Add(_readinessPanel, 0, 1);
+        BuildChecks();
+        _selectedLayout.Controls.Add(_checks, 0, 2);
+        _selectedPanel.Controls.Add(_selectedLayout);
+
+        _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270));
+        _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        _actions.Controls.Add(_actionButtons, 0, 0);
+        _actions.Controls.Add(_secondaryButtons, 0, 1);
+        _actions.Controls.Add(_lastLaunch, 1, 0);
+        _actions.SetRowSpan(_lastLaunch, 2);
+        StyleButton(_start, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 0);
+        StyleButton(_stop, Color.FromArgb(255, 125, 139), Color.FromArgb(49, 22, 34), 1);
+        StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 2);
+        StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 3);
+        StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 4);
+        _actionButtons.Controls.Add(_start);
+        _actionButtons.Controls.Add(_stop);
+        _actionButtons.Controls.Add(_open);
+        _secondaryButtons.Controls.Add(_refresh);
+        _secondaryButtons.Controls.Add(_detailsToggle);
+
+        var detailsLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+        };
+        detailsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
+        detailsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        detailsLayout.Controls.Add(_detailsTitle, 0, 0);
+        detailsLayout.Controls.Add(_status, 0, 1);
+        _detailsPanel.Controls.Add(detailsLayout);
+
+        _root.Controls.Add(_header, 0, 0);
+        _root.Controls.Add(_profilesCaption, 0, 1);
+        _root.Controls.Add(_profiles, 0, 2);
+        _root.Controls.Add(_selectedPanel, 0, 3);
+        _root.Controls.Add(_actions, 0, 4);
+        _root.Controls.Add(_detailsPanel, 0, 5);
+        Controls.Add(_root);
+
+        _start.Click += async (_, _) => await StartSelectedAsync();
+        _stop.Click += (_, _) => StopLaunchedStack("Hermes остановлен владельцем.");
+        _open.Click += (_, _) => OpenHermes();
+        _refresh.Click += async (_, _) => await RefreshSelectedAsync();
+        _detailsToggle.Click += (_, _) => ToggleDetails();
+        _profiles.Resize += (_, _) => ResizeProfileCards();
+        Resize += (_, _) => ResizeProfileCards();
+    }
+
+    private void BuildReadinessPanel()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.Controls.Add(_readinessDot, 0, 0);
+        layout.SetRowSpan(_readinessDot, 2);
+        layout.Controls.Add(_readinessTitle, 1, 0);
+        layout.Controls.Add(_readinessDescription, 1, 1);
+        _readinessPanel.Controls.Add(layout);
+    }
+
+    private void BuildChecks()
+    {
+        _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 22));
+        _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        for (var row = 0; row < 4; row++)
+        {
+            _checks.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
+        }
+        AddCheckRow(0, "Code identity", _identityCheck);
+        AddCheckRow(1, "Data boundary", _dataCheck);
+        AddCheckRow(2, "Locked dependencies", _dependenciesCheck);
+        AddCheckRow(3, "Loopback service", _serviceCheck);
+    }
+
+    private void AddCheckRow(int row, string title, Label status)
+    {
+        var icon = new Label
+        {
+            Text = "●",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 7F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(102, 227, 190),
+            Margin = new Padding(0),
+        };
+        var label = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font("Segoe UI", 8.5F),
+            ForeColor = Color.FromArgb(193, 204, 220),
+            Margin = new Padding(0),
+        };
+        status.Dock = DockStyle.Fill;
+        status.TextAlign = ContentAlignment.MiddleRight;
+        status.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
+        status.ForeColor = MutedText;
+        status.AutoEllipsis = true;
+        status.Margin = new Padding(0);
+        _checks.Controls.Add(icon, 0, row);
+        _checks.Controls.Add(label, 1, row);
+        _checks.Controls.Add(status, 2, row);
+    }
+
+    private async Task LoadConfigAsync()
     {
         var configPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -54,16 +518,104 @@ public sealed class MainForm : Form
         {
             _config = LauncherConfig.Load(configPath);
             ProfileValidator.ValidateConfiguration(_config);
-            _profiles.DataSource = _config.Profiles;
-            _profiles.DisplayMember = nameof(LauncherProfile.DisplayName);
-            AppendStatus($"Loaded {configPath}");
-            AppendStatus("Select a configured profile, then click Запустить. No Git branch selection is available.");
-            AppendStatus("Start checks release/tag, DB/Alembic, and locked frontend/backend dependencies before boot.");
+            AppendDiagnostic($"Loaded launcher config: {configPath}");
+            AppendDiagnostic("Owner UI exposes configured profiles only; no Git branch selection is available.");
+            BindProfiles(runInitialPreflight: true);
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or JsonException)
         {
-            AppendStatus($"Launcher config is invalid: {exception.Message}");
-            _start.Enabled = false;
+            AppendDiagnostic($"Launcher config is invalid: {exception.Message}");
+            ShowConfigurationFailure();
+        }
+        await Task.CompletedTask;
+    }
+
+    private void BindProfiles(bool runInitialPreflight)
+    {
+        _profiles.SuspendLayout();
+        _profiles.Controls.Clear();
+        _profileCards.Clear();
+        foreach (var profile in _config?.Profiles ?? [])
+        {
+            var card = new ProfileCard(profile);
+            card.Selected += (_, _) => SelectProfile(profile, runPreflight: true);
+            _profileCards[profile.Id] = card;
+            _profiles.Controls.Add(card);
+        }
+        _profiles.ResumeLayout();
+        ResizeProfileCards();
+
+        var firstProfile = _config?.Profiles.FirstOrDefault();
+        if (firstProfile is not null)
+        {
+            SelectProfile(firstProfile, runInitialPreflight);
+        }
+        else
+        {
+            ShowConfigurationFailure();
+        }
+    }
+
+    private void SelectProfile(LauncherProfile profile, bool runPreflight)
+    {
+        if (_launcherProcess is not null && !_launcherProcess.HasExited)
+        {
+            return;
+        }
+
+        _selectedProfile = profile;
+        _validatedProfile = null;
+        _ready = false;
+        foreach (var card in _profileCards.Values)
+        {
+            card.SetSelected(ReferenceEquals(card.Profile, profile));
+        }
+        SetSelectedIdentity(profile);
+        SetReadiness(profile, LauncherReadinessState.NotChecked);
+        if (runPreflight)
+        {
+            _ = RunPreflightAsync(profile);
+        }
+    }
+
+    private async Task RefreshSelectedAsync()
+    {
+        if (_selectedProfile is null)
+        {
+            ShowConfigurationFailure();
+            return;
+        }
+        await RunPreflightAsync(_selectedProfile);
+    }
+
+    private async Task<ValidatedProfile?> RunPreflightAsync(LauncherProfile profile)
+    {
+        var generation = Interlocked.Increment(ref _validationGeneration);
+        SetReadiness(profile, LauncherReadinessState.Checking);
+        AppendDiagnostic($"Preflight started for profile '{profile.Id}'.");
+        try
+        {
+            var config = _config ?? throw new LauncherValidationException("Launcher config is not loaded.");
+            var validated = await Task.Run(() => ProfileValidator.Validate(config, profile));
+            if (!IsCurrentSelection(profile, generation))
+            {
+                return null;
+            }
+
+            _validatedProfile = validated;
+            AppendDiagnostic($"Release/tag check passed: {validated.Profile.ExpectedRef} -> {validated.Head}.");
+            AppendDiagnostic("DB/Alembic, data identity, loopback port, and runtime layout checks passed.");
+            AppendDiagnostic($"Dependency check: backend {validated.Dependencies?.BackendDetail}; frontend {validated.Dependencies?.FrontendDetail}.");
+            ApplyValidated(validated);
+            return validated;
+        }
+        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception or JsonException)
+        {
+            if (IsCurrentSelection(profile, generation))
+            {
+                ApplyBlocked(profile, exception);
+            }
+            return null;
         }
     }
 
@@ -71,70 +623,107 @@ public sealed class MainForm : Form
     {
         if (_launcherProcess is not null && !_launcherProcess.HasExited)
         {
-            AppendStatus("A Hermes startup process is already active. v1 permits one profile at a time.");
+            ShowTransientMessage("Hermes уже запускается или работает. В v1 одновременно разрешён только один профиль.");
             return;
         }
-        if (_config is null || _profiles.SelectedItem is not LauncherProfile profile)
+        if (_config is null || _selectedProfile is null)
         {
-            AppendStatus("Choose a configured profile first.");
+            ShowConfigurationFailure();
             return;
         }
 
+        var profile = _selectedProfile;
         _start.Enabled = false;
+        _refresh.Enabled = false;
+        _open.Enabled = false;
+        var validated = await RunPreflightAsync(profile);
+        if (validated is null)
+        {
+            _refresh.Enabled = true;
+            return;
+        }
+
         try
         {
-            AppendStatus($"Validating {profile.DisplayName}…");
-            var validated = await Task.Run(() => ProfileValidator.Validate(_config, profile));
-            AppendStatus($"Release/tag check: passed ({validated.Profile.ExpectedRef} → {validated.Head[..Math.Min(12, validated.Head.Length)]}).");
-            AppendStatus("DB/Alembic check: passed (selected database is compatible with this checkout).");
-            AppendStatus($"Dependency check: backend {validated.Dependencies?.BackendDetail ?? "not checked"}; frontend {validated.Dependencies?.FrontendDetail ?? "not checked"}.");
             if (validated.Dependencies?.RequiresPreparation == true)
             {
-                AppendStatus("Preparing only the missing or stale locked dependencies; repeat launches skip this step when they are ready…");
+                SetReadiness(profile, LauncherReadinessState.Starting, "Готовим только locked-зависимости выбранного профиля…");
+                AppendDiagnostic("Preparing only missing or stale locked dependencies; repeat launches skip ready environments.");
                 await PrepareDependenciesAsync(validated.Checkout);
-                validated = await Task.Run(() => ProfileValidator.Validate(_config, profile));
-                AppendStatus($"Dependency check after preparation: backend {validated.Dependencies?.BackendDetail}; frontend {validated.Dependencies?.FrontendDetail}.");
+                validated = await RunPreflightAsync(profile)
+                    ?? throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after preparation.");
+                if (validated.Dependencies?.Ready != true)
+                {
+                    throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after preparation.");
+                }
             }
 
-            if (validated.Dependencies?.Ready == false)
+            if (validated.Dependencies?.Ready != true)
             {
-                throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after preparation.");
+                throw new LauncherValidationException("Locked frontend/backend dependencies are not ready.");
             }
 
-            AppendStatus("Starting existing guarded startup and waiting for its health probes…");
+            SetReadiness(profile, LauncherReadinessState.Starting);
+            AppendDiagnostic("Starting selected checkout's existing guarded startup and waiting for health probes.");
             SetLastLaunchStatus($"Последний запуск: стартует {profile.DisplayName}");
             StartProcess(validated);
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
         {
-            AppendStatus($"Start blocked: {exception.Message}");
-            SetLastLaunchStatus($"Последний запуск: заблокирован — {exception.Message}");
-            _start.Enabled = true;
-            _stop.Enabled = false;
+            ApplyBlocked(profile, exception, allowRetry: true);
+        }
+        finally
+        {
+            if (_launcherProcess is null || _launcherProcess.HasExited)
+            {
+                _refresh.Enabled = true;
+            }
         }
     }
 
     private void StartProcess(ValidatedProfile profile)
     {
-        var process = new Process { StartInfo = ProfileValidator.BuildStartCommand(profile), EnableRaisingEvents = true };
+        var process = new Process
+        {
+            StartInfo = ProfileValidator.BuildStartCommand(profile),
+            EnableRaisingEvents = true,
+        };
         _launcherProcess = process;
         process.OutputDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
         process.ErrorDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
-        process.Exited += (_, _) => BeginInvoke(() =>
+        process.Exited += (_, _) => PostToUi(() =>
         {
-            AppendStatus($"Guarded startup exited with code {process.ExitCode}. See details above.");
-            SetLastLaunchStatus($"Последний запуск: завершён с кодом {process.ExitCode}");
+            AppendDiagnostic($"Guarded startup exited with code {process.ExitCode}.");
             if (ReferenceEquals(_launcherProcess, process))
             {
                 _launcherProcess = null;
             }
             _stop.Enabled = false;
+            _open.Enabled = false;
+            _profiles.Enabled = true;
+            _refresh.Enabled = true;
+            _ready = false;
+            var state = process.ExitCode == 0 ? LauncherReadinessState.Stopped : LauncherReadinessState.Blocked;
+            SetReadiness(profile.Profile, state, process.ExitCode == 0
+                ? LauncherUi.ReadinessDescription(LauncherReadinessState.Stopped)
+                : "Hermes завершился до подтверждения готовности. Откройте «Диагностика и логи».");
+            SetLastLaunchStatus($"Последний запуск: завершён с кодом {process.ExitCode}");
             _start.Enabled = true;
         });
-        process.Start();
-        _stop.Enabled = true;
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+        try
+        {
+            process.Start();
+            _stop.Enabled = true;
+            _profiles.Enabled = false;
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+        }
+        catch
+        {
+            _launcherProcess = null;
+            process.Dispose();
+            throw;
+        }
     }
 
     internal static bool TryCompleteReady(
@@ -161,32 +750,64 @@ public sealed class MainForm : Form
         {
             return;
         }
-        BeginInvoke(() =>
+        PostToUi(() =>
         {
-            if (line.Contains(ReadyMarker, StringComparison.Ordinal))
+            AppendDiagnostic(line);
+            if (!line.Contains(ReadyMarker, StringComparison.Ordinal))
             {
-                if (!TryCompleteReady(
-                        profile,
-                        StopLaunchedStack,
-                        message => AppendStatus(message)))
-                {
-                    _start.Enabled = true;
-                    _stop.Enabled = false;
-                    return;
-                }
-                AppendStatus(line);
-                AppendStatus("Health checks passed. Hermes Finance is ready on loopback. Click Остановить to stop this profile.");
-                SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
-                if (profile.Profile.OpenBrowser)
-                {
-                    Process.Start(new ProcessStartInfo("http://127.0.0.1:8000") { UseShellExecute = true });
-                }
-
                 return;
             }
 
-            AppendStatus(line);
+            if (!TryCompleteReady(
+                    profile,
+                    StopLaunchedStack,
+                    message => AppendDiagnostic(message)))
+            {
+                _ready = false;
+                _profiles.Enabled = true;
+                _open.Enabled = false;
+                _start.Enabled = true;
+                SetReadiness(
+                    profile.Profile,
+                    LauncherReadinessState.Blocked,
+                    "Identity данных не удалось подтвердить. Исправьте права или sidecar и повторите запуск.");
+                SetLastLaunchStatus("Последний запуск: заблокирован");
+                return;
+            }
+
+            _ready = true;
+            _profiles.Enabled = false;
+            _start.Enabled = false;
+            _stop.Enabled = true;
+            _open.Enabled = true;
+            SetReadiness(profile.Profile, LauncherReadinessState.Running);
+            SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
+            AppendDiagnostic("Health checks passed. Hermes Finance is ready on loopback.");
+            if (profile.Profile.OpenBrowser)
+            {
+                OpenHermes();
+            }
         });
+    }
+
+    private void OpenHermes()
+    {
+        if (!_ready || _launcherProcess is null || _launcherProcess.HasExited)
+        {
+            ShowTransientMessage("Открыть Hermes можно после успешных health probes.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(ReadyUrl) { UseShellExecute = true });
+            AppendDiagnostic($"Opened {ReadyUrl}.");
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            AppendDiagnostic($"Could not open Hermes in the browser: {exception.Message}");
+            ShowTransientMessage("Не удалось открыть браузер. Сервис всё ещё доступен локально после успешной проверки.");
+        }
     }
 
     private void StopLaunchedStack() =>
@@ -198,6 +819,8 @@ public sealed class MainForm : Form
         if (process is null || process.HasExited)
         {
             _stop.Enabled = false;
+            _profiles.Enabled = true;
+            _open.Enabled = false;
             return;
         }
 
@@ -206,20 +829,203 @@ public sealed class MainForm : Form
         {
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
-            AppendStatus(successMessage);
+            AppendDiagnostic(successMessage);
             SetLastLaunchStatus("Последний запуск: остановлен");
+            _ready = false;
+            _open.Enabled = false;
+            _profiles.Enabled = true;
+            _start.Enabled = true;
+            _refresh.Enabled = true;
+            SetReadiness(_selectedProfile, LauncherReadinessState.Stopped);
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
-            AppendStatus($"BLOCKING ERROR: could not stop the launched stack automatically. {exception.Message}");
+            AppendDiagnostic($"BLOCKING ERROR: could not stop the launched stack automatically. {exception.Message}");
             if (!process.HasExited)
             {
                 _stop.Enabled = true;
             }
+            ShowTransientMessage("Не удалось автоматически остановить Hermes. См. «Диагностика и логи».");
         }
     }
 
-    private void AppendStatus(string message) => _status.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    private void ApplyValidated(ValidatedProfile validated)
+    {
+        var state = validated.Dependencies?.RequiresPreparation == true
+            ? LauncherReadinessState.NeedsPreparation
+            : LauncherReadinessState.Ready;
+        SetReadiness(validated.Profile, state);
+        SetCheck(_identityCheck, "Проверено", true);
+        SetCheck(_dataCheck, LauncherUi.DataBoundary(validated.Profile.Type), true);
+        SetCheck(
+            _dependenciesCheck,
+            validated.Dependencies?.Ready == true ? "Готовы" : "Подготовим при запуске",
+            validated.Dependencies?.Ready == true);
+        SetCheck(_serviceCheck, "Порт свободен", true);
+        _start.Text = state == LauncherReadinessState.NeedsPreparation
+            ? "Подготовить и запустить"
+            : "Запустить Hermes";
+        _start.Enabled = true;
+        _open.Enabled = false;
+        _refresh.Enabled = true;
+        _ready = false;
+    }
+
+    private void ApplyBlocked(LauncherProfile profile, Exception exception, bool allowRetry = false)
+    {
+        AppendDiagnostic($"Start blocked for profile '{profile.Id}': {exception.Message}");
+        _validatedProfile = null;
+        _ready = false;
+        SetReadiness(
+            profile,
+            LauncherReadinessState.Blocked,
+            LauncherUi.OwnerFacingFailure(exception.Message) + "  Откройте «Диагностика и логи» при необходимости.");
+        SetAllChecks("Не подтверждено", false);
+        _start.Text = "Запустить Hermes";
+        _start.Enabled = allowRetry;
+        _stop.Enabled = false;
+        _open.Enabled = false;
+        _refresh.Enabled = true;
+        _profiles.Enabled = true;
+        SetLastLaunchStatus("Последний запуск: заблокирован");
+    }
+
+    private void ShowConfigurationFailure()
+    {
+        _selectedProfile = null;
+        _validatedProfile = null;
+        _start.Enabled = false;
+        _stop.Enabled = false;
+        _open.Enabled = false;
+        _refresh.Enabled = true;
+        _profiles.Enabled = false;
+        _selectedName.Text = "Профили недоступны";
+        _selectedType.Text = "CONFIGURATION";
+        _selectedType.ForeColor = MutedText;
+        _readinessDot.ForeColor = LauncherUi.StatusColor(LauncherReadinessState.Blocked);
+        _readinessTitle.Text = "Запуск заблокирован";
+        _readinessDescription.Text = "Конфигурация launcher невалидна. Откройте «Диагностика и логи» после проверки локальной настройки.";
+        SetAllChecks("Не подтверждено", false);
+        SetLastLaunchStatus("Последний запуск: заблокирован");
+    }
+
+    private void SetSelectedIdentity(LauncherProfile profile)
+    {
+        _selectedName.Text = profile.DisplayName;
+        _selectedType.Text = $"{LauncherUi.TypeBadge(profile.Type)}  /  {LauncherUi.DataBoundary(profile.Type)}";
+        _selectedType.ForeColor = LauncherUi.AccentFor(profile.Type);
+    }
+
+    private void SetReadiness(LauncherProfile? profile, LauncherReadinessState state, string? description = null)
+    {
+        if (profile is not null && _profileCards.TryGetValue(profile.Id, out var card))
+        {
+            card.SetState(state);
+        }
+        if (!ReferenceEquals(profile, _selectedProfile) && profile is not null)
+        {
+            return;
+        }
+
+        if (profile is not null)
+        {
+            SetSelectedIdentity(profile);
+        }
+        _readinessDot.ForeColor = LauncherUi.StatusColor(state);
+        _readinessTitle.Text = LauncherUi.ReadinessTitle(state);
+        _readinessDescription.Text = description ?? LauncherUi.ReadinessDescription(state);
+        _readinessPanel.BackColor = state == LauncherReadinessState.Blocked
+            ? Color.FromArgb(49, 27, 43)
+            : Color.FromArgb(21, 35, 57);
+        _readinessDot.AccessibleName = LauncherUi.ReadinessLabel(state);
+    }
+
+    private void SetAllChecks(string text, bool passed)
+    {
+        SetCheck(_identityCheck, text, passed);
+        SetCheck(_dataCheck, text, passed);
+        SetCheck(_dependenciesCheck, text, passed);
+        SetCheck(_serviceCheck, text, passed);
+    }
+
+    private static void SetCheck(Label label, string text, bool passed)
+    {
+        label.Text = text;
+        label.ForeColor = passed
+            ? Color.FromArgb(102, 227, 190)
+            : Color.FromArgb(255, 125, 139);
+    }
+
+    private void ResizeProfileCards()
+    {
+        if (_profileCards.Count == 0 || _profiles.ClientSize.Width <= 0)
+        {
+            return;
+        }
+        var available = Math.Max(540, _profiles.ClientSize.Width - 18);
+        var width = Math.Max(260, (available - ((_profileCards.Count - 1) * 12)) / _profileCards.Count);
+        foreach (var card in _profileCards.Values)
+        {
+            card.Width = width;
+        }
+    }
+
+    private void ToggleDetails()
+    {
+        _detailsVisible = !_detailsVisible;
+        _detailsPanel.Visible = _detailsVisible;
+        _root.RowStyles[5] = new RowStyle(SizeType.Absolute, _detailsVisible ? 184 : 0);
+        _detailsToggle.Text = _detailsVisible ? "Скрыть диагностику" : "Диагностика и логи";
+        _detailsToggle.AccessibleName = _detailsVisible ? "Скрыть диагностику и логи" : "Показать диагностику и логи";
+        if (_detailsVisible)
+        {
+            _status.SelectionStart = _status.TextLength;
+            _status.ScrollToCaret();
+        }
+    }
+
+    private void ApplySyntheticSmokePresentation()
+    {
+        var stable = _config?.Profiles.FirstOrDefault(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        var preview = _config?.Profiles.FirstOrDefault(profile => profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase));
+        if (stable is null || preview is null)
+        {
+            return;
+        }
+
+        _selectedProfile = stable;
+        SetSelectedIdentity(stable);
+        SetReadiness(stable, LauncherReadinessState.Ready, "Synthetic smoke: Stable готов к запуску с canonical production data.");
+        SetCheck(_identityCheck, "Проверено", true);
+        SetCheck(_dataCheck, "Canonical production data", true);
+        SetCheck(_dependenciesCheck, "Готовы", true);
+        SetCheck(_serviceCheck, "Порт свободен", true);
+        _start.Text = "Запустить Hermes";
+        _start.Enabled = true;
+        _refresh.Enabled = true;
+        _profiles.Enabled = true;
+        if (_profileCards.TryGetValue(preview.Id, out var previewCard))
+        {
+            previewCard.SetState(LauncherReadinessState.Blocked);
+            previewCard.AccessibleDescription = "0.7 Preview: blocked — synthetic data identity requires confirmation";
+        }
+        AppendDiagnostic("Synthetic UI smoke: no runtime or owner data was loaded.");
+    }
+
+    private void ShowTransientMessage(string message)
+    {
+        _readinessDescription.Text = message;
+        AppendDiagnostic(message);
+    }
+
+    private void AppendDiagnostic(string message)
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+        _status.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
 
     private async Task PrepareDependenciesAsync(string checkout)
     {
@@ -239,11 +1045,11 @@ public sealed class MainForm : Form
         var error = await errorTask;
         foreach (var line in output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
         {
-            AppendStatus($"deps: {line}");
+            AppendDiagnostic($"deps: {line}");
         }
         foreach (var line in error.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
         {
-            AppendStatus($"deps error: {line}");
+            AppendDiagnostic($"deps error: {line}");
         }
         if (process.ExitCode != 0)
         {
@@ -251,7 +1057,62 @@ public sealed class MainForm : Form
         }
     }
 
-    private void SetLastLaunchStatus(string message) => _lastLaunch.Text = message;
+    private void SetLastLaunchStatus(string message) =>
+        _lastLaunch.Text = $"{message}  ·  {DateTime.Now:HH:mm}";
+
+    private bool IsCurrentSelection(LauncherProfile profile, long generation) =>
+        ReferenceEquals(profile, _selectedProfile) && generation == Interlocked.Read(ref _validationGeneration);
+
+    private void PostToUi(Action action)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return;
+        }
+        try
+        {
+            BeginInvoke(action);
+        }
+        catch (InvalidOperationException)
+        {
+            // The form may be closing while the guarded process is draining output.
+        }
+    }
+
+    private void StyleButton(Button button, Color border, Color background, int tabIndex)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderColor = border;
+        button.BackColor = background;
+        button.ForeColor = PrimaryText;
+        button.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
+        button.Margin = new Padding(4, 4, 4, 4);
+        button.TabIndex = tabIndex;
+        button.UseVisualStyleBackColor = false;
+        button.Cursor = Cursors.Hand;
+        button.EnabledChanged += (_, _) =>
+        {
+            button.ForeColor = button.Enabled ? PrimaryText : Color.FromArgb(126, 138, 158);
+            button.BackColor = button.Enabled ? background : Color.FromArgb(20, 29, 44);
+        };
+        button.Paint += (_, eventArgs) =>
+        {
+            if (button.Enabled)
+            {
+                return;
+            }
+            TextRenderer.DrawText(
+                eventArgs.Graphics,
+                button.Text,
+                button.Font,
+                button.ClientRectangle,
+                Color.FromArgb(126, 138, 158),
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        };
+        button.ForeColor = button.Enabled ? PrimaryText : Color.FromArgb(126, 138, 158);
+        button.BackColor = button.Enabled ? background : Color.FromArgb(20, 29, 44);
+    }
 
     private void TrySetApplicationIcon()
     {
@@ -264,7 +1125,7 @@ public sealed class MainForm : Form
         }
         catch (Exception exception) when (exception is IOException or ArgumentException)
         {
-            AppendStatus($"Application icon could not be loaded: {exception.Message}");
+            AppendDiagnostic($"Application icon could not be loaded: {exception.Message}");
         }
     }
 }

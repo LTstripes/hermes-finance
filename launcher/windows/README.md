@@ -34,11 +34,13 @@ For an owner UAT copy, follow ADR 0014 §7: create/select a production backup by
 
 ## Normal owner use
 
-For an already prepared Stable runtime, normal use is entirely through the packaged executable: open `HermesFinance.Launcher.exe` (or a Windows shortcut to it), select `Hermes Finance — Stable`, and click `Запустить`. No Git command or branch switching is part of normal Stable use. The launcher validates the configured checkout/data tuple and starts only that prepared runtime.
+For an already prepared Stable runtime, normal use is entirely through the packaged executable: open `HermesFinance.Launcher.exe` (or a Windows shortcut to it), select the green `STABLE · PRODUCTION` card, and click `Запустить Hermes`. Preview is shown as a visually separate violet `PREVIEW · ISOLATED` card with its own data-boundary label. No Git command or branch switching is part of normal use. The launcher validates the configured checkout/data tuple and starts only that prepared runtime.
 
-Before startup the window records separate release/tag, DB/Alembic and frontend/backend dependency checks. If either locked dependency environment is missing or stale, the launcher runs the bundled preparation helper once (`uv sync --locked`, `npm ci`), verifies the result, and only then starts the guarded script. A repeat launch runs read-only checks and does not reinstall ready dependencies.
+The owner-facing view shows readiness, profile identity, data boundary and four concise checks: code identity, data boundary, locked dependencies and loopback service. Selecting a profile or clicking `Обновить проверку` runs the read-only preflight before startup. If either locked dependency environment is missing or stale, the primary action becomes `Подготовить и запустить`; the launcher runs the bundled preparation helper once (`uv sync --locked`, `npm ci`), verifies the result, and only then starts the guarded script. A repeat launch runs read-only checks and does not reinstall ready dependencies.
 
-While a profile is running, `Остановить` terminates the launched guarded startup process and its child process tree. `Запустить` becomes available again after the process exits. Preview development may still require an integrator to move the Preview checkout to a newly accepted commit; the launcher deliberately never performs Git updates itself.
+`Открыть Hermes` is enabled only after the existing health probes emit the ready marker. While a profile is running, `Остановить` terminates the launched guarded startup process and its child process tree. `Запустить Hermes` becomes available again after the process exits. Preview development may still require an integrator to move the Preview checkout to a newly accepted commit; the launcher deliberately never performs Git updates itself.
+
+The primary view never displays raw filesystem paths or process diagnostics. `Диагностика и логи` opens a separate technical layer for troubleshooting; it is opt-in and does not change preflight or startup behavior.
 
 ## Preconditions and failure handling
 
@@ -49,3 +51,13 @@ After a successful preflight it invokes only the selected checkout's existing gu
 ## Explicit Stable upgrade lifecycle
 
 The launcher does not choose a release, pull Git or switch a checkout. For a Stable upgrade, the owner/integrator must first create a backup, stop Hermes, prepare the independent released checkout at its immutable expected tag, then run `install.ps1` from that prepared checkout if the packaged launcher itself needs updating. On the next Stable start, the launcher validates the exact tag, checks the selected database read-only, prepares only missing/stale locked dependencies, and lets the existing guarded startup perform its normal Alembic upgrade against that same validated Stable database. Preview data is never read or copied by this lifecycle.
+
+## Synthetic UI smoke
+
+The safety harness includes a synthetic-only visual mode. It loads no checkout, database, `.env`, sidecar or owner data:
+
+```powershell
+dotnet run --project .\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release -- --synthetic-ui-smoke
+```
+
+Use it to inspect the Stable-ready, Preview-blocked and opt-in diagnostics states on Windows, then close the window normally.
