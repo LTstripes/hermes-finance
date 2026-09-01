@@ -213,7 +213,13 @@ export function MonthlyCloseStepSummary({
   step: GuidedCloseStep;
   compact?: boolean;
 }) {
-  if (step.id !== "alfa_baseline" && step.id !== "broker_reconciliation") return null;
+  if (
+    step.id !== "alfa_baseline" &&
+    step.id !== "actual_payouts" &&
+    step.id !== "broker_reconciliation"
+  ) {
+    return null;
+  }
 
   if (step.id === "broker_reconciliation") {
     return (
@@ -224,6 +230,40 @@ export function MonthlyCloseStepSummary({
         <span>
           Проверка запускается отдельной кнопкой и не сохраняется в этом экране. После перезапуска
           её нужно запросить снова.
+        </span>
+      </div>
+    );
+  }
+
+  if (step.id === "actual_payouts") {
+    const available = step.evidence_summary.available === true;
+    if (!available) {
+      return (
+        <div
+          className={`monthly-close__step-summary${compact ? " monthly-close__step-summary--compact" : ""}`}
+        >
+          <Badge tone="info">Нужно действие</Badge>
+          <span>{step.why}</span>
+        </div>
+      );
+    }
+
+    const selectedCount = evidenceCount(step, "selected_count");
+    const matchingCount = evidenceCount(step, "matching_count");
+    const staleCount = evidenceCount(step, "stale_count");
+    const retractedCount = evidenceCount(step, "retracted_count");
+    const attentionCount = staleCount + retractedCount;
+    return (
+      <div
+        className={`monthly-close__step-summary${compact ? " monthly-close__step-summary--compact" : ""}`}
+      >
+        <Badge tone={attentionCount > 0 ? "stale" : "ok"}>
+          {attentionCount > 0 ? "Нужно обновить" : "Сохранено"}
+        </Badge>
+        <span>
+          Выплат сохранено: {selectedCount} · совпадают: {matchingCount} · требуют внимания:{" "}
+          {staleCount} · отменены: {retractedCount}. Это выборочные данные PDF, не полный охват
+          провайдера.
         </span>
       </div>
     );

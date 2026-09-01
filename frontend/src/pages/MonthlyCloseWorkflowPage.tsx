@@ -1,11 +1,15 @@
-import { useEffect } from "react";
-import { Link, useParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
 import { routeForGuidedAction } from "../components/month-close/navigation";
 import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
+import {
+  parseAlfaStatementTransientOutcome,
+  type AlfaStatementTransientOutcome,
+} from "../components/month-close/statementOutcome";
 import { Badge, EmptyState, ErrorState, LoadingState, Panel } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
@@ -29,9 +33,24 @@ function stateTone(state: keyof typeof STATE_LABELS) {
 
 export function MonthlyCloseWorkflowPage() {
   const params = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const parsedMonthId = Number(params.monthId);
   const monthId = Number.isInteger(parsedMonthId) && parsedMonthId > 0 ? parsedMonthId : null;
   const workflowQuery = useMonthCloseWorkflow(monthId);
+  const [statementOutcome] = useState<AlfaStatementTransientOutcome | null>(() =>
+    parseAlfaStatementTransientOutcome(
+      (location.state as { alfaStatementOutcome?: unknown } | null)?.alfaStatementOutcome,
+    ),
+  );
+
+  useEffect(() => {
+    if (!statementOutcome) return;
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    });
+  }, [location.hash, location.pathname, location.search, navigate, statementOutcome]);
 
   useEffect(() => {
     function refetchOnFocus() {
@@ -95,6 +114,19 @@ export function MonthlyCloseWorkflowPage() {
           запускаются, прогресс в браузере не сохраняется.
         </p>
       </header>
+
+      {statementOutcome ? (
+        <div className="statement-import__wizard-outcome" role="status">
+          <div>
+            <strong>Результат проверки PDF Alfa</strong>
+            <p>
+              {statementOutcome.kind === "applied"
+                ? `Применено выбранных строк: ${statementOutcome.selectedCount}. Состояние шага подтверждается сохранёнными данными.`
+                : "В этом PDF подходящих выплат не найдено. Это только текущий результат проверки; шаг остаётся доступным для повторного запроса."}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {recommended ? (
         <Panel className="monthly-close__current" label="Сейчас" title={recommended.title}>

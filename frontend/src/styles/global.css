@@ -550,6 +550,30 @@ a.btn {
   margin: 18px 0;
 }
 
+.statement-import__wizard-outcome,
+.monthly-close__statement-context {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.statement-import__wizard-outcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.statement-import__wizard-outcome p,
+.monthly-close__statement-context p {
+  margin: 6px 0 0;
+}
+
+.monthly-close__statement-context {
+  padding: 18px;
+}
+
 .statement-import__mapping {
   margin: 20px 0;
 }
