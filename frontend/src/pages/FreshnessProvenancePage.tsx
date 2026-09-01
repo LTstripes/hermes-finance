@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { formatApiError } from "../api/client";
+import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
+import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
 import { getFreshnessProvenance } from "../api/freshnessProvenance";
 import { listMonths } from "../api/months";
 import type {
@@ -60,6 +62,8 @@ function clockValue(item: FreshnessItem): string {
 }
 
 export function FreshnessProvenancePage() {
+  const closeContext = parseMonthlyCloseReturnContext(new URLSearchParams(window.location.search));
+  const requestedMonthId = closeContext?.monthId ?? null;
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [selectedMonthId, setSelectedMonthId] = useState<number | null>(null);
   const [summary, setSummary] = useState<FreshnessProvenanceSummary | null>(null);
@@ -76,11 +80,14 @@ export function FreshnessProvenancePage() {
         if (controller.signal.aborted) return;
         const sorted = sortMonths(rows);
         setMonths(sorted);
-        setSelectedMonthId((previous) =>
-          previous != null && sorted.some((month) => month.id === previous)
+        setSelectedMonthId((previous) => {
+          if (requestedMonthId && sorted.some((month) => month.id === requestedMonthId)) {
+            return requestedMonthId;
+          }
+          return previous != null && sorted.some((month) => month.id === previous)
             ? previous
-            : (sorted[0]?.id ?? null),
-        );
+            : (sorted[0]?.id ?? null);
+        });
         setMonthsError(null);
       })
       .catch((error: unknown) => {
@@ -94,7 +101,7 @@ export function FreshnessProvenancePage() {
         if (!controller.signal.aborted) setMonthsLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [requestedMonthId]);
 
   useEffect(() => {
     if (selectedMonthId == null) {
@@ -130,6 +137,7 @@ export function FreshnessProvenancePage() {
 
   return (
     <section className="stack-18">
+      <MonthlyCloseReturnBar />
       <header className="page-header">
         <p className="eyebrow">Обзор</p>
         <h1>Актуальность данных</h1>

@@ -1732,6 +1732,96 @@ th.num {
   min-width: 0;
 }
 
+.monthly-close {
+  max-width: 900px;
+}
+
+.monthly-close__meta,
+.monthly-close__primary-row,
+.monthly-close__footer-actions,
+.monthly-close-return {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.monthly-close__month-list,
+.monthly-close__steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monthly-close__month-link,
+.monthly-close__step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: inherit;
+  text-decoration: none;
+  background: var(--surface);
+}
+
+.monthly-close__month-link:hover {
+  border-color: var(--accent);
+}
+
+.monthly-close__month-link span,
+.monthly-close__step > div {
+  display: grid;
+  gap: 4px;
+}
+
+.monthly-close__month-link small,
+.monthly-close__step p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.monthly-close__current {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.monthly-close__primary-row {
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.monthly-close__step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+}
+
+.monthly-close__step-order {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.monthly-close-return {
+  position: sticky;
+  z-index: 5;
+  top: 12px;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgb(17 24 20 / 8%);
+}
+
 .muted {
   color: var(--muted);
 }
