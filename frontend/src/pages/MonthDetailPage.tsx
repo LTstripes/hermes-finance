@@ -8,6 +8,7 @@ import { closeMonth, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
 import type { DashboardKpis, IncomeEntry, ReportingMonth } from "../api/types";
 import { MonthAssetsSection } from "../components/MonthAssetsSection";
+import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { MonthBudgetSection } from "../components/MonthBudgetSection";
 import { MonthNoteSection } from "../components/MonthNoteSection";
 import { MonthReviewSection } from "../components/MonthReviewSection";
@@ -360,6 +361,7 @@ export function MonthDetailPage() {
 
   return (
     <section className="month-workspace stack-18">
+      <MonthlyCloseReturnBar />
       <header className="page-header month-workspace__page-header">
         <p className="eyebrow">Месяц</p>
         <h1>{formatMonth(month.year, month.month)}</h1>

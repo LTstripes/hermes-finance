@@ -28,6 +28,7 @@ const NAV: NavGroup[] = [
   {
     section: "Учёт",
     items: [
+      { to: "/monthly-close", label: "Закрытие месяца", icon: "✓" },
       { to: "/months", label: "Месяцы", icon: "☰" },
       { to: "/accounts", label: "Счета и инструменты", icon: "⬡" },
     ],
