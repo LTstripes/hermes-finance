@@ -4,20 +4,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import { formatMoney } from "../lib/format";
 import { MonthlyCloseWorkflowPage } from "./MonthlyCloseWorkflowPage";
 
-function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthCloseWorkflow {
+function money(amount: string) {
+  return { amount, currency: "RUB" };
+}
+
+function workflow(
+  monthId: number,
+  status: "draft" | "closed" = "draft",
+  outlookMode: "known" | "none" = "known",
+): MonthCloseWorkflow {
+  const month = {
+    id: monthId,
+    year: 2025,
+    month: 4,
+    status,
+    snapshot_date: "2025-04-30",
+    source: "manual",
+  } as const;
   return {
     contract_version: "monthly_close_workflow_v1",
     generated_at: "2026-09-01T08:00:00Z",
-    month: {
-      id: monthId,
-      year: 2025,
-      month: 4,
-      status,
-      snapshot_date: "2025-04-30",
-      source: "manual",
-    },
+    month,
     recommended_step_id: status === "closed" ? "next_month_outlook" : "readiness",
     progress: { completed_or_skipped: 2, total_applicable: 8 },
     steps: [
@@ -36,7 +46,16 @@ function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthC
           label: status === "closed" ? "Открыть денежную лестницу" : "Открыть актуальность",
           target: "internal_route",
         },
-        secondary_actions: [],
+        secondary_actions:
+          status === "closed"
+            ? [
+                {
+                  id: "clone_next_month",
+                  label: "Создать следующий месяц",
+                  target: "internal_route",
+                },
+              ]
+            : [],
         completion_basis: null,
         evidence_scope: "none",
         evidence_version: null,
@@ -54,7 +73,37 @@ function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthC
       reason_codes: [],
     },
     final_review: { available: false, reason_code: "final_review_not_in_core" },
-    outlook: status === "closed" ? { available: false, reason_code: "unavailable" } : null,
+    outlook:
+      status === "closed"
+        ? {
+            available: true,
+            reason_code: null,
+            source_month: month,
+            next_month: {
+              year: 2025,
+              month: 5,
+              known_event_count: outlookMode === "known" ? 1 : 0,
+              has_known_events: outlookMode === "known",
+              passive_income: outlookMode === "known" ? money("1234.56") : null,
+              redemption_principal: outlookMode === "known" ? money("5000.00") : null,
+              total_cash_flow: outlookMode === "known" ? money("6234.56") : null,
+              deposit_interest_estimate: null,
+              items: [],
+            },
+            upcoming_14_days: {
+              days: 14,
+              from_date: "2025-05-01",
+              to_date: "2025-05-14",
+              passive_income: money("0.00"),
+              redemption_principal: money("0.00"),
+              total_cash_flow: money("0.00"),
+              items: [],
+            },
+            upcoming_30_days: null,
+            known_event_count: outlookMode === "known" ? 1 : 0,
+            evidence_version: "outlook-test-v1",
+          }
+        : null,
     links: { month: `/months/${monthId}`, close_readiness: "", freshness: "" },
   };
 }
@@ -90,6 +139,34 @@ function providerWorkflow(): MonthCloseWorkflow {
     recommended_step_id: "alfa_baseline",
     steps: [alfaStep, reconciliationStep],
   };
+}
+
+function readyForCloseWorkflow(monthId: number): MonthCloseWorkflow {
+  const base = workflow(monthId);
+  return {
+    ...base,
+    recommended_step_id: "final_review_close",
+    steps: [
+      {
+        ...base.steps[0],
+        id: "final_review_close",
+        order: 8,
+        title: "Подтвердить закрытие",
+        primary_action: {
+          id: "confirm_close",
+          label: "Закрыть месяц",
+          target: "confirm_close",
+        },
+      },
+    ],
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    headers: { "Content-Type": "application/json" },
+    status,
+  });
 }
 
 function renderRoute(entry: string) {
@@ -152,6 +229,88 @@ describe("MonthlyCloseWorkflowPage", () => {
     expect(screen.getByRole("link", { name: "Открыть денежную лестницу" })).toHaveAttribute(
       "href",
       "/payouts?from=monthly-close&step=next_month_outlook&monthId=8",
+    );
+    expect(screen.getByRole("link", { name: "Создать следующий месяц" })).toHaveAttribute(
+      "href",
+      "/months?from=monthly-close&step=next_month_outlook&monthId=8",
+    );
+    expect(screen.getByText("Пассивный доход").parentElement).toHaveTextContent(/1.234,56/);
+    expect(screen.getByText("Погашение · возврат капитала").parentElement).toHaveTextContent(
+      /5.000/,
+    );
+    expect(screen.getByText("outlook-test-v1")).toBeInTheDocument();
+  });
+
+  it("does not turn an outlook with no known events into measured zero", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(workflow(9, "closed", "none"))))),
+    );
+    renderRoute("/months/9/close");
+
+    expect(await screen.findByText("Утверждён")).toBeInTheDocument();
+    expect(screen.getAllByText("Нет известных событий").length).toBeGreaterThan(0);
+    expect(screen.queryByText(formatMoney("0.00"))).not.toBeInTheDocument();
+  });
+
+  it("refetches before confirmation, closes explicitly, and renders persisted outlook state", async () => {
+    const draft = readyForCloseWorkflow(17);
+    const closed = workflow(17, "closed");
+    let closedPersisted = false;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        closedPersisted = true;
+        return Promise.resolve(jsonResponse(closed.month));
+      }
+      return Promise.resolve(jsonResponse(closedPersisted ? closed : draft));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderRoute("/months/17/close");
+
+    const closeButton = await screen.findByRole("button", { name: "Закрыть месяц" });
+    fireEvent.click(closeButton);
+    expect(await screen.findByRole("alertdialog", { name: "Закрыть месяц?" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/months/17/close",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText("Утверждён")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/months/17/close",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("refetches before reopening and derives the draft workflow again", async () => {
+    const closed = workflow(18, "closed");
+    const draft = workflow(18);
+    let reopened = false;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        reopened = true;
+        return Promise.resolve(jsonResponse(draft.month));
+      }
+      return Promise.resolve(jsonResponse(reopened ? draft : closed));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderRoute("/months/18/close");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Открыть месяц заново" }));
+    expect(
+      await screen.findByRole("alertdialog", { name: "Открыть месяц заново?" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Открыть заново" }));
+
+    await waitFor(() => expect(screen.getByText("Черновик")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/months/18/reopen",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
