@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.month_close_workflow import (
@@ -14,6 +16,7 @@ from hermes_finance.domain.month_close_workflow import (
     GuidedCloseCompletionBasis,
     GuidedCloseEvidenceScope,
     GuidedCloseGate,
+    GuidedCloseReasonCode,
     GuidedCloseStale,
     GuidedCloseStep,
     GuidedCloseStepId,
@@ -21,12 +24,28 @@ from hermes_finance.domain.month_close_workflow import (
     derive_step_state,
     recommended_step_id,
 )
+from hermes_finance.market_data.dto import T_INVEST_PROVIDER
+from hermes_finance.persistence import (
+    AppliedPayoutReconciliation,
+    AppliedProviderPayout,
+    AppliedStatementEvent,
+    AppliedStatementEventRevision,
+    BrokerBaselineApply,
+    BrokerBaselineApplyItem,
+    ExpectedCashFlow,
+    InstrumentMarketMapping,
+    InvestmentCashFlow,
+    PositionQuoteProvenance,
+    PositionSnapshot,
+)
+from hermes_finance.services.applied_statement_events import StatementLinkMode
 from hermes_finance.services.close_readiness import (
     CloseReadiness,
     CloseReadinessBackup,
     build_close_readiness,
 )
 from hermes_finance.services.freshness_provenance import (
+    PROVIDER_PRICE_SOURCES,
     FreshnessFamily,
     FreshnessProvenanceSummary,
     FreshnessReasonCode,
@@ -34,7 +53,9 @@ from hermes_finance.services.freshness_provenance import (
     FreshnessStatus,
     build_freshness_provenance_summary,
 )
+from hermes_finance.services.payout_preview import _manual_candidates_for_applied
 from hermes_finance.services.reporting_months import get_reporting_month
+from hermes_finance.statement_import.dto import ALFA_DEPOSITORY_INCOME_PROVIDER
 
 WORKFLOW_CONTRACT_VERSION = "monthly_close_workflow_v1"
 
@@ -95,6 +116,609 @@ def _unavailable_evidence(reason_code: str) -> dict[str, object]:
     return {"available": False, "reason_code": reason_code}
 
 
+def _unique_reason_codes(codes: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(codes))
+
+
+def _selected_evidence_summary(**counts: int) -> dict[str, object]:
+    return {
+        "available": True,
+        "coverage_scope": GuidedCloseEvidenceScope.SELECTED_ROWS_ONLY.value,
+        **counts,
+    }
+
+
+def _latest_baseline_apply(session: Session, month_id: int) -> BrokerBaselineApply | None:
+    return session.scalar(
+        select(BrokerBaselineApply)
+        .where(BrokerBaselineApply.reporting_month_id == month_id)
+        .order_by(BrokerBaselineApply.confirmed_at.desc(), BrokerBaselineApply.id.desc())
+    )
+
+
+def _alfa_baseline_step(session: Session, month: object) -> GuidedCloseStep:
+    if getattr(month, "snapshot_date") is None:
+        return _provider_step_read_only(
+            step_id=GuidedCloseStepId.ALFA_BASELINE,
+            why="Без даты снимка нельзя проверить сохранённое подтверждение Alfa.",
+            reason_code=GuidedCloseReasonCode.SNAPSHOT_DATE_REQUIRED.value,
+            action_id=GuidedCloseActionId.OPEN_ALFA_PREVIEW,
+        )
+
+    applied = _latest_baseline_apply(session, getattr(month, "id"))
+    if applied is None:
+        return _provider_step_read_only(
+            step_id=GuidedCloseStepId.ALFA_BASELINE,
+            why=(
+                "Сохранённого подтверждения Alfa в core-контракте нет; "
+                "проверка запускается только явным действием."
+            ),
+            reason_code=GuidedCloseReasonCode.BASELINE_NOT_APPLIED.value,
+            action_id=GuidedCloseActionId.OPEN_ALFA_PREVIEW,
+        )
+
+    items = list(
+        session.scalars(
+            select(BrokerBaselineApplyItem)
+            .where(
+                BrokerBaselineApplyItem.reporting_month_id == getattr(month, "id"),
+                BrokerBaselineApplyItem.baseline_apply_id == applied.id,
+            )
+            .order_by(BrokerBaselineApplyItem.id)
+        )
+    )
+    if not items:
+        return _step(
+            step_id=GuidedCloseStepId.ALFA_BASELINE,
+            state=GuidedCloseStepState.READY,
+            applicability=GuidedCloseApplicability.CONDITIONAL,
+            gate=GuidedCloseGate.OWNER_DECISION,
+            affects_close=False,
+            why="Подтверждение Alfa не содержит сохранённых выбранных позиций.",
+            reason_codes=(GuidedCloseReasonCode.BASELINE_COVERAGE_NOT_PERSISTED.value,),
+            primary_action=_action(
+                GuidedCloseActionId.OPEN_ALFA_PREVIEW, GuidedCloseActionTarget.OPEN_PANEL
+            ),
+            evidence_summary=_unavailable_evidence(
+                GuidedCloseReasonCode.BASELINE_COVERAGE_NOT_PERSISTED.value
+            ),
+        )
+
+    snapshot_ids = {item.position_snapshot_id for item in items}
+    snapshots = {
+        snapshot.id: snapshot
+        for snapshot in session.scalars(
+            select(PositionSnapshot).where(PositionSnapshot.id.in_(snapshot_ids))
+        )
+    }
+    position_missing = 0
+    quantity_changed = 0
+    for item in items:
+        snapshot = snapshots.get(item.position_snapshot_id)
+        if snapshot is None or snapshot.reporting_month_id != getattr(month, "id"):
+            position_missing += 1
+        elif snapshot.quantity != item.quantity:
+            quantity_changed += 1
+
+    date_changed = applied.baseline_date != getattr(month, "snapshot_date")
+    stale_count = len(items) if date_changed else position_missing + quantity_changed
+    matching_count = len(items) - stale_count
+    reason_codes: list[str] = []
+    if position_missing:
+        reason_codes.append(GuidedCloseReasonCode.BASELINE_POSITION_MISSING.value)
+    if quantity_changed:
+        reason_codes.append(GuidedCloseReasonCode.BASELINE_QUANTITY_CHANGED.value)
+    if date_changed:
+        reason_codes.append(GuidedCloseReasonCode.BASELINE_DATE_CHANGED.value)
+    reason_tuple = _unique_reason_codes(reason_codes)
+    stale = bool(reason_tuple)
+    return _step(
+        step_id=GuidedCloseStepId.ALFA_BASELINE,
+        state=derive_step_state(stale_or_partial=stale, completed=not stale),
+        applicability=GuidedCloseApplicability.CONDITIONAL,
+        gate=GuidedCloseGate.OWNER_DECISION,
+        affects_close=False,
+        why=(
+            "Сохранённое выбранное подтверждение Alfa больше не совпадает с текущим месяцем "
+            "или позициями."
+            if stale
+            else "Сохранены выбранные позиции Alfa; это не подтверждение полного покрытия провайдера."
+        ),
+        reason_codes=(
+            reason_tuple if stale else (GuidedCloseReasonCode.BASELINE_SELECTED_ROWS_PRESENT.value,)
+        ),
+        primary_action=_action(
+            GuidedCloseActionId.OPEN_ALFA_PREVIEW, GuidedCloseActionTarget.OPEN_PANEL
+        ),
+        completion_basis=GuidedCloseCompletionBasis.DOMAIN_FACT if not stale else None,
+        evidence_scope=GuidedCloseEvidenceScope.SELECTED_ROWS_ONLY,
+        evidence_summary=_selected_evidence_summary(
+            selected_count=len(items),
+            matching_count=matching_count,
+            stale_count=stale_count,
+        ),
+        stale=GuidedCloseStale(is_stale=stale, reason_codes=reason_tuple),
+    )
+
+
+def _latest_statement_revisions(
+    session: Session, event_ids: set[int]
+) -> dict[int, AppliedStatementEventRevision]:
+    if not event_ids:
+        return {}
+    latest: dict[int, AppliedStatementEventRevision] = {}
+    revisions = session.scalars(
+        select(AppliedStatementEventRevision)
+        .where(AppliedStatementEventRevision.applied_statement_event_id.in_(event_ids))
+        .order_by(AppliedStatementEventRevision.id)
+    )
+    for revision in revisions:
+        latest[revision.applied_statement_event_id] = revision
+    return latest
+
+
+def _statement_flow_matches_accepted(
+    *,
+    event: AppliedStatementEvent,
+    flow: InvestmentCashFlow | None,
+    accepted: AppliedStatementEventRevision | None,
+    month: object,
+) -> bool:
+    if (
+        flow is None
+        or accepted is None
+        or event.investment_cash_flow_id is None
+        or flow.id != event.investment_cash_flow_id
+        or (accepted.event_date.year, accepted.event_date.month)
+        != (getattr(month, "year"), getattr(month, "month"))
+    ):
+        return False
+    expected_tax = accepted.tax_amount_kopecks if accepted.tax_available else 0
+    if (
+        flow.reporting_month_id != getattr(month, "id")
+        or flow.account_id != event.account_id
+        or flow.instrument_id != event.instrument_id
+        or flow.flow_type != event.event_kind
+        or flow.event_date != accepted.event_date
+        or flow.gross_amount_kopecks != accepted.gross_amount_kopecks
+        or flow.tax_amount_kopecks != expected_tax
+        or flow.commission_amount_kopecks != 0
+        or flow.net_amount_kopecks != accepted.net_amount_kopecks
+        or flow.currency != accepted.net_currency
+    ):
+        return False
+    try:
+        link_mode = StatementLinkMode(event.link_mode)
+    except ValueError:
+        return False
+    return (
+        link_mode is not StatementLinkMode.STATEMENT_CREATED
+        or flow.source == ALFA_DEPOSITORY_INCOME_PROVIDER
+    )
+
+
+def _retracted_statement_count(
+    month: object,
+    events: list[AppliedStatementEvent],
+    revisions_by_event: dict[int, AppliedStatementEventRevision],
+) -> int:
+    count = 0
+    for event in events:
+        revision = revisions_by_event.get(event.id)
+        event_date = revision.event_date if revision is not None else event.record_date
+        if (event_date.year, event_date.month) == (getattr(month, "year"), getattr(month, "month")):
+            count += 1
+    return count
+
+
+def _actual_payouts_step(session: Session, month: object) -> GuidedCloseStep:
+    flows = list(
+        session.scalars(
+            select(InvestmentCashFlow).where(
+                InvestmentCashFlow.reporting_month_id == getattr(month, "id")
+            )
+        )
+    )
+    flow_by_id = {flow.id: flow for flow in flows}
+    active_events = (
+        list(
+            session.scalars(
+                select(AppliedStatementEvent).where(
+                    AppliedStatementEvent.status == "active",
+                    AppliedStatementEvent.investment_cash_flow_id.in_(flow_by_id or {-1}),
+                )
+            )
+        )
+        if flow_by_id
+        else []
+    )
+    retracted_events = list(
+        session.scalars(
+            select(AppliedStatementEvent).where(AppliedStatementEvent.status == "retracted")
+        )
+    )
+    event_ids = {event.id for event in active_events} | {event.id for event in retracted_events}
+    revisions_by_event = _latest_statement_revisions(session, event_ids)
+    matching_count = sum(
+        _statement_flow_matches_accepted(
+            event=event,
+            flow=flow_by_id.get(event.investment_cash_flow_id),
+            accepted=revisions_by_event.get(event.id),
+            month=month,
+        )
+        for event in active_events
+    )
+    changed_count = len(active_events) - matching_count
+    retracted_count = _retracted_statement_count(month, retracted_events, revisions_by_event)
+    if not active_events and not retracted_count:
+        return _provider_step_read_only(
+            step_id=GuidedCloseStepId.ACTUAL_PAYOUTS,
+            why="Сохранённых активных выплат Alfa за выбранный месяц нет.",
+            reason_code=GuidedCloseReasonCode.STATEMENT_NOT_IMPORTED.value,
+            action_id=GuidedCloseActionId.CHOOSE_STATEMENT_FILE,
+        )
+
+    reason_codes: list[str] = []
+    if changed_count:
+        reason_codes.append(GuidedCloseReasonCode.STATEMENT_LINKED_FLOW_CHANGED.value)
+    if retracted_count:
+        reason_codes.append(GuidedCloseReasonCode.STATEMENT_ROWS_RETRACTED.value)
+    reason_tuple = _unique_reason_codes(reason_codes)
+    stale = bool(reason_tuple)
+    return _step(
+        step_id=GuidedCloseStepId.ACTUAL_PAYOUTS,
+        state=derive_step_state(stale_or_partial=stale, completed=not stale),
+        applicability=GuidedCloseApplicability.CONDITIONAL,
+        gate=GuidedCloseGate.OWNER_DECISION,
+        affects_close=False,
+        why=(
+            "Часть сохранённых выплат Alfa требует повторной проверки."
+            if stale
+            else "Сохранены активные выплаты Alfa и совпадающие связанные денежные потоки."
+        ),
+        reason_codes=(
+            reason_tuple if stale else (GuidedCloseReasonCode.STATEMENT_ACTIVE_ROWS_PRESENT.value,)
+        ),
+        primary_action=_action(
+            GuidedCloseActionId.CHOOSE_STATEMENT_FILE, GuidedCloseActionTarget.OPEN_PANEL
+        ),
+        completion_basis=GuidedCloseCompletionBasis.DOMAIN_FACT if not stale else None,
+        evidence_scope=GuidedCloseEvidenceScope.SELECTED_ROWS_ONLY,
+        evidence_summary=_selected_evidence_summary(
+            selected_count=len(active_events),
+            matching_count=matching_count,
+            stale_count=changed_count,
+            retracted_count=retracted_count,
+        ),
+        stale=GuidedCloseStale(is_stale=stale, reason_codes=reason_tuple),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _PayoutDependencyCounts:
+    position_missing: int = 0
+    quantity_changed: int = 0
+    mapping_changed: int = 0
+    reconciliation_changed: int = 0
+    affected_payouts: int = 0
+
+    @property
+    def stale_count(self) -> int:
+        return self.affected_payouts
+
+
+def _future_payout_dependencies(
+    session: Session,
+    month: object,
+    payouts: list[AppliedProviderPayout],
+) -> _PayoutDependencyCounts:
+    snapshots = list(
+        session.scalars(
+            select(PositionSnapshot).where(
+                PositionSnapshot.reporting_month_id == getattr(month, "id")
+            )
+        )
+    )
+    snapshot_by_identity = {(row.account_id, row.instrument_id): row for row in snapshots}
+    instrument_ids = {payout.instrument_id for payout in payouts} | {
+        row.instrument_id for row in snapshots
+    }
+    mappings = {
+        mapping.instrument_id: mapping
+        for mapping in session.scalars(
+            select(InstrumentMarketMapping).where(
+                InstrumentMarketMapping.instrument_id.in_(instrument_ids or {-1})
+            )
+        )
+    }
+    position_missing = quantity_changed = mapping_changed = reconciliation_changed = 0
+    affected_payout_ids: set[int] = set()
+    for payout in payouts:
+        snapshot = snapshot_by_identity.get((payout.account_id, payout.instrument_id))
+        if snapshot is None or payout.source_position_snapshot_id != snapshot.id:
+            position_missing += 1
+            affected_payout_ids.add(payout.id)
+        elif payout.quantity != snapshot.quantity:
+            quantity_changed += 1
+            affected_payout_ids.add(payout.id)
+        mapping = mappings.get(payout.instrument_id)
+        if snapshot is not None and (
+            mapping is None
+            or mapping.excluded
+            or mapping.provider != payout.provider
+            or mapping.provider_instrument_id != payout.provider_instrument_uid
+        ):
+            mapping_changed += 1
+            affected_payout_ids.add(payout.id)
+
+    payout_ids = {payout.id for payout in payouts}
+    links = list(
+        session.scalars(
+            select(AppliedPayoutReconciliation).where(
+                AppliedPayoutReconciliation.applied_payout_id.in_(payout_ids or {-1})
+            )
+        )
+    )
+    flow_ids = {link.expected_cash_flow_id for link in links}
+    flows = {
+        flow.id: flow
+        for flow in session.scalars(
+            select(ExpectedCashFlow).where(ExpectedCashFlow.id.in_(flow_ids or {-1}))
+        )
+    }
+    manual_candidates_by_scope: dict[tuple[int, int | None], list[ExpectedCashFlow]] = {}
+    manual_candidates = session.scalars(
+        select(ExpectedCashFlow)
+        .where(
+            ExpectedCashFlow.reporting_month_id == getattr(month, "id"),
+            ExpectedCashFlow.flow_type.in_(("coupon", "dividend", "redemption")),
+        )
+        .order_by(ExpectedCashFlow.expected_date, ExpectedCashFlow.id)
+    )
+    for flow in manual_candidates:
+        manual_candidates_by_scope.setdefault((flow.account_id, flow.instrument_id), []).append(
+            flow
+        )
+    manual_candidate_ids = {
+        flow.id for candidates in manual_candidates_by_scope.values() for flow in candidates
+    }
+    payout_by_id = {payout.id: payout for payout in payouts}
+    reconciliation_by_payout = {link.applied_payout_id: link for link in links}
+    for link in links:
+        payout = payout_by_id.get(link.applied_payout_id)
+        flow = flows.get(link.expected_cash_flow_id)
+        if (
+            payout is None
+            or flow is None
+            or flow.reporting_month_id != getattr(month, "id")
+            or flow.account_id != payout.account_id
+            or flow.instrument_id != payout.instrument_id
+            or flow.flow_type != payout.event_kind
+        ):
+            reconciliation_changed += 1
+            if payout is not None:
+                affected_payout_ids.add(payout.id)
+    for payout in payouts:
+        link = reconciliation_by_payout.get(payout.id)
+        candidate_ids = _manual_candidates_for_applied(
+            payout,
+            manual_candidates_by_scope.get((payout.account_id, payout.instrument_id), []),
+        )
+        resolved_manual_id = (
+            link.expected_cash_flow_id
+            if link is not None and link.expected_cash_flow_id in manual_candidate_ids
+            else None
+        )
+        if (
+            (link is not None and link.expected_cash_flow_id not in candidate_ids)
+            or any(candidate_id != resolved_manual_id for candidate_id in candidate_ids)
+            or (link is None and bool(candidate_ids))
+        ):
+            reconciliation_changed += 1
+            affected_payout_ids.add(payout.id)
+    return _PayoutDependencyCounts(
+        position_missing=position_missing,
+        quantity_changed=quantity_changed,
+        mapping_changed=mapping_changed,
+        reconciliation_changed=reconciliation_changed,
+        affected_payouts=len(affected_payout_ids),
+    )
+
+
+def _future_payouts_step(session: Session, month: object) -> GuidedCloseStep:
+    snapshots = list(
+        session.scalars(
+            select(PositionSnapshot).where(
+                PositionSnapshot.reporting_month_id == getattr(month, "id")
+            )
+        )
+    )
+    snapshot_instrument_ids = {snapshot.instrument_id for snapshot in snapshots}
+    mappings = {
+        mapping.instrument_id: mapping
+        for mapping in session.scalars(
+            select(InstrumentMarketMapping).where(
+                InstrumentMarketMapping.instrument_id.in_(snapshot_instrument_ids or {-1})
+            )
+        )
+    }
+    eligible_count = sum(
+        bool(
+            (mapping := mappings.get(snapshot.instrument_id))
+            and not mapping.excluded
+            and mapping.provider == T_INVEST_PROVIDER
+            and mapping.provider_instrument_id
+        )
+        for snapshot in snapshots
+    )
+    payouts = list(
+        session.scalars(
+            select(AppliedProviderPayout).where(
+                AppliedProviderPayout.reporting_month_id == getattr(month, "id"),
+                AppliedProviderPayout.provider == T_INVEST_PROVIDER,
+                AppliedProviderPayout.lifecycle == "active",
+            )
+        )
+    )
+    if not payouts:
+        explicitly_excluded_count = sum(
+            bool(mapping := mappings.get(snapshot.instrument_id)) and mapping.excluded
+            for snapshot in snapshots
+        )
+        if not snapshots or explicitly_excluded_count == len(snapshots):
+            return _step(
+                step_id=GuidedCloseStepId.FUTURE_PAYOUTS,
+                state=derive_step_state(not_applicable=True),
+                applicability=GuidedCloseApplicability.NOT_APPLICABLE,
+                gate=GuidedCloseGate.NONE,
+                affects_close=False,
+                why="В выбранном месяце нет текущих позиций, eligible для T-Invest выплат.",
+                reason_codes=(GuidedCloseReasonCode.NO_PAYOUT_ELIGIBLE_POSITIONS.value,),
+                evidence_summary={
+                    "available": True,
+                    "current_position_count": len(snapshots),
+                    "eligible_position_count": eligible_count,
+                    "active_count": 0,
+                },
+            )
+        if not eligible_count:
+            return _step(
+                step_id=GuidedCloseStepId.FUTURE_PAYOUTS,
+                state=GuidedCloseStepState.WARNING,
+                applicability=GuidedCloseApplicability.CONDITIONAL,
+                gate=GuidedCloseGate.OWNER_DECISION,
+                affects_close=False,
+                why=(
+                    "Текущие позиции есть, но mapping T-Invest не зафиксирован; "
+                    "отсутствие строк не доказывает отсутствие выплат."
+                ),
+                reason_codes=(GuidedCloseReasonCode.NO_PAYOUT_ELIGIBLE_POSITIONS.value,),
+                primary_action=_action(
+                    GuidedCloseActionId.OPEN_PAYOUT_BATCH_PREVIEW,
+                    GuidedCloseActionTarget.OPEN_PANEL,
+                ),
+                evidence_summary={
+                    "available": False,
+                    "reason_code": GuidedCloseReasonCode.NO_PAYOUT_ELIGIBLE_POSITIONS.value,
+                    "current_position_count": len(snapshots),
+                    "eligible_position_count": 0,
+                    "active_count": 0,
+                },
+            )
+        return _step(
+            step_id=GuidedCloseStepId.FUTURE_PAYOUTS,
+            state=GuidedCloseStepState.READY,
+            applicability=GuidedCloseApplicability.CONDITIONAL,
+            gate=GuidedCloseGate.OWNER_DECISION,
+            affects_close=False,
+            why="Зафиксированных результатов T-Invest нет; отсутствие строк не доказывает нулевые выплаты.",
+            reason_codes=(GuidedCloseReasonCode.PAYOUT_ZERO_RESULT_NOT_PERSISTED.value,),
+            primary_action=_action(
+                GuidedCloseActionId.OPEN_PAYOUT_BATCH_PREVIEW, GuidedCloseActionTarget.OPEN_PANEL
+            ),
+            evidence_summary={
+                "available": False,
+                "reason_code": GuidedCloseReasonCode.PAYOUT_ZERO_RESULT_NOT_PERSISTED.value,
+                "current_position_count": len(snapshots),
+                "eligible_position_count": eligible_count,
+                "active_count": 0,
+            },
+        )
+
+    dependencies = _future_payout_dependencies(session, month, payouts)
+    reason_codes: list[str] = []
+    if dependencies.position_missing:
+        reason_codes.append(GuidedCloseReasonCode.PAYOUT_POSITION_MISSING.value)
+    if dependencies.quantity_changed:
+        reason_codes.append(GuidedCloseReasonCode.PAYOUT_QUANTITY_CHANGED.value)
+    if dependencies.mapping_changed:
+        reason_codes.append(GuidedCloseReasonCode.PAYOUT_MAPPING_CHANGED.value)
+    if dependencies.reconciliation_changed:
+        reason_codes.append(GuidedCloseReasonCode.PAYOUT_RECONCILIATION_CHANGED.value)
+    reason_tuple = _unique_reason_codes(reason_codes)
+    stale = bool(reason_tuple)
+    return _step(
+        step_id=GuidedCloseStepId.FUTURE_PAYOUTS,
+        state=derive_step_state(stale_or_partial=stale, completed=not stale),
+        applicability=GuidedCloseApplicability.CONDITIONAL,
+        gate=GuidedCloseGate.OWNER_DECISION,
+        affects_close=False,
+        why=(
+            "Сохранённые выплаты T-Invest больше не полностью совпадают с текущими "
+            "позициями или mapping/reconciliation зависимостями."
+            if stale
+            else "Сохранены выбранные выплаты T-Invest; это не подтверждение полного покрытия провайдера."
+        ),
+        reason_codes=(
+            reason_tuple
+            if stale
+            else (GuidedCloseReasonCode.PROVIDER_PAYOUT_ACTIVE_ROWS_PRESENT.value,)
+        ),
+        primary_action=_action(
+            GuidedCloseActionId.OPEN_PAYOUT_BATCH_PREVIEW, GuidedCloseActionTarget.OPEN_PANEL
+        ),
+        completion_basis=GuidedCloseCompletionBasis.DOMAIN_FACT if not stale else None,
+        evidence_scope=GuidedCloseEvidenceScope.SELECTED_ROWS_ONLY,
+        evidence_summary=_selected_evidence_summary(
+            selected_count=len(payouts),
+            matching_count=len(payouts) - dependencies.stale_count,
+            stale_count=dependencies.stale_count,
+            eligible_position_count=eligible_count,
+        ),
+        stale=GuidedCloseStale(is_stale=stale, reason_codes=reason_tuple),
+    )
+
+
+def _latest_quote_provenance_by_snapshot(
+    session: Session, month_id: int
+) -> dict[int, PositionQuoteProvenance]:
+    latest: dict[int, PositionQuoteProvenance] = {}
+    rows = session.scalars(
+        select(PositionQuoteProvenance)
+        .where(PositionQuoteProvenance.reporting_month_id == month_id)
+        .order_by(
+            PositionQuoteProvenance.position_snapshot_id,
+            PositionQuoteProvenance.applied_at_utc.desc(),
+            PositionQuoteProvenance.id.desc(),
+        )
+    )
+    for row in rows:
+        latest.setdefault(row.position_snapshot_id, row)
+    return latest
+
+
+def _quote_mapping_mismatch_count(session: Session, month_id: int) -> int:
+    snapshots = list(
+        session.scalars(
+            select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == month_id)
+        )
+    )
+    if not snapshots:
+        return 0
+    mappings = {
+        mapping.instrument_id: mapping
+        for mapping in session.scalars(
+            select(InstrumentMarketMapping).where(
+                InstrumentMarketMapping.instrument_id.in_({row.instrument_id for row in snapshots})
+            )
+        )
+    }
+    provenance_by_snapshot = _latest_quote_provenance_by_snapshot(session, month_id)
+    return sum(
+        1
+        for snapshot in snapshots
+        if snapshot.price_source in PROVIDER_PRICE_SOURCES
+        and (quote := provenance_by_snapshot.get(snapshot.id)) is not None
+        and (
+            (mapping := mappings.get(snapshot.instrument_id)) is None
+            or mapping.excluded
+            or mapping.provider != quote.provider
+            or mapping.provider_instrument_id != quote.provider_instrument_id
+            or mapping.provider_venue_id != quote.provider_venue_id
+        )
+    )
+
+
 def _step(
     *,
     step_id: GuidedCloseStepId,
@@ -151,7 +775,9 @@ def _provider_step_read_only(
     )
 
 
-def _market_quote_step(summary: FreshnessProvenanceSummary) -> GuidedCloseStep:
+def _market_quote_step(
+    summary: FreshnessProvenanceSummary, *, session: Session, month_id: int
+) -> GuidedCloseStep:
     family = _family(summary, "market_quotes")
     coverage = family.coverage
     if coverage.row_count == 0:
@@ -165,11 +791,16 @@ def _market_quote_step(summary: FreshnessProvenanceSummary) -> GuidedCloseStep:
             reason_codes=("no_quote_eligible_positions",),
             evidence_summary={"available": True, "row_count": 0},
         )
+    mapping_mismatch_count = _quote_mapping_mismatch_count(session, month_id)
     warning_codes = tuple(
         reason.code.value
         for reason in family.reasons
         if reason.severity is FreshnessSeverity.WARNING
     )
+    if mapping_mismatch_count:
+        warning_codes = _unique_reason_codes(
+            [*warning_codes, GuidedCloseReasonCode.QUOTE_MAPPING_MISSING.value]
+        )
     has_manual_or_missing = coverage.manual_count > 0 or coverage.missing_count > 0
     complete = (
         coverage.provider_count > 0
@@ -179,6 +810,7 @@ def _market_quote_step(summary: FreshnessProvenanceSummary) -> GuidedCloseStep:
         and coverage.unknown_count == 0
         and coverage.missing_count == 0
         and not has_manual_or_missing
+        and mapping_mismatch_count == 0
     )
     stale_or_partial = (
         bool(warning_codes)
@@ -216,7 +848,11 @@ def _market_quote_step(summary: FreshnessProvenanceSummary) -> GuidedCloseStep:
             if complete
             else GuidedCloseEvidenceScope.NONE
         ),
-        evidence_summary={"available": True, **_family_summary(family)},
+        evidence_summary={
+            "available": True,
+            **_family_summary(family),
+            "mapping_mismatch_count": mapping_mismatch_count,
+        },
         stale=GuidedCloseStale(is_stale=stale_or_partial, reason_codes=reason_codes),
     )
 
@@ -384,17 +1020,9 @@ def build_month_close_workflow(
                 completion_basis=None if month_blocked else GuidedCloseCompletionBasis.DOMAIN_FACT,
             )
             provider_steps = (
-                _provider_step_read_only(
-                    step_id=GuidedCloseStepId.ALFA_BASELINE,
-                    why=(
-                        "Сохранённого подтверждения Alfa в core-контракте нет; "
-                        "проверка запускается только явным действием."
-                    ),
-                    reason_code="baseline_not_applied",
-                    action_id=GuidedCloseActionId.OPEN_ALFA_PREVIEW,
-                ),
+                _alfa_baseline_step(session, month),
                 (
-                    _market_quote_step(freshness)
+                    _market_quote_step(freshness, session=session, month_id=month.id)
                     if freshness is not None
                     else _provider_step_read_only(
                         step_id=GuidedCloseStepId.MARKET_QUOTES,
@@ -403,18 +1031,8 @@ def build_month_close_workflow(
                         action_id=GuidedCloseActionId.OPEN_QUOTE_PREVIEW,
                     )
                 ),
-                _provider_step_read_only(
-                    step_id=GuidedCloseStepId.ACTUAL_PAYOUTS,
-                    why="Фактические выплаты проверяются через отдельный явный PDF workflow.",
-                    reason_code="statement_not_imported",
-                    action_id=GuidedCloseActionId.CHOOSE_STATEMENT_FILE,
-                ),
-                _provider_step_read_only(
-                    step_id=GuidedCloseStepId.FUTURE_PAYOUTS,
-                    why="Будущие выплаты проверяются отдельным явным T-Invest workflow.",
-                    reason_code="payout_zero_result_not_persisted",
-                    action_id=GuidedCloseActionId.OPEN_PAYOUT_BATCH_PREVIEW,
-                ),
+                _actual_payouts_step(session, month),
+                _future_payouts_step(session, month),
                 _provider_step_read_only(
                     step_id=GuidedCloseStepId.BROKER_RECONCILIATION,
                     why=(
