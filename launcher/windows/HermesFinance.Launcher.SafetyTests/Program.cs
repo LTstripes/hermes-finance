@@ -30,6 +30,7 @@ var tests = new (string Name, Action Run)[]
     ("fails closed when npm is missing", FailsClosedWhenNpmIsMissing),
     ("packages the branded cat icon", PackagesBrandedCatIcon),
     ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
+    ("starts and stops only a synthetic runtime", StartsAndStopsSyntheticRuntime),
     ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
@@ -337,6 +338,78 @@ static void InstallsShortcutsBesideStableLauncher()
     Assert(source.Contains("TargetPath = $executable", StringComparison.Ordinal), "The shortcut must target the installed launcher executable.");
     Assert(source.Contains("IconLocation = \"$executable,0\"", StringComparison.Ordinal), "The shortcut must use the installed branded executable icon.");
     Assert(!System.Text.RegularExpressions.Regex.IsMatch(source, @"git\s+(pull|switch|checkout|reset)", System.Text.RegularExpressions.RegexOptions.IgnoreCase), "The installer must not mutate Git state.");
+}
+
+static void StartsAndStopsSyntheticRuntime()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-start-stop-{Guid.NewGuid():N}");
+    Process? process = null;
+    MainForm? form = null;
+    try
+    {
+        var checkout = Path.Combine(root, "Synthetic Runtime With Spaces");
+        var dataDir = Path.Combine(root, "data");
+        var database = Path.Combine(dataDir, "synthetic.db");
+        var marker = Path.Combine(root, "started.txt");
+        Directory.CreateDirectory(Path.Combine(checkout, "scripts"));
+        Directory.CreateDirectory(dataDir);
+        var script = Path.Combine(checkout, "scripts", "start-local.ps1");
+        File.WriteAllText(
+            script,
+            $"Set-Content -LiteralPath {PsQuote(marker)} -Encoding UTF8 -Value 'started'\nwhile ($true) {{ Start-Sleep -Seconds 1 }}\n",
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        var profile = new ValidatedProfile(
+            new LauncherProfile { Id = "synthetic", DisplayName = "Synthetic Runtime", Type = "experiment", Checkout = checkout, ExpectedRef = "HEAD", DataDir = dataDir, Database = database, OpenBrowser = false },
+            checkout,
+            dataDir,
+            database,
+            "synthetic-head",
+            "experiment");
+        form = new MainForm(new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = database },
+            Profiles = [profile.Profile],
+        });
+
+        var start = typeof(MainForm).GetMethod("StartProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher Start implementation.");
+        start.Invoke(form, [profile]);
+
+        var processField = typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher process state.");
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline && (!File.Exists(marker) || (process = processField.GetValue(form) as Process) is null || process.HasExited))
+        {
+            Thread.Sleep(100);
+        }
+
+        process ??= processField.GetValue(form) as Process;
+        Assert(File.Exists(marker), "Synthetic runtime did not reach its start marker.");
+        Assert(process is not null && !process.HasExited, "Synthetic runtime was not running after launcher Start.");
+
+        var stop = typeof(MainForm).GetMethod(
+                "StopLaunchedStack",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null)
+            ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher Stop implementation.");
+        stop.Invoke(form, ["Synthetic smoke stopped the runtime."]);
+        var startedProcess = process ?? throw new InvalidOperationException("Synthetic runtime process disappeared before launcher Stop.");
+        Assert(startedProcess.WaitForExit(5_000), "Synthetic runtime did not stop after launcher Stop.");
+    }
+    finally
+    {
+        if (process is not null && !process.HasExited)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(5_000);
+        }
+        form?.Dispose();
+        DeleteSyntheticTree(root);
+    }
 }
 
 static void FailsClosedOnReadySidecarFailure()
