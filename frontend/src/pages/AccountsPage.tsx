@@ -610,6 +610,7 @@ export function AccountsPage() {
             accounts={accounts}
             initialMonthId={closeContext?.monthId}
             instruments={instruments}
+            monthlyClose={Boolean(closeContext)}
             onApplied={async () => {
               await loadAccounts();
               await loadInstruments();

@@ -59,6 +59,39 @@ function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthC
   };
 }
 
+function providerWorkflow(): MonthCloseWorkflow {
+  const base = workflow(17);
+  const alfaStep = {
+    ...base.steps[0],
+    id: "alfa_baseline" as const,
+    order: 2,
+    title: "Сверить состав портфеля Alfa",
+    primary_action: {
+      id: "open_alfa_preview" as const,
+      label: "Получить данные Alfa PRO",
+      target: "open_panel" as const,
+    },
+    evidence_summary: { available: false, reason_code: "baseline_not_applied" },
+  };
+  const reconciliationStep = {
+    ...base.steps[0],
+    id: "broker_reconciliation" as const,
+    order: 6,
+    title: "Проверить портфель после обновлений",
+    primary_action: {
+      id: "open_reconciliation_preview" as const,
+      label: "Проверить снимок Alfa",
+      target: "open_panel" as const,
+    },
+    evidence_summary: { available: false, reason_code: "reconciliation_not_run" },
+  };
+  return {
+    ...base,
+    recommended_step_id: "alfa_baseline",
+    steps: [alfaStep, reconciliationStep],
+  };
+}
+
 function renderRoute(entry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -90,6 +123,23 @@ describe("MonthlyCloseWorkflowPage", () => {
       "href",
       "/freshness?from=monthly-close&step=readiness&monthId=17",
     );
+  });
+
+  it("keeps provider checks explicit and explains their transient wizard evidence", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(providerWorkflow())))),
+    );
+    renderRoute("/months/17/close");
+
+    expect(await screen.findByRole("heading", { name: /Апрель.*2025/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Получить данные Alfa PRO" })).toHaveAttribute(
+      "href",
+      "/accounts?from=monthly-close&step=alfa_baseline&monthId=17",
+    );
+    expect(screen.getAllByText("Только по запросу").length).toBeGreaterThan(0);
+    expect(screen.getByText(/После перезапуска.*нужно запросить снова/)).toBeInTheDocument();
+    expect(screen.getAllByText("Состояние рассчитано backend.").length).toBeGreaterThan(0);
   });
 
   it("renders a closed month from the same month-scoped route", async () => {

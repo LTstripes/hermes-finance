@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAccounts } from "../api/accounts";
 import {
   type BrokerReconciliationResponse,
@@ -11,6 +11,7 @@ import {
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import type { Account, Instrument } from "../api/types";
+import { MemoryRouter } from "react-router";
 import { ReconciliationCenterPage } from "./ReconciliationCenterPage";
 
 vi.mock("../api/brokerReconciliation", () => ({
@@ -216,12 +217,18 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <ReconciliationCenterPage />
+      <MemoryRouter>
+        <ReconciliationCenterPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
 describe("ReconciliationCenterPage", () => {
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(listMonths).mockResolvedValue([month]);
@@ -238,6 +245,40 @@ describe("ReconciliationCenterPage", () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(listMonths).toHaveBeenCalledTimes(1));
     expect(previewBrokerReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the close month, shows the transient compact result, and forgets it after remount", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(
+      {},
+      "",
+      "/reconciliation?from=monthly-close&step=broker_reconciliation&monthId=7",
+    );
+    const firstRender = renderPage();
+
+    const monthSelect = await screen.findByLabelText("Отчётный месяц");
+    await waitFor(() => expect(monthSelect).toHaveValue("7"));
+    expect(monthSelect).toBeDisabled();
+    expect(previewBrokerReconciliation).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+
+    expect(
+      await screen.findByRole("status", { name: "Результат сверки Alfa PRO" }),
+    ).toHaveTextContent("Совпадает");
+    expect(previewBrokerReconciliation).toHaveBeenCalledWith(7, {
+      accounts: [],
+      instruments: [],
+    });
+
+    firstRender.unmount();
+    renderPage();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Сверка портфеля" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: "Результат сверки Alfa PRO" }),
+    ).not.toBeInTheDocument();
+    expect(previewBrokerReconciliation).toHaveBeenCalledTimes(1);
   });
 
   it("runs the accepted read-only path explicitly and renders every normalized state", async () => {
