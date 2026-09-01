@@ -268,6 +268,8 @@ function localizeApiMessage(error: ApiClientError): string {
       return "Котировка изменилась после предпросмотра. Обнови предпросмотр и выбери строки заново.";
     case "payout_mapping_required":
       return "Для выбранного инструмента нет принятого источника T-Invest. Сохрани сопоставление в справочнике инструментов — после этого можно проверять автоматические выплаты.";
+    case "instrument_deletion_blocked":
+      return error.message;
     case "already_retracted":
       return "Эта строка выписки уже отменена. Обнови список выплат.";
     case "not_statement_backed":

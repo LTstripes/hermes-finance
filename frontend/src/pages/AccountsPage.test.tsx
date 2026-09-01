@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAccount, deleteAccount, listAccounts, updateAccount } from "../api/accounts";
+import { ApiClientError } from "../api/client";
 import {
   deleteInstrumentMapping,
   deleteInstrumentMappingExclusion,
@@ -14,11 +15,11 @@ import {
 import {
   createInstrument,
   deleteInstrument,
+  getInstrumentCleanup,
   listInstruments,
   updateInstrument,
 } from "../api/instruments";
-import type { InstrumentMarketMapping } from "../api/types";
-import { ApiClientError } from "../api/client";
+import type { InstrumentCleanup, InstrumentMarketMapping } from "../api/types";
 import { AccountsPage } from "./AccountsPage";
 
 vi.mock("../api/accounts", () => ({
@@ -33,6 +34,7 @@ vi.mock("../api/instruments", () => ({
   createInstrument: vi.fn(),
   updateInstrument: vi.fn(),
   deleteInstrument: vi.fn(),
+  getInstrumentCleanup: vi.fn(),
 }));
 
 vi.mock("../api/instrumentMappings", () => ({
@@ -87,6 +89,19 @@ function mappingView(overrides: Partial<InstrumentMarketMapping> = {}): Instrume
   };
 }
 
+function cleanupView(overrides: Partial<InstrumentCleanup> = {}): InstrumentCleanup {
+  return {
+    instrument_id: instrument.id,
+    can_delete: true,
+    status: "deletable",
+    reason_code: "unused",
+    message: "Инструмент не используется. Его можно удалить после явного подтверждения.",
+    references: [],
+    active_duplicates: [],
+    ...overrides,
+  };
+}
+
 const listAccountsMock = vi.mocked(listAccounts);
 const createAccountMock = vi.mocked(createAccount);
 const updateAccountMock = vi.mocked(updateAccount);
@@ -95,6 +110,7 @@ const listInstrumentsMock = vi.mocked(listInstruments);
 const createInstrumentMock = vi.mocked(createInstrument);
 const updateInstrumentMock = vi.mocked(updateInstrument);
 const deleteInstrumentMock = vi.mocked(deleteInstrument);
+const getInstrumentCleanupMock = vi.mocked(getInstrumentCleanup);
 const getInstrumentMappingMock = vi.mocked(getInstrumentMapping);
 const putInstrumentMappingMock = vi.mocked(putInstrumentMapping);
 const deleteInstrumentMappingMock = vi.mocked(deleteInstrumentMapping);
@@ -113,6 +129,7 @@ describe("AccountsPage", () => {
     createInstrumentMock.mockResolvedValue(instrument);
     updateInstrumentMock.mockResolvedValue(instrument);
     deleteInstrumentMock.mockResolvedValue(undefined);
+    getInstrumentCleanupMock.mockResolvedValue(cleanupView());
     getInstrumentMappingMock.mockImplementation(async (id) => mappingView({ instrument_id: id }));
     putInstrumentMappingMock.mockResolvedValue(mappingView({ state: "mapped" }));
     deleteInstrumentMappingMock.mockResolvedValue(mappingView());
@@ -215,9 +232,42 @@ describe("AccountsPage", () => {
     expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
-    expect(screen.getByText("Удалить запись?")).toBeInTheDocument();
+    expect(await screen.findByText("Проверка удаления инструмента")).toBeInTheDocument();
+    expect(screen.getByText(/Инструмент не используется/)).toBeInTheDocument();
+    expect(getInstrumentCleanupMock).toHaveBeenCalledWith(instrument.id);
     await user.click(screen.getByRole("button", { name: "Удалить" }));
     await waitFor(() => expect(deleteInstrumentMock).toHaveBeenCalledWith(instrument.id));
+  });
+
+  it("explains why a referenced instrument is protected from deletion", async () => {
+    const user = userEvent.setup();
+    listInstrumentsMock.mockResolvedValue([instrument]);
+    getInstrumentCleanupMock.mockResolvedValue(
+      cleanupView({
+        can_delete: false,
+        status: "protected",
+        reason_code: "historical_referenced",
+        message:
+          "Нельзя удалить: инструмент используется в закрытой истории «август 2026» (позицией). Сохранённые сопоставления и историю источника нельзя удалять автоматически или переписывать.",
+        references: [
+          { kind: "position", lifecycle: "historical", count: 1, month_labels: ["август 2026"] },
+        ],
+      }),
+    );
+    render(<AccountsPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Инструменты (1)" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Действия для инструмента «ОФЗ 26248»",
+      }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
+
+    expect(await screen.findByText(/Нельзя удалить: инструмент используется/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Понятно" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Понятно" }));
+    expect(deleteInstrumentMock).not.toHaveBeenCalled();
   });
 
   it("renders account load error and retries only that list", async () => {

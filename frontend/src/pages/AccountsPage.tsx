@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  type AccountCreatePayload,
+  type AccountUpdatePayload,
   createAccount,
   deleteAccount,
   listAccounts,
   updateAccount,
-  type AccountCreatePayload,
-  type AccountUpdatePayload,
 } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import {
@@ -20,25 +20,27 @@ import {
 import {
   createInstrument,
   deleteInstrument,
-  listInstruments,
-  updateInstrument,
+  getInstrumentCleanup,
   type InstrumentCreatePayload,
   type InstrumentUpdatePayload,
+  listInstruments,
+  updateInstrument,
 } from "../api/instruments";
 import type {
   Account,
   Instrument,
+  InstrumentCleanup,
   InstrumentMarketMapping,
   MarketDiscoverResult,
   MarketIdentityWrite,
 } from "../api/types";
 import { AccountFormDialog } from "../components/AccountFormDialog";
 import { BrokerSnapshotPanel } from "../components/BrokerSnapshotPanel";
+import { IisAccountSection } from "../components/IisAccountSection";
 import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
 import { InstrumentFormDialog } from "../components/InstrumentFormDialog";
 import { InstrumentMappingDialog } from "../components/InstrumentMappingDialog";
-import { IisAccountSection } from "../components/IisAccountSection";
 import {
   Badge,
   Button,
@@ -107,6 +109,10 @@ export function AccountsPage() {
   const [mappingError, setMappingError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [deleting, setDeleting] = useState(false);
+  const [instrumentCleanup, setInstrumentCleanup] = useState<InstrumentCleanup | null>(null);
+  const [instrumentCleanupLoading, setInstrumentCleanupLoading] = useState(false);
+  const [instrumentCleanupError, setInstrumentCleanupError] = useState<string | null>(null);
+  const cleanupRequestId = useRef(0);
 
   const loadAccounts = useCallback(async (signal?: AbortSignal) => {
     setAccountsLoading(true);
@@ -338,6 +344,44 @@ export function AccountsPage() {
     }
   }
 
+  function closeDeleteDialog() {
+    if (deleting) return;
+    cleanupRequestId.current += 1;
+    setPendingDelete(null);
+    setInstrumentCleanup(null);
+    setInstrumentCleanupLoading(false);
+    setInstrumentCleanupError(null);
+  }
+
+  function openAccountDelete(account: Account) {
+    cleanupRequestId.current += 1;
+    setPendingDelete({ kind: "account", item: account });
+    setInstrumentCleanup(null);
+    setInstrumentCleanupLoading(false);
+    setInstrumentCleanupError(null);
+  }
+
+  function openInstrumentDelete(instrument: Instrument) {
+    const requestId = cleanupRequestId.current + 1;
+    cleanupRequestId.current = requestId;
+    setPendingDelete({ kind: "instrument", item: instrument });
+    setInstrumentCleanup(null);
+    setInstrumentCleanupError(null);
+    setInstrumentCleanupLoading(true);
+    void getInstrumentCleanup(instrument.id)
+      .then((cleanup) => {
+        if (cleanupRequestId.current === requestId) setInstrumentCleanup(cleanup);
+      })
+      .catch((error) => {
+        if (cleanupRequestId.current === requestId) {
+          setInstrumentCleanupError(formatApiError(error));
+        }
+      })
+      .finally(() => {
+        if (cleanupRequestId.current === requestId) setInstrumentCleanupLoading(false);
+      });
+  }
+
   async function handleConfirmDelete() {
     if (!pendingDelete) return;
     setDeleting(true);
@@ -410,11 +454,7 @@ export function AccountsPage() {
                       Скрыть
                     </Button>
                   ) : null}
-                  <Button
-                    onClick={() => setPendingDelete({ kind: "account", item: account })}
-                    size="sm"
-                    variant="danger"
-                  >
+                  <Button onClick={() => openAccountDelete(account)} size="sm" variant="danger">
                     Удалить
                   </Button>
                 </div>
@@ -510,10 +550,7 @@ export function AccountsPage() {
                   >
                     {instrument.is_active ? "Деактивировать" : "Активировать"}
                   </OverflowMenuItem>
-                  <OverflowMenuItem
-                    danger
-                    onClick={() => setPendingDelete({ kind: "instrument", item: instrument })}
-                  >
+                  <OverflowMenuItem danger onClick={() => openInstrumentDelete(instrument)}>
                     Удалить
                   </OverflowMenuItem>
                 </OverflowMenu>
@@ -526,6 +563,22 @@ export function AccountsPage() {
   }
 
   const deleteName = pendingDelete?.item.name ?? "";
+  const pendingInstrumentCleanup =
+    pendingDelete?.kind === "instrument" &&
+    instrumentCleanup?.instrument_id === pendingDelete.item.id
+      ? instrumentCleanup
+      : null;
+  const deleteAllowed =
+    pendingDelete?.kind === "account" || pendingInstrumentCleanup?.can_delete === true;
+  const deleteDescription =
+    pendingDelete?.kind !== "instrument"
+      ? `Удалить «${deleteName}»?`
+      : instrumentCleanupLoading
+        ? `Проверяем, можно ли безопасно удалить «${deleteName}»…`
+        : instrumentCleanupError
+          ? `Не удалось проверить возможность удаления «${deleteName}». ${instrumentCleanupError}`
+          : (pendingInstrumentCleanup?.message ??
+            "Не удалось получить правила удаления. Обнови данные и повтори попытку.");
 
   return (
     <section className="stack-18">
@@ -704,15 +757,24 @@ export function AccountsPage() {
       />
       <ConfirmDialog
         busy={deleting}
-        confirmLabel="Удалить"
-        danger
-        description={`Удалить «${deleteName}»? Если запись уже используется в финансовых данных, приложение не позволит её удалить.`}
-        onCancel={() => {
-          if (!deleting) setPendingDelete(null);
+        cancelLabel="Отмена"
+        confirmLabel={
+          pendingDelete?.kind === "instrument" && !deleteAllowed ? "Понятно" : "Удалить"
+        }
+        danger={deleteAllowed}
+        description={deleteDescription}
+        onCancel={closeDeleteDialog}
+        onConfirm={() => {
+          if (pendingDelete?.kind === "instrument" && !deleteAllowed) {
+            closeDeleteDialog();
+            return;
+          }
+          void handleConfirmDelete();
         }}
-        onConfirm={() => void handleConfirmDelete()}
         open={pendingDelete !== null}
-        title="Удалить запись?"
+        title={
+          pendingDelete?.kind === "instrument" ? "Проверка удаления инструмента" : "Удалить запись?"
+        }
       />
     </section>
   );

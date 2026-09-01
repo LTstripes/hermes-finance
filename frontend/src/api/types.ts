@@ -463,6 +463,29 @@ export type Instrument = {
   notes: string | null;
 };
 
+export type InstrumentCleanupReference = {
+  kind: string;
+  lifecycle: string;
+  count: number;
+  month_labels: string[];
+};
+
+export type InstrumentCleanupDuplicate = {
+  instrument_id: number;
+  name: string;
+  basis: string;
+};
+
+export type InstrumentCleanup = {
+  instrument_id: number;
+  can_delete: boolean;
+  status: string;
+  reason_code: string;
+  message: string;
+  references: InstrumentCleanupReference[];
+  active_duplicates: InstrumentCleanupDuplicate[];
+};
+
 export type InstrumentCreate = {
   name: string;
   instrument_type: string;
