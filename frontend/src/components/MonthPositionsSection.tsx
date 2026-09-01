@@ -9,6 +9,7 @@ import type {
   Account,
   Instrument,
   PositionSnapshot,
+  QuoteApplyResult,
   QuoteApplyRowRequest,
   QuotePreview,
 } from "../api/types";
@@ -133,6 +134,7 @@ export function MonthPositionsSection({
   const [editDraft, setEditDraft] = useState<PositionDraft | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PositionSnapshot | null>(null);
   const [quotePreview, setQuotePreview] = useState<QuotePreview | null>(null);
+  const [quoteApplyResult, setQuoteApplyResult] = useState<QuoteApplyResult | null>(null);
   const [previewApplying, setPreviewApplying] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -404,6 +406,7 @@ export function MonthPositionsSection({
     }
     setPreviewLoading(true);
     setPreviewError(null);
+    setQuoteApplyResult(null);
     try {
       setQuotePreview(await previewMonthQuotes(monthId));
     } catch (err) {
@@ -419,10 +422,12 @@ export function MonthPositionsSection({
     }
     setPreviewApplying(true);
     setPreviewError(null);
+    setQuoteApplyResult(null);
     try {
-      await applyMonthQuotes(monthId, rows);
+      const result = await applyMonthQuotes(monthId, rows);
+      setQuotePreview(null);
+      setQuoteApplyResult(result);
       await load();
-      setQuotePreview(await previewMonthQuotes(monthId));
     } catch (err) {
       if (err instanceof ApiClientError && err.code === "preview_changed") {
         setQuotePreview(null);
@@ -924,6 +929,7 @@ export function MonthPositionsSection({
 
       <QuotePreviewPanel
         applying={previewApplying}
+        applyResult={quoteApplyResult}
         closedMonthHint={readOnly}
         error={previewError}
         loading={previewLoading}

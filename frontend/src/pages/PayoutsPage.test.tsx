@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listAccounts } from "../api/accounts";
 import { ApiClientError } from "../api/client";
@@ -213,13 +213,18 @@ const mergedCalendar = [
   },
 ];
 
-function renderPage() {
+function renderPage(search = "") {
+  window.history.replaceState({}, "", `/payouts${search}`);
   return render(
     <MemoryRouter>
       <PayoutsPage />
     </MemoryRouter>,
   );
 }
+
+afterEach(() => {
+  window.history.replaceState({}, "", "/");
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -304,6 +309,32 @@ describe("PayoutsPage", () => {
     expect(screen.queryByText(providerUid)).not.toBeInTheDocument();
   });
 
+  it("keeps the close-context month exact and does not preview on entry", async () => {
+    renderPage("?from=monthly-close&step=future_payouts&monthId=7");
+
+    expect(await screen.findByRole("option", { name: /ОФЗ 26248/ })).toBeInTheDocument();
+    const monthSelect = screen.getByRole("combobox", { name: "Отчётный месяц" });
+    expect(monthSelect).toHaveValue("7");
+    expect(monthSelect).toBeDisabled();
+    expect(previewPayouts).not.toHaveBeenCalled();
+    expect(previewPayoutsBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to the newest month when the close-context month is missing", async () => {
+    vi.mocked(listMonths).mockResolvedValue([{ ...draftMonth, id: 8 }]);
+    renderPage("?from=monthly-close&step=future_payouts&monthId=7");
+
+    expect(
+      await screen.findByText(
+        "Месяц из закрытия не найден. Вернись к выбору месяца и открой закрытие заново.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Отчётный месяц" })).toHaveValue("");
+    expect(listPositions).not.toHaveBeenCalled();
+    expect(previewPayouts).not.toHaveBeenCalled();
+    expect(previewPayoutsBatch).not.toHaveBeenCalled();
+  });
+
   it("runs an explicit sequential batch preview and keeps Apply inside each position group", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -315,6 +346,43 @@ describe("PayoutsPage", () => {
     expect(await screen.findByText(/1 позиций · 1 с событиями/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применить выбранные (1)" })).toBeEnabled();
     expect(applyPayouts).not.toHaveBeenCalled();
+  });
+
+  it("keeps a zero-event batch position visible as a session-only result", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewPayoutsBatch).mockResolvedValue({
+      reporting_month_id: 7,
+      forecast_version: "v1",
+      summary: {
+        total_positions: 1,
+        eligible_positions: 1,
+        with_events: 0,
+        without_events: 1,
+        errors: 0,
+        skipped: 0,
+      },
+      items: [
+        {
+          account_id: 11,
+          instrument_id: 21,
+          position_snapshot_id: 44,
+          provider: "t_invest",
+          instrument_uid: providerUid,
+          status: "no_events",
+          message: null,
+          preview: { ...newAndRevisedPreview, rows: [] },
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByRole("option", { name: /ОФЗ 26248/ });
+    await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
+
+    const summary = await screen.findByRole("status", { name: "Итог проверки будущих выплат" });
+    expect(summary).toHaveTextContent("1 без событий");
+    expect(summary).toHaveTextContent("доступно для T-Invest: 1");
+    expect(screen.getAllByText("Событий нет").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Ошибка")).not.toBeInTheDocument();
   });
 
   it("offers changed-only refresh from local staleness without refreshing on render", async () => {

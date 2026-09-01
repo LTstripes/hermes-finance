@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { QuoteApplyRowRequest, QuotePreview, QuotePreviewRow } from "../api/types";
+import type {
+  QuoteApplyResult,
+  QuoteApplyRowRequest,
+  QuotePreview,
+  QuotePreviewRow,
+} from "../api/types";
 import { formatDate, formatMoney } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, labelOf, PRICE_SOURCE_LABELS } from "../lib/labels";
 import {
@@ -11,12 +16,14 @@ import {
   quoteStatusTone,
 } from "../lib/marketData";
 import { moneyAmount } from "../lib/money";
+import { QuotePreviewSummary } from "./month-close/TInvestStepSummary";
 import { Badge, Button, EmptyState, HelpTip, LoadingState, Panel, Table, Td, Th } from "./ui";
 
 type Props = {
   preview: QuotePreview | null;
   loading: boolean;
   applying?: boolean;
+  applyResult?: QuoteApplyResult | null;
   error: string | null;
   closedMonthHint: boolean;
   onRefresh: () => void;
@@ -155,6 +162,7 @@ export function QuotePreviewPanel({
   preview,
   loading,
   applying = false,
+  applyResult = null,
   error,
   closedMonthHint,
   onRefresh,
@@ -237,6 +245,7 @@ export function QuotePreviewPanel({
           {error}
         </div>
       ) : null}
+      <QuotePreviewSummary applyResult={applyResult} preview={preview} />
       {preview?.batch_error_reason || preview?.batch_error ? (
         <div className="inline-alert inline-alert--warn" role="status">
           {quoteFailureGuidance(preview.batch_error_reason) ??
