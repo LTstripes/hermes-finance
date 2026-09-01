@@ -259,7 +259,7 @@ describe("MonthDetailPage R03-06 workspace", () => {
     expect(closeMonthMock).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /^Доходы$/ }));
-    expect(screen.getByLabelText("Зарплата до вычета налогов")).toHaveValue("100000");
+    expect(screen.getByLabelText("Зарплата до вычета налогов")).toHaveValue("100\u00a0000,00");
 
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);

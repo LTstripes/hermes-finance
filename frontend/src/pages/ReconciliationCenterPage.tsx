@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listAccounts } from "../api/accounts";
 import {
   type BrokerReconciliationResponse,
@@ -9,6 +9,8 @@ import {
   type ReconciliationRow,
 } from "../api/brokerReconciliation";
 import { formatApiError } from "../api/client";
+import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
+import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
@@ -778,6 +780,8 @@ function ResultView({
 }
 
 export function ReconciliationCenterPage() {
+  const closeContext = parseMonthlyCloseReturnContext(new URLSearchParams(window.location.search));
+  const requestedMonthId = closeContext?.monthId ?? null;
   const [selectedMonthId, setSelectedMonthId] = useState("");
   const [result, setResult] = useState<BrokerReconciliationResponse | null>(null);
   const [accountValues, setAccountValues] = useState<MappingValues>({});
@@ -813,6 +817,12 @@ export function ReconciliationCenterPage() {
 
   const months = monthsQuery.data ?? [];
   const monthsError = monthsQuery.error ? formatApiError(monthsQuery.error) : null;
+
+  useEffect(() => {
+    if (requestedMonthId && months.some((month) => month.id === requestedMonthId)) {
+      setSelectedMonthId(String(requestedMonthId));
+    }
+  }, [requestedMonthId, months]);
 
   async function runReconciliation() {
     const monthId = Number(selectedMonthId);
@@ -855,6 +865,7 @@ export function ReconciliationCenterPage() {
 
   return (
     <section className="stack-18 reconciliation-center">
+      <MonthlyCloseReturnBar />
       <header className="page-header">
         <p className="eyebrow">Контроль данных</p>
         <h1>Сверка портфеля</h1>

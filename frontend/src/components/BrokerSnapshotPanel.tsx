@@ -272,6 +272,7 @@ function selectionFor(row: BrokerPositionRow, decision: LocalDecision): BrokerAp
 type Props = {
   accounts: Account[];
   instruments: Instrument[];
+  initialMonthId?: number;
   onApplied?: () => Promise<void> | void;
   onInstrumentCreated?: () => Promise<void> | void;
 };
@@ -279,6 +280,7 @@ type Props = {
 export function BrokerSnapshotPanel({
   accounts,
   instruments,
+  initialMonthId,
   onApplied,
   onInstrumentCreated,
 }: Props) {
@@ -315,7 +317,12 @@ export function BrokerSnapshotPanel({
       setMonthsError(null);
       try {
         const rows = await listMonths(controller.signal);
-        if (!controller.signal.aborted) setMonths(rows);
+        if (!controller.signal.aborted) {
+          setMonths(rows);
+          if (initialMonthId && rows.some((month) => month.id === initialMonthId)) {
+            setMonthId(String(initialMonthId));
+          }
+        }
       } catch (error) {
         if (!controller.signal.aborted) setMonthsError(formatApiError(error));
       } finally {
@@ -324,7 +331,7 @@ export function BrokerSnapshotPanel({
     }
     void loadMonths();
     return () => controller.abort();
-  }, []);
+  }, [initialMonthId]);
 
   const selectedMonth = months.find((month) => String(month.id) === monthId) ?? null;
   const baselineDate = selectedMonth?.snapshot_date ?? "";

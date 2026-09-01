@@ -1,4 +1,7 @@
 import { useEffect, useId, useRef, useState, type FocusEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+import { useFloatingPosition } from "./FloatingLayer";
 
 type HelpTipProps = {
   label: string;
@@ -11,12 +14,15 @@ export function HelpTip({ label, children, align = "end" }: HelpTipProps) {
   const contentId = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
+  const bubbleStyle = useFloatingPosition(rootRef, bubbleRef, open, align);
 
   useEffect(() => {
     if (!open) return;
 
     function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !bubbleRef.current?.contains(target)) {
         setOpen(false);
       }
     }
@@ -38,7 +44,7 @@ export function HelpTip({ label, children, align = "end" }: HelpTipProps) {
 
   function handleBlur(event: FocusEvent<HTMLSpanElement>) {
     const next = event.relatedTarget as Node | null;
-    if (!next || !rootRef.current?.contains(next)) {
+    if (!next || (!rootRef.current?.contains(next) && !bubbleRef.current?.contains(next))) {
       setOpen(false);
     }
   }
@@ -56,11 +62,20 @@ export function HelpTip({ label, children, align = "end" }: HelpTipProps) {
       >
         <span aria-hidden="true">i</span>
       </button>
-      {open ? (
-        <span className="help-tip__bubble" id={contentId} role="tooltip">
-          {children}
-        </span>
-      ) : null}
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              className="help-tip__bubble"
+              id={contentId}
+              ref={bubbleRef}
+              role="tooltip"
+              style={bubbleStyle}
+            >
+              {children}
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }

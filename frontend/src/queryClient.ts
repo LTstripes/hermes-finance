@@ -5,6 +5,7 @@ export const queryKeys = {
   accounts: ["accounts"] as const,
   instruments: ["instruments"] as const,
   dashboard: (monthId: number | null) => ["dashboard", monthId] as const,
+  monthCloseWorkflow: (monthId: number | null) => ["month-close-workflow", monthId] as const,
   riskAllocation: (monthId: number | null, topN = 5, forecastVersion = "v1") =>
     ["risk-allocation", monthId, topN, forecastVersion] as const,
 };

@@ -64,8 +64,8 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     await user.click(
       within(debtTable).getByRole("button", { name: "Действия для долга «Основная карта»" }),
     );
-    expect(within(debtTable).getByRole("menuitem", { name: "Изменить" })).toBeEnabled();
-    expect(within(debtTable).getByRole("menuitem", { name: "Удалить" })).toHaveClass(
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toHaveClass(
       "overflow-menu__item--danger",
     );
   });

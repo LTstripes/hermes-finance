@@ -8,8 +8,10 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "./Button";
+import { useFloatingPosition } from "./FloatingLayer";
 
 type OverflowMenuProps = {
   label?: string;
@@ -31,6 +33,7 @@ export function OverflowMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useFloatingPosition(rootRef, menuRef, open, align);
 
   useEffect(() => {
     if (!open) return;
@@ -41,7 +44,8 @@ export function OverflowMenu({
     if (!open) return;
 
     function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
       }
     }
@@ -63,7 +67,7 @@ export function OverflowMenu({
 
   function handleBlur(event: FocusEvent<HTMLDivElement>) {
     const next = event.relatedTarget as Node | null;
-    if (!next || !rootRef.current?.contains(next)) {
+    if (!next || (!rootRef.current?.contains(next) && !menuRef.current?.contains(next))) {
       setOpen(false);
     }
   }
@@ -116,22 +120,26 @@ export function OverflowMenu({
       >
         <span aria-hidden="true">⋯</span>
       </Button>
-      {open ? (
-        <div
-          className="overflow-menu__menu"
-          id={menuId}
-          onClick={(event) => {
-            if ((event.target as Element).closest('[role="menuitem"]')) {
-              setOpen(false);
-            }
-          }}
-          onKeyDown={handleMenuKeyDown}
-          ref={menuRef}
-          role="menu"
-        >
-          {children}
-        </div>
-      ) : null}
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="overflow-menu__menu"
+              id={menuId}
+              onClick={(event) => {
+                if ((event.target as Element).closest('[role="menuitem"]')) {
+                  setOpen(false);
+                }
+              }}
+              onKeyDown={handleMenuKeyDown}
+              ref={menuRef}
+              role="menu"
+              style={menuStyle}
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

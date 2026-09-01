@@ -329,7 +329,7 @@ describe("App", () => {
 
     const juneRow = periodCell(/Июнь/);
     await user.click(within(juneRow).getByRole("button", { name: /Действия для Июнь/ }));
-    expect(within(juneRow).queryByRole("menuitem", { name: "Удалить черновик" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Удалить черновик" })).toBeNull();
     await user.keyboard("{Escape}");
 
     await user.click(screen.getByRole("button", { name: "Создать другой период" }));
@@ -359,7 +359,7 @@ describe("App", () => {
 
     const julyAgain = periodCell(/Июль/);
     await user.click(within(julyAgain).getByRole("button", { name: /Действия для Июль/ }));
-    await user.click(within(julyAgain).getByRole("menuitem", { name: "Удалить черновик" }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить черновик" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Удалить черновик" }));
 
