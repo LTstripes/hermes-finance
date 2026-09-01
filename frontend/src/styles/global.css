@@ -1907,6 +1907,176 @@ th.num {
   font-weight: 700;
 }
 
+.final-review {
+  max-width: 900px;
+  scroll-margin-top: 24px;
+}
+
+.final-review__header,
+.final-review__card-heading,
+.final-review__event-heading,
+.final-review__close-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.final-review__header h2,
+.final-review__card-heading h3,
+.final-review__event-heading strong {
+  margin: 0;
+}
+
+.final-review__lead,
+.final-review__close-note,
+.final-review__disclosure {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.final-review__kpis,
+.final-review__supporting-values,
+.final-review__status-grid,
+.final-review__card-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.final-review__kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.final-review__supporting-values,
+.final-review__status-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.final-review__kpis .data-value,
+.final-review__supporting-values .data-value,
+.final-review__status-grid .data-value,
+.final-review__card-grid .data-value {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.final-review__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.final-review__card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.final-review__card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.final-review__card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.final-review__details-stack,
+.final-review__event-windows {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.final-review__details-stack h3 {
+  margin: 0 0 8px;
+  font-size: var(--text-sm);
+}
+
+.final-review__diagnostic-list,
+.final-review__attention-list,
+.final-review__event-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.final-review__diagnostic-list li,
+.final-review__attention-list li,
+.final-review__event-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.final-review__diagnostic-list code,
+.final-review__attention-details code {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.final-review__attention-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.final-review__attention-list li:last-child {
+  border-bottom: 0;
+}
+
+.final-review__attention-details {
+  width: 100%;
+  padding-left: 4px;
+}
+
+.final-review__attention-details summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+
+.final-review__event-window {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.final-review__event-list li {
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.final-review__close-action {
+  align-items: flex-end;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: var(--radius-lg);
+  background: var(--surface-soft);
+}
+
+.final-review__close-action p {
+  margin: 0;
+}
+
 .monthly-close-return {
   position: sticky;
   z-index: 5;
@@ -1927,11 +2097,34 @@ th.num {
   .monthly-close__provider-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .final-review__kpis,
+  .final-review__supporting-values,
+  .final-review__status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .final-review__cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
   .monthly-close__provider-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .final-review__kpis,
+  .final-review__supporting-values,
+  .final-review__status-grid,
+  .final-review__card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .final-review__header,
+  .final-review__close-action {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
