@@ -11,6 +11,7 @@ import {
 import { formatApiError } from "../api/client";
 import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
+import { ReconciliationSummary } from "../components/month-close/ProviderStepSummary";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
@@ -214,7 +215,7 @@ function observedInstrumentShortLabel(item: {
 
 function instrumentMappingLabel(row: ReconciliationInstrument): string {
   const readable = joinIdentityParts([row.display_name, row.isin, row.ticker]);
-  return readable || `Источник: ${row.provider_instrument_id ?? "—"}`;
+  return readable || "Инструмент без описания";
 }
 
 const ACCOUNT_MAPPING_VISIBLE_INSTRUMENTS = 3;
@@ -228,7 +229,7 @@ function accountMappingLabel(row: ReconciliationAccount): string {
   const hiddenCount = instruments.length - visible.length;
   const extra = hiddenCount > 0 ? [`ещё ${hiddenCount}`] : [];
   const readable = [...sections, ...visible, ...extra].join(" · ");
-  return readable || `Источник: ${row.provider_account_id}`;
+  return readable || "Счёт без наблюдений";
 }
 
 function mappingSourceLine(providerId: string, label: string): string | null {
@@ -317,7 +318,10 @@ function MappingPanel({
                         ))}
                       </Select>
                       {sourceLine ? (
-                        <span className="reconciliation-center__mapping-source">{sourceLine}</span>
+                        <details className="reconciliation-center__mapping-source">
+                          <summary>Идентификатор источника</summary>
+                          <code>{sourceLine}</code>
+                        </details>
                       ) : null}
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
@@ -366,7 +370,10 @@ function MappingPanel({
                         ))}
                       </Select>
                       {sourceLine ? (
-                        <span className="reconciliation-center__mapping-source">{sourceLine}</span>
+                        <details className="reconciliation-center__mapping-source">
+                          <summary>Идентификатор источника</summary>
+                          <code>{sourceLine}</code>
+                        </details>
                       ) : null}
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
@@ -391,10 +398,12 @@ function IdentityCell({ row }: { row: ReconciliationRow }) {
       <strong>{row.account_name ?? "Счёт не сопоставлен"}</strong>
       <span>{row.instrument_name ?? "Инструмент не сопоставлен"}</span>
       {instrumentIdentity ? <span className="muted">{instrumentIdentity}</span> : null}
-      <span className="reconciliation-center__identity-provider">
-        Идентификаторы источника: {valueOrDash(row.provider_account_id)} /{" "}
-        {valueOrDash(row.provider_instrument_id)}
-      </span>
+      <details className="reconciliation-center__identity-provider">
+        <summary>Идентификаторы источника</summary>
+        <span>
+          {valueOrDash(row.provider_account_id)} / {valueOrDash(row.provider_instrument_id)}
+        </span>
+      </details>
       <details className="reconciliation-center__fingerprint">
         <summary>Технический ключ строки</summary>
         <code>{valueOrDash(row.fingerprint)}</code>
@@ -887,7 +896,7 @@ export function ReconciliationCenterPage() {
               id="reconciliation-month"
               value={selectedMonthId}
               onChange={(event) => changeMonth(event.target.value)}
-              disabled={monthsQuery.isPending}
+              disabled={monthsQuery.isPending || Boolean(closeContext)}
             >
               <option value="">
                 {monthsQuery.isPending ? "Загружаем месяцы…" : "— выбрать месяц —"}
@@ -929,28 +938,36 @@ export function ReconciliationCenterPage() {
       </Panel>
 
       {result ? (
-        <ResultView
-          accountValues={accountValues}
-          accounts={accountsQuery.data ?? []}
-          accountsError={accountsQuery.error ? formatApiError(accountsQuery.error) : null}
-          accountsLoading={accountsQuery.isPending}
-          instrumentValues={instrumentValues}
-          instruments={instrumentsQuery.data ?? []}
-          instrumentsError={instrumentsQuery.error ? formatApiError(instrumentsQuery.error) : null}
-          instrumentsLoading={instrumentsQuery.isPending}
-          mappingDirty={mappingDirty}
-          onAccountChange={changeAccountMapping}
-          onInstrumentChange={changeInstrumentMapping}
-          result={result}
-        />
-      ) : (
-        <Panel label="Результат" title="Сверка ещё не запрашивалась">
-          <EmptyState
-            description="Страница готова. Выбери месяц и запусти проверку, когда понадобится. Простое открытие не обращается к внешнему источнику."
-            inline
-            title="Нет снимка источника"
+        <>
+          {closeContext ? <ReconciliationSummary error={actionError} result={result} /> : null}
+          <ResultView
+            accountValues={accountValues}
+            accounts={accountsQuery.data ?? []}
+            accountsError={accountsQuery.error ? formatApiError(accountsQuery.error) : null}
+            accountsLoading={accountsQuery.isPending}
+            instrumentValues={instrumentValues}
+            instruments={instrumentsQuery.data ?? []}
+            instrumentsError={
+              instrumentsQuery.error ? formatApiError(instrumentsQuery.error) : null
+            }
+            instrumentsLoading={instrumentsQuery.isPending}
+            mappingDirty={mappingDirty}
+            onAccountChange={changeAccountMapping}
+            onInstrumentChange={changeInstrumentMapping}
+            result={result}
           />
-        </Panel>
+        </>
+      ) : (
+        <>
+          {closeContext ? <ReconciliationSummary error={actionError} result={null} /> : null}
+          <Panel label="Результат" title="Сверка ещё не запрашивалась">
+            <EmptyState
+              description="Страница готова. Выбери месяц и запусти проверку, когда понадобится. Простое открытие не обращается к внешнему источнику."
+              inline
+              title="Нет снимка источника"
+            />
+          </Panel>
+        </>
       )}
     </section>
   );

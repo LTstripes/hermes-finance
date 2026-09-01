@@ -17,6 +17,11 @@ import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
 import { formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
+import {
+  AlfaSnapshotSummary,
+  type AlfaApplyOutcome,
+  summarizeAlfaSnapshot,
+} from "./month-close/ProviderStepSummary";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type DecisionAction = "keep_existing" | "replace" | "";
@@ -238,10 +243,17 @@ type Props = {
   accounts: Account[];
   instruments: Instrument[];
   initialMonthId?: number;
+  monthlyClose?: boolean;
   onApplied?: () => Promise<void> | void;
 };
 
-export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onApplied }: Props) {
+export function BrokerSnapshotPanel({
+  accounts,
+  instruments,
+  initialMonthId,
+  monthlyClose = false,
+  onApplied,
+}: Props) {
   const [monthId, setMonthId] = useState("");
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [monthsLoading, setMonthsLoading] = useState(true);
@@ -256,6 +268,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [applyOutcome, setApplyOutcome] = useState<AlfaApplyOutcome | null>(null);
   const [diagnosticCopied, setDiagnosticCopied] = useState(false);
   const [identityMappings, setIdentityMappings] = useState<BrokerIdentityMapping[]>([]);
 
@@ -344,6 +357,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
     setBusy(true);
     setMessage(null);
     setSuccess(null);
+    setApplyOutcome(null);
     clearReview();
     try {
       const next = await previewBrokerSnapshot(id, mapping());
@@ -366,6 +380,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
     setBusy(true);
     setMessage(null);
     setSuccess(null);
+    setApplyOutcome(null);
     try {
       await revokeBrokerIdentityMapping(mappingId);
       setMappingDirty(true);
@@ -418,6 +433,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
 
   async function apply() {
     if (!preview || !applyReady || !baselineDate) return;
+    const previewCounts = summarizeAlfaSnapshot(preview);
     setBusy(true);
     setMessage(null);
     setSuccess(null);
@@ -440,6 +456,11 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
           ? `Базовый срез без изменений: ${result.selected_count}.`
           : `Базовый срез применён. Позиций: ${result.selected_count}.`,
       );
+      setApplyOutcome({
+        selectedCount: result.selected_count,
+        unchangedCount: unchanged,
+        attentionCount: previewCounts.unresolved,
+      });
       clearReview();
       await onApplied?.();
     } catch (error) {
@@ -462,7 +483,7 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
             id="broker-month-id"
             value={monthId}
             onChange={(event) => setMonthId(event.target.value)}
-            disabled={monthsLoading}
+            disabled={monthsLoading || monthlyClose}
           >
             <option value="">{monthsLoading ? "Загружаем месяцы…" : "— выберите месяц —"}</option>
             {[...months]
@@ -505,6 +526,9 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
           </Button>
         ) : null}
       </div>
+      {monthlyClose ? (
+        <AlfaSnapshotSummary error={message} outcome={applyOutcome} preview={preview} />
+      ) : null}
       {message ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {message}
@@ -556,7 +580,10 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
                     <div className="toolbar">
                       <div className="stack-8">
                         <strong>{label}</strong>
-                        <span className="muted tiny">Источник: {row.provider_account_id}</span>
+                        <details className="provider-identity-details">
+                          <summary>Идентификатор источника</summary>
+                          <code>Источник: {row.provider_account_id}</code>
+                        </details>
                       </div>
                       <Badge tone={classificationTone(classification)}>
                         {identityLabel(classification, row.status)}
@@ -633,7 +660,10 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
                     <div className="toolbar">
                       <div className="stack-8">
                         <strong>{label}</strong>
-                        <span className="muted tiny">Источник: {providerId}</span>
+                        <details className="provider-identity-details">
+                          <summary>Идентификатор источника</summary>
+                          <code>Источник: {providerId}</code>
+                        </details>
                       </div>
                       <Badge tone={classificationTone(classification)}>
                         {identityLabel(classification, row.status)}
@@ -714,7 +744,10 @@ export function BrokerSnapshotPanel({ accounts, instruments, initialMonthId, onA
                           {row.instrument_name ?? "Инструмент не найден"}
                           {row.instrument_isin ? ` · ${row.instrument_isin}` : ""}
                         </span>
-                        <span className="muted tiny">ID: {key}</span>
+                        <details className="provider-identity-details">
+                          <summary>Технический ключ строки</summary>
+                          <code>ID: {key}</code>
+                        </details>
                       </div>
                     </Td>
                     <Td>
