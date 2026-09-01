@@ -7,6 +7,7 @@ import "./styles/sticky-sidebar.css";
 import "./styles/ui-primitives.css";
 import "./styles/app-shell-v03.css";
 import "./styles/dashboard-v03.css";
+import "./styles/broker-snapshot.css";
 import "./styles/fact-forecast-goal-v03.css";
 import "./styles/goals-v03.css";
 import "./styles/month-workspace-v03.css";
@@ -14,6 +15,7 @@ import "./styles/analytics-v03.css";
 import "./styles/risk-allocation.css";
 import "./styles/tax-iis-planner.css";
 import "./styles/reconciliation-center.css";
+import "./styles/portfolio-review-package.css";
 
 const root = document.getElementById("root");
 

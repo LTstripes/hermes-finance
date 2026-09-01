@@ -11,7 +11,7 @@ import { MonthAssetsSection } from "../components/MonthAssetsSection";
 import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { MonthBudgetSection } from "../components/MonthBudgetSection";
 import { MonthNoteSection } from "../components/MonthNoteSection";
-import { MonthReviewSection } from "../components/MonthReviewSection";
+import { MonthReviewSection, type MonthReadinessSummary } from "../components/MonthReviewSection";
 import { MonthFlowsSection } from "../components/MonthFlowsSection";
 import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
@@ -35,6 +35,7 @@ import { formatMoney, formatMonth } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { MONTH_STATUS_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput } from "../lib/money";
+import { russianCount } from "../lib/ownerCopy";
 
 type EditorForm = {
   snapshot_date: string;
@@ -115,7 +116,7 @@ export function MonthDetailPage() {
   const [calcNet, setCalcNet] = useState("");
   const [calcTaxParts, setCalcTaxParts] = useState<SalaryTaxRatePart[]>([]);
   const [dashboardKpis, setDashboardKpis] = useState<DashboardKpis | null>(null);
-  const [dashboardWarnings, setDashboardWarnings] = useState<string[]>([]);
+  const [readinessSummary, setReadinessSummary] = useState<MonthReadinessSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,6 +184,7 @@ export function MonthDetailPage() {
       setLoading(true);
       setError(null);
       setSaveError(null);
+      setReadinessSummary(null);
       try {
         const [monthData, incomeData, summary, dashboard] = await Promise.all([
           getMonth(monthId, signal),
@@ -204,13 +206,12 @@ export function MonthDetailPage() {
         };
         setCalcTaxParts(salaryTax.parts ?? []);
         setDashboardKpis(dashboard?.kpis ?? null);
-        setDashboardWarnings(dashboard?.warnings ?? []);
       } catch (err) {
         if (!signal?.aborted) {
           setError(formatApiError(err));
           setMonth(null);
           setDashboardKpis(null);
-          setDashboardWarnings([]);
+          setReadinessSummary(null);
         }
       } finally {
         if (!signal?.aborted) setLoading(false);
@@ -396,9 +397,7 @@ export function MonthDetailPage() {
             <span>Раздел: {activeSectionLabel}</span>
           </span>
         }
-        summary={
-          <MonthStickySummary kpis={dashboardKpis} warningCount={dashboardWarnings.length} />
-        }
+        summary={<MonthStickySummary kpis={dashboardKpis} readinessSummary={readinessSummary} />}
         title={formatMonth(month.year, month.month)}
       />
 
@@ -412,7 +411,7 @@ export function MonthDetailPage() {
               section.id !== "income" &&
               section.id !== "review" &&
               childDirty[section.id]);
-          const warningCount = section.id === "review" ? dashboardWarnings.length : 0;
+          const warningCount = section.id === "review" ? (readinessSummary?.warningCount ?? 0) : 0;
           return (
             <button
               aria-current={isActive ? "page" : undefined}
@@ -664,6 +663,7 @@ export function MonthDetailPage() {
           <MonthReviewSection
             dirty={workspaceDirty}
             monthId={month.id}
+            onReadinessSummaryChange={setReadinessSummary}
             onStatusChanged={() => void load()}
             readOnly={readOnly}
             status={month.status === "closed" ? "closed" : "draft"}
@@ -702,16 +702,34 @@ export function MonthDetailPage() {
 
 function MonthStickySummary({
   kpis,
-  warningCount,
+  readinessSummary,
 }: {
   kpis: DashboardKpis | null;
-  warningCount: number;
+  readinessSummary: MonthReadinessSummary | null;
 }) {
   if (!kpis) {
-    const fallback =
-      warningCount > 0 ? `${warningCount} предупреждений` : "Краткие показатели недоступны";
-    return <span className="month-workspace__summary-item">{fallback}</span>;
+    return <span className="month-workspace__summary-item">Краткие показатели недоступны</span>;
   }
+
+  const readinessLabel =
+    readinessSummary == null
+      ? "Проверка не загружена"
+      : [
+          readinessSummary.blockerCount > 0
+            ? russianCount(readinessSummary.blockerCount, "условие", "условия", "условий") +
+              " блокирует закрытие"
+            : null,
+          readinessSummary.warningCount > 0
+            ? russianCount(
+                readinessSummary.warningCount,
+                "предупреждение",
+                "предупреждения",
+                "предупреждений",
+              )
+            : null,
+        ]
+          .filter((value): value is string => value !== null)
+          .join(" · ") || "Без предупреждений";
 
   return (
     <div className="month-workspace__summary">
@@ -719,11 +737,25 @@ function MonthStickySummary({
         Капитал <strong>{formatMoney(moneyAmount(kpis.liquid_capital_net))}</strong>
       </span>
       <span className="month-workspace__summary-item">
-        Пассивный доход <strong>{formatMoney(moneyAmount(kpis.passive_income_average))}</strong>
+        Средний пассивный доход{" "}
+        <strong>{formatMoney(moneyAmount(kpis.passive_income_average))}</strong>
       </span>
-      <span className={`month-workspace__summary-item${warningCount > 0 ? " is-warning" : ""}`}>
-        {warningCount > 0 ? `${warningCount} предупреждений` : "Без предупреждений"}
+      <span
+        className={
+          "month-workspace__summary-item" +
+          (readinessSummary &&
+          (readinessSummary.blockerCount > 0 || readinessSummary.warningCount > 0)
+            ? " is-warning"
+            : "")
+        }
+      >
+        {readinessLabel}
       </span>
+      {readinessSummary && readinessSummary.infoCount > 0 ? (
+        <span className="month-workspace__summary-item">
+          Контекст: {russianCount(readinessSummary.infoCount, "факт", "факта", "фактов")}
+        </span>
+      ) : null}
     </div>
   );
 }

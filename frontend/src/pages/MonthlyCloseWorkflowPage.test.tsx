@@ -4,20 +4,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import { formatMoney } from "../lib/format";
 import { MonthlyCloseWorkflowPage } from "./MonthlyCloseWorkflowPage";
 
-function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthCloseWorkflow {
+function money(amount: string) {
+  return { amount, currency: "RUB" };
+}
+
+function workflow(
+  monthId: number,
+  status: "draft" | "closed" = "draft",
+  outlookMode: "known" | "none" = "known",
+): MonthCloseWorkflow {
+  const month = {
+    id: monthId,
+    year: 2025,
+    month: 4,
+    status,
+    snapshot_date: "2025-04-30",
+    source: "manual",
+  } as const;
   return {
     contract_version: "monthly_close_workflow_v1",
     generated_at: "2026-09-01T08:00:00Z",
-    month: {
-      id: monthId,
-      year: 2025,
-      month: 4,
-      status,
-      snapshot_date: "2025-04-30",
-      source: "manual",
-    },
+    month,
     recommended_step_id: status === "closed" ? "next_month_outlook" : "readiness",
     progress: { completed_or_skipped: 2, total_applicable: 8 },
     steps: [
@@ -63,7 +73,37 @@ function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthC
       reason_codes: [],
     },
     final_review: { available: false, reason_code: "final_review_not_in_core" },
-    outlook: status === "closed" ? { available: false, reason_code: "unavailable" } : null,
+    outlook:
+      status === "closed"
+        ? {
+            available: true,
+            reason_code: null,
+            source_month: month,
+            next_month: {
+              year: 2025,
+              month: 5,
+              known_event_count: outlookMode === "known" ? 1 : 0,
+              has_known_events: outlookMode === "known",
+              passive_income: outlookMode === "known" ? money("1234.56") : null,
+              redemption_principal: outlookMode === "known" ? money("5000.00") : null,
+              total_cash_flow: outlookMode === "known" ? money("6234.56") : null,
+              deposit_interest_estimate: null,
+              items: [],
+            },
+            upcoming_14_days: {
+              days: 14,
+              from_date: "2025-05-01",
+              to_date: "2025-05-14",
+              passive_income: money("0.00"),
+              redemption_principal: money("0.00"),
+              total_cash_flow: money("0.00"),
+              items: [],
+            },
+            upcoming_30_days: null,
+            known_event_count: outlookMode === "known" ? 1 : 0,
+            evidence_version: "outlook-test-v1",
+          }
+        : null,
     links: { month: `/months/${monthId}`, close_readiness: "", freshness: "" },
   };
 }
@@ -194,6 +234,23 @@ describe("MonthlyCloseWorkflowPage", () => {
       "href",
       "/months?from=monthly-close&step=next_month_outlook&monthId=8",
     );
+    expect(screen.getByText("Пассивный доход").parentElement).toHaveTextContent(/1.234,56/);
+    expect(screen.getByText("Погашение · возврат капитала").parentElement).toHaveTextContent(
+      /5.000/,
+    );
+    expect(screen.getByText("outlook-test-v1")).toBeInTheDocument();
+  });
+
+  it("does not turn an outlook with no known events into measured zero", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(workflow(9, "closed", "none"))))),
+    );
+    renderRoute("/months/9/close");
+
+    expect(await screen.findByText("Утверждён")).toBeInTheDocument();
+    expect(screen.getAllByText("Нет известных событий").length).toBeGreaterThan(0);
+    expect(screen.queryByText(formatMoney("0.00"))).not.toBeInTheDocument();
   });
 
   it("refetches before confirmation, closes explicitly, and renders persisted outlook state", async () => {

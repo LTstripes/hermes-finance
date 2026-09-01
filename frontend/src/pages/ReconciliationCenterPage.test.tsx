@@ -322,7 +322,7 @@ describe("ReconciliationCenterPage", () => {
     expect(screen.getAllByText("Не сопоставлено").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Учётная цена брокера:").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Оценка брокера:").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("только сравнение").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("только для сравнения").length).toBeGreaterThan(0);
     expect(screen.getByText("Нельзя считать сопоставление безопасным")).toBeInTheDocument();
     expect(screen.queryByText("matched")).toBeNull();
     expect(screen.queryByText(/Локально: счёт #1/)).toBeNull();
@@ -377,8 +377,17 @@ describe("ReconciliationCenterPage", () => {
     expect(
       screen.getByLabelText("Synthetic provider bond · RU000SYN00001 · SYN"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Источник: SYN-ACCOUNT-001")).toBeInTheDocument();
-    expect(screen.getByText("Источник: SYN-INSTRUMENT-001")).toBeInTheDocument();
+    expect(screen.queryByText("Источник: SYN-ACCOUNT-001")).toBeNull();
+    expect(screen.queryByText("Источник: SYN-INSTRUMENT-001")).toBeNull();
+    const sourceDetails = screen.getAllByText("Идентификатор источника");
+    await user.click(sourceDetails[0]);
+    expect(
+      screen.getByText("Раздел MICEX · Synthetic provider bond: SYN-ACCOUNT-001"),
+    ).toBeVisible();
+    await user.click(sourceDetails[1]);
+    expect(
+      screen.getByText("Synthetic provider bond · RU000SYN00001 · SYN: SYN-INSTRUMENT-001"),
+    ).toBeVisible();
     expect(
       screen.getByText("Причина: Нет явного сопоставления владельца для счёта брокера"),
     ).toBeInTheDocument();
@@ -417,7 +426,7 @@ describe("ReconciliationCenterPage", () => {
         "Раздел MICEX · Synthetic bond 01 · Synthetic bond 02 · Synthetic bond 03 · ещё 5",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Источник: SYN-ACCOUNT-001")).toBeInTheDocument();
+    expect(screen.queryByText("Источник: SYN-ACCOUNT-001")).toBeNull();
     expect(screen.queryByText(/Synthetic bond 04/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Synthetic bond 08/)).not.toBeInTheDocument();
   });

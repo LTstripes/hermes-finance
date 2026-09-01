@@ -13,6 +13,7 @@ import {
   type StatementRow,
 } from "../api/statementImport";
 import type { Account, Instrument } from "../api/types";
+import type { AlfaStatementTransientOutcome } from "./month-close/statementOutcome";
 import { formatDate, formatMoney } from "../lib/format";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { fromKopecks } from "../lib/money";
@@ -199,15 +200,19 @@ function readyForBulkSelect(row: StatementRow): boolean {
 type Props = {
   accounts: Account[];
   instruments: Instrument[];
+  readOnly?: boolean;
   onApplied?: () => Promise<void> | void;
   onInstrumentsChange?: (instruments: Instrument[]) => void;
+  onOutcome?: (outcome: AlfaStatementTransientOutcome | null) => void;
 };
 
 export function StatementImportPanel({
   accounts,
   instruments,
+  readOnly = false,
   onApplied,
   onInstrumentsChange,
+  onOutcome,
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
@@ -291,6 +296,7 @@ export function StatementImportPanel({
     clearReview();
     setMessage(null);
     setSuccess(null);
+    onOutcome?.(null);
   }
 
   function resetMappings() {
@@ -308,6 +314,7 @@ export function StatementImportPanel({
     setMessage(null);
     setSuccess(null);
     clearReview();
+    onOutcome?.(null);
     try {
       const next = await inspectStatement(file);
       const nextRefs = uniqueValues(next.rows.map((row) => row.provider_account_ref));
@@ -315,6 +322,9 @@ export function StatementImportPanel({
       setInspected(next);
       setAccountMappings((current) => retainMappings(current, nextRefs));
       setInstrumentMappings((current) => retainMappings(current, nextIsins));
+      onOutcome?.(
+        next.status === "applicable" && next.rows.length === 0 ? { kind: "zero_rows" } : null,
+      );
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
       setMessage(formatApiError(error));
@@ -491,6 +501,7 @@ export function StatementImportPanel({
       setDecisions({});
       setConfirmOpen(false);
       setSuccess(`Импортировано строк: ${result.selected_count}.`);
+      onOutcome?.({ kind: "applied", selectedCount: result.selected_count });
       await onApplied?.();
     } catch (error) {
       setMessage(formatApiError(error));
@@ -514,6 +525,12 @@ export function StatementImportPanel({
         PDF читается только в памяти. При применении Hermes повторно проверит тот же файл и
         убедится, что он не изменился.
       </p>
+      {readOnly ? (
+        <div className="inline-alert inline-alert--warn" role="status">
+          Месяц закрыт. Проверка PDF доступна, но применение выплат заблокировано до явного
+          повторного открытия месяца.
+        </div>
+      ) : null}
       <div className="editor-grid">
         <Field htmlFor="statement-file" label="PDF отчёта Alfa">
           <input
@@ -536,7 +553,7 @@ export function StatementImportPanel({
         {preparation ? (
           <Button
             onClick={() => setConfirmOpen(true)}
-            disabled={busy || !selectedRowsReady}
+            disabled={readOnly || busy || !selectedRowsReady}
             variant="primary"
           >
             Применить выбранные строки
@@ -555,6 +572,12 @@ export function StatementImportPanel({
       ) : null}
       {inspected ? (
         <div className="stack-12">
+          {inspected.status === "applicable" && inspected.rows.length === 0 ? (
+            <div className="inline-alert inline-alert--info" role="status">
+              В этом PDF нет подходящих выплат за отчётные месяцы. Это результат только текущей
+              проверки: после перезапуска файл не считается просмотренным.
+            </div>
+          ) : null}
           <div className="statement-import__summary">
             <Badge tone={inspected.status === "applicable" ? "ok" : "closed"}>
               {REPORT_STATUS_LABELS[inspected.status] ?? "Статус отчёта неизвестен"}

@@ -150,6 +150,29 @@ export type FinalMonthReviewUnavailable = {
   reason_code: string | null;
 };
 
+export type NextMonthBucket = {
+  year: number;
+  month: number;
+  known_event_count: number;
+  has_known_events: boolean;
+  passive_income: MoneyValue | null;
+  redemption_principal: MoneyValue | null;
+  total_cash_flow: MoneyValue | null;
+  deposit_interest_estimate: MoneyValue | null;
+  items: CashFlowLadderEvent[];
+};
+
+export type NextMonthOutlook = {
+  available: boolean;
+  reason_code: string | null;
+  source_month: WorkflowMonth;
+  next_month: NextMonthBucket | null;
+  upcoming_14_days: UpcomingEventsWindow | null;
+  upcoming_30_days: UpcomingEventsWindow | null;
+  known_event_count: number;
+  evidence_version: string | null;
+};
+
 export type GuidedCloseStep = {
   id: GuidedCloseStepId;
   order: number;
@@ -198,7 +221,7 @@ export type MonthCloseWorkflow = {
     reason_codes: string[];
   };
   final_review: FinalMonthReview | FinalMonthReviewUnavailable;
-  outlook: { available: boolean; reason_code: string | null } | null;
+  outlook: NextMonthOutlook | null;
   links: { month: string; close_readiness: string; freshness: string };
 };
 

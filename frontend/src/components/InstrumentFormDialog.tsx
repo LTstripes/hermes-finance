@@ -14,13 +14,28 @@ type Props = {
   error: string | null;
   onCancel: () => void;
   onSubmit: (payload: InstrumentCreatePayload | InstrumentUpdatePayload) => Promise<void>;
+  prefill?: {
+    name?: string | null;
+    isin?: string | null;
+    ticker?: string | null;
+  };
+  sourceLabel?: string;
 };
 
 function normalizeMoney(value: string): string {
   return value.trim().replace(",", ".");
 }
 
-export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, onSubmit }: Props) {
+export function InstrumentFormDialog({
+  open,
+  instrument,
+  busy,
+  error,
+  onCancel,
+  onSubmit,
+  prefill,
+  sourceLabel,
+}: Props) {
   const titleId = useId();
   const descriptionId = useId();
   const [name, setName] = useState("");
@@ -37,10 +52,10 @@ export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, 
 
   useEffect(() => {
     if (!open) return;
-    setName(instrument?.name ?? "");
+    setName(instrument?.name ?? prefill?.name ?? "");
     setInstrumentType(instrument?.instrument_type ?? "bond");
-    setIsin(instrument?.isin ?? "");
-    setTicker(instrument?.ticker ?? "");
+    setIsin(instrument?.isin ?? prefill?.isin ?? "");
+    setTicker(instrument?.ticker ?? prefill?.ticker ?? "");
     setMoexSecid(instrument?.moex_secid ?? "");
     setCurrency(instrument?.currency ?? "RUB");
     setNominalValue(instrument?.nominal_value?.amount ?? "");
@@ -48,7 +63,7 @@ export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, 
     setManualPriceAllowed(instrument?.manual_price_allowed ?? true);
     setNotes(instrument?.notes ?? "");
     setLocalError(null);
-  }, [open, instrument]);
+  }, [open, instrument, prefill?.name, prefill?.isin, prefill?.ticker]);
 
   useEffect(() => {
     if (!open) return;
@@ -131,13 +146,19 @@ export function InstrumentFormDialog({ open, instrument, busy, error, onCancel, 
         role="dialog"
       >
         <h2 className="dialog__title" id={titleId}>
-          {instrument ? "Редактировать инструмент" : "Создать инструмент"}
+          {instrument
+            ? "Редактировать инструмент"
+            : sourceLabel
+              ? `Создать инструмент из ${sourceLabel}`
+              : "Создать инструмент"}
         </h2>
         <p className="dialog__body" id={descriptionId}>
           Денежные значения сохраняются точно, без округления.
           {instrument
             ? " Уже заполненные дополнительные поля сохраняются, если оставить их без изменений."
-            : ""}
+            : sourceLabel
+              ? " Предзаполнены только название, ISIN и тикер из источника; остальные поля проверь и заполни сам."
+              : ""}
         </p>
         <form className="form-stack" onSubmit={handleSubmit}>
           <Field htmlFor="instrument-name" label="Название">

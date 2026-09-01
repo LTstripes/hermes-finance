@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import { useMonthCloseWorkflow, type MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { closeMonth, reopenMonth } from "../api/months";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
+import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
 import { routeForGuidedAction } from "../components/month-close/navigation";
 import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
+import {
+  parseAlfaStatementTransientOutcome,
+  type AlfaStatementTransientOutcome,
+} from "../components/month-close/statementOutcome";
 import {
   Badge,
   Button,
@@ -40,6 +45,8 @@ function stateTone(state: keyof typeof STATE_LABELS) {
 
 export function MonthlyCloseWorkflowPage() {
   const params = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const parsedMonthId = Number(params.monthId);
   const monthId = Number.isInteger(parsedMonthId) && parsedMonthId > 0 ? parsedMonthId : null;
   const workflowQuery = useMonthCloseWorkflow(monthId);
@@ -48,6 +55,19 @@ export function MonthlyCloseWorkflowPage() {
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const [preparingClose, setPreparingClose] = useState(false);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [statementOutcome] = useState<AlfaStatementTransientOutcome | null>(() =>
+    parseAlfaStatementTransientOutcome(
+      (location.state as { alfaStatementOutcome?: unknown } | null)?.alfaStatementOutcome,
+    ),
+  );
+
+  useEffect(() => {
+    if (!statementOutcome) return;
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    });
+  }, [location.hash, location.pathname, location.search, navigate, statementOutcome]);
 
   useEffect(() => {
     function refetchOnFocus() {
@@ -200,6 +220,19 @@ export function MonthlyCloseWorkflowPage() {
         </p>
       </header>
 
+      {statementOutcome ? (
+        <div className="statement-import__wizard-outcome" role="status">
+          <div>
+            <strong>Результат проверки PDF Alfa</strong>
+            <p>
+              {statementOutcome.kind === "applied"
+                ? `Применено выбранных строк: ${statementOutcome.selectedCount}. Состояние шага подтверждается сохранёнными данными.`
+                : "В этом PDF подходящих выплат не найдено. Это только текущий результат проверки; шаг остаётся доступным для повторного запроса."}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {recommended ? (
         <Panel className="monthly-close__current" label="Сейчас" title={recommended.title}>
           <p>{recommended.why}</p>
@@ -253,6 +286,9 @@ export function MonthlyCloseWorkflowPage() {
       )}
 
       <FinalMonthReview review={workflow.final_review} />
+      {workflow.month.status === "closed" && workflow.outlook ? (
+        <NextMonthOutlook outlook={workflow.outlook} />
+      ) : null}
 
       <ol className="monthly-close__steps" aria-label="Шаги закрытия">
         {workflow.steps.map((step) => (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   type BrokerIdentityMapping,
   listBrokerIdentityMappings,
@@ -13,10 +13,16 @@ import {
   previewBrokerSnapshot,
 } from "../api/brokerSnapshot";
 import { formatApiError } from "../api/client";
+import {
+  createInstrument,
+  type InstrumentCreatePayload,
+  type InstrumentUpdatePayload,
+} from "../api/instruments";
 import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
 import { formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
+import { InstrumentFormDialog } from "./InstrumentFormDialog";
 import {
   AlfaSnapshotSummary,
   type AlfaApplyOutcome,
@@ -25,6 +31,7 @@ import {
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type DecisionAction = "keep_existing" | "replace" | "";
+type PositionFilter = "all" | "applicable" | "attention";
 type LocalDecision = {
   averageCost: DecisionAction;
   averageValue: string;
@@ -138,6 +145,21 @@ function isApplyablePositionRow(row: BrokerPositionRow): boolean {
   );
 }
 
+function groupPositionRows(rows: BrokerPositionRow[]) {
+  const groups = new Map<string, { key: string; accountName: string; rows: BrokerPositionRow[] }>();
+  for (const row of rows) {
+    const accountName = row.account_name ?? "Счёт не сопоставлен";
+    const groupKey = `${String(row.account_id)}:${accountName}`;
+    const group = groups.get(groupKey);
+    if (group) {
+      group.rows.push(row);
+    } else {
+      groups.set(groupKey, { key: groupKey, accountName, rows: [row] });
+    }
+  }
+  return [...groups.values()];
+}
+
 function previewStatusLabel(next: BrokerSnapshotPreview): string {
   if (next.status === "conflicts" && next.eligible_for_apply) {
     return "Есть нерешённые строки; безопасные доступны";
@@ -185,6 +207,19 @@ function accountMappingLabel(row: BrokerSnapshotPreview["accounts"][number]): st
   const hints = visible.length > 0 ? [`Инструменты: ${visible.join(" · ")}`] : [];
   if (hiddenCount > 0) hints.push(`ещё ${hiddenCount}`);
   return [...sections, ...hints].join(" · ") || "Счёт без наблюдений";
+}
+
+function localAccountLabel(accountId: number | null, accounts: Account[]): string {
+  const account = accountId == null ? null : accounts.find((item) => item.id === accountId);
+  return account ? `Сопоставлен со счётом «${account.name}»` : "Сопоставлен с локальным счётом";
+}
+
+function localInstrumentLabel(instrumentId: number | null, instruments: Instrument[]): string {
+  const instrument =
+    instrumentId == null ? null : instruments.find((item) => item.id === instrumentId);
+  return instrument
+    ? `Сопоставлен с инструментом «${instrument.name}»`
+    : "Сопоставлен с локальным инструментом";
 }
 
 function validAmount(value: string): boolean {
@@ -245,6 +280,7 @@ type Props = {
   initialMonthId?: number;
   monthlyClose?: boolean;
   onApplied?: () => Promise<void> | void;
+  onInstrumentCreated?: () => Promise<void> | void;
 };
 
 export function BrokerSnapshotPanel({
@@ -253,6 +289,7 @@ export function BrokerSnapshotPanel({
   initialMonthId,
   monthlyClose = false,
   onApplied,
+  onInstrumentCreated,
 }: Props) {
   const [monthId, setMonthId] = useState("");
   const [months, setMonths] = useState<ReportingMonth[]>([]);
@@ -271,6 +308,15 @@ export function BrokerSnapshotPanel({
   const [applyOutcome, setApplyOutcome] = useState<AlfaApplyOutcome | null>(null);
   const [diagnosticCopied, setDiagnosticCopied] = useState(false);
   const [identityMappings, setIdentityMappings] = useState<BrokerIdentityMapping[]>([]);
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
+  const [instrumentToCreate, setInstrumentToCreate] = useState<{
+    providerId: string;
+    name: string | null;
+    isin: string | null;
+    ticker: string | null;
+  } | null>(null);
+  const [instrumentCreateBusy, setInstrumentCreateBusy] = useState(false);
+  const [instrumentCreateError, setInstrumentCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -335,6 +381,7 @@ export function BrokerSnapshotPanel({
     setConfirmOpen(false);
     setDiagnosticCopied(false);
     setIdentityMappings([]);
+    setPositionFilter("all");
   }
 
   async function copyDiagnostic() {
@@ -400,6 +447,45 @@ export function BrokerSnapshotPanel({
     }));
   }
 
+  function selectAllApplicable() {
+    if (!preview || mappingDirty) return;
+    setSelected((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        preview.positions.filter(isApplyablePositionRow).map((row) => [rowKey(row), true]),
+      ),
+    }));
+  }
+
+  function clearSelection() {
+    setSelected({});
+  }
+
+  async function handleInstrumentCreate(
+    payload: InstrumentCreatePayload | InstrumentUpdatePayload,
+  ) {
+    if (!instrumentToCreate) return;
+    setInstrumentCreateBusy(true);
+    setInstrumentCreateError(null);
+    try {
+      const created = await createInstrument(payload as InstrumentCreatePayload);
+      setInstrumentMappings((current) => ({
+        ...current,
+        [instrumentToCreate.providerId]: String(created.id),
+      }));
+      setInstrumentToCreate(null);
+      setMappingDirty(true);
+      setSuccess(
+        "Инструмент создан и выбран для будущего явного сопоставления. Обнови данные из Alfa PRO, чтобы подтвердить его перед применением.",
+      );
+      await onInstrumentCreated?.();
+    } catch (error) {
+      setInstrumentCreateError(formatApiError(error));
+    } finally {
+      setInstrumentCreateBusy(false);
+    }
+  }
+
   const moneyProviderInstrumentIds = new Set(
     (preview?.positions ?? [])
       .filter((row) => row.is_money === true && row.provider_instrument_id)
@@ -419,6 +505,14 @@ export function BrokerSnapshotPanel({
         row.is_money !== true &&
         !moneyProviderInstrumentIds.has(row.provider_instrument_id as string),
     ) ?? [];
+  const applicablePositionCount = preview?.positions.filter(isApplyablePositionRow).length ?? 0;
+  const visiblePositionRows =
+    preview?.positions.filter((row) => {
+      if (positionFilter === "applicable") return isApplyablePositionRow(row);
+      if (positionFilter === "attention") return !isApplyablePositionRow(row);
+      return true;
+    }) ?? [];
+  const groupedPositionRows = groupPositionRows(visiblePositionRows);
 
   const applyReady = Boolean(
     preview?.eligible_for_apply &&
@@ -580,10 +674,9 @@ export function BrokerSnapshotPanel({
                     <div className="toolbar">
                       <div className="stack-8">
                         <strong>{label}</strong>
-                        <details className="provider-identity-details">
-                          <summary>Идентификатор источника</summary>
-                          <code>Источник: {row.provider_account_id}</code>
-                        </details>
+                        <span className="muted tiny">
+                          Короткая подсказка для выбора счёта Hermes
+                        </span>
                       </div>
                       <Badge tone={classificationTone(classification)}>
                         {identityLabel(classification, row.status)}
@@ -614,12 +707,12 @@ export function BrokerSnapshotPanel({
                         </Select>
                       </Field>
                     ) : (
-                      <p className="muted">
-                        {row.hermes_account_id
-                          ? `Локальный счёт #${row.hermes_account_id}`
-                          : "Счёт не сопоставлен"}
-                      </p>
+                      <p className="muted">{localAccountLabel(row.hermes_account_id, accounts)}</p>
                     )}
+                    <details className="broker-snapshot__mapping-details provider-identity-details">
+                      <summary>Подробности источника</summary>
+                      <span>Идентификатор счёта Alfa PRO: {row.provider_account_id}</span>
+                    </details>
                     {stored ? (
                       <Button
                         size="sm"
@@ -646,8 +739,8 @@ export function BrokerSnapshotPanel({
             <Panel label="Сопоставление" title="Инструменты Alfa → Hermes">
               <p className="muted">
                 Уже подтверждённые и однозначные ISIN не нужно вводить заново. Новые и спорные
-                строки сопоставляются с существующим инструментом Hermes; новые инструменты здесь не
-                создаются.
+                строки можно сопоставить с существующим инструментом Hermes или создать новый
+                инструмент отдельным явным действием.
               </p>
               {instrumentMappingRows.map((row) => {
                 const providerId = row.provider_instrument_id as string;
@@ -660,10 +753,9 @@ export function BrokerSnapshotPanel({
                     <div className="toolbar">
                       <div className="stack-8">
                         <strong>{label}</strong>
-                        <details className="provider-identity-details">
-                          <summary>Идентификатор источника</summary>
-                          <code>Источник: {providerId}</code>
-                        </details>
+                        <span className="muted tiny">
+                          Используй ISIN, тикер и название как подсказки для выбора Hermes
+                        </span>
                       </div>
                       <Badge tone={classificationTone(classification)}>
                         {identityLabel(classification, row.status)}
@@ -693,11 +785,32 @@ export function BrokerSnapshotPanel({
                       </Field>
                     ) : (
                       <p className="muted">
-                        {row.hermes_instrument_id
-                          ? `Локальный инструмент #${row.hermes_instrument_id}`
-                          : "Инструмент не сопоставлен"}
+                        {localInstrumentLabel(row.hermes_instrument_id, instruments)}
                       </p>
                     )}
+                    {row.hermes_instrument_id == null ? (
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                        disabled={busy || instrumentCreateBusy}
+                        onClick={() => {
+                          setInstrumentCreateError(null);
+                          setInstrumentToCreate({
+                            providerId,
+                            name: row.display_name,
+                            isin: row.isin,
+                            ticker: row.ticker,
+                          });
+                        }}
+                      >
+                        Создать инструмент из Alfa PRO
+                      </Button>
+                    ) : null}
+                    <details className="broker-snapshot__mapping-details provider-identity-details">
+                      <summary>Подробности источника</summary>
+                      <span>Идентификатор инструмента Alfa PRO: {providerId}</span>
+                    </details>
                     {stored ? (
                       <Button
                         size="sm"
@@ -720,7 +833,43 @@ export function BrokerSnapshotPanel({
               применением.
             </div>
           ) : null}
-          <Table>
+          <div className="broker-snapshot__position-toolbar">
+            <div className="inline-actions">
+              <Button
+                disabled={busy || mappingDirty || applicablePositionCount === 0}
+                onClick={selectAllApplicable}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                Выбрать все применимые
+              </Button>
+              <Button
+                disabled={busy || Object.values(selected).every((value) => !value)}
+                onClick={clearSelection}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                Снять выбор
+              </Button>
+            </div>
+            <Field htmlFor="broker-position-filter" label="Показывать строки">
+              <Select
+                id="broker-position-filter"
+                value={positionFilter}
+                onChange={(event) => setPositionFilter(event.target.value as PositionFilter)}
+              >
+                <option value="all">Все строки</option>
+                <option value="applicable">Только применимые</option>
+                <option value="attention">Требуют внимания</option>
+              </Select>
+            </Field>
+            <span className="muted tiny">
+              Выбрано: {selectedRows.length} из {applicablePositionCount} применимых
+            </span>
+          </div>
+          <Table className="broker-snapshot__table">
             <thead>
               <tr>
                 <Th>Счёт / инструмент</Th>
@@ -731,189 +880,222 @@ export function BrokerSnapshotPanel({
               </tr>
             </thead>
             <tbody>
-              {preview.positions.map((row) => {
-                const key = rowKey(row);
-                const decision = decisions[key] ?? initialDecision(row);
-                const applyable = isApplyablePositionRow(row);
-                return (
-                  <tr key={key}>
-                    <Td>
-                      <div className="stack-8">
-                        <strong>{row.account_name ?? "Счёт не найден"}</strong>
-                        <span>
-                          {row.instrument_name ?? "Инструмент не найден"}
-                          {row.instrument_isin ? ` · ${row.instrument_isin}` : ""}
-                        </span>
-                        <details className="provider-identity-details">
-                          <summary>Технический ключ строки</summary>
-                          <code>ID: {key}</code>
-                        </details>
-                      </div>
-                    </Td>
-                    <Td>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(selected[key])}
-                        disabled={!applyable || mappingDirty}
-                        onChange={(event) =>
-                          setSelected((current) => ({ ...current, [key]: event.target.checked }))
-                        }
-                        aria-label={`Выбрать позицию ${key}`}
-                      />
-                    </Td>
-                    <Td>{labelOf(POSITION_STATUS_LABELS, row.status)}</Td>
-                    <Td>
-                      <div className="stack-8">
-                        <span>
-                          Количество: {formatQuantity(row.provider_quantity)}
-                          {row.hermes_quantity != null
-                            ? ` vs локально ${formatQuantity(row.hermes_quantity)}`
-                            : ""}
-                        </span>
-                        {row.is_money ? (
-                          <span className="muted">Денежная строка Alfa, не позиция</span>
-                        ) : null}
-                        <span>
-                          Цена брокера (только сравнение):{" "}
-                          {formatMoney(row.provider_broker_unit_price)}
-                        </span>
-                        <span>
-                          НКД брокера (только сравнение):{" "}
-                          {formatMoney(row.provider_accrued_interest_nkd)}
-                        </span>
-                        <span>
-                          P&amp;L брокера (только сравнение):{" "}
-                          {formatMoney(row.provider_unrealized_result)}
-                        </span>
-                      </div>
-                    </Td>
-                    <Td>
-                      {applyable ? (
-                        <div className="stack-8">
-                          <label>
-                            Средняя стоимость{" "}
-                            <select
-                              aria-label={`Решение средней стоимости ${key}`}
-                              value={decision.averageCost}
-                              disabled={!selected[key]}
-                              onChange={(event) =>
-                                updateDecision(row, {
-                                  averageCost: event.target.value as DecisionAction,
-                                })
-                              }
-                            >
-                              <option value="">— выбери —</option>
-                              {row.status === "matched" ? (
-                                <option value="keep_existing">Оставить локальную</option>
-                              ) : null}
-                              <option value="replace">Заменить локальным значением</option>
-                            </select>
-                          </label>
-                          {decision.averageCost === "replace" ? (
-                            <input
-                              aria-label={`Локальная средняя стоимость ${key}`}
-                              value={decision.averageValue}
-                              onChange={(event) =>
-                                updateDecision(row, { averageValue: event.target.value })
-                              }
-                              placeholder="Сумма в RUB"
-                              disabled={!selected[key]}
-                            />
-                          ) : null}
-                          <label>
-                            Рыночная цена{" "}
-                            <select
-                              aria-label={`Решение рыночной цены ${key}`}
-                              value={decision.marketPrice}
-                              disabled={!selected[key]}
-                              onChange={(event) =>
-                                updateDecision(row, {
-                                  marketPrice: event.target.value as DecisionAction,
-                                })
-                              }
-                            >
-                              <option value="">— выбери —</option>
-                              {row.status === "matched" ? (
-                                <option value="keep_existing">Оставить локальную</option>
-                              ) : null}
-                              <option value="replace">Заменить локальным значением</option>
-                            </select>
-                          </label>
-                          {decision.marketPrice === "replace" ? (
-                            <>
-                              <input
-                                aria-label={`Локальная рыночная цена ${key}`}
-                                value={decision.marketValue}
-                                onChange={(event) =>
-                                  updateDecision(row, { marketValue: event.target.value })
-                                }
-                                placeholder="Цена в RUB"
-                                disabled={!selected[key]}
-                              />
-                              <input
-                                aria-label={`Дата локальной цены ${key}`}
-                                type="date"
-                                value={decision.marketDate}
-                                onChange={(event) =>
-                                  updateDecision(row, { marketDate: event.target.value })
-                                }
-                                disabled={!selected[key]}
-                              />
-                              <select
-                                aria-label={`Источник локальной цены ${key}`}
-                                value={decision.marketSource}
-                                onChange={(event) =>
-                                  updateDecision(row, { marketSource: event.target.value })
-                                }
-                                disabled={!selected[key]}
-                              >
-                                <option value="">— источник —</option>
-                                <option value="manual">manual</option>
-                                <option value="moex">moex</option>
-                                <option value="t_invest">t_invest</option>
-                              </select>
-                            </>
-                          ) : null}
-                          <label>
-                            НКД{" "}
-                            <select
-                              aria-label={`Решение НКД ${key}`}
-                              value={decision.accruedInterest}
-                              disabled={!selected[key]}
-                              onChange={(event) =>
-                                updateDecision(row, {
-                                  accruedInterest: event.target.value as DecisionAction,
-                                })
-                              }
-                            >
-                              <option value="">
-                                {row.status === "provider_only" ? "— не задавать —" : "— выбери —"}
-                              </option>
-                              {row.status === "provider_only" ? null : (
-                                <option value="keep_existing">Оставить локальную</option>
-                              )}
-                              <option value="replace">Заменить локальным значением</option>
-                            </select>
-                          </label>
-                          {decision.accruedInterest === "replace" ? (
-                            <input
-                              aria-label={`Локальный НКД ${key}`}
-                              value={decision.accruedValue}
-                              onChange={(event) =>
-                                updateDecision(row, { accruedValue: event.target.value })
-                              }
-                              placeholder="НКД в RUB"
-                              disabled={!selected[key]}
-                            />
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="muted">Строка не применима</span>
-                      )}
-                    </Td>
+              {groupedPositionRows.map((group) => (
+                <Fragment key={group.key}>
+                  <tr className="broker-snapshot__account-group">
+                    <th colSpan={5} scope="rowgroup">
+                      Счёт Hermes: {group.accountName}
+                    </th>
                   </tr>
-                );
-              })}
+                  {group.rows.map((row) => {
+                    const key = rowKey(row);
+                    const decision = decisions[key] ?? initialDecision(row);
+                    const applyable = isApplyablePositionRow(row);
+                    return (
+                      <tr key={key}>
+                        <Td>
+                          <div className="stack-8">
+                            <strong>{row.account_name ?? "Счёт не найден"}</strong>
+                            <span>
+                              {row.instrument_name ?? "Инструмент не найден"}
+                              {row.instrument_isin ? ` · ${row.instrument_isin}` : ""}
+                            </span>
+                            <details className="broker-snapshot__row-details provider-identity-details">
+                              <summary>Подробности строки</summary>
+                              <span>Ключ проверки: {key}</span>
+                              {row.provider_account_id || row.provider_instrument_id ? (
+                                <span>
+                                  Идентификаторы Alfa PRO: {row.provider_account_id ?? "—"} /{" "}
+                                  {row.provider_instrument_id ?? "—"}
+                                </span>
+                              ) : null}
+                            </details>
+                          </div>
+                        </Td>
+                        <Td>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selected[key])}
+                            disabled={!applyable || mappingDirty}
+                            onChange={(event) =>
+                              setSelected((current) => ({
+                                ...current,
+                                [key]: event.target.checked,
+                              }))
+                            }
+                            aria-label={`Выбрать позицию ${key}`}
+                          />
+                        </Td>
+                        <Td>{labelOf(POSITION_STATUS_LABELS, row.status)}</Td>
+                        <Td>
+                          <div className="stack-8">
+                            <span>
+                              <strong>Данные Alfa PRO</strong>: количество{" "}
+                              {formatQuantity(row.provider_quantity)}
+                              {row.hermes_quantity != null ? (
+                                <>
+                                  {" · "}
+                                  <strong>Текущие данные Hermes</strong>:{" "}
+                                  {formatQuantity(row.hermes_quantity)}
+                                </>
+                              ) : (
+                                <> · Текущие данные Hermes: позиции нет</>
+                              )}
+                            </span>
+                            {row.is_money ? (
+                              <span className="muted">Денежная строка Alfa PRO, не позиция</span>
+                            ) : null}
+                            <span>
+                              Цена Alfa PRO (только для сравнения):{" "}
+                              {formatMoney(row.provider_broker_unit_price)}
+                            </span>
+                            <span>
+                              НКД Alfa PRO (только для сравнения):{" "}
+                              {formatMoney(row.provider_accrued_interest_nkd)}
+                            </span>
+                            <span>
+                              P&amp;L Alfa PRO (только для сравнения):{" "}
+                              {formatMoney(row.provider_unrealized_result)}
+                            </span>
+                          </div>
+                        </Td>
+                        <Td>
+                          {applyable ? (
+                            <div className="stack-8">
+                              <label>
+                                Средняя стоимость{" "}
+                                <select
+                                  aria-label={`Решение средней стоимости ${key}`}
+                                  value={decision.averageCost}
+                                  disabled={!selected[key]}
+                                  onChange={(event) =>
+                                    updateDecision(row, {
+                                      averageCost: event.target.value as DecisionAction,
+                                    })
+                                  }
+                                >
+                                  <option value="">— выбери —</option>
+                                  {row.status === "matched" ? (
+                                    <option value="keep_existing">
+                                      Оставить текущее значение Hermes
+                                    </option>
+                                  ) : null}
+                                  <option value="replace">Задать значение Hermes вручную</option>
+                                </select>
+                              </label>
+                              {decision.averageCost === "replace" ? (
+                                <input
+                                  aria-label={`Локальная средняя стоимость ${key}`}
+                                  value={decision.averageValue}
+                                  onChange={(event) =>
+                                    updateDecision(row, { averageValue: event.target.value })
+                                  }
+                                  placeholder="Сумма в RUB"
+                                  disabled={!selected[key]}
+                                />
+                              ) : null}
+                              <label>
+                                Рыночная цена{" "}
+                                <select
+                                  aria-label={`Решение рыночной цены ${key}`}
+                                  value={decision.marketPrice}
+                                  disabled={!selected[key]}
+                                  onChange={(event) =>
+                                    updateDecision(row, {
+                                      marketPrice: event.target.value as DecisionAction,
+                                    })
+                                  }
+                                >
+                                  <option value="">— выбери —</option>
+                                  {row.status === "matched" ? (
+                                    <option value="keep_existing">
+                                      Оставить текущее значение Hermes
+                                    </option>
+                                  ) : null}
+                                  <option value="replace">Задать значение Hermes вручную</option>
+                                </select>
+                              </label>
+                              {decision.marketPrice === "replace" ? (
+                                <>
+                                  <input
+                                    aria-label={`Локальная рыночная цена ${key}`}
+                                    value={decision.marketValue}
+                                    onChange={(event) =>
+                                      updateDecision(row, { marketValue: event.target.value })
+                                    }
+                                    placeholder="Цена в RUB"
+                                    disabled={!selected[key]}
+                                  />
+                                  <input
+                                    aria-label={`Дата локальной цены ${key}`}
+                                    type="date"
+                                    value={decision.marketDate}
+                                    onChange={(event) =>
+                                      updateDecision(row, { marketDate: event.target.value })
+                                    }
+                                    disabled={!selected[key]}
+                                  />
+                                  <select
+                                    aria-label={`Источник локальной цены ${key}`}
+                                    value={decision.marketSource}
+                                    onChange={(event) =>
+                                      updateDecision(row, { marketSource: event.target.value })
+                                    }
+                                    disabled={!selected[key]}
+                                  >
+                                    <option value="">— источник —</option>
+                                    <option value="manual">manual</option>
+                                    <option value="moex">moex</option>
+                                    <option value="t_invest">t_invest</option>
+                                  </select>
+                                </>
+                              ) : null}
+                              <label>
+                                НКД{" "}
+                                <select
+                                  aria-label={`Решение НКД ${key}`}
+                                  value={decision.accruedInterest}
+                                  disabled={!selected[key]}
+                                  onChange={(event) =>
+                                    updateDecision(row, {
+                                      accruedInterest: event.target.value as DecisionAction,
+                                    })
+                                  }
+                                >
+                                  <option value="">
+                                    {row.status === "provider_only"
+                                      ? "— не задавать —"
+                                      : "— выбери —"}
+                                  </option>
+                                  {row.status === "provider_only" ? null : (
+                                    <option value="keep_existing">
+                                      Оставить текущее значение Hermes
+                                    </option>
+                                  )}
+                                  <option value="replace">Задать значение Hermes вручную</option>
+                                </select>
+                              </label>
+                              {decision.accruedInterest === "replace" ? (
+                                <input
+                                  aria-label={`Локальный НКД ${key}`}
+                                  value={decision.accruedValue}
+                                  onChange={(event) =>
+                                    updateDecision(row, { accruedValue: event.target.value })
+                                  }
+                                  placeholder="НКД в RUB"
+                                  disabled={!selected[key]}
+                                />
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="muted">Строка не применима</span>
+                          )}
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           </Table>
         </div>
@@ -929,6 +1111,29 @@ export function BrokerSnapshotPanel({
           setConfirmOpen(false);
           void apply();
         }}
+      />
+      <InstrumentFormDialog
+        busy={instrumentCreateBusy}
+        error={instrumentCreateError}
+        instrument={null}
+        onCancel={() => {
+          if (!instrumentCreateBusy) {
+            setInstrumentToCreate(null);
+            setInstrumentCreateError(null);
+          }
+        }}
+        onSubmit={handleInstrumentCreate}
+        open={instrumentToCreate !== null}
+        prefill={
+          instrumentToCreate
+            ? {
+                name: instrumentToCreate.name,
+                isin: instrumentToCreate.isin,
+                ticker: instrumentToCreate.ticker,
+              }
+            : undefined
+        }
+        sourceLabel="Alfa PRO"
       />
     </Panel>
   );

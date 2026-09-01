@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$InstallDirectory,
+    [string]$PackageDirectory,
+    [string]$ShortcutDirectory,
     [switch]$SkipStartMenuShortcut
 )
 
@@ -12,17 +14,25 @@ if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
 }
 
 $InstallDirectory = [IO.Path]::GetFullPath($InstallDirectory)
-$stagingDirectory = Join-Path $PSScriptRoot "artifacts\install-staging"
-$packageScript = Join-Path $PSScriptRoot "package.ps1"
+$packageDirectoryWasProvided = -not [string]::IsNullOrWhiteSpace($PackageDirectory)
+if ($packageDirectoryWasProvided) {
+    $PackageDirectory = [IO.Path]::GetFullPath($PackageDirectory)
+    if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {
+        throw "Cannot install launcher: package directory '$PackageDirectory' does not exist."
+    }
+} else {
+    $PackageDirectory = Join-Path $PSScriptRoot "artifacts\install-staging"
+    $packageScript = Join-Path $PSScriptRoot "package.ps1"
 
-& $packageScript -OutputDirectory $stagingDirectory
-if ($LASTEXITCODE -ne 0) {
-    throw "Launcher packaging failed; installation was not attempted."
+    & $packageScript -OutputDirectory $PackageDirectory
+    if ($LASTEXITCODE -ne 0) {
+        throw "Launcher packaging failed; installation was not attempted."
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
 foreach ($asset in @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-schema-check.py")) {
-    $source = Join-Path $stagingDirectory $asset
+    $source = Join-Path $PackageDirectory $asset
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Cannot install launcher: packaged asset '$asset' is missing."
     }
@@ -46,8 +56,13 @@ function New-LauncherShortcut {
     $shortcut.Save()
 }
 
-$desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+$desktop = if ([string]::IsNullOrWhiteSpace($ShortcutDirectory)) {
+    [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+} else {
+    [IO.Path]::GetFullPath($ShortcutDirectory)
+}
 if (-not [string]::IsNullOrWhiteSpace($desktop)) {
+    New-Item -ItemType Directory -Force -Path $desktop | Out-Null
     New-LauncherShortcut -Path (Join-Path $desktop "Hermes Finance.lnk")
 }
 

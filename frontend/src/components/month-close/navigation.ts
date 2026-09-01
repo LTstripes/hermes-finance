@@ -14,6 +14,10 @@ const STEP_IDS = new Set<GuidedCloseStepId>([
 
 export type MonthlyCloseReturnContext = { monthId: number; step: GuidedCloseStepId };
 
+export function monthlyCloseReturnPath(context: MonthlyCloseReturnContext): string {
+  return `/months/${context.monthId}/close#${context.step}`;
+}
+
 export function parseMonthlyCloseReturnContext(
   params: URLSearchParams,
 ): MonthlyCloseReturnContext | null {

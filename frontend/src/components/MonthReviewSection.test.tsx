@@ -150,8 +150,8 @@ describe("MonthReviewSection", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("salary_tax_history_incomplete")).toBeInTheDocument();
-    expect(screen.getByText("quote_stale")).toBeInTheDocument();
+    expect(await screen.findByText("История зарплатного НДФЛ неполная")).toBeInTheDocument();
+    expect(screen.getByText("Есть устаревшие котировки")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Закрыть месяц" }));
     expect(screen.getByText(/предупреждения, но они не блокируют закрытие/i)).toBeInTheDocument();
@@ -183,7 +183,7 @@ describe("MonthReviewSection", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("snapshot_date_required")).toBeInTheDocument();
+    expect(await screen.findByText("Дата снимка не задана")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
   });
 
@@ -217,7 +217,7 @@ describe("MonthReviewSection", () => {
 
     const reopen = await screen.findByRole("button", { name: "Открыть заново" });
     expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
-    expect(screen.getByText("month_already_closed")).toBeInTheDocument();
+    expect(screen.getByText("Месяц уже закрыт")).toBeInTheDocument();
     expect(reopen).toBeEnabled();
     await user.click(reopen);
     const dialog = screen.getByRole("alertdialog");

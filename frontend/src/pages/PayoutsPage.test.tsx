@@ -320,6 +320,25 @@ describe("PayoutsPage", () => {
     expect(previewPayoutsBatch).not.toHaveBeenCalled();
   });
 
+  it("opens the Alfa PDF flow with the exact actual-payouts wizard context", async () => {
+    renderPage("?from=monthly-close&step=actual_payouts&monthId=7");
+
+    expect(
+      await screen.findByRole("heading", { name: /Фактические выплаты.*Март.*2032/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+      "href",
+      "/months/7/close#actual_payouts",
+    );
+    expect(screen.getByRole("link", { name: "Ручные выплаты этого месяца →" })).toHaveAttribute(
+      "href",
+      "/months/7?section=flows&from=monthly-close&step=actual_payouts&monthId=7",
+    );
+    expect(screen.getByLabelText("PDF отчёта Alfa")).toBeInTheDocument();
+    expect(previewPayouts).not.toHaveBeenCalled();
+    expect(previewPayoutsBatch).not.toHaveBeenCalled();
+  });
+
   it("does not fall back to the newest month when the close-context month is missing", async () => {
     vi.mocked(listMonths).mockResolvedValue([{ ...draftMonth, id: 8 }]);
     renderPage("?from=monthly-close&step=future_payouts&monthId=7");
@@ -333,6 +352,7 @@ describe("PayoutsPage", () => {
     expect(listPositions).not.toHaveBeenCalled();
     expect(previewPayouts).not.toHaveBeenCalled();
     expect(previewPayoutsBatch).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("PDF отчёта Alfa")).not.toBeInTheDocument();
   });
 
   it("runs an explicit sequential batch preview and keeps Apply inside each position group", async () => {

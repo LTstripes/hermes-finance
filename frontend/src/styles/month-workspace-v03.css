@@ -237,6 +237,11 @@
   border-color: var(--line);
 }
 
+.close-cockpit__group--empty {
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
 .close-cockpit__group-heading {
   display: flex;
   align-items: center;
@@ -264,12 +269,48 @@
   line-height: 1.45;
 }
 
-.close-cockpit__code {
-  display: inline-block;
-  margin-right: 8px;
+.close-cockpit__items li {
+  display: grid;
+  gap: 4px;
+}
+
+.close-cockpit__item-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.close-cockpit__item-copy strong {
+  color: var(--ink);
+}
+
+.close-cockpit__item-copy span {
   color: var(--muted);
-  font-family: var(--mono);
+}
+
+.close-cockpit__diagnostics {
+  color: var(--muted);
   font-size: var(--text-xs);
+}
+
+.close-cockpit__diagnostics summary {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.close-cockpit__diagnostics pre {
+  max-width: 100%;
+  margin: 5px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .close-cockpit-notices {

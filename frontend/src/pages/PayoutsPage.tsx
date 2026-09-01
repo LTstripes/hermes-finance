@@ -25,7 +25,12 @@ import { PayoutPaymentsCalendar } from "../components/PayoutPaymentsCalendar";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import { StatementImportPanel } from "../components/StatementImportPanel";
 import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
-import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
+import {
+  monthlyCloseReturnPath,
+  parseMonthlyCloseReturnContext,
+  withMonthlyCloseReturn,
+} from "../components/month-close/navigation";
+import type { AlfaStatementTransientOutcome } from "../components/month-close/statementOutcome";
 import {
   TInvestBatchItemStatus,
   TInvestBatchSummary,
@@ -70,6 +75,11 @@ export function PayoutsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastApplyResult, setLastApplyResult] = useState<PayoutApplyResult | null>(null);
   const [requestedMonthMissing, setRequestedMonthMissing] = useState(false);
+  const [statementOutcome, setStatementOutcome] = useState<AlfaStatementTransientOutcome | null>(
+    null,
+  );
+
+  const statementWizardContext = closeContext?.step === "actual_payouts" ? closeContext : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -162,10 +172,19 @@ export function PayoutsPage() {
     setBatchPreview(null);
     setActionError(null);
     setLastApplyResult(null);
+    setStatementOutcome(null);
     const controller = new AbortController();
     void loadContext(monthId, forecastVersion.trim(), controller.signal);
     return () => controller.abort();
   }, [forecastVersion, loadContext, selectedMonthId]);
+
+  useEffect(() => {
+    if (!statementWizardContext || loadingBase || requestedMonthMissing) return;
+    const target = document.getElementById("statement-import");
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "start" });
+    }
+  }, [loadingBase, requestedMonthMissing, statementWizardContext]);
 
   const positionLabel = useMemo(() => {
     if (!selectedPosition) return null;
@@ -383,17 +402,55 @@ export function PayoutsPage() {
       ) : null}
       <TInvestPayoutApplySummary result={lastApplyResult} />
 
-      <StatementImportPanel
-        accounts={accounts}
-        instruments={instruments}
-        onApplied={async () => {
-          const monthId = Number(selectedMonthId);
-          if (Number.isInteger(monthId) && monthId > 0) {
-            await loadContext(monthId, forecastVersion.trim());
-          }
-        }}
-        onInstrumentsChange={setInstruments}
-      />
+      {statementWizardContext && selectedMonth ? (
+        <Panel
+          className="monthly-close__statement-context"
+          label="Шаг закрытия"
+          title={`Фактические выплаты · ${formatMonth(selectedMonth.year, selectedMonth.month)}`}
+        >
+          <p>
+            Контекст месяца зафиксирован для этого перехода и возврата в закрытие. Строки PDF
+            распределяются сервером по дате события; выбранный месяц не подменяет даты отчёта.
+          </p>
+        </Panel>
+      ) : null}
+
+      {!requestedMonthMissing ? (
+        <div id="statement-import">
+          <StatementImportPanel
+            accounts={accounts}
+            instruments={instruments}
+            onApplied={async () => {
+              const monthId = Number(selectedMonthId);
+              if (Number.isInteger(monthId) && monthId > 0) {
+                await loadContext(monthId, forecastVersion.trim());
+              }
+            }}
+            onInstrumentsChange={setInstruments}
+            onOutcome={statementWizardContext ? setStatementOutcome : undefined}
+            readOnly={Boolean(statementWizardContext && selectedMonth?.status === "closed")}
+          />
+          {statementWizardContext && statementOutcome ? (
+            <div className="statement-import__wizard-outcome" role="status">
+              <div>
+                <strong>Результат проверки PDF Alfa</strong>
+                <p>
+                  {statementOutcome.kind === "applied"
+                    ? `Выбранные строки применены: ${statementOutcome.selectedCount}. Сохранённые факты будут повторно показаны в закрытии после обновления.`
+                    : "Подходящих выплат не найдено. Этот результат не сохранён и не отмечает шаг выполненным."}
+                </p>
+              </div>
+              <Link
+                className="btn btn--secondary"
+                state={{ alfaStatementOutcome: statementOutcome }}
+                to={monthlyCloseReturnPath(statementWizardContext)}
+              >
+                Продолжить к закрытию
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <Panel
         action={
@@ -463,7 +520,18 @@ export function PayoutsPage() {
         </div>
         {selectedMonth ? (
           <div className="toolbar">
-            <Link className="btn btn--ghost" to={`/months/${selectedMonth.id}?section=flows`}>
+            <Link
+              className="btn btn--ghost"
+              to={
+                statementWizardContext
+                  ? withMonthlyCloseReturn(
+                      `/months/${selectedMonth.id}?section=flows`,
+                      selectedMonth.id,
+                      "actual_payouts",
+                    )
+                  : `/months/${selectedMonth.id}?section=flows`
+              }
+            >
               Ручные выплаты этого месяца →
             </Link>
           </div>

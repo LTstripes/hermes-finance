@@ -99,6 +99,44 @@ function supportReason(reason: string): string {
   return REASON_LABELS[reason] ?? "дополнительное ограничение данных";
 }
 
+function concentrationEmptyState(
+  metric: RiskConcentrationMetric,
+  kind: "positions" | "payouts" | "redemptions",
+  asOfDate: string,
+): { title: string; description: string } {
+  if (metric.support.status !== "supported") {
+    const reason = metric.support.reason_codes[0];
+    return {
+      title: "События недоступны",
+      description: reason
+        ? `Этот срез нельзя построить: ${supportReason(reason)}.`
+        : "Этот срез нельзя построить из доступных данных.",
+    };
+  }
+  if (kind === "payouts") {
+    return {
+      title: "Выплат в окне нет",
+      description:
+        "С " +
+        formatDate(asOfDate) +
+        " и следующие 12 месяцев нет датированных ожидаемых выплат. События без даты в этот срез не входят.",
+    };
+  }
+  if (kind === "redemptions") {
+    return {
+      title: "Погашений в окне нет",
+      description:
+        "С " +
+        formatDate(asOfDate) +
+        " и следующие 12 месяцев нет датированных ожидаемых погашений. События без даты в этот срез не входят.",
+    };
+  }
+  return {
+    title: "Нет позиций",
+    description: "В выбранном месяце нет позиций с положительной оценкой.",
+  };
+}
+
 const SOURCE_KIND_LABELS: Record<string, string> = {
   cash_balance: "Денежный остаток",
   deposit: "Депозит",
@@ -252,20 +290,21 @@ function ConcentrationPanel({
   title,
   label,
   metric,
+  emptyKind,
+  asOfDate,
 }: {
   title: string;
   label: string;
   metric: RiskConcentrationMetric;
+  emptyKind: "positions" | "payouts" | "redemptions";
+  asOfDate: string;
 }) {
+  const emptyState = concentrationEmptyState(metric, emptyKind, asOfDate);
   return (
     <Panel label={label} title={title}>
       <MetricSummary kind="concentration" metric={metric} />
       {metric.items.length === 0 ? (
-        <EmptyState
-          description="В выбранном окне нет концентрируемых датированных событий."
-          inline
-          title="Нет событий"
-        />
+        <EmptyState description={emptyState.description} inline title={emptyState.title} />
       ) : (
         <Table>
           <caption className="visually-hidden">{title}</caption>
@@ -461,7 +500,7 @@ export function RiskAllocationPage() {
             <strong>Окно будущих событий</strong>
             <span>
               Датированные выплаты и погашения: с {formatDate(data.as_of_date)} · следующие 12
-              месяцев.
+              месяцев. Учитываются только события с известной датой.
             </span>
           </div>
           <div className="risk-allocation__grid">
@@ -472,17 +511,23 @@ export function RiskAllocationPage() {
             <AllocationMetricPanel account metric={data.allocation_by_account} title="По счетам" />
           </div>
           <ConcentrationPanel
+            asOfDate={data.as_of_date}
+            emptyKind="positions"
             label="Позиции"
             metric={data.top_positions}
             title={`${data.top_positions.top_n} крупнейших позиций`}
           />
           <div className="risk-allocation__grid">
             <ConcentrationPanel
+              asOfDate={data.as_of_date}
+              emptyKind="payouts"
               label="Будущие денежные события"
               metric={data.payout_concentration}
               title="Концентрация выплат"
             />
             <ConcentrationPanel
+              asOfDate={data.as_of_date}
+              emptyKind="redemptions"
               label="Будущие денежные события"
               metric={data.redemption_concentration}
               title="Концентрация погашений"
