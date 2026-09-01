@@ -36,12 +36,13 @@ export function withMonthlyCloseReturn(
   monthId: number,
   step: GuidedCloseStepId,
 ): string {
-  const [pathname, query = ""] = path.split("?", 2);
+  const [pathAndQuery, hash = ""] = path.split("#", 2);
+  const [pathname, query = ""] = pathAndQuery.split("?", 2);
   const params = new URLSearchParams(query);
   params.set("from", "monthly-close");
   params.set("step", step);
   params.set("monthId", String(monthId));
-  return `${pathname}?${params.toString()}`;
+  return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
 }
 
 const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
@@ -53,8 +54,8 @@ const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
   open_payout_batch_preview: () => "/payouts",
   open_reconciliation_preview: () => "/reconciliation",
   open_freshness: () => "/freshness",
-  open_final_review: (monthId) => `/months/${monthId}?section=review`,
-  confirm_close: (monthId) => `/months/${monthId}?section=review`,
+  open_final_review: (monthId) => `/months/${monthId}/close#final_review_close`,
+  confirm_close: (monthId) => `/months/${monthId}/close#final_review_close`,
   open_cash_flow_ladder: () => "/payouts",
   clone_next_month: () => "/months",
 };

@@ -18,7 +18,7 @@ For an owner-facing install, run from this directory:
 .\install.ps1
 ```
 
-This packages the launcher, copies it and its bundled read-only helpers to `%LOCALAPPDATA%\HermesFinance\launcher`, and creates/updates `Hermes Finance.lnk` on the Desktop and in the Start menu. The shortcuts never target a checkout, worktree or task artifact directory. Use `-SkipStartMenuShortcut` when only the Desktop shortcut is wanted.
+This packages the launcher, copies it and its bundled read-only helpers to `%LOCALAPPDATA%\HermesFinance\launcher`, and creates/updates `Hermes Finance.lnk` on the Desktop and in the Start menu. The shortcuts never target a checkout, worktree or task artifact directory. Use `-SkipStartMenuShortcut` when only the Desktop shortcut is wanted. Release and synthetic tests may pass `-PackageDirectory` to install an already-built package and `-ShortcutDirectory` to keep the shortcut outside the real Desktop.
 
 ## Owner configuration
 
