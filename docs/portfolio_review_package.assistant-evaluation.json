@@ -1,0 +1,49 @@
+{
+  "fixture_name": "portfolio_review_package_synthetic_assistant_evaluation",
+  "schema_name": "hermes.finance.portfolio_review_package",
+  "schema_version": "1.0.0",
+  "profile": "concise",
+  "source_fixture": "portfolio_review_package.synthetic.json",
+  "questions": [
+    {
+      "id": "selected_period",
+      "question": "What reporting period is the package about?",
+      "expected": "2026-04"
+    },
+    {
+      "id": "liquid_capital_net",
+      "question": "What is the selected period's net liquid capital?",
+      "expected": "2300000.00 RUB"
+    },
+    {
+      "id": "position_count",
+      "question": "How many current positions are included?",
+      "expected": "3"
+    },
+    {
+      "id": "passive_income_forecast",
+      "question": "What is the monthly passive-income forecast?",
+      "expected": "22800.00 RUB"
+    },
+    {
+      "id": "future_calendar_total",
+      "question": "What is the total amount in the future cash-flow calendar?",
+      "expected": "191000.00 RUB"
+    },
+    {
+      "id": "redemption_semantics",
+      "question": "Is redemption principal counted as passive income forecast?",
+      "expected": "no"
+    },
+    {
+      "id": "total_net_worth",
+      "question": "Is total net worth available as an authoritative metric?",
+      "expected": "unavailable"
+    },
+    {
+      "id": "concise_profile_omissions",
+      "question": "Which extended sections are omitted by the concise profile?",
+      "expected": ["allocation", "context", "deterministic_insights"]
+    }
+  ]
+}
