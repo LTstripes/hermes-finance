@@ -94,6 +94,10 @@ function uniqueInstrumentByIsin(isin: string, instruments: Instrument[]): Instru
   return matches.length === 1 ? matches[0] : null;
 }
 
+function requiresManualInstrumentMapping(status: string): boolean {
+  return status === "unmatched" || status === "ambiguous";
+}
+
 function moneyDisplay(
   amount: string | null | undefined,
   currency: string | null | undefined,
@@ -233,18 +237,30 @@ export function StatementImportPanel({
     () => uniqueValues(inspected?.rows.map((row) => row.isin) ?? []),
     [inspected],
   );
+  const manualMappingIsins = useMemo(
+    () =>
+      uniqueValues(
+        inspected?.rows
+          .filter((row) => requiresManualInstrumentMapping(row.status))
+          .map((row) => row.isin) ?? [],
+      ),
+    [inspected],
+  );
 
   const mappingSummary = useMemo(() => {
     let auto = 0;
+    let manual = 0;
     let manualNeeded = 0;
     for (const isin of isins) {
-      if (instrumentMappings[isin] || uniqueInstrumentByIsin(isin, localInstruments)) {
+      if (instrumentMappings[isin]) {
+        manual += 1;
+      } else if (uniqueInstrumentByIsin(isin, localInstruments)) {
         auto += 1;
       } else {
         manualNeeded += 1;
       }
     }
-    return { auto, manualNeeded, accounts: accountRefs.length, isins: isins.length };
+    return { auto, manual, manualNeeded, accounts: accountRefs.length, isins: isins.length };
   }, [accountRefs.length, instrumentMappings, isins, localInstruments]);
 
   function mapping(): StatementMapping {
@@ -483,6 +499,15 @@ export function StatementImportPanel({
     }
   }
 
+  function focusInstrumentMapping(isin: string) {
+    const target = document.getElementById(`statement-map-instrument-${isin}`);
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+    target.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    target.focus();
+  }
+
   return (
     <Panel className="statement-import" label="Alfa PDF" title="Импорт отчёта Alfa">
       <p className="muted">
@@ -536,7 +561,8 @@ export function StatementImportPanel({
             </Badge>
             <span className="muted">Найдено строк: {inspected.rows.length}</span>
             <span className="muted">
-              ISIN: {mappingSummary.auto} совпали, {mappingSummary.manualNeeded} нужно сопоставить
+              ISIN: автоматически — {mappingSummary.auto} · вручную — {mappingSummary.manual} ·
+              требуется сопоставить — {mappingSummary.manualNeeded}
             </span>
           </div>
           <Panel
@@ -552,6 +578,16 @@ export function StatementImportPanel({
                 Сопоставления Alfa-счетов живут только в этой сессии и не записываются в базу.
               </span>
             </div>
+            {manualMappingIsins.length > 0 ? (
+              <div
+                className="inline-alert inline-alert--warn statement-import__mapping-help"
+                role="note"
+              >
+                Для ISIN со статусом «Требуется сопоставление» выбери существующий инструмент Hermes
+                в списке «Выбрать инструмент Hermes…» ниже. Это временное сопоставление только для
+                этой проверки; новый инструмент автоматически не создаётся.
+              </div>
+            ) : null}
             <div className="statement-import__mapping-grid">
               <div className="stack-12">
                 <p className="panel__label section-form-label">Счета Alfa</p>
@@ -598,9 +634,9 @@ export function StatementImportPanel({
                         {auto && !selectedId ? (
                           <Badge tone="ok">совпало автоматически</Badge>
                         ) : selectedId ? (
-                          <Badge tone="draft">вручную</Badge>
+                          <Badge tone="draft">сопоставлено вручную</Badge>
                         ) : (
-                          <Badge tone="closed">нужно сопоставить</Badge>
+                          <Badge tone="closed">требует сопоставления</Badge>
                         )}
                       </div>
                       <Field
@@ -619,7 +655,7 @@ export function StatementImportPanel({
                           }}
                         >
                           <option value="">
-                            {auto ? `авто: ${auto.name}` : "— авто только при уникальном ISIN —"}
+                            {auto ? `Автоматически: ${auto.name}` : "Выбрать инструмент Hermes…"}
                           </option>
                           {localInstruments.map((instrument) => (
                             <option key={instrument.id} value={instrument.id}>
@@ -630,14 +666,19 @@ export function StatementImportPanel({
                         </Select>
                       </Field>
                       {kind === "save" && selectedInstrument ? (
-                        <Button
-                          disabled={busy}
-                          onClick={() => void saveCanonicalIsin(isin, selectedInstrument.id)}
-                          size="sm"
-                          type="button"
-                        >
-                          Сохранить ISIN в инструмент
-                        </Button>
+                        <>
+                          <span className="muted tiny">
+                            У инструмента пока нет ISIN. При необходимости сохрани ISIN из отчёта.
+                          </span>
+                          <Button
+                            disabled={busy}
+                            onClick={() => void saveCanonicalIsin(isin, selectedInstrument.id)}
+                            size="sm"
+                            type="button"
+                          >
+                            Сохранить ISIN в инструмент
+                          </Button>
+                        </>
                       ) : null}
                       {kind === "same" ? (
                         <span className="muted tiny">ISIN уже сохранён в инструменте</span>
@@ -671,7 +712,20 @@ export function StatementImportPanel({
                   <Td>{row.provider_account_ref ?? "—"}</Td>
                   <Td>{row.isin ?? "—"}</Td>
                   <Td>{eventLabel(row.event_kind)}</Td>
-                  <Td>{ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен"}</Td>
+                  <Td>
+                    <div className="statement-import__inspect-status">
+                      <span>{ROW_STATUS_LABELS[row.status] ?? "Статус неизвестен"}</span>
+                      {row.isin && requiresManualInstrumentMapping(row.status) ? (
+                        <Button
+                          onClick={() => focusInstrumentMapping(row.isin as string)}
+                          size="sm"
+                          type="button"
+                        >
+                          Сопоставить
+                        </Button>
+                      ) : null}
+                    </div>
+                  </Td>
                 </tr>
               ))}
             </tbody>

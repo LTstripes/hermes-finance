@@ -356,6 +356,34 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(screen.getByLabelText("Alfa-счёт broker-1")).toHaveValue("");
   });
 
+  it("makes an unmatched ISIN mapping discoverable from the statement row", async () => {
+    vi.mocked(inspectStatement).mockResolvedValueOnce({
+      ...inspectResult,
+      rows: [{ ...inspectResult.rows[0], status: "unmatched", isin: "RU000NEW01" }],
+    });
+    const user = userEvent.setup();
+    render(<StatementImportPanel accounts={[account]} instruments={[instrument]} />);
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+
+    expect(await screen.findByText("Требуется сопоставление")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /выбери существующий инструмент Hermes в списке «Выбрать инструмент Hermes…»/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Выбрать инструмент Hermes…" })).toBeInTheDocument();
+    expect(screen.getByText(/требуется сопоставить — 1/)).toBeInTheDocument();
+
+    const mappingSelect = screen.getByLabelText("Инструмент для RU000NEW01");
+    await user.click(screen.getByRole("button", { name: "Сопоставить" }));
+    expect(mappingSelect).toHaveFocus();
+
+    await user.selectOptions(mappingSelect, "10");
+    expect(screen.getByText(/вручную — 1/)).toBeInTheDocument();
+    expect(screen.getByText("сопоставлено вручную")).toBeInTheDocument();
+  });
+
   it("saves a blank Hermes ISIN only through the explicit action", async () => {
     const blank = { ...instrument, id: 11, name: "Без ISIN", isin: null };
     vi.mocked(updateInstrument).mockResolvedValue({ ...blank, isin: "RU000SYNTH01" });

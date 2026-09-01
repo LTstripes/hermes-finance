@@ -562,6 +562,10 @@ a.btn {
   margin-bottom: 12px;
 }
 
+.statement-import__mapping-help {
+  margin-bottom: 12px;
+}
+
 .statement-import__mapping-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -590,6 +594,13 @@ a.btn {
 .statement-import__isin-head code {
   font-family: var(--mono);
   font-size: var(--text-xs);
+}
+
+.statement-import__inspect-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .statement-import__prepare-table {
