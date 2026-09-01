@@ -12,10 +12,12 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import InstrumentType, RubleAmount
 from hermes_finance.services.instruments import (
+    InstrumentCleanupResult,
     create_instrument,
     delete_instrument,
     get_instrument,
     get_instrument_by_isin,
+    get_instrument_cleanup,
     list_instruments,
     update_instrument,
 )
@@ -69,6 +71,29 @@ class InstrumentResponse(BaseModel):
     notes: str | None
 
 
+class InstrumentCleanupReferenceResponse(BaseModel):
+    kind: str
+    lifecycle: str
+    count: int
+    month_labels: list[str]
+
+
+class InstrumentCleanupDuplicateResponse(BaseModel):
+    instrument_id: int
+    name: str
+    basis: str
+
+
+class InstrumentCleanupResponse(BaseModel):
+    instrument_id: int
+    can_delete: bool
+    status: str
+    reason_code: str
+    message: str
+    references: list[InstrumentCleanupReferenceResponse]
+    active_duplicates: list[InstrumentCleanupDuplicateResponse]
+
+
 def _validate_instrument_type(value: str) -> str:
     try:
         InstrumentType(value)
@@ -102,6 +127,33 @@ def _response_from_instrument(instrument: object) -> InstrumentResponse:
         is_active=instrument.is_active,
         manual_price_allowed=instrument.manual_price_allowed,
         notes=instrument.notes,
+    )
+
+
+def _cleanup_response(cleanup: InstrumentCleanupResult) -> InstrumentCleanupResponse:
+    return InstrumentCleanupResponse(
+        instrument_id=cleanup.instrument_id,
+        can_delete=cleanup.can_delete,
+        status=cleanup.status,
+        reason_code=cleanup.reason_code,
+        message=cleanup.message,
+        references=[
+            InstrumentCleanupReferenceResponse(
+                kind=reference.kind,
+                lifecycle=reference.lifecycle,
+                count=reference.count,
+                month_labels=list(reference.month_labels),
+            )
+            for reference in cleanup.references
+        ],
+        active_duplicates=[
+            InstrumentCleanupDuplicateResponse(
+                instrument_id=duplicate.instrument_id,
+                name=duplicate.name,
+                basis=duplicate.basis,
+            )
+            for duplicate in cleanup.active_duplicates
+        ],
     )
 
 
@@ -151,6 +203,14 @@ def create_instrument_endpoint(
         notes=payload.notes,
     )
     return _response_from_instrument(instrument)
+
+
+@router.get("/{instrument_id}/cleanup", response_model=InstrumentCleanupResponse)
+def inspect_instrument_cleanup_endpoint(
+    instrument_id: int,
+    session: Session = Depends(session_for_request),
+) -> InstrumentCleanupResponse:
+    return _cleanup_response(get_instrument_cleanup(session, instrument_id))
 
 
 @router.get("/{instrument_id}", response_model=InstrumentResponse)

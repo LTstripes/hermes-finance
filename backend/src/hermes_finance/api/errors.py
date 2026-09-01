@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.instruments import InstrumentDeletionBlockedError
 from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
@@ -146,6 +147,18 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(409, "conflict", str(exc))
+
+    @application.exception_handler(InstrumentDeletionBlockedError)
+    async def _instrument_deletion_blocked_handler(
+        request: Request, exc: InstrumentDeletionBlockedError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(409, exc.code, str(exc))
 
     @application.exception_handler(TaxBracketYearLockedError)
     async def _tax_bracket_year_locked_handler(
