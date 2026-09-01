@@ -34,12 +34,12 @@ excludes tests from the normal full suite.
 | `service` | Backend files ending in `_service.py` | Application orchestration | Service contracts and domain tests |
 | `persistence` | Database, reporting-month, applied-state, broker-state, and SQLite persistence suites | Persisted state | Persistence models and accepted migration contracts |
 | `migration` | `test_migrations.py`, R04/R05/R06 release verification, and R08-01A migration coverage | Schema/data preservation | Alembic chain and additive/downgrade safety |
-| `integration` | Alfa, broker, T-Invest, quote, payout, market, provider, and reconciliation suites | Provider/integration boundaries | Accepted provider and read-only integration ADRs |
+| `integration` | Alfa, broker, T-Invest, quote, payout, market, provider, reconciliation, and forecast/dashboard integration suites | Provider/integration boundaries | Accepted provider and read-only integration ADRs |
 | `import_export` | Statement import, Markdown export, AI bundle, private-seed, and legacy interchange suites | Import/export boundary | Export/import contracts and privacy rules |
 | `legacy` | `test_legacy_*.py` | Supported legacy compatibility | Legacy CLI and explicit mapping contracts |
 | `runtime` | Startup, settings, local security, static app, CLI, timezone, and launcher schema suites | Runtime safety | Loopback/offline startup and launcher contracts |
 | `release` | Release verification plus F05/G02/G08 acceptance and Windows release-path checks | Release/task gate | Release workflow and task acceptance contracts |
-| `benchmark` | `test_r07_t02_long_history_benchmark.py` and `test_historical_batch_reads.py` | Explicit performance lane | Long-history benchmark contract |
+| `benchmark` | `test_long_history_benchmark.py` and `test_historical_batch_reads.py` | Explicit performance lane | Long-history benchmark contract |
 | `windows` | Windows launcher path, timezone, and launcher schema suites | Windows/runtime lane | Windows process/path/timezone behavior |
 | `network_free` | Synthetic provider, startup, and release offline-boundary suites | Offline safety | No live provider or external network during the test |
 

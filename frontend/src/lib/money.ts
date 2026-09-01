@@ -21,6 +21,18 @@ export function normalizeMoneyInput(value: string): string | null {
   return negative ? `-${body}` : body;
 }
 
+/** Format a valid money string for editing without using locale-dependent parsing. */
+export function formatMoneyInput(value: string): string {
+  const normalized = normalizeMoneyInput(value);
+  if (normalized == null) return value;
+
+  const negative = normalized.startsWith("-");
+  const unsigned = negative ? normalized.slice(1) : normalized;
+  const [intPart, fraction = "00"] = unsigned.split(".");
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
+  return `${negative ? "-" : ""}${grouped},${fraction}`;
+}
+
 export function rub(amount: string): MoneyValue {
   const normalized = normalizeMoneyInput(amount);
   if (normalized == null) {

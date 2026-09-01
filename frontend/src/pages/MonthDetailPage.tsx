@@ -8,6 +8,7 @@ import { closeMonth, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
 import type { DashboardKpis, IncomeEntry, ReportingMonth } from "../api/types";
 import { MonthAssetsSection } from "../components/MonthAssetsSection";
+import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { MonthBudgetSection } from "../components/MonthBudgetSection";
 import { MonthNoteSection } from "../components/MonthNoteSection";
 import { MonthReviewSection } from "../components/MonthReviewSection";
@@ -25,6 +26,7 @@ import {
   Field,
   HelpTip,
   Input,
+  MoneyInput,
   LoadingState,
   Panel,
   StickySubheader,
@@ -359,6 +361,7 @@ export function MonthDetailPage() {
 
   return (
     <section className="month-workspace stack-18">
+      <MonthlyCloseReturnBar />
       <header className="page-header month-workspace__page-header">
         <p className="eyebrow">Месяц</p>
         <h1>{formatMonth(month.year, month.month)}</h1>
@@ -505,12 +508,11 @@ export function MonthDetailPage() {
           <Panel label="Доходы" title="Зарплата и прочее">
             <div className="editor-grid">
               <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
-                <Input
-                  className="input--money"
+                <MoneyInput
                   disabled={readOnly}
                   id="salary-gross"
                   inputMode="decimal"
-                  onChange={(event) => patchForm("salaryGross", event.target.value)}
+                  onChange={(value) => patchForm("salaryGross", value)}
                   placeholder="0.00"
                   value={form.salaryGross}
                 />
@@ -544,45 +546,41 @@ export function MonthDetailPage() {
                 />
               </section>
               <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
-                <Input
-                  className="input--money"
+                <MoneyInput
                   disabled={readOnly}
                   id="salary-actual-net"
                   inputMode="decimal"
-                  onChange={(event) => patchForm("salaryActualNet", event.target.value)}
+                  onChange={(value) => patchForm("salaryActualNet", value)}
                   placeholder="0.00"
                   value={form.salaryActualNet}
                 />
               </Field>
               <Field htmlFor="bonus" label="Премия">
-                <Input
-                  className="input--money"
+                <MoneyInput
                   disabled={readOnly}
                   id="bonus"
                   inputMode="decimal"
-                  onChange={(event) => patchForm("bonus", event.target.value)}
+                  onChange={(value) => patchForm("bonus", value)}
                   placeholder="0.00"
                   value={form.bonus}
                 />
               </Field>
               <Field htmlFor="side" label="Дополнительный доход">
-                <Input
-                  className="input--money"
+                <MoneyInput
                   disabled={readOnly}
                   id="side"
                   inputMode="decimal"
-                  onChange={(event) => patchForm("sideIncome", event.target.value)}
+                  onChange={(value) => patchForm("sideIncome", value)}
                   placeholder="0.00"
                   value={form.sideIncome}
                 />
               </Field>
               <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
-                <Input
-                  className="input--money"
+                <MoneyInput
                   disabled={readOnly}
                   id="cashback"
                   inputMode="decimal"
-                  onChange={(event) => patchForm("cashback", event.target.value)}
+                  onChange={(value) => patchForm("cashback", value)}
                   placeholder="0.00"
                   value={form.cashback}
                 />

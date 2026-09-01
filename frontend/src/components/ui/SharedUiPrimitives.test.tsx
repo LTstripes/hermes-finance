@@ -3,11 +3,28 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { DataValue } from "./DataValue";
+import { MoneyInput } from "./Field";
 import { HelpTip } from "./HelpTip";
 import { OverflowMenu, OverflowMenuItem } from "./OverflowMenu";
 import { StickySubheader } from "./StickySubheader";
 
 describe("shared UI primitives", () => {
+  it("groups money on blur without changing the value while typing", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<MoneyInput aria-label="Сумма" onChange={onChange} value="450000.00" />);
+
+    const input = screen.getByRole("textbox", { name: "Сумма" });
+    expect(input).toHaveValue("450\u00a0000,00");
+
+    await user.click(input);
+    expect(input).toHaveValue("450000.00");
+    await user.tab();
+
+    expect(input).toHaveValue("450\u00a0000,00");
+    expect(onChange).toHaveBeenLastCalledWith("450\u00a0000,00");
+  });
+
   it("opens compact help from keyboard-capable button and closes on Escape", async () => {
     const user = userEvent.setup();
     render(<HelpTip label="Как считается показатель">Берём только закрытые месяцы.</HelpTip>);
@@ -17,7 +34,9 @@ describe("shared UI primitives", () => {
 
     await user.click(trigger);
 
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Берём только закрытые месяцы.");
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Берём только закрытые месяцы.");
+    expect(tooltip.parentElement).toBe(document.body);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     await user.keyboard("{Escape}");
@@ -57,6 +76,49 @@ describe("shared UI primitives", () => {
     await user.click(screen.getByRole("menuitem", { name: "Клонировать" }));
     expect(onEdit).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("keeps a portaled overflow menu connected to its trigger", async () => {
+    const user = userEvent.setup();
+    render(
+      <OverflowMenu label="Действия строки">
+        <OverflowMenuItem>Изменить</OverflowMenuItem>
+      </OverflowMenu>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Действия строки" });
+    await user.click(trigger);
+
+    const menu = screen.getByRole("menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(within(menu).getByRole("menuitem", { name: "Изменить" })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("places a bottom-edge help bubble above its trigger", async () => {
+    const user = userEvent.setup();
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("role") === "tooltip") {
+          return { bottom: 120, height: 120, left: 0, right: 200, top: 0, width: 200 } as DOMRect;
+        }
+        return { bottom: 724, height: 24, left: 700, right: 724, top: 700, width: 24 } as DOMRect;
+      });
+
+    try {
+      render(<HelpTip label="Оценка">Подсказка</HelpTip>);
+      await user.click(screen.getByRole("button", { name: "Оценка" }));
+
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip).toHaveStyle({ position: "fixed", visibility: "visible" });
+      expect(Number.parseFloat(tooltip.style.top)).toBeLessThan(700);
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   it("renders read-only data and sticky workspace structure without editable controls", () => {

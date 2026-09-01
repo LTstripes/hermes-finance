@@ -23,6 +23,8 @@ import type { Account, Instrument, PositionSnapshot, ReportingMonth } from "../a
 import { PayoutPaymentsCalendar } from "../components/PayoutPaymentsCalendar";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import { StatementImportPanel } from "../components/StatementImportPanel";
+import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
+import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
 import { Badge, Button, EmptyState, Field, LoadingState, Panel, Select } from "../components/ui";
 import { formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
@@ -40,6 +42,8 @@ const APPLY_FAILURE_LABELS: Record<string, string> = {
 };
 
 export function PayoutsPage() {
+  const closeContext = parseMonthlyCloseReturnContext(new URLSearchParams(window.location.search));
+  const requestedMonthId = closeContext?.monthId ?? null;
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -75,8 +79,11 @@ export function PayoutsPage() {
         setMonths(monthRows);
         setAccounts(accountRows);
         setInstruments(instrumentRows);
-        const latest = newestMonth(monthRows);
-        if (latest) setSelectedMonthId(String(latest.id));
+        const requested = requestedMonthId
+          ? monthRows.find((month) => month.id === requestedMonthId)
+          : undefined;
+        const initial = requested ?? newestMonth(monthRows);
+        if (initial) setSelectedMonthId(String(initial.id));
       } catch (err) {
         if (!controller.signal.aborted) setError(formatApiError(err));
       } finally {
@@ -85,7 +92,7 @@ export function PayoutsPage() {
     }
     void loadBase();
     return () => controller.abort();
-  }, []);
+  }, [requestedMonthId]);
 
   const selectedMonth = useMemo(
     () => months.find((month) => String(month.id) === selectedMonthId) ?? null,
@@ -338,6 +345,7 @@ export function PayoutsPage() {
 
   return (
     <section className="stack-18">
+      <MonthlyCloseReturnBar />
       <header className="page-header">
         <p className="eyebrow">Планирование</p>
         <h1>Автовыплаты</h1>

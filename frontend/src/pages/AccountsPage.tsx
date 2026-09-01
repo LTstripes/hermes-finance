@@ -37,6 +37,8 @@ import type {
 import { AccountFormDialog } from "../components/AccountFormDialog";
 import { BrokerSnapshotPanel } from "../components/BrokerSnapshotPanel";
 import { IisAccountSection } from "../components/IisAccountSection";
+import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
+import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
 import { InstrumentFormDialog } from "../components/InstrumentFormDialog";
 import { InstrumentMappingDialog } from "../components/InstrumentMappingDialog";
 import {
@@ -87,6 +89,7 @@ function accountCodeLabel(code: string): string {
 }
 
 export function AccountsPage() {
+  const closeContext = parseMonthlyCloseReturnContext(new URLSearchParams(window.location.search));
   const [tab, setTab] = useState<Tab>("accounts");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -579,6 +582,7 @@ export function AccountsPage() {
 
   return (
     <section className="stack-18">
+      <MonthlyCloseReturnBar />
       <header className="page-header">
         <p className="eyebrow">Данные</p>
         <h1>Счета и инструменты</h1>
@@ -657,6 +661,7 @@ export function AccountsPage() {
           <IisAccountSection accounts={accounts} />
           <BrokerSnapshotPanel
             accounts={accounts}
+            initialMonthId={closeContext?.monthId}
             instruments={instruments}
             onApplied={async () => {
               await loadAccounts();

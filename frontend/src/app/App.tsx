@@ -11,6 +11,8 @@ import { FreshnessProvenancePage } from "../pages/FreshnessProvenancePage";
 import { GoalsPage } from "../pages/GoalsPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
 import { MonthsPage } from "../pages/MonthsPage";
+import { MonthlyCloseLandingPage } from "../pages/MonthlyCloseLandingPage";
+import { MonthlyCloseWorkflowPage } from "../pages/MonthlyCloseWorkflowPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
 import { RiskAllocationPage } from "../pages/RiskAllocationPage";
@@ -36,6 +38,8 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
             <Route path="freshness" element={<FreshnessProvenancePage />} />
             <Route path="reconciliation" element={<ReconciliationCenterPage />} />
             <Route path="months" element={<MonthsPage />} />
+            <Route path="monthly-close" element={<MonthlyCloseLandingPage />} />
+            <Route path="months/:monthId/close" element={<MonthlyCloseWorkflowPage />} />
             <Route path="months/:monthId" element={<MonthDetailPage />} />
             <Route path="payouts" element={<PayoutsPage />} />
             <Route path="accounts" element={<AccountsPage />} />

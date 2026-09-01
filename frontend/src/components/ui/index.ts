@@ -3,7 +3,7 @@ export { Button } from "./Button";
 export { CloneMonthDialog } from "./CloneMonthDialog";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { DataValue } from "./DataValue";
-export { Field, Input, Select } from "./Field";
+export { Field, Input, MoneyInput, Select } from "./Field";
 export { HelpTip } from "./HelpTip";
 export { KpiCard } from "./KpiCard";
 export { OverflowMenu, OverflowMenuItem } from "./OverflowMenu";
