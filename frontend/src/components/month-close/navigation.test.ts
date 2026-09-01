@@ -34,6 +34,9 @@ describe("monthly close navigation", () => {
     expect(routeForGuidedAction("open_payout_batch_preview", 42, "future_payouts")).toBe(
       "/payouts?from=monthly-close&step=future_payouts&monthId=42",
     );
+    expect(routeForGuidedAction("choose_statement_file", 42, "actual_payouts")).toBe(
+      "/payouts?from=monthly-close&step=actual_payouts&monthId=42",
+    );
     expect(routeForGuidedAction("open_final_review", 3, "readiness")).toBe(
       "/months/3/close?from=monthly-close&step=readiness&monthId=3#final_review_close",
     );

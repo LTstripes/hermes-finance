@@ -282,6 +282,29 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(container.querySelector(".statement-import__mapping")).not.toBeNull();
   });
 
+  it("keeps a zero-row inspection session-only and reports it to the wizard adapter", async () => {
+    vi.mocked(inspectStatement).mockResolvedValueOnce({
+      ...inspectResult,
+      rows: [],
+    });
+    const onOutcome = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <StatementImportPanel
+        accounts={[account]}
+        instruments={[instrument]}
+        onOutcome={onOutcome}
+      />,
+    );
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+
+    expect(
+      await screen.findByText(/В этом PDF нет подходящих выплат за отчётные месяцы/),
+    ).toBeInTheDocument();
+    expect(onOutcome).toHaveBeenLastCalledWith({ kind: "zero_rows" });
+  });
+
   it("renders prepared rows with account, instrument, amounts and duplicate class", async () => {
     const user = await prepareReport();
     const prepareTable = screen.getAllByRole("table")[1];
