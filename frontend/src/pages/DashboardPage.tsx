@@ -245,8 +245,10 @@ function CapitalOverviewCard({
         <div className="overview-card__breakdown">
           <div className="overview-card__breakdown-heading">
             <span>По классам</span>
-            <span>Сейчас</span>
-            <span>К месяцу ранее</span>
+            <span className="overview-card__breakdown-values">
+              <span>Сейчас</span>
+              <span>К месяцу ранее</span>
+            </span>
           </div>
           {allocation.map((item) => {
             const meta = ASSET_CLASS_META[item.asset_class] ?? {
@@ -263,12 +265,14 @@ function CapitalOverviewCard({
                   <i aria-hidden="true" style={{ backgroundColor: meta.color }} />
                   {meta.label}
                 </span>
-                <strong>{formatMoney(moneyAmount(item.amount))}</strong>
-                <strong
-                  className={`overview-card__breakdown-delta overview-card__delta--${deltaToneFromAmount(deltaAmount)}`}
-                >
-                  {previousDelta ? formatMoneyDelta(deltaAmount) : "—"}
-                </strong>
+                <span className="overview-card__breakdown-values">
+                  <strong>{formatMoney(moneyAmount(item.amount))}</strong>
+                  <strong
+                    className={`overview-card__breakdown-delta overview-card__delta--${deltaToneFromAmount(deltaAmount)}`}
+                  >
+                    {previousDelta ? formatMoneyDelta(deltaAmount) : "—"}
+                  </strong>
+                </span>
               </div>
             );
           })}

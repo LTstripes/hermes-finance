@@ -232,9 +232,8 @@ function accountMappingLabel(row: ReconciliationAccount): string {
   return readable || "Счёт без наблюдений";
 }
 
-function mappingSourceLine(providerId: string, label: string): string | null {
-  if (label === `Источник: ${providerId}`) return null;
-  return `Источник: ${providerId}`;
+function mappingSourceLine(providerId: string | null | undefined, label: string): string | null {
+  return providerId ? `${label}: ${providerId}` : null;
 }
 
 function accountDisplay(account: Account): string {
@@ -415,35 +414,37 @@ function IdentityCell({ row }: { row: ReconciliationRow }) {
 function ValueComparisonCell({ row }: { row: ReconciliationRow }) {
   return (
     <div className="reconciliation-center__values">
+      <strong className="reconciliation-center__values-heading">Текущие данные Hermes</strong>
       <span>
         Локальная цена/ед.:{" "}
         <strong>{formatKopecks(row.hermes_market_price_per_unit_kopecks)}</strong>
       </span>
+      <strong className="reconciliation-center__values-heading">Данные Alfa PRO</strong>
       <span>
         Цена брокера: <strong>{formatProviderAmount(row.provider_broker_unit_price)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Учётная цена брокера: <strong>{formatProviderAmount(row.provider_accounting_price)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Оценка брокера: <strong>{formatProviderAmount(row.provider_market_value)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Локальный НКД: <strong>{formatKopecks(row.hermes_accrued_interest_kopecks)}</strong>
       </span>
       <span>
         НКД брокера: <strong>{formatProviderAmount(row.provider_accrued_interest_nkd)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <span>
         Локальный P&amp;L: <strong>{formatKopecks(row.hermes_unrealized_result_kopecks)}</strong>
       </span>
       <span>
         P&amp;L брокера: <strong>{formatProviderAmount(row.provider_unrealized_result)}</strong>
-        <small>только сравнение</small>
+        <small>только для сравнения</small>
       </span>
       <details>
         <summary>Ограничения сравнения</summary>

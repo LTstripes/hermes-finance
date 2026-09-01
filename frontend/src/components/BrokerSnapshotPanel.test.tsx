@@ -7,6 +7,7 @@ import {
   revokeBrokerIdentityMapping,
 } from "../api/brokerIdentityMappings";
 import { applyBrokerBaseline, previewBrokerSnapshot } from "../api/brokerSnapshot";
+import { createInstrument } from "../api/instruments";
 import { listMonths } from "../api/months";
 import type { Account, Instrument } from "../api/types";
 import { BrokerSnapshotPanel } from "./BrokerSnapshotPanel";
@@ -23,6 +24,10 @@ vi.mock("../api/brokerIdentityMappings", () => ({
 
 vi.mock("../api/months", () => ({
   listMonths: vi.fn(),
+}));
+
+vi.mock("../api/instruments", () => ({
+  createInstrument: vi.fn(),
 }));
 
 const account = { id: 1, name: "Основной счёт" } as Account;
@@ -94,6 +99,7 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
   beforeEach(() => {
     vi.mocked(previewBrokerSnapshot).mockReset();
     vi.mocked(applyBrokerBaseline).mockReset();
+    vi.mocked(createInstrument).mockReset();
     vi.mocked(listBrokerIdentityMappings).mockReset();
     vi.mocked(previewBrokerSnapshot).mockResolvedValue(preview());
     vi.mocked(listBrokerIdentityMappings).mockResolvedValue([]);
@@ -138,12 +144,13 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
     await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
     expect(await screen.findByText(/101,25/)).toBeInTheDocument();
-    expect(screen.getByText(/Количество: 300 vs локально 299,5/)).toBeInTheDocument();
-    expect(screen.getByText(/НКД брокера.*3,5/)).toBeInTheDocument();
-    expect(screen.getByText(/P&L брокера.*12 ₽/)).toBeInTheDocument();
+    expect(screen.getByText("Данные Alfa PRO", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(/количество\s+300/)).toBeInTheDocument();
+    expect(screen.getByText(/НКД Alfa PRO.*3,5/)).toBeInTheDocument();
+    expect(screen.getByText(/P&L Alfa PRO.*12 ₽/)).toBeInTheDocument();
     expect(screen.getByText("Основной счёт")).toBeInTheDocument();
     expect(screen.getByText(/Синтетическая облигация.*RU000SYNTH01/)).toBeInTheDocument();
-    expect(screen.getByText("ID: 1:10")).toBeInTheDocument();
+    expect(screen.queryByText("ID: 1:10")).toBeNull();
     const checkbox = screen.getByRole("checkbox", { name: /Выбрать позицию/ });
     expect(checkbox).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Применить выбранный базовый срез" })).toBeDisabled();
@@ -153,6 +160,7 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     for (const label of ["Решение средней стоимости", "Решение рыночной цены", "Решение НКД"]) {
       expect(screen.getByLabelText(new RegExp(label))).toHaveValue("keep_existing");
     }
+    expect(screen.getAllByText("Оставить текущее значение Hermes").length).toBeGreaterThan(0);
     expect(screen.queryByText("Оставить текущую")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Применить выбранный базовый срез" }));
     await user.click(screen.getByRole("button", { name: "Подтвердить базовый срез" }));
@@ -201,8 +209,10 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     expect(
       await screen.findByRole("status", { name: "Результат шага Alfa PRO" }),
     ).toHaveTextContent("Частичный результат");
-    expect(screen.getByText("Требуют внимания")).toBeInTheDocument();
-    expect(screen.getByText("ID: 1:10")).not.toBeVisible();
+    expect(screen.getByRole("status", { name: "Результат шага Alfa PRO" })).toHaveTextContent(
+      "Требуют внимания",
+    );
+    expect(screen.queryByText("ID: 1:10")).not.toBeInTheDocument();
     expect(previewBrokerSnapshot).toHaveBeenCalledWith(7, { accounts: [], instruments: [] });
   });
 
@@ -423,9 +433,17 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
         "Раздел RUB · Инструменты: ОФЗ 26240 · RU000A103BR0 · SU26240RMFS8",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Источник: opaque-account-1")).toBeInTheDocument();
+    expect(screen.queryByText("Источник: opaque-account-1")).toBeNull();
     expect(screen.getByLabelText("Тестовая облигация · RU000A0TEST01 · TEST")).toBeInTheDocument();
-    expect(screen.getByText("Источник: opaque-instrument-1")).toBeInTheDocument();
+    expect(screen.queryByText("Источник: opaque-instrument-1")).toBeNull();
+    const sourceDetails = screen.getAllByText("Подробности источника");
+    expect(sourceDetails).toHaveLength(2);
+    await user.click(sourceDetails[0]);
+    expect(screen.getByText("Идентификатор счёта Alfa PRO: opaque-account-1")).toBeVisible();
+    await user.click(sourceDetails[1]);
+    expect(
+      screen.getByText("Идентификатор инструмента Alfa PRO: opaque-instrument-1"),
+    ).toBeVisible();
   });
 
   it("allows provider-only create without accrued interest and states mapping persist", async () => {
@@ -548,6 +566,112 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     expect(
       screen.getByRole("button", { name: "Отозвать сопоставление счёта" }),
     ).toBeInTheDocument();
+  });
+
+  it("groups positions and lets the owner select all applicable rows explicitly", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        positions: [
+          matched,
+          {
+            ...matched,
+            instrument_id: 20,
+            instrument_name: "Вторая облигация",
+            instrument_isin: "RU000SYNTH02",
+            fingerprint: "fp-second",
+          },
+        ],
+      }),
+    );
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(await screen.findByText("Счёт Hermes: Основной счёт")).toBeInTheDocument();
+    const checkboxes = screen.getAllByRole("checkbox", { name: /Выбрать позицию/ });
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes.every((checkbox) => !(checkbox as HTMLInputElement).checked)).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Выбрать все применимые" }));
+    expect(
+      screen
+        .getAllByRole("checkbox", { name: /Выбрать позицию/ })
+        .every((checkbox) => (checkbox as HTMLInputElement).checked),
+    ).toBe(true);
+    expect(screen.getByText("Выбрано: 2 из 2 применимых")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Снять выбор" }));
+    expect(
+      screen
+        .getAllByRole("checkbox", { name: /Выбрать позицию/ })
+        .every((checkbox) => !(checkbox as HTMLInputElement).checked),
+    ).toBe(true);
+  });
+
+  it("creates a provider-only instrument only after explicit owner confirmation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        instruments: [
+          {
+            provider_instrument_id: "needs-owner",
+            isin: "RU000A103BR0",
+            ticker: "SU26240RMFS8",
+            display_name: "ОФЗ 26240",
+            hermes_instrument_id: null,
+            status: "unmatched",
+            reason: "instrument_unmatched",
+          },
+        ],
+      }),
+    );
+    vi.mocked(createInstrument).mockResolvedValue({
+      id: 42,
+      name: "ОФЗ владельца",
+      instrument_type: "bond",
+      isin: "RU000A103BR0",
+      ticker: "SU26240RMFS8",
+      moex_secid: null,
+      currency: "RUB",
+      nominal_value: null,
+      is_active: true,
+      manual_price_allowed: true,
+      notes: null,
+    });
+
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    await user.click(await screen.findByRole("button", { name: "Создать инструмент из Alfa PRO" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Создать инструмент из Alfa PRO" }),
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("ОФЗ 26240")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("RU000A103BR0")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("SU26240RMFS8")).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Название"));
+    await user.type(screen.getByLabelText("Название"), "ОФЗ владельца");
+    await user.click(screen.getByRole("button", { name: /^Создать$/ }));
+
+    await waitFor(() => expect(createInstrument).toHaveBeenCalledTimes(1));
+    expect(createInstrument).toHaveBeenCalledWith({
+      name: "ОФЗ владельца",
+      instrument_type: "bond",
+      isin: "RU000A103BR0",
+      ticker: "SU26240RMFS8",
+      moex_secid: null,
+      currency: "RUB",
+      nominal_value: null,
+      is_active: true,
+      manual_price_allowed: true,
+      notes: null,
+    });
+    expect(
+      await screen.findByText(/Инструмент создан и выбран для будущего явного сопоставления/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Получите обновлённые данные из Альфа PRO/)).toBeInTheDocument();
   });
 
   it("shows and copies the safe diagnostic artifact", async () => {

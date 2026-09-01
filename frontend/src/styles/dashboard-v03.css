@@ -106,6 +106,7 @@
 .overview-card__breakdown {
   display: grid;
   gap: 6px;
+  min-width: 0;
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--line-soft);
@@ -114,7 +115,7 @@
 .overview-card__breakdown-heading,
 .overview-card__breakdown-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr);
   gap: 8px;
   align-items: baseline;
 }
@@ -127,9 +128,22 @@
   text-transform: uppercase;
 }
 
-.overview-card__breakdown-heading span:not(:first-child),
+.overview-card__breakdown-heading > span:last-child,
 .overview-card__breakdown-row strong {
   text-align: right;
+}
+
+.overview-card__breakdown-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  align-items: baseline;
+  text-align: right;
+}
+
+.overview-card__breakdown-heading .overview-card__breakdown-values {
+  gap: 10px;
 }
 
 .overview-card__breakdown-row {
@@ -153,12 +167,13 @@
 
 .overview-card__breakdown-row strong {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: clamp(0.58rem, 0.8vw, 0.68rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .overview-card__breakdown-delta.overview-card__delta--up {
