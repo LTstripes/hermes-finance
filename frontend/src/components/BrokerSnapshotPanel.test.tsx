@@ -173,6 +173,49 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     });
   });
 
+  it("keeps the close month selected and shows a compact partial preview only after the explicit action", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        status: "conflicts",
+        positions: [
+          matched,
+          {
+            ...matched,
+            instrument_id: 20,
+            instrument_name: "Нерешённый инструмент",
+            status: "conflict",
+            fingerprint: null,
+          },
+        ],
+      }),
+    );
+
+    render(
+      <BrokerSnapshotPanel
+        accounts={[account]}
+        initialMonthId={7}
+        instruments={[instrument]}
+        monthlyClose
+      />,
+    );
+    const monthSelect = await screen.findByLabelText("Отчётный месяц");
+    expect(monthSelect).toHaveValue("7");
+    expect(monthSelect).toBeDisabled();
+    expect(previewBrokerSnapshot).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(
+      await screen.findByRole("status", { name: "Результат шага Alfa PRO" }),
+    ).toHaveTextContent("Частичный результат");
+    expect(screen.getByRole("status", { name: "Результат шага Alfa PRO" })).toHaveTextContent(
+      "Требуют внимания",
+    );
+    expect(screen.queryByText("ID: 1:10")).not.toBeInTheDocument();
+    expect(previewBrokerSnapshot).toHaveBeenCalledWith(7, { accounts: [], instruments: [] });
+  });
+
   it("clears review state on preview_changed and sends only confirmed selections", async () => {
     const user = userEvent.setup();
     vi.mocked(applyBrokerBaseline).mockResolvedValueOnce({

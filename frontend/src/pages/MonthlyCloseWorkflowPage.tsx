@@ -3,10 +3,12 @@ import { Link, useParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
 import { routeForGuidedAction } from "../components/month-close/navigation";
+import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
 import { Badge, EmptyState, ErrorState, LoadingState, Panel } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
-import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
+import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 
 const STATE_LABELS = {
   not_started: "Ещё не начато",
@@ -72,6 +74,7 @@ export function MonthlyCloseWorkflowPage() {
   const recommended =
     workflow.steps.find((step) => step.id === workflow.recommended_step_id) ?? null;
   const primaryAction = recommended?.primary_action ?? null;
+  const finalReviewActive = recommended?.id === "final_review_close";
 
   return (
     <section className="stack-18 monthly-close">
@@ -96,12 +99,13 @@ export function MonthlyCloseWorkflowPage() {
       {recommended ? (
         <Panel className="monthly-close__current" label="Сейчас" title={recommended.title}>
           <p>{recommended.why}</p>
+          <MonthlyCloseStepSummary step={recommended} />
           <div className="monthly-close__primary-row">
             <span className="muted">
               {workflow.progress.completed_or_skipped} из {workflow.progress.total_applicable} шагов
               подтверждены сохранёнными фактами
             </span>
-            {primaryAction ? (
+            {primaryAction && !finalReviewActive ? (
               <Link
                 className="btn btn--primary"
                 to={routeForGuidedAction(primaryAction.id, workflow.month.id, recommended.id)}
@@ -117,6 +121,8 @@ export function MonthlyCloseWorkflowPage() {
         </Panel>
       )}
 
+      <FinalMonthReview review={workflow.final_review} />
+
       <ol className="monthly-close__steps" aria-label="Шаги закрытия">
         {workflow.steps.map((step) => (
           <li className="monthly-close__step" id={step.id} key={step.id}>
@@ -124,6 +130,7 @@ export function MonthlyCloseWorkflowPage() {
             <div>
               <strong>{step.title}</strong>
               <p>{step.why}</p>
+              <MonthlyCloseStepSummary compact step={step} />
             </div>
             <Badge tone={stateTone(step.state)}>{STATE_LABELS[step.state]}</Badge>
           </li>

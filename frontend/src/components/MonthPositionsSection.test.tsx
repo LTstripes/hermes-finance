@@ -448,6 +448,87 @@ describe("MonthPositionsSection G03 component contract", () => {
     );
   });
 
+  it("keeps quote Apply separate and shows its result without a hidden second preview", async () => {
+    const previewBody = {
+      reporting_month_id: 7,
+      month_status: "draft",
+      target_date: "2031-01-31",
+      month_editable: true,
+      batch_error: null,
+      batch_error_reason: null,
+      rows: [
+        {
+          position_snapshot_id: 31,
+          account_id: 11,
+          instrument_id: 21,
+          instrument_name: "T-Invest Stock",
+          instrument_type: "stock",
+          mapping_state: "mapped",
+          identity: {
+            provider: "t_invest",
+            provider_instrument_id: "11111111-1111-1111-1111-111111111111",
+            provider_venue_id: null,
+          },
+          current_market_price_per_unit: { amount: "1100.00", currency: "RUB" },
+          current_price_date: "2031-01-31",
+          current_price_source: "manual",
+          proposed_market_price_per_unit: { amount: "1110.00", currency: "RUB" },
+          proposed_price_date: "2031-01-30",
+          proposed_quote_kind: "last",
+          proposed_raw_price: "1110.00",
+          proposed_raw_price_basis: "R",
+          fetched_at_utc: "2031-01-31T12:00:00Z",
+          freshness_status: "ok",
+          status: "ok",
+          failure_reason: null,
+          message: null,
+          apply_allowed: true,
+        },
+      ],
+    };
+    const fetchMock = setup(
+      {
+        "POST /api/months/7/quote-preview": () => jsonResponse(previewBody),
+        "POST /api/months/7/quote-apply": () =>
+          jsonResponse({
+            reporting_month_id: 7,
+            applied_count: 1,
+            rows: [
+              {
+                position_snapshot_id: 31,
+                market_price_per_unit: { amount: "1110.00", currency: "RUB" },
+                market_value: { amount: "11100.00", currency: "RUB" },
+                unrealized_result: { amount: "1100.00", currency: "RUB" },
+                accrued_interest: null,
+                price_date: "2031-01-30",
+                price_source: "t_invest",
+                freshness: "ok",
+              },
+            ],
+          }),
+      },
+      [position],
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Позиции");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await screen.findByRole("button", { name: "Применить выбранные" });
+    await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
+
+    expect(await screen.findByText(/Котировки применены: 1/)).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input, init]) =>
+          String(input) === "/api/months/7/quote-preview" && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input, init]) => String(input) === "/api/months/7/quote-apply" && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("keeps the closed-month manual edit path disabled but still allows preview", async () => {
     setup(
       {

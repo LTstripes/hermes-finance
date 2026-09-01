@@ -11,6 +11,7 @@ import {
   listPayoutCalendar,
   previewPayoutsBatch,
   previewPayouts,
+  type PayoutApplyResult,
   type PayoutApplySelection,
   type PayoutBatchPreview,
   type PayoutCalendarMonth,
@@ -25,6 +26,11 @@ import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import { StatementImportPanel } from "../components/StatementImportPanel";
 import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
+import {
+  TInvestBatchItemStatus,
+  TInvestBatchSummary,
+  TInvestPayoutApplySummary,
+} from "../components/month-close/TInvestStepSummary";
 import { Badge, Button, EmptyState, Field, LoadingState, Panel, Select } from "../components/ui";
 import { formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
@@ -62,7 +68,8 @@ export function PayoutsPage() {
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [lastApplyResult, setLastApplyResult] = useState<PayoutApplyResult | null>(null);
+  const [requestedMonthMissing, setRequestedMonthMissing] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,8 +89,9 @@ export function PayoutsPage() {
         const requested = requestedMonthId
           ? monthRows.find((month) => month.id === requestedMonthId)
           : undefined;
-        const initial = requested ?? newestMonth(monthRows);
-        if (initial) setSelectedMonthId(String(initial.id));
+        setRequestedMonthMissing(Boolean(requestedMonthId && !requested));
+        const initial = requestedMonthId ? requested : newestMonth(monthRows);
+        setSelectedMonthId(initial ? String(initial.id) : "");
       } catch (err) {
         if (!controller.signal.aborted) setError(formatApiError(err));
       } finally {
@@ -153,7 +161,7 @@ export function PayoutsPage() {
     setPreview(null);
     setBatchPreview(null);
     setActionError(null);
-    setSuccess(null);
+    setLastApplyResult(null);
     const controller = new AbortController();
     void loadContext(monthId, forecastVersion.trim(), controller.signal);
     return () => controller.abort();
@@ -203,7 +211,7 @@ export function PayoutsPage() {
     if (!payload || !Number.isInteger(monthId) || monthId < 1) return;
     setPreviewLoading(true);
     setActionError(null);
-    setSuccess(null);
+    setLastApplyResult(null);
     try {
       setPreview(await previewPayouts(monthId, payload));
     } catch (err) {
@@ -219,7 +227,7 @@ export function PayoutsPage() {
     if (!Number.isInteger(monthId) || monthId < 1 || !forecastVersion.trim()) return;
     setBatchLoading(true);
     setActionError(null);
-    setSuccess(null);
+    setLastApplyResult(null);
     try {
       setBatchPreview(
         await previewPayoutsBatch(monthId, forecastVersion.trim(), positionSnapshotIds),
@@ -238,6 +246,7 @@ export function PayoutsPage() {
     if (!position || !Number.isInteger(monthId) || monthId < 1) return;
     setPreviewLoading(true);
     setActionError(null);
+    setLastApplyResult(null);
     try {
       const value = await previewPayouts(monthId, {
         account_id: position.account_id,
@@ -251,7 +260,12 @@ export function PayoutsPage() {
               ...current,
               items: current.items.map((item) =>
                 item.position_snapshot_id === positionSnapshotId
-                  ? { ...item, status: "previewed", message: null, preview: value }
+                  ? {
+                      ...item,
+                      status: value.rows.length === 0 ? "no_events" : "previewed",
+                      message: null,
+                      preview: value,
+                    }
                   : item,
               ),
             }
@@ -270,7 +284,7 @@ export function PayoutsPage() {
     if (!payload || rows.length === 0 || !Number.isInteger(monthId) || monthId < 1) return;
     setApplying(true);
     setActionError(null);
-    setSuccess(null);
+    setLastApplyResult(null);
     try {
       await applyRows(payload, rows, (result) => {
         if (result.success) setPreview(null);
@@ -291,6 +305,7 @@ export function PayoutsPage() {
       const result = await applyPayouts(monthId, { ...payload, rows });
       if (!result.success) {
         if (result.error_code === "preview_changed") setPreview(null);
+        setLastApplyResult(null);
         setActionError(
           (result.error_code && APPLY_FAILURE_LABELS[result.error_code]) ||
             result.message ||
@@ -300,9 +315,10 @@ export function PayoutsPage() {
       }
       setCalendar(await listPayoutCalendar(monthId, forecastVersion.trim()));
       setRefreshStatus(await getPayoutRefreshStatus(monthId));
-      setSuccess(`Применено выплат: ${result.selected_count}. Календарь обновлён.`);
+      setLastApplyResult(result);
       onSuccess?.(result);
     } catch (err) {
+      setLastApplyResult(null);
       setActionError(formatApiError(err));
     }
   }
@@ -311,7 +327,7 @@ export function PayoutsPage() {
     if (previewValue.position_snapshot_id === null) return;
     setApplying(true);
     setActionError(null);
-    setSuccess(null);
+    setLastApplyResult(null);
     await applyRows(payloadForPreview(previewValue), rows, (result) => {
       if (!result.success) return;
       setBatchPreview((current) =>
@@ -360,11 +376,12 @@ export function PayoutsPage() {
           {error}
         </div>
       ) : null}
-      {success ? (
-        <div className="month-workspace__save-ok" role="status">
-          {success}
+      {requestedMonthMissing ? (
+        <div className="inline-alert inline-alert--error" role="alert">
+          Месяц из закрытия не найден. Вернись к выбору месяца и открой закрытие заново.
         </div>
       ) : null}
+      <TInvestPayoutApplySummary result={lastApplyResult} />
 
       <StatementImportPanel
         accounts={accounts}
@@ -392,10 +409,12 @@ export function PayoutsPage() {
         <div className="editor-grid">
           <Field htmlFor="payout-month" label="Отчётный месяц">
             <Select
+              disabled={Boolean(closeContext)}
               id="payout-month"
               onChange={(event) => {
                 setSelectedMonthId(event.target.value);
                 setPreview(null);
+                setLastApplyResult(null);
               }}
               value={selectedMonthId}
             >
@@ -419,6 +438,7 @@ export function PayoutsPage() {
                 setSelectedPositionId(event.target.value);
                 setPreview(null);
                 setActionError(null);
+                setLastApplyResult(null);
               }}
               value={selectedPositionId}
             >
@@ -467,6 +487,7 @@ export function PayoutsPage() {
           setForecastVersion(value || "v1");
           setPreview(null);
           setActionError(null);
+          setLastApplyResult(null);
         }}
         onRefresh={() => void handlePreview()}
         positionLabel={positionLabel}
@@ -511,11 +532,7 @@ export function PayoutsPage() {
         </div>
         {batchPreview ? (
           <div className="stack-18 payout-batch-results">
-            <div className="inline-alert inline-alert--info" role="status">
-              {batchPreview.summary.total_positions} позиций · {batchPreview.summary.with_events} с
-              событиями · {batchPreview.summary.without_events} без событий ·{" "}
-              {batchPreview.summary.errors} ошибок · {batchPreview.summary.skipped} пропущено
-            </div>
+            <TInvestBatchSummary preview={batchPreview} />
             {batchPreview.items.map((item) => {
               const itemLabel = positionLabelFor(item.account_id, item.instrument_id);
               const previewValue = item.preview;
@@ -523,6 +540,7 @@ export function PayoutsPage() {
                 <div className="payout-batch-results__group" key={item.position_snapshot_id}>
                   <div className="payout-batch-results__heading">
                     <strong>{itemLabel}</strong>
+                    <TInvestBatchItemStatus item={item} />
                     <span className="muted tiny">
                       PositionSnapshot #{item.position_snapshot_id}
                     </span>
@@ -541,14 +559,13 @@ export function PayoutsPage() {
                       readOnly={selectedMonth?.status === "closed"}
                     />
                   ) : (
-                    <div className="inline-alert inline-alert--warn" role="status">
-                      <Badge tone={item.status === "error" ? "closed" : "draft"}>
-                        {item.status === "skipped"
-                          ? "Пропущено"
-                          : item.status === "applied"
-                            ? "Применено"
-                            : "Ошибка"}
-                      </Badge>{" "}
+                    <div
+                      className={`inline-alert ${
+                        item.status === "error" ? "inline-alert--warn" : "inline-alert--info"
+                      }`}
+                      role="status"
+                    >
+                      <TInvestBatchItemStatus item={item} />{" "}
                       {item.message ?? "Для позиции нет доступного preview."}
                     </div>
                   )}

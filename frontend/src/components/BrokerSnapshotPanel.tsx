@@ -23,6 +23,11 @@ import type { Account, Instrument, ReportingMonth } from "../api/types";
 import { formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { InstrumentFormDialog } from "./InstrumentFormDialog";
+import {
+  AlfaSnapshotSummary,
+  type AlfaApplyOutcome,
+  summarizeAlfaSnapshot,
+} from "./month-close/ProviderStepSummary";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type DecisionAction = "keep_existing" | "replace" | "";
@@ -273,6 +278,7 @@ type Props = {
   accounts: Account[];
   instruments: Instrument[];
   initialMonthId?: number;
+  monthlyClose?: boolean;
   onApplied?: () => Promise<void> | void;
   onInstrumentCreated?: () => Promise<void> | void;
 };
@@ -281,6 +287,7 @@ export function BrokerSnapshotPanel({
   accounts,
   instruments,
   initialMonthId,
+  monthlyClose = false,
   onApplied,
   onInstrumentCreated,
 }: Props) {
@@ -298,6 +305,7 @@ export function BrokerSnapshotPanel({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [applyOutcome, setApplyOutcome] = useState<AlfaApplyOutcome | null>(null);
   const [diagnosticCopied, setDiagnosticCopied] = useState(false);
   const [identityMappings, setIdentityMappings] = useState<BrokerIdentityMapping[]>([]);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
@@ -396,6 +404,7 @@ export function BrokerSnapshotPanel({
     setBusy(true);
     setMessage(null);
     setSuccess(null);
+    setApplyOutcome(null);
     clearReview();
     try {
       const next = await previewBrokerSnapshot(id, mapping());
@@ -418,6 +427,7 @@ export function BrokerSnapshotPanel({
     setBusy(true);
     setMessage(null);
     setSuccess(null);
+    setApplyOutcome(null);
     try {
       await revokeBrokerIdentityMapping(mappingId);
       setMappingDirty(true);
@@ -517,6 +527,7 @@ export function BrokerSnapshotPanel({
 
   async function apply() {
     if (!preview || !applyReady || !baselineDate) return;
+    const previewCounts = summarizeAlfaSnapshot(preview);
     setBusy(true);
     setMessage(null);
     setSuccess(null);
@@ -539,6 +550,11 @@ export function BrokerSnapshotPanel({
           ? `Базовый срез без изменений: ${result.selected_count}.`
           : `Базовый срез применён. Позиций: ${result.selected_count}.`,
       );
+      setApplyOutcome({
+        selectedCount: result.selected_count,
+        unchangedCount: unchanged,
+        attentionCount: previewCounts.unresolved,
+      });
       clearReview();
       await onApplied?.();
     } catch (error) {
@@ -561,7 +577,7 @@ export function BrokerSnapshotPanel({
             id="broker-month-id"
             value={monthId}
             onChange={(event) => setMonthId(event.target.value)}
-            disabled={monthsLoading}
+            disabled={monthsLoading || monthlyClose}
           >
             <option value="">{monthsLoading ? "Загружаем месяцы…" : "— выберите месяц —"}</option>
             {[...months]
@@ -604,6 +620,9 @@ export function BrokerSnapshotPanel({
           </Button>
         ) : null}
       </div>
+      {monthlyClose ? (
+        <AlfaSnapshotSummary error={message} outcome={applyOutcome} preview={preview} />
+      ) : null}
       {message ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {message}
@@ -690,7 +709,7 @@ export function BrokerSnapshotPanel({
                     ) : (
                       <p className="muted">{localAccountLabel(row.hermes_account_id, accounts)}</p>
                     )}
-                    <details className="broker-snapshot__mapping-details">
+                    <details className="broker-snapshot__mapping-details provider-identity-details">
                       <summary>Подробности источника</summary>
                       <span>Идентификатор счёта Alfa PRO: {row.provider_account_id}</span>
                     </details>
@@ -788,7 +807,7 @@ export function BrokerSnapshotPanel({
                         Создать инструмент из Alfa PRO
                       </Button>
                     ) : null}
-                    <details className="broker-snapshot__mapping-details">
+                    <details className="broker-snapshot__mapping-details provider-identity-details">
                       <summary>Подробности источника</summary>
                       <span>Идентификатор инструмента Alfa PRO: {providerId}</span>
                     </details>
@@ -881,7 +900,7 @@ export function BrokerSnapshotPanel({
                               {row.instrument_name ?? "Инструмент не найден"}
                               {row.instrument_isin ? ` · ${row.instrument_isin}` : ""}
                             </span>
-                            <details className="broker-snapshot__row-details">
+                            <details className="broker-snapshot__row-details provider-identity-details">
                               <summary>Подробности строки</summary>
                               <span>Ключ проверки: {key}</span>
                               {row.provider_account_id || row.provider_instrument_id ? (

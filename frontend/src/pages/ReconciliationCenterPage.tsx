@@ -11,6 +11,7 @@ import {
 import { formatApiError } from "../api/client";
 import { MonthlyCloseReturnBar } from "../components/month-close/MonthlyCloseReturnBar";
 import { parseMonthlyCloseReturnContext } from "../components/month-close/navigation";
+import { ReconciliationSummary } from "../components/month-close/ProviderStepSummary";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
@@ -228,7 +229,11 @@ function accountMappingLabel(row: ReconciliationAccount): string {
   const hiddenCount = instruments.length - visible.length;
   const extra = hiddenCount > 0 ? [`ещё ${hiddenCount}`] : [];
   const readable = [...sections, ...visible, ...extra].join(" · ");
-  return readable || "Счёт без описания";
+  return readable || "Счёт без наблюдений";
+}
+
+function mappingSourceLine(providerId: string | null | undefined, label: string): string | null {
+  return providerId ? `${label}: ${providerId}` : null;
 }
 
 function accountDisplay(account: Account): string {
@@ -290,6 +295,7 @@ function MappingPanel({
             {!accountsLoading && !accountsError
               ? accountRows.map((row, index) => {
                   const label = accountMappingLabel(row);
+                  const sourceLine = mappingSourceLine(row.provider_account_id, label);
                   return (
                     <Field
                       key={row.provider_account_id}
@@ -310,10 +316,12 @@ function MappingPanel({
                           </option>
                         ))}
                       </Select>
-                      <details className="reconciliation-center__mapping-details">
-                        <summary>Подробности источника</summary>
-                        <span>Идентификатор счёта Alfa PRO: {row.provider_account_id}</span>
-                      </details>
+                      {sourceLine ? (
+                        <details className="reconciliation-center__mapping-source">
+                          <summary>Идентификатор источника</summary>
+                          <code>{sourceLine}</code>
+                        </details>
+                      ) : null}
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
                       </span>
@@ -341,6 +349,7 @@ function MappingPanel({
               ? instrumentRows.map((row, index) => {
                   const providerId = row.provider_instrument_id as string;
                   const label = instrumentMappingLabel(row);
+                  const sourceLine = mappingSourceLine(providerId, label);
                   return (
                     <Field
                       key={providerId}
@@ -359,10 +368,12 @@ function MappingPanel({
                           </option>
                         ))}
                       </Select>
-                      <details className="reconciliation-center__mapping-details">
-                        <summary>Подробности источника</summary>
-                        <span>Идентификатор инструмента Alfa PRO: {providerId}</span>
-                      </details>
+                      {sourceLine ? (
+                        <details className="reconciliation-center__mapping-source">
+                          <summary>Идентификатор источника</summary>
+                          <code>{sourceLine}</code>
+                        </details>
+                      ) : null}
                       <span className="reconciliation-center__mapping-reason">
                         Причина: {reasonLabel(row.reason)}
                       </span>
@@ -386,15 +397,15 @@ function IdentityCell({ row }: { row: ReconciliationRow }) {
       <strong>{row.account_name ?? "Счёт не сопоставлен"}</strong>
       <span>{row.instrument_name ?? "Инструмент не сопоставлен"}</span>
       {instrumentIdentity ? <span className="muted">{instrumentIdentity}</span> : null}
-      <details className="reconciliation-center__identity-details">
-        <summary>Подробности строки</summary>
-        <span className="reconciliation-center__identity-provider">
-          Идентификаторы Alfa PRO: {valueOrDash(row.provider_account_id)} /{" "}
-          {valueOrDash(row.provider_instrument_id)}
+      <details className="reconciliation-center__identity-provider">
+        <summary>Идентификаторы источника</summary>
+        <span>
+          {valueOrDash(row.provider_account_id)} / {valueOrDash(row.provider_instrument_id)}
         </span>
-        <span className="reconciliation-center__fingerprint">
-          Технический ключ: <code>{valueOrDash(row.fingerprint)}</code>
-        </span>
+      </details>
+      <details className="reconciliation-center__fingerprint">
+        <summary>Технический ключ строки</summary>
+        <code>{valueOrDash(row.fingerprint)}</code>
       </details>
     </div>
   );
@@ -886,7 +897,7 @@ export function ReconciliationCenterPage() {
               id="reconciliation-month"
               value={selectedMonthId}
               onChange={(event) => changeMonth(event.target.value)}
-              disabled={monthsQuery.isPending}
+              disabled={monthsQuery.isPending || Boolean(closeContext)}
             >
               <option value="">
                 {monthsQuery.isPending ? "Загружаем месяцы…" : "— выбрать месяц —"}
@@ -928,28 +939,36 @@ export function ReconciliationCenterPage() {
       </Panel>
 
       {result ? (
-        <ResultView
-          accountValues={accountValues}
-          accounts={accountsQuery.data ?? []}
-          accountsError={accountsQuery.error ? formatApiError(accountsQuery.error) : null}
-          accountsLoading={accountsQuery.isPending}
-          instrumentValues={instrumentValues}
-          instruments={instrumentsQuery.data ?? []}
-          instrumentsError={instrumentsQuery.error ? formatApiError(instrumentsQuery.error) : null}
-          instrumentsLoading={instrumentsQuery.isPending}
-          mappingDirty={mappingDirty}
-          onAccountChange={changeAccountMapping}
-          onInstrumentChange={changeInstrumentMapping}
-          result={result}
-        />
-      ) : (
-        <Panel label="Результат" title="Сверка ещё не запрашивалась">
-          <EmptyState
-            description="Страница готова. Выбери месяц и запусти проверку, когда понадобится. Простое открытие не обращается к внешнему источнику."
-            inline
-            title="Нет снимка источника"
+        <>
+          {closeContext ? <ReconciliationSummary error={actionError} result={result} /> : null}
+          <ResultView
+            accountValues={accountValues}
+            accounts={accountsQuery.data ?? []}
+            accountsError={accountsQuery.error ? formatApiError(accountsQuery.error) : null}
+            accountsLoading={accountsQuery.isPending}
+            instrumentValues={instrumentValues}
+            instruments={instrumentsQuery.data ?? []}
+            instrumentsError={
+              instrumentsQuery.error ? formatApiError(instrumentsQuery.error) : null
+            }
+            instrumentsLoading={instrumentsQuery.isPending}
+            mappingDirty={mappingDirty}
+            onAccountChange={changeAccountMapping}
+            onInstrumentChange={changeInstrumentMapping}
+            result={result}
           />
-        </Panel>
+        </>
+      ) : (
+        <>
+          {closeContext ? <ReconciliationSummary error={actionError} result={null} /> : null}
+          <Panel label="Результат" title="Сверка ещё не запрашивалась">
+            <EmptyState
+              description="Страница готова. Выбери месяц и запусти проверку, когда понадобится. Простое открытие не обращается к внешнему источнику."
+              inline
+              title="Нет снимка источника"
+            />
+          </Panel>
+        </>
       )}
     </section>
   );
