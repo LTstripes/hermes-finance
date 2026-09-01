@@ -121,9 +121,7 @@ export function MonthlyCloseWorkflowPage() {
         </Panel>
       )}
 
-      <FinalMonthReview
-        review={workflow.final_review}
-      />
+      <FinalMonthReview review={workflow.final_review} />
 
       <ol className="monthly-close__steps" aria-label="Шаги закрытия">
         {workflow.steps.map((step) => (
