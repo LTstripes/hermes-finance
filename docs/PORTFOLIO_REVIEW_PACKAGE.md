@@ -10,9 +10,11 @@
 
 ## Scope of this slice
 
-This slice records the gap audit and freezes the transport contract for a future
-owner-triggered portfolio-review handoff. It does not add an endpoint, UI, file
-generation workflow, upload, cloud call, LLM call, persistence, or provider refresh.
+This slice records the gap audit, freezes the transport contract, and provides the
+local owner-triggered portfolio-review handoff. It adds a read-only package
+endpoint, a human-readable companion report, and a preview/download UI. It does
+not upload data, call a cloud service or LLM, persist an export, or refresh a
+provider.
 
 The existing `hermes.finance.ai_analysis_bundle` `1.0.0` contract remains unchanged
 and remains the source contract for the first adapter. The review package is one
@@ -112,7 +114,10 @@ profile-compatible fields; a major version is required for changed requiredness,
 units, counting semantics, or source meaning. Consumers dispatch on the major
 version and must validate the exact schema identified by the package.
 
-The next slices are intentionally not started here: a backend assembler/endpoint,
-the human-readable companion report, owner profile/preview/download UI, and an
-assistant-evaluation fixture against agreed questions. Owner UAT with real local
-data remains separate and no real package belongs in Git.
+The package endpoint is available at `GET /api/export/portfolio-review-package`
+for an explicit local preview. `GET /api/export/portfolio-review-package/json`
+and `/markdown` download the same assembled DTO as JSON or a human-readable
+Markdown companion. The owner UI exposes concise/full profile selection, section
+status preview, and both downloads from the Export screen. Synthetic assistant
+evaluation remains fixture-based and does not use owner data. Owner UAT with real
+local data remains separate and no real package belongs in Git.

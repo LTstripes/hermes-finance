@@ -6,6 +6,7 @@ import json
 import socket
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,10 @@ from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.services import portfolio_review_package as package_service
+from hermes_finance.services.portfolio_review_package import (
+    portfolio_review_package_filename,
+    render_portfolio_review_markdown,
+)
 
 pytestmark = [
     pytest.mark.api,
@@ -232,3 +237,60 @@ def test_full_package_marks_unavailable_optional_read_model_explicitly(
         item["path"] == "sections.allocation" and item["status"] == "unavailable"
         for item in package["field_states"]
     )
+
+
+def test_markdown_download_is_rendered_from_the_same_dto_and_keeps_privacy_boundary(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    _seed_history(client)
+    before = _table_counts(database)
+
+    with _forbid_full_network(), _forbid_sql_writes(database.engine):
+        response = client.get(
+            "/api/export/portfolio-review-package/markdown",
+            params={"profile": "concise", "generated_at": GENERATED_AT},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="hermes-portfolio-review-2026-04-30-concise.md"'
+    )
+    report = response.text
+    assert "# Hermes Finance — пакет для анализа (concise)" in report
+    assert "Чистый ликвидный капитал: 1386001.00 ₽" in report, report
+    assert "Распределение и концентрация**: опущен профилем" in report
+    assert "Совокупный капитал: недоступно" in report
+    assert "Никакие данные не отправляются автоматически" in report
+    assert "d:\\" not in report.lower()
+    assert "file://" not in report.lower()
+    assert before == _table_counts(database)
+
+
+def test_json_download_has_a_profiled_filename_and_markdown_renderer_revalidates_dto(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_history(client)
+    response, package = _package(client, "full")
+
+    assert response.status_code == 200
+    assert portfolio_review_package_filename(
+        as_of_date=date.fromisoformat(package["metadata"]["as_of_date"]),
+        profile="full",
+        media="json",
+    ) == "hermes-portfolio-review-2026-04-30-full.json"
+    report = render_portfolio_review_markdown(package)
+    assert "## Детерминированные сигналы" in report
+    assert "## Ограничения" in report
+
+    download = client.get(
+        "/api/export/portfolio-review-package/json",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert download.status_code == 200, download.text
+    assert download.headers["content-disposition"] == (
+        'attachment; filename="hermes-portfolio-review-2026-04-30-full.json"'
+    )
+    assert download.json() == package

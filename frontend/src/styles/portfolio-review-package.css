@@ -1,0 +1,111 @@
+.portfolio-review-package {
+  max-width: 980px;
+}
+
+.portfolio-review-package > p {
+  max-width: 820px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.portfolio-review-package__controls {
+  display: flex;
+  align-items: end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.portfolio-review-package__controls .field {
+  min-width: 260px;
+}
+
+.portfolio-review-package__preview {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.portfolio-review-package__summary {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.portfolio-review-package__summary span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.portfolio-review-package__summary span::before {
+  content: "·";
+  margin-right: var(--space-3);
+  color: var(--line);
+}
+
+.portfolio-review-package__sections {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.portfolio-review-package__section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.portfolio-review-package__section > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+
+.portfolio-review-package__details {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.portfolio-review-package__details summary {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.portfolio-review-package__details ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.portfolio-review-package__downloads {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .portfolio-review-package__sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .portfolio-review-package__sections {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-review-package__controls,
+  .portfolio-review-package__controls .field,
+  .portfolio-review-package__controls .btn {
+    width: 100%;
+  }
+}

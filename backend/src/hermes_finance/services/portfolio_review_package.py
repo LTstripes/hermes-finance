@@ -163,6 +163,250 @@ def canonical_json(package: dict[str, object]) -> str:
     return json.dumps(package, ensure_ascii=False, indent=2) + "\n"
 
 
+_MARKDOWN_SECTION_LABELS = {
+    "capital": "Капитал",
+    "positions": "Позиции",
+    "dynamics": "Динамика",
+    "passive_income": "Пассивный доход",
+    "future_cash_flows": "Будущие денежные потоки",
+    "freshness": "Актуальность данных",
+    "allocation": "Распределение и концентрация",
+    "context": "Контекст целей, долгов и налогов",
+    "deterministic_insights": "Детерминированные сигналы",
+}
+_MARKDOWN_STATUS_LABELS = {
+    "included": "включён",
+    "partial": "включён частично",
+    "unavailable": "недоступен",
+    "omitted": "опущен профилем",
+}
+_MARKDOWN_REASON_LABELS = {
+    "authoritative_market_value_change_unavailable": "нет принятой модели изменения рыночной стоимости",
+    "cash_flow_adjusted_return_unavailable": "доходность с учётом денежных потоков не рассчитана",
+    "incomplete_12_month_window": "доступно менее 12 закрытых месяцев",
+    "no_authoritative_aggregate": "нет принятого агрегата",
+    "no_eligible_closed_months": "нет подходящих закрытых месяцев",
+    "profile_concise": "раздел исключён профилем concise",
+    "risk_allocation_unavailable": "распределение недоступно в принятой read model",
+    "deterministic_insights_unavailable": "детерминированные сигналы недоступны",
+    "reporting_history_gap": "в истории есть пропущенные календарные месяцы",
+    "personal_tax_unknown": "налоговый статус части ожидаемых доходов неизвестен",
+    "quote_stale": "часть оценок старше принятого окна свежести",
+}
+
+
+def portfolio_review_package_filename(*, as_of_date: date, profile: Profile, media: str) -> str:
+    """Return a stable local filename for a package download."""
+    if profile not in {"concise", "full"}:
+        raise ValueError("profile must be concise or full")
+    if media not in {"json", "markdown"}:
+        raise ValueError("media must be json or markdown")
+    extension = "md" if media == "markdown" else "json"
+    return f"hermes-portfolio-review-{as_of_date.isoformat()}-{profile}.{extension}"
+
+
+def _markdown_period(value: object) -> str:
+    period = _mapping(value, label="markdown period")
+    year = period.get("year")
+    month = period.get("month")
+    return f"{year:04d}-{month:02d}" if isinstance(year, int) and isinstance(month, int) else "неизвестно"
+
+
+def _markdown_money(value: object) -> str:
+    source = value if isinstance(value, Mapping) else {}
+    if source.get("availability") != "available":
+        reasons = _reason_codes(source.get("reason_codes"))
+        reason = next((_MARKDOWN_REASON_LABELS.get(code) for code in reasons if code in _MARKDOWN_REASON_LABELS), None)
+        return f"недоступно ({reason or 'нет подтверждённого значения'})"
+    money = source.get("value")
+    if not isinstance(money, Mapping):
+        return "недоступно (нет подтверждённого значения)"
+    amount = money.get("amount")
+    return f"{amount} ₽" if isinstance(amount, str) else "недоступно (нет подтверждённого значения)"
+
+
+def _markdown_ratio(value: object) -> str:
+    source = value if isinstance(value, Mapping) else {}
+    if source.get("availability") != "available" or not isinstance(source.get("value_pct"), str):
+        return "недоступно"
+    return f"{source['value_pct']}%"
+
+
+def _markdown_provenance(value: object) -> str:
+    source = value if isinstance(value, Mapping) else {}
+    provider = source.get("provider")
+    return str(provider or source.get("source_kind") or "неизвестно")
+
+
+def _markdown_section_state(section: Mapping[str, object]) -> str:
+    status = section.get("status")
+    label = _MARKDOWN_STATUS_LABELS.get(str(status), "неизвестен")
+    reasons = _reason_codes(section.get("reason_codes"))
+    readable = next((_MARKDOWN_REASON_LABELS.get(code) for code in reasons if code in _MARKDOWN_REASON_LABELS), None)
+    return f"{label}{f' — {readable}' if readable else ''}"
+
+
+def _markdown_positions(data: Mapping[str, object], lines: list[str]) -> None:
+    instruments = {
+        item.get("ref"): item.get("name")
+        for item in _list(data.get("instruments"), label="markdown instruments")
+        if isinstance(item, Mapping)
+    }
+    lines.extend([
+        f"- Счета: {len(_list(data.get('accounts'), label='markdown accounts'))}",
+        f"- Позиции: {len(_list(data.get('items'), label='markdown positions'))}",
+        "",
+        "| Счёт | Инструмент | Количество | Стоимость | Дата цены | Источник оценки |",
+        "| --- | --- | ---: | ---: | --- | --- |",
+    ])
+    for item in _list(data.get("items"), label="markdown positions"):
+        source = _mapping(item, label="markdown position")
+        instrument = instruments.get(source.get("instrument_ref")) or "инструмент без названия"
+        lines.append(
+            f"| {source.get('account_ref') or 'счёт не указан'} | {instrument} | "
+            f"{source.get('quantity') or 'неизвестно'} | {_markdown_money(source.get('market_value'))} | "
+            f"{_mapping(source.get('price_date'), label='markdown price date').get('value') or 'неизвестно'} | "
+            f"{_markdown_provenance(source.get('valuation_provenance'))} |"
+        )
+
+
+def render_portfolio_review_markdown(package: dict[str, object]) -> str:
+    """Render a human-readable report from the already assembled package DTO."""
+    validate_portfolio_review_package(package)
+    metadata = _mapping(package["metadata"], label="package metadata")
+    scope = _mapping(package["scope"], label="package scope")
+    sections = _mapping(package["sections"], label="package sections")
+    profile = str(package["profile"])
+    lines = [
+        f"# Hermes Finance — пакет для анализа ({profile})",
+        "",
+        f"- Отчётный период: {_markdown_period(scope['reporting_period'])}",
+        f"- Статус периода: {scope['reporting_status']}",
+        f"- Срез на: {metadata['as_of_date']}",
+        f"- Сформирован: {metadata['generated_at']}",
+        "",
+        "Этот локальный отчёт составлен из того же read-only DTO, что и JSON-пакет. Никакие данные не отправляются автоматически.",
+        "",
+        "## Состав пакета",
+        "",
+    ]
+    for name in ALL_SECTIONS:
+        section = _mapping(sections[name], label=f"package section {name}")
+        lines.append(f"- **{_MARKDOWN_SECTION_LABELS[name]}**: {_markdown_section_state(section)}")
+    lines.append("")
+
+    capital = sections["capital"].get("data")
+    if isinstance(capital, Mapping):
+        lines.extend([
+            "## Капитал",
+            "",
+            f"- Ликвидные активы: {_markdown_money(capital.get('liquid_assets_total'))}",
+            f"- Долги, включённые в расчёт: {_markdown_money(capital.get('included_debts'))}",
+            f"- Чистый ликвидный капитал: {_markdown_money(capital.get('liquid_capital_net'))}",
+            f"- Капитал в недвижимости: {_markdown_money(capital.get('property_equity'))}",
+            f"- Совокупный капитал: {_markdown_money(capital.get('total_net_worth'))}",
+            "",
+        ])
+
+    positions = sections["positions"].get("data")
+    if isinstance(positions, Mapping):
+        lines.extend(["## Позиции", ""])
+        _markdown_positions(positions, lines)
+        lines.append("")
+
+    dynamics = sections["dynamics"].get("data")
+    if isinstance(dynamics, Mapping):
+        lines.extend([
+            "## Динамика",
+            "",
+            "| Период | Статус | Чистый ликвидный капитал | Фактический пассивный доход | Доходность |",
+            "| --- | --- | ---: | ---: | ---: |",
+        ])
+        for item in _list(dynamics.get("history"), label="markdown dynamics"):
+            point = _mapping(item, label="markdown dynamics point")
+            lines.append(
+                f"| {_markdown_period(point['period'])} | {point.get('status') or 'неизвестно'} | "
+                f"{_markdown_money(point.get('liquid_capital_net'))} | "
+                f"{_markdown_money(point.get('passive_income_actual'))} | "
+                f"{_markdown_ratio(point.get('investment_return'))} |"
+            )
+        missing = _list(dynamics.get("missing_calendar_periods"), label="markdown missing periods")
+        lines.append(f"\nПропущенных календарных месяцев: {len(missing)}.")
+        lines.append("")
+
+    passive = sections["passive_income"].get("data")
+    if isinstance(passive, Mapping):
+        rolling = _mapping(passive.get("rolling_actual_average"), label="markdown rolling income")
+        forecast = _mapping(passive.get("forecast"), label="markdown income forecast")
+        lines.extend([
+            "## Пассивный доход",
+            "",
+            f"- Среднее фактическое значение: {_markdown_money(rolling.get('value'))}",
+            f"- Месяцев в среднем: {rolling.get('eligible_month_count')}",
+            f"- Прогноз в месяц: {_markdown_money(forecast.get('monthly_total'))}",
+            f"- Прогноз в год: {_markdown_money(forecast.get('annual_total'))}",
+            "",
+        ])
+
+    future = sections["future_cash_flows"].get("data")
+    if isinstance(future, Mapping):
+        lines.extend([
+            "## Будущие денежные потоки",
+            "",
+            f"- Всего по календарю: {_markdown_money(future.get('calendar_total'))}",
+            f"- Доходная часть без погашения: {_markdown_money(future.get('non_principal_calendar_amount_total'))}",
+            f"- Погашение основного капитала: {_markdown_money(future.get('principal_total'))}",
+            f"- Событий: {len(_list(future.get('items'), label='markdown future flows'))}",
+            "",
+        ])
+
+    freshness = sections["freshness"].get("data")
+    if isinstance(freshness, Mapping):
+        lines.extend([
+            "## Актуальность данных",
+            "",
+            f"- Оценено на: {freshness.get('evaluated_on') or 'неизвестно'}",
+            f"- Целевая дата оценки котировок: {freshness.get('quote_valuation_target_date') or 'неизвестно'}",
+        ])
+        for family in _list(freshness.get("families"), label="markdown freshness families"):
+            item = _mapping(family, label="markdown freshness family")
+            lines.append(f"- {item.get('family_id')}: {item.get('status')}")
+        lines.append("")
+
+    insights = sections["deterministic_insights"].get("data")
+    if isinstance(insights, Mapping):
+        lines.extend(["## Детерминированные сигналы", ""])
+        items = _list(insights.get("items"), label="markdown insights")
+        if not items:
+            lines.append("- Сигналов нет.")
+        for item in items:
+            insight = _mapping(item, label="markdown insight")
+            lines.append(f"- **{insight.get('severity')}**: {insight.get('message')}")
+        lines.append("")
+
+    field_states = _list(package.get("field_states"), label="markdown field states")
+    unavailable = sum(
+        1 for item in field_states if isinstance(item, Mapping) and item.get("status") == "unavailable"
+    )
+    omitted = sum(
+        1 for item in field_states if isinstance(item, Mapping) and item.get("status") == "omitted"
+    )
+    lines.extend([
+        "## Ограничения",
+        "",
+        f"- Недоступных полей: {unavailable}",
+        f"- Полей, опущенных профилем: {omitted}",
+    ])
+    warnings = _list(package.get("warnings"), label="markdown warnings")
+    if warnings:
+        lines.extend(["", "### Предупреждения", ""])
+        for warning in warnings:
+            item = _mapping(warning, label="markdown warning")
+            lines.append(f"- {item.get('message')}")
+    lines.extend(["", "Канонический машинно-читаемый артефакт — JSON-пакет из того же DTO.", ""])
+    return "\n".join(lines)
+
+
 def _mapping(value: object, *, label: str) -> dict[str, object]:
     if not isinstance(value, Mapping):
         raise PortfolioReviewPackageValidationError(f"authoritative {label} is not an object")
