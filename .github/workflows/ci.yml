@@ -290,3 +290,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
           }
+
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-windows-launcher-package.ps1
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
