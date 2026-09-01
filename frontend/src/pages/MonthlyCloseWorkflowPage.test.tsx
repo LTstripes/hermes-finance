@@ -36,7 +36,16 @@ function workflow(monthId: number, status: "draft" | "closed" = "draft"): MonthC
           label: status === "closed" ? "Открыть денежную лестницу" : "Открыть актуальность",
           target: "internal_route",
         },
-        secondary_actions: [],
+        secondary_actions:
+          status === "closed"
+            ? [
+                {
+                  id: "clone_next_month",
+                  label: "Создать следующий месяц",
+                  target: "internal_route",
+                },
+              ]
+            : [],
         completion_basis: null,
         evidence_scope: "none",
         evidence_version: null,
@@ -90,6 +99,34 @@ function providerWorkflow(): MonthCloseWorkflow {
     recommended_step_id: "alfa_baseline",
     steps: [alfaStep, reconciliationStep],
   };
+}
+
+function readyForCloseWorkflow(monthId: number): MonthCloseWorkflow {
+  const base = workflow(monthId);
+  return {
+    ...base,
+    recommended_step_id: "final_review_close",
+    steps: [
+      {
+        ...base.steps[0],
+        id: "final_review_close",
+        order: 8,
+        title: "Подтвердить закрытие",
+        primary_action: {
+          id: "confirm_close",
+          label: "Закрыть месяц",
+          target: "confirm_close",
+        },
+      },
+    ],
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    headers: { "Content-Type": "application/json" },
+    status,
+  });
 }
 
 function renderRoute(entry: string) {
@@ -152,6 +189,71 @@ describe("MonthlyCloseWorkflowPage", () => {
     expect(screen.getByRole("link", { name: "Открыть денежную лестницу" })).toHaveAttribute(
       "href",
       "/payouts?from=monthly-close&step=next_month_outlook&monthId=8",
+    );
+    expect(screen.getByRole("link", { name: "Создать следующий месяц" })).toHaveAttribute(
+      "href",
+      "/months?from=monthly-close&step=next_month_outlook&monthId=8",
+    );
+  });
+
+  it("refetches before confirmation, closes explicitly, and renders persisted outlook state", async () => {
+    const draft = readyForCloseWorkflow(17);
+    const closed = workflow(17, "closed");
+    let closedPersisted = false;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        closedPersisted = true;
+        return Promise.resolve(jsonResponse(closed.month));
+      }
+      return Promise.resolve(jsonResponse(closedPersisted ? closed : draft));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderRoute("/months/17/close");
+
+    const closeButton = await screen.findByRole("button", { name: "Закрыть месяц" });
+    fireEvent.click(closeButton);
+    expect(await screen.findByRole("alertdialog", { name: "Закрыть месяц?" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/months/17/close",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText("Утверждён")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/months/17/close",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("refetches before reopening and derives the draft workflow again", async () => {
+    const closed = workflow(18, "closed");
+    const draft = workflow(18);
+    let reopened = false;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        reopened = true;
+        return Promise.resolve(jsonResponse(draft.month));
+      }
+      return Promise.resolve(jsonResponse(reopened ? draft : closed));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderRoute("/months/18/close");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Открыть месяц заново" }));
+    expect(
+      await screen.findByRole("alertdialog", { name: "Открыть месяц заново?" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Открыть заново" }));
+
+    await waitFor(() => expect(screen.getByText("Черновик")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/months/18/reopen",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 

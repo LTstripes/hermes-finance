@@ -1902,6 +1902,14 @@ th.num {
   margin-top: 16px;
 }
 
+.monthly-close__secondary-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .monthly-close__step {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto;
