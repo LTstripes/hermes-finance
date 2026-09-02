@@ -242,9 +242,9 @@ describe("FinalMonthReview", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByText("Не заполнено · не блокирует закрытие").length).toBeGreaterThanOrEqual(
-      5,
-    );
+    expect(
+      screen.getAllByText("Не заполнено · не блокирует закрытие").length,
+    ).toBeGreaterThanOrEqual(5);
   });
 
   it("links manual corrections back to the same wizard month without a close mutation", () => {

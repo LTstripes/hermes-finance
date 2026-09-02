@@ -79,9 +79,9 @@ export function MonthlyCloseWorkflowPage() {
 
   const workflow = workflowQuery.data;
   const activeStep = workflow
-    ? workflow.steps.find((step) => step.id === location.hash.replace(/^#/, "")) ??
+    ? (workflow.steps.find((step) => step.id === location.hash.replace(/^#/, "")) ??
       workflow.steps.find((step) => step.id === workflow.recommended_step_id) ??
-      null
+      null)
     : null;
 
   useEffect(() => {
@@ -288,7 +288,9 @@ export function MonthlyCloseWorkflowPage() {
               </Link>
             ) : null}
           </div>
-          {recommended && recommended.id === activeStep.id && recommended.secondary_actions.length > 0 ? (
+          {recommended &&
+          recommended.id === activeStep.id &&
+          recommended.secondary_actions.length > 0 ? (
             <div className="monthly-close__secondary-row">
               {recommended.secondary_actions.map((action) => (
                 <Link

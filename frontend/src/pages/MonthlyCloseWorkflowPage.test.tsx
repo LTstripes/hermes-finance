@@ -248,7 +248,9 @@ describe("MonthlyCloseWorkflowPage", () => {
     renderRoute("/months/17/close#final_review_close");
 
     expect(await screen.findByRole("button", { name: "Закрыть месяц" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Проверить итог и закрыть месяц" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Проверить итог и закрыть месяц" }),
+    ).toBeInTheDocument();
   });
 
   it("renders a closed month from the same month-scoped route", async () => {
