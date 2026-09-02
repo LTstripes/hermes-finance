@@ -14,7 +14,8 @@ public sealed record ValidatedProfile(
     string Database,
     string Head,
     string SidecarKind,
-    DependencyStatus? Dependencies = null);
+    DependencyStatus? Dependencies = null,
+    PreviewUpdateStatus? PreviewUpdate = null);
 
 public static class ProfileValidator
 {
@@ -48,8 +49,11 @@ public static class ProfileValidator
         AssertSchemaCompatibility(checkout, database, profile.Type);
         var dependencies = DependencyValidator.Check(checkout);
         AssertPortAvailable();
+        var previewUpdate = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
+            ? PreviewUpdateService.ReadStatus(new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies))
+            : null;
 
-        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies);
+        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, previewUpdate);
     }
 
     public static void ValidateConfiguration(LauncherConfig config)
@@ -204,7 +208,11 @@ public static class ProfileValidator
     {
         var head = RunGit(checkout, "rev-parse", "HEAD");
         var expected = RunGit(checkout, "rev-parse", "--verify", profile.ExpectedRef + "^{commit}");
-        if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase))
+        var canonicalMain = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
+            ? TryReadGitRef(checkout, "refs/remotes/origin/main^{commit}")
+            : null;
+        if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase)
+            && !head.Equals(canonicalMain, StringComparison.OrdinalIgnoreCase))
         {
             throw new LauncherValidationException("Checkout identity does not match this profile.");
         }
@@ -414,6 +422,18 @@ public static class ProfileValidator
         catch (Win32Exception exception)
         {
             throw new LauncherValidationException($"Checkout Git identity cannot be read because git is unavailable: {exception.Message}");
+        }
+    }
+
+    private static string? TryReadGitRef(string checkout, string reference)
+    {
+        try
+        {
+            return RunGit(checkout, "rev-parse", "--verify", reference);
+        }
+        catch (LauncherValidationException)
+        {
+            return null;
         }
     }
 

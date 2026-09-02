@@ -1,6 +1,6 @@
 # Hermes Finance Windows launcher
 
-`HermesFinance.Launcher.exe` is the small Windows-first owner launcher defined by ADR 0014. It shows only locally configured runtime profiles; it does not list Git branches and never changes Git state.
+`HermesFinance.Launcher.exe` is the small Windows-first owner launcher defined by ADR 0014. It shows only locally configured runtime profiles; it does not list Git branches. The only Git mutation available to the owner is the explicit Preview update action described below.
 
 ## Build/package
 
@@ -36,9 +36,11 @@ For an owner UAT copy, follow ADR 0014 §7: create/select a production backup by
 
 For an already prepared Stable runtime, normal use is entirely through the packaged executable: open `HermesFinance.Launcher.exe` (or a Windows shortcut to it), select the green `STABLE · PRODUCTION` card, and click `Запустить Hermes`. Preview is shown as a visually separate violet `PREVIEW · ISOLATED` card with its own data-boundary label. No Git command or branch switching is part of normal use. The launcher validates the configured checkout/data tuple and starts only that prepared runtime.
 
-The owner-facing view shows readiness, profile identity, data boundary and four concise checks: code identity, data boundary, locked dependencies and loopback service. Selecting a profile or clicking `Обновить проверку` runs the read-only preflight before startup. If either locked dependency environment is missing or stale, the primary action becomes `Подготовить и запустить`; the launcher runs the bundled preparation helper once (`uv sync --locked`, `npm ci`), verifies the result, and only then starts the guarded script. A repeat launch runs read-only checks and does not reinstall ready dependencies.
+The owner-facing view shows readiness, profile identity, data boundary, current/target code SHA and four concise checks: code identity, data boundary, locked dependencies and loopback service. Selecting a profile or clicking `Обновить проверку` runs the read-only preflight before startup. If either locked dependency environment is missing or stale, the primary action becomes `Подготовить и запустить`; the launcher runs the bundled preparation helper once (`uv sync --locked`, `npm ci`), verifies the result, and only then starts the guarded script. A repeat launch runs read-only checks and does not reinstall ready dependencies.
 
-`Открыть Hermes` is enabled only after the existing health probes emit the ready marker. While a profile is running, `Остановить` terminates the launched guarded startup process and its child process tree. `Запустить Hermes` becomes available again after the process exits. Preview development may still require an integrator to move the Preview checkout to a newly accepted commit; the launcher deliberately never performs Git updates itself.
+For the configured Preview profile, the owner can click `Обновить Preview` or `Обновить и запустить`. The launcher rechecks the clean, conflict-free expected checkout, fetches only `origin/main`, displays the fetched target SHA, and fast-forwards only that Preview checkout to the target. A clean Preview already at `origin/main` is also accepted even when `expected_ref` still names the previous prepared release, so `config.json` does not need editing when main is unreleased. Dirty, conflicted, diverged or otherwise unexpected checkouts fail closed. The action never runs against Stable, never changes a database or data sidecar, and is never started in the background. `Обновить и запустить` then uses the same locked-dependency preparation and guarded startup flow as the normal Start action.
+
+`Открыть Hermes` is enabled only after the existing health probes emit the ready marker. While a profile is running, `Остановить` terminates the launched guarded startup process and its child process tree. `Запустить Hermes` becomes available again after the process exits. Preview development no longer requires a terminal for the canonical `origin/main` update path. Moving a Preview checkout to any other branch or commit remains outside the launcher and must be handled by the integrator.
 
 The primary view never displays raw filesystem paths or process diagnostics. `Диагностика и логи` opens a separate technical layer for troubleshooting; it is opt-in and does not change preflight or startup behavior.
 

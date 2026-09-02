@@ -10,6 +10,7 @@ internal enum LauncherReadinessState
     NeedsPreparation,
     Blocked,
     Starting,
+    Updating,
     Running,
     Stopped,
 }
@@ -75,6 +76,7 @@ internal static class LauncherUi
         LauncherReadinessState.NeedsPreparation => "НУЖНА ПОДГОТОВКА",
         LauncherReadinessState.Blocked => "ЗАБЛОКИРОВАНО",
         LauncherReadinessState.Starting => "ЗАПУСКАЕМ",
+        LauncherReadinessState.Updating => "ОБНОВЛЯЕМ",
         LauncherReadinessState.Running => "ЗАПУЩЕНО",
         LauncherReadinessState.Stopped => "ОСТАНОВЛЕНО",
         _ => "НЕ ПРОВЕРЕНО",
@@ -88,6 +90,7 @@ internal static class LauncherUi
         LauncherReadinessState.NeedsPreparation => "Нужна подготовка зависимостей",
         LauncherReadinessState.Blocked => "Запуск заблокирован",
         LauncherReadinessState.Starting => "Hermes запускается",
+        LauncherReadinessState.Updating => "Обновляем Preview",
         LauncherReadinessState.Running => "Hermes работает",
         LauncherReadinessState.Stopped => "Hermes остановлен",
         _ => "Проверка ещё не запускалась",
@@ -101,6 +104,7 @@ internal static class LauncherUi
         LauncherReadinessState.NeedsPreparation => "При запуске launcher подготовит только locked-зависимости этого профиля.",
         LauncherReadinessState.Blocked => "Исправьте blocker в подготовленном runtime и повторите проверку.",
         LauncherReadinessState.Starting => "Ждём штатные health probes существующего guarded startup.",
+        LauncherReadinessState.Updating => "Получаем canonical origin/main и обновляем только настроенный Preview checkout.",
         LauncherReadinessState.Running => "Сервис доступен только локально на 127.0.0.1:8000.",
         LauncherReadinessState.Stopped => "Профиль остановлен. Можно снова выполнить preflight.",
         _ => "Выберите профиль, чтобы проверить его готовность.",
@@ -136,6 +140,18 @@ internal static class LauncherUi
         if (message.Contains("identity does not match") || message.Contains("identity is ambiguous"))
         {
             return "Code identity профиля не совпадает с подготовленной версией или checkout изменён.";
+        }
+        if (message.Contains("dirty or conflicted"))
+        {
+            return "Preview checkout изменён или содержит конфликт. Сначала подготовьте его и повторите действие.";
+        }
+        if (message.Contains("unexpected; update is blocked"))
+        {
+            return "Preview checkout не совпадает с ожидаемой подготовленной версией. Обновление заблокировано.";
+        }
+        if (message.Contains("origin/main") && message.Contains("update"))
+        {
+            return "Preview не удалось безопасно обновить до canonical origin/main.";
         }
         if (message.Contains("sidecar") || message.Contains("unstamped data"))
         {
@@ -182,7 +198,7 @@ internal static class LauncherUi
     public static Color StatusColor(LauncherReadinessState state) => state switch
     {
         LauncherReadinessState.Ready or LauncherReadinessState.Running => Color.FromArgb(102, 227, 190),
-        LauncherReadinessState.NeedsPreparation or LauncherReadinessState.Starting => Color.FromArgb(255, 196, 116),
+        LauncherReadinessState.NeedsPreparation or LauncherReadinessState.Starting or LauncherReadinessState.Updating => Color.FromArgb(255, 196, 116),
         LauncherReadinessState.Blocked => Color.FromArgb(255, 125, 139),
         LauncherReadinessState.Stopped => Color.FromArgb(190, 165, 255),
         _ => Color.FromArgb(148, 161, 181),
