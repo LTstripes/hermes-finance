@@ -37,13 +37,19 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Опубликованная стабильная product identity — **0.7.0**. Annotated tag `v0.7.0` peel'ится в exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`; canonical exact-main CI #425 (run `33325251688`) для этого SHA завершился `success`, GitHub Release опубликован 2026-08-30. Канонический Alembic head — `0036_broker_baseline_provenance`.
+Опубликованная стабильная product identity — **0.8.0**. Annotated tag `v0.8.0` (tag object `2f27d9e34271843d97eed1138bd8b388630bd7a8`) peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`. Exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились `success`; GitHub Release опубликован 2026-09-02. Канонический release record — `docs/releases/0.8.0.md`.
+
+0.8.0 — owner-workflow release: Guided Monthly Close Wizard объединяет month-scoped review/Alfa/reconciliation/provider steps/final review/Close-Reopen; добавлены safe instrument cleanup и explicit portfolio review handoff. Предрелизный Preview UAT не заявляется как пройденный: owner acceptance выполняется на released Stable 0.8.0. Launcher update UX вынесен в #277–#279; filesystem cleanup — #280; backend CI performance — #282.
+
+Предыдущая опубликованная стабильная линия **0.7.0** сохранена как историческая identity: `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`, опубликована 2026-08-30 с owner Stable promotion `PASS`.
+
+Канонический Alembic head опубликованного 0.8 tree остаётся `0036_broker_baseline_provenance`; релиз не добавлял новую миграцию.
 
 Историческая подготовка публикации в issue #231 подготовила принятый R07 tree; post-release sync issue #234 фиксирует, что его опубликованная identity — `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`. Owner Stable promotion для 0.7.0 подтверждён как `PASS` 2026-08-30. Операционное наблюдение о разовой установке frontend-зависимостей при первом Stable start не меняет release identity или финансовую семантику.
 
 После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
 
-Опубликованный R07 tree расширяет текущую продуктовую поверхность owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Подробная release фиксация находится в разделе 20 и `docs/releases/0.7.0.md`; 0.6.3 остаётся исторической предыдущей стабильной линией.
+Опубликованный R07 tree расширяет текущую продуктовую поверхность owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Подробная release фиксация 0.8 находится в `docs/releases/0.8.0.md`; 0.7.0 и 0.6.3 остаются историческими предыдущими стабильными линиями.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -88,7 +94,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed gaps/order/root states;
 - guarded Windows Stable/Preview launcher с owner Start/Stop controls, без Git branch/state mutation;
 - row-scoped selective apply: unrelated unresolved/conflicting rows не блокируют safe selected subset, selected unsafe/stale rows fail closed;
-- UI/visual-audit polish, semantic test-taxonomy/verification work и backend CI timeout 15 минут;
+- UI/visual-audit polish, semantic test-taxonomy/verification work; Backend CI timeout временно 30 минут после release unblock, durable split/telemetry tracked в #282;
 - импорт принятого Alfa депозитарного PDF о выплатах доходов: Inspect → mapping → Prepare → selected Apply;
 - Goals и основная цель;
 - Dashboard и графики;
