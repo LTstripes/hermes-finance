@@ -2,6 +2,43 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.8.0] — 2026-09-02
+
+Published owner-workflow release. This entry records the already published `v0.8.0` identity; it does not introduce new product code, financial semantics or provider write behavior.
+
+### Added
+
+- Guided Monthly Close Wizard (#236 A–H): one month-scoped workflow for exact-month review, Alfa baseline/reconciliation, explicit T-Invest/provider actions, payout PDF orchestration, final review and explicit Close/Reopen;
+- owner-facing month/readiness/Dashboard/Risk wording and layout polish;
+- safe duplicate/inactive instrument cleanup with read-only inspection and fail-closed deletion guards;
+- explicit concise/full portfolio review handoff packages in JSON and Markdown from the same backend facts, with no automatic upload/LLM call/write-back;
+- Windows launcher package/install artifact verification, shortcut validation and synthetic start/stop/Git-mutation guards.
+
+### Changed
+
+- product/package identity synchronized to `0.8.0` across backend/frontend metadata and lock files;
+- Backend CI timeout temporarily raised from 15 to 30 minutes after one hosted runner reached ~83% of the monolithic suite and hit the old limit; durable parallel-lane/slow-test work is tracked in #282;
+- owner workflow keeps provider Price/UchPrice/NKD/P&L comparison-only and preserves unknown/unavailable states instead of converting them to financial zero.
+
+### Release evidence
+
+- release candidate: `920cca87066190a7776e8583e3d639ecfd89c5be`;
+- exact-head PR CI run `33665746651`: SUCCESS;
+- PR #281 merge / released main commit: `ec185deab8d3fe949e7d579e5041d23216a6d73f`;
+- post-merge exact-main CI run `33668924186`: SUCCESS;
+- guarded Release run `33669922698`: SUCCESS;
+- published annotated tag `v0.8.0` object `2f27d9e34271843d97eed1138bd8b388630bd7a8`, peeled to `ec185deab8d3fe949e7d579e5041d23216a6d73f`.
+
+### Owner acceptance note
+
+Pre-release Preview UAT was intentionally not represented as passed because the current launcher cannot update an unreleased Preview checkout itself. Hands-on acceptance is performed on released Stable 0.8.0. Concrete defects become patch/follow-up work. Launcher normalization begins with #277.
+
+### Follow-up / tech debt
+
+- #277–#279 launcher normalization and owner update flows;
+- #280 controlled cleanup of old `D:\Finance` workspaces/artifacts;
+- #282 split backend pytest into parallel lanes and add slow-test telemetry.
+
 ## [0.7.0] — 2026-08-30
 
 Published 0.7.0 for the accepted R07 tree. This entry records already integrated product work and the post-release identity; it does not change product code, financial semantics or provider write behavior.

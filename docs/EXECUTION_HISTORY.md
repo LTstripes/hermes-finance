@@ -34,6 +34,23 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 0.8.0 release
+
+### 0.8.0 — owner-workflow release publication
+
+- **Published:** 2026-09-02
+- **Reviewer/integrator:** ChatGPT + owner-authorized guarded release flow
+- **Frozen pre-release feature main:** `3e35bf3ca36bbe8c57006c9b1a161b381cacd95c`
+- **Release candidate:** `920cca87066190a7776e8583e3d639ecfd89c5be`
+- **PR:** #281
+- **Released main / PR merge:** `ec185deab8d3fe949e7d579e5041d23216a6d73f`
+- **Tag:** annotated `v0.8.0`, tag object `2f27d9e34271843d97eed1138bd8b388630bd7a8`, peeled commit `ec185deab8d3fe949e7d579e5041d23216a6d73f`
+- **Verification:** exact-head PR CI run `33665746651` SUCCESS; post-merge exact-main CI run `33668924186` SUCCESS; guarded Release run `33669922698` SUCCESS.
+- **Release blocker/iteration:** an earlier Backend job was cancelled only because the monolithic pytest suite reached the previous 15-minute Actions timeout at ~83%; no product test failure was reported. The release candidate changed Backend timeout `15 -> 30` minutes only. Durable CI parallelization/telemetry is tracked in #282.
+- **Owner acceptance:** pre-release Preview UAT was intentionally not claimed as passed because the launcher could not update unreleased Preview without manual Git/config work. Hands-on acceptance is performed on released Stable 0.8.0; concrete defects are follow-up/patch work.
+- **Scope note:** 0.8.0 integrates Guided Monthly Close Wizard A–H, owner workflow/Alfa/reconciliation UX, safe instrument cleanup, explicit portfolio review package handoff, and guarded Windows launcher/package verification while preserving local-only/no-cloud/no-auth/provider-explicit-action boundaries.
+- **Follow-ups:** launcher normalization #277–#279; workspace cleanup #280; backend CI performance #282.
+
 # 0.4.x development
 
 ### 0.4.0 / R04-00 — parallel release line + active backlog setup

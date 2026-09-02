@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Опубликованная стабильная идентичность **0.7.0** — неизменяемый Git-тег `v0.7.0`, указывающий на exact released main SHA `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`; exact-main CI #425 (run `33325251688`) завершился успешно, публикация состоялась 2026-08-30. Owner Stable promotion для 0.7.0 подтверждён как PASS в тот же день. Этот post-release docs sync фиксирует уже опубликованное состояние и не меняет product code или финансовую семантику.
+Опубликованная стабильная идентичность **0.8.0** — неизменяемый Git-тег `v0.8.0`, peel'ящийся в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`. Exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились успешно; публикация состоялась 2026-09-02. Предрелизный Preview UAT сознательно не заявляется как пройденный: owner acceptance выполняется на released Stable 0.8.0, а найденные дефекты оформляются отдельными follow-up/patch задачами.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -78,18 +78,18 @@ Frontend будет на `127.0.0.1:5173`, `/api` проксируется в л
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Для 0.7.0 ожидается:
+Для 0.8.0 ожидается:
 
 ```json
 {
   "status": "ok",
-  "version": "0.7.0"
+  "version": "0.8.0"
 }
 ```
 
-## Что доступно в 0.7.0
+## Что доступно в 0.8.0
 
-Released `0.7.0` фиксирует принятый R07 tree поверх уже интегрированных R07/R08 workstreams. Все provider- и owner-triggered действия остаются явными, а вычисления и финансовые границы — backend-authoritative. Доступны:
+Released `0.8.0` фиксирует owner-workflow release поверх принятого R07/R08 tree: Guided Monthly Close Wizard объединяет monthly close, Alfa/reconciliation, T-Invest/provider steps, final review и explicit Close/Reopen в один локальный workflow; добавлены safe instrument cleanup и explicit portfolio review handoff в JSON/Markdown. Все provider- и owner-triggered действия остаются явными, а вычисления и финансовые границы — backend-authoritative. Доступны:
 
 - **Дашборд** — KPI, графики капитала/пассивного дохода, распределение активов, инвестиционный результат и основная цель;
 - **Месяцы** — draft/closed lifecycle, клонирование, ввод данных, reopen/close и безопасное удаление draft вместе с его месячными данными;
@@ -110,8 +110,8 @@ Released `0.7.0` фиксирует принятый R07 tree поверх уж�
 - **Tax/IIS Planner** — current-state v1 для фактических и текущих налоговых данных; расширение projection scope отложено.
 - **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; полного UI/AI-bundle integration в 0.7.0 не заявляется.
 - **XIRR и exact TWRR** — XIRR доступен для whole portfolio при однозначном валидном корне; TWRR использует persisted observed valuation boundaries и pre/post observations для потоков. Missing/gapped evidence, неизвестный порядок событий и неоднозначный XIRR root fail closed.
-- **Windows Stable/Preview launcher** — guarded runtime profiles и owner Start/Stop controls; launcher не перечисляет и не меняет Git branches/state и не смешивает Stable с Preview.
-- **UI и verification** — visual-audit polish, semantic test-taxonomy work и backend CI с timeout 15 минут входят в release evidence, не расширяя финансовую семантику.
+- **Windows Stable/Preview launcher** — guarded runtime profiles, owner Start/Stop controls, package/install verification и shortcut/start-stop smoke; текущий 0.8 launcher всё ещё требует заранее подготовленный checkout и не обновляет Preview из `origin/main` сам — это tracked follow-up #277.
+- **UI и verification** — visual-audit polish, semantic test-taxonomy work и backend CI входят в release evidence; Backend timeout временно поднят с 15 до 30 минут как release unblock, а durable split/slow-test telemetry tracked в #282.
 
 В редакторе месяца доступны зарплата и прочие доходы, депозиты/cash, позиции, фактические и ожидаемые investment flows, расходы/savings, долги/недвижимость, ИИС и комментарии.
 
@@ -142,7 +142,7 @@ Released `0.7.0` фиксирует принятый R07 tree поверх уж�
 
 ### Календарь ожидаемых выплат
 
-В **0.7.0** календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest; раскрытие месяца очевидно, а expanded rows показывают instrument/company первично, account вторично, source/provenance, amount и redemption-as-capital context. `Ручные ожидаемые выплаты` остаются manual-only/additive и стоят после merged calendar в DOM. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
+В **0.8.0** календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest; раскрытие месяца очевидно, а expanded rows показывают instrument/company первично, account вторично, source/provenance, amount и redemption-as-capital context. `Ручные ожидаемые выплаты` остаются manual-only/additive и стоят после merged calendar в DOM. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
 
 - количество для провайдерской выплаты берётся из локального `PositionSnapshot`, не из брокерского портфеля;
 - apply не редактирует и не удаляет ручные `expected_cash_flows`;
