@@ -811,6 +811,8 @@ static (string Root, string Seed, string Remote, string Preview, string DataDir,
     RunGit(seed, "push", "--set-upstream", "origin", "main");
     var currentSha = RunGit(seed, "rev-parse", "HEAD");
     RunGit(root, "clone", "-b", "main", remote, preview);
+    RunGit(preview, "config", "--local", "user.name", "Hermes Preview Safety Test");
+    RunGit(preview, "config", "--local", "user.email", "hermes-preview-safety-test");
     RunGit(preview, "branch", "legacy-preview", currentSha);
 
     File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "unreleased canonical main runtime");
