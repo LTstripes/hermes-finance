@@ -76,6 +76,7 @@ describe("PortfolioReviewPackagePanel", () => {
     render(<PortfolioReviewPackagePanel />);
 
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/Режим: только для чтения/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Подготовить пакет для анализа" }));
 
     expect(await screen.findByLabelText("Предпросмотр пакета для анализа")).toBeInTheDocument();

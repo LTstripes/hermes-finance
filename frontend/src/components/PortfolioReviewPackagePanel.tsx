@@ -112,9 +112,9 @@ export function PortfolioReviewPackagePanel() {
   return (
     <Panel label="Локальная передача" title="Подготовить пакет для анализа">
       <div className="portfolio-review-package stack-12">
-        <p>
-          Сформируй безопасный срез из локальных данных Hermes без изменения учёта. Пакет не
-          загружается в облако и не отправляется ассистенту автоматически.
+        <p className="portfolio-review-package__read-only-note">
+          Режим: только для чтения. Сформируй безопасный срез из локальных данных Hermes без
+          изменения учёта. Пакет не загружается в облако и не отправляется ассистенту автоматически.
         </p>
         <div className="portfolio-review-package__controls">
           <Field htmlFor="portfolio-review-profile" label="Профиль пакета">
