@@ -39,7 +39,7 @@ function workflow(
         applicability: "mandatory",
         gate: "advisory",
         affects_close: false,
-        why: "Состояние рассчитано backend.",
+        why: "Состояние рассчитано системой.",
         reason_codes: [],
         primary_action: {
           id: status === "closed" ? "open_cash_flow_ladder" : "open_freshness",
@@ -162,6 +162,27 @@ function readyForCloseWorkflow(monthId: number): MonthCloseWorkflow {
   };
 }
 
+function wizardWorkflowWithFinalReview(monthId: number): MonthCloseWorkflow {
+  const base = workflow(monthId);
+  return {
+    ...base,
+    steps: [
+      base.steps[0],
+      {
+        ...base.steps[0],
+        id: "final_review_close",
+        order: 8,
+        title: "Проверить итог и закрыть месяц",
+        primary_action: {
+          id: "confirm_close",
+          label: "Закрыть месяц",
+          target: "confirm_close",
+        },
+      },
+    ],
+  };
+}
+
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
     headers: { "Content-Type": "application/json" },
@@ -216,7 +237,20 @@ describe("MonthlyCloseWorkflowPage", () => {
     );
     expect(screen.getAllByText("Только по запросу").length).toBeGreaterThan(0);
     expect(screen.getByText(/После перезапуска.*нужно запросить снова/)).toBeInTheDocument();
-    expect(screen.getAllByText("Состояние рассчитано backend.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Состояние рассчитано системой.").length).toBeGreaterThan(0);
+  });
+
+  it("honours the final-review hash and exposes the close CTA", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(wizardWorkflowWithFinalReview(17))))),
+    );
+    renderRoute("/months/17/close#final_review_close");
+
+    expect(await screen.findByRole("button", { name: "Закрыть месяц" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Проверить итог и закрыть месяц" }),
+    ).toBeInTheDocument();
   });
 
   it("renders a closed month from the same month-scoped route", async () => {

@@ -190,6 +190,63 @@ describe("FinalMonthReview", () => {
     expect(screen.getAllByText("Не заполнено · не блокирует закрытие").length).toBeGreaterThan(0);
   });
 
+  it("labels available sections with no rows as optional and non-blocking", () => {
+    const empty = review();
+    empty.manual_review_cards = empty.manual_review_cards.map((card) => {
+      if (card.id === "cash") {
+        return { ...card, summary: { cash_total: rub("0.00"), row_count: 0 } };
+      }
+      if (card.id === "deposits_savings") {
+        return {
+          ...card,
+          summary: {
+            balance: rub("0.00"),
+            actual_interest_received: rub("0.00"),
+            savings_allocations: rub("0.00"),
+            deposit_row_count: 0,
+          },
+        };
+      }
+      if (card.id === "debts_property") {
+        return {
+          ...card,
+          summary: {
+            debt_total: rub("0.00"),
+            property_value: rub("0.00"),
+            mortgage_balance: rub("0.00"),
+            debt_row_count: 0,
+            property_row_count: 0,
+          },
+        };
+      }
+      if (card.id === "income_budget") {
+        return {
+          ...card,
+          summary: {
+            cash_balance: rub("0.00"),
+            passive_income_actual: rub("0.00"),
+            salary_actual_net: rub("0.00"),
+            mandatory_expenses: rub("0.00"),
+            income_row_count: 0,
+            expense_row_count: 0,
+            saving_allocation_count: 0,
+          },
+        };
+      }
+      return card;
+    });
+
+    render(
+      <MemoryRouter>
+        <FinalMonthReviewView review={empty} />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getAllByText("Не заполнено · не блокирует закрытие").length,
+    ).toBeGreaterThanOrEqual(5);
+  });
+
   it("links manual corrections back to the same wizard month without a close mutation", () => {
     render(
       <MemoryRouter>

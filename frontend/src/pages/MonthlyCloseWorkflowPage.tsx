@@ -77,6 +77,24 @@ export function MonthlyCloseWorkflowPage() {
     return () => window.removeEventListener("focus", refetchOnFocus);
   }, [workflowQuery.refetch]);
 
+  const workflow = workflowQuery.data;
+  const activeStep = workflow
+    ? (workflow.steps.find((step) => step.id === location.hash.replace(/^#/, "")) ??
+      workflow.steps.find((step) => step.id === workflow.recommended_step_id) ??
+      null)
+    : null;
+
+  useEffect(() => {
+    if (!location.hash || !activeStep) return;
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.getElementById(activeStep.id);
+      if (element && typeof element.scrollIntoView === "function") {
+        element.scrollIntoView({ block: "start" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeStep, location.hash]);
+
   async function refetchAuthoritativeWorkflow(): Promise<MonthCloseWorkflow> {
     const result = await workflowQuery.refetch();
     if (result.error) throw result.error;
@@ -192,13 +210,18 @@ export function MonthlyCloseWorkflowPage() {
       />
     );
   }
-  const workflow = workflowQuery.data;
   if (!workflow) return null;
   const recommended =
     workflow.steps.find((step) => step.id === workflow.recommended_step_id) ?? null;
-  const primaryAction = recommended?.primary_action ?? null;
-  const finalReviewActive = recommended?.id === "final_review_close";
+  const primaryAction = activeStep?.primary_action ?? null;
+  const finalReviewActive = activeStep?.id === "final_review_close";
   const closeAction = finalReviewActive && primaryAction?.id === "confirm_close";
+  const finalReviewAction =
+    workflow.month.status === "draft" &&
+    activeStep?.id !== "final_review_close" &&
+    workflow.steps.some((step) => step.id === "final_review_close")
+      ? routeForGuidedAction("open_final_review", workflow.month.id, activeStep?.id ?? "readiness")
+      : null;
 
   return (
     <section className="stack-18 monthly-close">
@@ -233,10 +256,10 @@ export function MonthlyCloseWorkflowPage() {
         </div>
       ) : null}
 
-      {recommended ? (
-        <Panel className="monthly-close__current" label="Сейчас" title={recommended.title}>
-          <p>{recommended.why}</p>
-          <MonthlyCloseStepSummary step={recommended} />
+      {activeStep ? (
+        <Panel className="monthly-close__current" label="Сейчас" title={activeStep.title}>
+          <p>{activeStep.why}</p>
+          <MonthlyCloseStepSummary step={activeStep} />
           <div className="monthly-close__primary-row">
             <span className="muted">
               {workflow.progress.completed_or_skipped} из {workflow.progress.total_applicable} шагов
@@ -259,13 +282,15 @@ export function MonthlyCloseWorkflowPage() {
             ) : primaryAction && !finalReviewActive ? (
               <Link
                 className="btn btn--primary"
-                to={routeForGuidedAction(primaryAction.id, workflow.month.id, recommended.id)}
+                to={routeForGuidedAction(primaryAction.id, workflow.month.id, activeStep.id)}
               >
                 {primaryAction.label}
               </Link>
             ) : null}
           </div>
-          {recommended.secondary_actions.length > 0 ? (
+          {recommended &&
+          recommended.id === activeStep.id &&
+          recommended.secondary_actions.length > 0 ? (
             <div className="monthly-close__secondary-row">
               {recommended.secondary_actions.map((action) => (
                 <Link
@@ -278,10 +303,17 @@ export function MonthlyCloseWorkflowPage() {
               ))}
             </div>
           ) : null}
+          {finalReviewAction ? (
+            <div className="monthly-close__secondary-row">
+              <Link className="btn btn--secondary" to={finalReviewAction}>
+                Открыть итоговую проверку
+              </Link>
+            </div>
+          ) : null}
         </Panel>
       ) : (
         <Panel label="Статус" title="Нет следующего действия">
-          <p>Backend не рекомендовал действие для текущего состояния месяца.</p>
+          <p>Для текущего состояния месяца нет следующего действия.</p>
         </Panel>
       )}
 
