@@ -1,0 +1,51 @@
+name: Release test version sync
+
+on:
+  push:
+    branches:
+      - release/0.8.0
+    paths:
+      - .github/workflows/release-test-version-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: release/0.8.0
+          fetch-depth: 0
+
+      - name: Sync current-release test expectations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          for name in [
+              'backend/tests/test_health.py',
+              'backend/tests/test_r05_11_release_verification.py',
+          ]:
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              updated = text.replace('0.7.0', '0.8.0')
+              if updated == text:
+                  raise SystemExit(f'No 0.7.0 release expectation found in {name}')
+              path.write_text(updated, encoding='utf-8')
+          PY
+          git rm .github/workflows/release-test-version-sync.yml
+
+      - name: Commit test metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/tests/test_health.py backend/tests/test_r05_11_release_verification.py
+          git diff --cached --check
+          git commit -m "release: sync 0.8.0 health test expectations"
+          git push origin HEAD:release/0.8.0
