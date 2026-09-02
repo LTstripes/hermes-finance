@@ -68,6 +68,7 @@ export function FreshnessProvenancePage() {
   const [selectedMonthId, setSelectedMonthId] = useState<number | null>(null);
   const [summary, setSummary] = useState<FreshnessProvenanceSummary | null>(null);
   const [monthsLoading, setMonthsLoading] = useState(true);
+  const [requestedMonthMissing, setRequestedMonthMissing] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [monthsError, setMonthsError] = useState<string | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -80,20 +81,25 @@ export function FreshnessProvenancePage() {
         if (controller.signal.aborted) return;
         const sorted = sortMonths(rows);
         setMonths(sorted);
-        setSelectedMonthId((previous) => {
-          if (requestedMonthId && sorted.some((month) => month.id === requestedMonthId)) {
-            return requestedMonthId;
-          }
-          return previous != null && sorted.some((month) => month.id === previous)
-            ? previous
-            : (sorted[0]?.id ?? null);
-        });
+        const requestedMonthFound =
+          requestedMonthId != null && sorted.some((month) => month.id === requestedMonthId);
+        setRequestedMonthMissing(requestedMonthId != null && !requestedMonthFound);
+        setSelectedMonthId((previous) =>
+          requestedMonthId != null
+            ? requestedMonthFound
+              ? requestedMonthId
+              : null
+            : previous != null && sorted.some((month) => month.id === previous)
+              ? previous
+              : (sorted[0]?.id ?? null),
+        );
         setMonthsError(null);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
           setMonths([]);
           setSelectedMonthId(null);
+          setRequestedMonthMissing(false);
           setMonthsError(formatApiError(error));
         }
       })
@@ -163,6 +169,7 @@ export function FreshnessProvenancePage() {
             <Select
               id="freshness-month"
               onChange={(event) => setSelectedMonthId(Number(event.target.value))}
+              disabled={Boolean(closeContext)}
               value={selectedMonthId ?? ""}
             >
               {months.map((month) => (
@@ -174,6 +181,11 @@ export function FreshnessProvenancePage() {
             </Select>
           </Field>
         )}
+        {requestedMonthMissing ? (
+          <div className="inline-alert inline-alert--error" role="alert">
+            Месяц из закрытия не найден. Выбери другой месяц в самом Wizard.
+          </div>
+        ) : null}
       </Panel>
 
       {summaryLoading ? (

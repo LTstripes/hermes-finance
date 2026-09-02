@@ -71,7 +71,7 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
   return (
     <Panel label="После закрытия" title="Что известно о следующем месяце">
       <p className="muted">
-        Показаны только уже известные backend-события после закрытия{" "}
+        Показаны только уже известные события после закрытия{" "}
         {formatMonth(outlook.source_month.year, outlook.source_month.month)}. Будущий месяц здесь не
         создаётся.
       </p>
@@ -127,7 +127,7 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
       </details>
       {outlook.evidence_version ? (
         <details className="field-details">
-          <summary>Версия backend-свидетельства</summary>
+          <summary>Версия подтверждения</summary>
           <code>{outlook.evidence_version}</code>
         </details>
       ) : null}

@@ -81,12 +81,40 @@ function reasonLabel(reasonCode: string | null): string {
   return reasonCode ? "Данные пока недоступны" : "Нет данных";
 }
 
+function isZeroMoney(value: unknown): boolean {
+  return isMoneyValue(value) && Number(value.amount) === 0;
+}
+
+function isOptionalEmpty(card: ManualReviewCard): boolean {
+  if (!card.available) return false;
+  const { summary } = card;
+  const count = (key: string) => summary[key];
+  switch (card.id) {
+    case "cash":
+      return count("row_count") === 0;
+    case "deposits_savings":
+      return count("deposit_row_count") === 0 && isZeroMoney(summary.savings_allocations);
+    case "debts_property":
+      return count("debt_row_count") === 0 && count("property_row_count") === 0;
+    case "income_budget":
+      return (
+        count("income_row_count") === 0 &&
+        count("expense_row_count") === 0 &&
+        count("saving_allocation_count") === 0
+      );
+    default:
+      return false;
+  }
+}
+
 function availabilityLabel(card: ManualReviewCard): string {
-  return card.available ? "Есть данные" : reasonLabel(card.reason_code);
+  if (!card.available) return reasonLabel(card.reason_code);
+  return isOptionalEmpty(card) ? reasonLabel("optional_empty") : "Есть данные";
 }
 
 function cardTone(card: ManualReviewCard): "ok" | "info" | "unknown" {
-  return card.available ? "ok" : "unknown";
+  if (!card.available) return "unknown";
+  return isOptionalEmpty(card) ? "info" : "ok";
 }
 
 function editLinks(card: ManualReviewCard, month: WorkflowMonth) {
@@ -478,7 +506,7 @@ export function FinalMonthReview({
         </Badge>
       </header>
       <p className="final-review__lead">
-        Здесь собраны backend-значения месяца и оставшиеся ручные проверки. Ничего не
+        Здесь собраны значения месяца из системы и оставшиеся ручные проверки. Ничего не
         пересчитывается в браузере.
       </p>
 

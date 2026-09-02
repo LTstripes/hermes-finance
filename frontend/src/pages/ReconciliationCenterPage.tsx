@@ -828,12 +828,21 @@ export function ReconciliationCenterPage() {
 
   const months = monthsQuery.data ?? [];
   const monthsError = monthsQuery.error ? formatApiError(monthsQuery.error) : null;
+  const requestedMonthMissing = Boolean(
+    closeContext &&
+      requestedMonthId != null &&
+      !monthsQuery.isPending &&
+      !monthsError &&
+      !months.some((month) => month.id === requestedMonthId),
+  );
 
   useEffect(() => {
     if (requestedMonthId && months.some((month) => month.id === requestedMonthId)) {
       setSelectedMonthId(String(requestedMonthId));
+    } else if (requestedMonthId && !monthsQuery.isPending) {
+      setSelectedMonthId("");
     }
-  }, [requestedMonthId, months]);
+  }, [months, monthsQuery.isPending, requestedMonthId]);
 
   async function runReconciliation() {
     const monthId = Number(selectedMonthId);
@@ -912,7 +921,7 @@ export function ReconciliationCenterPage() {
           </Field>
           <div className="reconciliation-center__action-button">
             <Button
-              disabled={previewMutation.isPending || !selectedMonthId}
+              disabled={previewMutation.isPending || !selectedMonthId || requestedMonthMissing}
               onClick={() => void runReconciliation()}
               type="button"
               variant="primary"
@@ -929,6 +938,11 @@ export function ReconciliationCenterPage() {
         {monthsError ? (
           <div className="inline-alert inline-alert--error" role="alert">
             Не удалось загрузить месяцы: {monthsError}
+          </div>
+        ) : null}
+        {requestedMonthMissing ? (
+          <div className="inline-alert inline-alert--error" role="alert">
+            Месяц из закрытия не найден. Выбери другой месяц в самом Wizard.
           </div>
         ) : null}
         {actionError ? (

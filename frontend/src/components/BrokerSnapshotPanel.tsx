@@ -329,6 +329,8 @@ export function BrokerSnapshotPanel({
           setMonths(rows);
           if (initialMonthId && rows.some((month) => month.id === initialMonthId)) {
             setMonthId(String(initialMonthId));
+          } else if (monthlyClose && initialMonthId) {
+            setMonthId("");
           }
         }
       } catch (error) {
@@ -339,9 +341,15 @@ export function BrokerSnapshotPanel({
     }
     void loadMonths();
     return () => controller.abort();
-  }, [initialMonthId]);
+  }, [initialMonthId, monthlyClose]);
 
   const selectedMonth = months.find((month) => String(month.id) === monthId) ?? null;
+  const requestedMonthMissing =
+    monthlyClose &&
+    initialMonthId != null &&
+    !monthsLoading &&
+    !monthsError &&
+    !months.some((month) => month.id === initialMonthId);
   const baselineDate = selectedMonth?.snapshot_date ?? "";
   const monthClosed = selectedMonth?.status === "closed" || Boolean(preview?.month_closed);
   const selectedRows =
@@ -606,8 +614,13 @@ export function BrokerSnapshotPanel({
           Не удалось загрузить список отчётных месяцев: {monthsError}
         </div>
       ) : null}
+      {requestedMonthMissing ? (
+        <div className="inline-alert inline-alert--error" role="alert">
+          Месяц из закрытия не найден. Вернись в Wizard и выбери актуальный месяц.
+        </div>
+      ) : null}
       <div className="toolbar">
-        <Button onClick={() => void refresh()} disabled={busy}>
+        <Button onClick={() => void refresh()} disabled={busy || requestedMonthMissing}>
           {preview ? "Обновить данные из Альфа PRO" : "Получить данные из Альфа PRO"}
         </Button>
         {preview ? (
