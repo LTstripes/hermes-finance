@@ -1,7 +1,7 @@
 {
   "$schema": "./ai_analysis_bundle.schema.json",
   "schema_name": "hermes.finance.ai_analysis_bundle",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "metadata": {
     "generated_at": "2026-05-15T12:00:00+03:00",
     "as_of_date": "2026-05-15",

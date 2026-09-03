@@ -49,6 +49,10 @@ class SalaryTaxSnapshot:
     taxable_gross_ytd_kopecks: int | None
     current_marginal_rate_bps: int | None
     warning_codes: tuple[str, ...]
+    gross_kopecks: int = 0
+    calculated_tax_kopecks: int | None = None
+    calculated_net_kopecks: int | None = None
+    actual_net_kopecks: int = 0
 
 
 def _salary_gross_for_month(session: Session, reporting_month_id: int) -> int:
@@ -183,6 +187,7 @@ def salary_tax_snapshot_for_month(session: Session, reporting_month_id: int) -> 
     try:
         ytd_before, opening_available = prior_taxable_gross_ytd(session, reporting_month)
     except SalaryTaxHistoryIncompleteError:
+        gross = _salary_gross_for_month(session, reporting_month_id)
         return SalaryTaxSnapshot(
             tax_year=reporting_month.year,
             history_complete=False,
@@ -190,6 +195,8 @@ def salary_tax_snapshot_for_month(session: Session, reporting_month_id: int) -> 
             taxable_gross_ytd_kopecks=None,
             current_marginal_rate_bps=None,
             warning_codes=("salary_tax_history_incomplete",),
+            gross_kopecks=gross,
+            actual_net_kopecks=actual_net_for_month(session, reporting_month_id).kopecks,
         )
     payment_gross = _salary_gross_for_month(session, reporting_month_id)
     result = _progressive_tax(
@@ -210,6 +217,10 @@ def salary_tax_snapshot_for_month(session: Session, reporting_month_id: int) -> 
         taxable_gross_ytd_kopecks=ytd_before + payment_gross,
         current_marginal_rate_bps=marginal_bps,
         warning_codes=(),
+        gross_kopecks=payment_gross,
+        calculated_tax_kopecks=result.tax_kopecks,
+        calculated_net_kopecks=result.calculated_net_kopecks,
+        actual_net_kopecks=actual_net_for_month(session, reporting_month_id).kopecks,
     )
 
 

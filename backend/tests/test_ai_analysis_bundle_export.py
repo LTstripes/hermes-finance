@@ -368,6 +368,113 @@ def _seed_history(client: TestClient) -> dict[str, int]:
     }
 
 
+def _seed_issue_285_august_fixture(client: TestClient) -> int:
+    brokerage = _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic August Brokerage", "account_type": "brokerage"},
+        )
+    )["id"]
+    missing_account = _ok(
+        client.post(
+            "/api/accounts", json={"name": "Synthetic Missing Account", "account_type": "brokerage"}
+        )
+    )["id"]
+    _ok(
+        client.post(
+            "/api/accounts", json={"name": "Synthetic Unconfigured IIS", "account_type": "iis"}
+        )
+    )
+    instrument = _ok(
+        client.post(
+            "/api/instruments",
+            json={
+                "name": "Synthetic August Fund",
+                "instrument_type": "fund",
+                "isin": "RU000A0JXNV6",
+                "ticker": "SYN-AUG",
+                "currency": "RUB",
+            },
+        )
+    )["id"]
+    month_ids: dict[int, int] = {}
+    for month in range(1, 9):
+        month_id = _create_month(client, 2026, month)
+        month_ids[month] = month_id
+        if month == 4:
+            _ok(
+                client.post(
+                    "/api/cash-balances",
+                    json={
+                        "reporting_month_id": month_id,
+                        "name": "Synthetic exact zero cash",
+                        "amount": _money("0.00"),
+                    },
+                )
+            )
+        if month == 7:
+            _ok(
+                client.post(
+                    "/api/properties",
+                    json={
+                        "reporting_month_id": month_id,
+                        "name": "Synthetic apartment",
+                        "estimated_value": _money("8000000.00"),
+                        "mortgage_balance": _money("0.00"),
+                        "monthly_payment": _money("45000.00"),
+                        "notes": "Synthetic note with a conflicting mortgage balance 999999.99",
+                    },
+                )
+            )
+        if month == 8:
+            _ok(
+                client.post(
+                    "/api/incomes",
+                    json={
+                        "reporting_month_id": month_id,
+                        "income_type": "salary",
+                        "name": "Synthetic August salary",
+                        "gross_amount": _money("450000.00"),
+                        "tax_amount": _money("81000.00"),
+                        "net_amount": _money("382000.00"),
+                    },
+                )
+            )
+            _ok(
+                client.post(
+                    "/api/positions",
+                    json={
+                        "reporting_month_id": month_id,
+                        "account_id": brokerage,
+                        "instrument_id": instrument,
+                        "quantity": "10",
+                        "average_cost_per_unit": _money("90.00"),
+                        "market_price_per_unit": _money("100.00"),
+                        "accrued_interest": _money("0.00"),
+                        "price_date": "2026-07-31",
+                        "price_source": "manual",
+                    },
+                )
+            )
+            for _ in range(2):
+                _ok(
+                    client.post(
+                        "/api/properties",
+                        json={
+                            "reporting_month_id": month_id,
+                            "name": "Synthetic apartment",
+                            "estimated_value": _money("8000000.00"),
+                            "mortgage_balance": _money("0.00"),
+                            "monthly_payment": _money("45000.00"),
+                            "notes": "Synthetic conflicting note, never authoritative",
+                        },
+                    )
+                )
+        _close(client, month_id)
+    assert missing_account > 0
+    return month_ids[8]
+
+
 def _export(client: TestClient, *, media: str = "json", path: str | None = None):
     target = path or "/api/export/ai-analysis-bundle"
     params: dict[str, str] = {"generated_at": GENERATED_AT}
@@ -390,7 +497,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
         response = _export(client)
     assert response.status_code == 200, response.text
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.0.0.json"
+        "hermes-ai-analysis-bundle-2026-04-30-v1.1.0.json"
         in response.headers["content-disposition"]
     )
     payload = json.loads(response.content.decode("utf-8"))
@@ -410,7 +517,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["current_portfolio"]["reporting_status"] == "closed"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["schema_name"] == "hermes.finance.ai_analysis_bundle"
-    assert payload["schema_version"] == "1.0.0"
+    assert payload["schema_version"] == "1.1.0"
 
     mixed_sources = {
         source for point in payload["reporting_history"] for source in point["provenance_sources"]
@@ -465,6 +572,117 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     ] == ("latest_closed")
 
 
+def test_issue_285_august_fixture_preserves_data_quality_semantics(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_issue_285_august_fixture(client)
+
+    response = _export(client)
+    assert response.status_code == 200, response.text
+    payload = json.loads(response.content.decode("utf-8"))
+    _validator().validate(payload)
+
+    january = next(
+        point
+        for point in payload["reporting_history"]
+        if point["period"] == {"year": 2026, "month": 1}
+    )
+    april = next(
+        point
+        for point in payload["reporting_history"]
+        if point["period"] == {"year": 2026, "month": 4}
+    )
+    assert january["kpis"]["liquid_capital_net"]["value"] is None
+    assert "portfolio_snapshot_missing" in january["kpis"]["liquid_capital_net"]["reason_codes"]
+    assert april["kpis"]["liquid_capital_net"]["value"]["amount"] == "0.00"
+
+    august = payload["reporting_history"][-1]
+    salary = august["kpis"]["salary"]
+    assert salary["gross"]["value"]["amount"] == "450000.00"
+    assert salary["calculated_tax"]["value"]["amount"] == "58500.00"
+    assert salary["calculated_net"]["value"]["amount"] == "391500.00"
+    assert salary["actual_net"]["value"]["amount"] == "382000.00"
+    assert salary["consistency"] == "mismatch"
+    assert "salary_net_mismatch" in salary["reason_codes"]
+
+    portfolio = payload["current_portfolio"]
+    assert portfolio["coverage"]["status"] == "partial"
+    assert portfolio["missing_snapshot_account_refs"]
+    freshness = portfolio["valuation_freshness"]
+    assert freshness["oldest_price_date"] == "2026-07-31"
+    assert freshness["latest_price_date"] == "2026-07-31"
+    assert freshness["stale_valuation_count"] == 1
+    assert freshness["stale_valuation_share"]["value_pct"] == "100.00"
+    assert "stale_valuation" in freshness["reason_codes"]
+
+    iis = payload["iis_and_tax"]
+    assert iis["iis_accounts"] == []
+    assert iis["iis_coverage"]["status"] == "partial"
+    assert iis["iis_coverage"]["reason_codes"] == ["iis_tax_data_unconfigured"]
+    assert iis["active_account_refs"]
+
+    property_quality = payload["debts_and_real_estate"]["property_data_quality"]
+    assert property_quality["structured_snapshot_authoritative"] is True
+    assert set(property_quality["warning_codes"]) == {
+        "duplicate_property_snapshot",
+        "property_equity_suspicious_jump",
+    }
+    assert "notes" not in json.dumps(payload, ensure_ascii=False)
+
+    kpis = august["kpis"]
+    assert kpis["cash_flow_after_allocations"] == kpis["monthly_cash_balance"]
+    warning_codes = [warning["code"] for warning in payload["warnings"]]
+    assert len(warning_codes) == len(set(warning_codes))
+
+
+def test_cash_snapshot_detection_is_account_specific(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    covered_account = _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Covered Cash", "account_type": "cash"},
+        )
+    )["id"]
+    _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Missing Cash", "account_type": "cash"},
+        )
+    )
+    month_id = _create_month(client, 2026, 8)
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": covered_account,
+                "name": "Synthetic covered cash snapshot",
+                "amount": _money("125000.00"),
+            },
+        )
+    )
+    _close(client, month_id)
+
+    response = _export(client)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    _validator().validate(payload)
+
+    account_refs = {item["name"]: item["ref"] for item in payload["current_portfolio"]["accounts"]}
+    missing_ref = account_refs["Synthetic Missing Cash"]
+    assert (
+        account_refs["Synthetic Covered Cash"]
+        not in payload["current_portfolio"]["missing_snapshot_account_refs"]
+    )
+    assert payload["current_portfolio"]["missing_snapshot_account_refs"] == [missing_ref]
+    assert any(
+        warning["code"] == "active_account_snapshot_missing" for warning in payload["warnings"]
+    )
+
+
 def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     app_context: tuple[TestClient, Database],
 ) -> None:
@@ -478,15 +696,15 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.0.0.md" in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.1.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.0.0")
+    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.1.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     alias = _export(client, path="/api/export/ai-analysis-bundle/markdown")
     assert alias.status_code == 200, alias.text
-    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.0.0")
+    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.1.0")
     assert _table_counts(database) == before
 
 

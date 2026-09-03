@@ -2,7 +2,7 @@
 
 **Schema name:** `hermes.finance.ai_analysis_bundle`
 
-**Current schema version:** `1.0.0`
+**Current schema version:** `1.1.0`
 
 **Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
 
@@ -37,6 +37,11 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
   component is unavailable; an exporter must not invent zero or retain a stale numeric placeholder.
 - Missing calendar months are unknown history. They are listed in
   `coverage.missing_calendar_periods` and are never synthesized as zero-valued months.
+- A reporting month without any persisted capital/debt snapshot exposes capital metrics as
+  unavailable with `portfolio_snapshot_missing`; a persisted zero row remains an exact zero.
+- A configured `passive_income_history_start_month` makes earlier passive-income metrics
+  unavailable with `passive_income_history_before_configured_start`. Export never infers this
+  boundary from first non-zero data, positions, timestamps, or notes.
 - A draft month may be exported, but its values carry `draft_value` and the point has partial
   coverage. Draft months never enter eligible CLOSED-month historical averages.
 - Export-local refs (`acct-*`, `inst-*`, `goal-*`, `flow-*`) exist only to join objects inside one
@@ -61,12 +66,14 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
 | Rolling actual average | `passive_income_average` / ADR 0008 | Last at most 12 eligible CLOSED records on/after the configured history boundary. Missing or draft months do not enter the denominator. |
 | Passive-income forecast | `forecast_passive_income` | Expected interest/coupons/other plus the actual CLOSED-month dividend component. Expected dividends are not added again. Redemption remains principal and is excluded. Persisted deposit monthly estimates are annualized by the current approximate method and labelled accordingly. |
 | Main passive-income goal | persisted `goals` plus `build_goal_achievement_summary` | Current value is the rolling actual average after R02-27, not the C04 forecast. A below-target future date remains `not_projectable` when no trajectory exists. |
-| Monthly cash context | `cash_balance_for_month`, `actual_net_for_month`, expense and saving services | Active income, cashback, passive income, expenses, and saving allocations retain their existing cash-flow inclusion semantics. |
+| Monthly cash context | `cash_balance_for_month`, `actual_net_for_month`, expense and saving services | `cash_flow_after_allocations` is the derived surplus. `monthly_cash_balance` remains a backward-compatible alias and is never physical cash. Persisted cash is only `current_portfolio.cash_balances`. |
 | Market value change / return | no accepted aggregate service currently exists | Both fields stay unavailable in v1. A consumer may inspect point-in-time valuations, but must not relabel liquid-capital delta as market value change or market value change as investment return. |
-| Current portfolio | the selected reporting month's persisted accounts, instruments, position/deposit snapshots, and cash balances | Locally persisted valuation fields remain authoritative for the export. Provider observations are provenance, not silent replacements for Hermes identity or valuation semantics. |
+| Current portfolio | the selected reporting month's persisted accounts, instruments, position/deposit snapshots, and cash balances | Portfolio completeness and `valuation_freshness` are independent. `oldest_price_date`, `latest_price_date`, stale count/share, and `stale_valuation` expose old prices without dropping the persisted position. Active capital-included accounts without a snapshot use `active_account_snapshot_missing`. |
 | Debt and property | debt, property, liquid-capital, and mortgage services | Included short-term debt affects liquid capital; mortgage/property remain reference context. Property equity is separate. |
-| IIS | `iis_result` plus persisted IIS profile, contributions, and benefit states | Only received tax benefits increase the result with benefit. Planned/submitted remain separate; rejected does not increase either result. Redemption and contributions are not income. |
+| IIS | `iis_result` plus persisted IIS profile, contributions, and benefit states | `iis_coverage` distinguishes no active IIS (`iis_account_absent`) from an active IIS with unconfigured (`iis_tax_data_unconfigured`) or partial (`iis_tax_data_partial`) tax data. Only received tax benefits increase the result with benefit. |
 | Salary tax | `calculate_salary_tax` and salary-tax opening context | YTD/bracket values appear only if backend calculation succeeds with complete known history. `salary_tax_history_incomplete` is an unavailable state, never an assumed zero. |
+| Salary consistency | persisted salary gross/net plus the read-only salary-tax calculation | `reporting_history[].kpis.salary` retains `gross`, `calculated_tax`, `calculated_net`, and `actual_net` as separate facts. `salary_net_mismatch` is a warning when `gross - calculated_tax != actual_net`. |
+| Property quality | structured `PropertySnapshot` rows | Structured value/mortgage fields are authoritative. Notes are excluded and never parsed as a competing balance. `property_equity_suspicious_jump` and `duplicate_property_snapshot` are warnings only; persisted values are not silently rewritten. |
 | Upcoming cash flows | `merged_payout_calendar` / ADR 0011 | Manual/provider reconciliation decides which row counts. Provider totals with unknown personal tax remain provider-announced approximate amounts, never labelled net. An unresolved duplicate uses the existing safe manual-only behavior. Calendar total, non-principal calendar amount total, and principal total are separate. |
 | Provenance | persisted manual/provider/statement provenance already accepted by Hermes | `manual`, `t_invest`, `alfa_pro`, and `alfa_statement` are reported only where meaningful. Raw protocol payloads and provider correlation IDs are excluded. |
 
@@ -126,6 +133,14 @@ Warnings contain a stable machine code, severity, scope, and concise owner-safe 
 They must not contain stack traces, SQL, filesystem paths, private payload fragments, credentials,
 or debug dumps.
 
+The #285 data-quality codes are intentionally additive: `portfolio_snapshot_missing` and
+`active_account_snapshot_missing` mean persisted capital evidence is absent; `stale_valuation`
+means the position remains present but its price date is older than the reporting snapshot;
+`salary_net_mismatch` means actual employer-paid net differs from the derived calculation;
+`iis_account_absent`, `iis_tax_data_unconfigured`, and `iis_tax_data_partial` describe distinct
+IIS coverage states; and property warning codes request review without changing structured facts.
+Warnings are deduplicated by code, while `scope` and `message` remain explanatory fields.
+
 ## Current portfolio selection
 
 The exporter records both the selected `reporting_period` and `selection_reason`. The preferred
@@ -143,6 +158,8 @@ No later price, quantity, or balance may be backfilled into an earlier reporting
 - major: removal/rename, changed requiredness, changed units, changed counting/source semantics,
   or another change that can alter an existing consumer's interpretation.
 
+`1.1.0` adds data-quality fields while retaining all v1.0 financial fields, including the
+deprecated `monthly_cash_balance` alias. New consumers should use `cash_flow_after_allocations`.
 Consumers must dispatch on the major version. A consumer supporting major `1` must ignore unknown
 optional fields after validating the instance with the schema declared by that instance. The
 checked-in `1.0.0` schema is intentionally strict (`additionalProperties=false`) to detect exporter

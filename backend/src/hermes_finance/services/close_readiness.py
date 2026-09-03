@@ -14,7 +14,14 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hermes_finance.persistence import AppliedPayoutReconciliation, AppliedProviderPayout
+from hermes_finance.persistence import (
+    Account,
+    AppliedPayoutReconciliation,
+    AppliedProviderPayout,
+    CashBalance,
+    DepositSnapshot,
+    PositionSnapshot,
+)
 from hermes_finance.services.applied_payouts import (
     AppliedPayoutLifecycle,
     PayoutCountingDecision,
@@ -48,6 +55,7 @@ class CloseReadinessCode(StrEnum):
     BACKUP_PRESENT = "backup_present"
     BACKUP_NONE = "backup_none"
     MONTH_ALREADY_CLOSED = "month_already_closed"
+    ACTIVE_ACCOUNT_SNAPSHOT_MISSING = "active_account_snapshot_missing"
 
 
 _SEVERITY_ORDER = {
@@ -65,6 +73,10 @@ _UNRESOLVED_PAYOUT_MESSAGE = (
     "безопасный режим «только ручные». Это не блокирует закрытие."
 )
 _MONTH_ALREADY_CLOSED_MESSAGE = "Месяц уже закрыт. Повторное закрытие не предлагается."
+_ACTIVE_ACCOUNT_SNAPSHOT_MISSING_MESSAGE = (
+    "Активный счёт, включённый в капитал, не имеет snapshot за выбранный месяц. "
+    "Значение считается отсутствующим, а не нулевым; это предупреждение не блокирует закрытие."
+)
 _BACKUP_NONE_MESSAGE = "Резервных копий пока нет."
 _SECTION_EMPTY_MESSAGE = (
     "Раздел «{title}» в этом месяце не заполнен. Пустые необязательные разделы не мешают закрытию."
@@ -154,6 +166,57 @@ def _salary_tax_items(session: Session, month) -> list[CloseReadinessItem]:
             code=CloseReadinessCode.SALARY_TAX_HISTORY_INCOMPLETE.value,
             message=_SALARY_TAX_INCOMPLETE_MESSAGE,
             context=context,
+        )
+    ]
+
+
+def _active_account_snapshot_items(session: Session, month) -> list[CloseReadinessItem]:
+    accounts = list(
+        session.scalars(
+            select(Account).where(
+                Account.status == "active",
+                Account.include_in_capital.is_(True),
+            )
+        )
+    )
+    if not accounts:
+        return []
+    position_account_ids = set(
+        session.scalars(
+            select(PositionSnapshot.account_id).where(
+                PositionSnapshot.reporting_month_id == month.id
+            )
+        )
+    )
+    deposit_account_ids = set(
+        session.scalars(
+            select(DepositSnapshot.account_id).where(DepositSnapshot.reporting_month_id == month.id)
+        )
+    )
+    cash_rows = list(
+        session.scalars(select(CashBalance).where(CashBalance.reporting_month_id == month.id))
+    )
+    cash_account_ids = {row.account_id for row in cash_rows if row.account_id is not None}
+    has_unassigned_cash = any(row.account_id is None for row in cash_rows)
+    missing = [
+        account
+        for account in accounts
+        if account.id not in position_account_ids
+        and account.id not in deposit_account_ids
+        and account.id not in cash_account_ids
+        and not (account.account_type == "cash" and has_unassigned_cash)
+    ]
+    if not missing:
+        return []
+    return [
+        _item(
+            severity=CloseReadinessSeverity.WARNING,
+            code=CloseReadinessCode.ACTIVE_ACCOUNT_SNAPSHOT_MISSING.value,
+            message=_ACTIVE_ACCOUNT_SNAPSHOT_MISSING_MESSAGE,
+            context={
+                "account_names": sorted(account.name for account in missing),
+                "count": len(missing),
+            },
         )
     ]
 
@@ -354,6 +417,7 @@ def build_close_readiness(
         month = get_reporting_month(session, month_id)
         items = _hard_blocker_items(month)
         items.extend(_salary_tax_items(session, month))
+        items.extend(_active_account_snapshot_items(session, month))
         if month.snapshot_date is not None:
             freshness = freshness_summary or build_freshness_provenance_summary(
                 session, month.id, today=today
