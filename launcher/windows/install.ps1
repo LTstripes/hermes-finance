@@ -31,7 +31,7 @@ if ($packageDirectoryWasProvided) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
-foreach ($asset in @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-schema-check.py")) {
+foreach ($asset in @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-schema-check.py", "config.example.json")) {
     $source = Join-Path $PackageDirectory $asset
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Cannot install launcher: packaged asset '$asset' is missing."

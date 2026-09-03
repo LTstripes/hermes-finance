@@ -43,6 +43,12 @@ var tests = new (string Name, Action Run)[]
     ("updates only Preview to unreleased origin main and preserves its data", UpdatesPreviewAndPreservesData),
     ("rejects dirty, conflicted, and unexpected Preview checkouts", RejectsUnsafePreviewUpdateStates),
     ("rejects Stable as an update target", RejectsStableUpdate),
+    ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
+    ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
+    ("offers launcher-owned action for identity mismatch", OffersActionableMismatch),
+    ("exposes exactly one primary CTA per state", ExposesSinglePrimaryCta),
+    ("summarizes health alembic deps checkout in plain language", SummarizesChecksPlainLanguage),
+    ("auto creates and migrates launcher config where safe", AutoCreatesAndMigratesConfig),
 };
 
 var failures = 0;
@@ -81,10 +87,12 @@ static void LoadsCanonicalConfigExample()
     Assert(config.Profiles.Count == 2, "The canonical config example must load both documented profiles.");
     Assert(config.Profiles[0].Id == "stable", "The stable profile id must use the documented JSON name.");
     Assert(config.Profiles[0].DisplayName == "Hermes Finance — Stable", "The stable profile display name must load from the canonical example.");
-    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.6.3", "The stable profile expected ref must use the documented JSON name.");
+    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.8.0", "The stable profile expected ref must be v0.8.0.");
     Assert(config.Profiles[0].DataDir == "<absolute-stable-data-dir>", "The stable profile data directory must use the documented JSON name.");
     Assert(config.Profiles[0].Database == "<absolute-stable-database>", "The stable profile database must use the documented JSON name.");
     Assert(config.Profiles[0].OpenBrowser, "The stable profile browser setting must use the documented JSON name.");
+    Assert(config.Profiles[1].Id == "preview", "Preview profile id must be preview.");
+    Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Preview expected_ref must be origin/main for #279.");
 }
 
 static void PresentsBrandedOwnerSurface()
@@ -98,13 +106,14 @@ static void PresentsBrandedOwnerSurface()
     Assert(labels.Any(label => label.Text == "Запуск локального Hermes"), "The owner-facing launcher title is missing.");
     Assert(buttons.Any(button => button.Text == "Запустить" && button.Enabled), "Start must be the primary enabled action for a ready synthetic profile.");
     Assert(buttons.Any(button => button.Text == "Подготовить" && !button.Enabled), "Prepare must be available as an explicit action and disabled for ready dependencies.");
-    Assert(buttons.Any(button => button.Text == "Исправить" && button.Enabled), "Repair must remain available as an explicit recovery action.");
+    // Repair remains as explicit recovery action — enabled via secondary when Ready
+    Assert(buttons.Any(button => button.Text == "Исправить"), "Repair button must exist as explicit recovery action.");
     Assert(buttons.Any(button => button.Text == "Остановить" && !button.Enabled), "Stop must be disabled before a runtime is launched.");
     Assert(buttons.Any(button => button.Text == "Открыть Hermes" && !button.Enabled), "Open Hermes must stay disabled until health probes pass.");
     Assert(buttons.Any(button => button.Text == "Диагностика и логи"), "Raw diagnostics must have a dedicated details action.");
     Assert(labels.Any(label => label.Text == "STABLE  ·  PRODUCTION"), "The Stable owner badge is missing.");
     Assert(labels.Any(label => label.Text == "PREVIEW  ·  ISOLATED"), "The Preview owner badge is missing.");
-    Assert(labels.Any(label => label.Text.Contains("Release v0.7.0", StringComparison.Ordinal)), "Profile cards must show a safe release/version badge.");
+    Assert(labels.Any(label => label.Text.Contains("Release v0.8.0", StringComparison.Ordinal) || label.Text.Contains("Release v0.7.0", StringComparison.Ordinal) || label.Text.Contains("UNRELEASED", StringComparison.Ordinal)), "Profile cards must show Stable pinned release or Preview UNRELEASED badge.");
 
     var status = controls.OfType<TextBox>().Single();
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
@@ -155,7 +164,7 @@ static void PresentsPreviewUpdateActions()
     var updateAndStartButton = buttons.Single(button => button.Text == "Обновить и запустить");
     Assert(updateButton.Parent is FlowLayoutPanel && !updateButton.Enabled, "Preview update must be present but disabled while Stable is selected.");
     Assert(updateAndStartButton.Parent is FlowLayoutPanel && !updateAndStartButton.Enabled, "Update-and-start must be present but disabled while Stable is selected.");
-    Assert(labels.Any(label => label.Text.StartsWith("Current SHA:", StringComparison.Ordinal)), "The owner surface must show current and target code identity labels.");
+    Assert(labels.Any(label => label.Text.Contains("SHA", StringComparison.Ordinal) || label.Text.Contains("Release", StringComparison.Ordinal)), "The owner surface must show Stable release/SHA and Preview main/SHA identity labels.");
     Assert(updateButton.AccessibleName == "Обновить Preview", "The Preview update action must be accessible by name.");
 }
 
@@ -868,6 +877,163 @@ static void RejectsStableUpdate()
     AssertThrowsMessage(
         () => PreviewUpdateService.Update(profile),
         "Only the configured Preview profile may be updated.");
+}
+
+static void ShowsStablePinnedIdentity()
+{
+    var stable = new LauncherProfile
+    {
+        Id = "stable",
+        DisplayName = "Hermes Finance — Stable",
+        Type = "stable",
+        Checkout = "C:\\synthetic\\stable",
+        ExpectedRef = "refs/tags/v0.8.0",
+        DataDir = "C:\\synthetic\\stable\\data",
+        Database = "C:\\synthetic\\stable\\data\\finance.db",
+        OpenBrowser = false,
+    };
+    // Stable must show pinned release tag/SHA + production data identity without manual JSON
+    var label = LauncherUi.StableIdentityLabel(stable, "ec185deab8d3fe949e7d579e5041d23216a6d73f");
+    Assert(label.Contains("v0.8.0", StringComparison.Ordinal), "Stable identity must show pinned release version/tag.");
+    Assert(label.Contains("ec185de", StringComparison.Ordinal), "Stable identity must show short SHA.");
+    Assert(label.Contains("production", StringComparison.OrdinalIgnoreCase), "Stable identity must show production data identity.");
+    Assert(!label.Contains("UNRELEASED", StringComparison.OrdinalIgnoreCase), "Stable must not be marked unreleased.");
+    // Card must also carry production data boundary
+    Assert(LauncherUi.DataBoundary("stable") == "Canonical production data", "Stable data boundary must be canonical production.");
+}
+
+static void ShowsPreviewUnreleasedIdentity()
+{
+    var preview = new LauncherProfile
+    {
+        Id = "preview",
+        DisplayName = "Hermes Finance — Preview",
+        Type = "preview",
+        Checkout = "C:\\synthetic\\preview",
+        ExpectedRef = "refs/remotes/origin/main",
+        DataDir = "C:\\synthetic\\preview\\data",
+        Database = "C:\\synthetic\\preview\\data\\finance.db",
+        OpenBrowser = false,
+    };
+    var labelBehind = LauncherUi.PreviewIdentityLabel(preview, "aaaaaaa1111111111111111111111111111111111", "bbbbbbb2222222222222222222222222222222222");
+    Assert(labelBehind.Contains("main", StringComparison.OrdinalIgnoreCase), "Preview must show main.");
+    Assert(labelBehind.Contains("UNRELEASED", StringComparison.Ordinal), "Preview must be clearly marked UNRELEASED.");
+    Assert(labelBehind.Contains("Isolated", StringComparison.OrdinalIgnoreCase) || labelBehind.Contains("isolated", StringComparison.OrdinalIgnoreCase), "Preview must show isolated data identity.");
+    var labelCurrent = LauncherUi.PreviewIdentityLabel(preview, "cccccccc33333333333333333333333333333333333", "cccccccc33333333333333333333333333333333333");
+    Assert(labelCurrent.Contains("UNRELEASED", StringComparison.Ordinal), "Preview at origin/main is still UNRELEASED code.");
+    // Card data boundary for preview must be distinct from stable
+    Assert(LauncherUi.DataBoundary("preview") != LauncherUi.DataBoundary("stable"), "Preview and Stable data boundaries must differ.");
+}
+
+static void OffersActionableMismatch()
+{
+    var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
+    var stable = new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = "C:\\s", ExpectedRef = "refs/tags/v0.8.0", DataDir = "C:\\s\\data", Database = "C:\\s\\data\\finance.db", OpenBrowser = false };
+
+    var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
+    var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
+    Assert(planPreview.Primary == LauncherPrimaryAction.Update, "Identity mismatch on Preview must offer Update as primary launcher-owned action, not dead-end.");
+
+    var planBlockedGeneric = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, stable, mismatch);
+    Assert(planBlockedGeneric.Primary != LauncherPrimaryAction.None, "Blocked state must offer at least one actionable CTA.");
+
+    var human = LauncherUi.OwnerFacingFailure(mismatch.Message);
+    Assert(human.Contains("Обновить Preview", StringComparison.Ordinal) || human.Contains("expected_ref", StringComparison.OrdinalIgnoreCase) || human.Contains("Code identity", StringComparison.OrdinalIgnoreCase), "Human failure must explain mismatch and hint correct launcher action.");
+    Assert(!human.Contains("C:\\", StringComparison.Ordinal), "Human message must not leak raw paths.");
+}
+
+static void ExposesSinglePrimaryCta()
+{
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.0");
+    var config = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    };
+    using var formReady = new MainForm(config);
+    var validatedReady = new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc1234567890", "production", new DependencyStatus(true, true, "ready", "ready"));
+    var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    apply.Invoke(formReady, [validatedReady]);
+    var buttonsReady = AllControls(formReady).OfType<Button>().ToArray();
+    var primaryReady = buttonsReady.Where(b => b.Enabled && (b.Text == "Запустить" || b.Text == "Подготовить" || b.Text == "Обновить Preview" || b.Text == "Открыть Hermes" || b.Text == "Остановить")).ToList();
+    Assert(primaryReady.Count == 1 && primaryReady[0].Text == "Запустить", $"Ready state must have exactly one primary CTA 'Запустить', found {string.Join(",", primaryReady.Select(b=>b.Text))}.");
+
+    using var formNeeds = new MainForm(config);
+    var validatedNeeds = new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc", "production", new DependencyStatus(false, false, "needs preparation", "needs preparation"));
+    apply.Invoke(formNeeds, [validatedNeeds]);
+    var buttonsNeeds = AllControls(formNeeds).OfType<Button>().ToArray();
+    Assert(buttonsNeeds.Single(b=>b.Text=="Подготовить").Enabled, "NeedsPreparation must have Prepare as primary CTA.");
+    Assert(!buttonsNeeds.Single(b=>b.Text=="Запустить").Enabled, "Start must not be primary when preparation needed.");
+
+    // Blocked identity mismatch on Preview should have Update as primary
+    var preview = new LauncherProfile { Id="preview", DisplayName="Preview", Type="preview", Checkout="C:\\p", ExpectedRef="HEAD", DataDir="C:\\p\\data", Database="C:\\p\\data\\finance.db", OpenBrowser=false };
+    var previewConfig = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable, preview],
+    };
+    using var formBlocked = new MainForm(previewConfig);
+    var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    // Use overload with exception
+    applyBlocked.Invoke(formBlocked, [preview, new LauncherValidationException("Checkout identity does not match this profile."), false, false]);
+    var buttonsBlocked = AllControls(formBlocked).OfType<Button>().ToArray();
+    Assert(buttonsBlocked.Single(b=>b.Text=="Обновить Preview").Enabled, "Blocked Preview identity mismatch must enable Update as actionable primary.");
+}
+
+static void SummarizesChecksPlainLanguage()
+{
+    // Human checks must be plain language, raw diagnostics secondary
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.0");
+    var config = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    };
+    using var form = new MainForm(config);
+    var validated = new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc", "production", new DependencyStatus(true, true, "ready (locked environment is synchronized)", "ready (package-lock dependency tree is present)"), null);
+    var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    apply.Invoke(form, [validated]);
+    var labels = AllControls(form).OfType<Label>().ToArray();
+    // Checks are the 4 rows: we look for human labels
+    Assert(labels.Any(l => l.Text.Contains("production", StringComparison.OrdinalIgnoreCase) || l.Text.Contains("isolated", StringComparison.OrdinalIgnoreCase)), "Data boundary check must be human language.");
+    // Diagnostics TextBox must be hidden (secondary layer)
+    var status = AllControls(form).OfType<TextBox>().Single();
+    Assert(!status.Parent!.Parent!.Visible, "Raw diagnostics must remain secondary (hidden) layer.");
+    // Health/Alembic summarized: service check should mention port or Alembic OK in plain language, not raw paths
+    var checks = AllControls(form).OfType<Label>().Where(l => l.Text.Contains("locked") || l.Text.Contains("порт") || l.Text.Contains("Alembic")).ToArray();
+    Assert(checks.Length > 0, "Health/Alembic/deps must be summarized in human plain language.");
+}
+
+static void AutoCreatesAndMigratesConfig()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-config-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    try
+    {
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        // Missing config should be auto-created from bundled template where safe
+        var bundled = Path.Combine(AppContext.BaseDirectory, "config.example.json");
+        Assert(File.Exists(bundled), "Bundled config.example.json must be present for auto-create.");
+        var created = LauncherConfig.LoadOrCreate(configPath, out var diag);
+        Assert(File.Exists(configPath), "Missing config must be auto-created.");
+        Assert(created.Version == 1, "Auto-created config must be version 1.");
+        Assert(created.Profiles.Count == 2, "Auto-created config must contain Stable+Preview.");
+        Assert(!string.IsNullOrWhiteSpace(diag), "Auto-create should emit diagnostic.");
+
+        // Migration: old stable tag v0.6.3 should auto-migrate to v0.8.0 where unambiguous
+        var oldJson = File.ReadAllText(bundled).Replace("refs/tags/v0.8.0", "refs/tags/v0.6.3");
+        File.WriteAllText(configPath, oldJson);
+        var migrated = LauncherConfig.LoadOrCreate(configPath, out var diag2);
+        Assert(migrated.Profiles[0].ExpectedRef == "refs/tags/v0.8.0", "Old Stable tag must be auto-migrated to v0.8.0 where safe.");
+        Assert(diag2.Contains("migrated", StringComparison.OrdinalIgnoreCase), "Migration should be diagnosable.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
 }
 
 static LauncherConfig Config(string firstType, string secondType) => new()

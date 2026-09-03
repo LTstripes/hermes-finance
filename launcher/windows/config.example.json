@@ -11,17 +11,17 @@
       "display_name": "Hermes Finance — Stable",
       "type": "stable",
       "checkout": "<absolute-stable-checkout>",
-      "expected_ref": "refs/tags/v0.6.3",
+      "expected_ref": "refs/tags/v0.8.0",
       "data_dir": "<absolute-stable-data-dir>",
       "database": "<absolute-stable-database>",
       "open_browser": true
     },
     {
-      "id": "preview-0.7",
-      "display_name": "0.7 Preview",
+      "id": "preview",
+      "display_name": "Hermes Finance — Preview",
       "type": "preview",
       "checkout": "<absolute-preview-checkout>",
-      "expected_ref": "origin/r07",
+      "expected_ref": "refs/remotes/origin/main",
       "data_dir": "<absolute-preview-data-dir>",
       "database": "<absolute-preview-database>",
       "open_browser": true

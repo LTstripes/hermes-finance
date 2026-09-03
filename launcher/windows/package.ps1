@@ -48,7 +48,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "assets\hermes-finance-cat.ico")
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Packaging did not produce HermesFinance.Launcher.exe."
 }
-$expectedAssets = @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-schema-check.py")
+$expectedAssets = @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-schema-check.py", "config.example.json")
 foreach ($asset in $expectedAssets) {
     if (-not (Test-Path -LiteralPath (Join-Path $OutputDirectory $asset) -PathType Leaf)) {
         throw "Packaging did not include required launcher asset '$asset'."

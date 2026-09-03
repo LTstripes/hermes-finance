@@ -32,23 +32,40 @@ Set-Location ..
 
 Backend-зависимости фиксируются `backend/uv.lock`, frontend-зависимости — `frontend/package-lock.json`.
 
-## Запуск
+## Запуск — launcher-first (Windows)
 
-Рекомендуемый production local build:
+**Каноническая owner-точка входа — Windows launcher.** Никаких логов, PowerShell, Git и ручного JSON для обычного запуска.
+
+1. Установите launcher один раз из подготовленного checkout (pinned релиз `v0.8.0`):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-Launcher:
+Скрипт собирает `HermesFinance.Launcher.exe`, кладёт его в `%LOCALAPPDATA%\HermesFinance\launcher` (branded cat icon), создаёт ярлыки на Desktop и Start menu. Ярлыки не зависят от ephemeral checkout.
 
-1. собирает production frontend;
-2. применяет `alembic upgrade head`;
-3. запускает backend на `127.0.0.1:8000`;
-4. проверяет `/api/health`, `/api/months` и HTML-интерфейс;
-5. освобождает порт после остановки.
+2. Откройте **Hermes Finance** (Desktop/Start menu) — выберите карту:
 
-Для owner-facing Desktop/Start-menu shortcut используйте `launcher\windows\install.ps1`. Скрипт размещает packaged launcher в `%LOCALAPPDATA%\HermesFinance\launcher`, поэтому shortcut не зависит от ephemeral checkout/workspace и использует branded Hermes Finance cat icon. При обычном Stable запуске launcher сначала offline-проверяет exact release/tag, DB/Alembic и locked frontend/backend dependencies. Если окружение missing/stale, owner явно нажимает `Подготовить`; `Исправить` принудительно восстанавливает обе locked-среды, а `Запустить` не выполняет скрытых download/install действий.
+ - **Stable** — pinned production runtime: показывает `Release v0.8.0` + короткий SHA + `Canonical production data` (зелёный акцент). Это единственная карточка, которая может открыть production DB.
+ - **Preview** — `main / UNRELEASED` + `Isolated UAT / synthetic data` (фиолетовый), показывает `main <cur> → <target> · UNRELEASED`. Никогда не смешивает данные с Stable.
+
+3. Нажмите **одну очевидную primary кнопку** по состоянию (ровно одна подсвечена):
+
+ - `Обновить Preview` / `Обновить и запустить` — только для Preview, явный owner action, `fetch origin/main` + `ff-only` только для настроенного Preview checkout;
+ - `Подготовить` — явная установка только missing/stale locked зависимостей (`uv sync --locked`, `npm ci`);
+ - `Исправить` — принудительное восстановление обеих locked-сред;
+ - `Запустить` — обычный старт без download/install;
+ - `Открыть Hermes` — только после health probes, `http://127.0.0.1:8000`;
+ - `Остановить` — останавливает запущенный guarded startup.
+
+Проверка перед стартом (человеческим языком, кратко):
+
+ - **Code identity** — совпадает ли checkout с ожидаемым `expected_ref` (Stable: `refs/tags/v0.8.0`, Preview: `refs/remotes/origin/main`);
+ - **Data boundary** — защита от alias production (path + file-id + sidecar `.hermes-data-identity.json`);
+ - **Locked dependencies** — `backend pyproject/uv.lock` + `frontend package-lock/node_modules` (offline `uv --offline --dry-run`, `npm ls --json`);
+ - **Loopback service** — `127.0.0.1:8000` свободен + `alembic`/схема совместима (offline, миграция — только в guarded startup).
+
+Raw-диагностика — вторичный слой: кнопка `Диагностика и логи` (скрыта по умолчанию, не меняет поведение). Конфиг `%LOCALAPPDATA%\HermesFinance\launcher\config.json` создаётся/мигрируется launcher’ом автоматически где безопасно и однозначно; обычный workflow не требует ручного редактирования JSON.
 
 После готовности откройте:
 
@@ -56,13 +73,29 @@ Launcher:
 http://127.0.0.1:8000
 ```
 
-Короткий production smoke с автоматической остановкой:
+### Recovery-only (не для обычного запуска)
+
+> PowerShell/Git/ручное JSON — только для восстановления, когда launcher сообщил о блокере и показал корректное действие.
+
+Короткий production smoke с автоматической остановкой (без launcher):
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
 ```
 
-Dev-режим с Vite:
+Ручной guarded startup (что делает launcher под капотом):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+```
+
+ - собирает production frontend;
+ - применяет `alembic upgrade head` к **той же** validated DB (`HERMES_FINANCE_DATABASE_PATH`);
+ - запускает backend на `127.0.0.1:8000`;
+ - проверяет `/api/health`, `/api/months` и HTML;
+ - освобождает порт после остановки.
+
+Dev-режим с Vite (только для разработки):
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
@@ -197,18 +230,18 @@ finance_data_YYYY-MM.json
 
 Export read-only и не изменяет месяц. Файлы могут содержать личные финансовые данные — проверяйте их перед передачей третьим лицам.
 
-## Обновление приложения
+## Обновление приложения — через launcher ( Stable pinned )
 
-1. Создайте backup.
-2. Остановите приложение.
-3. Подготовьте отдельный Stable checkout на неизменяемом release tag; launcher сам Git не меняет.
-4. Для подготовки packaged launcher и shortcut выполните из подготовленного checkout:
+1. Создайте backup в **Экспорт и бэкапы**.
+2. Остановите Hermes в launcher (`Остановить`) или закройте окно — `127.0.0.1:8000` должен освободиться.
+3. Подготовьте **отдельный Stable checkout** на неизменяемом release tag ( `git fetch origin && git switch --detach refs/tags/v0.8.0` ); launcher сам Git не меняет — это recovery-шаг вне ежедневного `Запустить`.
+4. Для обновления packaged launcher и ярлыков выполните **из этого подготовленного checkout**:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-5. Запустите Stable shortcut. Launcher offline-проверит release/tag, DB/Alembic и locked dependencies; если зависимости missing/stale, нажмите `Подготовить` (или `Исправить` для принудительного восстановления), затем `Запустить`. После этого существующий guarded startup применит Alembic migrations к той же validated DB и выполнит readiness-check.
+5. Откройте **Hermes Finance — Stable** в launcher. Launcher покажет `Release v0.8.0 · SHA <short> · production data` ( зелёная карточка ) и человеческую сводку 4 checks. Если зависимости missing/stale — единственная primary будет `Подготовить` ( `Исправить` — для принудительного восстановления ); обычный `Запустить` никогда не качает скрытно. После `Запустить` guarded startup применит Alembic к той же validated DB на `127.0.0.1:8000`.
 
 ## Известные ограничения 0.7.0
 
