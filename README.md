@@ -48,7 +48,7 @@ Launcher:
 4. проверяет `/api/health`, `/api/months` и HTML-интерфейс;
 5. освобождает порт после остановки.
 
-Для owner-facing Desktop/Start-menu shortcut используйте `launcher\windows\install.ps1`. Скрипт размещает packaged launcher в `%LOCALAPPDATA%\HermesFinance\launcher`, поэтому shortcut не зависит от ephemeral checkout/workspace и использует branded Hermes Finance cat icon. При обычном Stable запуске launcher сначала проверяет exact release/tag, DB/Alembic и locked frontend/backend dependencies; `uv sync --locked` и `npm ci` выполняются только если dependency check обнаружил missing/stale окружение.
+Для owner-facing Desktop/Start-menu shortcut используйте `launcher\windows\install.ps1`. Скрипт размещает packaged launcher в `%LOCALAPPDATA%\HermesFinance\launcher`, поэтому shortcut не зависит от ephemeral checkout/workspace и использует branded Hermes Finance cat icon. При обычном Stable запуске launcher сначала offline-проверяет exact release/tag, DB/Alembic и locked frontend/backend dependencies. Если окружение missing/stale, owner явно нажимает `Подготовить`; `Исправить` принудительно восстанавливает обе locked-среды, а `Запустить` не выполняет скрытых download/install действий.
 
 После готовности откройте:
 
@@ -110,7 +110,7 @@ Released `0.8.0` фиксирует owner-workflow release поверх прин
 - **Tax/IIS Planner** — current-state v1 для фактических и текущих налоговых данных; расширение projection scope отложено.
 - **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; полного UI/AI-bundle integration в 0.7.0 не заявляется.
 - **XIRR и exact TWRR** — XIRR доступен для whole portfolio при однозначном валидном корне; TWRR использует persisted observed valuation boundaries и pre/post observations для потоков. Missing/gapped evidence, неизвестный порядок событий и неоднозначный XIRR root fail closed.
-- **Windows Stable/Preview launcher** — guarded runtime profiles, owner Start/Stop controls, package/install verification и shortcut/start-stop smoke; текущий 0.8 launcher всё ещё требует заранее подготовленный checkout и не обновляет Preview из `origin/main` сам — это tracked follow-up #277.
+- **Windows Stable/Preview launcher** — guarded runtime profiles, owner Prepare/Repair/Start/Stop controls, explicit Preview update, package/install verification и shortcut/start-stop smoke; Stable остаётся на pinned release identity, Preview — на отдельном unreleased checkout.
 - **UI и verification** — visual-audit polish, semantic test-taxonomy work и backend CI входят в release evidence; Backend timeout временно поднят с 15 до 30 минут как release unblock, а durable split/slow-test telemetry tracked в #282.
 
 В редакторе месяца доступны зарплата и прочие доходы, депозиты/cash, позиции, фактические и ожидаемые investment flows, расходы/savings, долги/недвижимость, ИИС и комментарии.
@@ -208,7 +208,7 @@ Export read-only и не изменяет месяц. Файлы могут со
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-5. Запустите Stable shortcut. Launcher сам подготовит только missing/stale locked dependencies, повторно проверит release/tag и DB/Alembic, а затем применит Alembic migrations перед readiness-check.
+5. Запустите Stable shortcut. Launcher offline-проверит release/tag, DB/Alembic и locked dependencies; если зависимости missing/stale, нажмите `Подготовить` (или `Исправить` для принудительного восстановления), затем `Запустить`. После этого существующий guarded startup применит Alembic migrations к той же validated DB и выполнит readiness-check.
 
 ## Известные ограничения 0.7.0
 

@@ -25,7 +25,7 @@ internal static class DependencyValidator
         RequireFile(Path.Combine(frontend, "package.json"), "Frontend project metadata is missing.");
         RequireFile(Path.Combine(frontend, "package-lock.json"), "Frontend lockfile is missing.");
 
-        var backendCheck = RunCommand("uv", backend, "sync", "--locked", "--dry-run");
+        var backendCheck = RunCommand("uv", backend, "sync", "--locked", "--dry-run", "--offline");
         if (backendCheck.ExitCode != 0)
         {
             throw new LauncherValidationException(
@@ -70,7 +70,7 @@ internal static class DependencyValidator
             frontendDetail);
     }
 
-    internal static ProcessStartInfo BuildPreparationCommand(string checkout)
+    internal static ProcessStartInfo BuildPreparationCommand(string checkout, bool repair = false)
     {
         var powershell = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Windows),
@@ -102,7 +102,7 @@ internal static class DependencyValidator
         command.ArgumentList.Add(helper);
         command.ArgumentList.Add("-Checkout");
         command.ArgumentList.Add(checkout);
-        command.ArgumentList.Add("-Prepare");
+        command.ArgumentList.Add(repair ? "-Repair" : "-Prepare");
         return command;
     }
 

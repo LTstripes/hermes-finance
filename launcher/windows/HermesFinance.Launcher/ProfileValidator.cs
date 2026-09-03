@@ -46,8 +46,14 @@ public static class ProfileValidator
         AssertProfileTuple(profile, canonicalCheckout, canonicalDataDir, canonicalDatabase, checkout, dataDir, database);
         var head = AssertGitIdentity(profile, checkout, canonicalCheckout);
         var sidecarKind = AssertSidecar(profile, dataDir, database);
-        AssertSchemaCompatibility(checkout, database, profile.Type);
         var dependencies = DependencyValidator.Check(checkout);
+        // Keep the dependency-repair path actionable without allowing a hidden
+        // uv download: the schema probe is deferred until locked dependencies
+        // are ready and then runs in offline mode.
+        if (dependencies.Ready)
+        {
+            AssertSchemaCompatibility(checkout, database, profile.Type);
+        }
         AssertPortAvailable();
         var previewUpdate = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
             ? PreviewUpdateService.ReadStatus(new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies))
@@ -126,6 +132,7 @@ public static class ProfileValidator
         // This binds Alembic's effective database to the same resolved path that
         // completed all tuple, file-identity and schema checks above.
         command.Environment["HERMES_FINANCE_DATABASE_PATH"] = profile.Database;
+        command.Environment["UV_OFFLINE"] = "1";
         return command;
     }
 
@@ -143,6 +150,7 @@ public static class ProfileValidator
         };
         command.ArgumentList.Add("run");
         command.ArgumentList.Add("--locked");
+        command.ArgumentList.Add("--offline");
         command.ArgumentList.Add("python");
         command.ArgumentList.Add(script);
         command.ArgumentList.Add("--database");

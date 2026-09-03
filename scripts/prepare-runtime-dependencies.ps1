@@ -2,11 +2,16 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Checkout,
-    [switch]$Prepare
+    [switch]$Prepare,
+    [switch]$Repair
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+if ($Prepare -and $Repair) {
+    throw "Choose either -Prepare or -Repair, not both."
+}
 
 function Get-RequiredCommand {
     param(
@@ -80,7 +85,7 @@ function Get-DependencyStatus {
     $backendCheck = Invoke-CapturedCommand `
         -FilePath $Uv `
         -WorkingDirectory $backend `
-        -ArgumentList @("sync", "--locked", "--dry-run")
+        -ArgumentList @("sync", "--locked", "--dry-run", "--offline")
     if ($backendCheck.ExitCode -ne 0) {
         throw "Backend dependency check failed: $($backendCheck.Output.Trim())"
     }
@@ -139,10 +144,13 @@ try {
 
     $uv = Get-RequiredCommand -Name "uv" -InstallHint "Install uv from https://docs.astral.sh/uv/."
     $npm = Get-RequiredCommand -Name "npm.cmd" -InstallHint "Install Node.js 22.22 or newer from https://nodejs.org/."
-    $status = Get-DependencyStatus -Root $resolvedCheckout -Uv $uv -Npm $npm
+    $status = $null
+    if (-not $Repair) {
+        $status = Get-DependencyStatus -Root $resolvedCheckout -Uv $uv -Npm $npm
+    }
 
-    if ($Prepare -and -not $status.BackendReady) {
-        Write-Host "Preparing locked backend dependencies..." -ForegroundColor Cyan
+    if ($Repair -or ($Prepare -and -not $status.BackendReady)) {
+        Write-Host $(if ($Repair) { "Repairing locked backend dependencies..." } else { "Preparing locked backend dependencies..." }) -ForegroundColor Cyan
         Push-Location (Join-Path $resolvedCheckout "backend")
         try {
             & $uv sync --locked
@@ -155,8 +163,8 @@ try {
         }
     }
 
-    if ($Prepare -and -not $status.FrontendReady) {
-        Write-Host "Preparing locked frontend dependencies..." -ForegroundColor Cyan
+    if ($Repair -or ($Prepare -and -not $status.FrontendReady)) {
+        Write-Host $(if ($Repair) { "Repairing locked frontend dependencies..." } else { "Preparing locked frontend dependencies..." }) -ForegroundColor Cyan
         Push-Location (Join-Path $resolvedCheckout "frontend")
         try {
             & $npm ci --no-audit --no-fund
@@ -169,7 +177,7 @@ try {
         }
     }
 
-    if ($Prepare) {
+    if ($Prepare -or $Repair) {
         $status = Get-DependencyStatus -Root $resolvedCheckout -Uv $uv -Npm $npm
     }
 
