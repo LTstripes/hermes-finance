@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace HermesFinance.Launcher;
@@ -22,9 +24,10 @@ public sealed class LauncherConfig
     }
 
     /// <summary>
-    /// Loads config, creating it from the bundled example where missing,
-    /// and migrating safe unambiguous fields where possible.
-    /// Normal owner workflow never requires manual JSON editing.
+    /// Loads config. Missing, unknown-field, and stale-ref cases are handled
+    /// launcher-first: concrete auto-create only where provably safe, otherwise
+    /// fail closed with an actionable launcher-owned message (no placeholder
+    /// config that demands manual JSON, no silent rewrites).
     /// </summary>
     public static LauncherConfig LoadOrCreate(string configPath, out string diagnostic)
     {
@@ -37,24 +40,26 @@ public sealed class LauncherConfig
 
         if (!File.Exists(configPath))
         {
+            // Auto-create ONLY from a concrete bundled template (no placeholders,
+            // absolute paths, valid shape). The shipped config.example.json is a
+            // template with <absolute-...> placeholders, so fresh installs fail
+            // closed here with setup guidance instead of a placeholder file.
             var bundled = Path.Combine(AppContext.BaseDirectory, "config.example.json");
-            if (File.Exists(bundled))
+            if (TryAutoCreateConcrete(bundled, configPath, out var created, out var createDiag) && created is not null)
             {
-                File.Copy(bundled, configPath);
-                diagnostic = $"Launcher config was missing; created from bundled template at {configPath}. Verify checkout/data paths, then click Update check.";
-                return Load(configPath);
+                diagnostic = createDiag;
+                return created;
             }
 
-            // Fallback: bundled not present (e.g. dev run without package) — try source tree
             var sourceFallback = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "config.example.json");
-            if (File.Exists(sourceFallback))
+            if (TryAutoCreateConcrete(sourceFallback, configPath, out var createdFallback, out var createDiagFallback) && createdFallback is not null)
             {
-                File.Copy(sourceFallback, configPath);
-                diagnostic = $"Launcher config was missing; created from template at {configPath}.";
-                return Load(configPath);
+                diagnostic = createDiagFallback;
+                return createdFallback;
             }
 
-            throw new LauncherValidationException($"Launcher config not found at {configPath}. Run install.ps1 or place config.json in %LOCALAPPDATA%\\HermesFinance\\launcher.");
+            throw new LauncherValidationException(
+                $"Launcher config not found at {configPath}. Run install.ps1 to install the launcher, then open it and press «Обновить проверку». Manual JSON editing is recovery-only; see docs for prepared Stable/Preview runtimes.");
         }
 
         var raw = File.ReadAllText(configPath);
@@ -64,8 +69,8 @@ public sealed class LauncherConfig
             var strict = JsonSerializer.Deserialize<LauncherConfig>(raw, JsonOptions);
             if (strict is not null)
             {
-                // Auto-migrate stable expected_ref from old documented tags where safe
-                var migrated = TryMigrateStableTag(strict, raw, configPath, out var migrateDiag);
+                // Auto-migrate stable expected_ref only where provably safe
+                var migrated = TryMigrateStableTag(strict, configPath, out var migrateDiag);
                 if (!string.IsNullOrWhiteSpace(migrateDiag))
                 {
                     diagnostic = migrateDiag;
@@ -73,9 +78,10 @@ public sealed class LauncherConfig
                 return migrated;
             }
         }
-        catch (JsonException ex) when (ex.Message.Contains("UnmappedMember", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("unknown", StringComparison.OrdinalIgnoreCase))
+        catch (JsonException)
         {
-            // Try tolerant migration: strip unknown fields where unambiguous
+            // Try schema-aware unknown-field strip; fail closed when it cannot
+            // produce a valid config (original file left untouched).
             var tolerant = TryStripUnknownFields(raw, configPath, out var stripDiag);
             if (tolerant is not null)
             {
@@ -89,85 +95,310 @@ public sealed class LauncherConfig
             ?? throw new LauncherValidationException("Launcher config is invalid: the document is empty.");
     }
 
-    private static LauncherConfig TryMigrateStableTag(LauncherConfig config, string raw, string configPath, out string diagnostic)
+    private static bool TryAutoCreateConcrete(string templatePath, string configPath, out LauncherConfig? created, out string diagnostic)
+    {
+        created = null;
+        diagnostic = "";
+        if (!File.Exists(templatePath))
+        {
+            return false;
+        }
+        string text;
+        try
+        {
+            text = File.ReadAllText(templatePath);
+        }
+        catch
+        {
+            return false;
+        }
+        LauncherConfig? candidate;
+        try
+        {
+            candidate = JsonSerializer.Deserialize<LauncherConfig>(text, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        if (candidate is null || !IsConcreteConfig(candidate))
+        {
+            return false;
+        }
+        try
+        {
+            File.Copy(templatePath, configPath);
+            created = Load(configPath);
+            diagnostic = $"Launcher config was missing; created concrete config at {configPath} from {templatePath}. No manual JSON needed.";
+            return true;
+        }
+        catch
+        {
+            created = null;
+            return false;
+        }
+    }
+
+    internal static bool IsConcreteConfig(LauncherConfig config)
+    {
+        if (config.Version != 1)
+        {
+            return false;
+        }
+        if (config.Profiles is null || config.Profiles.Count == 0)
+        {
+            return false;
+        }
+        if (config.Profiles.Count(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)) != 1)
+        {
+            return false;
+        }
+        foreach (var path in new[] { config.CanonicalProduction.Checkout, config.CanonicalProduction.DataDir, config.CanonicalProduction.Database })
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Contains('<') || path.Contains('>'))
+            {
+                return false;
+            }
+            if (!Path.IsPathFullyQualified(path))
+            {
+                return false;
+            }
+        }
+        foreach (var profile in config.Profiles)
+        {
+            if (string.IsNullOrWhiteSpace(profile.Id)
+                || string.IsNullOrWhiteSpace(profile.DisplayName)
+                || string.IsNullOrWhiteSpace(profile.Type)
+                || string.IsNullOrWhiteSpace(profile.ExpectedRef))
+            {
+                return false;
+            }
+            foreach (var path in new[] { profile.Checkout, profile.DataDir, profile.Database })
+            {
+                if (string.IsNullOrWhiteSpace(path) || path.Contains('<') || path.Contains('>'))
+                {
+                    return false;
+                }
+                if (!Path.IsPathFullyQualified(path))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static readonly string[] StaleStableRefs = ["refs/tags/v0.6.3", "refs/tags/v0.7.0", "origin/r07"];
+    private const string CurrentStableRef = "refs/tags/v0.8.0";
+
+    private static LauncherConfig TryMigrateStableTag(LauncherConfig config, string configPath, out string diagnostic)
     {
         diagnostic = "";
-        // Migrate known stale example tags to current published release where safe and unambiguous
+        // Migrate a stale Stable expected_ref ONLY when provably safe: the
+        // configured Stable checkout exists, is clean, and its HEAD already
+        // equals the v0.8.0 release commit. Otherwise fail closed WITHOUT
+        // touching the config file (preflight will surface recovery-only guidance).
         var stable = config.Profiles.FirstOrDefault(p => p.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        if (stable is not null && (stable.ExpectedRef == "refs/tags/v0.6.3" || stable.ExpectedRef == "refs/tags/v0.7.0" || stable.ExpectedRef == "origin/r07"))
+        if (stable is null || !StaleStableRefs.Contains(stable.ExpectedRef, StringComparer.Ordinal))
         {
-            var updated = new LauncherConfig
-            {
-                Version = config.Version,
-                CanonicalProduction = config.CanonicalProduction,
-                Profiles = config.Profiles.Select(p => p.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
-                    ? new LauncherProfile
-                    {
-                        Id = p.Id,
-                        DisplayName = p.DisplayName,
-                        Type = p.Type,
-                        Checkout = p.Checkout,
-                        ExpectedRef = "refs/tags/v0.8.0",
-                        DataDir = p.DataDir,
-                        Database = p.Database,
-                        OpenBrowser = p.OpenBrowser,
-                    }
-                    : p).ToList(),
-            };
-            try
-            {
-                File.WriteAllText(configPath, JsonSerializer.Serialize(updated, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }));
-                diagnostic = $"Launcher config migrated Stable expected_ref to refs/tags/v0.8.0 (from {stable.ExpectedRef}) where unambiguous.";
-            }
-            catch { /* migration diagnostic is best-effort; keep original if write fails */ }
-            return updated;
+            return config;
         }
-        return config;
+        if (!Directory.Exists(stable.Checkout))
+        {
+            diagnostic = "Stable expected_ref migration blocked: Stable checkout does not exist; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
+            return config;
+        }
+        string? head;
+        string? target;
+        try
+        {
+            head = RunGitRef(stable.Checkout, "HEAD");
+            target = RunGitRef(stable.Checkout, CurrentStableRef + "^{commit}");
+        }
+        catch
+        {
+            diagnostic = "Stable expected_ref migration blocked: release identity cannot be proven (git unavailable or v0.8.0 tag missing); config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
+            return config;
+        }
+        if (string.IsNullOrWhiteSpace(head) || string.IsNullOrWhiteSpace(target)
+            || !head.Equals(target, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostic = $"Stable expected_ref migration blocked: checkout HEAD {Short(head)} does not match release v0.8.0 {Short(target)}; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
+            return config;
+        }
+        try
+        {
+            var status = RunGitOutput(stable.Checkout, "status", "--porcelain");
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                diagnostic = "Stable expected_ref migration blocked: Stable checkout is not clean; config left unchanged. Recovery-only: make the checkout clean, then press «Обновить проверку».";
+                return config;
+            }
+        }
+        catch
+        {
+            diagnostic = "Stable expected_ref migration blocked: checkout cleanliness cannot be proven; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
+            return config;
+        }
+        var fromRef = stable.ExpectedRef;
+        var updated = new LauncherConfig
+        {
+            Version = config.Version,
+            CanonicalProduction = config.CanonicalProduction,
+            Profiles = config.Profiles.Select(p => p.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
+                ? new LauncherProfile
+                {
+                    Id = p.Id,
+                    DisplayName = p.DisplayName,
+                    Type = p.Type,
+                    Checkout = p.Checkout,
+                    ExpectedRef = CurrentStableRef,
+                    DataDir = p.DataDir,
+                    Database = p.Database,
+                    OpenBrowser = p.OpenBrowser,
+                }
+                : p).ToList(),
+        };
+        try
+        {
+            File.WriteAllText(configPath, JsonSerializer.Serialize(updated, new JsonSerializerOptions { WriteIndented = true }));
+            diagnostic = $"Launcher config migrated Stable expected_ref to {CurrentStableRef} (from {fromRef}); checkout HEAD proven at release commit.";
+        }
+        catch
+        {
+            diagnostic = "";
+            return config;
+        }
+        return updated;
     }
+
+    private static string Short(string? sha) => string.IsNullOrWhiteSpace(sha) ? "—" : sha[..Math.Min(7, sha.Length)];
+
+    private static string RunGitRef(string workingDirectory, string reference)
+    {
+        var output = RunGitOutput(workingDirectory, "rev-parse", "--verify", reference);
+        var value = output.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new LauncherValidationException($"Checkout Git identity cannot be read: empty result for '{reference}'.");
+        }
+        return value;
+    }
+
+    private static string RunGitOutput(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new LauncherValidationException("Could not start 'git'.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new LauncherValidationException($"Checkout Git identity cannot be read: {(string.IsNullOrWhiteSpace(standardError) ? standardOutput : standardError).Trim()}");
+        }
+        return standardOutput;
+    }
+
+    private static readonly HashSet<string> TopLevelAllowed = new(StringComparer.Ordinal)
+    {
+        "version", "canonical_production", "profiles",
+    };
+
+    private static readonly HashSet<string> CanonicalAllowed = new(StringComparer.Ordinal)
+    {
+        "checkout", "data_dir", "database",
+    };
+
+    private static readonly HashSet<string> ProfileAllowed = new(StringComparer.Ordinal)
+    {
+        "id", "display_name", "type", "checkout", "expected_ref", "data_dir", "database", "open_browser",
+    };
 
     private static LauncherConfig? TryStripUnknownFields(string raw, string configPath, out string diagnostic)
     {
         diagnostic = "";
         try
         {
-            using var doc = JsonDocument.Parse(raw);
-            var cleaned = StripUnknownFields(doc.RootElement);
-            var cleanedJson = JsonSerializer.Serialize(cleaned, new JsonSerializerOptions { WriteIndented = true });
+            var node = JsonNode.Parse(raw) as JsonObject;
+            if (node is null)
+            {
+                return null;
+            }
+            var stripped = false;
+            foreach (var key in node.Select(entry => entry.Key).ToList())
+            {
+                if (!TopLevelAllowed.Contains(key))
+                {
+                    node.Remove(key);
+                    stripped = true;
+                }
+            }
+            if (node["canonical_production"] is JsonObject canonical)
+            {
+                foreach (var key in canonical.Select(entry => entry.Key).ToList())
+                {
+                    if (!CanonicalAllowed.Contains(key))
+                    {
+                        canonical.Remove(key);
+                        stripped = true;
+                    }
+                }
+            }
+            if (node["profiles"] is JsonArray profiles)
+            {
+                foreach (var item in profiles)
+                {
+                    if (item is JsonObject profile)
+                    {
+                        foreach (var key in profile.Select(entry => entry.Key).ToList())
+                        {
+                            if (!ProfileAllowed.Contains(key))
+                            {
+                                profile.Remove(key);
+                                stripped = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!stripped)
+            {
+                return null;
+            }
+            var cleanedJson = node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             var cfg = JsonSerializer.Deserialize<LauncherConfig>(cleanedJson, JsonOptions);
-            if (cfg is not null)
+            if (cfg is null)
             {
-                diagnostic = "Launcher config contained unknown fields; they were removed automatically. Extra fields are not needed for normal use.";
-                try { File.WriteAllText(configPath, cleanedJson); } catch { }
-                return cfg;
+                return null;
             }
-        }
-        catch { }
-        diagnostic = "";
-        return null;
-    }
-
-    private static object StripUnknownFields(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var dict = new Dictionary<string, object?>();
-            foreach (var prop in element.EnumerateObject())
+            diagnostic = "Launcher config contained unknown fields; they were removed automatically. Extra fields are not needed for normal use.";
+            try
             {
-                // Keep only known top-level and profile fields
-                dict[prop.Name] = StripUnknownFields(prop.Value);
+                File.WriteAllText(configPath, JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true }));
             }
-            // Filter to known fields at top level? keep all but will be validated later
-            return dict;
+            catch
+            {
+                // Migration diagnostic is best-effort; config still usable in memory.
+            }
+            return cfg;
         }
-        if (element.ValueKind == JsonValueKind.Array)
+        catch
         {
-            return element.EnumerateArray().Select(StripUnknownFields).ToList();
+            return null;
         }
-        if (element.ValueKind == JsonValueKind.String) return element.GetString()!;
-        if (element.ValueKind == JsonValueKind.Number) return element.GetRawText();
-        if (element.ValueKind == JsonValueKind.True) return true;
-        if (element.ValueKind == JsonValueKind.False) return false;
-        return element.GetRawText();
     }
 
     public static readonly JsonSerializerOptions JsonOptions = new()

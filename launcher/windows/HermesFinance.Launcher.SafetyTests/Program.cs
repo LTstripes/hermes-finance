@@ -48,7 +48,12 @@ var tests = new (string Name, Action Run)[]
     ("offers launcher-owned action for identity mismatch", OffersActionableMismatch),
     ("exposes exactly one primary CTA per state", ExposesSinglePrimaryCta),
     ("summarizes health alembic deps checkout in plain language", SummarizesChecksPlainLanguage),
-    ("auto creates and migrates launcher config where safe", AutoCreatesAndMigratesConfig),
+    ("missing config fails closed without placeholder", MissingConfigFailsClosedWithoutPlaceholder),
+    ("strips real unknown fields or fails closed", StripsRealUnknownFieldsOrFailsClosed),
+    ("leaves stale Stable ref untouched when checkout is off release", LeavesStaleStableRefUntouchedWhenCheckoutOffRelease),
+    ("migrates stale Stable ref only when checkout proves release", MigratesStaleStableRefOnlyWhenCheckoutProvesRelease),
+    ("offers Refresh not Stop for external port collision", PortCollisionOffersRefreshNotStop),
+    ("marks Stable identity mismatch recovery-only", StableMismatchIsRecoveryOnly),
 };
 
 var failures = 0;
@@ -1007,33 +1012,214 @@ static void SummarizesChecksPlainLanguage()
     Assert(checks.Length > 0, "Health/Alembic/deps must be summarized in human plain language.");
 }
 
-static void AutoCreatesAndMigratesConfig()
+static void MissingConfigFailsClosedWithoutPlaceholder()
 {
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-config-{Guid.NewGuid():N}");
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-missing-config-{Guid.NewGuid():N}");
     Directory.CreateDirectory(root);
     try
     {
         var configPath = Path.Combine(root, "launcher", "config.json");
-        // Missing config should be auto-created from bundled template where safe
-        var bundled = Path.Combine(AppContext.BaseDirectory, "config.example.json");
-        Assert(File.Exists(bundled), "Bundled config.example.json must be present for auto-create.");
-        var created = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(File.Exists(configPath), "Missing config must be auto-created.");
-        Assert(created.Version == 1, "Auto-created config must be version 1.");
-        Assert(created.Profiles.Count == 2, "Auto-created config must contain Stable+Preview.");
-        Assert(!string.IsNullOrWhiteSpace(diag), "Auto-create should emit diagnostic.");
-
-        // Migration: old stable tag v0.6.3 should auto-migrate to v0.8.0 where unambiguous
-        var oldJson = File.ReadAllText(bundled).Replace("refs/tags/v0.8.0", "refs/tags/v0.6.3");
-        File.WriteAllText(configPath, oldJson);
-        var migrated = LauncherConfig.LoadOrCreate(configPath, out var diag2);
-        Assert(migrated.Profiles[0].ExpectedRef == "refs/tags/v0.8.0", "Old Stable tag must be auto-migrated to v0.8.0 where safe.");
-        Assert(diag2.Contains("migrated", StringComparison.OrdinalIgnoreCase), "Migration should be diagnosable.");
+        Assert(!File.Exists(configPath), "Fixture must start without a config file.");
+        try
+        {
+            LauncherConfig.LoadOrCreate(configPath, out _);
+            throw new InvalidOperationException("Missing config must fail closed, not auto-create.");
+        }
+        catch (LauncherValidationException exception)
+        {
+            Assert(exception.Message.Contains("not found", StringComparison.OrdinalIgnoreCase), "Missing config failure must say the config was not found.");
+            Assert(exception.Message.Contains("install.ps1", StringComparison.OrdinalIgnoreCase), "Missing config failure must point at launcher-owned setup (install.ps1).");
+        }
+        Assert(!File.Exists(configPath), "Missing config must NOT create a placeholder file demanding manual JSON.");
     }
     finally
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+static void StripsRealUnknownFieldsOrFailsClosed()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-unknown-fields-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    try
+    {
+        var checkout = Path.Combine(root, "checkout");
+        var dataDir = Path.Combine(root, "data");
+        var database = Path.Combine(dataDir, "finance.db");
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+        var valid = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = database },
+            Profiles =
+            [
+                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.8.0", DataDir = dataDir, Database = database, OpenBrowser = false },
+            ],
+        };
+        var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(valid)) as System.Text.Json.Nodes.JsonObject
+            ?? throw new InvalidOperationException("Could not build unknown-field fixture.");
+        node["token"] = "forbidden";
+        (node["canonical_production"] as System.Text.Json.Nodes.JsonObject)!["extra_canonical"] = "strip-me";
+        (node["profiles"] as System.Text.Json.Nodes.JsonArray)![0]!["unknown_field"] = 123;
+        File.WriteAllText(configPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var stripped = LauncherConfig.LoadOrCreate(configPath, out var diag);
+        Assert(stripped.Profiles.Count == 1 && stripped.Profiles[0].ExpectedRef == "refs/tags/v0.8.0", "Stripped config must keep known fields intact.");
+        Assert(diag.Contains("removed", StringComparison.OrdinalIgnoreCase) || diag.Contains("unknown", StringComparison.OrdinalIgnoreCase), "Unknown-field strip must be diagnosable.");
+        var rewritten = File.ReadAllText(configPath);
+        Assert(!rewritten.Contains("token", StringComparison.Ordinal), "Rewritten config must not keep the top-level unknown field.");
+        Assert(!rewritten.Contains("unknown_field", StringComparison.Ordinal), "Rewritten config must not keep the profile unknown field.");
+        Assert(!rewritten.Contains("extra_canonical", StringComparison.Ordinal), "Rewritten config must not keep the canonical unknown field.");
+
+        // Fail-closed: unknown field plus a schema break that stripping cannot repair.
+        var brokenPath = Path.Combine(root, "launcher", "broken.json");
+        File.WriteAllText(brokenPath, """{"version":1,"canonical_production":{"checkout":"C:\\x","data_dir":"C:\\x\\data","database":"C:\\x\\data\\finance.db"},"profiles":"not-an-array","token":"forbidden"}""");
+        var before = File.ReadAllText(brokenPath);
+        AssertThrows<JsonException>(() => LauncherConfig.LoadOrCreate(brokenPath, out _));
+        Assert(File.ReadAllText(brokenPath) == before, "Unrepairable config must be left untouched (fail closed).");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void LeavesStaleStableRefUntouchedWhenCheckoutOffRelease()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-nomigrate-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "checkout");
+    var dataDir = Path.Combine(root, "data");
+    try
+    {
+        CreateRuntimeLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "--local", "user.name", "Hermes Safety Test");
+        RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "synthetic stable at old release");
+        RunGit(checkout, "tag", "v0.6.3");
+        // No v0.8.0 tag exists and HEAD is not on v0.8.0: migration must not fire.
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db") },
+            Profiles =
+            [
+                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.6.3", DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db"), OpenBrowser = false },
+            ],
+        };
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+        var before = File.ReadAllText(configPath);
+
+        var loaded = LauncherConfig.LoadOrCreate(configPath, out var diag);
+        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.6.3", "Stale Stable ref must NOT be rewritten when the checkout is not proven at v0.8.0.");
+        Assert(File.ReadAllText(configPath) == before, "Config file must be byte-identical when migration is blocked.");
+        Assert(diag.Contains("blocked", StringComparison.OrdinalIgnoreCase), "Blocked migration must be diagnosable.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void MigratesStaleStableRefOnlyWhenCheckoutProvesRelease()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-migrate-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "checkout");
+    var dataDir = Path.Combine(root, "data");
+    try
+    {
+        CreateRuntimeLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "--local", "user.name", "Hermes Safety Test");
+        RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "synthetic stable at old release");
+        RunGit(checkout, "tag", "v0.6.3");
+        File.WriteAllText(Path.Combine(checkout, "release-marker.txt"), "synthetic v0.8.0 release");
+        RunGit(checkout, "add", "release-marker.txt");
+        RunGit(checkout, "commit", "-m", "synthetic stable at v0.8.0");
+        RunGit(checkout, "tag", "v0.8.0");
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db") },
+            Profiles =
+            [
+                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.6.3", DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db"), OpenBrowser = false },
+            ],
+        };
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+        var loaded = LauncherConfig.LoadOrCreate(configPath, out var diag);
+        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.8.0", "Stale Stable ref must migrate once HEAD is proven at the v0.8.0 release commit.");
+        Assert(diag.Contains("migrated", StringComparison.OrdinalIgnoreCase), "Proven migration must be diagnosable.");
+        Assert(File.ReadAllText(configPath).Contains("refs/tags/v0.8.0", StringComparison.Ordinal), "Migrated file must persist the new expected_ref.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void PortCollisionOffersRefreshNotStop()
+{
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.0");
+    var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
+    var portEx = new LauncherValidationException("Another Hermes instance is running; v1 is single-instance on port 8000.");
+
+    var planStable = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, stable, portEx);
+    var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, portEx);
+    Assert(planStable.Primary == LauncherPrimaryAction.Refresh, $"External port collision must offer Refresh, not {planStable.Primary} (Stable).");
+    Assert(planPreview.Primary == LauncherPrimaryAction.Refresh, $"External port collision must offer Refresh, not {planPreview.Primary} (Preview).");
+
+    var human = LauncherUi.OwnerFacingFailure(portEx.Message);
+    Assert(!human.Contains("«Остановить»", StringComparison.Ordinal), "Port-collision guidance must not promise a launcher Stop action.");
+    Assert(human.Contains("«Обновить проверку»", StringComparison.Ordinal), "Port-collision guidance must point at Refresh after manual stop.");
+
+    // Running (launcher-owned process) keeps Stop as the executable primary.
+    var planRunning = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Running, null, stable, null);
+    Assert(planRunning.Primary == LauncherPrimaryAction.Stop, "Running state must keep Stop for the launcher-owned process.");
+
+    // UI level: Blocked port must not enable Stop when the launcher owns no process.
+    var config = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    };
+    using var form = new MainForm(config);
+    var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException("Could not find ApplyBlocked for port-collision presentation.");
+    applyBlocked.Invoke(form, [stable, portEx, false, false]);
+    var buttons = AllControls(form).OfType<Button>().ToArray();
+    Assert(!buttons.Single(button => button.Text == "Остановить").Enabled, "Stop must be disabled for an external port collision the launcher cannot stop.");
+    Assert(buttons.Single(button => button.Text == "Обновить проверку").Enabled, "Refresh must be enabled for an external port collision.");
+}
+
+static void StableMismatchIsRecoveryOnly()
+{
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.0");
+    var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
+    var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
+
+    var planStable = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, stable, mismatch);
+    Assert(planStable.Primary == LauncherPrimaryAction.Refresh, $"Stable identity mismatch must be recovery-only Refresh, not {planStable.Primary}. No launcher-owned fix may be promised.");
+    var human = LauncherUi.OwnerFacingFailure(mismatch.Message);
+    Assert(!human.Contains("C:\\", StringComparison.Ordinal), "Human message must not leak raw paths.");
+    Assert(human.Contains("expected_ref", StringComparison.OrdinalIgnoreCase) || human.Contains("Обновить проверку", StringComparison.Ordinal), "Stable mismatch guidance must point at released-tag verification plus Refresh.");
+
+    // No regression for Preview: its mismatch stays launcher-owned Update.
+    var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
+    Assert(planPreview.Primary == LauncherPrimaryAction.Update, "Preview identity mismatch must keep launcher-owned Update.");
 }
 
 static LauncherConfig Config(string firstType, string secondType) => new()

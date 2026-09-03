@@ -218,7 +218,7 @@ internal static class LauncherUi
         }
         if (message.Contains("another hermes instance") || message.Contains("port 8000"))
         {
-            return "Другой экземпляр Hermes уже использует локальный порт. Нажмите «Остановить» или остановите другой процесс и «Обновить проверку».";
+            return "Локальный порт 127.0.0.1:8000 занят другим процессом. Launcher не останавливает чужие процессы: остановите другой Hermes вручную и нажмите «Обновить проверку».";
         }
         if (message.Contains("guarded startup") || message.Contains("not a hermes finance runtime"))
         {
@@ -262,9 +262,21 @@ internal static class LauncherUi
         {
             var msg = blockedException.Message.ToLowerInvariant();
             var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
+            var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
             if (msg.Contains("identity does not match") && isPreview)
             {
                 return new(LauncherPrimaryAction.Update, "Code identity не совпадает — нужно обновление Preview", "Preview отстал от canonical origin/main — нажмите «Обновить Preview»");
+            }
+            if (msg.Contains("identity does not match") && isStable)
+            {
+                // Stable is pinned: launcher never updates Stable, so a mismatch
+                // is recovery-only. Refresh re-checks; the fix happens outside
+                // the launcher (verify released tag / reinstall Stable).
+                return new(LauncherPrimaryAction.Refresh, "Stable code identity не совпадает — recovery-only", "Stable pinned: launcher не обновляет Stable. Проверьте released tag или переустановите Stable, затем «Обновить проверку»");
+            }
+            if (msg.Contains("identity is ambiguous") && isStable)
+            {
+                return new(LauncherPrimaryAction.Refresh, "Stable checkout изменён — recovery-only", "Сделайте Stable checkout чистым (released tag), затем «Обновить проверку». Launcher не исправляет Stable автоматически");
             }
             if (msg.Contains("dirty or conflicted") && isPreview)
             {
@@ -276,7 +288,9 @@ internal static class LauncherUi
             }
             if (msg.Contains("another hermes instance") || msg.Contains("port 8000"))
             {
-                return new(LauncherPrimaryAction.Stop, "Порт занят", "Остановите другой Hermes и «Обновить проверку»");
+                // External port collision: launcher owns no process to stop, so
+                // Stop would be a false action. Refresh is the honest primary.
+                return new(LauncherPrimaryAction.Refresh, "Порт занят внешним процессом", "Порт 127.0.0.1:8000 занят другим процессом — launcher не останавливает чужие процессы. Остановите его вручную и «Обновить проверку»");
             }
             if (msg.Contains("sidecar") || msg.Contains("unstamped"))
             {

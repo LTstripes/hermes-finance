@@ -17,7 +17,7 @@ Install the .NET 8 SDK, then run from this directory:
 .\package.ps1
 ```
 
-The script runs the automated safety harness (30 checks including #279 identity/CTA/config) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
+The script runs the automated safety harness (35 checks including #279 identity/CTA/config regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
 
 For an owner-facing install, run from this directory:
 
@@ -29,11 +29,11 @@ This packages the launcher, copies it and its bundled read-only helpers (`launch
 
 ## Owner configuration — launcher-owned, без ручного JSON в норме
 
-Launcher сам создаёт/мигрирует `%LOCALAPPDATA%\HermesFinance\launcher\config.json` там, где это безопасно и однозначно:
+`%LOCALAPPDATA%\HermesFinance\launcher\config.json` — launcher-first, без placeholder-файлов:
 
-- если файла нет — копирует bundled `config.example.json` ( `Stable: refs/tags/v0.8.0`, `Preview: refs/remotes/origin/main` );
-- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0` — мигрирует на `v0.8.0` где однозначно;
-- если есть неизвестные поля — удаляет их где безопасно.
+- если файла нет — launcher **не создаёт** placeholder из `config.example.json` (там `<absolute-...>` заглушки). Вместо этого fail closed с actionable guidance: run `install.ps1`, откройте launcher, нажмите «Обновить проверку». Авто-создание срабатывает только если bundled шаблон сам concrete (абсолютные пути, валидная shape) — shipped `config.example.json` таковым не является;
+- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0` — миграция на `v0.8.0` только при доказанной безопасности (Stable checkout существует, чист, HEAD == `v0.8.0^{commit}`); иначе config **не меняется**, preflight покажет recovery-only guidance;
+- если есть неизвестные поля — schema-aware strip (top-level / canonical / profile allowlists); что не чинится — fail closed без изменения файла.
 
 Обычный workflow **не требует** ручного редактирования `config.json`. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
 
@@ -67,11 +67,12 @@ The launcher requires Git, `uv`, Node.js/npm at check time (build time only for 
 Before PowerShell, it fail-closes with **человеческой сводкой** и подсвечивает **правильную primary CTA** вместо тупика:
 
 - `Stable`/`Preview` dirty worktree → `Заблокировано: checkout изменён — сделайте чистым и Обновить проверку`;
-- `identity does not match` на Preview → `Обновить Preview`;
+- `identity does not match` на Preview → `Обновить Preview`; на Stable → recovery-only `Обновить проверку` (launcher никогда не обновляет Stable, скрытого Stable update нет);
 - `sidecar`/`unstamped data` → `Обновить проверку` после исправления sidecar;
 - `schema`/`alembic` → `Обновить проверку` (схема несовместима);
-- `port 8000` занят → `Остановить` или освободить порт и `Обновить проверку`;
+- `port 8000` занят внешним процессом → launcher **не** предлагает ложный `Остановить` (чужие процессы не останавливает); primary — `Обновить проверку` после ручной остановки;
 - `dependency`/`npm`/`uv` — `Подготовить`/`Исправить`.
+- `Остановить` — только для launcher-owned running процесса (Running).
 
 Raw-детали — только в `Диагностика и логи`.
 

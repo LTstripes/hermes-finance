@@ -1221,6 +1221,14 @@ public sealed class MainForm : Form
     private void ApplyPrimaryPlan(LauncherProfile profile, LauncherReadinessState state, ValidatedProfile? validated, Exception? blockedEx)
     {
         var plan = LauncherUi.PlanPrimaryAction(state, validated, profile, blockedEx);
+        // Stop is executable only for a launcher-owned running process.
+        // An external port collision (Blocked, no owned process) must never
+        // present a false Stop action: downgrade to honest Refresh.
+        var ownsRunningProcess = _launcherProcess is not null && !_launcherProcess.HasExited;
+        if (plan.Primary == LauncherPrimaryAction.Stop && !ownsRunningProcess && state != LauncherReadinessState.Running)
+        {
+            plan = new(LauncherPrimaryAction.Refresh, "Порт занят внешним процессом", "Порт 127.0.0.1:8000 занят другим процессом — launcher не останавливает чужие процессы. Остановите его вручную и «Обновить проверку»");
+        }
         // Reset all to secondary disabled state first
         _prepare.Enabled = false;
         _repair.Enabled = false;
