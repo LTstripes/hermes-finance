@@ -173,7 +173,7 @@ public sealed class MainForm : Form
     {
         Dock = DockStyle.Fill,
         ColumnCount = 2,
-        RowCount = 1,
+        RowCount = 2,
         BackColor = Color.Transparent,
         Margin = new Padding(0),
     };
@@ -191,14 +191,31 @@ public sealed class MainForm : Form
         Dock = DockStyle.Fill,
         FlowDirection = FlowDirection.LeftToRight,
         WrapContents = false,
+        AutoScroll = true,
         BackColor = Color.Transparent,
         Margin = new Padding(-4, 0, 0, 0),
         Padding = new Padding(0),
     };
+    private readonly Button _prepare = new()
+    {
+        Text = "Подготовить",
+        Width = 116,
+        Height = 40,
+        Enabled = false,
+        AccessibleName = "Подготовить зависимости Hermes",
+    };
+    private readonly Button _repair = new()
+    {
+        Text = "Исправить",
+        Width = 100,
+        Height = 40,
+        Enabled = false,
+        AccessibleName = "Исправить зависимости Hermes",
+    };
     private readonly Button _start = new()
     {
-        Text = "Запустить Hermes",
-        Width = 148,
+        Text = "Запустить",
+        Width = 112,
         Height = 40,
         Enabled = false,
         AccessibleName = "Запустить Hermes",
@@ -430,16 +447,20 @@ public sealed class MainForm : Form
         _actions.Controls.Add(_secondaryButtons, 0, 1);
         _actions.Controls.Add(_lastLaunch, 1, 0);
         _actions.SetRowSpan(_lastLaunch, 2);
-        StyleButton(_start, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 0);
-        StyleButton(_stop, Color.FromArgb(255, 125, 139), Color.FromArgb(49, 22, 34), 1);
-        StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 2);
-        StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 3);
-        StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 4);
-        StyleButton(_updatePreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 5);
-        StyleButton(_updateAndStartPreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 6);
+        StyleButton(_prepare, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 0);
+        StyleButton(_repair, Color.FromArgb(255, 196, 116), Color.FromArgb(57, 39, 22), 1);
+        StyleButton(_start, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 2);
+        StyleButton(_stop, Color.FromArgb(255, 125, 139), Color.FromArgb(49, 22, 34), 3);
+        StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 4);
+        StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 5);
+        StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 6);
+        StyleButton(_updatePreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 7);
+        StyleButton(_updateAndStartPreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 8);
+        _actionButtons.Controls.Add(_prepare);
+        _actionButtons.Controls.Add(_repair);
         _actionButtons.Controls.Add(_start);
         _actionButtons.Controls.Add(_stop);
-        _actionButtons.Controls.Add(_open);
+        _secondaryButtons.Controls.Add(_open);
         _secondaryButtons.Controls.Add(_refresh);
         _secondaryButtons.Controls.Add(_detailsToggle);
         _secondaryButtons.Controls.Add(_updatePreview);
@@ -467,6 +488,8 @@ public sealed class MainForm : Form
         _root.Controls.Add(_detailsPanel, 0, 5);
         Controls.Add(_root);
 
+        _prepare.Click += async (_, _) => await PrepareSelectedAsync(repair: false);
+        _repair.Click += async (_, _) => await PrepareSelectedAsync(repair: true);
         _start.Click += async (_, _) => await StartSelectedAsync();
         _stop.Click += (_, _) => StopLaunchedStack("Hermes остановлен владельцем.");
         _open.Click += (_, _) => OpenHermes();
@@ -607,6 +630,7 @@ public sealed class MainForm : Form
             card.SetSelected(ReferenceEquals(card.Profile, profile));
         }
         SetSelectedIdentity(profile);
+        SetDependencyActions(enabled: false, preparationRequired: false);
         SetPreviewUpdateActions(profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: false);
         SetReadiness(profile, LauncherReadinessState.NotChecked);
         if (runPreflight)
@@ -660,7 +684,79 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task StartSelectedAsync()
+    private async Task PrepareSelectedAsync(bool repair)
+    {
+        if (_launcherProcess is not null && !_launcherProcess.HasExited)
+        {
+            ShowTransientMessage("Сначала остановите Hermes: изменение зависимостей во время работы заблокировано.");
+            return;
+        }
+        if (_config is null || _selectedProfile is null)
+        {
+            ShowConfigurationFailure();
+            return;
+        }
+
+        var profile = _selectedProfile;
+        SetDependencyActions(enabled: false, preparationRequired: false);
+        _start.Enabled = false;
+        _stop.Enabled = false;
+        _open.Enabled = false;
+        _refresh.Enabled = false;
+        SetPreviewUpdateActions(visible: false, enabled: false);
+        _profiles.Enabled = false;
+
+        try
+        {
+            var validated = await RunPreflightAsync(profile);
+            if (validated is null)
+            {
+                return;
+            }
+
+            SetDependencyActions(enabled: false, preparationRequired: false);
+            _start.Enabled = false;
+            _refresh.Enabled = false;
+            _open.Enabled = false;
+            if (!repair && validated.Dependencies?.Ready == true)
+            {
+                AppendDiagnostic("Prepare requested, but both locked dependency environments are already ready; no network action was needed.");
+                ApplyValidated(validated);
+                SetReadiness(profile, LauncherReadinessState.Ready, "Зависимости уже готовы. Можно нажать «Запустить».");
+                return;
+            }
+
+            SetReadiness(profile, repair ? LauncherReadinessState.Repairing : LauncherReadinessState.Preparing);
+            AppendDiagnostic(repair
+                ? "Explicit Repair requested: restoring locked backend and frontend dependencies for this profile."
+                : "Explicit Prepare requested: installing only missing or stale locked dependencies for this profile.");
+            await PrepareDependenciesAsync(validated.Checkout, repair);
+
+            var refreshed = await RunPreflightAsync(profile);
+            if (refreshed?.Dependencies?.Ready != true)
+            {
+                throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after the requested action.");
+            }
+
+            AppendDiagnostic(repair
+                ? "Dependency repair completed; no runtime was started."
+                : "Dependency preparation completed; no runtime was started.");
+        }
+        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            ApplyBlocked(profile, exception, allowDependencyAction: true);
+        }
+        finally
+        {
+            if (_launcherProcess is null || _launcherProcess.HasExited)
+            {
+                _profiles.Enabled = true;
+                _refresh.Enabled = true;
+            }
+        }
+    }
+
+    private async Task StartSelectedAsync(bool allowPreparation = false)
     {
         if (_launcherProcess is not null && !_launcherProcess.HasExited)
         {
@@ -674,6 +770,7 @@ public sealed class MainForm : Form
         }
 
         var profile = _selectedProfile;
+        SetDependencyActions(enabled: false, preparationRequired: false);
         _start.Enabled = false;
         _refresh.Enabled = false;
         _open.Enabled = false;
@@ -686,24 +783,30 @@ public sealed class MainForm : Form
 
         try
         {
-            if (validated.Dependencies?.RequiresPreparation == true)
+            if (validated.Dependencies?.Ready != true && allowPreparation)
             {
-                SetReadiness(profile, LauncherReadinessState.Starting, "Готовим только locked-зависимости выбранного профиля…");
-                AppendDiagnostic("Preparing only missing or stale locked dependencies; repeat launches skip ready environments.");
-                await PrepareDependenciesAsync(validated.Checkout);
+                SetDependencyActions(enabled: false, preparationRequired: false);
+                _start.Enabled = false;
+                _refresh.Enabled = false;
+                _open.Enabled = false;
+                SetReadiness(profile, LauncherReadinessState.Preparing, "Обновление Preview явно запрошено вместе с подготовкой locked-зависимостей…");
+                AppendDiagnostic("Update-and-start explicitly authorizes locked dependency preparation for this Preview action.");
+                await PrepareDependenciesAsync(validated.Checkout, repair: false);
                 validated = await RunPreflightAsync(profile)
-                    ?? throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after preparation.");
-                if (validated.Dependencies?.Ready != true)
-                {
-                    throw new LauncherValidationException("Locked frontend/backend dependencies are not ready after preparation.");
-                }
+                    ?? throw new LauncherValidationException("Preview dependencies are not ready after explicit preparation.");
             }
 
             if (validated.Dependencies?.Ready != true)
             {
-                throw new LauncherValidationException("Locked frontend/backend dependencies are not ready.");
+                SetReadiness(
+                    profile,
+                    LauncherReadinessState.NeedsPreparation,
+                    "Нажмите «Подготовить», чтобы owner-triggered восстановить locked-зависимости. Запуск пока заблокирован.");
+                AppendDiagnostic("Start remains read-only: dependency download/install requires an explicit Prepare or Repair action.");
+                return;
             }
 
+            SetDependencyActions(enabled: false, preparationRequired: false);
             SetReadiness(profile, LauncherReadinessState.Starting);
             AppendDiagnostic("Starting selected checkout's existing guarded startup and waiting for health probes.");
             SetLastLaunchStatus($"Последний запуск: стартует {profile.DisplayName}");
@@ -753,6 +856,13 @@ public sealed class MainForm : Form
             return;
         }
 
+        SetDependencyActions(enabled: false, preparationRequired: false);
+        _start.Enabled = false;
+        _refresh.Enabled = false;
+        _open.Enabled = false;
+        SetPreviewUpdateActions(visible: false, enabled: false);
+        _profiles.Enabled = false;
+
         try
         {
             SetReadiness(profile, LauncherReadinessState.Updating);
@@ -766,7 +876,7 @@ public sealed class MainForm : Form
             }
             if (startAfter)
             {
-                await StartSelectedAsync();
+                await StartSelectedAsync(allowPreparation: true);
             }
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
@@ -802,6 +912,9 @@ public sealed class MainForm : Form
             }
             _stop.Enabled = false;
             _open.Enabled = false;
+            SetDependencyActions(
+                enabled: _validatedProfile is not null,
+                preparationRequired: _validatedProfile?.Dependencies?.RequiresPreparation == true);
             SetPreviewUpdateActions(profile.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: true);
             _profiles.Enabled = true;
             _refresh.Enabled = true;
@@ -924,6 +1037,9 @@ public sealed class MainForm : Form
         if (process is null || process.HasExited)
         {
             _stop.Enabled = false;
+            SetDependencyActions(
+                enabled: _validatedProfile is not null,
+                preparationRequired: _validatedProfile?.Dependencies?.RequiresPreparation == true);
             _profiles.Enabled = true;
             _open.Enabled = false;
             SetPreviewUpdateActions(false, enabled: false);
@@ -942,6 +1058,9 @@ public sealed class MainForm : Form
             _profiles.Enabled = true;
             _start.Enabled = true;
             _refresh.Enabled = true;
+            SetDependencyActions(
+                enabled: _validatedProfile is not null,
+                preparationRequired: _validatedProfile?.Dependencies?.RequiresPreparation == true);
             SetPreviewUpdateActions(_selectedProfile?.Type.Equals("preview", StringComparison.OrdinalIgnoreCase) == true, enabled: true);
             SetReadiness(_selectedProfile, LauncherReadinessState.Stopped);
         }
@@ -967,20 +1086,23 @@ public sealed class MainForm : Form
         SetCheck(_dataCheck, LauncherUi.DataBoundary(validated.Profile.Type), true);
         SetCheck(
             _dependenciesCheck,
-            validated.Dependencies?.Ready == true ? "Готовы" : "Подготовим при запуске",
+            validated.Dependencies?.Ready == true ? "Готовы" : "Нажмите «Подготовить»",
             validated.Dependencies?.Ready == true);
         SetCheck(_serviceCheck, "Порт свободен", true);
-        _start.Text = state == LauncherReadinessState.NeedsPreparation
-            ? "Подготовить и запустить"
-            : "Запустить Hermes";
-        _start.Enabled = true;
+        _start.Text = "Запустить";
+        _start.Enabled = state == LauncherReadinessState.Ready;
+        SetDependencyActions(enabled: true, preparationRequired: state == LauncherReadinessState.NeedsPreparation);
         _open.Enabled = false;
         _refresh.Enabled = true;
         SetPreviewUpdateActions(validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: true);
         _ready = false;
     }
 
-    private void ApplyBlocked(LauncherProfile profile, Exception exception, bool allowRetry = false)
+    private void ApplyBlocked(
+        LauncherProfile profile,
+        Exception exception,
+        bool allowRetry = false,
+        bool allowDependencyAction = false)
     {
         AppendDiagnostic($"Start blocked for profile '{profile.Id}': {exception.Message}");
         _validatedProfile = null;
@@ -990,8 +1112,9 @@ public sealed class MainForm : Form
             LauncherReadinessState.Blocked,
             LauncherUi.OwnerFacingFailure(exception.Message) + "  Откройте «Диагностика и логи» при необходимости.");
         SetAllChecks("Не подтверждено", false);
-        _start.Text = "Запустить Hermes";
+        _start.Text = "Запустить";
         _start.Enabled = allowRetry;
+        SetDependencyActions(enabled: allowDependencyAction, preparationRequired: allowDependencyAction);
         _stop.Enabled = false;
         _open.Enabled = false;
         _refresh.Enabled = true;
@@ -1004,6 +1127,7 @@ public sealed class MainForm : Form
     {
         _selectedProfile = null;
         _validatedProfile = null;
+        SetDependencyActions(enabled: false, preparationRequired: false);
         _start.Enabled = false;
         _stop.Enabled = false;
         _open.Enabled = false;
@@ -1035,6 +1159,12 @@ public sealed class MainForm : Form
             return;
         }
         _shaSummary.Text = $"Current SHA: {validated.Head}   Target origin/main: — (Preview only)";
+    }
+
+    private void SetDependencyActions(bool enabled, bool preparationRequired)
+    {
+        _prepare.Enabled = enabled && preparationRequired;
+        _repair.Enabled = enabled;
     }
 
     private void SetPreviewUpdateActions(bool visible, bool enabled)
@@ -1129,7 +1259,8 @@ public sealed class MainForm : Form
         SetCheck(_dataCheck, "Canonical production data", true);
         SetCheck(_dependenciesCheck, "Готовы", true);
         SetCheck(_serviceCheck, "Порт свободен", true);
-        _start.Text = "Запустить Hermes";
+        SetDependencyActions(enabled: true, preparationRequired: false);
+        _start.Text = "Запустить";
         _start.Enabled = true;
         _refresh.Enabled = true;
         _profiles.Enabled = true;
@@ -1156,11 +1287,11 @@ public sealed class MainForm : Form
         _status.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
     }
 
-    private async Task PrepareDependenciesAsync(string checkout)
+    private async Task PrepareDependenciesAsync(string checkout, bool repair)
     {
         using var process = new Process
         {
-            StartInfo = DependencyValidator.BuildPreparationCommand(checkout),
+            StartInfo = DependencyValidator.BuildPreparationCommand(checkout, repair),
         };
         if (!process.Start())
         {
@@ -1182,7 +1313,8 @@ public sealed class MainForm : Form
         }
         if (process.ExitCode != 0)
         {
-            throw new LauncherValidationException($"Dependency preparation failed with exit code {process.ExitCode}.");
+            throw new LauncherValidationException(
+                $"Dependency {(repair ? "repair" : "preparation")} failed with exit code {process.ExitCode}.");
         }
     }
 

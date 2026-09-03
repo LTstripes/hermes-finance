@@ -9,6 +9,8 @@ internal enum LauncherReadinessState
     Ready,
     NeedsPreparation,
     Blocked,
+    Preparing,
+    Repairing,
     Starting,
     Updating,
     Running,
@@ -75,6 +77,8 @@ internal static class LauncherUi
         LauncherReadinessState.Ready => "ГОТОВО",
         LauncherReadinessState.NeedsPreparation => "НУЖНА ПОДГОТОВКА",
         LauncherReadinessState.Blocked => "ЗАБЛОКИРОВАНО",
+        LauncherReadinessState.Preparing => "ПОДГОТАВЛИВАЕМ",
+        LauncherReadinessState.Repairing => "ИСПРАВЛЯЕМ",
         LauncherReadinessState.Starting => "ЗАПУСКАЕМ",
         LauncherReadinessState.Updating => "ОБНОВЛЯЕМ",
         LauncherReadinessState.Running => "ЗАПУЩЕНО",
@@ -89,6 +93,8 @@ internal static class LauncherUi
         LauncherReadinessState.Ready => "Готово к запуску",
         LauncherReadinessState.NeedsPreparation => "Нужна подготовка зависимостей",
         LauncherReadinessState.Blocked => "Запуск заблокирован",
+        LauncherReadinessState.Preparing => "Подготавливаем зависимости",
+        LauncherReadinessState.Repairing => "Исправляем зависимости",
         LauncherReadinessState.Starting => "Hermes запускается",
         LauncherReadinessState.Updating => "Обновляем Preview",
         LauncherReadinessState.Running => "Hermes работает",
@@ -101,8 +107,10 @@ internal static class LauncherUi
         LauncherReadinessState.NotChecked => "Выберите профиль, чтобы проверить его готовность.",
         LauncherReadinessState.Checking => "Проверяем identity, данные, зависимости и loopback-порт.",
         LauncherReadinessState.Ready => "Все preflight-проверки пройдены. Можно запускать Hermes.",
-        LauncherReadinessState.NeedsPreparation => "При запуске launcher подготовит только locked-зависимости этого профиля.",
+        LauncherReadinessState.NeedsPreparation => "Нажмите «Подготовить» для явной установки только locked-зависимостей этого профиля.",
         LauncherReadinessState.Blocked => "Исправьте blocker в подготовленном runtime и повторите проверку.",
+        LauncherReadinessState.Preparing => "Выполняем owner-triggered установку только locked-зависимостей выбранного профиля.",
+        LauncherReadinessState.Repairing => "Принудительно восстанавливаем только locked-зависимости выбранного профиля.",
         LauncherReadinessState.Starting => "Ждём штатные health probes существующего guarded startup.",
         LauncherReadinessState.Updating => "Получаем canonical origin/main и обновляем только настроенный Preview checkout.",
         LauncherReadinessState.Running => "Сервис доступен только локально на 127.0.0.1:8000.",
@@ -171,7 +179,7 @@ internal static class LauncherUi
         }
         if (message.Contains("dependency") || message.Contains("npm") || message.Contains("uv "))
         {
-            return "Проверка локальных зависимостей не пройдена. Установите или восстановите инструменты и повторите проверку.";
+            return "Проверка зависимостей не пройдена. Нажмите «Подготовить» или «Исправить», если launcher может восстановить этот профиль.";
         }
         if (message.Contains("access") || message.Contains("permission"))
         {
@@ -198,7 +206,7 @@ internal static class LauncherUi
     public static Color StatusColor(LauncherReadinessState state) => state switch
     {
         LauncherReadinessState.Ready or LauncherReadinessState.Running => Color.FromArgb(102, 227, 190),
-        LauncherReadinessState.NeedsPreparation or LauncherReadinessState.Starting or LauncherReadinessState.Updating => Color.FromArgb(255, 196, 116),
+        LauncherReadinessState.NeedsPreparation or LauncherReadinessState.Preparing or LauncherReadinessState.Repairing or LauncherReadinessState.Starting or LauncherReadinessState.Updating => Color.FromArgb(255, 196, 116),
         LauncherReadinessState.Blocked => Color.FromArgb(255, 125, 139),
         LauncherReadinessState.Stopped => Color.FromArgb(190, 165, 255),
         _ => Color.FromArgb(148, 161, 181),
