@@ -97,7 +97,7 @@ public sealed class MainForm : Form
     {
         Dock = DockStyle.Fill,
         ColumnCount = 1,
-        RowCount = 4,
+        RowCount = 5,
         BackColor = Color.Transparent,
     };
     private readonly Label _selectedName = new()
@@ -115,6 +115,16 @@ public sealed class MainForm : Form
         Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
         ForeColor = MutedText,
         AutoEllipsis = true,
+    };
+    private readonly Label _shaSummary = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = new Font("Cascadia Mono", 8F),
+        ForeColor = Color.FromArgb(164, 190, 225),
+        AutoEllipsis = true,
+        Text = "Current SHA: —   Target origin/main: —",
+        Margin = new Padding(0, 0, 0, 3),
     };
     private readonly Panel _readinessPanel = new()
     {
@@ -222,6 +232,24 @@ public sealed class MainForm : Form
         Width = 154,
         Height = 40,
         AccessibleName = "Показать диагностику и логи",
+    };
+    private readonly Button _updatePreview = new()
+    {
+        Text = "Обновить Preview",
+        Width = 138,
+        Height = 40,
+        Enabled = false,
+        Visible = true,
+        AccessibleName = "Обновить Preview",
+    };
+    private readonly Button _updateAndStartPreview = new()
+    {
+        Text = "Обновить и запустить",
+        Width = 162,
+        Height = 40,
+        Enabled = false,
+        Visible = true,
+        AccessibleName = "Обновить и запустить Preview",
     };
     private readonly Label _lastLaunch = new()
     {
@@ -369,6 +397,7 @@ public sealed class MainForm : Form
         _header.SetRowSpan(_localPill, 3);
 
         _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
         _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
         _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -385,11 +414,12 @@ public sealed class MainForm : Form
         selectedHeader.Controls.Add(_selectedName, 0, 0);
         selectedHeader.Controls.Add(_selectedType, 1, 0);
         _selectedLayout.Controls.Add(selectedHeader, 0, 0);
+        _selectedLayout.Controls.Add(_shaSummary, 0, 1);
 
         BuildReadinessPanel();
-        _selectedLayout.Controls.Add(_readinessPanel, 0, 1);
+        _selectedLayout.Controls.Add(_readinessPanel, 0, 2);
         BuildChecks();
-        _selectedLayout.Controls.Add(_checks, 0, 2);
+        _selectedLayout.Controls.Add(_checks, 0, 3);
         _selectedPanel.Controls.Add(_selectedLayout);
 
         _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -405,11 +435,15 @@ public sealed class MainForm : Form
         StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 2);
         StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 3);
         StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 4);
+        StyleButton(_updatePreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 5);
+        StyleButton(_updateAndStartPreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 6);
         _actionButtons.Controls.Add(_start);
         _actionButtons.Controls.Add(_stop);
         _actionButtons.Controls.Add(_open);
         _secondaryButtons.Controls.Add(_refresh);
         _secondaryButtons.Controls.Add(_detailsToggle);
+        _secondaryButtons.Controls.Add(_updatePreview);
+        _secondaryButtons.Controls.Add(_updateAndStartPreview);
 
         var detailsLayout = new TableLayoutPanel
         {
@@ -437,6 +471,8 @@ public sealed class MainForm : Form
         _stop.Click += (_, _) => StopLaunchedStack("Hermes остановлен владельцем.");
         _open.Click += (_, _) => OpenHermes();
         _refresh.Click += async (_, _) => await RefreshSelectedAsync();
+        _updatePreview.Click += async (_, _) => await UpdatePreviewAsync(startAfter: false);
+        _updateAndStartPreview.Click += async (_, _) => await UpdatePreviewAsync(startAfter: true);
         _detailsToggle.Click += (_, _) => ToggleDetails();
         _profiles.Resize += (_, _) => ResizeProfileCards();
         Resize += (_, _) => ResizeProfileCards();
@@ -571,6 +607,7 @@ public sealed class MainForm : Form
             card.SetSelected(ReferenceEquals(card.Profile, profile));
         }
         SetSelectedIdentity(profile);
+        SetPreviewUpdateActions(profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: false);
         SetReadiness(profile, LauncherReadinessState.NotChecked);
         if (runPreflight)
         {
@@ -604,6 +641,10 @@ public sealed class MainForm : Form
 
             _validatedProfile = validated;
             AppendDiagnostic($"Release/tag check passed: {validated.Profile.ExpectedRef} -> {validated.Head}.");
+            if (validated.PreviewUpdate is not null)
+            {
+                AppendDiagnostic($"Preview code identity: current {validated.PreviewUpdate.CurrentSha}; target origin/main {validated.PreviewUpdate.TargetSha ?? "not available locally"}.");
+            }
             AppendDiagnostic("DB/Alembic, data identity, loopback port, and runtime layout checks passed.");
             AppendDiagnostic($"Dependency check: backend {validated.Dependencies?.BackendDetail}; frontend {validated.Dependencies?.FrontendDetail}.");
             ApplyValidated(validated);
@@ -681,6 +722,67 @@ public sealed class MainForm : Form
         }
     }
 
+    private async Task UpdatePreviewAsync(bool startAfter)
+    {
+        if (_launcherProcess is not null && !_launcherProcess.HasExited)
+        {
+            ShowTransientMessage("Сначала остановите Hermes: обновление Preview во время работы заблокировано.");
+            return;
+        }
+        if (_config is null || _selectedProfile is null)
+        {
+            ShowConfigurationFailure();
+            return;
+        }
+        if (!_selectedProfile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowTransientMessage("Обновить можно только настроенный Preview; Stable никогда не изменяется этим действием.");
+            return;
+        }
+
+        var profile = _selectedProfile;
+        _updatePreview.Enabled = false;
+        _updateAndStartPreview.Enabled = false;
+        _start.Enabled = false;
+        _refresh.Enabled = false;
+        _open.Enabled = false;
+        _profiles.Enabled = false;
+        var validated = await RunPreflightAsync(profile);
+        if (validated is null)
+        {
+            return;
+        }
+
+        try
+        {
+            SetReadiness(profile, LauncherReadinessState.Updating);
+            AppendDiagnostic("Explicit Preview update requested: fetching only origin/main for the configured Preview checkout.");
+            var result = await Task.Run(() => PreviewUpdateService.Update(validated));
+            AppendDiagnostic($"Preview update reached target SHA {result.TargetSha}; current SHA {result.CurrentSha}; changed={result.Updated}.");
+            var refreshed = await RunPreflightAsync(profile);
+            if (refreshed is null)
+            {
+                throw new LauncherValidationException("Preview update completed, but the refreshed Preview preflight did not pass.");
+            }
+            if (startAfter)
+            {
+                await StartSelectedAsync();
+            }
+        }
+        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            ApplyBlocked(profile, exception);
+        }
+        finally
+        {
+            if (_launcherProcess is null || _launcherProcess.HasExited)
+            {
+                _refresh.Enabled = true;
+                _profiles.Enabled = true;
+            }
+        }
+    }
+
     private void StartProcess(ValidatedProfile profile)
     {
         var process = new Process
@@ -700,6 +802,7 @@ public sealed class MainForm : Form
             }
             _stop.Enabled = false;
             _open.Enabled = false;
+            SetPreviewUpdateActions(profile.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: true);
             _profiles.Enabled = true;
             _refresh.Enabled = true;
             _ready = false;
@@ -714,6 +817,7 @@ public sealed class MainForm : Form
         {
             process.Start();
             _stop.Enabled = true;
+            SetPreviewUpdateActions(false, enabled: false);
             _profiles.Enabled = false;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
@@ -780,6 +884,7 @@ public sealed class MainForm : Form
             _start.Enabled = false;
             _stop.Enabled = true;
             _open.Enabled = true;
+            SetPreviewUpdateActions(false, enabled: false);
             SetReadiness(profile.Profile, LauncherReadinessState.Running);
             SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
             AppendDiagnostic("Health checks passed. Hermes Finance is ready on loopback.");
@@ -821,6 +926,7 @@ public sealed class MainForm : Form
             _stop.Enabled = false;
             _profiles.Enabled = true;
             _open.Enabled = false;
+            SetPreviewUpdateActions(false, enabled: false);
             return;
         }
 
@@ -836,6 +942,7 @@ public sealed class MainForm : Form
             _profiles.Enabled = true;
             _start.Enabled = true;
             _refresh.Enabled = true;
+            SetPreviewUpdateActions(_selectedProfile?.Type.Equals("preview", StringComparison.OrdinalIgnoreCase) == true, enabled: true);
             SetReadiness(_selectedProfile, LauncherReadinessState.Stopped);
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
@@ -855,6 +962,7 @@ public sealed class MainForm : Form
             ? LauncherReadinessState.NeedsPreparation
             : LauncherReadinessState.Ready;
         SetReadiness(validated.Profile, state);
+        SetShaSummary(validated);
         SetCheck(_identityCheck, "Проверено", true);
         SetCheck(_dataCheck, LauncherUi.DataBoundary(validated.Profile.Type), true);
         SetCheck(
@@ -868,6 +976,7 @@ public sealed class MainForm : Form
         _start.Enabled = true;
         _open.Enabled = false;
         _refresh.Enabled = true;
+        SetPreviewUpdateActions(validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: true);
         _ready = false;
     }
 
@@ -886,6 +995,7 @@ public sealed class MainForm : Form
         _stop.Enabled = false;
         _open.Enabled = false;
         _refresh.Enabled = true;
+        SetPreviewUpdateActions(profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: false);
         _profiles.Enabled = true;
         SetLastLaunchStatus("Последний запуск: заблокирован");
     }
@@ -897,6 +1007,7 @@ public sealed class MainForm : Form
         _start.Enabled = false;
         _stop.Enabled = false;
         _open.Enabled = false;
+        SetPreviewUpdateActions(false, enabled: false);
         _refresh.Enabled = true;
         _profiles.Enabled = false;
         _selectedName.Text = "Профили недоступны";
@@ -914,6 +1025,24 @@ public sealed class MainForm : Form
         _selectedName.Text = profile.DisplayName;
         _selectedType.Text = $"{LauncherUi.TypeBadge(profile.Type)}  /  {LauncherUi.DataBoundary(profile.Type)}";
         _selectedType.ForeColor = LauncherUi.AccentFor(profile.Type);
+    }
+
+    private void SetShaSummary(ValidatedProfile validated)
+    {
+        if (validated.PreviewUpdate is { } preview)
+        {
+            _shaSummary.Text = $"Current SHA: {preview.CurrentSha}   Target origin/main: {preview.TargetSha ?? "not available locally"}";
+            return;
+        }
+        _shaSummary.Text = $"Current SHA: {validated.Head}   Target origin/main: — (Preview only)";
+    }
+
+    private void SetPreviewUpdateActions(bool visible, bool enabled)
+    {
+        _updatePreview.Visible = true;
+        _updateAndStartPreview.Visible = true;
+        _updatePreview.Enabled = visible && enabled;
+        _updateAndStartPreview.Enabled = visible && enabled;
     }
 
     private void SetReadiness(LauncherProfile? profile, LauncherReadinessState state, string? description = null)

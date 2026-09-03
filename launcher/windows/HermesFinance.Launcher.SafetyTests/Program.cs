@@ -18,6 +18,7 @@ var tests = new (string Name, Action Run)[]
     ("loads the canonical config example", LoadsCanonicalConfigExample),
     ("rejects unknown config fields", RejectsUnknownConfigFields),
     ("presents the branded owner launcher surface", PresentsBrandedOwnerSurface),
+    ("exposes explicit Preview update actions and SHA labels", PresentsPreviewUpdateActions),
     ("keeps Stable and Preview data boundaries visibly distinct", KeepsProfileBoundariesDistinct),
     ("sanitizes raw paths from owner-facing blockers", SanitizesOwnerFacingBlockers),
     ("requires exactly one stable profile", RequiresExactlyOneStableProfile),
@@ -35,6 +36,9 @@ var tests = new (string Name, Action Run)[]
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
     ("accepts an annotated release tag that peels to HEAD", AcceptsAnnotatedReleaseTag),
+    ("updates only Preview to unreleased origin main and preserves its data", UpdatesPreviewAndPreservesData),
+    ("rejects dirty, conflicted, and unexpected Preview checkouts", RejectsUnsafePreviewUpdateStates),
+    ("rejects Stable as an update target", RejectsStableUpdate),
 };
 
 var failures = 0;
@@ -98,6 +102,21 @@ static void PresentsBrandedOwnerSurface()
 
     var status = controls.OfType<TextBox>().Single();
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
+}
+
+static void PresentsPreviewUpdateActions()
+{
+    using var form = MainForm.CreateSyntheticSmoke();
+    var controls = AllControls(form).ToArray();
+    var buttons = controls.OfType<Button>().ToArray();
+    var labels = controls.OfType<Label>().ToArray();
+
+    var updateButton = buttons.Single(button => button.Text == "Обновить Preview");
+    var updateAndStartButton = buttons.Single(button => button.Text == "Обновить и запустить");
+    Assert(updateButton.Parent is FlowLayoutPanel && !updateButton.Enabled, "Preview update must be present but disabled while Stable is selected.");
+    Assert(updateAndStartButton.Parent is FlowLayoutPanel && !updateAndStartButton.Enabled, "Update-and-start must be present but disabled while Stable is selected.");
+    Assert(labels.Any(label => label.Text.StartsWith("Current SHA:", StringComparison.Ordinal)), "The owner surface must show current and target code identity labels.");
+    Assert(updateButton.AccessibleName == "Обновить Preview", "The Preview update action must be accessible by name.");
 }
 
 static void KeepsProfileBoundariesDistinct()
@@ -548,6 +567,120 @@ static void AcceptsAnnotatedReleaseTag()
     }
 }
 
+static void UpdatesPreviewAndPreservesData()
+{
+    var fixture = CreatePreviewUpdateFixture();
+    try
+    {
+        var database = Path.Combine(fixture.DataDir, "finance.db");
+        var sidecar = Path.Combine(fixture.DataDir, ".hermes-data-identity.json");
+        File.WriteAllText(database, "synthetic Preview database; never Stable");
+        File.WriteAllText(sidecar, "{\"kind\":\"preview\",\"profile_id\":\"preview\"}");
+        var databaseBefore = File.ReadAllBytes(database);
+        var sidecarBefore = File.ReadAllText(sidecar);
+        var targetContent = File.ReadAllText(Path.Combine(fixture.Seed, "runtime-marker.txt"));
+        var profile = NewValidatedPreviewProfile(fixture.Preview, fixture.DataDir, database, fixture.CurrentSha);
+        var cleanStatus = RunGit(fixture.Preview, "status", "--porcelain=v1", "--untracked-files=all");
+        Assert(string.IsNullOrWhiteSpace(cleanStatus), $"The clean Preview fixture must start clean: {cleanStatus}");
+        Assert(RunGit(fixture.Preview, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}") == fixture.CurrentSha, "The Preview fixture must expose its initial origin/main commit.");
+
+        var result = PreviewUpdateService.Update(profile);
+
+        Assert(result.Updated, "An unreleased origin/main commit must update the Preview checkout.");
+        Assert(result.TargetSha == fixture.TargetSha, "Preview must update to the fetched origin/main commit, not a tag.");
+        Assert(RunGit(fixture.Preview, "rev-parse", "HEAD") == fixture.TargetSha, "Preview HEAD must equal origin/main after update.");
+        Assert(File.ReadAllText(Path.Combine(fixture.Preview, "runtime-marker.txt")) == targetContent, "Preview must receive the canonical main code.");
+        Assert(File.ReadAllBytes(database).SequenceEqual(databaseBefore), "Preview database bytes must remain unchanged.");
+        Assert(File.ReadAllText(sidecar) == sidecarBefore, "Preview data identity sidecar must remain unchanged.");
+        Assert(File.ReadAllText(fixture.StableMarker) == "stable untouched", "Stable data must remain untouched by Preview update.");
+        Assert(
+            ProfileValidator.AssertGitIdentity(profile.Profile, fixture.Preview, fixture.Seed) == fixture.TargetSha,
+            "A clean Preview at unreleased origin/main must remain an accepted identity without editing expected_ref.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void RejectsUnsafePreviewUpdateStates()
+{
+    var dirtyFixture = CreatePreviewUpdateFixture();
+    try
+    {
+        var dirtyProfile = NewValidatedPreviewProfile(dirtyFixture.Preview, dirtyFixture.DataDir, Path.Combine(dirtyFixture.DataDir, "finance.db"), dirtyFixture.CurrentSha);
+        File.WriteAllText(Path.Combine(dirtyFixture.Preview, "owner-edit.txt"), "must block");
+        AssertThrowsMessage(
+            () => PreviewUpdateService.Update(dirtyProfile),
+            "Preview checkout is dirty or conflicted; update is blocked.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(dirtyFixture.Root);
+    }
+
+    var conflictFixture = CreatePreviewUpdateFixture();
+    try
+    {
+        var conflictProfile = NewValidatedPreviewProfile(conflictFixture.Preview, conflictFixture.DataDir, Path.Combine(conflictFixture.DataDir, "finance.db"), conflictFixture.CurrentSha);
+        RunGit(conflictFixture.Preview, "fetch", "origin", "main");
+        File.WriteAllText(Path.Combine(conflictFixture.Preview, "runtime-marker.txt"), "local conflicting edit");
+        RunGit(conflictFixture.Preview, "add", "runtime-marker.txt");
+        RunGit(conflictFixture.Preview, "commit", "-m", "synthetic local preview edit");
+        Assert(RunGitMayFail(conflictFixture.Preview, "merge", "origin/main") != 0, "The synthetic conflict setup must fail to merge cleanly.");
+        var conflictStatus = RunGit(conflictFixture.Preview, "status", "--porcelain=v1", "--untracked-files=all");
+        Assert(!string.IsNullOrWhiteSpace(conflictStatus), $"The conflicted Preview fixture must expose a non-clean status: {conflictStatus}");
+        AssertThrowsMessage(
+            () => PreviewUpdateService.Update(conflictProfile),
+            "Preview checkout is dirty or conflicted; update is blocked.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(conflictFixture.Root);
+    }
+
+    var unexpectedFixture = CreatePreviewUpdateFixture();
+    try
+    {
+        var unexpectedProfile = NewValidatedPreviewProfile(unexpectedFixture.Preview, unexpectedFixture.DataDir, Path.Combine(unexpectedFixture.DataDir, "finance.db"), unexpectedFixture.CurrentSha);
+        File.WriteAllText(Path.Combine(unexpectedFixture.Preview, "unexpected-marker.txt"), "unexpected clean commit");
+        RunGit(unexpectedFixture.Preview, "add", "unexpected-marker.txt");
+        RunGit(unexpectedFixture.Preview, "commit", "-m", "synthetic unexpected preview commit");
+        AssertThrowsMessage(
+            () => PreviewUpdateService.Update(unexpectedProfile),
+            "Preview checkout identity is unexpected; update is blocked.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(unexpectedFixture.Root);
+    }
+}
+
+static void RejectsStableUpdate()
+{
+    var profile = new ValidatedProfile(
+        new LauncherProfile
+        {
+            Id = "stable",
+            DisplayName = "Stable",
+            Type = "stable",
+            Checkout = "C:\\stable",
+            ExpectedRef = "HEAD",
+            DataDir = "C:\\stable\\data",
+            Database = "C:\\stable\\data\\finance.db",
+            OpenBrowser = false,
+        },
+        "C:\\stable",
+        "C:\\stable\\data",
+        "C:\\stable\\data\\finance.db",
+        "stable-head",
+        "production");
+
+    AssertThrowsMessage(
+        () => PreviewUpdateService.Update(profile),
+        "Only the configured Preview profile may be updated.");
+}
+
 static LauncherConfig Config(string firstType, string secondType) => new()
 {
     Version = 1,
@@ -653,6 +786,63 @@ static void CreateDependencyValidationLayout(string checkout)
     Directory.CreateDirectory(Path.Combine(checkout, "frontend", "node_modules"));
 }
 
+static (string Root, string Seed, string Remote, string Preview, string DataDir, string StableMarker, string CurrentSha, string TargetSha) CreatePreviewUpdateFixture()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-preview-update-{Guid.NewGuid():N}");
+    var seed = Path.Combine(root, "seed");
+    var remote = Path.Combine(root, "preview-origin.git");
+    var preview = Path.Combine(root, "configured-preview");
+    var dataDir = Path.Combine(root, "preview-data");
+    var stableMarker = Path.Combine(root, "stable-data", "stable-marker.txt");
+    Directory.CreateDirectory(root);
+    Directory.CreateDirectory(Path.GetDirectoryName(stableMarker)!);
+    File.WriteAllText(stableMarker, "stable untouched");
+    Directory.CreateDirectory(remote);
+    RunGit(remote, "init", "--bare");
+    CreateRuntimeLayout(seed);
+    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "initial Preview runtime");
+    RunGit(seed, "init");
+    RunGit(seed, "config", "user.name", "Hermes Preview Safety Test");
+    RunGit(seed, "config", "user.email", "hermes-preview-safety-test");
+    RunGit(seed, "add", ".");
+    RunGit(seed, "commit", "-m", "initial synthetic Preview runtime");
+    RunGit(seed, "branch", "-M", "main");
+    RunGit(seed, "remote", "add", "origin", remote);
+    RunGit(seed, "push", "--set-upstream", "origin", "main");
+    var currentSha = RunGit(seed, "rev-parse", "HEAD");
+    RunGit(root, "clone", "-b", "main", remote, preview);
+    RunGit(preview, "config", "--local", "user.name", "Hermes Preview Safety Test");
+    RunGit(preview, "config", "--local", "user.email", "hermes-preview-safety-test");
+    RunGit(preview, "branch", "legacy-preview", currentSha);
+
+    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "unreleased canonical main runtime");
+    RunGit(seed, "add", "runtime-marker.txt");
+    RunGit(seed, "commit", "-m", "unreleased canonical main change");
+    RunGit(seed, "push", "origin", "main");
+    var targetSha = RunGit(seed, "rev-parse", "HEAD");
+    Directory.CreateDirectory(dataDir);
+    return (root, seed, remote, preview, dataDir, stableMarker, currentSha, targetSha);
+}
+
+static ValidatedProfile NewValidatedPreviewProfile(string checkout, string dataDir, string database, string currentSha) =>
+    new(
+        new LauncherProfile
+        {
+            Id = "preview",
+            DisplayName = "Preview",
+            Type = "preview",
+            Checkout = checkout,
+            ExpectedRef = "refs/heads/legacy-preview",
+            DataDir = dataDir,
+            Database = database,
+            OpenBrowser = false,
+        },
+        checkout,
+        dataDir,
+        database,
+        currentSha,
+        "preview");
+
 static void WriteCommandShim(string path, string contents)
 {
     File.WriteAllText(path, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -682,6 +872,29 @@ static string RunGit(string workingDirectory, params string[] arguments)
     process.WaitForExit();
     Assert(process.ExitCode == 0, $"Synthetic git command failed: {standardError.Trim()} {standardOutput.Trim()}".Trim());
     return standardOutput.Trim();
+}
+
+static int RunGitMayFail(string workingDirectory, params string[] arguments)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = "git",
+        WorkingDirectory = workingDirectory,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    foreach (var argument in arguments)
+    {
+        startInfo.ArgumentList.Add(argument);
+    }
+
+    using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start synthetic Git command.");
+    _ = process.StandardOutput.ReadToEnd();
+    _ = process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    return process.ExitCode;
 }
 
 static void DeleteSyntheticTree(string root)
