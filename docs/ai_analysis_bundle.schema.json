@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.0.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.1.0/schema.json",
   "title": "Hermes Finance AI Analysis Bundle",
   "description": "Versioned read-only multi-period financial analysis export. Financial calculations are supplied by authoritative Hermes backend services; this schema defines transport only.",
   "type": "object",
@@ -22,7 +22,7 @@
   "properties": {
     "$schema": {"type": "string"},
     "schema_name": {"const": "hermes.finance.ai_analysis_bundle"},
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "1.1.0"},
     "metadata": {"$ref": "#/$defs/metadata"},
     "coverage": {"$ref": "#/$defs/coverage"},
     "reporting_history": {
@@ -237,7 +237,7 @@
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/period"}
         },
-        "domains": {
+    "domains": {
           "type": "object",
           "additionalProperties": false,
           "required": ["capital", "passive_income", "salary_tax", "portfolio", "payouts"],
@@ -245,6 +245,8 @@
             "capital": {"$ref": "#/$defs/coverage_state"},
             "passive_income": {"$ref": "#/$defs/coverage_state"},
             "salary_tax": {"$ref": "#/$defs/coverage_state"},
+            "salary": {"$ref": "#/$defs/coverage_state"},
+            "iis_tax": {"$ref": "#/$defs/coverage_state"},
             "portfolio": {"$ref": "#/$defs/coverage_state"},
             "payouts": {"$ref": "#/$defs/coverage_state"}
           }
@@ -260,6 +262,26 @@
         "bond_coupons": {"$ref": "#/$defs/money_metric"},
         "dividends": {"$ref": "#/$defs/money_metric"},
         "other_capital_income": {"$ref": "#/$defs/money_metric"}
+      }
+    },
+    "salary_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gross",
+        "calculated_tax",
+        "calculated_net",
+        "actual_net",
+        "consistency",
+        "reason_codes"
+      ],
+      "properties": {
+        "gross": {"$ref": "#/$defs/money_metric"},
+        "calculated_tax": {"$ref": "#/$defs/money_metric"},
+        "calculated_net": {"$ref": "#/$defs/money_metric"},
+        "actual_net": {"$ref": "#/$defs/money_metric"},
+        "consistency": {"enum": ["consistent", "mismatch", "unavailable"]},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
       }
     },
     "reporting_kpis": {
@@ -285,10 +307,18 @@
         "liquid_capital_net": {"$ref": "#/$defs/money_metric"},
         "passive_income_actual": {"$ref": "#/$defs/money_metric"},
         "passive_income_actual_breakdown": {"$ref": "#/$defs/passive_breakdown"},
+        "salary": {"$ref": "#/$defs/salary_metrics"},
         "active_income_net": {"$ref": "#/$defs/money_metric"},
         "mandatory_expenses": {"$ref": "#/$defs/money_metric"},
         "saving_allocations": {"$ref": "#/$defs/money_metric"},
-        "monthly_cash_balance": {"$ref": "#/$defs/money_metric"},
+        "monthly_cash_balance": {
+          "description": "Deprecated compatibility alias for cash_flow_after_allocations; this is not a persisted cash balance.",
+          "$ref": "#/$defs/money_metric"
+        },
+        "cash_flow_after_allocations": {
+          "description": "Derived monthly cash-flow surplus after recorded income, expenses, and saving allocations; never physical cash.",
+          "$ref": "#/$defs/money_metric"
+        },
         "property_equity": {"$ref": "#/$defs/money_metric"},
         "market_value_change": {"$ref": "#/$defs/money_metric"},
         "investment_return": {"$ref": "#/$defs/ratio_metric"}
@@ -320,6 +350,26 @@
         },
         "kpis": {"$ref": "#/$defs/reporting_kpis"},
         "warning_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
+    "valuation_freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oldest_price_date",
+        "latest_price_date",
+        "stale_valuation_count",
+        "position_count",
+        "stale_valuation_share",
+        "reason_codes"
+      ],
+      "properties": {
+        "oldest_price_date": {"type": ["string", "null"], "format": "date"},
+        "latest_price_date": {"type": ["string", "null"], "format": "date"},
+        "stale_valuation_count": {"type": "integer", "minimum": 0},
+        "position_count": {"type": "integer", "minimum": 0},
+        "stale_valuation_share": {"$ref": "#/$defs/ratio_metric"},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
       }
     },
     "account": {
@@ -433,6 +483,12 @@
         "reporting_status": {"enum": ["closed", "draft"]},
         "selection_reason": {"enum": ["latest_closed", "latest_available"]},
         "coverage": {"$ref": "#/$defs/coverage_state"},
+        "missing_snapshot_account_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"}
+        },
+        "valuation_freshness": {"$ref": "#/$defs/valuation_freshness"},
         "accounts": {
           "type": "array",
           "items": {"$ref": "#/$defs/account"}
@@ -593,16 +649,32 @@
         "monthly_payment": {"$ref": "#/$defs/money_metric"}
       }
     },
+    "property_data_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warning_codes", "structured_snapshot_authoritative"],
+      "properties": {
+        "warning_codes": {"$ref": "#/$defs/reason_codes"},
+        "structured_snapshot_authoritative": {"const": true}
+      }
+    },
     "debts_and_real_estate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reporting_period", "debts", "real_estate", "mortgage_coverage", "liquidity_rule"],
+      "required": [
+        "reporting_period",
+        "debts",
+        "real_estate",
+        "mortgage_coverage",
+        "liquidity_rule"
+      ],
       "properties": {
         "reporting_period": {"$ref": "#/$defs/period"},
         "debts": {"$ref": "#/$defs/debt_summary"},
         "real_estate": {"$ref": "#/$defs/property_summary"},
         "mortgage_coverage": {"$ref": "#/$defs/ratio_metric"},
-        "liquidity_rule": {"const": "real_estate_and_mortgage_are_excluded_from_liquid_capital"}
+        "liquidity_rule": {"const": "real_estate_and_mortgage_are_excluded_from_liquid_capital"},
+        "property_data_quality": {"$ref": "#/$defs/property_data_quality"}
       }
     },
     "iis_account": {
@@ -673,11 +745,26 @@
         "warning_codes": {"$ref": "#/$defs/reason_codes"}
       }
     },
+    "iis_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes"],
+      "properties": {
+        "status": {"enum": ["complete", "partial", "unavailable"]},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
+      }
+    },
     "iis_and_tax": {
       "type": "object",
       "additionalProperties": false,
       "required": ["iis_accounts", "salary_tax_context"],
       "properties": {
+        "iis_coverage": {"$ref": "#/$defs/iis_coverage"},
+        "active_account_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"}
+        },
         "iis_accounts": {
           "type": "array",
           "items": {"$ref": "#/$defs/iis_account"}

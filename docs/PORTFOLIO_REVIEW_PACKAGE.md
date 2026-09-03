@@ -16,7 +16,7 @@ endpoint, a human-readable companion report, and a preview/download UI. It does
 not upload data, call a cloud service or LLM, persist an export, or refresh a
 provider.
 
-The existing `hermes.finance.ai_analysis_bundle` `1.0.0` contract remains unchanged
+The existing `hermes.finance.ai_analysis_bundle` `1.1.0` contract remains the source
 and remains the source contract for the first adapter. The review package is one
 new output contract, not a second financial model: its sections deliberately reuse
 the existing bundle's money, availability, provenance, payout-counting, and
@@ -25,7 +25,7 @@ contract without recalculating them.
 
 ## Gap audit against the current AI Analysis Bundle
 
-| Review need | Current `ai_analysis_bundle` v1.0.0 | R08 package decision |
+| Review need | Current `ai_analysis_bundle` v1.1.0 | R08 package decision |
 | --- | --- | --- |
 | Owner-selected concise/full output | One required, full-shaped export; no profile or requested scope | Require `profile` and a scope with requested sections |
 | Direct capital answer | Liquid capital is available inside each history point, but a consumer must locate the selected period | Add a selected-period `capital` section; keep total net worth unavailable until an accepted aggregate exists |

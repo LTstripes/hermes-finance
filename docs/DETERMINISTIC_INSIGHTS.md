@@ -89,10 +89,10 @@ already-built normalized result into a pure evaluator or add an additive
 preview-response integration, without introducing persistence or background
 provider work.
 
-The AI Analysis Bundle remains schema `1.0.0` with strict allowlists and
-version invariants.  Adding this endpoint's insight DTO to that bundle would
-require an additive bundle schema/version decision, so v1 leaves the bundle
-unchanged and records this as a follow-up boundary.
+The AI Analysis Bundle is now schema `1.1.0` with strict allowlists and version
+invariants. This task's additive data-quality fields do not add deterministic
+insights to the bundle; the insight DTO remains a separate endpoint and future
+integration still requires its own reviewed contract decision.
 
 No frontend formulas, migrations, new persistence tables, or UI are part of
 this slice.

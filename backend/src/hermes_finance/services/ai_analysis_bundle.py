@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
-from hermes_finance.domain.values import PercentageRate, RubleAmount
+from hermes_finance.domain.values import FINANCIAL_ROUNDING, PercentageRate, RubleAmount
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
     DEFAULT_TIMEZONE,
@@ -37,7 +37,7 @@ from hermes_finance.services.accounts import list_accounts
 from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.cash_balance import cash_balance_for_month
-from hermes_finance.services.debts import total_debts, total_included_debts
+from hermes_finance.services.debts import list_debts, total_debts, total_included_debts
 from hermes_finance.services.deposits import list_deposit_snapshots
 from hermes_finance.services.forecast_passive_income import forecast_passive_income
 from hermes_finance.services.goal_achievement import build_goal_achievement_summary
@@ -54,6 +54,7 @@ from hermes_finance.services.payout_calendar import (
 )
 from hermes_finance.services.positions import list_position_snapshots
 from hermes_finance.services.properties import (
+    list_property_snapshots,
     mortgage_coverage,
     property_equity,
     total_mortgage_balance,
@@ -64,10 +65,20 @@ from hermes_finance.services.salary import salary_tax_snapshot_for_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
-SCHEMA_VERSION = "1.0.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.0.0/schema.json"
+SCHEMA_VERSION = "1.1.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.1.0/schema.json"
 ORDERING_CONTRACT = "arrays_are_stably_sorted_as_defined_by_contract"
 ACTUAL_HISTORY_METRIC_PATH = "reporting_history[].kpis.passive_income_actual"
+PASSIVE_HISTORY_BEFORE_START = "passive_income_history_before_configured_start"
+PORTFOLIO_SNAPSHOT_MISSING = "portfolio_snapshot_missing"
+ACTIVE_ACCOUNT_SNAPSHOT_MISSING = "active_account_snapshot_missing"
+STALE_VALUATION = "stale_valuation"
+SALARY_NET_MISMATCH = "salary_net_mismatch"
+IIS_ACCOUNT_ABSENT = "iis_account_absent"
+IIS_TAX_DATA_UNCONFIGURED = "iis_tax_data_unconfigured"
+IIS_TAX_DATA_PARTIAL = "iis_tax_data_partial"
+PROPERTY_EQUITY_SUSPICIOUS_JUMP = "property_equity_suspicious_jump"
+DUPLICATE_PROPERTY_SNAPSHOT = "duplicate_property_snapshot"
 LIQUIDITY_RULE = "real_estate_and_mortgage_are_excluded_from_liquid_capital"
 IIS_RESULT_RULE = "only_received_tax_benefits_are_added_to_actual_result"
 DIVIDEND_COMPONENT_SOURCE = "actual_closed_month_dividend_average_annualized"
@@ -311,12 +322,42 @@ def assemble_ai_analysis_bundle(
     else:
         synthetic_cash_ref = account_refs[cash_type_account.id]
 
-    warnings: list[dict[str, str]] = []
+    all_position_rows = list_position_snapshots(session)
+    all_deposit_rows = list_deposit_snapshots(session)
+    all_cash_rows = list_cash_balances(session)
+    all_debt_rows = list_debts(session)
+    all_property_rows = list_property_snapshots(session)
+    positions_by_month = {}
+    deposits_by_month = {}
+    cash_by_month = {}
+    debts_by_month = {}
+    properties_by_month = {}
+    for row in all_position_rows:
+        positions_by_month.setdefault(row.reporting_month_id, []).append(row)
+    for row in all_deposit_rows:
+        deposits_by_month.setdefault(row.reporting_month_id, []).append(row)
+    for row in all_cash_rows:
+        cash_by_month.setdefault(row.reporting_month_id, []).append(row)
+    for row in all_debt_rows:
+        debts_by_month.setdefault(row.reporting_month_id, []).append(row)
+    for row in all_property_rows:
+        properties_by_month.setdefault(row.reporting_month_id, []).append(row)
+
+    start_tuple = parse_passive_income_history_start_month(
+        settings.passive_income_history_start_month if settings is not None else None
+    )
+
+    warnings_by_code: dict[str, dict[str, str]] = {}
 
     def add_warning(code: str, severity: str, scope: str, message: str) -> None:
         item = {"code": code, "severity": severity, "scope": scope, "message": message[:500]}
-        if item not in warnings:
-            warnings.append(item)
+        existing = warnings_by_code.get(code)
+        if existing is None or (_SEVERITY_RANK.get(severity, 9), scope, item["message"]) < (
+            _SEVERITY_RANK.get(existing["severity"], 9),
+            existing["scope"],
+            existing["message"],
+        ):
+            warnings_by_code[code] = item
 
     add_warning(
         "authoritative_market_value_change_unavailable",
@@ -333,6 +374,8 @@ def assemble_ai_analysis_bundle(
 
     history: list[dict[str, object]] = []
     previous_month: ReportingMonth | None = None
+    capital_quality_codes: set[str] = set()
+    salary_quality_codes: set[str] = set()
     for month in ordered_months:
         capital = liquid_capital_for_month(session, month.id)
         passive = passive_income_for_month(session, month.id)
@@ -341,10 +384,84 @@ def assemble_ai_analysis_bundle(
         point_warnings: list[str] = []
         coverage_reasons: list[str] = []
         draft_codes: list[str] = []
+        month_positions = positions_by_month.get(month.id, [])
+        month_deposits = deposits_by_month.get(month.id, [])
+        month_cash = cash_by_month.get(month.id, [])
+        month_debts = debts_by_month.get(month.id, [])
+        has_capital_evidence = bool(month_positions or month_deposits or month_cash or month_debts)
+        if not has_capital_evidence:
+            coverage_reasons.append(PORTFOLIO_SNAPSHOT_MISSING)
+            point_warnings.append(PORTFOLIO_SNAPSHOT_MISSING)
+            capital_quality_codes.add(PORTFOLIO_SNAPSHOT_MISSING)
+            add_warning(
+                PORTFOLIO_SNAPSHOT_MISSING,
+                "warning",
+                "reporting_history",
+                "No persisted portfolio/debt snapshot exists for this reporting month; capital is unavailable, not zero.",
+            )
+
+        salary_snapshot = salary_tax_snapshot_for_month(session, month.id)
+        salary_codes = list(salary_snapshot.warning_codes)
+        salary_consistency = "unavailable"
+        if (
+            salary_snapshot.calculated_tax_kopecks is not None
+            and salary_snapshot.calculated_net_kopecks is not None
+        ):
+            salary_consistency = "consistent"
+            if (
+                salary_snapshot.gross_kopecks - salary_snapshot.calculated_tax_kopecks
+                != salary_snapshot.actual_net_kopecks
+            ):
+                salary_consistency = "mismatch"
+                salary_codes.append(SALARY_NET_MISMATCH)
+                salary_quality_codes.add(SALARY_NET_MISMATCH)
+                point_warnings.append(SALARY_NET_MISMATCH)
+                add_warning(
+                    SALARY_NET_MISMATCH,
+                    "warning",
+                    "reporting_history",
+                    "Actual salary net differs from gross minus calculated tax; the two values remain separate persisted and derived facts.",
+                )
+        salary_block = {
+            "gross": _metric(
+                salary_snapshot.gross_kopecks,
+                source="persisted_actual",
+                reason_codes=salary_codes,
+            ),
+            "calculated_tax": _metric(
+                salary_snapshot.calculated_tax_kopecks,
+                source="backend_derived",
+                reason_codes=salary_codes,
+            ),
+            "calculated_net": _metric(
+                salary_snapshot.calculated_net_kopecks,
+                source="backend_derived",
+                reason_codes=salary_codes,
+            ),
+            "actual_net": _metric(
+                salary_snapshot.actual_net_kopecks,
+                source="persisted_actual",
+                reason_codes=salary_codes,
+            ),
+            "consistency": salary_consistency,
+            "reason_codes": sorted(set(salary_codes)),
+        }
+        passive_history_before_start = (
+            start_tuple is not None and (month.year, month.month) < start_tuple
+        )
+        if passive_history_before_start:
+            coverage_reasons.append(PASSIVE_HISTORY_BEFORE_START)
+            point_warnings.append(PASSIVE_HISTORY_BEFORE_START)
         if month.status == "draft":
             coverage_reasons.append("draft_month_incomplete")
             point_warnings.append("draft_month_incomplete")
             draft_codes.append("draft_value")
+        capital_codes = draft_codes.copy()
+        if not has_capital_evidence:
+            capital_codes.append(PORTFOLIO_SNAPSHOT_MISSING)
+        passive_codes = draft_codes.copy()
+        if passive_history_before_start:
+            passive_codes.append(PASSIVE_HISTORY_BEFORE_START)
         if previous_month is not None:
             expected_year, expected_month = previous_month.year, previous_month.month + 1
             if expected_month == 13:
@@ -358,9 +475,7 @@ def assemble_ai_analysis_bundle(
         mapped = _MONTH_SOURCE.get(month.source)
         if mapped:
             provenance_sources.add(mapped)
-        for snapshot in list_position_snapshots(session):
-            if snapshot.reporting_month_id != month.id:
-                continue
+        for snapshot in month_positions:
             if snapshot.price_source == "t_invest":
                 provenance_sources.add("t_invest")
             elif snapshot.price_source == "alfa_pdf":
@@ -378,47 +493,58 @@ def assemble_ai_analysis_bundle(
                 "provenance_sources": sorted(provenance_sources),
                 "kpis": {
                     "liquid_assets_total": _metric(
-                        capital.total_assets.kopecks,
+                        capital.total_assets.kopecks if has_capital_evidence else None,
                         source="backend_derived",
-                        reason_codes=draft_codes,
+                        reason_codes=capital_codes,
                     ),
                     "included_debts": _metric(
-                        capital.total_debts_included.kopecks,
+                        capital.total_debts_included.kopecks if has_capital_evidence else None,
                         source="backend_derived",
-                        reason_codes=draft_codes,
+                        reason_codes=capital_codes,
                     ),
                     "liquid_capital_net": _metric(
-                        capital.liquid_capital_net.kopecks,
+                        capital.liquid_capital_net.kopecks if has_capital_evidence else None,
                         source="backend_derived",
-                        reason_codes=draft_codes,
+                        reason_codes=capital_codes,
                     ),
                     "passive_income_actual": _metric(
-                        passive.total_net_passive_income.kopecks,
+                        passive.total_net_passive_income.kopecks
+                        if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                        else None,
                         source="backend_derived",
-                        reason_codes=draft_codes,
+                        reason_codes=passive_codes,
                     ),
                     "passive_income_actual_breakdown": {
                         "deposit_interest": _metric(
-                            passive.breakdown.deposit_interest.kopecks,
+                            passive.breakdown.deposit_interest.kopecks
+                            if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                            else None,
                             source="backend_derived",
-                            reason_codes=draft_codes,
+                            reason_codes=passive_codes,
                         ),
                         "bond_coupons": _metric(
-                            passive.breakdown.bond_coupons.kopecks,
+                            passive.breakdown.bond_coupons.kopecks
+                            if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                            else None,
                             source="backend_derived",
-                            reason_codes=draft_codes,
+                            reason_codes=passive_codes,
                         ),
                         "dividends": _metric(
-                            passive.breakdown.dividends.kopecks,
+                            passive.breakdown.dividends.kopecks
+                            if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                            else None,
                             source="backend_derived",
-                            reason_codes=draft_codes,
+                            reason_codes=passive_codes,
                         ),
                         "other_capital_income": _metric(
-                            passive.breakdown.other_capital_income.kopecks,
+                            passive.breakdown.other_capital_income.kopecks
+                            if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                            else None,
                             source="backend_derived",
-                            reason_codes=draft_codes,
+                            reason_codes=passive_codes,
                         ),
                     },
+                    "salary": salary_block,
                     "active_income_net": _metric(
                         cash.breakdown.salary_net.kopecks
                         + cash.breakdown.bonus_net.kopecks
@@ -438,12 +564,27 @@ def assemble_ai_analysis_bundle(
                         reason_codes=draft_codes,
                     ),
                     "monthly_cash_balance": _metric(
-                        cash.total.kopecks,
+                        cash.total.kopecks
+                        if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                        else None,
                         source="backend_derived",
-                        reason_codes=draft_codes,
+                        reason_codes=passive_codes,
+                    ),
+                    "cash_flow_after_allocations": _metric(
+                        cash.total.kopecks
+                        if PASSIVE_HISTORY_BEFORE_START not in passive_codes
+                        else None,
+                        source="backend_derived",
+                        reason_codes=passive_codes,
                     ),
                     "property_equity": _metric(
-                        equity.kopecks, source="backend_derived", reason_codes=draft_codes
+                        equity.kopecks if properties_by_month.get(month.id) else None,
+                        source="backend_derived",
+                        reason_codes=(
+                            draft_codes
+                            if properties_by_month.get(month.id)
+                            else [*draft_codes, "property_snapshot_missing"]
+                        ),
                     ),
                     "market_value_change": _metric(
                         None,
@@ -562,6 +703,56 @@ def assemble_ai_analysis_bundle(
         row for row in list_cash_balances(session) if row.reporting_month_id == current.id
     ]
 
+    def account_has_current_snapshot(account) -> bool:
+        if any(row.account_id == account.id for row in selected_positions):
+            return True
+        if any(row.account_id == account.id for row in selected_deposits):
+            return True
+        if any(row.account_id == account.id for row in selected_cash):
+            return True
+        return account.account_type == "cash" and bool(selected_cash)
+
+    missing_snapshot_accounts = [
+        row
+        for row in account_rows
+        if row.status == "active"
+        and row.include_in_capital
+        and not account_has_current_snapshot(row)
+    ]
+    missing_snapshot_refs = [account_refs[row.id] for row in missing_snapshot_accounts]
+    if missing_snapshot_refs:
+        add_warning(
+            ACTIVE_ACCOUNT_SNAPSHOT_MISSING,
+            "warning",
+            "current_portfolio",
+            "One or more active capital-included accounts have no snapshot for the selected reporting month; their value is unavailable, not zero.",
+        )
+
+    price_dates = [row.price_date for row in selected_positions]
+    stale_positions = [
+        row
+        for row in selected_positions
+        if row.price_date < current.snapshot_date
+        or (
+            quote_by_snapshot.get(row.id) is not None
+            and quote_by_snapshot[row.id].freshness == "stale"
+        )
+    ]
+    stale_valuation_count = len(stale_positions)
+    position_count = len(selected_positions)
+    stale_share = None
+    if position_count:
+        stale_share = (
+            Decimal(stale_valuation_count) * Decimal(100) / Decimal(position_count)
+        ).quantize(Decimal("0.01"), rounding=FINANCIAL_ROUNDING)
+    if stale_valuation_count:
+        add_warning(
+            STALE_VALUATION,
+            "warning",
+            "current_portfolio",
+            "At least one position uses a price dated before the selected reporting snapshot; persisted valuation remains authoritative.",
+        )
+
     accounts_out = [
         {
             "ref": account_refs[row.id],
@@ -610,13 +801,6 @@ def assemble_ai_analysis_bundle(
                 "provider": quote.provider,
                 "observed_at": _dt(quote.applied_at_utc),
             }
-            if quote.freshness == "stale":
-                add_warning(
-                    "stale_quote",
-                    "warning",
-                    "current_portfolio",
-                    "At least one position quote is marked stale; persisted valuation remains authoritative.",
-                )
         else:
             valuation = _provenance(row.price_source, row.updated_at)
         quantity = format(row.quantity, "f").rstrip("0").rstrip(".")
@@ -684,9 +868,12 @@ def assemble_ai_analysis_bundle(
         )
     cash_out.sort(key=lambda item: (item["account_ref"], item["name"]))
 
-    portfolio_coverage = _coverage("complete")
+    portfolio_coverage_reasons = [ACTIVE_ACCOUNT_SNAPSHOT_MISSING] if missing_snapshot_refs else []
     if selection_reason == "latest_available" and current.status == "draft":
-        portfolio_coverage = _coverage("partial", "draft_value")
+        portfolio_coverage_reasons.append("draft_value")
+    portfolio_coverage = _coverage(
+        "partial" if portfolio_coverage_reasons else "complete", *portfolio_coverage_reasons
+    )
 
     current_portfolio = {
         "reporting_period": _period(current.year, current.month),
@@ -694,6 +881,19 @@ def assemble_ai_analysis_bundle(
         "reporting_status": current.status,
         "selection_reason": selection_reason,
         "coverage": portfolio_coverage,
+        "missing_snapshot_account_refs": sorted(missing_snapshot_refs),
+        "valuation_freshness": {
+            "oldest_price_date": min(price_dates).isoformat() if price_dates else None,
+            "latest_price_date": max(price_dates).isoformat() if price_dates else None,
+            "stale_valuation_count": stale_valuation_count,
+            "position_count": position_count,
+            "stale_valuation_share": _ratio(
+                stale_share,
+                reason_codes=[STALE_VALUATION] if stale_valuation_count else (),
+                available=stale_share is not None,
+            ),
+            "reason_codes": [STALE_VALUATION] if stale_valuation_count else [],
+        },
         "accounts": accounts_out,
         "instruments": instruments_out,
         "positions": positions_out,
@@ -777,6 +977,34 @@ def assemble_ai_analysis_bundle(
         )
         or 0
     )
+    property_quality_codes: set[str] = set()
+    for rows in properties_by_month.values():
+        names = [row.name.strip().casefold() for row in rows]
+        if len(names) != len(set(names)):
+            property_quality_codes.add(DUPLICATE_PROPERTY_SNAPSHOT)
+            add_warning(
+                DUPLICATE_PROPERTY_SNAPSHOT,
+                "warning",
+                "debts_and_real_estate",
+                "A reporting month contains duplicate structured property snapshots; totals are preserved and require owner review.",
+            )
+    previous_property_equity: int | None = None
+    for month in ordered_months:
+        rows = properties_by_month.get(month.id, [])
+        if not rows:
+            continue
+        month_equity = sum(
+            row.estimated_value_kopecks - row.mortgage_balance_kopecks for row in rows
+        )
+        if previous_property_equity and month_equity == previous_property_equity * 2:
+            property_quality_codes.add(PROPERTY_EQUITY_SUSPICIOUS_JUMP)
+            add_warning(
+                PROPERTY_EQUITY_SUSPICIOUS_JUMP,
+                "warning",
+                "debts_and_real_estate",
+                "Property equity exactly doubled between adjacent persisted snapshots; structured values are preserved and require owner review.",
+            )
+        previous_property_equity = month_equity
     excluded = RubleAmount(all_debts.kopecks - included.kopecks)
     debts_and_real_estate = {
         "reporting_period": _period(current.year, current.month),
@@ -800,10 +1028,58 @@ def assemble_ai_analysis_bundle(
             reason_codes=[] if coverage_pct is not None else ["no_mortgage"],
         ),
         "liquidity_rule": LIQUIDITY_RULE,
+        "property_data_quality": {
+            "warning_codes": sorted(property_quality_codes),
+            "structured_snapshot_authoritative": True,
+        },
     }
 
     iis_accounts = []
     profiles = session.scalars(select(IisProfile).order_by(IisProfile.id)).all()
+    active_iis_accounts = [
+        row for row in account_rows if row.account_type == "iis" and row.status == "active"
+    ]
+    profile_account_ids = {profile.account_id for profile in profiles}
+    iis_coverage_reasons: list[str] = []
+    if not active_iis_accounts:
+        iis_coverage = _coverage("unavailable", IIS_ACCOUNT_ABSENT)
+        add_warning(
+            IIS_ACCOUNT_ABSENT,
+            "info",
+            "iis_and_tax",
+            "No active IIS account is configured; an empty IIS array represents absence, not missing tax data.",
+        )
+    else:
+        if any(row.id not in profile_account_ids for row in active_iis_accounts):
+            iis_coverage_reasons.append(IIS_TAX_DATA_UNCONFIGURED)
+            add_warning(
+                IIS_TAX_DATA_UNCONFIGURED,
+                "warning",
+                "iis_and_tax",
+                "An active IIS account has no tax profile; its tax data is unconfigured, not absent.",
+            )
+        if any(
+            profile.account_id in {row.id for row in active_iis_accounts}
+            and not session.scalar(
+                select(func.count(IisContribution.id)).where(
+                    IisContribution.account_id == profile.account_id
+                )
+            )
+            and not session.scalar(
+                select(func.count(TaxBenefit.id)).where(TaxBenefit.account_id == profile.account_id)
+            )
+            for profile in profiles
+        ):
+            iis_coverage_reasons.append(IIS_TAX_DATA_PARTIAL)
+            add_warning(
+                IIS_TAX_DATA_PARTIAL,
+                "warning",
+                "iis_and_tax",
+                "An IIS profile exists but has no contribution or tax-benefit records; coverage is partial.",
+            )
+        iis_coverage = _coverage(
+            "partial" if iis_coverage_reasons else "complete", *iis_coverage_reasons
+        )
     for profile in profiles:
         result = iis_result(session, account_id=profile.account_id, reporting_month_id=current.id)
         contributions = session.scalars(
@@ -978,11 +1254,17 @@ def assemble_ai_analysis_bundle(
     closed_count = sum(1 for item in ordered_months if item.status == "closed")
     draft_count = sum(1 for item in ordered_months if item.status == "draft")
     domains = {
-        "capital": _coverage("complete"),
+        "capital": _coverage(
+            "partial" if capital_quality_codes else "complete", *sorted(capital_quality_codes)
+        ),
         "passive_income": _coverage("partial" if average_reasons else "complete", *average_reasons),
         "salary_tax": _coverage(
             "unavailable" if salary_warning_codes else "complete", *salary_warning_codes
         ),
+        "salary": _coverage(
+            "partial" if salary_quality_codes else "complete", *sorted(salary_quality_codes)
+        ),
+        "iis_tax": iis_coverage,
         "portfolio": portfolio_coverage,
         "payouts": _coverage("partial" if payout_warnings else "complete", *payout_warnings),
     }
@@ -995,8 +1277,9 @@ def assemble_ai_analysis_bundle(
         "domains": domains,
     }
 
-    warnings.sort(
-        key=lambda item: (_SEVERITY_RANK.get(item["severity"], 9), item["code"], item["scope"])
+    warnings = sorted(
+        warnings_by_code.values(),
+        key=lambda item: (_SEVERITY_RANK.get(item["severity"], 9), item["code"], item["scope"]),
     )
 
     bundle = {
@@ -1026,7 +1309,12 @@ def assemble_ai_analysis_bundle(
         },
         "goals": goals_out,
         "debts_and_real_estate": debts_and_real_estate,
-        "iis_and_tax": {"iis_accounts": iis_accounts, "salary_tax_context": salary_tax_context},
+        "iis_and_tax": {
+            "iis_coverage": iis_coverage,
+            "active_account_refs": sorted(account_refs[row.id] for row in active_iis_accounts),
+            "iis_accounts": iis_accounts,
+            "salary_tax_context": salary_tax_context,
+        },
         "upcoming_cash_flows": upcoming,
         "warnings": warnings,
     }

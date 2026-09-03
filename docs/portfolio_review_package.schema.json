@@ -254,7 +254,7 @@
         },
         "generation_mode": {"const": "read_only"},
         "source_contract_name": {"const": "hermes.finance.ai_analysis_bundle"},
-        "source_contract_version": {"const": "1.0.0"},
+        "source_contract_version": {"const": "1.1.0"},
         "calculation_versions": {
           "type": "object",
           "additionalProperties": false,

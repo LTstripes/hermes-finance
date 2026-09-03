@@ -257,6 +257,20 @@ def test_incomplete_salary_tax_history_is_warning_not_blocker(tmp_path: Path) ->
     assert CloseReadinessSeverity.HARD_BLOCKER.value not in _severities(result)
 
 
+def test_active_capital_account_without_monthly_snapshot_is_warning(tmp_path: Path) -> None:
+    session, _database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))
+    create_account(session, name="Synthetic Missing Snapshot", account_type=AccountType.BROKERAGE)
+
+    result = build_close_readiness(session, month.id, today=TODAY)
+
+    missing = _by_code(result, CloseReadinessCode.ACTIVE_ACCOUNT_SNAPSHOT_MISSING.value)
+    assert len(missing) == 1
+    assert missing[0].severity is CloseReadinessSeverity.WARNING
+    assert missing[0].context["account_names"] == ["Synthetic Missing Snapshot"]
+    assert result.can_close is True
+
+
 def test_persisted_stale_quote_is_warning_from_freshness_codes(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))

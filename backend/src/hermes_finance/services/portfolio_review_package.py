@@ -23,6 +23,9 @@ from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSI
 from hermes_finance.domain.risk_allocation import RiskSupportStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.accounts import list_accounts
+from hermes_finance.services.ai_analysis_bundle import (
+    SCHEMA_VERSION as AI_ANALYSIS_BUNDLE_SCHEMA_VERSION,
+)
 from hermes_finance.services.ai_analysis_bundle import _slug as _bundle_slug
 from hermes_finance.services.ai_analysis_bundle import assemble_ai_analysis_bundle
 from hermes_finance.services.deterministic_insights import (
@@ -1761,7 +1764,7 @@ def assemble_portfolio_review_package(
         },
         "generation_mode": "read_only",
         "source_contract_name": "hermes.finance.ai_analysis_bundle",
-        "source_contract_version": "1.0.0",
+        "source_contract_version": AI_ANALYSIS_BUNDLE_SCHEMA_VERSION,
         "calculation_versions": {
             "monthly_summary": str(calculation_versions.get("monthly_summary", "v2")),
             "passive_income_forecast": str(

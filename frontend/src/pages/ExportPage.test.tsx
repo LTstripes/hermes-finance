@@ -237,7 +237,7 @@ describe("ExportPage", () => {
           headers: {
             "Content-Type": "application/json; charset=utf-8",
             "Content-Disposition":
-              'attachment; filename="hermes-ai-analysis-bundle-2026-07-31-v1.0.0.json"',
+              'attachment; filename="hermes-ai-analysis-bundle-2026-07-31-v1.1.0.json"',
           },
         }),
       );
@@ -259,7 +259,7 @@ describe("ExportPage", () => {
     );
     expect(anchorClick.mock.instances[0]).toHaveProperty(
       "download",
-      "hermes-ai-analysis-bundle-2026-07-31-v1.0.0.json",
+      "hermes-ai-analysis-bundle-2026-07-31-v1.1.0.json",
     );
     const [createdBlob] = createObjectURL.mock.calls[0] ?? [];
     expect(await (createdBlob as Blob).text()).toBe(bundle);
@@ -282,12 +282,12 @@ describe("ExportPage", () => {
       .mockResolvedValueOnce(jsonResponse(months))
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
-        new Response("# Hermes Finance AI Analysis Bundle 1.0.0\n", {
+        new Response("# Hermes Finance AI Analysis Bundle 1.1.0\n", {
           status: 200,
           headers: {
             "Content-Type": "text/markdown; charset=utf-8",
             "Content-Disposition":
-              'attachment; filename="hermes-ai-analysis-bundle-2026-07-31-v1.0.0.md"',
+              'attachment; filename="hermes-ai-analysis-bundle-2026-07-31-v1.1.0.md"',
           },
         }),
       );
