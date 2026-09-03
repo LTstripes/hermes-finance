@@ -43,11 +43,38 @@ excludes tests from the normal full suite.
 | `windows` | Windows launcher path, timezone, and launcher schema suites | Windows/runtime lane | Windows process/path/timezone behavior |
 | `network_free` | Synthetic provider, startup, and release offline-boundary suites | Offline safety | No live provider or external network during the test |
 
-The mapping is intentionally not a mass classification of every flat legacy
-test module. Existing unmarked modules remain covered by the full suite and
-should be classified when they are next changed. This keeps Phase 2A low-risk
-and makes ownership decisions reviewable instead of hiding them in a bulk
-rename.
+The semantic mapping is intentionally not a mass classification of every flat
+legacy test module. Existing modules may remain semantically unmarked and are
+still covered by the full suite; the exclusive CI primary map below owns them
+without renaming or moving files. This keeps the ownership decision reviewable
+instead of hiding it in a bulk rename.
+
+## Backend CI primary lanes
+
+Issue #282 adds one exclusive primary CI marker to every collected backend
+test. The additive semantic markers above remain useful for targeted local
+debugging; they do not decide CI ownership when a test has more than one
+semantic marker.
+
+| Primary marker | CI lane | Ownership rule |
+| --- | --- | --- |
+| `ci_core` | Backend core | Domain, service, general API, and explicitly mapped flat financial tests |
+| `ci_persistence` | Backend persistence | SQLite, persisted state, and migration tests |
+| `ci_integrations` | Backend integrations | Provider, reconciliation, and import/export boundaries |
+| `ci_runtime_release` | Backend runtime/release | Runtime, release, legacy, Windows, and CI-contract tests |
+| `ci_benchmark` | Backend benchmark | Explicit benchmark/performance tests only |
+
+`backend/tests/_test_taxonomy.py` owns the deterministic path-to-lane map.
+`backend/tests/conftest.py` adds the primary marker to each collected node and
+raises a collection error for an unclassified or conflicting node. The
+`test_ci_lane_ownership.py` guard also inventories every pytest-style backend
+test file. A new flat test module therefore requires an explicit owner before
+any lane can pass; benchmark tests cannot silently join a correctness lane.
+
+CI runs the five lanes as independent matrix jobs with `--durations=40` and a
+10-minute job timeout. The existing Windows timezone job remains a dedicated
+Windows check; its selected subset is intentionally preserved in addition to
+the normal Linux correctness lanes.
 
 The shared support modules have these owners:
 
@@ -116,8 +143,6 @@ The following require a node-level coverage map and owner/integrator decision:
 - rehoming or renaming release/task-ID files and payout suffix fragments;
 - deciding whether G02/G08 are distinct acceptance evidence or overlap with
   the browser smoke path;
-- separating the long-history benchmark from the default suite at the CI-job
-  level;
 - comparing large frontend interaction suites and any exact duplicate nodes;
 - deleting or merging any assertion, including an apparently old release
   regression.

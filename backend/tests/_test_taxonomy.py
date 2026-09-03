@@ -22,6 +22,55 @@ _MARKER_ORDER = (
     "network_free",
 )
 
+CI_LANE_MARKERS = (
+    "ci_core",
+    "ci_persistence",
+    "ci_integrations",
+    "ci_runtime_release",
+    "ci_benchmark",
+)
+
+_CI_LANE_OVERRIDES = {
+    # Resolve legacy flat modules and ambiguous additive-marker combinations
+    # explicitly. Keep this fail-closed so a new unclassified module cannot
+    # disappear from every CI lane by inheriting a broad default.
+    "test_accounts.py": "ci_core",
+    "test_cash.py": "ci_core",
+    "test_cash_flow_ladder.py": "ci_core",
+    "test_close_readiness.py": "ci_core",
+    "test_comments.py": "ci_core",
+    "test_debts.py": "ci_core",
+    "test_deposits.py": "ci_core",
+    "test_deterministic_insights.py": "ci_core",
+    "test_expected_cash_flows.py": "ci_core",
+    "test_expenses.py": "ci_core",
+    "test_goal_achievement.py": "ci_core",
+    "test_goal_settings_sync.py": "ci_core",
+    "test_goals.py": "ci_core",
+    "test_iis.py": "ci_core",
+    "test_incomes.py": "ci_core",
+    "test_instruments.py": "ci_core",
+    "test_portfolio_review_package.py": "ci_core",
+    "test_portfolio_review_package_assistant_eval.py": "ci_core",
+    "test_portfolio_review_package_contract.py": "ci_core",
+    "test_properties.py": "ci_core",
+    "test_r02_27_passive_goal_current_value.py": "ci_core",
+    "test_r08_01c_performance_availability.py": "ci_core",
+    "test_r08_02_portfolio_xirr.py": "ci_core",
+    "test_r08_03_portfolio_twrr.py": "ci_core",
+    "test_r08_03_twrr_contract_recon.py": "ci_core",
+    "test_r08_03a_valuation_boundaries.py": "ci_core",
+    "test_salary_cardinality.py": "ci_core",
+    "test_salary_tax_opening.py": "ci_core",
+    "test_tax_iis_planner.py": "ci_core",
+    "test_instrument_cleanup.py": "ci_persistence",
+    "test_investment_cash_flows.py": "ci_persistence",
+    "test_positions_deposits_api.py": "ci_persistence",
+    "test_r08_01b_valuation_points.py": "ci_persistence",
+    "test_instrument_mappings_api.py": "ci_integrations",
+    "test_ci_lane_ownership.py": "ci_runtime_release",
+}
+
 _MIGRATION_FILES = frozenset(
     {
         "test_migrations.py",
@@ -165,3 +214,49 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
         markers.add("network_free")
 
     return tuple(marker for marker in _MARKER_ORDER if marker in markers)
+
+
+def _relative_test_path(test_path: Path) -> Path | None:
+    try:
+        return test_path.resolve().relative_to(TESTS_ROOT)
+    except ValueError:
+        return None
+
+
+def ci_lane_for_test_path(test_path: Path) -> str | None:
+    """Return exactly one exclusive CI lane marker for a backend test file."""
+
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+
+    key = relative_path.as_posix()
+    if key in _CI_LANE_OVERRIDES:
+        return _CI_LANE_OVERRIDES[key]
+
+    markers = set(semantic_markers_for(test_path))
+    if "benchmark" in markers:
+        return "ci_benchmark"
+    if markers.intersection({"release", "runtime", "legacy", "windows"}):
+        return "ci_runtime_release"
+    if "integration" in markers:
+        return "ci_integrations"
+    if "import_export" in markers:
+        return "ci_integrations"
+    if markers.intersection({"migration", "persistence"}):
+        return "ci_persistence"
+    if markers.intersection({"domain", "api", "service"}):
+        return "ci_core"
+    return None
+
+
+def iter_backend_test_files() -> tuple[Path, ...]:
+    """Return all pytest-style backend test files in deterministic order."""
+
+    return tuple(
+        sorted(
+            path
+            for path in TESTS_ROOT.rglob("*.py")
+            if path.name.startswith("test_") or path.name.endswith("_test.py")
+        )
+    )
