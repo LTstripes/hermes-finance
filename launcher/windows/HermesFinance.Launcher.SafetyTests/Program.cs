@@ -54,6 +54,12 @@ var tests = new (string Name, Action Run)[]
     ("migrates stale Stable ref only when checkout proves release", MigratesStaleStableRefOnlyWhenCheckoutProvesRelease),
     ("offers Refresh not Stop for external port collision", PortCollisionOffersRefreshNotStop),
     ("marks Stable identity mismatch recovery-only", StableMismatchIsRecoveryOnly),
+    ("Preview current offers Start primary", PreviewCurrentStartsPrimary),
+    ("Preview behind offers Update primary", PreviewBehindUpdatesPrimary),
+    ("Preview behind with missing deps offers a single safe primary", PreviewBehindMissingDepsOffersSingleSafePrimary),
+    ("Stable Ready offers Start primary", StableReadyStartsPrimary),
+    ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
+    ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
 };
 
 var failures = 0;
@@ -1220,6 +1226,182 @@ static void StableMismatchIsRecoveryOnly()
     // No regression for Preview: its mismatch stays launcher-owned Update.
     var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
     Assert(planPreview.Primary == LauncherPrimaryAction.Update, "Preview identity mismatch must keep launcher-owned Update.");
+}
+
+static string[] PrimaryCtaTexts() =>
+[
+    "Запустить", "Подготовить", "Обновить Preview", "Обновить и запустить", "Открыть Hermes", "Остановить",
+];
+
+static List<string> EnabledPrimaries(MainForm form) =>
+    AllControls(form).OfType<Button>().Where(button => button.Enabled && PrimaryCtaTexts().Contains(button.Text)).Select(button => button.Text).ToList();
+
+static LauncherProfile PreviewProfileForCta() => new()
+{
+    Id = "preview",
+    DisplayName = "Preview",
+    Type = "preview",
+    Checkout = "C:\\p",
+    ExpectedRef = "refs/remotes/origin/main",
+    DataDir = "C:\\p\\data",
+    Database = "C:\\p\\data\\finance.db",
+    OpenBrowser = false,
+};
+
+static void ApplyValidatedOn(MainForm form, ValidatedProfile validated)
+{
+    var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException("Could not find ApplyValidated for CTA planning.");
+    apply.Invoke(form, [validated]);
+}
+
+static void PreviewCurrentStartsPrimary()
+{
+    var preview = PreviewProfileForCta();
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.0");
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable, preview],
+    });
+    var validated = new ValidatedProfile(
+        preview, preview.Checkout, preview.DataDir, preview.Database, "cur1234",
+        "preview", new DependencyStatus(true, true, "ready", "ready"),
+        new PreviewUpdateStatus("cur1234", "cur1234"));
+    ApplyValidatedOn(form, validated);
+    var primaries = EnabledPrimaries(form);
+    Assert(primaries.Count == 1 && primaries[0] == "Запустить", $"Preview current + deps ready must have exactly one primary CTA 'Запустить', found [{string.Join(",", primaries)}].");
+}
+
+static void PreviewBehindUpdatesPrimary()
+{
+    var preview = PreviewProfileForCta();
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.0");
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable, preview],
+    });
+    var validated = new ValidatedProfile(
+        preview, preview.Checkout, preview.DataDir, preview.Database, "cur1111",
+        "preview", new DependencyStatus(true, true, "ready", "ready"),
+        new PreviewUpdateStatus("cur1111", "tgt2222"));
+    ApplyValidatedOn(form, validated);
+    var primaries = EnabledPrimaries(form);
+    Assert(primaries.Count == 2 && primaries.Contains("Обновить Preview") && primaries.Contains("Обновить и запустить"),
+        $"Preview behind + deps ready must offer Update primaries, found [{string.Join(",", primaries)}].");
+    var buttons = AllControls(form).OfType<Button>().ToArray();
+    Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must not be offered while a prepared Preview update is pending.");
+    var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, validated, preview, null);
+    Assert(plan.Primary == LauncherPrimaryAction.Update, $"Preview behind + deps ready must plan Update primary, got {plan.Primary}.");
+}
+
+static void PreviewBehindMissingDepsOffersSingleSafePrimary()
+{
+    var preview = PreviewProfileForCta();
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.0");
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable, preview],
+    });
+    var validated = new ValidatedProfile(
+        preview, preview.Checkout, preview.DataDir, preview.Database, "cur1111",
+        "preview", new DependencyStatus(false, false, "needs preparation", "needs preparation"),
+        new PreviewUpdateStatus("cur1111", "tgt2222"));
+    ApplyValidatedOn(form, validated);
+    var primaries = EnabledPrimaries(form);
+    Assert(primaries.Count == 1 && primaries[0] == "Обновить и запустить",
+        $"Preview behind + deps missing must offer exactly one primary CTA 'Обновить и запустить', found [{string.Join(",", primaries)}].");
+    var buttons = AllControls(form).OfType<Button>().ToArray();
+    Assert(!buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must not compete with the update-first chain when Preview is behind.");
+    Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must stay disabled until update + preparation complete.");
+    var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.NeedsPreparation, validated, preview, null);
+    Assert(plan.Primary == LauncherPrimaryAction.UpdateAndStart, $"Preview behind + deps missing must plan UpdateAndStart primary, got {plan.Primary}.");
+}
+
+static void StableReadyStartsPrimary()
+{
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.0");
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    });
+    var validated = new ValidatedProfile(
+        stable, stable.Checkout, stable.DataDir, stable.Database, "abc1234567890",
+        "production", new DependencyStatus(true, true, "ready", "ready"));
+    ApplyValidatedOn(form, validated);
+    var primaries = EnabledPrimaries(form);
+    Assert(primaries.Count == 1 && primaries[0] == "Запустить", $"Stable Ready must have exactly one primary CTA 'Запустить', found [{string.Join(",", primaries)}].");
+}
+
+static void SetupFlowCreatesConcreteConfig()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        RunGit(stableCheckout, "init");
+        RunGit(stableCheckout, "config", "--local", "user.name", "Hermes Safety Test");
+        RunGit(stableCheckout, "config", "--local", "user.email", "hermes-safety-test");
+        RunGit(stableCheckout, "add", ".");
+        RunGit(stableCheckout, "commit", "-m", "synthetic stable at release");
+        RunGit(stableCheckout, "tag", "v0.8.0");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        RunGit(previewCheckout, "init");
+
+        // Synthetic owner selections become a concrete valid config — no manual JSON.
+        var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.8.0", "Setup must pin Stable to the v0.8.0 release.");
+        Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Setup must point Preview at origin/main.");
+        Assert(LauncherConfig.IsConcreteConfig(config), "Setup result must be concrete (absolute paths, no placeholders).");
+
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        LauncherSetup.WriteConfig(config, configPath);
+
+        // The next preflight config stage works without manual JSON.
+        var loaded = LauncherConfig.Load(configPath);
+        ProfileValidator.ValidateConfiguration(loaded);
+        Assert(LauncherConfig.IsConcreteConfig(loaded), "Reloaded setup config must stay concrete.");
+
+        // Boundaries are enforced: Preview on production paths is rejected.
+        AssertThrows<LauncherValidationException>(() => LauncherSetup.BuildConfig(stableCheckout, stableData, stableCheckout, stableData));
+        // Nothing is guessed: missing selections fail closed.
+        AssertThrows<LauncherValidationException>(() => LauncherSetup.BuildConfig("", stableData, previewCheckout, previewData));
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void ConfigFailureOffersSetupAction()
+{
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.0");
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    });
+    var show = typeof(MainForm).GetMethod("ShowConfigurationFailure", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException("Could not find ShowConfigurationFailure for setup presentation.");
+    show.Invoke(form, []);
+    var buttons = AllControls(form).OfType<Button>().ToArray();
+    Assert(buttons.Single(button => button.Text == "Настроить…").Enabled, "Configuration failure must offer an enabled executable setup action.");
+    Assert(buttons.Single(button => button.Text == "Обновить проверку").Enabled, "Refresh must stay available beside setup.");
+    Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must stay disabled until setup completes.");
 }
 
 static LauncherConfig Config(string firstType, string secondType) => new()

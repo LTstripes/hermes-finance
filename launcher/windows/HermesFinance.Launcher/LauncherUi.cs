@@ -170,7 +170,7 @@ internal static class LauncherUi
         }
         if (message.Contains("launcher config") || message.Contains("config is invalid"))
         {
-            return "Конфигурация launcher невалидна. Launcher попробует создать/мигрировать её автоматически где безопасно; иначе откройте «Диагностика» и нажмите «Обновить проверку».";
+            return "Конфигурация launcher отсутствует или невалидна. Нажмите «Настроить…» и выберите Stable/Preview каталоги через launcher; ручной JSON — только recovery-only.";
         }
         if (message.Contains("stable may use only the production runtime"))
         {
@@ -251,11 +251,24 @@ internal static class LauncherUi
         }
         if (state == LauncherReadinessState.Ready)
         {
+            // Preview behind origin/main with an available target must update
+            // first: Update is the primary CTA, Start is not offered while the
+            // prepared update is pending.
+            if (IsPreviewBehindWithTarget(validated, profile))
+            {
+                return new(LauncherPrimaryAction.Update, "Preview отстал — доступно обновление", "Preview отстал от canonical origin/main — нажмите «Обновить Preview» (или «Обновить и запустить»)");
+            }
             // Running already handled; Ready means validated and deps ready
             return new(LauncherPrimaryAction.Start, "Готово к запуску", "Preflight пройден — нажмите «Запустить»");
         }
         if (state == LauncherReadinessState.NeedsPreparation)
         {
+            // Behind + deps missing: one unambiguous primary covering the safe
+            // owner chain (update Preview, then prepare locked deps, then start).
+            if (IsPreviewBehindWithTarget(validated, profile))
+            {
+                return new(LauncherPrimaryAction.UpdateAndStart, "Preview отстал и зависимости не готовы", "Нажмите «Обновить и запустить»: сначала обновление Preview до origin/main, затем подготовка locked-зависимостей и запуск");
+            }
             return new(LauncherPrimaryAction.Prepare, "Зависимости требуют подготовки", "Locked зависимости не готовы — нажмите «Подготовить» (offline проверка, сеть только по явному нажатию)");
         }
         if (state == LauncherReadinessState.Blocked && blockedException is not null)
@@ -305,13 +318,14 @@ internal static class LauncherUi
         {
             return new(LauncherPrimaryAction.Refresh, "Заблокировано", "Исправьте blocker и «Обновить проверку»");
         }
-        // Preview behind origin/main but still Ready? Offer update-and-start as primary
-        if (validated?.PreviewUpdate is not null && !validated.PreviewUpdate.IsCurrent && validated.Dependencies?.Ready == true)
-        {
-            return new(LauncherPrimaryAction.Update, "Preview отстал — доступно обновление", "Preview можно обновить до canonical origin/main");
-        }
         return new(LauncherPrimaryAction.Refresh, "Проверка не запускалась", "Нажмите «Обновить проверку»");
     }
+
+    internal static bool IsPreviewBehindWithTarget(ValidatedProfile? validated, LauncherProfile profile) =>
+        profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
+        && validated?.PreviewUpdate is not null
+        && !validated.PreviewUpdate.IsCurrent
+        && validated.PreviewUpdate.TargetAvailable;
 
     public static string CheckValue(bool passed, string success, string failure = "Требует внимания") =>
         passed ? success : failure;

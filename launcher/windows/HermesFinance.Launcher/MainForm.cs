@@ -268,6 +268,14 @@ public sealed class MainForm : Form
         Visible = true,
         AccessibleName = "Обновить и запустить Preview",
     };
+    private readonly Button _setup = new()
+    {
+        Text = "Настроить…",
+        Width = 132,
+        Height = 40,
+        Enabled = false,
+        AccessibleName = "Настроить профили Hermes",
+    };
     private readonly Label _lastLaunch = new()
     {
         Text = "Последний запуск: ещё не выполнялся",
@@ -456,6 +464,7 @@ public sealed class MainForm : Form
         StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 6);
         StyleButton(_updatePreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 7);
         StyleButton(_updateAndStartPreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 8);
+        StyleButton(_setup, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 9);
         _actionButtons.Controls.Add(_prepare);
         _actionButtons.Controls.Add(_repair);
         _actionButtons.Controls.Add(_start);
@@ -465,6 +474,7 @@ public sealed class MainForm : Form
         _secondaryButtons.Controls.Add(_detailsToggle);
         _secondaryButtons.Controls.Add(_updatePreview);
         _secondaryButtons.Controls.Add(_updateAndStartPreview);
+        _secondaryButtons.Controls.Add(_setup);
 
         var detailsLayout = new TableLayoutPanel
         {
@@ -496,6 +506,7 @@ public sealed class MainForm : Form
         _refresh.Click += async (_, _) => await RefreshSelectedAsync();
         _updatePreview.Click += async (_, _) => await UpdatePreviewAsync(startAfter: false);
         _updateAndStartPreview.Click += async (_, _) => await UpdatePreviewAsync(startAfter: true);
+        _setup.Click += async (_, _) => await OpenSetupAsync();
         _detailsToggle.Click += (_, _) => ToggleDetails();
         _profiles.Resize += (_, _) => ResizeProfileCards();
         Resize += (_, _) => ResizeProfileCards();
@@ -570,9 +581,7 @@ public sealed class MainForm : Form
 
     private async Task LoadConfigAsync()
     {
-        var configPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "HermesFinance", "launcher", "config.json");
+        var configPath = LauncherSetup.DefaultConfigPath;
         try
         {
             _config = LauncherConfig.LoadOrCreate(configPath, out var createDiag);
@@ -589,10 +598,24 @@ public sealed class MainForm : Form
         catch (Exception exception) when (exception is LauncherValidationException or IOException or JsonException)
         {
             AppendDiagnostic($"Launcher config is invalid: {exception.Message}");
-            AppendDiagnostic("Launcher tried auto-create/migrate where safe; otherwise edit is recovery-only. Check %LOCALAPPDATA%\\\\HermesFinance\\\\launcher\\\\config.json or reinstall via install.ps1.");
+            AppendDiagnostic("Нажмите «Настроить…» и выберите подготовленные Stable/Preview каталоги через launcher — ручное редактирование JSON это recovery-only. Либо переустановите через install.ps1.");
             ShowConfigurationFailure();
         }
         await Task.CompletedTask;
+    }
+
+    private async Task OpenSetupAsync()
+    {
+        using var dialog = new SetupForm(LauncherSetup.DefaultConfigPath);
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            AppendDiagnostic("Setup saved a concrete launcher config; reloading.");
+            await LoadConfigAsync();
+        }
+        else
+        {
+            AppendDiagnostic("Setup was cancelled; launcher config unchanged.");
+        }
     }
 
     private void BindProfiles(bool runInitialPreflight)
@@ -1077,8 +1100,8 @@ public sealed class MainForm : Form
         var state = validated.Dependencies?.RequiresPreparation == true
             ? LauncherReadinessState.NeedsPreparation
             : LauncherReadinessState.Ready;
-        // Preview behind origin/main is still Ready but with update available — keep primary CTA as Update
-        var previewBehind = isPreview && validated.PreviewUpdate is not null && !validated.PreviewUpdate.IsCurrent && validated.PreviewUpdate.TargetAvailable;
+        // Preview behind origin/main is planned in PlanPrimaryAction:
+        // Update (or UpdateAndStart when deps are missing) is primary.
         SetReadiness(validated.Profile, state);
         SetShaSummary(validated);
         // Human plain-language checks (summarized, raw in diagnostics)
@@ -1148,13 +1171,14 @@ public sealed class MainForm : Form
         _open.Enabled = false;
         SetPreviewUpdateActions(false, enabled: false);
         _refresh.Enabled = true;
+        _setup.Enabled = true;
         _profiles.Enabled = false;
         _selectedName.Text = "Профили недоступны";
         _selectedType.Text = "CONFIGURATION";
         _selectedType.ForeColor = MutedText;
         _readinessDot.ForeColor = LauncherUi.StatusColor(LauncherReadinessState.Blocked);
-        _readinessTitle.Text = "Запуск заблокирован";
-        _readinessDescription.Text = "Конфигурация launcher невалидна. Откройте «Диагностика и логи» после проверки локальной настройки.";
+        _readinessTitle.Text = "Нужна настройка";
+        _readinessDescription.Text = "Конфигурация launcher отсутствует или невалидна. Нажмите «Настроить…» и выберите подготовленные Stable/Preview каталоги — ручной JSON не нужен (он recovery-only).";
         SetAllChecks("Не подтверждено", false);
         SetLastLaunchStatus("Последний запуск: заблокирован");
     }
@@ -1238,6 +1262,7 @@ public sealed class MainForm : Form
         _refresh.Enabled = false;
         _updatePreview.Enabled = false;
         _updateAndStartPreview.Enabled = false;
+        _setup.Enabled = false;
 
         // Always allow details and refresh as secondary where sensible
         _refresh.Enabled = state != LauncherReadinessState.Checking
@@ -1264,16 +1289,21 @@ public sealed class MainForm : Form
             case LauncherPrimaryAction.Start:
                 _start.Enabled = true;
                 _repair.Enabled = true; // repair stays available as recovery even when ready
-                // Allow Update as secondary when preview behind even if Start is primary
-                if (validated?.PreviewUpdate is not null && !validated.PreviewUpdate.IsCurrent)
+                // Allow Update as secondary only when the target is actually
+                // available; behind without a target keeps Start alone.
+                if (validated?.PreviewUpdate is not null && !validated.PreviewUpdate.IsCurrent && validated.PreviewUpdate.TargetAvailable)
                 {
                     _updatePreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
                     _updateAndStartPreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
                 }
                 break;
             case LauncherPrimaryAction.Update:
-            case LauncherPrimaryAction.UpdateAndStart:
                 _updatePreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
+                _updateAndStartPreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
+                break;
+            case LauncherPrimaryAction.UpdateAndStart:
+                // Single unambiguous CTA for the safe chain (update, then
+                // prepare locked deps, then start) — no competing buttons.
                 _updateAndStartPreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
                 break;
             case LauncherPrimaryAction.Open:
