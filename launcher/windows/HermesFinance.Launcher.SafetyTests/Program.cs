@@ -59,6 +59,10 @@ var tests = new (string Name, Action Run)[]
     ("Preview behind with missing deps offers a single safe primary", PreviewBehindMissingDepsOffersSingleSafePrimary),
     ("Stable Ready offers Start primary", StableReadyStartsPrimary),
     ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
+    ("setup rejects Stable off the v0.8.0 release commit", SetupRejectsStableOffRelease),
+    ("setup rejects Preview without origin/main", SetupRejectsPreviewWithoutOriginMain),
+    ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
+    ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
 };
 
@@ -1360,6 +1364,11 @@ static void SetupFlowCreatesConcreteConfig()
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         RunGit(previewCheckout, "init");
+        RunGit(previewCheckout, "config", "--local", "user.name", "Hermes Safety Test");
+        RunGit(previewCheckout, "config", "--local", "user.email", "hermes-safety-test");
+        RunGit(previewCheckout, "add", ".");
+        RunGit(previewCheckout, "commit", "-m", "synthetic preview at origin/main");
+        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
 
         // Synthetic owner selections become a concrete valid config — no manual JSON.
         var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
@@ -1379,6 +1388,164 @@ static void SetupFlowCreatesConcreteConfig()
         AssertThrows<LauncherValidationException>(() => LauncherSetup.BuildConfig(stableCheckout, stableData, stableCheckout, stableData));
         // Nothing is guessed: missing selections fail closed.
         AssertThrows<LauncherValidationException>(() => LauncherSetup.BuildConfig("", stableData, previewCheckout, previewData));
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void InitSyntheticRepo(string checkout, string commitMessage)
+{
+    RunGit(checkout, "init");
+    RunGit(checkout, "config", "--local", "user.name", "Hermes Safety Test");
+    RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
+    RunGit(checkout, "add", ".");
+    RunGit(checkout, "commit", "-m", commitMessage);
+}
+
+static void CommitSyntheticFile(string checkout, string fileName, string content, string commitMessage)
+{
+    File.WriteAllText(Path.Combine(checkout, fileName), content);
+    RunGit(checkout, "add", fileName);
+    RunGit(checkout, "commit", "-m", commitMessage);
+}
+
+static void SetupRejectsStableOffRelease()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-stale-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
+        RunGit(stableCheckout, "tag", "v0.8.0");
+        // Tag exists, but HEAD moved past the release commit.
+        CommitSyntheticFile(stableCheckout, "post-release.txt", "drifted past v0.8.0", "synthetic post-release drift");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
+        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
+
+        try
+        {
+            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+            throw new InvalidOperationException("Setup must reject a Stable checkout off the v0.8.0 release commit.");
+        }
+        catch (LauncherValidationException exception)
+        {
+            Assert(exception.Message.Contains("Stable", StringComparison.Ordinal), "Stable rejection must name the Stable checkout.");
+        }
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void SetupRejectsPreviewWithoutOriginMain()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-no-main-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
+        RunGit(stableCheckout, "tag", "v0.8.0");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        // A plain git repo: no refs/remotes/origin/main exists.
+        InitSyntheticRepo(previewCheckout, "synthetic preview without origin/main");
+
+        try
+        {
+            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+            throw new InvalidOperationException("Setup must reject a Preview checkout without refs/remotes/origin/main.");
+        }
+        catch (LauncherValidationException exception)
+        {
+            Assert(exception.Message.Contains("Preview", StringComparison.Ordinal), "Preview rejection must name the Preview checkout.");
+        }
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void SetupRejectsPreviewSharingStableGitDir()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-worktree-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "linked-preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
+        RunGit(stableCheckout, "tag", "v0.8.0");
+        RunGit(stableCheckout, "branch", "-M", "main");
+        RunGit(stableCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
+        // Linked worktree: same git-common-dir as Stable, HEAD at origin/main.
+        RunGit(stableCheckout, "worktree", "add", "--detach", previewCheckout);
+        Directory.CreateDirectory(previewData);
+
+        try
+        {
+            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+            throw new InvalidOperationException("Setup must reject a Preview sharing the Stable git-common-dir.");
+        }
+        catch (LauncherValidationException exception)
+        {
+            Assert(exception.Message.Contains("Preview", StringComparison.Ordinal), "Worktree rejection must name the Preview checkout.");
+        }
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void PreparedSetupPassesPreflightIdentity()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-identity-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
+        RunGit(stableCheckout, "tag", "v0.8.0");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
+        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
+
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        LauncherSetup.WriteConfig(LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData), configPath);
+
+        // The identity stage of the next real preflight passes on first try.
+        var loaded = LauncherConfig.Load(configPath);
+        ProfileValidator.ValidateConfiguration(loaded);
+        var stable = loaded.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        var preview = loaded.Profiles.Single(profile => profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase));
+        var stableHead = ProfileValidator.AssertGitIdentity(stable, stable.Checkout, stable.Checkout);
+        Assert(!string.IsNullOrWhiteSpace(stableHead), "Stable identity stage must resolve HEAD.");
+        var previewHead = ProfileValidator.AssertGitIdentity(preview, preview.Checkout, stable.Checkout);
+        Assert(!string.IsNullOrWhiteSpace(previewHead), "Preview identity stage must resolve HEAD.");
     }
     finally
     {

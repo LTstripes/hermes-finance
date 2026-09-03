@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace HermesFinance.Launcher;
 
 /// <summary>
@@ -65,8 +63,29 @@ public static class LauncherSetup
         ProfileValidator.AssertProfileTuple(stable, stableCheckoutFull, stableDataFull, stableDatabaseFull, stableCheckoutFull, stableDataFull, stableDatabaseFull);
         ProfileValidator.AssertProfileTuple(preview, stableCheckoutFull, stableDataFull, stableDatabaseFull, previewCheckoutFull, previewDataFull, previewDatabaseFull);
 
-        AssertStableReleaseTag(stableCheckoutFull);
-        AssertGitRepository(previewCheckoutFull, "Preview");
+        // Identity proof reuses the exact preflight invariants — no weaker
+        // parallel implementation. Stable: HEAD == v0.8.0 tag and clean.
+        // Preview: at refs/remotes/origin/main, clean, and independent from
+        // Stable (no linked worktree / shared git-common-dir). Read-only:
+        // no fetch, no network; Preview update stays an explicit owner action.
+        try
+        {
+            ProfileValidator.AssertGitIdentity(stable, stableCheckoutFull, stableCheckoutFull);
+        }
+        catch (LauncherValidationException exception)
+        {
+            throw new LauncherValidationException(
+                $"Setup rejected the Stable checkout: {exception.Message} Select a clean prepared Stable checkout at released v0.8.0 (HEAD == refs/tags/v0.8.0).");
+        }
+        try
+        {
+            ProfileValidator.AssertGitIdentity(preview, previewCheckoutFull, stableCheckoutFull);
+        }
+        catch (LauncherValidationException exception)
+        {
+            throw new LauncherValidationException(
+                $"Setup rejected the Preview checkout: {exception.Message} Select a clean independent Preview checkout at refs/remotes/origin/main (not a Stable worktree).");
+        }
 
         return new LauncherConfig
         {
@@ -138,74 +157,6 @@ public static class LauncherSetup
             {
                 throw new LauncherValidationException($"{description} checkout is not a prepared Hermes Finance runtime (missing {relative}). Select the prepared checkout directory.");
             }
-        }
-    }
-
-    private static void AssertStableReleaseTag(string stableCheckout)
-    {
-        try
-        {
-            var output = RunGit(stableCheckout, "rev-parse", "--verify", StableReleaseRef + "^{commit}");
-            if (string.IsNullOrWhiteSpace(output))
-            {
-                throw new LauncherValidationException(
-                    "Stable checkout does not carry the released v0.8.0 tag. Select the prepared Stable checkout at release v0.8.0.");
-            }
-        }
-        catch (LauncherValidationException)
-        {
-            throw new LauncherValidationException(
-                "Stable checkout does not carry the released v0.8.0 tag. Select the prepared Stable checkout at release v0.8.0.");
-        }
-    }
-
-    private static void AssertGitRepository(string checkout, string description)
-    {
-        try
-        {
-            var output = RunGit(checkout, "rev-parse", "--git-dir");
-            if (string.IsNullOrWhiteSpace(output))
-            {
-                throw new LauncherValidationException($"{description} checkout is not a Git repository. Select the prepared Preview checkout.");
-            }
-        }
-        catch (LauncherValidationException)
-        {
-            throw new LauncherValidationException($"{description} checkout is not a Git repository. Select the prepared Preview checkout.");
-        }
-    }
-
-    private static string RunGit(string workingDirectory, params string[] arguments)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "git",
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-        try
-        {
-            using var process = Process.Start(startInfo)
-                ?? throw new LauncherValidationException("Could not start 'git'.");
-            var standardOutput = process.StandardOutput.ReadToEnd();
-            var standardError = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            if (process.ExitCode != 0)
-            {
-                throw new LauncherValidationException($"Git probe failed: {standardError.Trim()} {standardOutput.Trim()}".Trim());
-            }
-            return standardOutput;
-        }
-        catch (System.ComponentModel.Win32Exception exception)
-        {
-            throw new LauncherValidationException($"Git is unavailable: {exception.Message}");
         }
     }
 }

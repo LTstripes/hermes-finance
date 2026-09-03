@@ -17,7 +17,7 @@ Install the .NET 8 SDK, then run from this directory:
 .\package.ps1
 ```
 
-The script runs the automated safety harness (45 checks including #279 identity/CTA/config/setup regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
+The script runs the automated safety harness (49 checks including #279 identity/CTA/config/setup regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
 
 For an owner-facing install, run from this directory:
 
@@ -35,7 +35,7 @@ This packages the launcher, copies it and its bundled read-only helpers (`launch
 - если Stable ещё указывает на старый `v0.6.3`/`v0.7.0` — миграция на `v0.8.0` только при доказанной безопасности (Stable checkout существует, чист, HEAD == `v0.8.0^{commit}`); иначе config **не меняется**, preflight покажет recovery-only guidance;
 - если есть неизвестные поля — schema-aware strip (top-level / canonical / profile allowlists); что не чинится — fail closed без изменения файла.
 
-Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с проверкой boundaries: Stable == canonical production + tag `v0.8.0`, Preview изолирован). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
+Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с доказательством identity теми же preflight-инвариантами: Stable чист и `HEAD == refs/tags/v0.8.0`, Preview чист, на `refs/remotes/origin/main` и независим от Stable; без fetch/сети). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
 
 The config may contain no secrets. Each profile names an independent checkout, data directory and database. `Stable` must exactly match `canonical_production`; Preview and Experiment must match none of it. Preview/Experiment databases that already exist require a matching `.hermes-data-identity.json` sidecar. For a fresh safe profile, the launcher writes the minimal sidecar only after the guarded startup reports health ready.
 
