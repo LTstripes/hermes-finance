@@ -21,10 +21,11 @@ public sealed class MainForm : Form
         Padding = new Padding(26, 22, 26, 20),
         BackColor = WindowBackground,
     };
-    private readonly TableLayoutPanel _header = new()
+    private readonly HeaderLayoutPanel _header = new()
     {
         Dock = DockStyle.Fill,
-        // #284: grow with content like the other content-driven blocks.
+        // #284: grow with content like the other content-driven blocks, but
+        // never beyond the root cell width (see HeaderLayoutPanel).
         AutoSize = true,
         AutoSizeMode = AutoSizeMode.GrowAndShrink,
         ColumnCount = 2,
@@ -53,7 +54,9 @@ public sealed class MainForm : Form
     };
     private readonly Label _subtitle = new()
     {
-        Text = "Выберите подготовленную среду  •  launcher не меняет Git и не смешивает данные",
+        // • = U+2022; single spaces so the line stays comfortably inside the
+        // cell width on every Windows metric (hosted runners measure wider).
+        Text = "Выберите подготовленную среду • launcher не меняет Git и не смешивает данные",
         // #284: see _brand — left-aligned text renders identically.
         TextAlign = ContentAlignment.TopLeft,
         Font = new Font("Segoe UI", 9.5F),
@@ -1648,6 +1651,42 @@ public sealed class MainForm : Form
         catch (Exception exception) when (exception is IOException or ArgumentException)
         {
             AppendDiagnostic($"Application icon could not be loaded: {exception.Message}");
+        }
+    }
+
+    // #284: the top header. AutoSize (so the root row takes its content
+    // height) but its width must never grow the root beyond the window: the
+    // root row is AutoSize too, and an unbounded preferred width would push
+    // the row (and header) past the content area on wider font metrics.
+    // GetPreferredSize therefore reports the constrained parent width and
+    // lets the AutoSize rows compute their heights at the real wrap width.
+    private sealed class HeaderLayoutPanel : TableLayoutPanel
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var width = proposedSize.Width;
+            if (width <= 0 && Parent is not null)
+            {
+                // Docked Fill inside the padded root: usable width is the
+                // parent's client width minus the parent's horizontal padding.
+                var available = Parent.ClientSize.Width - Parent.Padding.Horizontal;
+                width = Math.Max(0, available);
+            }
+
+            var preferred = width > 0
+                ? base.GetPreferredSize(new Size(width, proposedSize.Height))
+                : base.GetPreferredSize(proposedSize);
+
+            if (Parent is not null)
+            {
+                var cap = Math.Max(0, Parent.ClientSize.Width - Parent.Padding.Horizontal - Margin.Horizontal);
+                if (preferred.Width > cap)
+                {
+                    preferred.Width = cap;
+                }
+            }
+
+            return preferred;
         }
     }
 
