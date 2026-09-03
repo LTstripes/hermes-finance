@@ -17,6 +17,21 @@ internal enum LauncherReadinessState
     Stopped,
 }
 
+internal enum LauncherPrimaryAction
+{
+    None,
+    Update,
+    UpdateAndStart,
+    Prepare,
+    Repair,
+    Start,
+    Open,
+    Stop,
+    Refresh,
+}
+
+internal sealed record LauncherActionPlan(LauncherPrimaryAction Primary, string Reason, string HumanSummary);
+
 internal static class LauncherUi
 {
     public static string TypeBadge(string type) => type.ToLowerInvariant() switch
@@ -37,8 +52,8 @@ internal static class LauncherUi
 
     public static string CardDescription(string type) => type.ToLowerInvariant() switch
     {
-        "stable" => "Prepared production runtime",
-        "preview" => "Prepared independent runtime",
+        "stable" => "Pinned production runtime",
+        "preview" => "Unreleased main  ·  isolated",
         "experiment" => "Prepared sandbox runtime",
         _ => "Prepared Hermes Finance runtime",
     };
@@ -60,6 +75,11 @@ internal static class LauncherUi
             }
         }
 
+        if (value.StartsWith("refs/remotes/", StringComparison.OrdinalIgnoreCase))
+        {
+            value = value["refs/remotes/".Length..];
+        }
+
         if (value.Length is > 0 and <= 24
             && !value.Any(char.IsWhiteSpace)
             && !value.Contains('\\')
@@ -69,6 +89,29 @@ internal static class LauncherUi
         }
         return "Prepared release";
     }
+
+    public static string StableIdentityLabel(LauncherProfile profile, string? headSha)
+    {
+        var release = ReleaseBadge(profile.ExpectedRef);
+        var sha = string.IsNullOrWhiteSpace(headSha) ? "—" : headSha[..Math.Min(7, headSha.Length)];
+        // Stable must show pinned release identity clearly
+        return $"{release}  ·  {sha}  ·  {DataBoundary(profile.Type)}";
+    }
+
+    public static string PreviewIdentityLabel(LauncherProfile profile, string? currentSha, string? targetSha)
+    {
+        var cur = string.IsNullOrWhiteSpace(currentSha) ? "—" : currentSha[..Math.Min(7, currentSha.Length)];
+        var tgt = string.IsNullOrWhiteSpace(targetSha) ? "not fetched" : targetSha[..Math.Min(7, targetSha.Length)];
+        var unreleased = "UNRELEASED";
+        if (!string.IsNullOrWhiteSpace(targetSha) && !string.IsNullOrWhiteSpace(currentSha)
+            && targetSha.Equals(currentSha, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"main {cur} · {unreleased} · {DataBoundary(profile.Type)}";
+        }
+        return $"main {cur} → {tgt} · {unreleased} · {DataBoundary(profile.Type)}";
+    }
+
+    public static string ShaShort(string? sha) => string.IsNullOrWhiteSpace(sha) ? "—" : sha[..Math.Min(7, sha.Length)];
 
     public static string ReadinessLabel(LauncherReadinessState state) => state switch
     {
@@ -105,10 +148,10 @@ internal static class LauncherUi
     public static string ReadinessDescription(LauncherReadinessState state) => state switch
     {
         LauncherReadinessState.NotChecked => "Выберите профиль, чтобы проверить его готовность.",
-        LauncherReadinessState.Checking => "Проверяем identity, данные, зависимости и loopback-порт.",
-        LauncherReadinessState.Ready => "Все preflight-проверки пройдены. Можно запускать Hermes.",
-        LauncherReadinessState.NeedsPreparation => "Нажмите «Подготовить» для явной установки только locked-зависимостей этого профиля.",
-        LauncherReadinessState.Blocked => "Исправьте blocker в подготовленном runtime и повторите проверку.",
+        LauncherReadinessState.Checking => "Проверяем runtime, данные, зависимости и loopback-порт.",
+        LauncherReadinessState.Ready => "Все проверки пройдены. Можно запускать Hermes.",
+        LauncherReadinessState.NeedsPreparation => "Нажмите «Подготовить» — установка только locked-зависимостей этого профиля.",
+        LauncherReadinessState.Blocked => "Исправьте blocker в подготовленном runtime и повторите проверку. Подсказка ниже — какое launcher-действие исправляет это.",
         LauncherReadinessState.Preparing => "Выполняем owner-triggered установку только locked-зависимостей выбранного профиля.",
         LauncherReadinessState.Repairing => "Принудительно восстанавливаем только locked-зависимости выбранного профиля.",
         LauncherReadinessState.Starting => "Ждём штатные health probes существующего guarded startup.",
@@ -123,15 +166,15 @@ internal static class LauncherUi
         var message = rawMessage.ToLowerInvariant();
         if (message.Contains("only one production profile") || message.Contains("exactly one stable"))
         {
-            return "Конфигурация должна содержать ровно один Stable-профиль.";
+            return "Конфигурация должна содержать ровно один Stable-профиль. Исправьте config.json через launcher (Открыть папку) или переустановите launcher.";
         }
         if (message.Contains("launcher config") || message.Contains("config is invalid"))
         {
-            return "Конфигурация launcher невалидна. Проверьте подготовленные профили.";
+            return "Конфигурация launcher отсутствует или невалидна. Нажмите «Настроить…» и выберите Stable/Preview каталоги через launcher; ручной JSON — только recovery-only.";
         }
         if (message.Contains("stable may use only the production runtime"))
         {
-            return "Stable должен указывать только на canonical production runtime.";
+            return "Stable должен указывать только на canonical production runtime. Исправьте путь в launcher config.";
         }
         if (message.Contains("stable may use only the production database"))
         {
@@ -139,43 +182,47 @@ internal static class LauncherUi
         }
         if (message.Contains("cannot open production data") || message.Contains("aliases production"))
         {
-            return "Preview и Experiment должны использовать собственные данные, не production.";
+            return "Preview и Experiment должны использовать собственные данные, не production. Выберите другой data_dir/database и нажмите «Обновить проверку».";
         }
         if (message.Contains("linked worktrees") || message.Contains("not independent"))
         {
-            return "Профиль должен быть независимым checkout, а не linked worktree.";
+            return "Профиль должен быть независимым checkout, а не linked worktree. Создайте отдельный clone.";
         }
-        if (message.Contains("identity does not match") || message.Contains("identity is ambiguous"))
+        if (message.Contains("identity does not match"))
         {
-            return "Code identity профиля не совпадает с подготовленной версией или checkout изменён.";
+            return "Code identity не совпадает с ожидаемой версией. Для Preview нажмите «Обновить Preview»; для Stable — проверьте expected_ref (released tag) и нажмите «Обновить проверку».";
+        }
+        if (message.Contains("identity is ambiguous"))
+        {
+            return "Заблокировано: checkout изменён (не чистый). Сделайте checkout чистым и нажмите «Обновить проверку».";
         }
         if (message.Contains("dirty or conflicted"))
         {
-            return "Preview checkout изменён или содержит конфликт. Сначала подготовьте его и повторите действие.";
+            return "Preview checkout изменён или содержит конфликт. Нажмите «Обновить проверку» после очистки или «Исправить» если нужно восстановить зависимости.";
         }
         if (message.Contains("unexpected; update is blocked"))
         {
-            return "Preview checkout не совпадает с ожидаемой подготовленной версией. Обновление заблокировано.";
+            return "Preview checkout не совпадает с ожидаемой подготовленной версией. Обновление заблокировано — сделайте checkout чистым и повторите.";
         }
         if (message.Contains("origin/main") && message.Contains("update"))
         {
-            return "Preview не удалось безопасно обновить до canonical origin/main.";
+            return "Preview не удалось безопасно обновить до canonical origin/main. Проверьте сеть и нажмите «Обновить Preview» снова.";
         }
         if (message.Contains("sidecar") || message.Contains("unstamped data"))
         {
-            return "Identity данных не подтверждён. Нужен корректный sidecar для этого профиля.";
+            return "Identity данных не подтверждён. Нужен корректный sidecar для этого профиля — запустите Hermes один раз через launcher или создайте UAT-копию как в docs.";
         }
         if (message.Contains("schema") || message.Contains("alembic"))
         {
-            return "Схема базы не совместима с подготовленным runtime профиля.";
+            return "Схема базы не совместима с подготовленным runtime профиля. Проверьте базу/миграции, затем «Обновить проверку». При нужде — «Исправить» для зависимостей.";
         }
         if (message.Contains("another hermes instance") || message.Contains("port 8000"))
         {
-            return "Другой экземпляр Hermes уже использует локальный порт. Остановите его и обновите проверку.";
+            return "Локальный порт 127.0.0.1:8000 занят другим процессом. Launcher не останавливает чужие процессы: остановите другой Hermes вручную и нажмите «Обновить проверку».";
         }
         if (message.Contains("guarded startup") || message.Contains("not a hermes finance runtime"))
         {
-            return "Выбранный профиль не является подготовленным runtime Hermes Finance.";
+            return "Выбранный профиль не является подготовленным runtime Hermes Finance. Проверьте пути checkout.";
         }
         if (message.Contains("dependency") || message.Contains("npm") || message.Contains("uv "))
         {
@@ -183,14 +230,102 @@ internal static class LauncherUi
         }
         if (message.Contains("access") || message.Contains("permission"))
         {
-            return "Launcher не может безопасно прочитать или использовать данные профиля.";
+            return "Launcher не может безопасно прочитать или использовать данные профиля. Проверьте права/.hermes-data-identity.json.";
         }
         if (message.Contains("does not exist") || message.Contains("missing"))
         {
-            return "В подготовленном профиле не хватает обязательного runtime-файла или каталога.";
+            return "В подготовленном профиле не хватает runtime-файла/каталога. Проверьте checkout и «Обновить проверку».";
         }
-        return "Preflight-проверка не пройдена. Откройте «Диагностика и логи» для технического контекста.";
+        return "Preflight-проверка не пройдена. Launcher покажет точное действие ниже — нажмите его или откройте «Диагностика».";
     }
+
+    public static LauncherActionPlan PlanPrimaryAction(
+        LauncherReadinessState state,
+        ValidatedProfile? validated,
+        LauncherProfile profile,
+        Exception? blockedException = null)
+    {
+        if (state == LauncherReadinessState.Running)
+        {
+            return new(LauncherPrimaryAction.Stop, "Hermes работает — можно остановить или открыть.", "Hermes запущен на 127.0.0.1:8000");
+        }
+        if (state == LauncherReadinessState.Ready)
+        {
+            // Preview behind origin/main with an available target must update
+            // first: Update is the primary CTA, Start is not offered while the
+            // prepared update is pending.
+            if (IsPreviewBehindWithTarget(validated, profile))
+            {
+                return new(LauncherPrimaryAction.Update, "Preview отстал — доступно обновление", "Preview отстал от canonical origin/main — нажмите «Обновить Preview» (или «Обновить и запустить»)");
+            }
+            // Running already handled; Ready means validated and deps ready
+            return new(LauncherPrimaryAction.Start, "Готово к запуску", "Preflight пройден — нажмите «Запустить»");
+        }
+        if (state == LauncherReadinessState.NeedsPreparation)
+        {
+            // Behind + deps missing: one unambiguous primary covering the safe
+            // owner chain (update Preview, then prepare locked deps, then start).
+            if (IsPreviewBehindWithTarget(validated, profile))
+            {
+                return new(LauncherPrimaryAction.UpdateAndStart, "Preview отстал и зависимости не готовы", "Нажмите «Обновить и запустить»: сначала обновление Preview до origin/main, затем подготовка locked-зависимостей и запуск");
+            }
+            return new(LauncherPrimaryAction.Prepare, "Зависимости требуют подготовки", "Locked зависимости не готовы — нажмите «Подготовить» (offline проверка, сеть только по явному нажатию)");
+        }
+        if (state == LauncherReadinessState.Blocked && blockedException is not null)
+        {
+            var msg = blockedException.Message.ToLowerInvariant();
+            var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
+            var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
+            if (msg.Contains("identity does not match") && isPreview)
+            {
+                return new(LauncherPrimaryAction.Update, "Code identity не совпадает — нужно обновление Preview", "Preview отстал от canonical origin/main — нажмите «Обновить Preview»");
+            }
+            if (msg.Contains("identity does not match") && isStable)
+            {
+                // Stable is pinned: launcher never updates Stable, so a mismatch
+                // is recovery-only. Refresh re-checks; the fix happens outside
+                // the launcher (verify released tag / reinstall Stable).
+                return new(LauncherPrimaryAction.Refresh, "Stable code identity не совпадает — recovery-only", "Stable pinned: launcher не обновляет Stable. Проверьте released tag или переустановите Stable, затем «Обновить проверку»");
+            }
+            if (msg.Contains("identity is ambiguous") && isStable)
+            {
+                return new(LauncherPrimaryAction.Refresh, "Stable checkout изменён — recovery-only", "Сделайте Stable checkout чистым (released tag), затем «Обновить проверку». Launcher не исправляет Stable автоматически");
+            }
+            if (msg.Contains("dirty or conflicted") && isPreview)
+            {
+                return new(LauncherPrimaryAction.Refresh, "Заблокировано: checkout изменён", "Сделайте checkout чистым и «Обновить проверку»");
+            }
+            if ((msg.Contains("dependency") || msg.Contains("npm") || msg.Contains("uv ")) )
+            {
+                return new(LauncherPrimaryAction.Prepare, "Зависимости не готовы", "Нажмите «Подготовить» или «Исправить»");
+            }
+            if (msg.Contains("another hermes instance") || msg.Contains("port 8000"))
+            {
+                // External port collision: launcher owns no process to stop, so
+                // Stop would be a false action. Refresh is the honest primary.
+                return new(LauncherPrimaryAction.Refresh, "Порт занят внешним процессом", "Порт 127.0.0.1:8000 занят другим процессом — launcher не останавливает чужие процессы. Остановите его вручную и «Обновить проверку»");
+            }
+            if (msg.Contains("sidecar") || msg.Contains("unstamped"))
+            {
+                return new(LauncherPrimaryAction.Refresh, "Данные не подтверждены", "sidecar не совпадает — см. «Диагностика», затем «Обновить проверку»");
+            }
+            if (msg.Contains("schema") || msg.Contains("alembic"))
+            {
+                return new(LauncherPrimaryAction.Refresh, "Схема не совместима", "Проверьте DB/миграции — потом «Обновить проверку»");
+            }
+        }
+        if (state == LauncherReadinessState.Blocked)
+        {
+            return new(LauncherPrimaryAction.Refresh, "Заблокировано", "Исправьте blocker и «Обновить проверку»");
+        }
+        return new(LauncherPrimaryAction.Refresh, "Проверка не запускалась", "Нажмите «Обновить проверку»");
+    }
+
+    internal static bool IsPreviewBehindWithTarget(ValidatedProfile? validated, LauncherProfile profile) =>
+        profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
+        && validated?.PreviewUpdate is not null
+        && !validated.PreviewUpdate.IsCurrent
+        && validated.PreviewUpdate.TargetAvailable;
 
     public static string CheckValue(bool passed, string success, string failure = "Требует внимания") =>
         passed ? success : failure;
@@ -219,6 +354,7 @@ internal sealed class ProfileCard : Panel
     private readonly Label _name = new();
     private readonly Label _description = new();
     private readonly Label _dataBoundary = new();
+    private readonly Label _identity = new();
     private readonly Label _status = new();
     private LauncherReadinessState _state = LauncherReadinessState.NotChecked;
     private bool _selected;
@@ -230,7 +366,7 @@ internal sealed class ProfileCard : Panel
         AccessibleName = profile.DisplayName;
         Cursor = Cursors.Hand;
         Margin = new Padding(6, 4, 6, 6);
-        Height = 146;
+        Height = 168;
         BackColor = LauncherUi.CardBackgroundFor(profile.Type);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
 
@@ -245,17 +381,42 @@ internal sealed class ProfileCard : Panel
         _name.AutoEllipsis = true;
         _name.Dock = DockStyle.Fill;
 
-        _description.Text = $"{LauncherUi.CardDescription(profile.Type)}  •  {LauncherUi.ReleaseBadge(profile.ExpectedRef)}";
+        var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
+        var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
+        string desc;
+        if (isStable)
+        {
+            desc = $"Pinned {LauncherUi.ReleaseBadge(profile.ExpectedRef)}  ·  production";
+        }
+        else if (isPreview)
+        {
+            desc = $"main / unreleased  ·  {LauncherUi.DataBoundary(profile.Type)}";
+        }
+        else
+        {
+            desc = $"{LauncherUi.CardDescription(profile.Type)}  ·  {LauncherUi.ReleaseBadge(profile.ExpectedRef)}";
+        }
+        _description.Text = desc;
         _description.Font = new Font("Segoe UI", 9F);
         _description.ForeColor = Color.FromArgb(193, 204, 220);
         _description.AutoEllipsis = true;
         _description.Dock = DockStyle.Fill;
 
-        _dataBoundary.Text = LauncherUi.DataBoundary(profile.Type);
-        _dataBoundary.Font = new Font("Segoe UI", 9F);
-        _dataBoundary.ForeColor = Color.FromArgb(160, 175, 196);
+        _dataBoundary.Text = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
+            ? "Canonical production data  ·  Stable"
+            : LauncherUi.DataBoundary(profile.Type) + (isPreview ? "  ·  UNRELEASED" : "");
+        _dataBoundary.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
+        _dataBoundary.ForeColor = isStable ? Color.FromArgb(102, 227, 190) : isPreview ? Color.FromArgb(255, 196, 116) : Color.FromArgb(160, 175, 196);
         _dataBoundary.AutoEllipsis = true;
         _dataBoundary.Dock = DockStyle.Fill;
+
+        _identity.Text = isStable
+            ? LauncherUi.StableIdentityLabel(profile, null)
+            : isPreview ? LauncherUi.PreviewIdentityLabel(profile, null, null) : LauncherUi.ReleaseBadge(profile.ExpectedRef);
+        _identity.Font = new Font("Cascadia Mono", 7.5F);
+        _identity.ForeColor = Color.FromArgb(164, 190, 225);
+        _identity.AutoEllipsis = true;
+        _identity.Dock = DockStyle.Fill;
 
         _status.Text = LauncherUi.ReadinessLabel(_state);
         _status.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
@@ -267,20 +428,22 @@ internal sealed class ProfileCard : Panel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 6,
             Padding = new Padding(16, 12, 16, 10),
             BackColor = Color.Transparent,
         };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         layout.Controls.Add(_badge, 0, 0);
         layout.Controls.Add(_name, 0, 1);
         layout.Controls.Add(_description, 0, 2);
-        layout.Controls.Add(_dataBoundary, 0, 3);
-        layout.Controls.Add(_status, 0, 4);
+        layout.Controls.Add(_identity, 0, 3);
+        layout.Controls.Add(_dataBoundary, 0, 4);
+        layout.Controls.Add(_status, 0, 5);
         Controls.Add(layout);
         WireClick(this);
         Resize += (_, _) => SetRoundedRegion();
@@ -304,6 +467,24 @@ internal sealed class ProfileCard : Panel
         _status.ForeColor = LauncherUi.StatusColor(state);
         AccessibleDescription = $"{Profile.DisplayName}: {_status.Text}";
         Invalidate();
+    }
+
+    public void SetIdentity(string? headSha, string? targetSha)
+    {
+        var isStable = Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
+        var isPreview = Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
+        if (isStable)
+        {
+            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha);
+        }
+        else if (isPreview)
+        {
+            _identity.Text = LauncherUi.PreviewIdentityLabel(Profile, headSha, targetSha);
+        }
+        else
+        {
+            _identity.Text = headSha is not null ? $"SHA {LauncherUi.ShaShort(headSha)}" : LauncherUi.ReleaseBadge(Profile.ExpectedRef);
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e)
