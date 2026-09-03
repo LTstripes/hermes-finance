@@ -636,6 +636,53 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
     assert len(warning_codes) == len(set(warning_codes))
 
 
+def test_cash_snapshot_detection_is_account_specific(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    covered_account = _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Covered Cash", "account_type": "cash"},
+        )
+    )["id"]
+    _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Missing Cash", "account_type": "cash"},
+        )
+    )
+    month_id = _create_month(client, 2026, 8)
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": covered_account,
+                "name": "Synthetic covered cash snapshot",
+                "amount": _money("125000.00"),
+            },
+        )
+    )
+    _close(client, month_id)
+
+    response = _export(client)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    _validator().validate(payload)
+
+    account_refs = {item["name"]: item["ref"] for item in payload["current_portfolio"]["accounts"]}
+    missing_ref = account_refs["Synthetic Missing Cash"]
+    assert (
+        account_refs["Synthetic Covered Cash"]
+        not in payload["current_portfolio"]["missing_snapshot_account_refs"]
+    )
+    assert payload["current_portfolio"]["missing_snapshot_account_refs"] == [missing_ref]
+    assert any(
+        warning["code"] == "active_account_snapshot_missing" for warning in payload["warnings"]
+    )
+
+
 def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     app_context: tuple[TestClient, Database],
 ) -> None:

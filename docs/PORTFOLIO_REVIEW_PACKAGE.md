@@ -16,9 +16,11 @@ endpoint, a human-readable companion report, and a preview/download UI. It does
 not upload data, call a cloud service or LLM, persist an export, or refresh a
 provider.
 
-The existing `hermes.finance.ai_analysis_bundle` `1.1.0` contract remains the source
-and remains the source contract for the first adapter. The review package is one
-new output contract, not a second financial model: its sections deliberately reuse
+The current `hermes.finance.ai_analysis_bundle` `1.1.0` contract remains the source
+implementation for the first adapter. The frozen review package `1.0.0` intentionally
+retains its declared `source_contract_version` of `1.0.0`; a future package minor
+version can advance that metadata without mutating this contract. The review package
+is one new output contract, not a second financial model: its sections deliberately reuse
 the existing bundle's money, availability, provenance, payout-counting, and
 closed-month semantics. A later assembler maps existing DTOs/read models into this
 contract without recalculating them.

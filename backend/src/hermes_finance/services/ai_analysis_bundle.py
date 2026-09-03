@@ -702,6 +702,7 @@ def assemble_ai_analysis_bundle(
     selected_cash = [
         row for row in list_cash_balances(session) if row.reporting_month_id == current.id
     ]
+    has_unassigned_cash = any(row.account_id is None for row in selected_cash)
 
     def account_has_current_snapshot(account) -> bool:
         if any(row.account_id == account.id for row in selected_positions):
@@ -710,7 +711,7 @@ def assemble_ai_analysis_bundle(
             return True
         if any(row.account_id == account.id for row in selected_cash):
             return True
-        return account.account_type == "cash" and bool(selected_cash)
+        return account.account_type == "cash" and has_unassigned_cash
 
     missing_snapshot_accounts = [
         row

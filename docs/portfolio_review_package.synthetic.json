@@ -12,7 +12,7 @@
     },
     "generation_mode": "read_only",
     "source_contract_name": "hermes.finance.ai_analysis_bundle",
-    "source_contract_version": "1.1.0",
+    "source_contract_version": "1.0.0",
     "calculation_versions": {
       "monthly_summary": "v2",
       "passive_income_forecast": "v1",
