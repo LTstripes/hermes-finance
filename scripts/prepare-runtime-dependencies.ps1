@@ -59,6 +59,18 @@ function Invoke-CapturedCommand {
     }
 }
 
+function Test-OfflinePreparationRequired {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Output
+    )
+
+    $managedPythonCacheMiss = $Output -match "(?is)error:\s+No interpreter found for Python\b.*?managed installations.*?download"
+    $cacheLanguage = ($Output -match "(?i)cache") -or ($Output -match "(?i)artifact") -or ($Output -match "(?i)wheel")
+    $missingLanguage = $Output -match "(?is)(not\s+(found|available|cached)|missing|unavailable)"
+    return $managedPythonCacheMiss -or ($cacheLanguage -and $missingLanguage)
+}
+
 function Get-DependencyStatus {
     param(
         [Parameter(Mandatory = $true)]
@@ -86,11 +98,14 @@ function Get-DependencyStatus {
         -FilePath $Uv `
         -WorkingDirectory $backend `
         -ArgumentList @("sync", "--locked", "--dry-run", "--offline")
-    if ($backendCheck.ExitCode -ne 0) {
+    $backendNeedsPreparation = $backendCheck.Output -match "(?im)^\s*Would\s+(create|download|install|remove|uninstall|update|reinstall|build)\b"
+    if ($backendCheck.ExitCode -ne 0 -and -not (Test-OfflinePreparationRequired -Output $backendCheck.Output)) {
         throw "Backend dependency check failed: $($backendCheck.Output.Trim())"
     }
 
-    $backendNeedsPreparation = $backendCheck.Output -match "(?im)^\s*Would\s+(create|download|install|remove|uninstall|update|reinstall|build)\b"
+    if ($backendCheck.ExitCode -ne 0) {
+        $backendNeedsPreparation = $true
+    }
     $backendMessage = if ($backendNeedsPreparation) {
         "needs preparation"
     }

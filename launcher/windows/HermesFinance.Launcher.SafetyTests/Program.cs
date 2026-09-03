@@ -29,6 +29,8 @@ var tests = new (string Name, Action Run)[]
     ("uses the bundled schema probe for a legacy checkout", UsesBundledSchemaProbeForLegacyCheckout),
     ("uses the bundled dependency preparation helper", UsesBundledDependencyPreparationHelper),
     ("detects missing and outdated locked dependencies", DetectsDependencyDrift),
+    ("keeps an offline backend cache miss actionable", KeepsOfflineBackendCacheMissActionable),
+    ("fails closed on non-cache offline backend errors", FailsClosedOnInvalidOfflineBackendProbe),
     ("resolves PATH commands outside the selected checkout", ResolvesPathCommandsOutsideSelectedCheckout),
     ("fails closed when npm is missing", FailsClosedWhenNpmIsMissing),
     ("packages the branded cat icon", PackagesBrandedCatIcon),
@@ -342,6 +344,114 @@ static void DetectsDependencyDrift()
         Assert(!status.FrontendReady, "npm dependency problems must require preparation.");
         Assert(status.BackendDetail.Contains("needs preparation", StringComparison.Ordinal), "Backend drift must be owner-visible as preparation work.");
         Assert(status.FrontendDetail.Contains("needs preparation", StringComparison.Ordinal), "Frontend drift must be owner-visible as preparation work.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void KeepsOfflineBackendCacheMissActionable()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-offline-cache-miss-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "Selected Checkout With Spaces");
+    var dataDir = Path.Combine(root, "Stable Data");
+    var database = Path.Combine(dataDir, "finance.db");
+    var toolDirectory = Path.Combine(root, "External Tools With Spaces");
+    var preparationMarker = Path.Combine(root, "network-preparation.marker");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "user.name", "Hermes Safety Test");
+        RunGit(checkout, "config", "user.email", "hermes-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "initial synthetic runtime");
+        Directory.CreateDirectory(toolDirectory);
+        var marker = BatchQuote(preparationMarker);
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "uv.cmd"),
+            string.Join("\r\n", new[]
+            {
+                "@echo off",
+                "if \"%~1\"==\"sync\" if \"%~2\"==\"--locked\" if \"%~3\"==\"--dry-run\" if \"%~4\"==\"--offline\" (",
+                $"  if exist {marker} exit /b 0",
+                "  echo error: No interpreter found for Python 3.13 in managed installations",
+                "  echo hint: A managed Python download is available for Python 3.13, but Python downloads are set to 'never'",
+                "  exit /b 2",
+                ")",
+                $"> {marker} echo prepared",
+                "exit /b 0",
+            }));
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "npm.cmd"),
+            "@echo off\r\necho {\"name\":\"hermes-finance-frontend\"}\r\nexit /b 0\r\n");
+        var testPath = string.IsNullOrWhiteSpace(originalPath)
+            ? toolDirectory
+            : toolDirectory + Path.PathSeparator + originalPath;
+        Environment.SetEnvironmentVariable("PATH", testPath);
+
+        var profile = StableProfile(checkout, dataDir, database, "HEAD");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction
+            {
+                Checkout = checkout,
+                DataDir = dataDir,
+                Database = database,
+            },
+            Profiles = [profile],
+        };
+        var validated = ProfileValidator.Validate(config, profile);
+        var dependencies = validated.Dependencies ?? throw new InvalidOperationException("Preflight did not return dependency status.");
+        Assert(!dependencies.BackendReady && dependencies.FrontendReady, "An offline managed-Python cache miss must return a not-ready backend dependency status.");
+        Assert(dependencies.BackendDetail.Contains("needs preparation", StringComparison.Ordinal), "The offline cache miss must be owner-visible as preparation work.");
+        Assert(!File.Exists(preparationMarker), "Read-only preflight must not run network-capable preparation.");
+
+        using var form = new MainForm(config);
+        var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher validation presentation.");
+        apply.Invoke(form, [validated]);
+        var buttons = AllControls(form).OfType<Button>().ToArray();
+        Assert(buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must be enabled after an offline backend cache miss.");
+        Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Ordinary Start must remain disabled until preparation completes.");
+
+        using var preparation = Process.Start(DependencyValidator.BuildPreparationCommand(checkout))
+            ?? throw new InvalidOperationException("Synthetic owner action could not start the bundled preparation helper.");
+        preparation.WaitForExit();
+        Assert(preparation.ExitCode == 0, "The explicit owner preparation action must complete successfully for the synthetic cache-miss fixture.");
+        Assert(File.Exists(preparationMarker), "Network-capable preparation must run only after the explicit owner Prepare action.");
+        var prepared = ProfileValidator.Validate(config, profile);
+        apply.Invoke(form, [prepared]);
+        Assert(buttons.Single(button => button.Text == "Запустить").Enabled, "Start must become enabled after explicit preparation succeeds.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void FailsClosedOnInvalidOfflineBackendProbe()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-invalid-offline-probe-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "Selected Checkout");
+    var toolDirectory = Path.Combine(root, "External Tools");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    try
+    {
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(toolDirectory);
+        WriteCommandShim(Path.Combine(toolDirectory, "uv.cmd"), "@echo off\r\necho error: invalid uv.lock\r\nexit /b 2\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory + Path.PathSeparator + originalPath);
+
+        AssertThrowsMessage(
+            () => DependencyValidator.Check(checkout),
+            "Backend dependency check failed: error: invalid uv.lock");
     }
     finally
     {

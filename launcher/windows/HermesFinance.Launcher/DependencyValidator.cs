@@ -26,16 +26,20 @@ internal static class DependencyValidator
         RequireFile(Path.Combine(frontend, "package-lock.json"), "Frontend lockfile is missing.");
 
         var backendCheck = RunCommand("uv", backend, "sync", "--locked", "--dry-run", "--offline");
-        if (backendCheck.ExitCode != 0)
-        {
-            throw new LauncherValidationException(
-                $"Backend dependency check failed: {OneLine(backendCheck.StandardError, backendCheck.StandardOutput)}");
-        }
-
         var backendOutput = $"{backendCheck.StandardOutput}\n{backendCheck.StandardError}";
         var backendNeedsPreparation = System.Text.RegularExpressions.Regex.IsMatch(
             backendOutput,
             @"(?im)^\s*Would\s+(create|download|install|remove|uninstall|update|reinstall|build)\b");
+        if (backendCheck.ExitCode != 0)
+        {
+            if (!IsOfflinePreparationRequired(backendOutput))
+            {
+                throw new LauncherValidationException(
+                    $"Backend dependency check failed: {OneLine(backendCheck.StandardError, backendCheck.StandardOutput)}");
+            }
+
+            backendNeedsPreparation = true;
+        }
         var backendDetail = backendNeedsPreparation
             ? $"needs preparation: {OneLine(backendOutput, "uv reports a pending environment change.")}"
             : "ready (locked environment is synchronized)";
@@ -68,6 +72,20 @@ internal static class DependencyValidator
             !frontendNeedsPreparation,
             backendDetail,
             frontendDetail);
+    }
+
+    private static bool IsOfflinePreparationRequired(string output)
+    {
+        var managedPythonCacheMiss = System.Text.RegularExpressions.Regex.IsMatch(
+            output,
+            @"(?is)error:\s+No interpreter found for Python\b.*?managed installations.*?download");
+        var cacheLanguage = output.Contains("cache", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("artifact", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("wheel", StringComparison.OrdinalIgnoreCase);
+        var missingLanguage = System.Text.RegularExpressions.Regex.IsMatch(
+            output,
+            @"(?is)(not\s+(found|available|cached)|missing|unavailable)");
+        return managedPythonCacheMiss || (cacheLanguage && missingLanguage);
     }
 
     internal static ProcessStartInfo BuildPreparationCommand(string checkout, bool repair = false)
