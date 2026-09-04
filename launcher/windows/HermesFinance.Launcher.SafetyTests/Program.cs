@@ -65,7 +65,7 @@ var tests = new (string Name, Action Run)[]
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
     ("layout keeps the default window free of overlap and clipping", LayoutKeepsDefaultWindowClean),
-    ("layout fits Russian labels at 125 and 150 percent scaling", LayoutFitsRussianLabelsWhenScaled),
+    ("layout fits Russian labels at 100, 125, and 150 percent scaling", LayoutFitsRussianLabelsWhenScaled),
     ("layout survives narrow and wide resizes", LayoutSurvivesCommonResizes),
     ("layout keeps cards comparable with one obvious primary CTA", LayoutKeepsCardsComparableAndPrimaryObvious),
 };
