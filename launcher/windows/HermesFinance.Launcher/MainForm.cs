@@ -1795,10 +1795,11 @@ public sealed class MainForm : Form
                 return base.GetPreferredSize(proposedSize);
             }
 
-            var descriptionWidth = Math.Max(1, width - GetIconColumnWidth());
+            var descriptionWidth = GetDescriptionWidth(width);
             Description?.SetWrapWidth(descriptionWidth);
-            var preferred = base.GetPreferredSize(new Size(width, 0));
             var wrappedHeight = Description?.GetWrappedHeight(descriptionWidth) ?? 0;
+            SetDescriptionRowHeight(wrappedHeight);
+            var preferred = base.GetPreferredSize(new Size(width, 0));
             return new Size(width, Math.Max(preferred.Height, GetTitleRowHeight() + wrappedHeight));
         }
 
@@ -1807,10 +1808,33 @@ public sealed class MainForm : Form
             var width = ClientSize.Width;
             if (width > 0)
             {
-                Description?.SetWrapWidth(Math.Max(1, width - GetIconColumnWidth()));
+                var descriptionWidth = GetDescriptionWidth(width);
+                Description?.SetWrapWidth(descriptionWidth);
+                SetDescriptionRowHeight(Description?.GetWrappedHeight(descriptionWidth) ?? 0);
             }
 
             base.OnLayout(levent);
+        }
+
+        private int GetDescriptionWidth(int width) => Math.Max(1, width - GetIconColumnWidth());
+
+        private void SetDescriptionRowHeight(int height)
+        {
+            if (RowStyles.Count <= 1)
+            {
+                return;
+            }
+
+            var row = RowStyles[1];
+            if (row.SizeType != SizeType.Absolute)
+            {
+                row.SizeType = SizeType.Absolute;
+            }
+
+            if (Math.Abs(row.Height - height) > 0.1F)
+            {
+                row.Height = height;
+            }
         }
 
         private int GetIconColumnWidth()

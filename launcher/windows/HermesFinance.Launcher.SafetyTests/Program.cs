@@ -1863,6 +1863,7 @@ static void AssertReadinessHeightPropagates(MainForm form, string scenario)
     var description = (Label)typeof(MainForm)
         .GetField("_readinessDescription", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .GetValue(form)!;
+    var readinessLayout = (TableLayoutPanel)description.Parent!;
     var selectedLayout = (TableLayoutPanel)typeof(MainForm)
         .GetField("_selectedLayout", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .GetValue(form)!;
@@ -1874,6 +1875,12 @@ static void AssertReadinessHeightPropagates(MainForm form, string scenario)
     var contentBottom = description.Parent!.Top + description.Bottom + readinessPanel.Padding.Bottom;
     Assert(need.Height <= description.Height + 2,
         $"{scenario}: readiness description needs {need.Height}px but is {description.Height}px.");
+    var descriptionRow = readinessLayout.GetPositionFromControl(description).Row;
+    var descriptionRowHeight = readinessLayout.GetRowHeights()[descriptionRow];
+    Assert(readinessLayout.RowStyles[descriptionRow].SizeType == SizeType.Absolute,
+        $"{scenario}: readiness description row must be content-driven Absolute before layout.");
+    Assert(descriptionRowHeight >= need.Height - 1,
+        $"{scenario}: readiness description row is {descriptionRowHeight}px but wrapped text needs {need.Height}px.");
     Assert(contentBottom <= readinessPanel.ClientSize.Height + 1,
         $"{scenario}: readiness outer container is {readinessPanel.Height}px but its wrapped content needs at least {contentBottom}px.");
     var row = selectedLayout.GetPositionFromControl(readinessPanel).Row;
