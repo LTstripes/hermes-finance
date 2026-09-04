@@ -1,5 +1,8 @@
 using HermesFinance.Launcher;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text;
@@ -36,6 +39,13 @@ var tests = new (string Name, Action Run)[]
     ("packages the branded cat icon", PackagesBrandedCatIcon),
     ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
     ("starts and stops only a synthetic runtime", StartsAndStopsSyntheticRuntime),
+    ("returns Ready and enables Start after launcher-owned Stop", OwnerStopReturnsToReady),
+    ("recovers Stable ownership after launcher restart", RecoversStableOwnershipAfterLauncherRestart),
+    ("recovers Preview ownership after launcher restart", RecoversPreviewOwnershipAfterLauncherRestart),
+    ("rejects an unrelated loopback port occupant", RejectsUnrelatedLoopbackPortOccupant),
+    ("rejects stale ownership after PID reuse", RejectsStaleOwnershipAfterPidReuse),
+    ("cleans ownership when the owned process exits", CleansOwnershipWhenProcessExits),
+    ("forbids cross-profile ownership stop", ForbidsCrossProfileOwnershipStop),
     ("fails closed when the ready sidecar stamp cannot be written", FailsClosedOnReadySidecarFailure),
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
@@ -585,6 +595,7 @@ static void StartsAndStopsSyntheticRuntime()
         var checkout = Path.Combine(root, "Synthetic Runtime With Spaces");
         var dataDir = Path.Combine(root, "data");
         var database = Path.Combine(dataDir, "synthetic.db");
+        var ownershipDirectory = Path.Combine(root, "ownership");
         var marker = Path.Combine(root, "started.txt");
         Directory.CreateDirectory(Path.Combine(checkout, "scripts"));
         Directory.CreateDirectory(dataDir);
@@ -606,7 +617,7 @@ static void StartsAndStopsSyntheticRuntime()
             Version = 1,
             CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = database },
             Profiles = [profile.Profile],
-        });
+        }, ownershipDirectory);
 
         var start = typeof(MainForm).GetMethod("StartProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher Start implementation.");
@@ -645,6 +656,388 @@ static void StartsAndStopsSyntheticRuntime()
         form?.Dispose();
         DeleteSyntheticTree(root);
     }
+}
+
+static void OwnerStopReturnsToReady()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-owner-stop-{Guid.NewGuid():N}");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    Process? process = null;
+    MainForm? form = null;
+    try
+    {
+        var checkout = Path.Combine(root, "stable-runtime");
+        var dataDir = Path.Combine(checkout, "data");
+        var database = Path.Combine(dataDir, "finance.db");
+        var ownershipDirectory = Path.Combine(root, "ownership");
+        var toolDirectory = Path.Combine(root, "tools");
+        Directory.CreateDirectory(root);
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(toolDirectory);
+        File.WriteAllText(
+            Path.Combine(checkout, "scripts", "start-local.ps1"),
+            "$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000)\n"
+                + "$listener.Start()\n"
+                + "Write-Output 'Hermes Finance is ready: http://127.0.0.1:8000'\n"
+                + "while ($true) { Start-Sleep -Milliseconds 100 }\n",
+            new UTF8Encoding(true));
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "user.name", "Hermes launcher safety test");
+        RunGit(checkout, "config", "user.email", "hermes-launcher-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "synthetic launcher owner-stop runtime");
+        var head = RunGit(checkout, "rev-parse", "HEAD");
+
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "uv.cmd"),
+            "@echo off\r\nexit /b 0\r\n");
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "npm.cmd"),
+            "@echo off\r\necho {\"dependencies\":{}}\r\nexit /b 0\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory + Path.PathSeparator + originalPath);
+
+        var profile = StableProfile(checkout, dataDir, database, "HEAD");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction
+            {
+                Checkout = checkout,
+                DataDir = dataDir,
+                Database = database,
+            },
+            Profiles = [profile],
+        };
+        var validated = new ValidatedProfile(
+            profile,
+            checkout,
+            dataDir,
+            database,
+            head,
+            "production",
+            new DependencyStatus(true, true, "ready", "ready"));
+
+        form = new MainForm(config, ownershipDirectory)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-2000, -2000),
+        };
+        form.Show();
+        form.Hide();
+
+        var startMethod = typeof(MainForm).GetMethod("StartProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Owner-stop regression could not find the launcher Start implementation.");
+        startMethod.Invoke(form, [validated]);
+        var processField = typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Owner-stop regression could not find launcher process state.");
+        process = (Process?)processField.GetValue(form);
+        Assert(process is not null, "Launcher Start must retain the started process for the owner-stop cycle.");
+        var startedProcess = process ?? throw new InvalidOperationException("Launcher process was not retained.");
+
+        WaitForUi(
+            form,
+            () => GetPrivate<bool>(form, "_ready")
+                && GetButton(form, "Остановить").Enabled,
+            "Synthetic runtime did not reach Running before owner Stop.");
+        var markerPath = new LauncherProcessOwnership(ownershipDirectory).GetMarkerPath(validated);
+        Assert(File.Exists(markerPath), "Running synthetic runtime must have durable ownership metadata.");
+
+        var stopMethod = typeof(MainForm).GetMethod(
+                "StopLaunchedStack",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null)
+            ?? throw new InvalidOperationException("Owner-stop regression could not find the launcher Stop implementation.");
+        stopMethod.Invoke(form, ["Synthetic owner-stop regression stopped the runtime."]);
+        Assert(startedProcess.WaitForExit(5_000), "Synthetic runtime did not exit after launcher-owned Stop.");
+
+        WaitForUi(
+            form,
+            () => GetButton(form, "Запустить").Enabled
+                && GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску",
+            "Launcher-owned Stop did not complete cleanup, preflight, and return the UI to Ready with Start enabled.");
+        Assert(!File.Exists(markerPath), "Launcher-owned Stop must remove ownership metadata before Ready is restored.");
+        ProfileValidator.AssertPortAvailable();
+        Assert(
+            !GetPrivate<Label>(form, "_lastLaunch").Text.Contains("код -1", StringComparison.Ordinal),
+            "Expected launcher-owned Stop must not remain a fatal exit-code -1 launch status.");
+        Assert(
+            GetPrivate<Label>(form, "_serviceCheck").ForeColor == Color.FromArgb(102, 227, 190),
+            "Automatic post-stop preflight must leave the loopback/Alembic check green.");
+        process = null;
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        form?.Dispose();
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void RecoversStableOwnershipAfterLauncherRestart() =>
+    RecoversOwnershipAfterLauncherRestart("stable");
+
+static void RecoversPreviewOwnershipAfterLauncherRestart() =>
+    RecoversOwnershipAfterLauncherRestart("preview");
+
+static void RecoversOwnershipAfterLauncherRestart(string profileType)
+{
+    var fixture = CreateOwnershipFixture(profileType);
+    Process? process = null;
+    try
+    {
+        var started = StartOwnedSyntheticRuntime(fixture);
+        process = started.Process;
+        started.Form.Dispose();
+
+        using var reopened = new MainForm(fixture.Config, fixture.OwnershipDirectory);
+        var recovered = fixture.Ownership.TryRecover(fixture.ValidatedProfile);
+        Assert(recovered is not null, $"A running {profileType} process must be recovered after launcher restart.");
+        var recoveredProcess = recovered ?? throw new InvalidOperationException("Recovery unexpectedly returned no process.");
+        Assert(recoveredProcess.Marker.Ready, "Only a process that reached the ready marker may be recovered as Running.");
+
+        var validatedField = typeof(MainForm).GetField("_validatedProfile", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        validatedField.SetValue(reopened, fixture.ValidatedProfile);
+        var attach = typeof(MainForm).GetMethod("AttachRecoveredProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        attach.Invoke(reopened, [fixture.ValidatedProfile, recoveredProcess]);
+        Assert((bool)typeof(MainForm).GetField("_ready", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(reopened)!, "Recovered process must be presented as ready/running.");
+
+        var stop = typeof(MainForm).GetMethod("StopLaunchedStack", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, binder: null, types: [typeof(string)], modifiers: null)!;
+        stop.Invoke(reopened, [$"Synthetic {profileType} restart recovery stopped the runtime."]);
+        Assert(process.WaitForExit(5_000), "Recovered launcher-owned process did not stop through its proven process tree.");
+        Assert(!File.Exists(fixture.Ownership.GetMarkerPath(fixture.ValidatedProfile)), "Stopping a recovered process must remove its ownership marker.");
+        process = null;
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        fixture.Form?.Dispose();
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void RejectsUnrelatedLoopbackPortOccupant()
+{
+    using var listener = new TcpListener(IPAddress.Loopback, 8000);
+    listener.Start();
+    AssertThrows<LauncherValidationException>(ProfileValidator.AssertPortAvailable);
+    listener.Stop();
+}
+
+static void RejectsStaleOwnershipAfterPidReuse()
+{
+    var fixture = CreateOwnershipFixture("preview");
+    Process? process = null;
+    try
+    {
+        var started = StartOwnedSyntheticRuntime(fixture);
+        process = started.Process;
+        var markerPath = fixture.Ownership.GetMarkerPath(fixture.ValidatedProfile);
+        var marker = JsonSerializer.Deserialize<LauncherOwnershipMarker>(File.ReadAllText(markerPath))!
+            with { ProcessStartTimeUtcTicks = started.Process.StartTime.ToUniversalTime().Ticks - 1 };
+        File.WriteAllText(markerPath, JsonSerializer.Serialize(marker));
+
+        Assert(fixture.Ownership.TryRecover(fixture.ValidatedProfile) is null, "A reused PID with a different process start time must fail closed.");
+        Assert(!File.Exists(markerPath), "A stale PID marker must be removed or ignored before another process can be considered owned.");
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        fixture.Form?.Dispose();
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void CleansOwnershipWhenProcessExits()
+{
+    var fixture = CreateOwnershipFixture("stable");
+    Process? process = null;
+    try
+    {
+        var started = StartOwnedSyntheticRuntime(fixture);
+        process = started.Process;
+        var markerPath = fixture.Ownership.GetMarkerPath(fixture.ValidatedProfile);
+        Assert(File.Exists(markerPath), "A started runtime must have durable ownership metadata.");
+        process.Kill(entireProcessTree: true);
+        Assert(process.WaitForExit(5_000), "Synthetic owned process did not exit.");
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline && File.Exists(markerPath))
+        {
+            Thread.Sleep(50);
+        }
+        Assert(!File.Exists(markerPath), "Owned process exit must clean its durable ownership marker.");
+        process = null;
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        fixture.Form?.Dispose();
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void ForbidsCrossProfileOwnershipStop()
+{
+    var fixture = CreateOwnershipFixture("stable");
+    Process? process = null;
+    try
+    {
+        var previewCheckout = Path.Combine(fixture.Root, "preview-checkout");
+        var previewData = Path.Combine(fixture.Root, "preview-data");
+        Directory.CreateDirectory(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        var preview = new ValidatedProfile(
+            new LauncherProfile
+            {
+                Id = "preview",
+                DisplayName = "Preview",
+                Type = "preview",
+                Checkout = previewCheckout,
+                ExpectedRef = "preview-head",
+                DataDir = previewData,
+                Database = Path.Combine(previewData, "finance.db"),
+                OpenBrowser = false,
+            },
+            previewCheckout,
+            previewData,
+            Path.Combine(previewData, "finance.db"),
+            "preview-head",
+            "preview");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction { Checkout = fixture.ValidatedProfile.Checkout, DataDir = fixture.ValidatedProfile.DataDir, Database = fixture.ValidatedProfile.Database },
+            Profiles = [fixture.Profile, preview.Profile],
+        };
+        using var form = new MainForm(config, fixture.OwnershipDirectory);
+        var start = typeof(MainForm).GetMethod("StartProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        start.Invoke(form, [fixture.ValidatedProfile]);
+        process = (Process)typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(form)!;
+        WaitForOwnedMarker(fixture, process);
+        Assert(fixture.Ownership.MarkReady(fixture.ValidatedProfile, process), "Synthetic Stable ownership should become ready before cross-profile stop test.");
+
+        typeof(MainForm).GetField("_validatedProfile", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(form, fixture.ValidatedProfile);
+        typeof(MainForm).GetField("_selectedProfile", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(form, preview.Profile);
+        var stop = typeof(MainForm).GetMethod("StopLaunchedStack", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, binder: null, types: [typeof(string)], modifiers: null)!;
+        stop.Invoke(form, ["cross-profile stop probe"]);
+        Assert(!process.HasExited, "Stable ownership must not be stoppable while Preview is selected.");
+        Assert(File.Exists(fixture.Ownership.GetMarkerPath(fixture.ValidatedProfile)), "Cross-profile Stop must preserve Stable ownership metadata.");
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        fixture.Form?.Dispose();
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static (string Root, string OwnershipDirectory, LauncherProfile Profile, ValidatedProfile ValidatedProfile, LauncherConfig Config, LauncherProcessOwnership Ownership, MainForm? Form) CreateOwnershipFixture(string profileType)
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-ownership-{profileType}-{Guid.NewGuid():N}");
+    var checkout = Path.Combine(root, "checkout");
+    var dataDir = Path.Combine(root, "data");
+    var database = Path.Combine(dataDir, "finance.db");
+    var ownershipDirectory = Path.Combine(root, "ownership");
+    Directory.CreateDirectory(Path.Combine(checkout, "scripts"));
+    Directory.CreateDirectory(dataDir);
+    var script = Path.Combine(checkout, "scripts", "start-local.ps1");
+    File.WriteAllText(script, ""
+        + "$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000)\n"
+        + "$listener.Start()\n"
+        + "Write-Output 'Hermes Finance is ready: http://127.0.0.1:8000'\n"
+        + "while ($true) { Start-Sleep -Milliseconds 100 }\n", new UTF8Encoding(true));
+    var profile = new LauncherProfile
+    {
+        Id = profileType,
+        DisplayName = profileType,
+        Type = profileType,
+        Checkout = checkout,
+        ExpectedRef = $"{profileType}-head",
+        DataDir = dataDir,
+        Database = database,
+        OpenBrowser = false,
+    };
+    var validated = new ValidatedProfile(profile, checkout, dataDir, database, $"{profileType}-head", profileType == "stable" ? "production" : "preview");
+    var config = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = database },
+        Profiles = [profile],
+    };
+    return (root, ownershipDirectory, profile, validated, config, new LauncherProcessOwnership(ownershipDirectory), null);
+}
+
+static (MainForm Form, Process Process) StartOwnedSyntheticRuntime((string Root, string OwnershipDirectory, LauncherProfile Profile, ValidatedProfile ValidatedProfile, LauncherConfig Config, LauncherProcessOwnership Ownership, MainForm? Form) fixture)
+{
+    var form = new MainForm(fixture.Config, fixture.OwnershipDirectory);
+    var start = typeof(MainForm).GetMethod("StartProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    start.Invoke(form, [fixture.ValidatedProfile]);
+    var process = (Process)typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(form)!;
+    WaitForOwnedMarker(fixture, process);
+    Assert(fixture.Ownership.MarkReady(fixture.ValidatedProfile, process), "Synthetic runtime must be able to persist a ready ownership marker.");
+    return (form, process);
+}
+
+static void WaitForOwnedMarker((string Root, string OwnershipDirectory, LauncherProfile Profile, ValidatedProfile ValidatedProfile, LauncherConfig Config, LauncherProcessOwnership Ownership, MainForm? Form) fixture, Process process)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(15);
+    while (DateTime.UtcNow < deadline
+        && (!File.Exists(fixture.Ownership.GetMarkerPath(fixture.ValidatedProfile))
+            || process.HasExited
+            || !LauncherProcessOwnership.IsLoopbackPortOwnedByProcessTree(process.Id)))
+    {
+        Thread.Sleep(100);
+    }
+    Assert(!process.HasExited, "Synthetic launcher-owned process exited before the ownership probe completed.");
+    Assert(File.Exists(fixture.Ownership.GetMarkerPath(fixture.ValidatedProfile)), "Synthetic launcher Start must write an ownership marker.");
+}
+
+static void StopSyntheticProcess(Process? process)
+{
+    if (process is null)
+    {
+        return;
+    }
+    try
+    {
+        if (!process.HasExited)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(5_000);
+        }
+    }
+    catch (InvalidOperationException)
+    {
+    }
+    catch (Win32Exception)
+    {
+    }
+}
+
+static T GetPrivate<T>(MainForm form, string fieldName)
+{
+    var field = typeof(MainForm).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException($"Could not find launcher field '{fieldName}'.");
+    return (T)(field.GetValue(form) ?? throw new InvalidOperationException($"Launcher field '{fieldName}' is null."));
+}
+
+static Button GetButton(MainForm form, string text) =>
+    AllControls(form).OfType<Button>().Single(button => button.Text == text);
+
+static void WaitForUi(MainForm form, Func<bool> condition, string failureMessage)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(20);
+    while (DateTime.UtcNow < deadline && !condition())
+    {
+        Application.DoEvents();
+        Thread.Sleep(50);
+    }
+    Application.DoEvents();
+    Assert(condition(), failureMessage);
 }
 
 static void FailsClosedOnReadySidecarFailure()
