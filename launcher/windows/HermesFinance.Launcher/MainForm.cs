@@ -145,7 +145,7 @@ public sealed class MainForm : Form
         Text = "Current SHA: —   Target origin/main: —",
         Margin = new Padding(0, 0, 0, 3),
     };
-    private readonly Panel _readinessPanel = new()
+    private readonly ReadinessContainerPanel _readinessPanel = new()
     {
         Dock = DockStyle.Fill,
         BackColor = Color.FromArgb(21, 35, 57),
@@ -565,9 +565,11 @@ public sealed class MainForm : Form
 
     private void BuildReadinessPanel()
     {
-        var layout = new TableLayoutPanel
+        var layout = new ReadinessLayoutPanel
         {
             Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
             RowCount = 2,
             BackColor = Color.Transparent,
@@ -581,6 +583,8 @@ public sealed class MainForm : Form
         layout.SetRowSpan(_readinessDot, 2);
         layout.Controls.Add(_readinessTitle, 1, 0);
         layout.Controls.Add(_readinessDescription, 1, 1);
+        layout.Description = _readinessDescription;
+        _readinessPanel.ContentControl = layout;
         layout.Resize += (_, _) => ClampReadinessWrap();
         _readinessPanel.Controls.Add(layout);
     }
@@ -1462,7 +1466,13 @@ public sealed class MainForm : Form
         // #284: keep the wrapping description clamped to the visible panel
         // width; runs on panel resize (including layout sizing) so the wrap
         // width tracks reality instead of a pre-layout default.
-        var wrapWidth = Math.Max(120, _readinessPanel.ClientSize.Width - 54);
+        var availableWidth = _readinessPanel.ClientSize.Width - _readinessPanel.Padding.Horizontal;
+        if (availableWidth <= 30)
+        {
+            return;
+        }
+
+        var wrapWidth = availableWidth - 30;
         var clamped = new Size(wrapWidth, 0);
         if (_readinessDescription.MaximumSize != clamped)
         {
@@ -1690,10 +1700,136 @@ public sealed class MainForm : Form
                 return base.GetPreferredSize(proposedSize);
             }
 
+            return new Size(width, GetWrappedHeight(width, proposedSize));
+        }
+
+        public int GetWrappedHeight(int width, Size? fallbackProposal = null)
+        {
+            if (string.IsNullOrEmpty(Text) || width <= 0)
+            {
+                return 0;
+            }
+
             var need = TextRenderer.MeasureText(
                 Text, Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak);
-            var fallback = base.GetPreferredSize(proposedSize);
-            return new Size(width, Math.Max(need.Height, fallback.Height));
+            var fallback = base.GetPreferredSize(fallbackProposal ?? new Size(width, int.MaxValue));
+            return Math.Max(need.Height, fallback.Height);
+        }
+
+        public void SetWrapWidth(int width)
+        {
+            var clamped = new Size(Math.Max(1, width), 0);
+            if (MaximumSize != clamped)
+            {
+                MaximumSize = clamped;
+            }
+        }
+    }
+
+    // #284: a plain Panel's preferred size is based on its current bounds.
+    // That loses an inner AutoSize table's wrapped height while the selected
+    // layout is measuring its AutoSize row. Propagate the inner table's
+    // preferred height through the readiness container, using the width that
+    // the selected-profile cell can actually provide.
+    private sealed class ReadinessContainerPanel : Panel
+    {
+        public Control? ContentControl { get; set; }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var width = ResolveAvailableWidth(proposedSize.Width);
+            if (width <= 0 || ContentControl is null)
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            var contentWidth = Math.Max(1, width - Padding.Horizontal);
+            var contentPreferred = ContentControl.GetPreferredSize(new Size(contentWidth, 0));
+            return new Size(width, Padding.Vertical + contentPreferred.Height);
+        }
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            base.OnLayout(levent);
+            if (ContentControl is not null)
+            {
+                ContentControl.Bounds = DisplayRectangle;
+            }
+        }
+
+        private int ResolveAvailableWidth(int proposedWidth)
+        {
+            var width = proposedWidth;
+            for (var parent = Parent; width <= 0 && parent is not null; parent = parent.Parent)
+            {
+                if (parent.ClientSize.Width > 0)
+                {
+                    width = parent.ClientSize.Width;
+                }
+            }
+
+            if (Parent is not null && Parent.ClientSize.Width > 0)
+            {
+                width = width > 0 ? Math.Min(width, Parent.ClientSize.Width) : Parent.ClientSize.Width;
+            }
+
+            return width > 0 ? width : Width;
+        }
+    }
+
+    // #284: make the inner table expose the same wrapped height it will use
+    // during real layout. This closes the second propagation boundary: the
+    // outer readiness container can then return that height to selectedLayout.
+    private sealed class ReadinessLayoutPanel : TableLayoutPanel
+    {
+        private const int IconColumnWidth = 30;
+        private const int TitleRowHeight = 29;
+
+        public ReadinessDescriptionLabel? Description { get; set; }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var width = ResolveAvailableWidth(proposedSize.Width);
+            if (width <= 0)
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            var descriptionWidth = Math.Max(1, width - IconColumnWidth);
+            Description?.SetWrapWidth(descriptionWidth);
+            var preferred = base.GetPreferredSize(new Size(width, 0));
+            var wrappedHeight = Description?.GetWrappedHeight(descriptionWidth) ?? 0;
+            return new Size(width, Math.Max(preferred.Height, TitleRowHeight + wrappedHeight));
+        }
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            var width = ClientSize.Width;
+            if (width > 0)
+            {
+                Description?.SetWrapWidth(Math.Max(1, width - IconColumnWidth));
+            }
+
+            base.OnLayout(levent);
+        }
+
+        private int ResolveAvailableWidth(int proposedWidth)
+        {
+            var width = proposedWidth;
+            for (var parent = Parent; width <= 0 && parent is not null; parent = parent.Parent)
+            {
+                if (parent.ClientSize.Width > 0)
+                {
+                    width = parent.ClientSize.Width;
+                }
+            }
+
+            if (Parent is not null && Parent.ClientSize.Width > 0)
+            {
+                width = width > 0 ? Math.Min(width, Parent.ClientSize.Width) : Parent.ClientSize.Width;
+            }
+
+            return width > 0 ? width : Width;
         }
     }
 

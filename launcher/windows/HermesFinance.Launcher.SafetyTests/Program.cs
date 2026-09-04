@@ -1822,21 +1822,28 @@ static void LayoutFitsRussianLabelsWhenScaled()
     // Faithful DPI emulation: fonts AND window AND absolute table metrics
     // scale together (real 125/150% scales the whole form, not just fonts).
     // The longest Russian readiness text (NeedsPreparation) is used.
-    foreach (var factor in new[] { 1.25f, 1.5f })
+    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
     {
         using var form = LayoutNeedsPreparationForm();
         ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
+        AssertReadinessHeightPropagates(form, $"{factor * 100:0}% scaled");
         AssertLayoutClean(form, $"{factor * 100:0}% scaled");
     }
 }
 
 static void LayoutSurvivesCommonResizes()
 {
-    using var narrow = MainForm.CreateSyntheticSmoke();
+    using var narrow = LayoutNeedsPreparationForm();
     ForceLayout(narrow, new Size(780, 720));
+    AssertReadinessHeightPropagates(narrow, "minimum 780x720");
     AssertLayoutClean(narrow, "minimum 780x720");
-    using var wide = MainForm.CreateSyntheticSmoke();
+    using var defaultSize = LayoutNeedsPreparationForm();
+    ForceLayout(defaultSize, new Size(960, 820));
+    AssertReadinessHeightPropagates(defaultSize, "default 960x820 with NeedsPreparation");
+    AssertLayoutClean(defaultSize, "default 960x820 with NeedsPreparation");
+    using var wide = LayoutNeedsPreparationForm();
     ForceLayout(wide, new Size(1280, 800));
+    AssertReadinessHeightPropagates(wide, "wide 1280x800 with NeedsPreparation");
     AssertLayoutClean(wide, "wide 1280x800");
     // Opening diagnostics must not break the layout either.
     var toggle = typeof(MainForm).GetMethod("ToggleDetails", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -1846,6 +1853,32 @@ static void LayoutSurvivesCommonResizes()
     toggle.Invoke(wide, []);
     ForceLayout(wide, new Size(1280, 800));
     AssertLayoutClean(wide, "wide with diagnostics closed again");
+}
+
+static void AssertReadinessHeightPropagates(MainForm form, string scenario)
+{
+    var readinessPanel = (Panel)typeof(MainForm)
+        .GetField("_readinessPanel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    var description = (Label)typeof(MainForm)
+        .GetField("_readinessDescription", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    var selectedLayout = (TableLayoutPanel)typeof(MainForm)
+        .GetField("_selectedLayout", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    var need = TextRenderer.MeasureText(
+        description.Text,
+        description.Font,
+        new Size(Math.Max(1, description.Width), int.MaxValue),
+        TextFormatFlags.WordBreak);
+    var contentBottom = description.Parent!.Top + description.Bottom + readinessPanel.Padding.Bottom;
+    Assert(need.Height <= description.Height + 2,
+        $"{scenario}: readiness description needs {need.Height}px but is {description.Height}px.");
+    Assert(contentBottom <= readinessPanel.ClientSize.Height + 1,
+        $"{scenario}: readiness outer container is {readinessPanel.Height}px but its wrapped content needs at least {contentBottom}px.");
+    var row = selectedLayout.GetPositionFromControl(readinessPanel).Row;
+    Assert(selectedLayout.GetRowHeights()[row] >= readinessPanel.Height - 1,
+        $"{scenario}: selectedLayout row {row} did not propagate readiness height {readinessPanel.Height}px.");
 }
 
 static void LayoutKeepsCardsComparableAndPrimaryObvious()
