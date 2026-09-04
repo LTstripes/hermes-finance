@@ -362,6 +362,8 @@ public sealed class MainForm : Form
     private ValidatedProfile? _validatedProfile;
     private Process? _launcherProcess;
     private readonly LauncherProcessOwnership _ownership;
+    private readonly object _processStateGate = new();
+    private readonly HashSet<Process> _ownerStopRequests = new();
     private long _validationGeneration;
     private bool _detailsVisible;
     private bool _ready;
@@ -1065,20 +1067,43 @@ public sealed class MainForm : Form
         process.ErrorDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
         process.Exited += (_, _) =>
         {
+            var ownerStopRequested = ConsumeOwnerStopRequest(process);
             _ownership.RemoveIfOwned(profile, process, knownStartTimeUtcTicks?.Invoke());
             PostToUi(() =>
             {
-            AppendDiagnostic($"Guarded startup exited with code {process.ExitCode}.");
             if (ReferenceEquals(_launcherProcess, process))
             {
                 _launcherProcess = null;
             }
             _ready = false;
-            var state = process.ExitCode == 0 ? LauncherReadinessState.Stopped : LauncherReadinessState.Blocked;
-            SetReadiness(profile.Profile, state, process.ExitCode == 0
+            var exitCode = process.ExitCode;
+            if (ownerStopRequested)
+            {
+                AppendDiagnostic($"Launcher-owned Stop completed; process exited with code {exitCode} as expected.");
+                SetReadiness(profile.Profile, LauncherReadinessState.Stopped);
+                SetLastLaunchStatus("Последний запуск: остановлен");
+                if (_validatedProfile is not null)
+                {
+                    ApplyPrimaryPlan(profile.Profile, LauncherReadinessState.Stopped, _validatedProfile, null);
+                }
+                else if (_selectedProfile is not null)
+                {
+                    ApplyPrimaryPlan(_selectedProfile, LauncherReadinessState.Stopped, null, null);
+                }
+                process.Dispose();
+                if (ReferenceEquals(_selectedProfile, profile.Profile))
+                {
+                    _ = RefreshAfterExpectedOwnerStopAsync(profile.Profile);
+                }
+                return;
+            }
+
+            AppendDiagnostic($"Guarded startup exited with code {exitCode}.");
+            var state = exitCode == 0 ? LauncherReadinessState.Stopped : LauncherReadinessState.Blocked;
+            SetReadiness(profile.Profile, state, exitCode == 0
                 ? LauncherUi.ReadinessDescription(LauncherReadinessState.Stopped)
                 : "Hermes завершился до подтверждения готовности. Откройте «Диагностика и логи» — raw детали вторичны.");
-            SetLastLaunchStatus($"Последний запуск: завершён с кодом {process.ExitCode}");
+            SetLastLaunchStatus($"Последний запуск: завершён с кодом {exitCode}");
             if (_validatedProfile is not null)
             {
                 ApplyPrimaryPlan(profile.Profile, state, _validatedProfile, null);
@@ -1190,9 +1215,12 @@ public sealed class MainForm : Form
     }
 
     private void StopLaunchedStack() =>
-        StopLaunchedStack("Launched stack stopped because its data identity could not be established.");
+        StopLaunchedStack("Launched stack stopped because its data identity could not be established.", ownerRequested: false);
 
     private void StopLaunchedStack(string successMessage)
+        => StopLaunchedStack(successMessage, ownerRequested: true);
+
+    private void StopLaunchedStack(string successMessage, bool ownerRequested)
     {
         var process = _launcherProcess;
         if (process is null || process.HasExited)
@@ -1224,6 +1252,10 @@ public sealed class MainForm : Form
 
         try
         {
+            if (ownerRequested)
+            {
+                MarkOwnerStopRequested(process);
+            }
             var processStartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks;
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
@@ -1245,6 +1277,49 @@ public sealed class MainForm : Form
                 _stop.Enabled = true;
             }
             ShowTransientMessage("Не удалось автоматически остановить Hermes. См. «Диагностика и логи».");
+        }
+    }
+
+    private async Task RefreshAfterExpectedOwnerStopAsync(LauncherProfile profile)
+    {
+        const int portReleaseTimeoutMilliseconds = 5_000;
+        const int portReleasePollMilliseconds = 100;
+        var deadline = DateTime.UtcNow.AddMilliseconds(portReleaseTimeoutMilliseconds);
+        while (!IsDisposed && DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                ProfileValidator.AssertPortAvailable();
+                break;
+            }
+            catch (LauncherValidationException)
+            {
+                await Task.Delay(portReleasePollMilliseconds);
+            }
+        }
+
+        if (IsDisposed || !ReferenceEquals(profile, _selectedProfile))
+        {
+            return;
+        }
+
+        AppendDiagnostic("Launcher-owned Stop completed; rerunning read-only preflight after port cleanup.");
+        await RunPreflightAsync(profile);
+    }
+
+    private void MarkOwnerStopRequested(Process process)
+    {
+        lock (_processStateGate)
+        {
+            _ownerStopRequests.Add(process);
+        }
+    }
+
+    private bool ConsumeOwnerStopRequest(Process process)
+    {
+        lock (_processStateGate)
+        {
+            return _ownerStopRequests.Remove(process);
         }
     }
 

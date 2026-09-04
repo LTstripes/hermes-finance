@@ -39,6 +39,7 @@ var tests = new (string Name, Action Run)[]
     ("packages the branded cat icon", PackagesBrandedCatIcon),
     ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
     ("starts and stops only a synthetic runtime", StartsAndStopsSyntheticRuntime),
+    ("returns Ready and enables Start after launcher-owned Stop", OwnerStopReturnsToReady),
     ("recovers Stable ownership after launcher restart", RecoversStableOwnershipAfterLauncherRestart),
     ("recovers Preview ownership after launcher restart", RecoversPreviewOwnershipAfterLauncherRestart),
     ("rejects an unrelated loopback port occupant", RejectsUnrelatedLoopbackPortOccupant),
@@ -657,6 +658,126 @@ static void StartsAndStopsSyntheticRuntime()
     }
 }
 
+static void OwnerStopReturnsToReady()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-owner-stop-{Guid.NewGuid():N}");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    Process? process = null;
+    MainForm? form = null;
+    try
+    {
+        var checkout = Path.Combine(root, "stable-runtime");
+        var dataDir = Path.Combine(checkout, "data");
+        var database = Path.Combine(dataDir, "finance.db");
+        var ownershipDirectory = Path.Combine(root, "ownership");
+        var toolDirectory = Path.Combine(root, "tools");
+        Directory.CreateDirectory(root);
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(toolDirectory);
+        File.WriteAllText(
+            Path.Combine(checkout, "scripts", "start-local.ps1"),
+            "$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000)\n"
+                + "$listener.Start()\n"
+                + "Write-Output 'Hermes Finance is ready: http://127.0.0.1:8000'\n"
+                + "while ($true) { Start-Sleep -Milliseconds 100 }\n",
+            new UTF8Encoding(true));
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "user.name", "Hermes launcher safety test");
+        RunGit(checkout, "config", "user.email", "hermes-launcher-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "synthetic launcher owner-stop runtime");
+        var head = RunGit(checkout, "rev-parse", "HEAD");
+
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "uv.cmd"),
+            "@echo off\r\nexit /b 0\r\n");
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "npm.cmd"),
+            "@echo off\r\necho {\"dependencies\":{}}\r\nexit /b 0\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory + Path.PathSeparator + originalPath);
+
+        var profile = StableProfile(checkout, dataDir, database, "HEAD");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction
+            {
+                Checkout = checkout,
+                DataDir = dataDir,
+                Database = database,
+            },
+            Profiles = [profile],
+        };
+        var validated = new ValidatedProfile(
+            profile,
+            checkout,
+            dataDir,
+            database,
+            head,
+            "production",
+            new DependencyStatus(true, true, "ready", "ready"));
+
+        form = new MainForm(config, ownershipDirectory)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-2000, -2000),
+        };
+        form.Show();
+        form.Hide();
+
+        var startMethod = typeof(MainForm).GetMethod("StartProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Owner-stop regression could not find the launcher Start implementation.");
+        startMethod.Invoke(form, [validated]);
+        var processField = typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Owner-stop regression could not find launcher process state.");
+        process = (Process?)processField.GetValue(form);
+        Assert(process is not null, "Launcher Start must retain the started process for the owner-stop cycle.");
+        var startedProcess = process ?? throw new InvalidOperationException("Launcher process was not retained.");
+
+        WaitForUi(
+            form,
+            () => GetPrivate<bool>(form, "_ready")
+                && GetButton(form, "Остановить").Enabled,
+            "Synthetic runtime did not reach Running before owner Stop.");
+        var markerPath = new LauncherProcessOwnership(ownershipDirectory).GetMarkerPath(validated);
+        Assert(File.Exists(markerPath), "Running synthetic runtime must have durable ownership metadata.");
+
+        var stopMethod = typeof(MainForm).GetMethod(
+                "StopLaunchedStack",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null)
+            ?? throw new InvalidOperationException("Owner-stop regression could not find the launcher Stop implementation.");
+        stopMethod.Invoke(form, ["Synthetic owner-stop regression stopped the runtime."]);
+        Assert(startedProcess.WaitForExit(5_000), "Synthetic runtime did not exit after launcher-owned Stop.");
+
+        WaitForUi(
+            form,
+            () => GetButton(form, "Запустить").Enabled
+                && GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску",
+            "Launcher-owned Stop did not complete cleanup, preflight, and return the UI to Ready with Start enabled.");
+        Assert(!File.Exists(markerPath), "Launcher-owned Stop must remove ownership metadata before Ready is restored.");
+        ProfileValidator.AssertPortAvailable();
+        Assert(
+            !GetPrivate<Label>(form, "_lastLaunch").Text.Contains("код -1", StringComparison.Ordinal),
+            "Expected launcher-owned Stop must not remain a fatal exit-code -1 launch status.");
+        Assert(
+            GetPrivate<Label>(form, "_serviceCheck").ForeColor == Color.FromArgb(102, 227, 190),
+            "Automatic post-stop preflight must leave the loopback/Alembic check green.");
+        process = null;
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        form?.Dispose();
+        Environment.SetEnvironmentVariable("PATH", originalPath);
+        DeleteSyntheticTree(root);
+    }
+}
+
 static void RecoversStableOwnershipAfterLauncherRestart() =>
     RecoversOwnershipAfterLauncherRestart("stable");
 
@@ -895,6 +1016,28 @@ static void StopSyntheticProcess(Process? process)
     catch (Win32Exception)
     {
     }
+}
+
+static T GetPrivate<T>(MainForm form, string fieldName)
+{
+    var field = typeof(MainForm).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException($"Could not find launcher field '{fieldName}'.");
+    return (T)(field.GetValue(form) ?? throw new InvalidOperationException($"Launcher field '{fieldName}' is null."));
+}
+
+static Button GetButton(MainForm form, string text) =>
+    AllControls(form).OfType<Button>().Single(button => button.Text == text);
+
+static void WaitForUi(MainForm form, Func<bool> condition, string failureMessage)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(20);
+    while (DateTime.UtcNow < deadline && !condition())
+    {
+        Application.DoEvents();
+        Thread.Sleep(50);
+    }
+    Application.DoEvents();
+    Assert(condition(), failureMessage);
 }
 
 static void FailsClosedOnReadySidecarFailure()
