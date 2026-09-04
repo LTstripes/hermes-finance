@@ -21,9 +21,13 @@ public sealed class MainForm : Form
         Padding = new Padding(26, 22, 26, 20),
         BackColor = WindowBackground,
     };
-    private readonly TableLayoutPanel _header = new()
+    private readonly HeaderLayoutPanel _header = new()
     {
         Dock = DockStyle.Fill,
+        // #284: grow with content like the other content-driven blocks, but
+        // never beyond the root cell width (see HeaderLayoutPanel).
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         ColumnCount = 2,
         RowCount = 3,
         BackColor = Color.Transparent,
@@ -32,7 +36,8 @@ public sealed class MainForm : Form
     private readonly Label _brand = new()
     {
         Text = "HERMES FINANCE  /  LAUNCHER",
-        Dock = DockStyle.Fill,
+        // #284: AutoSize without Dock (Dock+AutoSize disagrees on preferred
+        // size and the AutoSize root row undermeasures, clipping siblings).
         TextAlign = ContentAlignment.BottomLeft,
         Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
         ForeColor = Color.FromArgb(102, 227, 190),
@@ -41,7 +46,7 @@ public sealed class MainForm : Form
     private readonly Label _title = new()
     {
         Text = "Запуск локального Hermes",
-        Dock = DockStyle.Fill,
+        // #284: see _brand — left-aligned text renders identically.
         TextAlign = ContentAlignment.MiddleLeft,
         Font = new Font("Segoe UI", 21F, FontStyle.Bold),
         ForeColor = PrimaryText,
@@ -49,8 +54,10 @@ public sealed class MainForm : Form
     };
     private readonly Label _subtitle = new()
     {
-        Text = "Выберите подготовленную среду  •  launcher не меняет Git и не смешивает данные",
-        Dock = DockStyle.Fill,
+        // • = U+2022; single spaces so the line stays comfortably inside the
+        // cell width on every Windows metric (hosted runners measure wider).
+        Text = "Выберите подготовленную среду • launcher не меняет Git и не смешивает данные",
+        // #284: see _brand — left-aligned text renders identically.
         TextAlign = ContentAlignment.TopLeft,
         Font = new Font("Segoe UI", 9.5F),
         ForeColor = MutedText,
@@ -79,8 +86,12 @@ public sealed class MainForm : Form
     private readonly FlowLayoutPanel _profiles = new()
     {
         Dock = DockStyle.Fill,
+        // #284: cards wrap instead of clipping when the window is narrow;
+        // the row heights itself to the tallest card (see AutoSize root row).
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         FlowDirection = FlowDirection.LeftToRight,
-        WrapContents = false,
+        WrapContents = true,
         AutoScroll = false,
         BackColor = Color.Transparent,
         Margin = new Padding(-6, 0, -6, 8),
@@ -92,10 +103,18 @@ public sealed class MainForm : Form
         BackColor = PanelBackground,
         Padding = new Padding(18, 14, 18, 14),
         Margin = new Padding(0, 0, 0, 8),
+        // #284: at small window sizes the flex area scrolls instead of
+        // silently clipping readiness/checks content.
+        AutoScroll = true,
     };
     private readonly TableLayoutPanel _selectedLayout = new()
     {
-        Dock = DockStyle.Fill,
+        // #284: Dock.Top (not Fill) + AutoSize: the table keeps its content
+        // height so the scrollable panel above can actually scroll instead
+        // of squeezing the table into a 1px flex row and clipping children.
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         ColumnCount = 1,
         RowCount = 5,
         BackColor = Color.Transparent,
@@ -126,9 +145,14 @@ public sealed class MainForm : Form
         Text = "Current SHA: —   Target origin/main: —",
         Margin = new Padding(0, 0, 0, 3),
     };
-    private readonly Panel _readinessPanel = new()
+    private readonly ReadinessContainerPanel _readinessPanel = new()
     {
-        Dock = DockStyle.Fill,
+        // #284: the selected-profile AutoSize row must consume the wrapper's
+        // content-driven preferred height. Dock.Top keeps the cell width,
+        // while AutoSize makes the inner layout's wrapped height authoritative.
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         BackColor = Color.FromArgb(21, 35, 57),
         Padding = new Padding(12, 8, 12, 8),
         Margin = new Padding(0, 2, 0, 8),
@@ -149,12 +173,21 @@ public sealed class MainForm : Form
         ForeColor = PrimaryText,
         AutoEllipsis = true,
     };
-    private readonly Label _readinessDescription = new()
+    private readonly ReadinessDescriptionLabel _readinessDescription = new()
     {
+        // #284: fills the table cell and wraps to the cell width instead of
+        // clipping; the row is AutoSize so the height follows the wrapped
+        // text. Clamp tracks the cell width (MaximumSize is the wrap hint),
+        // and the label itself measures its wrapped height at the real
+        // proposed width (see ReadinessDescriptionLabel).
         Dock = DockStyle.Fill,
+        AutoSize = false,
         TextAlign = ContentAlignment.TopLeft,
         Font = new Font("Segoe UI", 8.5F),
         ForeColor = MutedText,
+        // Spacing is provided by the readiness panel padding and title row;
+        // the AutoSize row must not add the Label's default 3px margins.
+        Margin = new Padding(0),
         AutoEllipsis = false,
     };
     private readonly TableLayoutPanel _checks = new()
@@ -169,9 +202,11 @@ public sealed class MainForm : Form
     private readonly Label _dataCheck = new();
     private readonly Label _dependenciesCheck = new();
     private readonly Label _serviceCheck = new();
-    private readonly TableLayoutPanel _actions = new()
+    private readonly ActionTableLayoutPanel _actions = new()
     {
         Dock = DockStyle.Fill,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         ColumnCount = 2,
         RowCount = 2,
         BackColor = Color.Transparent,
@@ -180,8 +215,13 @@ public sealed class MainForm : Form
     private readonly FlowLayoutPanel _actionButtons = new()
     {
         Dock = DockStyle.Fill,
+        // #284: primary buttons wrap to a second line instead of clipping
+        // when labels outgrow one row (narrow window / larger fonts). The
+        // row height is sized explicitly (see SizeActionRows): an AutoSize
+        // table row cannot measure a wrapping flow panel (unconstrained
+        // preferred width collapses to a single column).
         FlowDirection = FlowDirection.LeftToRight,
-        WrapContents = false,
+        WrapContents = true,
         BackColor = Color.Transparent,
         Margin = new Padding(-4, 0, 0, 0),
         Padding = new Padding(0),
@@ -189,8 +229,10 @@ public sealed class MainForm : Form
     private readonly FlowLayoutPanel _secondaryButtons = new()
     {
         Dock = DockStyle.Fill,
+        // #284: secondary actions wrap instead of hiding behind a scrollbar;
+        // row height is sized explicitly (see SizeActionRows).
         FlowDirection = FlowDirection.LeftToRight,
-        WrapContents = false,
+        WrapContents = true,
         AutoScroll = true,
         BackColor = Color.Transparent,
         Margin = new Padding(-4, 0, 0, 0),
@@ -336,8 +378,13 @@ public sealed class MainForm : Form
     private MainForm(LauncherConfig? config, bool loadConfigOnLoad)
     {
         Text = "Hermes Finance — Launcher";
-        MinimumSize = new Size(780, 600);
-        ClientSize = new Size(960, 660);
+        // #284: below 720px the honest content height collapses the flex
+        // viewport to scrolling-only; keep the minimum usable.
+        MinimumSize = new Size(780, 720);
+        // #284: default height fits all content without scrolling on real
+        // screens (the honest AutoSize layout no longer clips actions/cards
+        // into 660px); ~20px air covers cross-machine font metric variance.
+        ClientSize = new Size(960, 820);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = WindowBackground;
@@ -406,11 +453,14 @@ public sealed class MainForm : Form
 
     private void BuildUi()
     {
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        // #284: content-driven rows (AutoSize) so translated labels and larger
+        // fonts grow their rows instead of clipping. Only the selected-profile
+        // area flexes (Percent); the diagnostics row stays Absolute for toggle.
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
 
         _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -421,10 +471,12 @@ public sealed class MainForm : Form
         _header.Controls.Add(_localPill, 1, 0);
         _header.SetRowSpan(_localPill, 3);
 
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        // #284: selected-profile blocks size to content; the Percent filler
+        // row keeps the panel top-aligned when extra space is available.
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var selectedHeader = new TableLayoutPanel
         {
@@ -442,6 +494,8 @@ public sealed class MainForm : Form
         _selectedLayout.Controls.Add(_shaSummary, 0, 1);
 
         BuildReadinessPanel();
+        // #284: re-clamp the wrapping width whenever layout resizes the panel.
+        _readinessPanel.Resize += (_, _) => ClampReadinessWrap();
         _selectedLayout.Controls.Add(_readinessPanel, 0, 2);
         BuildChecks();
         _selectedLayout.Controls.Add(_checks, 0, 3);
@@ -449,12 +503,17 @@ public sealed class MainForm : Form
 
         _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270));
+        // #284: action rows are sized explicitly from wrapped content (see
+        // SizeActionRows) — an AutoSize row cannot measure a wrapping flow
+        // panel, it collapses to a single column and eats the flex area.
         _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         _actions.Controls.Add(_actionButtons, 0, 0);
         _actions.Controls.Add(_secondaryButtons, 0, 1);
         _actions.Controls.Add(_lastLaunch, 1, 0);
         _actions.SetRowSpan(_lastLaunch, 2);
+        _actions.PrimaryActions = _actionButtons;
+        _actions.SecondaryActions = _secondaryButtons;
         StyleButton(_prepare, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 0);
         StyleButton(_repair, Color.FromArgb(255, 196, 116), Color.FromArgb(57, 39, 22), 1);
         StyleButton(_start, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 2);
@@ -514,9 +573,11 @@ public sealed class MainForm : Form
 
     private void BuildReadinessPanel()
     {
-        var layout = new TableLayoutPanel
+        var layout = new ReadinessLayoutPanel
         {
             Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
             RowCount = 2,
             BackColor = Color.Transparent,
@@ -525,11 +586,14 @@ public sealed class MainForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(_readinessDot, 0, 0);
         layout.SetRowSpan(_readinessDot, 2);
         layout.Controls.Add(_readinessTitle, 1, 0);
         layout.Controls.Add(_readinessDescription, 1, 1);
+        layout.Description = _readinessDescription;
+        _readinessPanel.ContentControl = layout;
+        layout.Resize += (_, _) => ClampReadinessWrap();
         _readinessPanel.Controls.Add(layout);
     }
 
@@ -540,7 +604,9 @@ public sealed class MainForm : Form
         _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         for (var row = 0; row < 4; row++)
         {
-            _checks.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
+            // #284: check rows size to their (translated) content instead of
+            // splitting a fixed 92px that clips larger fonts.
+            _checks.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         }
         AddCheckRow(0, "Code identity", _identityCheck);
         AddCheckRow(1, "Data boundary", _dataCheck);
@@ -1403,8 +1469,28 @@ public sealed class MainForm : Form
             : Color.FromArgb(255, 125, 139);
     }
 
+    private void ClampReadinessWrap()
+    {
+        // #284: keep the wrapping description clamped to the visible panel
+        // width; runs on panel resize (including layout sizing) so the wrap
+        // width tracks reality instead of a pre-layout default.
+        var availableWidth = _readinessPanel.ClientSize.Width - _readinessPanel.Padding.Horizontal;
+        if (availableWidth <= 30)
+        {
+            return;
+        }
+
+        var wrapWidth = availableWidth - 30;
+        var clamped = new Size(wrapWidth, 0);
+        if (_readinessDescription.MaximumSize != clamped)
+        {
+            _readinessDescription.MaximumSize = clamped;
+        }
+    }
+
     private void ResizeProfileCards()
     {
+        ClampReadinessWrap();
         if (_profileCards.Count == 0 || _profiles.ClientSize.Width <= 0)
         {
             return;
@@ -1533,6 +1619,13 @@ public sealed class MainForm : Form
 
     private void StyleButton(Button button, Color border, Color background, int tabIndex)
     {
+        // #284: buttons size to their (Russian) labels instead of clipping
+        // them at a fixed Width; the old fixed size stays the minimum so the
+        // default 100% metrics are unchanged. Single primary emphasis still
+        // comes from HighlightPrimary (BorderSize), not from size.
+        button.AutoSize = true;
+        button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        button.MinimumSize = new Size(button.Width, button.Height);
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
         button.FlatAppearance.BorderColor = border;
@@ -1578,6 +1671,321 @@ public sealed class MainForm : Form
         catch (Exception exception) when (exception is IOException or ArgumentException)
         {
             AppendDiagnostic($"Application icon could not be loaded: {exception.Message}");
+        }
+    }
+
+    // #284: the readiness description. Dock Fill + AutoSize=false means the
+    // base Label reports its current bounds as its preferred size, so an
+    // AutoSize table row would keep a stale height when wider font metrics
+    // (hosted runners at 150%) wrap the text into an extra line. Measure the
+    // wrapped text at the real proposed (cell) width instead, so the row
+    // height always fits the text as actually laid out. No ellipsis, no
+    // fixed pixel height — the height follows the font metrics.
+    private sealed class ReadinessDescriptionLabel : Label
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            if (string.IsNullOrEmpty(Text))
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            // The proposed width is the live cell width from the table layout.
+            // A stale MaximumSize clamp must never widen the measurement past
+            // it: measuring wide would report fewer lines (short height) while
+            // the label is actually laid out narrow — exactly the 150% clip.
+            var width = proposedSize.Width;
+            if (width <= 0)
+            {
+                width = MaximumSize.Width;
+            }
+            if (width <= 0)
+            {
+                width = Width;
+            }
+            if (width <= 0)
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            return new Size(width, GetWrappedHeight(width, proposedSize));
+        }
+
+        public int GetWrappedHeight(int width, Size? fallbackProposal = null)
+        {
+            if (string.IsNullOrEmpty(Text) || width <= 0)
+            {
+                return 0;
+            }
+
+            var need = TextRenderer.MeasureText(
+                Text, Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak);
+            var fallback = base.GetPreferredSize(fallbackProposal ?? new Size(width, int.MaxValue));
+            return Math.Max(need.Height, fallback.Height);
+        }
+
+        public void SetWrapWidth(int width)
+        {
+            var clamped = new Size(Math.Max(1, width), 0);
+            if (MaximumSize != clamped)
+            {
+                MaximumSize = clamped;
+            }
+        }
+    }
+
+    // #284: a plain Panel's preferred size is based on its current bounds.
+    // That loses an inner AutoSize table's wrapped height while the selected
+    // layout is measuring its AutoSize row. Propagate the inner table's
+    // preferred height through the readiness container, using the width that
+    // the selected-profile cell can actually provide.
+    private sealed class ReadinessContainerPanel : Panel
+    {
+        public Control? ContentControl { get; set; }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var width = ResolveAvailableWidth(proposedSize.Width);
+            if (width <= 0 || ContentControl is null)
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            var contentWidth = Math.Max(1, width - Padding.Horizontal);
+            var contentPreferred = ContentControl.GetPreferredSize(new Size(contentWidth, 0));
+            return new Size(width, Padding.Vertical + contentPreferred.Height);
+        }
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            base.OnLayout(levent);
+            if (ContentControl is not null)
+            {
+                ContentControl.Bounds = DisplayRectangle;
+            }
+        }
+
+        private int ResolveAvailableWidth(int proposedWidth)
+        {
+            var width = proposedWidth;
+            for (var parent = Parent; width <= 0 && parent is not null; parent = parent.Parent)
+            {
+                if (parent.ClientSize.Width > 0)
+                {
+                    width = parent.ClientSize.Width;
+                }
+            }
+
+            if (Parent is not null && Parent.ClientSize.Width > 0)
+            {
+                width = width > 0 ? Math.Min(width, Parent.ClientSize.Width) : Parent.ClientSize.Width;
+            }
+
+            return width > 0 ? width : Width;
+        }
+    }
+
+    // #284: make the inner table expose the same wrapped height it will use
+    // during real layout. This closes the second propagation boundary: the
+    // outer readiness container can then return that height to selectedLayout.
+    private sealed class ReadinessLayoutPanel : TableLayoutPanel
+    {
+        public ReadinessDescriptionLabel? Description { get; set; }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var width = ResolveAvailableWidth(proposedSize.Width);
+            if (width <= 0)
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            var descriptionWidth = GetDescriptionWidth(width);
+            Description?.SetWrapWidth(descriptionWidth);
+            var wrappedHeight = Description?.GetWrappedHeight(descriptionWidth) ?? 0;
+            SetDescriptionRowHeight(wrappedHeight);
+            var preferred = base.GetPreferredSize(new Size(width, 0));
+            return new Size(width, Math.Max(preferred.Height, GetTitleRowHeight() + wrappedHeight));
+        }
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            var width = ClientSize.Width;
+            if (width > 0)
+            {
+                var descriptionWidth = GetDescriptionWidth(width);
+                Description?.SetWrapWidth(descriptionWidth);
+                SetDescriptionRowHeight(Description?.GetWrappedHeight(descriptionWidth) ?? 0);
+            }
+
+            base.OnLayout(levent);
+        }
+
+        private int GetDescriptionWidth(int width) => Math.Max(1, width - GetIconColumnWidth());
+
+        private void SetDescriptionRowHeight(int height)
+        {
+            if (RowStyles.Count <= 1)
+            {
+                return;
+            }
+
+            var row = RowStyles[1];
+            if (row.SizeType != SizeType.Absolute)
+            {
+                row.SizeType = SizeType.Absolute;
+            }
+
+            if (Math.Abs(row.Height - height) > 0.1F)
+            {
+                row.Height = height;
+            }
+        }
+
+        private int GetIconColumnWidth()
+        {
+            if (ColumnStyles.Count > 0 && ColumnStyles[0].SizeType == SizeType.Absolute)
+            {
+                return Math.Max(1, (int)Math.Ceiling(ColumnStyles[0].Width));
+            }
+
+            var widths = GetColumnWidths();
+            return widths.Length > 0 ? Math.Max(1, widths[0]) : 1;
+        }
+
+        private int GetTitleRowHeight()
+        {
+            if (RowStyles.Count > 0 && RowStyles[0].SizeType == SizeType.Absolute)
+            {
+                return Math.Max(1, (int)Math.Ceiling(RowStyles[0].Height));
+            }
+
+            var heights = GetRowHeights();
+            return heights.Length > 0 ? Math.Max(1, heights[0]) : 1;
+        }
+
+        private int ResolveAvailableWidth(int proposedWidth)
+        {
+            var width = proposedWidth;
+            for (var parent = Parent; width <= 0 && parent is not null; parent = parent.Parent)
+            {
+                if (parent.ClientSize.Width > 0)
+                {
+                    width = parent.ClientSize.Width;
+                }
+            }
+
+            if (Parent is not null && Parent.ClientSize.Width > 0)
+            {
+                width = width > 0 ? Math.Min(width, Parent.ClientSize.Width) : Parent.ClientSize.Width;
+            }
+
+            return width > 0 ? width : Width;
+        }
+    }
+
+    // #284: the top header. AutoSize (so the root row takes its content
+    // height) but its width must never grow the root beyond the window: the
+    // root row is AutoSize too, and an unbounded preferred width would push
+    // the row (and header) past the content area on wider font metrics.
+    // GetPreferredSize therefore reports the constrained parent width and
+    // lets the AutoSize rows compute their heights at the real wrap width.
+    private sealed class HeaderLayoutPanel : TableLayoutPanel
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var width = proposedSize.Width;
+            if (width <= 0 && Parent is not null)
+            {
+                // Docked Fill inside the padded root: usable width is the
+                // parent's client width minus the parent's horizontal padding.
+                var available = Parent.ClientSize.Width - Parent.Padding.Horizontal;
+                width = Math.Max(0, available);
+            }
+
+            var preferred = width > 0
+                ? base.GetPreferredSize(new Size(width, proposedSize.Height))
+                : base.GetPreferredSize(proposedSize);
+
+            if (Parent is not null)
+            {
+                var cap = Math.Max(0, Parent.ClientSize.Width - Parent.Padding.Horizontal - Margin.Horizontal);
+                if (preferred.Width > cap)
+                {
+                    preferred.Width = cap;
+                }
+            }
+
+            return preferred;
+        }
+    }
+
+    // #284: the action area measures its own wrapped rows. Pushing Absolute
+    // heights from outside handlers cannot work: TableLayoutPanel ignores a
+    // RowStyles index assignment for layout invalidation and a bare
+    // PerformLayout is a no-op while no layout is pending. The measurement
+    // must be pulled at the right time — root asks during GetPreferredSize
+    // and the table arranges during OnLayout, both with a live column width.
+    private sealed class ActionTableLayoutPanel : TableLayoutPanel
+    {
+        public FlowLayoutPanel? PrimaryActions { get; set; }
+        public FlowLayoutPanel? SecondaryActions { get; set; }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            // During root's AutoSize measurement, proposedSize may be
+            // unconstrained (0) — fall back to the parent's width which is
+            // already known top-down (form → root). The arranged ClientSize
+            // is stale at that moment, but the parent's ClientSize is live.
+            var width = proposedSize.Width;
+            if (width <= 0)
+            {
+                width = Parent?.ClientSize.Width ?? 0;
+                // Root has padding 26+26; action cell fills it. Parent width
+                // already excludes that, so usable width is parent width.
+                // If still 0 (very early), fall back to own ClientSize.
+                if (width <= 0)
+                {
+                    width = ClientSize.Width;
+                }
+            }
+
+            var columnWidth = width > 0 ? width - 270 : 0;
+            if (columnWidth > 0 && PrimaryActions is not null && SecondaryActions is not null)
+            {
+                var h0 = Math.Max(48, PrimaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
+                var h1 = Math.Max(48, SecondaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
+                var basePreferred = base.GetPreferredSize(proposedSize);
+                return new Size(basePreferred.Width, h0 + h1);
+            }
+
+            return base.GetPreferredSize(proposedSize);
+        }
+
+        protected override void OnLayout(LayoutEventArgs levent)
+        {
+            var columnWidth = ClientSize.Width - 270;
+            if (columnWidth > 0 && PrimaryActions is not null && SecondaryActions is not null)
+            {
+                SyncRow(0, PrimaryActions, columnWidth);
+                SyncRow(1, SecondaryActions, columnWidth);
+            }
+
+            base.OnLayout(levent);
+        }
+
+        private void SyncRow(int row, FlowLayoutPanel panel, int width)
+        {
+            var needed = Math.Max(48, panel.GetPreferredSize(new Size(width, 0)).Height);
+            if (RowStyles.Count > row && RowStyles[row].SizeType == SizeType.Absolute && (int)RowStyles[row].Height == needed)
+            {
+                return;
+            }
+
+            if (RowStyles.Count > row)
+            {
+                RowStyles[row] = new RowStyle(SizeType.Absolute, needed);
+            }
         }
     }
 }

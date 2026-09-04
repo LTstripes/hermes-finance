@@ -64,6 +64,10 @@ var tests = new (string Name, Action Run)[]
     ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
+    ("layout keeps the default window free of overlap and clipping", LayoutKeepsDefaultWindowClean),
+    ("layout fits Russian labels at 100, 125, and 150 percent scaling", LayoutFitsRussianLabelsWhenScaled),
+    ("layout survives narrow and wide resizes", LayoutSurvivesCommonResizes),
+    ("layout keeps cards comparable with one obvious primary CTA", LayoutKeepsCardsComparableAndPrimaryObvious),
 };
 
 var failures = 0;
@@ -1802,6 +1806,281 @@ static void DeleteSyntheticTree(string root)
 }
 
 static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
+
+// #284 layout regressions: deterministic WinForms checks (no screenshots).
+// A synthetic smoke form is laid out headless (handle forced, never shown)
+// and then inspected for containment, sibling overlap and text fit.
+static void LayoutKeepsDefaultWindowClean()
+{
+    using var form = MainForm.CreateSyntheticSmoke();
+    ForceLayout(form, new Size(960, 820));
+    AssertLayoutClean(form, "default 960x820");
+}
+
+static void LayoutFitsRussianLabelsWhenScaled()
+{
+    // Faithful DPI emulation: fonts AND window AND absolute table metrics
+    // scale together (real 125/150% scales the whole form, not just fonts).
+    // The longest Russian readiness text (NeedsPreparation) is used.
+    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
+    {
+        using var form = LayoutNeedsPreparationForm();
+        ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
+        AssertReadinessHeightPropagates(form, $"{factor * 100:0}% scaled");
+        AssertLayoutClean(form, $"{factor * 100:0}% scaled");
+    }
+}
+
+static void LayoutSurvivesCommonResizes()
+{
+    using var narrow = LayoutNeedsPreparationForm();
+    ForceLayout(narrow, new Size(780, 720));
+    AssertReadinessHeightPropagates(narrow, "minimum 780x720");
+    AssertLayoutClean(narrow, "minimum 780x720");
+    using var defaultSize = LayoutNeedsPreparationForm();
+    ForceLayout(defaultSize, new Size(960, 820));
+    AssertReadinessHeightPropagates(defaultSize, "default 960x820 with NeedsPreparation");
+    AssertLayoutClean(defaultSize, "default 960x820 with NeedsPreparation");
+    using var wide = LayoutNeedsPreparationForm();
+    ForceLayout(wide, new Size(1280, 800));
+    AssertReadinessHeightPropagates(wide, "wide 1280x800 with NeedsPreparation");
+    AssertLayoutClean(wide, "wide 1280x800");
+    // Opening diagnostics must not break the layout either.
+    var toggle = typeof(MainForm).GetMethod("ToggleDetails", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    toggle.Invoke(wide, []);
+    ForceLayout(wide, new Size(1280, 800));
+    AssertLayoutClean(wide, "wide with diagnostics open");
+    toggle.Invoke(wide, []);
+    ForceLayout(wide, new Size(1280, 800));
+    AssertLayoutClean(wide, "wide with diagnostics closed again");
+}
+
+static void AssertReadinessHeightPropagates(MainForm form, string scenario)
+{
+    var readinessPanel = (Panel)typeof(MainForm)
+        .GetField("_readinessPanel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    var description = (Label)typeof(MainForm)
+        .GetField("_readinessDescription", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    var readinessLayout = (TableLayoutPanel)description.Parent!;
+    var selectedLayout = (TableLayoutPanel)typeof(MainForm)
+        .GetField("_selectedLayout", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    var need = TextRenderer.MeasureText(
+        description.Text,
+        description.Font,
+        new Size(Math.Max(1, description.Width), int.MaxValue),
+        TextFormatFlags.WordBreak);
+    var contentBottom = description.Parent!.Top + description.Bottom + readinessPanel.Padding.Bottom;
+    Assert(need.Height <= description.Height + 2,
+        $"{scenario}: readiness description needs {need.Height}px but is {description.Height}px.");
+    var descriptionRow = readinessLayout.GetPositionFromControl(description).Row;
+    var descriptionRowHeight = readinessLayout.GetRowHeights()[descriptionRow];
+    Assert(readinessLayout.RowStyles[descriptionRow].SizeType == SizeType.Absolute,
+        $"{scenario}: readiness description row must be content-driven Absolute before layout.");
+    Assert(descriptionRowHeight >= need.Height - 1,
+        $"{scenario}: readiness description row is {descriptionRowHeight}px but wrapped text needs {need.Height}px.");
+    Assert(contentBottom <= readinessPanel.ClientSize.Height + 1,
+        $"{scenario}: readiness outer container is {readinessPanel.Height}px but its wrapped content needs at least {contentBottom}px.");
+    var row = selectedLayout.GetPositionFromControl(readinessPanel).Row;
+    Assert(selectedLayout.GetRowHeights()[row] >= readinessPanel.Height - 1,
+        $"{scenario}: selectedLayout row {row} did not propagate readiness height {readinessPanel.Height}px.");
+}
+
+static void LayoutKeepsCardsComparableAndPrimaryObvious()
+{
+    using var form = MainForm.CreateSyntheticSmoke();
+    ForceLayout(form, new Size(960, 820));
+    var cards = AllControls(form).OfType<ProfileCard>().ToArray();
+    Assert(cards.Length == 2, "Synthetic smoke must show Stable and Preview cards.");
+    Assert(cards[0].Width == cards[1].Width && cards[0].Height == cards[1].Height,
+        $"Stable/Preview cards must share one footprint for glance comparison, found {cards[0].Size} vs {cards[1].Size}.");
+    var allButtons = AllControls(form).OfType<Button>().Where(button => OwnVisible(button)).Select(button => button.Text + "=" + button.FlatAppearance.BorderSize.ToString() + (button.Enabled ? "+en" : "-dis")).ToArray();
+    var emphasized = AllControls(form).OfType<Button>().Where(button => OwnVisible(button) && button.FlatAppearance.BorderSize == 2).ToArray();
+    Assert(emphasized.Length == 1 && emphasized[0].Text == "Запустить" && emphasized[0].Enabled,
+        "Ready state must emphasize exactly one primary CTA ('Запустить'); secondary actions stay BorderSize 1. Got: " + string.Join(" | ", allButtons));
+}
+
+static MainForm LayoutNeedsPreparationForm()
+{
+    var form = MainForm.CreateSyntheticSmoke();
+    var configField = typeof(MainForm).GetField("_config", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    var config = (LauncherConfig)configField.GetValue(form)!;
+    var stable = config.Profiles.First(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+    var validated = new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc", "production", new DependencyStatus(false, false, "needs preparation", "needs preparation"));
+    var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    apply.Invoke(form, [validated]);
+    return form;
+}
+
+static void ForceLayout(Form form, Size client)
+{
+    form.ClientSize = client;
+    _ = form.Handle; // force handle creation so layout runs without showing
+    form.PerformLayout();
+}
+
+static void ScaleLayoutForDpi(Form form, float factor, Size client)
+{
+    foreach (var control in new[] { form }.Concat(AllControls(form)))
+    {
+        control.Font = new Font(control.Font.FontFamily, control.Font.Size * factor, control.Font.Style);
+    }
+    // Snapshot: changing a font re-runs layout synchronously, and the layout
+    // handlers replace Absolute row styles — never iterate the live collection.
+    foreach (var table in new[] { form }.Concat(AllControls(form)).OfType<TableLayoutPanel>().ToArray())
+    {
+        foreach (RowStyle row in table.RowStyles.Cast<RowStyle>().ToArray())
+        {
+            if (row.SizeType == SizeType.Absolute)
+            {
+                row.Height *= factor;
+            }
+        }
+        foreach (ColumnStyle column in table.ColumnStyles)
+        {
+            if (column.SizeType == SizeType.Absolute)
+            {
+                column.Width *= factor;
+            }
+        }
+    }
+    form.MinimumSize = new Size((int)(form.MinimumSize.Width * factor), (int)(form.MinimumSize.Height * factor));
+    ForceLayout(form, client);
+}
+
+static void AssertLayoutClean(Form form, string scenario)
+{
+    // NOTE: Control.Visible is false for every control of a never-shown form
+    // (it folds ancestors in), so headless checks use OwnVisible instead —
+    // otherwise every assertion below would vacuous-pass on empty sets.
+    AssertContained(form, form.ClientRectangle, scenario);
+    foreach (var flow in AllControls(form).OfType<FlowLayoutPanel>().Where(OwnVisible))
+    {
+        var kids = flow.Controls.Cast<Control>().Where(OwnVisible).ToArray();
+        for (var i = 0; i < kids.Length; i++)
+        {
+            for (var j = i + 1; j < kids.Length; j++)
+            {
+                var overlap = Rectangle.Intersect(kids[i].Bounds, kids[j].Bounds);
+                Assert(overlap.Width <= 1 && overlap.Height <= 1,
+                    $"{scenario}: '{DescribeControl(kids[i])}' overlaps '{DescribeControl(kids[j])}' in a flow panel.");
+            }
+        }
+    }
+    foreach (var control in AllControls(form).Where(OwnVisible))
+    {
+        if (control is Button button)
+        {
+            AssertButtonFits(button, scenario);
+        }
+        else if (control is Label label)
+        {
+            AssertLabelFits(label, scenario);
+        }
+    }
+}
+
+static void AssertContained(Control parent, Rectangle area, string scenario)
+{
+    // A scrolling panel does not clip: its content must start inside the
+    // viewport and remain reachable (fitting or with the scrollbar engaged).
+    // Everywhere else containment is strict — escaping means overlap/clipping.
+    var autoScroll = parent is ScrollableControl scroller && scroller.AutoScroll;
+    var viewport = autoScroll ? parent.ClientRectangle : area;
+    foreach (Control child in parent.Controls)
+    {
+        if (!OwnVisible(child))
+        {
+            continue;
+        }
+        if (autoScroll)
+        {
+            var scroll = (ScrollableControl)parent;
+            var anchored = child.Left >= viewport.Left + Math.Min(0, child.Margin.Left) - 1
+                && child.Top >= viewport.Top + Math.Min(0, child.Margin.Top) - 1;
+            var reachableX = child.Right <= viewport.Right + 1 || scroll.HorizontalScroll.Visible;
+            var reachableY = child.Bottom <= viewport.Bottom + 1 || scroll.VerticalScroll.Visible;
+            Assert(anchored && reachableX && reachableY,
+                $"{scenario}: {DescribeControl(child)} at {child.Bounds} is not reachable in scrolling {parent.GetType().Name} {viewport}.");
+        }
+        else
+        {
+            // Intentional negative margins (edge-bleed panels) expand the allowed
+            // area; anything else escaping its parent is clipping/overlap.
+            var allowed = Rectangle.FromLTRB(
+                viewport.Left + Math.Min(0, child.Margin.Left),
+                viewport.Top + Math.Min(0, child.Margin.Top),
+                viewport.Right - Math.Min(0, child.Margin.Right),
+                viewport.Bottom - Math.Min(0, child.Margin.Bottom));
+            Assert(allowed.Contains(child.Bounds),
+                $"{scenario}: {DescribeControl(child)} at {child.Bounds} escapes {parent.GetType().Name} {viewport}.");
+        }
+        var childArea = child is ScrollableControl scrollable ? scrollable.DisplayRectangle : child.ClientRectangle;
+        AssertContained(child, childArea, scenario);
+    }
+}
+
+static void AssertButtonFits(Button button, string scenario)
+{
+    if (string.IsNullOrEmpty(button.Text))
+    {
+        return;
+    }
+    var need = TextRenderer.MeasureText(button.Text, button.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+    Assert(need.Width <= button.Width - 8 && need.Height <= button.Height - 6,
+        $"{scenario}: button '{button.Text}' needs {need} but is {button.Size}; Russian labels must not clip.");
+}
+
+static void AssertLabelFits(Label label, string scenario)
+{
+    var text = label.Text;
+    if (string.IsNullOrEmpty(text) || label.AutoEllipsis)
+    {
+        return; // AutoEllipsis = by-design truncation (paths, status values)
+    }
+    if (label.AutoSize && label.Dock == DockStyle.None && label.MaximumSize.IsEmpty)
+    {
+        return; // fits by construction; parent overflow is caught by containment
+    }
+    if (text.Contains((char)10) || text.Contains((char)13) || !label.MaximumSize.IsEmpty)
+    {
+        var need = TextRenderer.MeasureText(text, label.Font, new Size(Math.Max(50, label.Width), int.MaxValue), TextFormatFlags.WordBreak);
+        Assert(need.Height <= label.Height + 2,
+            $"{scenario}: wrapped label '{ShortText(text)}' needs height {need.Height} but is {label.Height}; text clips.");
+    }
+    else
+    {
+        var need = TextRenderer.MeasureText(text, label.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+        Assert(need.Width <= label.Width + 1,
+            $"{scenario}: label '{ShortText(text)}' needs width {need.Width} but is {label.Width}; text clips.");
+    }
+}
+
+static string DescribeControl(Control control) => $"{control.GetType().Name} '{ShortText(control.Text)}'";
+
+static string ShortText(string text) => text.Length <= 48 ? text : string.Concat(text.AsSpan(0, 48), "…");
+
+// The control's own Visible flag (Control.Visible folds ancestors in, so it
+// is useless for never-shown headless forms). STATE_VISIBLE = 0x2.
+static System.Reflection.MethodInfo ControlGetStateMethod() =>
+    typeof(Control).GetMethod("GetState", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+static bool OwnVisible(Control control)
+{
+    // Own flags up the chain (stopping at the never-shown form itself): a
+    // control inside an own-hidden panel (e.g. closed diagnostics) is hidden.
+    var getState = ControlGetStateMethod();
+    for (var current = control; current is not null && current is not Form; current = current.Parent)
+    {
+        if (!(bool)getState.Invoke(current, [2])!)
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 static class NativeMethods
 {

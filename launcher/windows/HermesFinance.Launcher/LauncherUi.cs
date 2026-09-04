@@ -432,12 +432,16 @@ internal sealed class ProfileCard : Panel
             Padding = new Padding(16, 12, 16, 10),
             BackColor = Color.Transparent,
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+        // #284: text rows size to content (badge/name/desc/identity/status)
+        // so larger fonts grow the card content instead of clipping inside
+        // fixed rows; the Percent boundary row absorbs the slack of the
+        // fixed 168px card, keeping Stable/Preview visually comparable.
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(_badge, 0, 0);
         layout.Controls.Add(_name, 0, 1);
         layout.Controls.Add(_description, 0, 2);
