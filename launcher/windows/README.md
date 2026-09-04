@@ -46,7 +46,7 @@ For an owner UAT copy, follow ADR 0014 §7: create/select a production backup by
 
 1. Откройте **Hermes Finance** (Desktop/Start menu). Выберите карту — Stable (зелёная) или Preview (фиолетовая, `UNRELEASED`).
 
-2. Нажмите **Обновить проверку** — launcher прогонит read-only preflight и покажет одну primary CTA. Для Stable это единственное действие, которое явно запускает read-only release discovery (`gh api` + `git ls-remote`); оно не мутирует checkout, production data, backup или config:
+2. Нажмите **Обновить проверку** — launcher прогонит read-only preflight и покажет одну primary CTA. Для Stable это единственное действие, которое явно запускает read-only release discovery (unauthenticated public GitHub REST API + `git ls-remote`); оно не мутирует checkout, production data, backup или config:
 
  - `Подготовить` — если locked зависимости missing/stale (offline проверка, сеть только по явному нажатию);
  - `Исправить` — принудительно восстанавливает обе среды (даже если сейчас ready);
@@ -66,7 +66,7 @@ The primary view never displays raw filesystem paths or process diagnostics. `Д
 
 ## Preconditions and failure handling — human summaries + actionable CTA
 
-The launcher requires Git, `gh`, `uv`, Node.js/npm at the relevant action (build time only for self-contained exe). It carries its bundled schema, backup and dependency helpers, so an older checkout need not contain them. Read-only probes use offline mode (`uv --offline --dry-run`, `npm ls --json`); read-only Stable release discovery uses only explicit `Обновить проверку` (`gh api` and `git ls-remote`). Network-capable `uv sync --locked`, `npm ci`, Preview `git fetch` and Stable tag `git fetch` occur only after explicit owner action.
+The launcher requires Git, `uv`, Node.js/npm at the relevant action (build time only for self-contained exe). It carries its bundled schema, backup and dependency helpers, so an older checkout need not contain them. GitHub account authentication and the GitHub CLI are not runtime prerequisites: read-only Stable release discovery uses only explicit `Обновить проверку` (an unauthenticated public GitHub REST request and `git ls-remote`) and fails closed when GitHub or the network is unavailable. Network-capable `uv sync --locked`, `npm ci`, Preview `git fetch` and Stable tag `git fetch` occur only after explicit owner action.
 
 Before PowerShell, it fail-closes with **человеческой сводкой** и подсвечивает **правильную primary CTA** вместо тупика:
 

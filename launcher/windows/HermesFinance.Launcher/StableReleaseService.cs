@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -55,7 +56,8 @@ internal sealed record StableUpgradeResult(
 /// </summary>
 internal static class StableReleaseService
 {
-    private const string ReleasesEndpoint = "repos/LTstripes/hermes-finance/releases?per_page=100";
+    private const string ReleasesEndpoint =
+        "https://api.github.com/repos/LTstripes/hermes-finance/releases?per_page=100";
     private const string BackupScriptName = "launcher-production-backup.py";
     private const string BackupDirectoryName = "backups";
     private const string BackupFilenamePattern =
@@ -70,7 +72,7 @@ internal static class StableReleaseService
     /// Read-only release discovery. No fetch, checkout, config write, backup,
     /// dependency preparation, or startup is performed here.
     /// </summary>
-    internal static StableUpgradeStatus Discover(ValidatedProfile profile, string? ghCommand = null)
+    internal static StableUpgradeStatus Discover(ValidatedProfile profile, HttpMessageHandler? releaseHandler = null)
     {
         EnsureStableProfile(profile);
         var current = ProveCurrentRelease(profile);
@@ -78,7 +80,7 @@ internal static class StableReleaseService
         {
             throw new LauncherValidationException("Stable current release identity is invalid; upgrade is blocked.");
         }
-        var published = ReadPublishedReleases(profile.Checkout, ghCommand);
+        var published = ReadPublishedReleases(releaseHandler);
         var newer = published
             .Where(release => release.VersionValue.CompareTo(currentVersion) > 0)
             .OrderByDescending(release => release.VersionValue)
@@ -107,7 +109,7 @@ internal static class StableReleaseService
         ValidatedProfile profile,
         StableReleaseIdentity target,
         string configPath,
-        string? ghCommand = null)
+        HttpMessageHandler? releaseHandler = null)
     {
         EnsureStableProfile(profile);
         if (string.IsNullOrWhiteSpace(configPath) || !Path.IsPathFullyQualified(configPath))
@@ -129,7 +131,7 @@ internal static class StableReleaseService
 
         EnsureProductionDataIsOutsideCheckout(profile);
         var current = ProveCurrentRelease(profile);
-        var published = ReadPublishedReleases(profile.Checkout, ghCommand);
+        var published = ReadPublishedReleases(releaseHandler);
         var publishedTarget = published.SingleOrDefault(
             release => release.Tag.Equals(target.Tag, StringComparison.Ordinal));
         if (publishedTarget is null
@@ -388,36 +390,50 @@ internal static class StableReleaseService
         return new RemoteTagProof(tagObject, commit);
     }
 
-    private static IReadOnlyList<PublishedRelease> ReadPublishedReleases(string checkout, string? ghCommand)
+    private static IReadOnlyList<PublishedRelease> ReadPublishedReleases(HttpMessageHandler? releaseHandler)
     {
-        var executable = ghCommand ?? DependencyValidator.ResolveCommand("gh", checkout);
-        ProcessOutput output;
+        using var client = releaseHandler is null
+            ? new HttpClient()
+            : new HttpClient(releaseHandler, disposeHandler: false);
+        client.Timeout = TimeSpan.FromSeconds(15);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("HermesFinance.Launcher/1.0");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
+
+        string responseBody;
         try
         {
-            output = RunProcess(
-                executable,
-                checkout,
-                ["api", "--method", "GET", ReleasesEndpoint],
-                environment: new Dictionary<string, string>
-                {
-                    ["GH_PROMPT_DISABLED"] = "1",
-                    ["GH_NO_UPDATE_NOTIFIER"] = "1",
-                },
-                operation: "published Stable release discovery");
+            using var response = client.GetAsync(ReleasesEndpoint).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new LauncherValidationException(
+                    $"Published Stable release discovery failed: public GitHub API returned HTTP {(int)response.StatusCode}.");
+            }
+            responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         }
-        catch (Win32Exception exception)
+        catch (LauncherValidationException)
         {
-            throw new LauncherValidationException($"Published Stable release discovery cannot start: {exception.Message}");
+            throw;
         }
-        if (output.ExitCode != 0)
+        catch (TaskCanceledException)
         {
             throw new LauncherValidationException(
-                $"Published Stable release discovery failed: {OneLine(output.StandardError, output.StandardOutput)}");
+                "Published Stable release discovery failed: public GitHub API request timed out.");
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new LauncherValidationException(
+                $"Published Stable release discovery failed: {OneLine(exception.Message, "public GitHub API unavailable")}");
+        }
+        catch (IOException exception)
+        {
+            throw new LauncherValidationException(
+                $"Published Stable release discovery failed: {OneLine(exception.Message, "public GitHub API unavailable")}");
         }
 
         try
         {
-            using var document = JsonDocument.Parse(output.StandardOutput);
+            using var document = JsonDocument.Parse(responseBody);
             if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
                 throw new LauncherValidationException("Published Stable release discovery returned a non-array result.");

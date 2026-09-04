@@ -1,5 +1,6 @@
 using HermesFinance.Launcher;
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text;
@@ -43,7 +44,7 @@ var tests = new (string Name, Action Run)[]
     ("updates only Preview to unreleased origin main and preserves its data", UpdatesPreviewAndPreservesData),
     ("rejects dirty, conflicted, and unexpected Preview checkouts", RejectsUnsafePreviewUpdateStates),
     ("rejects Stable as an update target", RejectsStableUpdate),
-    ("discovers a published immutable Stable target without mutation", DiscoversPublishedStableTargetWithoutMutation),
+    ("discovers a published immutable Stable target without GitHub CLI auth or mutation", DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation),
     ("does not offer Stable upgrade for unpublished or prerelease candidates", IgnoresUnpublishedStableCandidates),
     ("fails closed before backup on dirty Stable checkout", StableUpgradeFailsClosedOnDirtyCheckout),
     ("fails closed when Stable target is not an annotated tag", StableUpgradeRejectsUnprovenTarget),
@@ -904,7 +905,7 @@ static void RejectsStableUpdate()
         "Only the configured Preview profile may be updated.");
 }
 
-static void DiscoversPublishedStableTargetWithoutMutation()
+static void DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation()
 {
     var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
     try
@@ -912,13 +913,14 @@ static void DiscoversPublishedStableTargetWithoutMutation()
         var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
         var beforeStatus = RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all");
         var beforeConfig = File.ReadAllText(fixture.ConfigPath);
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
         var discoveredTarget = status.Target ?? throw new InvalidOperationException("Synthetic discovery returned no target.");
 
         Assert(status.Current is not null && status.Current.Version == "0.8.0", "Discovery must prove the configured current immutable Stable release.");
         Assert(status.TargetAvailable, "A published newer release must produce an explicit Stable target.");
         Assert(discoveredTarget.Version == "0.8.1", "Discovery must select the published newer release.");
         Assert(discoveredTarget.CommitSha == fixture.TargetSha, "Discovery target must use the remote tag's peeled commit SHA.");
+        Assert(fixture.ReleaseHandler.RequestCount == 1, "Stable release discovery must use the standard public REST client.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Read-only release discovery must not switch Stable.");
         Assert(RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all") == beforeStatus, "Read-only release discovery must not dirty Stable.");
         Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "Read-only release discovery must not write launcher config.");
@@ -948,7 +950,7 @@ static void IgnoresUnpublishedStableCandidates()
     var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: true, prerelease: false));
     try
     {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
         Assert(status.Current is not null, "Current Stable identity must still be proven when a candidate is ignored.");
         Assert(status.Target is null && !status.TargetAvailable, "Draft releases must never become a Stable upgrade target.");
         var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, fixture.Profile with { StableUpgrade = status }, fixture.Profile.Profile);
@@ -963,7 +965,7 @@ static void IgnoresUnpublishedStableCandidates()
     var prereleaseFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: false, prerelease: true));
     try
     {
-        var status = StableReleaseService.Discover(prereleaseFixture.Profile, prereleaseFixture.GhCommand);
+        var status = StableReleaseService.Discover(prereleaseFixture.Profile, prereleaseFixture.ReleaseHandler);
         Assert(status.Target is null && !status.TargetAvailable, "Prerelease releases must never become a Stable upgrade target.");
     }
     finally
@@ -977,12 +979,12 @@ static void StableUpgradeFailsClosedOnDirtyCheckout()
     var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
     try
     {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
         var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
         var beforeConfig = File.ReadAllText(fixture.ConfigPath);
         var tamperedTarget = status.Target! with { TagObjectSha = new string('0', 40) };
         AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, tamperedTarget, fixture.ConfigPath, fixture.GhCommand),
+            () => StableReleaseService.Upgrade(fixture.Profile, tamperedTarget, fixture.ConfigPath, fixture.ReleaseHandler),
             "Stable upgrade target identity changed; the immutable tag proof no longer matches.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A tampered tag-object proof must not move Stable.");
         Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A tampered tag-object proof must not rewrite launcher config.");
@@ -991,7 +993,7 @@ static void StableUpgradeFailsClosedOnDirtyCheckout()
         File.WriteAllText(Path.Combine(fixture.StableCheckout, "owner-edit.txt"), "must block Stable upgrade");
 
         AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.GhCommand),
+            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
             "Stable checkout is dirty or conflicted; upgrade is blocked.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Dirty Stable must not switch releases.");
         Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "Dirty Stable must not rewrite launcher config.");
@@ -1005,7 +1007,7 @@ static void StableUpgradeFailsClosedOnDirtyCheckout()
     var unpublishedFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: false, prerelease: false, publishedAt: null));
     try
     {
-        var status = StableReleaseService.Discover(unpublishedFixture.Profile, unpublishedFixture.GhCommand);
+        var status = StableReleaseService.Discover(unpublishedFixture.Profile, unpublishedFixture.ReleaseHandler);
         Assert(status.Target is null && !status.TargetAvailable, "A release without published_at must never become a Stable upgrade target.");
     }
     finally
@@ -1020,7 +1022,7 @@ static void StableUpgradeRejectsUnprovenTarget()
     try
     {
         AssertThrowsMessage(
-            () => StableReleaseService.Discover(fixture.Profile, fixture.GhCommand),
+            () => StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler),
             "Stable release tag is not proven as an immutable annotated remote tag.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.CurrentSha, "An unproven target must not move Stable.");
         Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "An unproven target must not create a backup.");
@@ -1036,11 +1038,11 @@ static void UpgradesStableAfterBackupPreservingData()
     var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
     try
     {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
         var databaseBefore = File.ReadAllBytes(fixture.Database);
         var previewBefore = File.ReadAllText(fixture.PreviewMarker);
         var configBefore = LauncherConfig.Load(fixture.ConfigPath);
-        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.GhCommand);
+        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler);
 
         Assert(result.Target.CommitSha == fixture.TargetSha, "Upgrade result must report the proven target commit.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Stable must switch only to the proven immutable tag commit.");
@@ -1070,11 +1072,11 @@ static void StableUpgradeRejectsBackendVersionMismatch()
     var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"), targetApplicationVersion: "0.8.2");
     try
     {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
         var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
         var beforeConfig = File.ReadAllText(fixture.ConfigPath);
         AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.GhCommand),
+            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
             "Stable upgrade target backend version does not match its release tag.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A target version mismatch must fail before switching Stable.");
         Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A target version mismatch must fail before rewriting launcher config.");
@@ -1940,8 +1942,7 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     var previewData = Path.Combine(root, "preview-data");
     var previewMarker = Path.Combine(previewData, "preview-marker.txt");
     var configPath = Path.Combine(root, "launcher", "config.json");
-    var tools = Path.Combine(root, "tools");
-    var ghCommand = Path.Combine(tools, "gh.cmd");
+    var releaseHandler = new SyntheticReleaseHandler(releaseJson);
     Directory.CreateDirectory(root);
     Directory.CreateDirectory(remote);
     RunGit(remote, "init", "--bare");
@@ -2020,8 +2021,6 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
         Profiles = [stable, preview],
     };
     File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
-    Directory.CreateDirectory(tools);
-    WriteCommandShim(ghCommand, $"@echo off\r\necho {releaseJson}\r\nexit /b 0\r\n");
     var profile = new ValidatedProfile(
         stable,
         stableCheckout,
@@ -2043,7 +2042,7 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
         previewCheckout,
         previewMarker,
         configPath,
-        ghCommand,
+        releaseHandler,
         config,
         profile,
         currentSha,
@@ -2470,11 +2469,43 @@ sealed record StableUpgradeFixture(
     string PreviewCheckout,
     string PreviewMarker,
     string ConfigPath,
-    string GhCommand,
+    SyntheticReleaseHandler ReleaseHandler,
     LauncherConfig Config,
     ValidatedProfile Profile,
     string CurrentSha,
     string TargetSha);
+
+sealed class SyntheticReleaseHandler : HttpMessageHandler
+{
+    private const string ReleasesEndpoint =
+        "https://api.github.com/repos/LTstripes/hermes-finance/releases?per_page=100";
+    private readonly string _releaseJson;
+
+    public SyntheticReleaseHandler(string releaseJson)
+    {
+        _releaseJson = releaseJson;
+    }
+
+    public int RequestCount { get; private set; }
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        RequestCount++;
+        if (request.Method != HttpMethod.Get
+            || !string.Equals(request.RequestUri?.AbsoluteUri, ReleasesEndpoint, StringComparison.Ordinal)
+            || request.Headers.Authorization is not null)
+        {
+            throw new InvalidOperationException("Synthetic Stable release discovery request was not an unauthenticated public GET.");
+        }
+
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(_releaseJson, Encoding.UTF8, "application/json"),
+        });
+    }
+}
 
 static class NativeMethods
 {
