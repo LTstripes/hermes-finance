@@ -372,6 +372,9 @@ public sealed class MainForm : Form
     private LauncherProfile? _selectedProfile;
     private ValidatedProfile? _validatedProfile;
     private Process? _launcherProcess;
+    private readonly LauncherProcessOwnership _ownership;
+    private readonly object _processStateGate = new();
+    private readonly HashSet<Process> _ownerStopRequests = new();
     private long _validationGeneration;
     private bool _detailsVisible;
     private bool _ready;
@@ -379,17 +382,23 @@ public sealed class MainForm : Form
     private string? _pendingHealthFailure;
 
     public MainForm()
-        : this(null, loadConfigOnLoad: true)
+        : this(null, loadConfigOnLoad: true, ownershipDirectory: null)
     {
     }
 
     internal MainForm(LauncherConfig config)
-        : this(config, loadConfigOnLoad: false)
+        : this(config, loadConfigOnLoad: false, ownershipDirectory: null)
     {
     }
 
-    private MainForm(LauncherConfig? config, bool loadConfigOnLoad)
+    internal MainForm(LauncherConfig config, string ownershipDirectory)
+        : this(config, loadConfigOnLoad: false, ownershipDirectory)
     {
+    }
+
+    private MainForm(LauncherConfig? config, bool loadConfigOnLoad, string? ownershipDirectory)
+    {
+        _ownership = new LauncherProcessOwnership(ownershipDirectory);
         Text = "Hermes Finance — Launcher";
         // #284: below 720px the honest content height collapses the flex
         // viewport to scrolling-only; keep the minimum usable.
@@ -775,10 +784,16 @@ public sealed class MainForm : Form
         try
         {
             var config = _config ?? throw new LauncherValidationException("Launcher config is not loaded.");
-            var validated = await Task.Run(() => ProfileValidator.Validate(config, profile));
+            var validated = await Task.Run(() => ProfileValidator.Validate(config, profile, checkPort: false));
             if (!IsCurrentSelection(profile, generation))
             {
                 return null;
+            }
+
+            var recovered = _ownership.TryRecover(validated);
+            if (recovered is null)
+            {
+                ProfileValidator.AssertPortAvailable();
             }
 
             if (discoverStableUpgrade && profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
@@ -823,6 +838,11 @@ public sealed class MainForm : Form
             AppendDiagnostic("DB/Alembic, data identity, loopback port, and runtime layout checks passed.");
             AppendDiagnostic($"Dependency check: backend {validated.Dependencies?.BackendDetail}; frontend {validated.Dependencies?.FrontendDetail}.");
             ApplyValidated(validated);
+            if (recovered is not null)
+            {
+                AttachRecoveredProcess(validated, recovered);
+                ApplyPrimaryPlan(profile, LauncherReadinessState.Running, validated, null);
+            }
             return validated;
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception or JsonException)
@@ -933,6 +953,12 @@ public sealed class MainForm : Form
         if (validated is null)
         {
             _refresh.Enabled = true;
+            return;
+        }
+        if (_ready
+            && _launcherProcess is not null
+            && _ownership.ProvesOwnership(validated, _launcherProcess))
+        {
             return;
         }
 
@@ -1141,56 +1167,19 @@ public sealed class MainForm : Form
 
     private void StartProcess(ValidatedProfile profile)
     {
+        _validatedProfile = profile;
         var process = new Process
         {
             StartInfo = ProfileValidator.BuildStartCommand(profile),
             EnableRaisingEvents = true,
         };
-        _launcherProcess = process;
-        process.OutputDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
-        process.ErrorDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
-        process.Exited += (_, _) => PostToUi(() =>
-        {
-            AppendDiagnostic($"Guarded startup exited with code {process.ExitCode}.");
-            if (ReferenceEquals(_launcherProcess, process))
-            {
-                _launcherProcess = null;
-            }
-            _ready = false;
-            _healthVerificationPending = false;
-            var healthFailure = _pendingHealthFailure;
-            _pendingHealthFailure = null;
-            var state = healthFailure is not null
-                ? LauncherReadinessState.Blocked
-                : process.ExitCode == 0 ? LauncherReadinessState.Stopped : LauncherReadinessState.Blocked;
-            SetReadiness(profile.Profile, state, healthFailure ?? (process.ExitCode == 0
-                ? LauncherUi.ReadinessDescription(LauncherReadinessState.Stopped)
-                : "Hermes завершился до подтверждения готовности. Откройте «Диагностика и логи» — raw детали вторичны."));
-            SetLastLaunchStatus(healthFailure is not null
-                ? "Последний запуск: заблокирован"
-                : $"Последний запуск: завершён с кодом {process.ExitCode}");
-            if (_validatedProfile is not null)
-            {
-                ApplyPrimaryPlan(
-                    profile.Profile,
-                    state,
-                    _validatedProfile,
-                    healthFailure is null ? null : new LauncherValidationException(healthFailure));
-            }
-            else if (_selectedProfile is not null)
-            {
-                ApplyPrimaryPlan(
-                    _selectedProfile,
-                    state,
-                    null,
-                    healthFailure is null ? null : new LauncherValidationException(healthFailure));
-            }
-        });
+        long? processStartTimeUtcTicks = null;
+        AttachProcess(profile, process, () => processStartTimeUtcTicks);
         try
         {
             process.Start();
-            _healthVerificationPending = false;
-            _pendingHealthFailure = null;
+            processStartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks;
+            _ownership.Write(profile, process);
             _stop.Enabled = true;
             SetPreviewUpdateActions(false, enabled: false);
             SetStableUpgradeActions(visible: false, enabled: false, target: null);
@@ -1200,10 +1189,93 @@ public sealed class MainForm : Form
         }
         catch
         {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(5000);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // The process may have exited while its durable marker was being written.
+            }
+            catch (Win32Exception)
+            {
+                // Preserve the original startup failure and fail closed.
+            }
+            _ownership.RemoveIfOwned(profile, process);
             _launcherProcess = null;
             process.Dispose();
             throw;
         }
+    }
+
+    private void AttachProcess(ValidatedProfile profile, Process process, Func<long?>? knownStartTimeUtcTicks = null)
+    {
+        _launcherProcess = process;
+        process.OutputDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
+        process.ErrorDataReceived += (_, eventArgs) => HandleProcessLine(profile, eventArgs.Data);
+        process.Exited += (_, _) =>
+        {
+            var ownerStopRequested = ConsumeOwnerStopRequest(process);
+            _ownership.RemoveIfOwned(profile, process, knownStartTimeUtcTicks?.Invoke());
+            PostToUi(() =>
+            {
+            if (ReferenceEquals(_launcherProcess, process))
+            {
+                _launcherProcess = null;
+            }
+            _ready = false;
+            var exitCode = process.ExitCode;
+            if (ownerStopRequested)
+            {
+                AppendDiagnostic($"Launcher-owned Stop completed; process exited with code {exitCode} as expected.");
+                SetReadiness(profile.Profile, LauncherReadinessState.Stopped);
+                SetLastLaunchStatus("Последний запуск: остановлен");
+                if (_validatedProfile is not null)
+                {
+                    ApplyPrimaryPlan(profile.Profile, LauncherReadinessState.Stopped, _validatedProfile, null);
+                }
+                else if (_selectedProfile is not null)
+                {
+                    ApplyPrimaryPlan(_selectedProfile, LauncherReadinessState.Stopped, null, null);
+                }
+                process.Dispose();
+                if (ReferenceEquals(_selectedProfile, profile.Profile))
+                {
+                    _ = RefreshAfterExpectedOwnerStopAsync(profile.Profile);
+                }
+                return;
+            }
+
+            AppendDiagnostic($"Guarded startup exited with code {exitCode}.");
+            var state = exitCode == 0 ? LauncherReadinessState.Stopped : LauncherReadinessState.Blocked;
+            SetReadiness(profile.Profile, state, exitCode == 0
+                ? LauncherUi.ReadinessDescription(LauncherReadinessState.Stopped)
+                : "Hermes завершился до подтверждения готовности. Откройте «Диагностика и логи» — raw детали вторичны.");
+            SetLastLaunchStatus($"Последний запуск: завершён с кодом {exitCode}");
+            if (_validatedProfile is not null)
+            {
+                ApplyPrimaryPlan(profile.Profile, state, _validatedProfile, null);
+            }
+            else if (_selectedProfile is not null)
+            {
+                ApplyPrimaryPlan(_selectedProfile, state, null, null);
+            }
+            process.Dispose();
+            });
+        };
+    }
+
+    private void AttachRecoveredProcess(ValidatedProfile profile, RecoveredLauncherProcess recovered)
+    {
+        AttachProcess(profile, recovered.Process, () => recovered.Marker.ProcessStartTimeUtcTicks);
+        _ready = true;
+        SetReadiness(profile.Profile, LauncherReadinessState.Running);
+        SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
+        AppendDiagnostic("Recovered a launcher-owned Hermes process after launcher restart.");
     }
 
     internal static bool TryCompleteReady(
@@ -1257,6 +1329,13 @@ public sealed class MainForm : Form
                     LauncherReadinessState.Blocked,
                     "Identity данных не удалось подтвердить. Исправьте права или sidecar и повторите запуск.");
                 SetLastLaunchStatus("Последний запуск: заблокирован");
+                return;
+            }
+
+            if (_launcherProcess is null || !_ownership.MarkReady(profile, _launcherProcess))
+            {
+                AppendDiagnostic("BLOCKING ERROR: durable launcher ownership could not be marked ready; the launched stack will be stopped.");
+                StopLaunchedStack();
                 return;
             }
 
@@ -1366,13 +1445,20 @@ public sealed class MainForm : Form
     }
 
     private void StopLaunchedStack() =>
-        StopLaunchedStack("Launched stack stopped because its data identity could not be established.");
+        StopLaunchedStack("Launched stack stopped because its data identity could not be established.", ownerRequested: false);
 
     private void StopLaunchedStack(string successMessage)
+        => StopLaunchedStack(successMessage, ownerRequested: true);
+
+    private void StopLaunchedStack(string successMessage, bool ownerRequested)
     {
         var process = _launcherProcess;
         if (process is null || process.HasExited)
         {
+            if (process is not null && _selectedProfile is not null && _validatedProfile is not null)
+            {
+                _ownership.RemoveIfOwned(_validatedProfile, process);
+            }
             _ready = false;
             _healthVerificationPending = false;
             if (_selectedProfile is not null)
@@ -1384,10 +1470,27 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (_selectedProfile is null
+            || _validatedProfile is null
+            || !ReferenceEquals(_validatedProfile.Profile, _selectedProfile)
+            || !_ownership.ProvesOwnership(_validatedProfile, process))
+        {
+            AppendDiagnostic("BLOCKING ERROR: Stop refused because launcher ownership of the selected profile process could not be proven.");
+            _stop.Enabled = false;
+            ShowTransientMessage("Остановить можно только доказанный launcher-owned Hermes выбранного профиля.");
+            return;
+        }
+
         try
         {
+            if (ownerRequested)
+            {
+                MarkOwnerStopRequested(process);
+            }
+            var processStartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks;
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
+            _ownership.RemoveIfOwned(_validatedProfile, process, processStartTimeUtcTicks);
             AppendDiagnostic(successMessage);
             SetLastLaunchStatus("Последний запуск: остановлен");
             _ready = false;
@@ -1406,6 +1509,49 @@ public sealed class MainForm : Form
                 _stop.Enabled = true;
             }
             ShowTransientMessage("Не удалось автоматически остановить Hermes. См. «Диагностика и логи».");
+        }
+    }
+
+    private async Task RefreshAfterExpectedOwnerStopAsync(LauncherProfile profile)
+    {
+        const int portReleaseTimeoutMilliseconds = 5_000;
+        const int portReleasePollMilliseconds = 100;
+        var deadline = DateTime.UtcNow.AddMilliseconds(portReleaseTimeoutMilliseconds);
+        while (!IsDisposed && DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                ProfileValidator.AssertPortAvailable();
+                break;
+            }
+            catch (LauncherValidationException)
+            {
+                await Task.Delay(portReleasePollMilliseconds);
+            }
+        }
+
+        if (IsDisposed || !ReferenceEquals(profile, _selectedProfile))
+        {
+            return;
+        }
+
+        AppendDiagnostic("Launcher-owned Stop completed; rerunning read-only preflight after port cleanup.");
+        await RunPreflightAsync(profile);
+    }
+
+    private void MarkOwnerStopRequested(Process process)
+    {
+        lock (_processStateGate)
+        {
+            _ownerStopRequests.Add(process);
+        }
+    }
+
+    private bool ConsumeOwnerStopRequest(Process process)
+    {
+        lock (_processStateGate)
+        {
+            return _ownerStopRequests.Remove(process);
         }
     }
 
@@ -1605,7 +1751,11 @@ public sealed class MainForm : Form
         // Stop is executable only for a launcher-owned running process.
         // An external port collision (Blocked, no owned process) must never
         // present a false Stop action: downgrade to honest Refresh.
-        var ownsRunningProcess = _launcherProcess is not null && !_launcherProcess.HasExited;
+        var ownsRunningProcess = _launcherProcess is not null
+            && _validatedProfile is not null
+            && _selectedProfile is not null
+            && ReferenceEquals(_validatedProfile.Profile, _selectedProfile)
+            && _ownership.ProvesOwnership(_validatedProfile, _launcherProcess);
         if (plan.Primary == LauncherPrimaryAction.Stop && !ownsRunningProcess && state != LauncherReadinessState.Running)
         {
             plan = new(LauncherPrimaryAction.Refresh, "Порт занят внешним процессом", "Порт 127.0.0.1:8000 занят другим процессом — launcher не останавливает чужие процессы. Остановите его вручную и «Обновить проверку»");
