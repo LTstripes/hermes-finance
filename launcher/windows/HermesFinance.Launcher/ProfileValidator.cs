@@ -23,6 +23,9 @@ public static class ProfileValidator
     private const string ReadyUrl = "http://127.0.0.1:8000";
 
     public static ValidatedProfile Validate(LauncherConfig config, LauncherProfile profile)
+        => Validate(config, profile, checkPort: true);
+
+    internal static ValidatedProfile Validate(LauncherConfig config, LauncherProfile profile, bool checkPort)
     {
         ValidateConfiguration(config);
 
@@ -54,7 +57,10 @@ public static class ProfileValidator
         {
             AssertSchemaCompatibility(checkout, database, profile.Type);
         }
-        AssertPortAvailable();
+        if (checkPort)
+        {
+            AssertPortAvailable();
+        }
         var previewUpdate = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
             ? PreviewUpdateService.ReadStatus(new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies))
             : null;
@@ -332,7 +338,7 @@ public static class ProfileValidator
         return script;
     }
 
-    private static void AssertPortAvailable()
+    internal static void AssertPortAvailable()
     {
         if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(endpoint => endpoint.Port == 8000))
         {
