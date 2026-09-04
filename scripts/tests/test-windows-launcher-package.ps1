@@ -36,6 +36,7 @@ $expectedAssets = @(
     "HermesFinance.Launcher.exe",
     "hermes-finance-cat.ico",
     "prepare-runtime-dependencies.ps1",
+    "launcher-production-backup.py",
     "launcher-schema-check.py"
 )
 

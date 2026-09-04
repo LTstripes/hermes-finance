@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace HermesFinance.Launcher;
 
@@ -15,7 +16,9 @@ public sealed record ValidatedProfile(
     string Head,
     string SidecarKind,
     DependencyStatus? Dependencies = null,
-    PreviewUpdateStatus? PreviewUpdate = null);
+    PreviewUpdateStatus? PreviewUpdate = null,
+    StableUpgradeStatus? StableUpgrade = null,
+    string? ApplicationVersion = null);
 
 public static class ProfileValidator
 {
@@ -61,11 +64,44 @@ public static class ProfileValidator
         {
             AssertPortAvailable();
         }
+        var applicationVersion = ReadApplicationVersion(checkout);
         var previewUpdate = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
-            ? PreviewUpdateService.ReadStatus(new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies))
+            ? PreviewUpdateService.ReadStatus(new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, null, null, applicationVersion))
             : null;
 
-        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, previewUpdate);
+        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, previewUpdate, null, applicationVersion);
+    }
+
+    internal static string? ReadApplicationVersion(string checkout)
+    {
+        var path = Path.Combine(checkout, "backend", "src", "hermes_finance", "__init__.py");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ParseApplicationVersion(File.ReadAllText(path))
+                ?? throw new LauncherValidationException("Backend application version cannot be proven from the configured runtime.");
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw new LauncherValidationException($"Backend application version cannot be read: {exception.Message}");
+        }
+        catch (IOException exception)
+        {
+            throw new LauncherValidationException($"Backend application version cannot be read: {exception.Message}");
+        }
+    }
+
+    internal static string? ParseApplicationVersion(string source)
+    {
+        var matches = Regex.Matches(
+            source,
+            @"(?m)^\s*__version__\s*=\s*[""'](?<version>\d+\.\d+\.\d+)[""']\s*$",
+            RegexOptions.CultureInvariant);
+        return matches.Count == 1 ? matches[0].Groups["version"].Value : null;
     }
 
     public static void ValidateConfiguration(LauncherConfig config)
