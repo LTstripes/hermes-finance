@@ -1785,9 +1785,6 @@ public sealed class MainForm : Form
     // outer readiness container can then return that height to selectedLayout.
     private sealed class ReadinessLayoutPanel : TableLayoutPanel
     {
-        private const int IconColumnWidth = 30;
-        private const int TitleRowHeight = 29;
-
         public ReadinessDescriptionLabel? Description { get; set; }
 
         public override Size GetPreferredSize(Size proposedSize)
@@ -1798,11 +1795,11 @@ public sealed class MainForm : Form
                 return base.GetPreferredSize(proposedSize);
             }
 
-            var descriptionWidth = Math.Max(1, width - IconColumnWidth);
+            var descriptionWidth = Math.Max(1, width - GetIconColumnWidth());
             Description?.SetWrapWidth(descriptionWidth);
             var preferred = base.GetPreferredSize(new Size(width, 0));
             var wrappedHeight = Description?.GetWrappedHeight(descriptionWidth) ?? 0;
-            return new Size(width, Math.Max(preferred.Height, TitleRowHeight + wrappedHeight));
+            return new Size(width, Math.Max(preferred.Height, GetTitleRowHeight() + wrappedHeight));
         }
 
         protected override void OnLayout(LayoutEventArgs levent)
@@ -1810,10 +1807,32 @@ public sealed class MainForm : Form
             var width = ClientSize.Width;
             if (width > 0)
             {
-                Description?.SetWrapWidth(Math.Max(1, width - IconColumnWidth));
+                Description?.SetWrapWidth(Math.Max(1, width - GetIconColumnWidth()));
             }
 
             base.OnLayout(levent);
+        }
+
+        private int GetIconColumnWidth()
+        {
+            if (ColumnStyles.Count > 0 && ColumnStyles[0].SizeType == SizeType.Absolute)
+            {
+                return Math.Max(1, (int)Math.Ceiling(ColumnStyles[0].Width));
+            }
+
+            var widths = GetColumnWidths();
+            return widths.Length > 0 ? Math.Max(1, widths[0]) : 1;
+        }
+
+        private int GetTitleRowHeight()
+        {
+            if (RowStyles.Count > 0 && RowStyles[0].SizeType == SizeType.Absolute)
+            {
+                return Math.Max(1, (int)Math.Ceiling(RowStyles[0].Height));
+            }
+
+            var heights = GetRowHeights();
+            return heights.Length > 0 ? Math.Max(1, heights[0]) : 1;
         }
 
         private int ResolveAvailableWidth(int proposedWidth)
