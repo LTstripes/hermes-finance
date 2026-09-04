@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace HermesFinance.Launcher;
 
@@ -21,6 +22,80 @@ public sealed class LauncherConfig
         var json = File.ReadAllText(configPath);
         return JsonSerializer.Deserialize<LauncherConfig>(json, JsonOptions)
             ?? throw new LauncherValidationException("Launcher config is invalid: the document is empty.");
+    }
+
+    /// <summary>
+    /// Persist the Stable release identity only after the upgrade service has
+    /// proven the new immutable tag and switched the configured checkout. The
+    /// write is atomic from the launcher's point of view and never changes the
+    /// canonical production data paths.
+    /// </summary>
+    internal static LauncherConfig UpdateStableExpectedRef(string configPath, string expectedRef)
+    {
+        if (string.IsNullOrWhiteSpace(configPath) || !Path.IsPathFullyQualified(configPath))
+        {
+            throw new LauncherValidationException("Stable release identity cannot be persisted without an absolute config path.");
+        }
+        if (string.IsNullOrWhiteSpace(expectedRef)
+            || !StableReleaseRefPattern.IsMatch(expectedRef))
+        {
+            throw new LauncherValidationException("Stable release identity cannot be persisted: expected_ref is not a release tag.");
+        }
+
+        var config = Load(configPath);
+        ProfileValidator.ValidateConfiguration(config);
+        var stable = config.Profiles.SingleOrDefault(
+            profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        if (stable is null)
+        {
+            throw new LauncherValidationException("Stable release identity cannot be persisted: Stable profile is missing.");
+        }
+
+        var updated = new LauncherConfig
+        {
+            Version = config.Version,
+            CanonicalProduction = config.CanonicalProduction,
+            Profiles = config.Profiles.Select(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
+                ? new LauncherProfile
+                {
+                    Id = profile.Id,
+                    DisplayName = profile.DisplayName,
+                    Type = profile.Type,
+                    Checkout = profile.Checkout,
+                    ExpectedRef = expectedRef,
+                    DataDir = profile.DataDir,
+                    Database = profile.Database,
+                    OpenBrowser = profile.OpenBrowser,
+                }
+                : profile).ToList(),
+        };
+
+        var temporary = configPath + $".tmp-{Guid.NewGuid():N}";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(updated, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temporary, configPath, overwrite: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new LauncherValidationException($"Stable release identity could not be persisted: {exception.Message}");
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporary))
+                {
+                    File.Delete(temporary);
+                }
+            }
+            catch (IOException)
+            {
+                // The original config is still the authoritative file if the
+                // best-effort temporary cleanup loses a race.
+            }
+        }
+        return updated;
     }
 
     /// <summary>
@@ -190,6 +265,9 @@ public sealed class LauncherConfig
 
     private static readonly string[] StaleStableRefs = ["refs/tags/v0.6.3", "refs/tags/v0.7.0", "refs/tags/v0.8.0", "origin/r07"];
     private const string CurrentStableRef = "refs/tags/v0.8.1";
+    private static readonly Regex StableReleaseRefPattern = new(
+        "^refs/tags/v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static LauncherConfig TryMigrateStableTag(LauncherConfig config, string configPath, out string diagnostic)
     {

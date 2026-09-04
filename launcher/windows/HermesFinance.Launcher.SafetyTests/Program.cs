@@ -43,6 +43,12 @@ var tests = new (string Name, Action Run)[]
     ("updates only Preview to unreleased origin main and preserves its data", UpdatesPreviewAndPreservesData),
     ("rejects dirty, conflicted, and unexpected Preview checkouts", RejectsUnsafePreviewUpdateStates),
     ("rejects Stable as an update target", RejectsStableUpdate),
+    ("discovers a published immutable Stable target without mutation", DiscoversPublishedStableTargetWithoutMutation),
+    ("does not offer Stable upgrade for unpublished or prerelease candidates", IgnoresUnpublishedStableCandidates),
+    ("fails closed before backup on dirty Stable checkout", StableUpgradeFailsClosedOnDirtyCheckout),
+    ("fails closed when Stable target is not an annotated tag", StableUpgradeRejectsUnprovenTarget),
+    ("upgrades Stable after backup and preserves production and Preview boundaries", UpgradesStableAfterBackupPreservingData),
+    ("fails before checkout and config mutation when target backend version disagrees", StableUpgradeRejectsBackendVersionMismatch),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
     ("offers launcher-owned action for identity mismatch", OffersActionableMismatch),
@@ -898,6 +904,189 @@ static void RejectsStableUpdate()
         "Only the configured Preview profile may be updated.");
 }
 
+static void DiscoversPublishedStableTargetWithoutMutation()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
+    try
+    {
+        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
+        var beforeStatus = RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all");
+        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var discoveredTarget = status.Target ?? throw new InvalidOperationException("Synthetic discovery returned no target.");
+
+        Assert(status.Current is not null && status.Current.Version == "0.8.0", "Discovery must prove the configured current immutable Stable release.");
+        Assert(status.TargetAvailable, "A published newer release must produce an explicit Stable target.");
+        Assert(discoveredTarget.Version == "0.8.1", "Discovery must select the published newer release.");
+        Assert(discoveredTarget.CommitSha == fixture.TargetSha, "Discovery target must use the remote tag's peeled commit SHA.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Read-only release discovery must not switch Stable.");
+        Assert(RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all") == beforeStatus, "Read-only release discovery must not dirty Stable.");
+        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "Read-only release discovery must not write launcher config.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "Read-only release discovery must not create a production backup.");
+
+        var validated = fixture.Profile with { StableUpgrade = status };
+        var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, validated, fixture.Profile.Profile);
+        Assert(plan.Primary == LauncherPrimaryAction.UpgradeStable, "A proven newer Stable release must be the primary owner CTA.");
+        using var form = new MainForm(fixture.Config);
+        ApplyValidatedOn(form, validated);
+        var buttons = AllControls(form).OfType<Button>().ToArray();
+        var update = buttons.Single(button => button.Text.StartsWith("Обновить Stable", StringComparison.Ordinal));
+        Assert(update.Enabled && OwnVisible(update), $"The Stable release CTA must be visible and enabled only after target proof (ownVisible={OwnVisible(update)}, effectiveVisible={update.Visible}, enabled={update.Enabled}, buttons={string.Join(" | ", buttons.Select(button => $"{button.Text}:{OwnVisible(button)}/{button.Enabled}"))}).");
+        Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must not compete with a pending Stable upgrade.");
+        var labels = AllControls(form).OfType<Label>().ToArray();
+        Assert(labels.Any(label => label.Text.Contains("v0.8.0", StringComparison.Ordinal)
+            && label.Text.Contains("v0.8.1", StringComparison.Ordinal)), "The owner surface must show current and target Stable release identities.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void IgnoresUnpublishedStableCandidates()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: true, prerelease: false));
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        Assert(status.Current is not null, "Current Stable identity must still be proven when a candidate is ignored.");
+        Assert(status.Target is null && !status.TargetAvailable, "Draft releases must never become a Stable upgrade target.");
+        var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, fixture.Profile with { StableUpgrade = status }, fixture.Profile.Profile);
+        Assert(plan.Primary == LauncherPrimaryAction.Start, "No published target must leave Stable at the normal Start CTA.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "Ignored release candidates must not create a backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+
+    var prereleaseFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: false, prerelease: true));
+    try
+    {
+        var status = StableReleaseService.Discover(prereleaseFixture.Profile, prereleaseFixture.GhCommand);
+        Assert(status.Target is null && !status.TargetAvailable, "Prerelease releases must never become a Stable upgrade target.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(prereleaseFixture.Root);
+    }
+}
+
+static void StableUpgradeFailsClosedOnDirtyCheckout()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
+        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
+        var tamperedTarget = status.Target! with { TagObjectSha = new string('0', 40) };
+        AssertThrowsMessage(
+            () => StableReleaseService.Upgrade(fixture.Profile, tamperedTarget, fixture.ConfigPath, fixture.GhCommand),
+            "Stable upgrade target identity changed; the immutable tag proof no longer matches.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A tampered tag-object proof must not move Stable.");
+        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A tampered tag-object proof must not rewrite launcher config.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A tampered tag-object proof must fail before creating a backup.");
+
+        File.WriteAllText(Path.Combine(fixture.StableCheckout, "owner-edit.txt"), "must block Stable upgrade");
+
+        AssertThrowsMessage(
+            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.GhCommand),
+            "Stable checkout is dirty or conflicted; upgrade is blocked.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Dirty Stable must not switch releases.");
+        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "Dirty Stable must not rewrite launcher config.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "Dirty Stable must fail before creating a backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+
+    var unpublishedFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: false, prerelease: false, publishedAt: null));
+    try
+    {
+        var status = StableReleaseService.Discover(unpublishedFixture.Profile, unpublishedFixture.GhCommand);
+        Assert(status.Target is null && !status.TargetAvailable, "A release without published_at must never become a Stable upgrade target.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(unpublishedFixture.Root);
+    }
+}
+
+static void StableUpgradeRejectsUnprovenTarget()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"), annotatedTarget: false);
+    try
+    {
+        AssertThrowsMessage(
+            () => StableReleaseService.Discover(fixture.Profile, fixture.GhCommand),
+            "Stable release tag is not proven as an immutable annotated remote tag.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.CurrentSha, "An unproven target must not move Stable.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "An unproven target must not create a backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void UpgradesStableAfterBackupPreservingData()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var databaseBefore = File.ReadAllBytes(fixture.Database);
+        var previewBefore = File.ReadAllText(fixture.PreviewMarker);
+        var configBefore = LauncherConfig.Load(fixture.ConfigPath);
+        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.GhCommand);
+
+        Assert(result.Target.CommitSha == fixture.TargetSha, "Upgrade result must report the proven target commit.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Stable must switch only to the proven immutable tag commit.");
+        Assert(RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all") == "", "Upgraded Stable must remain clean.");
+        var configAfter = LauncherConfig.Load(fixture.ConfigPath);
+        var stableAfter = configAfter.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(stableAfter.ExpectedRef == "refs/tags/v0.8.1", "Config identity must be updated to the proven release tag after checkout verification.");
+        Assert(configAfter.CanonicalProduction.DataDir == configBefore.CanonicalProduction.DataDir
+            && configAfter.CanonicalProduction.Database == configBefore.CanonicalProduction.Database,
+            "Stable upgrade must preserve canonical production data paths.");
+        Assert(File.ReadAllBytes(fixture.Database).SequenceEqual(databaseBefore), "Stable upgrade must not mutate the production database contents.");
+        Assert(ProfileValidator.ReadApplicationVersion(fixture.StableCheckout) == "0.8.1", "Checked-out backend version must agree with the release identity.");
+        Assert(File.ReadAllText(fixture.PreviewMarker) == previewBefore, "Stable upgrade must not touch Preview data.");
+        var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
+        Assert(backups.Length == 1, "Stable upgrade must create exactly one synthetic production backup before mutation.");
+        Assert(Path.GetDirectoryName(backups[0])!.Equals(Path.Combine(fixture.DataDir, "backups"), StringComparison.OrdinalIgnoreCase), "Backup must remain beside the configured production database.");
+        Assert(result.BackupId == Path.GetFileNameWithoutExtension(backups[0]), "Upgrade result must report the verified backup identity.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void StableUpgradeRejectsBackendVersionMismatch()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"), targetApplicationVersion: "0.8.2");
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.GhCommand);
+        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
+        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
+        AssertThrowsMessage(
+            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.GhCommand),
+            "Stable upgrade target backend version does not match its release tag.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A target version mismatch must fail before switching Stable.");
+        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A target version mismatch must fail before rewriting launcher config.");
+        var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
+        Assert(backups.Length == 1, "The mandatory backup must precede the target-code proof failure.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
 static void ShowsStablePinnedIdentity()
 {
     var stable = new LauncherProfile
@@ -1242,7 +1431,9 @@ static string[] PrimaryCtaTexts() =>
 ];
 
 static List<string> EnabledPrimaries(MainForm form) =>
-    AllControls(form).OfType<Button>().Where(button => button.Enabled && PrimaryCtaTexts().Contains(button.Text)).Select(button => button.Text).ToList();
+    AllControls(form).OfType<Button>().Where(button => button.Enabled
+        && (PrimaryCtaTexts().Contains(button.Text)
+            || button.Text.StartsWith("Обновить Stable", StringComparison.Ordinal))).Select(button => button.Text).ToList();
 
 static LauncherProfile PreviewProfileForCta() => new()
 {
@@ -1718,6 +1909,193 @@ static (string Root, string Seed, string Remote, string Preview, string DataDir,
     return (root, seed, remote, preview, dataDir, stableMarker, currentSha, targetSha);
 }
 
+static string PublishedReleaseJson(
+    string tag,
+    bool draft = false,
+    bool prerelease = false,
+    string? publishedAt = "2026-09-05T00:00:00Z") =>
+    JsonSerializer.Serialize(new[]
+    {
+        new
+        {
+            tag_name = tag,
+            draft,
+            prerelease,
+            published_at = publishedAt,
+            html_url = "https://github.com/LTstripes/hermes-finance/releases/tag/" + tag,
+        },
+    });
+
+static StableUpgradeFixture CreateStableUpgradeFixture(
+    string releaseJson,
+    bool annotatedTarget = true,
+    string targetApplicationVersion = "0.8.1")
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
+    var seed = Path.Combine(root, "seed");
+    var remote = Path.Combine(root, "stable-origin.git");
+    var stableCheckout = Path.Combine(root, "stable-checkout");
+    var dataDir = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview-checkout");
+    var previewData = Path.Combine(root, "preview-data");
+    var previewMarker = Path.Combine(previewData, "preview-marker.txt");
+    var configPath = Path.Combine(root, "launcher", "config.json");
+    var tools = Path.Combine(root, "tools");
+    var ghCommand = Path.Combine(tools, "gh.cmd");
+    Directory.CreateDirectory(root);
+    Directory.CreateDirectory(remote);
+    RunGit(remote, "init", "--bare");
+    CreateRuntimeLayout(seed);
+    Directory.CreateDirectory(Path.Combine(seed, "backend", "src", "hermes_finance"));
+    File.WriteAllText(
+        Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
+        "__version__ = \"0.8.0\"\n");
+    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.0\n");
+    RunGit(seed, "init");
+    RunGit(seed, "config", "user.name", "Hermes Stable Safety Test");
+    RunGit(seed, "config", "user.email", "hermes-stable-safety-test");
+    RunGit(seed, "add", ".");
+    RunGit(seed, "commit", "-m", "synthetic Stable v0.8.0 runtime");
+    RunGit(seed, "branch", "-M", "main");
+    RunGit(seed, "tag", "-a", "v0.8.0", "-m", "synthetic published Stable v0.8.0");
+    RunGit(seed, "remote", "add", "origin", remote);
+    RunGit(seed, "push", "--set-upstream", "origin", "main");
+    RunGit(seed, "push", "origin", "refs/tags/v0.8.0");
+    var currentSha = RunGit(seed, "rev-parse", "HEAD");
+
+    File.WriteAllText(
+        Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
+        $"__version__ = \"{targetApplicationVersion}\"\n");
+    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.1\n");
+    RunGit(seed, "add", ".");
+    RunGit(seed, "commit", "-m", "synthetic Stable v0.8.1 runtime");
+    if (annotatedTarget)
+    {
+        RunGit(seed, "tag", "-a", "v0.8.1", "-m", "synthetic published Stable v0.8.1");
+    }
+    else
+    {
+        RunGit(seed, "tag", "v0.8.1");
+    }
+    RunGit(seed, "push", "origin", "main");
+    RunGit(seed, "push", "origin", "refs/tags/v0.8.1");
+    var targetSha = RunGit(seed, "rev-parse", "refs/tags/v0.8.1^{commit}");
+
+    RunGit(root, "clone", "-b", "main", remote, stableCheckout);
+    RunGit(stableCheckout, "switch", "--detach", "refs/tags/v0.8.0");
+    Assert(RunGitMayFail(stableCheckout, "tag", "-d", "v0.8.1") == 0, "The synthetic Stable checkout must start without a local target tag.");
+    Directory.CreateDirectory(dataDir);
+    var database = Path.Combine(dataDir, "finance.db");
+    CreateSyntheticSqliteDatabase(database);
+    CreateRuntimeLayout(previewCheckout);
+    Directory.CreateDirectory(previewData);
+    File.WriteAllText(previewMarker, "Preview untouched by Stable upgrade\n");
+    Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+    var stable = new LauncherProfile
+    {
+        Id = "stable",
+        DisplayName = "Stable",
+        Type = "stable",
+        Checkout = stableCheckout,
+        ExpectedRef = "refs/tags/v0.8.0",
+        DataDir = dataDir,
+        Database = database,
+        OpenBrowser = false,
+    };
+    var preview = new LauncherProfile
+    {
+        Id = "preview",
+        DisplayName = "Preview",
+        Type = "preview",
+        Checkout = previewCheckout,
+        ExpectedRef = "HEAD",
+        DataDir = previewData,
+        Database = Path.Combine(previewData, "preview.db"),
+        OpenBrowser = false,
+    };
+    var config = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stableCheckout, DataDir = dataDir, Database = database },
+        Profiles = [stable, preview],
+    };
+    File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+    Directory.CreateDirectory(tools);
+    WriteCommandShim(ghCommand, $"@echo off\r\necho {releaseJson}\r\nexit /b 0\r\n");
+    var profile = new ValidatedProfile(
+        stable,
+        stableCheckout,
+        dataDir,
+        database,
+        currentSha,
+        "production",
+        new DependencyStatus(true, true, "ready", "ready"),
+        null,
+        null,
+        "0.8.0");
+    return new StableUpgradeFixture(
+        root,
+        seed,
+        remote,
+        stableCheckout,
+        dataDir,
+        database,
+        previewCheckout,
+        previewMarker,
+        configPath,
+        ghCommand,
+        config,
+        profile,
+        currentSha,
+        targetSha);
+}
+
+static void CreateSyntheticSqliteDatabase(string database)
+{
+    var workingDirectory = Path.GetDirectoryName(database)!;
+    string python;
+    string[] prefixArguments;
+    try
+    {
+        python = DependencyValidator.ResolveCommand("python", workingDirectory);
+        prefixArguments = [];
+    }
+    catch (LauncherValidationException)
+    {
+        try
+        {
+            python = DependencyValidator.ResolveCommand("py", workingDirectory);
+            prefixArguments = [];
+        }
+        catch (LauncherValidationException)
+        {
+            python = DependencyValidator.ResolveCommand("uv", workingDirectory);
+            prefixArguments = ["run", "--no-project", "--offline", "python"];
+        }
+    }
+    var command = new ProcessStartInfo
+    {
+        FileName = python,
+        WorkingDirectory = workingDirectory,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    foreach (var argument in prefixArguments)
+    {
+        command.ArgumentList.Add(argument);
+    }
+    command.ArgumentList.Add("-c");
+    command.ArgumentList.Add("import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('create table ledger (id integer primary key, amount text not null)'); c.execute(\"insert into ledger(amount) values ('synthetic')\"); c.commit(); c.close()");
+    command.ArgumentList.Add(database);
+    using var process = Process.Start(command) ?? throw new InvalidOperationException("Could not start synthetic Python.");
+    var output = process.StandardOutput.ReadToEnd();
+    var error = process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    Assert(process.ExitCode == 0, $"Synthetic SQLite setup failed: {error.Trim()} {output.Trim()}".Trim());
+}
+
 static ValidatedProfile NewValidatedPreviewProfile(string checkout, string dataDir, string database, string currentSha) =>
     new(
         new LauncherProfile
@@ -2081,6 +2459,22 @@ static bool OwnVisible(Control control)
     }
     return true;
 }
+
+sealed record StableUpgradeFixture(
+    string Root,
+    string Seed,
+    string Remote,
+    string StableCheckout,
+    string DataDir,
+    string Database,
+    string PreviewCheckout,
+    string PreviewMarker,
+    string ConfigPath,
+    string GhCommand,
+    LauncherConfig Config,
+    ValidatedProfile Profile,
+    string CurrentSha,
+    string TargetSha);
 
 static class NativeMethods
 {
