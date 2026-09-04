@@ -295,6 +295,13 @@ Set-Location ..
 
 ## Для разработчика
 
+### Безопасная очистка Windows workspaces
+
+`./scripts/cleanup-finance-workspaces.ps1 -RefreshRemote` показывает кандидатов
+и оценку освобождаемого места без изменений. Для применения нужен отдельный
+флаг `-Apply`. Dirty/unmerged/unknown paths, launcher profiles, `.env`, SQLite,
+недоступные деревья и reparse points скрипт сохраняет fail-closed.
+
 Перед новой задачей в чистом development clone синхронизируйтесь с каноническим `main` так, как описано в [`AGENTS.md`](AGENTS.md). Не делайте `switch`/`reset`/`pull` поверх незаконченной task-работы.
 
 Карта semantic test lanes, ownership и правило добавления новых регрессий описаны в [`docs/TEST_SUITE_GUIDE.md`](docs/TEST_SUITE_GUIDE.md).
