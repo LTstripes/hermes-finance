@@ -2,6 +2,33 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.8.1] — 2026-09-04
+
+Release-prep maintenance on top of the published 0.8.0 state. This entry
+documents already integrated changes and synchronizes release identity; it
+does not add product behavior, financial formulas, provider writes or schema
+changes.
+
+### Changed
+
+- launcher-owned Preview update, one-click prepare/repair/start, clearer Stable/Preview identity and owner-facing primary actions (#277–#279);
+- launcher desktop layout/readability polish without safety-semantic changes (#284);
+- clearer AI/export fact quality: calculated-vs-actual salary semantics, valuation freshness versus position completeness, explicit missing-history/active-account states, warning dedupe, IIS coverage and additive AI Analysis Bundle schema 1.1.0 while preserving portfolio-review package 1.0.0 (#285);
+- repository-owned safe workspace cleanup that protects Stable/Preview/runtime data (#280).
+
+### Verification infrastructure
+
+- backend pytest parallel lanes with slow-test telemetry (#282);
+- deterministic quote-freshness regression test with a pinned clock (#292).
+
+### Not changed
+
+- canonical Alembic head remains `0036_broker_baseline_provenance`; no migration or schema semantics changed;
+- local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
+- no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
+- provider/network/file actions remain explicit owner actions; closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero;
+- private Stable/Preview/runtime data, `.env`, databases, backups, exports/PDFs and credentials are outside release preparation.
+
 ## [0.8.0] — 2026-09-02
 
 Published owner-workflow release. This entry records the already published `v0.8.0` identity; it does not introduce new product code, financial semantics or provider write behavior.
