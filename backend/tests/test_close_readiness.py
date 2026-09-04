@@ -757,7 +757,13 @@ def test_workflow_keeps_quote_current_on_quantity_change_and_detects_remap(
         )
     )
     session.commit()
-    client = TestClient(create_app(database))
+    application = create_app(database)
+    # Deterministic clock: quote freshness is evaluated against "today", so
+    # pin it to the fixture date. Otherwise the test ages into a stale state
+    # as the wall clock advances (same pattern as the neighbouring workflow
+    # tests). Production semantics untouched.
+    application.state.quote_preview_clock = lambda: TODAY
+    client = TestClient(application)
 
     completed = _workflow_step(client, month.id, "market_quotes")
     assert completed["state"] == "completed"
