@@ -147,7 +147,12 @@ public sealed class MainForm : Form
     };
     private readonly ReadinessContainerPanel _readinessPanel = new()
     {
-        Dock = DockStyle.Fill,
+        // #284: the selected-profile AutoSize row must consume the wrapper's
+        // content-driven preferred height. Dock.Top keeps the cell width,
+        // while AutoSize makes the inner layout's wrapped height authoritative.
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         BackColor = Color.FromArgb(21, 35, 57),
         Padding = new Padding(12, 8, 12, 8),
         Margin = new Padding(0, 2, 0, 8),
