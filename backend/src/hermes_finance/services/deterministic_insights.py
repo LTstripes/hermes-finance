@@ -199,6 +199,38 @@ def _close_insights(*, month, readiness) -> list[DeterministicInsight]:
     ]
 
 
+def _important_coverage_insights(*, month, readiness) -> list[DeterministicInsight]:
+    """Promote the accepted actionable snapshot-coverage warning.
+
+    Close readiness owns the account-coverage predicate and its owner-facing
+    context.  Insights only transport that result; they do not recalculate
+    completeness or turn an absent snapshot into zero.
+    """
+    return [
+        _insight(
+            code=item.code,
+            type="data_quality",
+            severity=InsightSeverity.WARNING,
+            message=item.message,
+            evidence={
+                "close_readiness_code": item.code,
+                "close_readiness_severity": item.severity.value,
+                "can_close": readiness.can_close,
+                "status": readiness.status,
+                "snapshot_date": _date(readiness.snapshot_date),
+                "context": item.context,
+            },
+            source="close_readiness.active_account_snapshot_missing",
+            as_of=month.snapshot_date,
+            reason="close_readiness_reported_missing_active_account_snapshot",
+            provenance=(InsightProvenance(source="reporting_month"),),
+        )
+        for item in readiness.items
+        if item.code == CloseReadinessCode.ACTIVE_ACCOUNT_SNAPSHOT_MISSING.value
+        and item.severity is CloseReadinessSeverity.WARNING
+    ]
+
+
 def _payout_reconciliation_insights(
     *,
     month,
@@ -476,6 +508,7 @@ def build_deterministic_insights(
 
     insights: list[DeterministicInsight] = []
     insights.extend(_close_insights(month=month, readiness=readiness))
+    insights.extend(_important_coverage_insights(month=month, readiness=readiness))
     insights.extend(_freshness_insights(freshness))
     insights.extend(_payout_reconciliation_insights(month=month, readiness=readiness))
     insights.extend(_risk_insights(risk))

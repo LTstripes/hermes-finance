@@ -168,6 +168,64 @@ def test_empty_month_has_no_signal(session: Session) -> None:
     assert result.insights == ()
 
 
+def test_missing_active_capital_account_snapshot_is_actionable_coverage_warning(
+    session: Session,
+) -> None:
+    month = _month(session)
+    create_account(
+        session,
+        name="Synthetic missing snapshot account",
+        account_type=AccountType.BROKERAGE,
+    )
+
+    result = build_deterministic_insights(session, month.id, evaluated_on=TODAY)
+
+    insight = next(
+        item for item in result.insights if item.code == "active_account_snapshot_missing"
+    )
+    assert insight.type == "data_quality"
+    assert insight.severity is InsightSeverity.WARNING
+    assert insight.evidence == {
+        "close_readiness_code": "active_account_snapshot_missing",
+        "close_readiness_severity": "warning",
+        "can_close": True,
+        "status": "draft",
+        "snapshot_date": "2030-05-12",
+        "context": {
+            "account_names": ["Synthetic missing snapshot account"],
+            "count": 1,
+        },
+    }
+    assert insight.reason == "close_readiness_reported_missing_active_account_snapshot"
+
+
+def test_present_active_capital_account_snapshot_suppresses_coverage_warning(
+    session: Session,
+) -> None:
+    month = _month(session)
+    account = create_account(
+        session,
+        name="Synthetic covered account",
+        account_type=AccountType.BROKERAGE,
+    )
+    instrument = create_instrument(
+        session,
+        name="Synthetic covered instrument",
+        instrument_type=InstrumentType.STOCK,
+    )
+    _position(
+        session,
+        month_id=month.id,
+        account_id=account.id,
+        instrument_id=instrument.id,
+        amount="100.00",
+    )
+
+    result = build_deterministic_insights(session, month.id, evaluated_on=TODAY)
+
+    assert "active_account_snapshot_missing" not in _codes(result)
+
+
 def test_concentration_rules_emit_exact_evidence(session: Session) -> None:
     month = _month(session)
     account = create_account(
