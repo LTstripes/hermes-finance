@@ -180,6 +180,9 @@ public sealed class MainForm : Form
         TextAlign = ContentAlignment.TopLeft,
         Font = new Font("Segoe UI", 8.5F),
         ForeColor = MutedText,
+        // Spacing is provided by the readiness panel padding and title row;
+        // the AutoSize row must not add the Label's default 3px margins.
+        Margin = new Padding(0),
         AutoEllipsis = false,
     };
     private readonly TableLayoutPanel _checks = new()
