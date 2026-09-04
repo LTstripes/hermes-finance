@@ -168,11 +168,13 @@ public sealed class MainForm : Form
         ForeColor = PrimaryText,
         AutoEllipsis = true,
     };
-    private readonly Label _readinessDescription = new()
+    private readonly ReadinessDescriptionLabel _readinessDescription = new()
     {
         // #284: fills the table cell and wraps to the cell width instead of
         // clipping; the row is AutoSize so the height follows the wrapped
-        // text. Clamp tracks the cell width (MaximumSize is the wrap hint).
+        // text. Clamp tracks the cell width (MaximumSize is the wrap hint),
+        // and the label itself measures its wrapped height at the real
+        // proposed width (see ReadinessDescriptionLabel).
         Dock = DockStyle.Fill,
         AutoSize = false,
         TextAlign = ContentAlignment.TopLeft,
@@ -1651,6 +1653,47 @@ public sealed class MainForm : Form
         catch (Exception exception) when (exception is IOException or ArgumentException)
         {
             AppendDiagnostic($"Application icon could not be loaded: {exception.Message}");
+        }
+    }
+
+    // #284: the readiness description. Dock Fill + AutoSize=false means the
+    // base Label reports its current bounds as its preferred size, so an
+    // AutoSize table row would keep a stale height when wider font metrics
+    // (hosted runners at 150%) wrap the text into an extra line. Measure the
+    // wrapped text at the real proposed (cell) width instead, so the row
+    // height always fits the text as actually laid out. No ellipsis, no
+    // fixed pixel height — the height follows the font metrics.
+    private sealed class ReadinessDescriptionLabel : Label
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            if (string.IsNullOrEmpty(Text))
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            // The proposed width is the live cell width from the table layout.
+            // A stale MaximumSize clamp must never widen the measurement past
+            // it: measuring wide would report fewer lines (short height) while
+            // the label is actually laid out narrow — exactly the 150% clip.
+            var width = proposedSize.Width;
+            if (width <= 0)
+            {
+                width = MaximumSize.Width;
+            }
+            if (width <= 0)
+            {
+                width = Width;
+            }
+            if (width <= 0)
+            {
+                return base.GetPreferredSize(proposedSize);
+            }
+
+            var need = TextRenderer.MeasureText(
+                Text, Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak);
+            var fallback = base.GetPreferredSize(proposedSize);
+            return new Size(width, Math.Max(need.Height, fallback.Height));
         }
     }
 
