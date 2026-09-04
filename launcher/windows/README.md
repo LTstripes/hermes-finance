@@ -4,7 +4,7 @@
 
 **Что видит владелец без логов:**
 
-- **Stable** — зелёная карточка `STABLE · PRODUCTION` с pinned production identity: `Release v0.8.0` + короткий SHA + `Canonical production data` + `production` data boundary. Может открыть только canonical production DB.
+- **Stable** — зелёная карточка `STABLE · PRODUCTION` с pinned production identity: `Release v0.8.1` + короткий SHA + `Canonical production data` + `production` data boundary. Может открыть только canonical production DB.
 - **Preview** — фиолетовая `PREVIEW · ISOLATED` с `main / UNRELEASED` + `Isolated UAT / synthetic data`, строка `main <current> → <target> · UNRELEASED` + короткий SHA. Никогда не смешивает данные со Stable.
 - **Ровно одна primary CTA** подсвечена по состоянию: `Обновить Preview` / `Подготовить` / `Исправить` / `Запустить` / `Открыть Hermes` / `Остановить` — остальные вторичны или отключены.
 - **4 проверки человеческим языком** (кратко, без путей): Code identity, Data boundary, Locked dependencies, Loopback service + Alembic. Raw-диагностика — вторичный скрытый слой.
@@ -32,10 +32,10 @@ This packages the launcher, copies it and its bundled read-only helpers (`launch
 `%LOCALAPPDATA%\HermesFinance\launcher\config.json` — launcher-first, без placeholder-файлов:
 
 - если файла нет — launcher **не создаёт** placeholder из `config.example.json` (там `<absolute-...>` заглушки). Вместо этого fail closed с actionable guidance: run `install.ps1`, откройте launcher, нажмите «Обновить проверку». Авто-создание срабатывает только если bundled шаблон сам concrete (абсолютные пути, валидная shape) — shipped `config.example.json` таковым не является;
-- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0` — миграция на `v0.8.0` только при доказанной безопасности (Stable checkout существует, чист, HEAD == `v0.8.0^{commit}`); иначе config **не меняется**, preflight покажет recovery-only guidance;
+- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0`/`v0.8.0` — миграция на `v0.8.1` только при доказанной безопасности (Stable checkout существует, чист, HEAD == `v0.8.1^{commit}`); иначе config **не меняется**, preflight покажет recovery-only guidance;
 - если есть неизвестные поля — schema-aware strip (top-level / canonical / profile allowlists); что не чинится — fail closed без изменения файла.
 
-Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с доказательством identity теми же preflight-инвариантами: Stable чист и `HEAD == refs/tags/v0.8.0`, Preview чист, на `refs/remotes/origin/main` и независим от Stable; без fetch/сети). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
+Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с доказательством identity теми же preflight-инвариантами: Stable чист и `HEAD == refs/tags/v0.8.1`, Preview чист, на `refs/remotes/origin/main` и независим от Stable; без fetch/сети). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
 
 The config may contain no secrets. Each profile names an independent checkout, data directory and database. `Stable` must exactly match `canonical_production`; Preview and Experiment must match none of it. Preview/Experiment databases that already exist require a matching `.hermes-data-identity.json` sidecar. For a fresh safe profile, the launcher writes the minimal sidecar only after the guarded startup reports health ready.
 
@@ -92,4 +92,4 @@ The safety harness includes a synthetic-only visual mode. It loads no checkout, 
 dotnet run --project .\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release -- --synthetic-ui-smoke
 ```
 
-Use it to inspect the Stable-ready ( `Release v0.8.0 · production` ), Preview-UNRELEASED and opt-in diagnostics states on Windows, then close the window normally.
+Use it to inspect the Stable-ready ( `Release v0.8.1 · production` ), Preview-UNRELEASED and opt-in diagnostics states on Windows, then close the window normally.

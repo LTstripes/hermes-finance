@@ -188,15 +188,15 @@ public sealed class LauncherConfig
         return true;
     }
 
-    private static readonly string[] StaleStableRefs = ["refs/tags/v0.6.3", "refs/tags/v0.7.0", "origin/r07"];
-    private const string CurrentStableRef = "refs/tags/v0.8.0";
+    private static readonly string[] StaleStableRefs = ["refs/tags/v0.6.3", "refs/tags/v0.7.0", "refs/tags/v0.8.0", "origin/r07"];
+    private const string CurrentStableRef = "refs/tags/v0.8.1";
 
     private static LauncherConfig TryMigrateStableTag(LauncherConfig config, string configPath, out string diagnostic)
     {
         diagnostic = "";
         // Migrate a stale Stable expected_ref ONLY when provably safe: the
         // configured Stable checkout exists, is clean, and its HEAD already
-        // equals the v0.8.0 release commit. Otherwise fail closed WITHOUT
+        // equals the v0.8.1 release commit. Otherwise fail closed WITHOUT
         // touching the config file (preflight will surface recovery-only guidance).
         var stable = config.Profiles.FirstOrDefault(p => p.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
         if (stable is null || !StaleStableRefs.Contains(stable.ExpectedRef, StringComparer.Ordinal))
@@ -217,13 +217,13 @@ public sealed class LauncherConfig
         }
         catch
         {
-            diagnostic = "Stable expected_ref migration blocked: release identity cannot be proven (git unavailable or v0.8.0 tag missing); config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
+            diagnostic = "Stable expected_ref migration blocked: release identity cannot be proven (git unavailable or v0.8.1 tag missing); config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
             return config;
         }
         if (string.IsNullOrWhiteSpace(head) || string.IsNullOrWhiteSpace(target)
             || !head.Equals(target, StringComparison.OrdinalIgnoreCase))
         {
-            diagnostic = $"Stable expected_ref migration blocked: checkout HEAD {Short(head)} does not match release v0.8.0 {Short(target)}; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
+            diagnostic = $"Stable expected_ref migration blocked: checkout HEAD {Short(head)} does not match release v0.8.1 {Short(target)}; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
             return config;
         }
         try

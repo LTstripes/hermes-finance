@@ -9,7 +9,7 @@ namespace HermesFinance.Launcher;
 /// </summary>
 public static class LauncherSetup
 {
-    private const string StableReleaseRef = "refs/tags/v0.8.0";
+    private const string StableReleaseRef = "refs/tags/v0.8.1";
     private const string PreviewExpectedRef = "refs/remotes/origin/main";
 
     public static string DefaultConfigPath => Path.Combine(
@@ -64,7 +64,7 @@ public static class LauncherSetup
         ProfileValidator.AssertProfileTuple(preview, stableCheckoutFull, stableDataFull, stableDatabaseFull, previewCheckoutFull, previewDataFull, previewDatabaseFull);
 
         // Identity proof reuses the exact preflight invariants — no weaker
-        // parallel implementation. Stable: HEAD == v0.8.0 tag and clean.
+        // parallel implementation. Stable: HEAD == v0.8.1 tag and clean.
         // Preview: at refs/remotes/origin/main, clean, and independent from
         // Stable (no linked worktree / shared git-common-dir). Read-only:
         // no fetch, no network; Preview update stays an explicit owner action.
@@ -75,7 +75,7 @@ public static class LauncherSetup
         catch (LauncherValidationException exception)
         {
             throw new LauncherValidationException(
-                $"Setup rejected the Stable checkout: {exception.Message} Select a clean prepared Stable checkout at released v0.8.0 (HEAD == refs/tags/v0.8.0).");
+                $"Setup rejected the Stable checkout: {exception.Message} Select a clean prepared Stable checkout at released v0.8.1 (HEAD == refs/tags/v0.8.1).");
         }
         try
         {

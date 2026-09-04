@@ -51,6 +51,20 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Scope note:** 0.8.0 integrates Guided Monthly Close Wizard A–H, owner workflow/Alfa/reconciliation UX, safe instrument cleanup, explicit portfolio review package handoff, and guarded Windows launcher/package verification while preserving local-only/no-cloud/no-auth/provider-explicit-action boundaries.
 - **Follow-ups:** launcher normalization #277–#279; workspace cleanup #280; backend CI performance #282.
 
+# 0.8.1 release preparation
+
+### M08-01 — prepare Hermes Finance v0.8.1 maintenance release
+
+- **Recorded:** 2026-09-04 as release-prep context from issue #295. This is not an accept/integrate verdict or a publication record.
+- **Implementation agent/tool:** Codex desktop; model not independently confirmed.
+- **Exact baseline `origin/main`:** `d04f46696a991ea59066b59d4870980ac4b69089`.
+- **Task branch:** `m08-01-release-081`.
+- **Scope:** synchronize version identity to `0.8.1`, health/release expectations, Windows launcher identity/config/tests, CHANGELOG, public notes, release record, README, Project Wiki and execution history for already integrated #277, #278, #279, #284, #285, #280, #282 and #292 maintenance.
+- **Canonical Alembic head:** `0036_broker_baseline_provenance`; this task adds no migration and changes no schema semantics.
+- **Safety:** local single-user Windows-first loopback runtime; explicit provider/network/file actions; no cloud/auth/telemetry, trading/provider writes, automatic upload or background refresh; unknown/unavailable evidence remains explicit; private Stable/Preview/runtime data is not used.
+- **Not done:** #143 was not touched or started; no product-function work, PR, merge, tag `v0.8.1` or GitHub Release.
+- **References:** issue #295, `docs/releases/0.8.1.md`, `docs/release-notes-0.8.1.md` and `CHANGELOG.md`.
+
 # 0.4.x development
 
 ### 0.4.0 / R04-00 — parallel release line + active backlog setup

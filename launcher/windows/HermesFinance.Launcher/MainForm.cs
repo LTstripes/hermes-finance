@@ -1529,11 +1529,11 @@ public sealed class MainForm : Form
         _selectedProfile = stable;
         SetSelectedIdentity(stable);
         SetReadiness(stable, LauncherReadinessState.Ready, "Synthetic smoke: Stable готов к запуску с canonical production data (pinned release).");
-        SetCheck(_identityCheck, "Release v0.8.0 — проверено", true);
+        SetCheck(_identityCheck, "Release v0.8.1 — проверено", true);
         SetCheck(_dataCheck, "production — isolated OK", true);
         SetCheck(_dependenciesCheck, "locked — готовы", true);
         SetCheck(_serviceCheck, "127.0.0.1:8000 — порт свободен · Alembic OK", true);
-        _shaSummary.Text = "Release v0.8.0  ·  SHA synthetic  ·  production data: synthetic";
+        _shaSummary.Text = "Release v0.8.1  ·  SHA synthetic  ·  production data: synthetic";
         if (_profileCards.TryGetValue(stable.Id, out var stableCard))
         {
             stableCard.SetIdentity("abc1234", null);
