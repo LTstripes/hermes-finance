@@ -297,10 +297,18 @@ Set-Location ..
 
 ### Безопасная очистка Windows workspaces
 
-`./scripts/cleanup-finance-workspaces.ps1 -RefreshRemote` показывает кандидатов
-и оценку освобождаемого места без изменений. Для применения нужен отдельный
-флаг `-Apply`. Dirty/unmerged/unknown paths, launcher profiles, `.env`, SQLite,
-недоступные деревья и reparse points скрипт сохраняет fail-closed.
+Сначала выполните явный remote refresh и dry-run:
+
+`./scripts/cleanup-finance-workspaces.ps1 -RefreshRemote`
+
+Для удаления Git worktrees нужны оба явных флага:
+
+`./scripts/cleanup-finance-workspaces.ps1 -RefreshRemote -Apply`
+
+`-Apply` без `-RefreshRemote` отклоняется, если Git worktrees не отключены.
+Artifact-only режим `-Apply -SkipGitWorktrees` не требует remote refresh.
+Dirty/unmerged/unknown paths, launcher profiles, `.env`, SQLite, недоступные
+деревья и reparse points скрипт сохраняет fail-closed.
 
 Перед новой задачей в чистом development clone синхронизируйтесь с каноническим `main` так, как описано в [`AGENTS.md`](AGENTS.md). Не делайте `switch`/`reset`/`pull` поверх незаконченной task-работы.
 

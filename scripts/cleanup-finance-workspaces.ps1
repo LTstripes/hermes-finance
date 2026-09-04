@@ -16,6 +16,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($Apply -and -not $SkipGitWorktrees -and -not $RefreshRemote) {
+    throw '-Apply for Git worktree cleanup requires explicit -RefreshRemote. Use -Apply -SkipGitWorktrees for artifact-only cleanup.'
+}
 
 function Normalize([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
 function IsWithin([string]$Path,[string]$Root) {
