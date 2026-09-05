@@ -531,13 +531,22 @@ internal static class StableReleaseService
         var layout = ProductionGitLayout.Create(profile, backupDirectory);
         var currentTree = ReadTrackedGitTree(profile.Checkout, "HEAD");
         AssertTrackedPathsDoNotCollide("current Stable release", currentTree, layout);
-        AssertCurrentTrackedPathsHaveNoReparsePoints(profile.Checkout, currentTree);
+        AssertTrackedPathAncestorsHaveNoReparsePoints(
+            profile.Checkout,
+            currentTree,
+            "current Stable release",
+            requireLeaf: true);
 
         // Read the exact target tree before the first mutation even when the
         // data directory is external: an ignored target-only checkout path
         // can still be a hardlink/reparse alias to production data.
         var targetTree = ReadTargetGitTree(target.CommitSha, releaseHandler);
         AssertTrackedPathsDoNotCollide("target Stable release", targetTree, layout);
+        AssertTrackedPathAncestorsHaveNoReparsePoints(
+            profile.Checkout,
+            targetTree,
+            "target Stable release",
+            requireLeaf: false);
         AssertNoProductionFileAliases(profile, currentTree, targetTree);
     }
 
@@ -632,33 +641,58 @@ internal static class StableReleaseService
         }
     }
 
-    private static void AssertCurrentTrackedPathsHaveNoReparsePoints(
+    private static void AssertTrackedPathAncestorsHaveNoReparsePoints(
         string checkout,
-        IReadOnlyList<GitTreeEntry> tree)
+        IReadOnlyList<GitTreeEntry> tree,
+        string treeDescription,
+        bool requireLeaf)
     {
         foreach (var entry in tree)
         {
-            var path = GetCheckoutPath(checkout, entry.Path);
-            if (!File.Exists(path) && !Directory.Exists(path))
-            {
-                continue;
-            }
-            try
-            {
-                if (IsReparsePoint(path))
-                {
-                    throw new LauncherValidationException(
-                        "Current Stable release contains a reparse-point path; production data safety cannot be proven before upgrade.");
-                }
-            }
-            catch (LauncherValidationException)
-            {
-                throw;
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            var fullPath = GetCheckoutPath(checkout, entry.Path);
+            var root = Path.GetPathRoot(fullPath);
+            if (string.IsNullOrWhiteSpace(root))
             {
                 throw new LauncherValidationException(
-                    $"Current Stable release path safety cannot be proven before upgrade: {exception.Message}");
+                    $"{treeDescription} path safety cannot be proven before upgrade.");
+            }
+
+            var current = root;
+            var missing = false;
+            foreach (var component in fullPath[root.Length..].Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, component);
+                if (!File.Exists(current) && !Directory.Exists(current))
+                {
+                    missing = true;
+                    break;
+                }
+
+                try
+                {
+                    if (IsReparsePoint(current))
+                    {
+                        throw new LauncherValidationException(
+                            $"{treeDescription} tracked path uses a symlink, junction, or reparse point; upgrade is blocked before backup.");
+                    }
+                }
+                catch (LauncherValidationException)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw new LauncherValidationException(
+                        $"{treeDescription} path safety cannot be proven before upgrade: {exception.Message}");
+                }
+            }
+
+            if (requireLeaf && missing)
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} tracked path is missing; upgrade is blocked before backup.");
             }
         }
     }
@@ -720,7 +754,7 @@ internal static class StableReleaseService
 
         var checkoutPaths = currentTree
             .Concat(targetTree)
-            .Select(entry => GetCheckoutPath(profile.Checkout, entry.Path))
+            .SelectMany(entry => ExistingCheckoutPathPrefixes(profile.Checkout, entry.Path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(path => File.Exists(path) || Directory.Exists(path))
             .ToArray();
@@ -745,11 +779,7 @@ internal static class StableReleaseService
             }
         }
 
-        var trackedFiles = currentTree
-            .Concat(targetTree)
-            .Where(entry => entry.Type.Equals("blob", StringComparison.Ordinal))
-            .Select(entry => GetCheckoutPath(profile.Checkout, entry.Path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var trackedFiles = checkoutPaths
             .Where(File.Exists)
             .ToArray();
         foreach (var productionFile in productionFiles)
@@ -774,6 +804,24 @@ internal static class StableReleaseService
                         $"Stable production file identity cannot be proven before upgrade: {exception.Message}");
                 }
             }
+        }
+    }
+
+    private static IEnumerable<string> ExistingCheckoutPathPrefixes(string checkout, string gitPath)
+    {
+        var checkoutFull = Path.GetFullPath(checkout);
+        var fullPath = GetCheckoutPath(checkoutFull, gitPath);
+        var relative = Path.GetRelativePath(checkoutFull, fullPath)
+            .Replace(Path.DirectorySeparatorChar, '/');
+        var current = checkoutFull;
+        foreach (var component in relative.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, component);
+            if (!File.Exists(current) && !Directory.Exists(current))
+            {
+                yield break;
+            }
+            yield return current;
         }
     }
 

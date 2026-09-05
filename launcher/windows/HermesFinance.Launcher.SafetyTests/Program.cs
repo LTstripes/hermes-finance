@@ -65,6 +65,7 @@ var tests = new (string Name, Action Run)[]
     ("fails closed when target Git tree proof is unavailable", BlocksUnavailableTargetTreeProof),
     ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
     ("blocks a target-only ignored hardlink alias before backup", BlocksTargetOnlyHardlinkAlias),
+    ("blocks a target-only junction ancestor before backup", BlocksTargetOnlyJunctionAncestor),
     ("fails before checkout and config mutation when target backend version disagrees", StableUpgradeRejectsBackendVersionMismatch),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
@@ -1610,6 +1611,25 @@ static void BlocksTargetOnlyHardlinkAlias()
     }
 }
 
+static void BlocksTargetOnlyJunctionAncestor()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        targetTrackedPath: "data/future/new-file",
+        targetOnlyJunctionToProduction: true);
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "target Stable release tracked path uses a symlink, junction, or reparse point; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        RemoveSyntheticJunction(Path.Combine(fixture.StableCheckout, "data"));
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
 static void AssertStableUpgradeBlockedBeforeMutation(
     StableUpgradeFixture fixture,
     string expectedMessage)
@@ -2652,7 +2672,8 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     string? targetTrackedPath = null,
     bool databaseHardlinkToTrackedFile = false,
     bool targetTreeProofAvailable = true,
-    bool targetOnlyHardlinkToProduction = false)
+    bool targetOnlyHardlinkToProduction = false,
+    bool targetOnlyJunctionToProduction = false)
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
     var seed = Path.Combine(root, "seed");
@@ -2754,6 +2775,12 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
         Assert(
             NativeMethods.CreateHardLink(targetOnlyPath, database, IntPtr.Zero),
             "Synthetic target-only hardlink alias setup must succeed.");
+    }
+    if (targetOnlyJunctionToProduction)
+    {
+        Assert(!string.IsNullOrWhiteSpace(targetTrackedPath), "Target-only junction setup requires a target tracked path.");
+        var junctionPath = Path.Combine(stableCheckout, "data");
+        CreateSyntheticJunction(junctionPath, dataDir);
     }
     CreateRuntimeLayout(previewCheckout);
     Directory.CreateDirectory(previewData);
@@ -2866,6 +2893,38 @@ static void CreateSyntheticSqliteDatabase(string database)
     var error = process.StandardError.ReadToEnd();
     process.WaitForExit();
     Assert(process.ExitCode == 0, $"Synthetic SQLite setup failed: {error.Trim()} {output.Trim()}".Trim());
+}
+
+static void CreateSyntheticJunction(string link, string target)
+{
+    var command = new ProcessStartInfo
+    {
+        FileName = "cmd.exe",
+        Arguments = $"/c mklink /J \"{link}\" \"{target}\"",
+        WorkingDirectory = Path.GetDirectoryName(link)!,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    using var process = Process.Start(command) ?? throw new InvalidOperationException("Could not start synthetic junction setup.");
+    var output = process.StandardOutput.ReadToEnd();
+    var error = process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    Assert(process.ExitCode == 0, $"Synthetic junction setup failed: {error.Trim()} {output.Trim()}".Trim());
+}
+
+static void RemoveSyntheticJunction(string path)
+{
+    if (!Directory.Exists(path) && !File.Exists(path))
+    {
+        return;
+    }
+
+    if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+    {
+        Directory.Delete(path);
+    }
 }
 
 static ValidatedProfile NewValidatedPreviewProfile(string checkout, string dataDir, string database, string currentSha) =>
