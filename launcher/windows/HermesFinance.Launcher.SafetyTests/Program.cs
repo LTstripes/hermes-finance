@@ -1958,7 +1958,7 @@ static void OwnerTitleDerivesFromValidatedIdentity()
     var stalePreview = new LauncherProfile
     {
         Id = "preview",
-        DisplayName = "0.7 Preview",
+        DisplayName = "Hermes Finance БЂ 0.7 Preview",
         Type = "preview",
         Checkout = "C:\\synthetic\\preview",
         ExpectedRef = "refs/remotes/origin/main",
@@ -1966,8 +1966,8 @@ static void OwnerTitleDerivesFromValidatedIdentity()
         Database = "C:\\synthetic\\preview\\data\\finance.db",
         OpenBrowser = false,
     };
-    Assert(!LauncherUi.OwnerTitle(stalePreview).Contains("0.7", StringComparison.Ordinal),
-        "OwnerTitle must strip the stale leading version from a Preview display name.");
+    Assert(LauncherUi.OwnerTitle(stalePreview) == "Hermes Finance — Preview",
+        "OwnerTitle must replace a legacy mojibake/version Preview display name with the canonical Unicode owner title.");
 
     var stable = StaleStable();
     using var form = new MainForm(new LauncherConfig

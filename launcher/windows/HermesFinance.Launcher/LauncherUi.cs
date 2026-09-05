@@ -77,6 +77,16 @@ internal static class LauncherUi
 
     public static string OwnerTitle(LauncherProfile profile)
     {
+        // #302: Stable/Preview are owner-facing product profiles, not custom
+        // labels. Rebuild their title from the validated type so legacy
+        // display_name values cannot leak mojibake or stale version tokens.
+        var type = profile.Type.Trim().ToLowerInvariant();
+        if (type is "stable" or "preview")
+        {
+            var profileLabel = type is "stable" ? "Stable" : "Preview";
+            return $"Hermes Finance — {profileLabel}";
+        }
+
         var raw = (profile.DisplayName ?? string.Empty).Trim();
         var clean = TrailingVersionToken.Replace(LeadingVersionToken.Replace(raw, string.Empty), string.Empty).Trim();
         return string.IsNullOrWhiteSpace(clean) ? raw : clean;
