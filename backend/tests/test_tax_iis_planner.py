@@ -205,3 +205,179 @@ def test_planner_read_does_not_seed_tax_brackets(client: TestClient) -> None:
         database = client.app.state.database
         with database.session_factory() as session:
             assert list_tax_brackets(session, 2031) == []
+
+
+def test_planner_january_ytd_is_payment_only_with_first_bracket(
+    client: TestClient,
+) -> None:
+    january_id = _create_month(client, 1)
+    _add_salary(client, january_id, "300000.00")
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={january_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["history_complete"] is True
+    assert salary["available"] is True
+    assert salary["taxable_gross_ytd"] == _rub("300000.00")
+    assert salary["current_marginal_rate_bps"] == 1300
+    assert salary["current_marginal_bracket"] == {
+        "threshold_from": _rub("0.00"),
+        "threshold_to": _rub("2400000.00"),
+        "rate_bps": 1300,
+    }
+    assert salary["next_threshold"] == _rub("2400000.00")
+    assert salary["distance_to_next_threshold"] == _rub("2100000.00")
+    assert salary["warning_codes"] == []
+
+
+def test_planner_zero_payment_with_incomplete_history_stays_fail_closed(
+    client: TestClient,
+) -> None:
+    # No salary entries at all: the payment itself is zero, but prior YTD is
+    # unknown, so the bracket/distance must stay unavailable, never guessed.
+    march_id = _create_month(client, 3)
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={march_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["history_complete"] is False
+    assert salary["available"] is False
+    assert salary["taxable_gross_ytd"] is None
+    assert salary["current_marginal_bracket"] is None
+    assert salary["current_marginal_rate_bps"] is None
+    assert salary["distance_to_next_threshold"] is None
+    assert salary["warning_codes"] == ["salary_tax_history_incomplete"]
+
+
+def test_planner_zero_payment_with_complete_history_keeps_prior_ytd(
+    client: TestClient,
+) -> None:
+    january_id = _create_month(client, 1)
+    _add_salary(client, january_id, "2000000.00")
+    assert client.post(f"/api/months/{january_id}/close").status_code == 200
+
+    february_id = _create_month(client, 2)
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={february_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["history_complete"] is True
+    assert salary["available"] is True
+    assert salary["taxable_gross_ytd"] == _rub("2000000.00")
+    assert salary["current_marginal_rate_bps"] == 1300
+    assert salary["distance_to_next_threshold"] == _rub("400000.00")
+    assert salary["warning_codes"] == []
+
+
+def test_planner_applies_opening_context_once(client: TestClient) -> None:
+    opening = client.put(
+        "/api/salary-tax/years/2031/opening-context",
+        json={
+            "effective_from_month": 5,
+            "opening_taxable_gross": _rub("400000.00"),
+        },
+    )
+    assert opening.status_code == 200, opening.text
+
+    may_id = _create_month(client, 5)
+    _add_salary(client, may_id, "100000.00")
+    assert client.post(f"/api/months/{may_id}/close").status_code == 200
+
+    june_id = _create_month(client, 6)
+    _add_salary(client, june_id, "100000.00")
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={june_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["history_complete"] is True
+    assert salary["available"] is True
+    assert salary["opening_context_available"] is True
+    assert salary["taxable_gross_ytd"] == _rub("600000.00")
+    assert salary["current_marginal_rate_bps"] == 1300
+    assert salary["distance_to_next_threshold"] == _rub("1800000.00")
+    assert salary["warning_codes"] == []
+
+
+def test_planner_exact_threshold_crossing_uses_next_bracket(
+    client: TestClient,
+) -> None:
+    january_id = _create_month(client, 1)
+    _add_salary(client, january_id, "2400000.00")
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={january_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["available"] is True
+    assert salary["taxable_gross_ytd"] == _rub("2400000.00")
+    assert salary["current_marginal_rate_bps"] == 1500
+    assert salary["current_marginal_bracket"] == {
+        "threshold_from": _rub("2400000.00"),
+        "threshold_to": _rub("5000000.00"),
+        "rate_bps": 1500,
+    }
+    assert salary["next_threshold"] == _rub("5000000.00")
+    assert salary["distance_to_next_threshold"] == _rub("2600000.00")
+
+
+def test_planner_above_threshold_reports_exact_remaining_distance(
+    client: TestClient,
+) -> None:
+    january_id = _create_month(client, 1)
+    _add_salary(client, january_id, "6000000.00")
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={january_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["available"] is True
+    assert salary["taxable_gross_ytd"] == _rub("6000000.00")
+    assert salary["current_marginal_rate_bps"] == 1800
+    assert salary["next_threshold"] == _rub("20000000.00")
+    assert salary["distance_to_next_threshold"] == _rub("14000000.00")
+
+
+def test_planner_open_ended_top_bracket_has_no_next_threshold(
+    client: TestClient,
+) -> None:
+    january_id = _create_month(client, 1)
+    _add_salary(client, january_id, "55000000.00")
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={january_id}")
+
+    assert response.status_code == 200, response.text
+    salary = response.json()["salary_tax"]
+    assert salary["available"] is True
+    assert salary["taxable_gross_ytd"] == _rub("55000000.00")
+    assert salary["current_marginal_rate_bps"] == 2200
+    assert salary["current_marginal_bracket"]["threshold_to"] is None
+    assert salary["next_threshold"] is None
+    assert salary["distance_to_next_threshold"] is None
+
+
+def test_planner_without_iis_data_returns_empty_iis_section(
+    client: TestClient,
+) -> None:
+    january_id = _create_month(client, 1)
+    _add_salary(client, january_id, "100000.00")
+    assert client.post(f"/api/months/{january_id}/close").status_code == 200
+
+    response = client.get(f"/api/tax-iis-planner?reporting_month_id={january_id}")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["iis_accounts"] == []
+    assert body["salary_tax"]["available"] is True
+
+
+def test_planner_unknown_reporting_month_is_not_found(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/tax-iis-planner?reporting_month_id=999999")
+
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "not_found"
