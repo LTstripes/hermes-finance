@@ -2,7 +2,7 @@
 
 **Schema name:** `hermes.finance.ai_analysis_bundle`
 
-**Current schema version:** `1.1.0`
+**Current schema version:** `1.2.0`
 
 **Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
 
@@ -76,6 +76,7 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
 | Property quality | structured `PropertySnapshot` rows | Structured value/mortgage fields are authoritative. Notes are excluded and never parsed as a competing balance. `property_equity_suspicious_jump` and `duplicate_property_snapshot` are warnings only; persisted values are not silently rewritten. |
 | Upcoming cash flows | `merged_payout_calendar` / ADR 0011 | Manual/provider reconciliation decides which row counts. Provider totals with unknown personal tax remain provider-announced approximate amounts, never labelled net. An unresolved duplicate uses the existing safe manual-only behavior. Calendar total, non-principal calendar amount total, and principal total are separate. |
 | Provenance | persisted manual/provider/statement provenance already accepted by Hermes | `manual`, `t_invest`, `alfa_pro`, and `alfa_statement` are reported only where meaningful. Raw protocol payloads and provider correlation IDs are excluded. |
+| Deterministic insights | `build_deterministic_insights` (close readiness, freshness, payouts, risk, tax) | Optional `deterministic_insights` carries the sanitized allowlist (`code`, `type`, `severity`, `message`, `source`, `as_of`, `provenance`, `reason`). The open `evidence` map remains on the dedicated `GET /deterministic-insights` endpoint and never enters the bundle. The section is evaluated for the bundle's selected `reporting_period` at `generated_at` (`evaluated_on`), preserving the engine's deterministic `(severity, code, source, reason)` order. |
 
 The historical `actual_history_metric_path` is a path, not a duplicate series. A consumer reads
 actual passive-income history from `reporting_history[].kpis.passive_income_actual`. This prevents
@@ -158,6 +159,7 @@ No later price, quantity, or balance may be backfilled into an earlier reporting
 - major: removal/rename, changed requiredness, changed units, changed counting/source semantics,
   or another change that can alter an existing consumer's interpretation.
 
+`1.2.0` adds the optional `deterministic_insights` section (sanitized engine insights without the open `evidence` map) while retaining all v1.1 financial fields.
 `1.1.0` adds data-quality fields while retaining all v1.0 financial fields, including the
 deprecated `monthly_cash_balance` alias. New consumers should use `cash_flow_after_allocations`.
 Consumers must dispatch on the major version. A consumer supporting major `1` must ignore unknown
@@ -166,8 +168,8 @@ checked-in `1.0.0` schema is intentionally strict (`additionalProperties=false`)
 leaks and typos; a later minor version publishes its matching strict schema rather than weakening
 the old schema. New required fields or new financial meanings require major `2`.
 
-`metadata.calculation_versions` is also an allowlisted object. v1 accepts only
-`monthly_summary`, `passive_income_forecast`, and `goal_achievement`; it is not an extension map
+`metadata.calculation_versions` is also an allowlisted object. v1.2 accepts
+`monthly_summary`, `passive_income_forecast`, `goal_achievement`, and `deterministic_insights`; it is not an extension map
 for arbitrary runtime metadata.
 
 Fields are required when their semantic state must always be known. Potentially absent financial

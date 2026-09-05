@@ -1,7 +1,7 @@
 {
   "$schema": "./ai_analysis_bundle.schema.json",
   "schema_name": "hermes.finance.ai_analysis_bundle",
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "metadata": {
     "generated_at": "2026-05-15T12:00:00+03:00",
     "as_of_date": "2026-05-15",
@@ -14,7 +14,8 @@
     "calculation_versions": {
       "monthly_summary": "v2",
       "passive_income_forecast": "v1",
-      "goal_achievement": "goal_achievement_v1"
+      "goal_achievement": "goal_achievement_v1",
+      "deterministic_insights": "v1"
     },
     "ordering_contract": "arrays_are_stably_sorted_as_defined_by_contract"
   },
@@ -525,6 +526,35 @@
       }
     ],
     "warning_codes": ["unresolved_provider_mapping"]
+  },
+  "deterministic_insights": {
+    "contract_version": "deterministic_insights_v1",
+    "ruleset_version": "v1",
+    "forecast_version": "v1",
+    "reporting_period": {"year": 2026, "month": 4},
+    "evaluated_on": "2026-05-15",
+    "items": [
+      {
+        "code": "salary_tax_history_incomplete",
+        "type": "salary_tax",
+        "severity": "warning",
+        "message": "История зарплатного НДФЛ за текущий налоговый год неполна; текущие налоговые пороги не оцениваются.",
+        "source": "tax_iis_planner.salary_tax",
+        "as_of": "2026-04-30",
+        "provenance": [{"source": "tax_iis_planner", "provider": null}],
+        "reason": "tax_planner_reports_salary_tax_history_incomplete"
+      },
+      {
+        "code": "unresolved_payout_reconciliation",
+        "type": "payout_reconciliation",
+        "severity": "warning",
+        "message": "Есть неразрешённая сверка ожидаемых выплат за отчётный месяц.",
+        "source": "close_readiness.unresolved_payout_reconciliation",
+        "as_of": "2026-04-30",
+        "provenance": [{"source": "merged_payout_calendar", "provider": null}],
+        "reason": "unresolved_payout_reconciliation_count_is_positive"
+      }
+    ]
   },
   "warnings": [
     {"code": "authoritative_market_value_change_unavailable", "severity": "info", "scope": "reporting_history", "message": "No accepted aggregate market-value-change service exists; liquid-capital changes are not substituted for it."},

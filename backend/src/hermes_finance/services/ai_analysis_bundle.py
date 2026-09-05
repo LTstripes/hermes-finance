@@ -39,6 +39,13 @@ from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.cash_balance import cash_balance_for_month
 from hermes_finance.services.debts import list_debts, total_debts, total_included_debts
 from hermes_finance.services.deposits import list_deposit_snapshots
+from hermes_finance.services.deterministic_insights import (
+    DETERMINISTIC_INSIGHTS_CONTRACT_VERSION,
+    DETERMINISTIC_INSIGHTS_RULESET_VERSION,
+    DeterministicInsight,
+    DeterministicInsightsResult,
+    build_deterministic_insights,
+)
 from hermes_finance.services.forecast_passive_income import forecast_passive_income
 from hermes_finance.services.goal_achievement import build_goal_achievement_summary
 from hermes_finance.services.iis_result import iis_result
@@ -65,8 +72,8 @@ from hermes_finance.services.salary import salary_tax_snapshot_for_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
-SCHEMA_VERSION = "1.1.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.1.0/schema.json"
+SCHEMA_VERSION = "1.2.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.2.0/schema.json"
 ORDERING_CONTRACT = "arrays_are_stably_sorted_as_defined_by_contract"
 ACTUAL_HISTORY_METRIC_PATH = "reporting_history[].kpis.passive_income_actual"
 PASSIVE_HISTORY_BEFORE_START = "passive_income_history_before_configured_start"
@@ -282,6 +289,148 @@ def _select_current(months: list[ReportingMonth]) -> tuple[ReportingMonth, str]:
         return current, "latest_closed"
     current = max(months, key=lambda item: (item.year, item.month, item.id))
     return current, "latest_available"
+
+
+_INSIGHT_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+_INSIGHT_TYPES = {
+    "close_readiness",
+    "data_quality",
+    "payout_reconciliation",
+    "freshness_warning",
+    "concentration",
+    "asset_class_coverage",
+    "salary_tax",
+}
+_INSIGHT_SOURCES = {
+    "close_readiness",
+    "close_readiness.active_account_snapshot_missing",
+    "close_readiness.unresolved_payout_reconciliation",
+    "freshness_provenance",
+    "risk_allocation.payout_concentration",
+    "risk_allocation.redemption_concentration",
+    "risk_allocation.top_positions",
+    "risk_allocation.allocation_by_asset_class",
+    "tax_iis_planner.salary_tax",
+}
+_INSIGHT_PROVENANCE_SOURCES = {
+    "reporting_month",
+    "close_readiness",
+    "freshness_provenance",
+    "merged_payout_calendar",
+    "risk_allocation",
+    "tax_iis_planner",
+}
+_INSIGHT_MESSAGE_FALLBACK = (
+    "A deterministic insight is available from an accepted backend read model."
+)
+_INSIGHT_REASON_FALLBACK = "The accepted backend read model returned this deterministic signal."
+
+
+def _insight_provenance_source(value: object, fallback: str) -> str:
+    source = value if isinstance(value, str) else ""
+    if source in _INSIGHT_PROVENANCE_SOURCES:
+        return source
+    if source.startswith("risk_allocation"):
+        return "risk_allocation"
+    if source.startswith("freshness_provenance"):
+        return "freshness_provenance"
+    if source.startswith("merged_payout_calendar"):
+        return "merged_payout_calendar"
+    if source.startswith("tax_iis_planner") or source == "salary_tax_context":
+        return "tax_iis_planner"
+    return fallback if fallback in _INSIGHT_PROVENANCE_SOURCES else "reporting_month"
+
+
+def _insight_provenance_fallback(source: str) -> str:
+    if source.startswith("risk_allocation"):
+        return "risk_allocation"
+    if source.startswith("freshness_provenance"):
+        return "freshness_provenance"
+    if source.startswith("merged_payout_calendar"):
+        return "merged_payout_calendar"
+    if source.startswith("tax_iis_planner"):
+        return "tax_iis_planner"
+    if source.startswith("close_readiness"):
+        return "close_readiness"
+    return "reporting_month"
+
+
+def _insight_item(
+    item: DeterministicInsight,
+    *,
+    fallback_index: int,
+) -> dict[str, object] | None:
+    """Map one engine insight onto the bundle allowlist.
+
+    The strict section carries code/type/severity/message/source/as_of/provenance
+    and reason.  The open ``evidence`` map stays on the dedicated
+    deterministic-insights endpoint and never enters the bundle.  Values outside
+    the frozen enum surface are suppressed rather than relabelled.
+    """
+
+    code = (
+        item.code
+        if isinstance(item.code, str) and _INSIGHT_CODE_PATTERN.fullmatch(item.code)
+        else f"insight_{fallback_index}"
+    )
+    item_type = item.type if item.type in _INSIGHT_TYPES else None
+    if item_type is None:
+        return None
+    severity = getattr(item.severity, "value", item.severity)
+    if severity not in {"error", "warning", "info"}:
+        return None
+    source = item.source if item.source in _INSIGHT_SOURCES else None
+    if source is None:
+        return None
+    message = item.message.strip() if isinstance(item.message, str) else ""
+    reason = item.reason.strip() if isinstance(item.reason, str) else ""
+    provenance: list[dict[str, object]] = []
+    seen: set[tuple[str, str | None]] = set()
+    for provenance_item in item.provenance:
+        provenance_source = _insight_provenance_source(provenance_item.source, source)
+        provider = provenance_item.provider if provenance_item.provider in _PROVIDER_ENUM else None
+        key = (provenance_source, provider)
+        if key in seen:
+            continue
+        seen.add(key)
+        provenance.append({"source": provenance_source, "provider": provider})
+    if not provenance:
+        provenance.append({"source": _insight_provenance_fallback(source), "provider": None})
+    return {
+        "code": code,
+        "type": item_type,
+        "severity": severity,
+        "message": (message or _INSIGHT_MESSAGE_FALLBACK)[:500],
+        "source": source,
+        "as_of": item.as_of.isoformat() if isinstance(item.as_of, date) else None,
+        "provenance": provenance,
+        "reason": (reason or _INSIGHT_REASON_FALLBACK)[:500],
+    }
+
+
+def _deterministic_insights_section(
+    result: DeterministicInsightsResult,
+) -> dict[str, object]:
+    """Bundle section for one engine result.
+
+    ``build_deterministic_insights`` already returns insights sorted by
+    (severity, code, source, reason); the bundle preserves that order instead of
+    introducing a second ordering contract.
+    """
+
+    items: list[dict[str, object]] = []
+    for index, item in enumerate(result.insights, start=1):
+        mapped = _insight_item(item, fallback_index=index)
+        if mapped is not None:
+            items.append(mapped)
+    return {
+        "contract_version": DETERMINISTIC_INSIGHTS_CONTRACT_VERSION,
+        "ruleset_version": DETERMINISTIC_INSIGHTS_RULESET_VERSION,
+        "forecast_version": result.forecast_version,
+        "reporting_period": _period(result.year, result.month),
+        "evaluated_on": result.evaluated_on.isoformat(),
+        "items": items,
+    }
 
 
 def _settings(session: Session) -> AppSettings | None:
@@ -1283,6 +1432,27 @@ def assemble_ai_analysis_bundle(
         key=lambda item: (_SEVERITY_RANK.get(item["severity"], 9), item["code"], item["scope"]),
     )
 
+    try:
+        insights_result = build_deterministic_insights(
+            session,
+            current.id,
+            evaluated_on=generated.date(),
+            forecast_version=forecast_version,
+        )
+    except LookupError:
+        insights_result = None
+    insights_section: dict[str, object] | None = None
+    if insights_result is not None:
+        insights_section = _deterministic_insights_section(insights_result)
+
+    calculation_versions: dict[str, object] = {
+        "monthly_summary": MONTHLY_SUMMARY_VERSION,
+        "passive_income_forecast": forecast_version,
+        "goal_achievement": GOAL_ACHIEVEMENT_METHOD_VERSION,
+    }
+    if insights_section is not None:
+        calculation_versions["deterministic_insights"] = DETERMINISTIC_INSIGHTS_RULESET_VERSION
+
     bundle = {
         "$schema": SCHEMA_URI,
         "schema_name": SCHEMA_NAME,
@@ -1293,11 +1463,7 @@ def assemble_ai_analysis_bundle(
             "base_currency": "RUB",
             "application": {"name": "Hermes Finance", "version": __version__},
             "generation_mode": "read_only",
-            "calculation_versions": {
-                "monthly_summary": MONTHLY_SUMMARY_VERSION,
-                "passive_income_forecast": forecast_version,
-                "goal_achievement": GOAL_ACHIEVEMENT_METHOD_VERSION,
-            },
+            "calculation_versions": calculation_versions,
             "ordering_contract": ORDERING_CONTRACT,
         },
         "coverage": coverage,
@@ -1319,6 +1485,8 @@ def assemble_ai_analysis_bundle(
         "upcoming_cash_flows": upcoming,
         "warnings": warnings,
     }
+    if insights_section is not None:
+        bundle["deterministic_insights"] = insights_section
     validate_bundle(bundle)
     return bundle
 

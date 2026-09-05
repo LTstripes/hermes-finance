@@ -497,7 +497,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
         response = _export(client)
     assert response.status_code == 200, response.text
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.1.0.json"
+        "hermes-ai-analysis-bundle-2026-04-30-v1.2.0.json"
         in response.headers["content-disposition"]
     )
     payload = json.loads(response.content.decode("utf-8"))
@@ -517,7 +517,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["current_portfolio"]["reporting_status"] == "closed"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["schema_name"] == "hermes.finance.ai_analysis_bundle"
-    assert payload["schema_version"] == "1.1.0"
+    assert payload["schema_version"] == "1.2.0"
 
     mixed_sources = {
         source for point in payload["reporting_history"] for source in point["provenance_sources"]
@@ -696,15 +696,15 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.1.0.md" in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.2.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.1.0")
+    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.2.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     alias = _export(client, path="/api/export/ai-analysis-bundle/markdown")
     assert alias.status_code == 200, alias.text
-    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.1.0")
+    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.2.0")
     assert _table_counts(database) == before
 
 
