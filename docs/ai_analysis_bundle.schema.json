@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.1.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.2.0/schema.json",
   "title": "Hermes Finance AI Analysis Bundle",
   "description": "Versioned read-only multi-period financial analysis export. Financial calculations are supplied by authoritative Hermes backend services; this schema defines transport only.",
   "type": "object",
@@ -22,7 +22,7 @@
   "properties": {
     "$schema": {"type": "string"},
     "schema_name": {"const": "hermes.finance.ai_analysis_bundle"},
-    "schema_version": {"const": "1.1.0"},
+    "schema_version": {"const": "1.2.0"},
     "metadata": {"$ref": "#/$defs/metadata"},
     "coverage": {"$ref": "#/$defs/coverage"},
     "reporting_history": {
@@ -39,6 +39,7 @@
     "debts_and_real_estate": {"$ref": "#/$defs/debts_and_real_estate"},
     "iis_and_tax": {"$ref": "#/$defs/iis_and_tax"},
     "upcoming_cash_flows": {"$ref": "#/$defs/upcoming_cash_flows"},
+    "deterministic_insights": {"$ref": "#/$defs/deterministic_insights"},
     "warnings": {
       "type": "array",
       "items": {"$ref": "#/$defs/warning"}
@@ -208,7 +209,8 @@
           "properties": {
             "monthly_summary": {"type": "string", "minLength": 1, "maxLength": 64},
             "passive_income_forecast": {"type": "string", "minLength": 1, "maxLength": 64},
-            "goal_achievement": {"type": "string", "minLength": 1, "maxLength": 64}
+            "goal_achievement": {"type": "string", "minLength": 1, "maxLength": 64},
+            "deterministic_insights": {"type": "string", "minLength": 1, "maxLength": 64}
           }
         },
         "ordering_contract": {
@@ -922,6 +924,99 @@
         "severity": {"enum": ["info", "warning", "error"]},
         "scope": {"type": "string", "minLength": 1, "maxLength": 256},
         "message": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    },
+    "insight_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "provider"],
+      "properties": {
+        "source": {
+          "enum": [
+            "reporting_month",
+            "close_readiness",
+            "freshness_provenance",
+            "merged_payout_calendar",
+            "risk_allocation",
+            "tax_iis_planner"
+          ]
+        },
+        "provider": {
+          "type": ["string", "null"],
+          "enum": [null, "t_invest", "alfa_pro", "alfa_statement"]
+        }
+      }
+    },
+    "deterministic_insight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "type",
+        "severity",
+        "message",
+        "source",
+        "as_of",
+        "provenance",
+        "reason"
+      ],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 96},
+        "type": {
+          "enum": [
+            "close_readiness",
+            "data_quality",
+            "payout_reconciliation",
+            "freshness_warning",
+            "concentration",
+            "asset_class_coverage",
+            "salary_tax"
+          ]
+        },
+        "severity": {"enum": ["error", "warning", "info"]},
+        "message": {"type": "string", "minLength": 1, "maxLength": 500},
+        "source": {
+          "enum": [
+            "close_readiness",
+            "close_readiness.active_account_snapshot_missing",
+            "close_readiness.unresolved_payout_reconciliation",
+            "freshness_provenance",
+            "risk_allocation.payout_concentration",
+            "risk_allocation.redemption_concentration",
+            "risk_allocation.top_positions",
+            "risk_allocation.allocation_by_asset_class",
+            "tax_iis_planner.salary_tax"
+          ]
+        },
+        "as_of": {"type": ["string", "null"], "format": "date"},
+        "provenance": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/insight_provenance"}
+        },
+        "reason": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    },
+    "deterministic_insights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "ruleset_version",
+        "forecast_version",
+        "reporting_period",
+        "evaluated_on",
+        "items"
+      ],
+      "properties": {
+        "contract_version": {"const": "deterministic_insights_v1"},
+        "ruleset_version": {"const": "v1"},
+        "forecast_version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "reporting_period": {"$ref": "#/$defs/period"},
+        "evaluated_on": {"type": "string", "format": "date"},
+        "items": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/deterministic_insight"}
+        }
       }
     }
   }
