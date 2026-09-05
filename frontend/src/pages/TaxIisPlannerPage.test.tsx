@@ -134,4 +134,78 @@ describe("TaxIisPlannerPage", () => {
     expect(screen.getByText("Synthetic IIS")).toBeInTheDocument();
     expect(screen.queryByText(/2\s*500\s*000/)).toBeNull();
   });
+
+  it("renders tax year and as-of reporting month from backend", async () => {
+    render(<TaxIisPlannerPage />);
+
+    expect(await screen.findByText(/Налоговый год 2031/)).toBeInTheDocument();
+    expect(screen.getByText(/Срез .*2031/)).toBeInTheDocument();
+  });
+
+  it("renders exact threshold and distance values from backend without recalculation", async () => {
+    const planner = completePlanner();
+    planner.salary_tax = {
+      ...planner.salary_tax,
+      taxable_gross_ytd: money("2500000.00"),
+      next_threshold: money("5000000.00"),
+      // Deliberately NOT threshold minus YTD (5 000 000 − 2 500 000 = 2 500 000),
+      // so the test proves the UI renders the backend distance verbatim.
+      distance_to_next_threshold: money("1111111.00"),
+    };
+    vi.mocked(getTaxIisPlanner).mockResolvedValue(planner);
+
+    render(<TaxIisPlannerPage />);
+
+    expect(await screen.findAllByText(/1\s*111\s*111/)).not.toHaveLength(0);
+    expect(screen.getByText(/Порог .*5\s*000\s*000/)).toBeInTheDocument();
+    // Backend distance must not be replaced by a frontend threshold-minus-YTD guess.
+    expect(
+      screen.queryByText(/2\s*500\s*000.*1\s*111\s*111|1\s*111\s*111.*2\s*500\s*000/),
+    ).toBeNull();
+    expect(await screen.findByText(/2\s*500\s*000/)).toBeInTheDocument();
+  });
+
+  it("keeps incomplete salary values unavailable and never renders them as zero", async () => {
+    vi.mocked(getTaxIisPlanner).mockResolvedValue(incompletePlanner());
+
+    render(<TaxIisPlannerPage />);
+
+    await screen.findAllByText(/История зарплатного НДФЛ неполна/i);
+    expect(screen.getByText(/Недоступно при неполной истории/)).toBeInTheDocument();
+    // Salary values must stay unavailable ("—"), never collapsed into an exact zero.
+    expect(screen.queryByText("0 ₽", { exact: true })).toBeNull();
+    expect(screen.queryByText("0%", { exact: true })).toBeNull();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText(/2\s*500\s*000/)).toBeNull();
+  });
+
+  it("shows an explicit empty state when no IIS accounts exist", async () => {
+    const planner = completePlanner();
+    vi.mocked(getTaxIisPlanner).mockResolvedValue({ ...planner, iis_accounts: [] });
+
+    render(<TaxIisPlannerPage />);
+
+    expect(await screen.findByText("Нет профилей ИИС")).toBeInTheDocument();
+    expect(screen.getByText(/В сохранённых данных нет счетов с профилем ИИС/)).toBeInTheDocument();
+    expect(screen.queryByText("Synthetic IIS")).toBeNull();
+  });
+
+  it("states explicitly that year-end projection is not included", async () => {
+    render(<TaxIisPlannerPage />);
+
+    expect(await screen.findByText(/без прогноза до конца года/i)).toBeInTheDocument();
+  });
+
+  it("shows loading and error states via existing conventions", async () => {
+    vi.mocked(getTaxIisPlanner).mockImplementation(() => new Promise(() => {}));
+
+    const { unmount } = render(<TaxIisPlannerPage />);
+    expect(await screen.findByText(/Собираем текущий налоговый контекст/)).toBeInTheDocument();
+    unmount();
+
+    vi.mocked(getTaxIisPlanner).mockRejectedValue(new Error("planner offline"));
+    render(<TaxIisPlannerPage />);
+    expect(await screen.findByText("Не удалось загрузить планировщик")).toBeInTheDocument();
+    expect(screen.getByText(/planner offline/)).toBeInTheDocument();
+  });
 });
