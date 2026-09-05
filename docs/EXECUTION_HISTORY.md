@@ -51,6 +51,15 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Scope note:** 0.8.0 integrates Guided Monthly Close Wizard A–H, owner workflow/Alfa/reconciliation UX, safe instrument cleanup, explicit portfolio review package handoff, and guarded Windows launcher/package verification while preserving local-only/no-cloud/no-auth/provider-explicit-action boundaries.
 - **Follow-ups:** launcher normalization #277–#279; workspace cleanup #280; backend CI performance #282.
 
+# 0.8.1 release publication
+
+### M08-01-POST — published Hermes Finance v0.8.1 Stable release
+
+- **Published:** 2026-09-04 as a non-draft, non-prerelease GitHub Release.
+- **Released Stable identity:** annotated tag `v0.8.1`, tag object `853ffbbf1349db80e1941c6db2051ca9d81a2bf3`, peeled commit `0bb932f5b3711acbbd6ac52218a242a03bdcf99b`.
+- **Current state:** #143 is integrated in AI Analysis Bundle schema `1.2.0`; the dedicated Insights UI remains deferred.
+- **History boundary:** the M08-01 release-prep record below remains historical and is not rewritten by this publication-state entry.
+
 # 0.8.2 release preparation
 
 ### M08-02 — prepare Hermes Finance v0.8.2 maintenance release

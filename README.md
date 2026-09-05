@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Текущее дерево содержит release-prep maintenance **0.8.2** поверх опубликованной стабильной идентичности **0.8.0** и предыдущей release-prep линии **0.8.1**. Исторический Git-тег `v0.8.0` peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились успешно 2026-09-02. В рамках #309 version identity синхронизируется к `0.8.2`; этот task branch ещё не создаёт tag или GitHub Release.
+Текущее дерево содержит release-prep maintenance **0.8.2** после опубликованной стабильной идентичности **0.8.1**. GitHub Release `v0.8.1` опубликован как Stable 2026-09-04; annotated tag object `853ffbbf1349db80e1941c6db2051ca9d81a2bf3` peel'ится в exact released main SHA `0bb932f5b3711acbbd6ac52218a242a03bdcf99b`. Исторический Git-тег `v0.8.0` peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились успешно 2026-09-02. В рамках #309 version identity синхронизируется к `0.8.2`; этот task branch ещё не создаёт tag или GitHub Release.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -141,7 +141,7 @@ Release-prep `0.8.2` фиксирует уже интегрированное с
 - **Freshness & Provenance Center** — persisted source/freshness clocks и reason codes без universal score и без background refresh.
 - **Reconciliation Center** — explicit read-only snapshot preview с normalized row states и compatibility diagnostics; provider Price/UchPrice/NKD/P&L — comparison-only и не перезаписывают Hermes.
 - **Tax/IIS Planner** — current-state v1 для фактических и текущих налоговых данных; расширение projection scope отложено.
-- **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; полный UI/AI-bundle integration beyond the deterministic backend не заявляется.
+- **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; AI Analysis Bundle integration уже присутствует в schema `1.2.0`, а dedicated Insights UI остаётся deferred.
 - **XIRR и exact TWRR** — XIRR доступен для whole portfolio при однозначном валидном корне; TWRR использует persisted observed valuation boundaries и pre/post observations для потоков. Missing/gapped evidence, неизвестный порядок событий и неоднозначный XIRR root fail closed.
 - **Windows Stable/Preview launcher** — guarded runtime profiles, owner Prepare/Repair/Start/Stop controls, explicit Preview update, package/install verification и shortcut/start-stop smoke; Stable остаётся на pinned release identity, Preview — на отдельном unreleased checkout.
 - **UI и verification** — #284 сохраняет visual/layout polish; #282 добавляет canonical backend CI lanes и slow-test telemetry как verification infrastructure; #292 закрепляет deterministic quote-freshness regression test. Эти изменения не являются новыми финансовыми функциями.
@@ -258,7 +258,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\insta
 
 - #141 Scenario Lab;
 - #142 projection expansion за пределы current-state Tax/IIS v1;
-- #143 Insights UI и AI Analysis Bundle integration за пределами deterministic backend v1;
+- #143 dedicated Insights UI; AI Analysis Bundle integration уже присутствует в schema `1.2.0`;
 - #203 Phase 2B test rehome/dedupe;
 - #202 residual workspace/ACL cleanup;
 - #229 owner workflow/Alfa UX consolidation.

@@ -37,9 +37,9 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущее дерево содержит release-prep maintenance **0.8.2** после предыдущей release-prep линии **0.8.1** поверх опубликованной стабильной product identity **0.8.0**. Annotated tag `v0.8.0` (tag object `2f27d9e34271843d97eed1138bd8b388630bd7a8`) peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились `success`, GitHub Release опубликован 2026-09-02. Канонический исторический record 0.8.0 — `docs/releases/0.8.0.md`; текущий release-prep record — `docs/releases/0.8.2.md`.
+Текущее дерево содержит release-prep maintenance **0.8.2** после опубликованной стабильной product identity **0.8.1**. GitHub Release `v0.8.1` опубликован как Stable 2026-09-04; annotated tag object `853ffbbf1349db80e1941c6db2051ca9d81a2bf3` peel'ится в exact released main SHA `0bb932f5b3711acbbd6ac52218a242a03bdcf99b`. Предыдущий Git-тег `v0.8.0` (tag object `2f27d9e34271843d97eed1138bd8b388630bd7a8`) peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились `success`, GitHub Release опубликован 2026-09-02. Канонический исторический record 0.8.0 — `docs/releases/0.8.0.md`; текущий release-prep record — `docs/releases/0.8.2.md`.
 
-0.8.2 — release-prep maintenance после 0.8.1: документирует уже интегрированные #298, #299, #302, current-state #142 и #143. Stable/Preview остаются разделёнными, owner actions явными, а текущая версия и release surfaces синхронизируются к 0.8.2. Публикация не утверждается этим task branch.
+0.8.2 — release-prep maintenance после опубликованного Stable-релиза 0.8.1: документирует уже интегрированные #298, #299, #302, current-state #142 и #143. Stable/Preview остаются разделёнными, owner actions явными, а текущая версия и release surfaces синхронизируются к 0.8.2. Публикация не утверждается этим task branch.
 
 Предыдущая опубликованная стабильная линия **0.7.0** сохранена как историческая identity: `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`, опубликована 2026-08-30 с owner Stable promotion `PASS`.
 
@@ -90,7 +90,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - Freshness & Provenance Center с persisted clocks/reason codes без universal score и background refresh;
 - Reconciliation Center с normalized row states и compatibility diagnostics; Price/UchPrice/NKD/P&L — comparison-only;
 - current-state Tax/IIS Planner v1;
-- deterministic Insights backend v1 на persisted evidence без full UI/AI-bundle integration;
+- deterministic Insights backend v1 на persisted evidence с AI Analysis Bundle integration в schema `1.2.0`; dedicated Insights UI остаётся deferred;
 - XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed gaps/order/root states;
 - guarded Windows Stable/Preview launcher с owner Start/Stop controls, без Git branch/state mutation;
 - row-scoped selective apply: unrelated unresolved/conflicting rows не блокируют safe selected subset, selected unsafe/stale rows fail closed;
@@ -112,7 +112,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - фоновое обновление котировок или выплат;
 - production fallback на MOEX;
 - универсальный импорт любого Excel/PDF;
-- полный Insights UI и AI Analysis Bundle integration beyond deterministic backend v1;
+- dedicated Insights UI; AI Analysis Bundle integration уже присутствует в schema `1.2.0`;
 - projection expansion beyond current-state Tax/IIS Planner v1;
 
 ## 5. Технический контур
@@ -409,7 +409,7 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 
 - #141 Scenario Lab;
 - #142 projection expansion beyond current-state Tax/IIS v1;
-- #143 Insights UI and AI Analysis Bundle integration beyond deterministic backend v1;
+- #143 dedicated Insights UI; AI Analysis Bundle integration is present in schema `1.2.0`;
 - #203 Phase 2B test rehome/dedupe;
 - #202 residual workspace/ACL cleanup;
 - #229 owner workflow/Alfa UX consolidation.

@@ -4,7 +4,7 @@
 
 ## [0.8.2] — 2026-09-05
 
-Release-prep maintenance on top of the previous 0.8.1 release-prep line. This
+Release-prep maintenance after the published Stable `v0.8.1` release. This
 entry documents already integrated changes and synchronizes release identity;
 it does not add product behavior, financial formulas, provider writes or schema
 changes.
@@ -14,7 +14,7 @@ changes.
 - launcher owner-safe Stable release update path and restart-safe process ownership / Stop recovery (#298, #299);
 - final owner-facing launcher visual/content polish (#302);
 - current-state Tax/IIS Planner Lite backend and owner UI without implicit year-end projection (#142);
-- Deterministic Financial Insights Engine v1 and AI Analysis Bundle schema `1.2.0` (#143).
+- Deterministic Financial Insights Engine v1 and AI Analysis Bundle integration in schema `1.2.0` (#143); the dedicated Insights UI remains deferred.
 
 ### Not changed
 
