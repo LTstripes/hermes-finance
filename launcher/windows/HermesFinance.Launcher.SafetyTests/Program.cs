@@ -75,7 +75,7 @@ var tests = new (string Name, Action Run)[]
     ("Preview behind with missing deps offers a single safe primary", PreviewBehindMissingDepsOffersSingleSafePrimary),
     ("Stable Ready offers Start primary", StableReadyStartsPrimary),
     ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
-    ("setup rejects Stable off the v0.8.1 release commit", SetupRejectsStableOffRelease),
+    ("setup rejects Stable off the v0.8.2 release commit", SetupRejectsStableOffRelease),
     ("setup rejects Preview without origin/main", SetupRejectsPreviewWithoutOriginMain),
     ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
@@ -125,7 +125,7 @@ static void LoadsCanonicalConfigExample()
     Assert(config.Profiles.Count == 2, "The canonical config example must load both documented profiles.");
     Assert(config.Profiles[0].Id == "stable", "The stable profile id must use the documented JSON name.");
     Assert(config.Profiles[0].DisplayName == "Hermes Finance — Stable", "The stable profile display name must load from the canonical example.");
-    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.8.1", "The stable profile expected ref must be v0.8.1.");
+    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.8.2", "The stable profile expected ref must be v0.8.2.");
     Assert(config.Profiles[0].DataDir == "<absolute-stable-data-dir>", "The stable profile data directory must use the documented JSON name.");
     Assert(config.Profiles[0].Database == "<absolute-stable-database>", "The stable profile database must use the documented JSON name.");
     Assert(config.Profiles[0].OpenBrowser, "The stable profile browser setting must use the documented JSON name.");
@@ -151,7 +151,7 @@ static void PresentsBrandedOwnerSurface()
     Assert(buttons.Any(button => button.Text == "Диагностика и логи"), "Raw diagnostics must have a dedicated details action.");
     Assert(labels.Any(label => label.Text == "STABLE  ·  PRODUCTION"), "The Stable owner badge is missing.");
     Assert(labels.Any(label => label.Text == "PREVIEW  ·  ISOLATED"), "The Preview owner badge is missing.");
-    Assert(labels.Any(label => label.Text.Contains("Release v0.8.1", StringComparison.Ordinal) || label.Text.Contains("UNRELEASED", StringComparison.Ordinal)), "Profile cards must show Stable pinned release or Preview UNRELEASED badge.");
+    Assert(labels.Any(label => label.Text.Contains("Release v0.8.2", StringComparison.Ordinal) || label.Text.Contains("UNRELEASED", StringComparison.Ordinal)), "Profile cards must show Stable pinned release or Preview UNRELEASED badge.");
 
     var status = controls.OfType<TextBox>().Single();
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
@@ -1302,7 +1302,7 @@ static void RejectsStableUpdate()
 
 static void DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation()
 {
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
     try
     {
         var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
@@ -1313,7 +1313,7 @@ static void DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation()
 
         Assert(status.Current is not null && status.Current.Version == "0.8.0", "Discovery must prove the configured current immutable Stable release.");
         Assert(status.TargetAvailable, "A published newer release must produce an explicit Stable target.");
-        Assert(discoveredTarget.Version == "0.8.1", "Discovery must select the published newer release.");
+        Assert(discoveredTarget.Version == "0.8.2", "Discovery must select the published newer release.");
         Assert(discoveredTarget.CommitSha == fixture.TargetSha, "Discovery target must use the remote tag's peeled commit SHA.");
         Assert(fixture.ReleaseHandler.RequestCount == 1, "Stable release discovery must use the standard public REST client.");
         Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Read-only release discovery must not switch Stable.");
@@ -1332,7 +1332,7 @@ static void DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation()
         Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must not compete with a pending Stable upgrade.");
         var labels = AllControls(form).OfType<Label>().ToArray();
         Assert(labels.Any(label => label.Text.Contains("v0.8.0", StringComparison.Ordinal)
-            && label.Text.Contains("v0.8.1", StringComparison.Ordinal)), "The owner surface must show current and target Stable release identities.");
+            && label.Text.Contains("v0.8.2", StringComparison.Ordinal)), "The owner surface must show current and target Stable release identities.");
     }
     finally
     {
@@ -1342,7 +1342,7 @@ static void DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation()
 
 static void IgnoresUnpublishedStableCandidates()
 {
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: true, prerelease: false));
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2", draft: true, prerelease: false));
     try
     {
         var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
@@ -1357,7 +1357,7 @@ static void IgnoresUnpublishedStableCandidates()
         DeleteSyntheticTree(fixture.Root);
     }
 
-    var prereleaseFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: false, prerelease: true));
+    var prereleaseFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2", draft: false, prerelease: true));
     try
     {
         var status = StableReleaseService.Discover(prereleaseFixture.Profile, prereleaseFixture.ReleaseHandler);
@@ -1371,7 +1371,7 @@ static void IgnoresUnpublishedStableCandidates()
 
 static void StableUpgradeFailsClosedOnDirtyCheckout()
 {
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
     try
     {
         var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
@@ -1399,7 +1399,7 @@ static void StableUpgradeFailsClosedOnDirtyCheckout()
         DeleteSyntheticTree(fixture.Root);
     }
 
-    var unpublishedFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1", draft: false, prerelease: false, publishedAt: null));
+    var unpublishedFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2", draft: false, prerelease: false, publishedAt: null));
     try
     {
         var status = StableReleaseService.Discover(unpublishedFixture.Profile, unpublishedFixture.ReleaseHandler);
@@ -1413,7 +1413,7 @@ static void StableUpgradeFailsClosedOnDirtyCheckout()
 
 static void StableUpgradeRejectsUnprovenTarget()
 {
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"), annotatedTarget: false);
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"), annotatedTarget: false);
     try
     {
         AssertThrowsMessage(
@@ -1430,7 +1430,7 @@ static void StableUpgradeRejectsUnprovenTarget()
 
 static void UpgradesStableAfterBackupPreservingData()
 {
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"));
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
     try
     {
         var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
@@ -1444,12 +1444,12 @@ static void UpgradesStableAfterBackupPreservingData()
         Assert(RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all") == "", "Upgraded Stable must remain clean.");
         var configAfter = LauncherConfig.Load(fixture.ConfigPath);
         var stableAfter = configAfter.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        Assert(stableAfter.ExpectedRef == "refs/tags/v0.8.1", "Config identity must be updated to the proven release tag after checkout verification.");
+        Assert(stableAfter.ExpectedRef == "refs/tags/v0.8.2", "Config identity must be updated to the proven release tag after checkout verification.");
         Assert(configAfter.CanonicalProduction.DataDir == configBefore.CanonicalProduction.DataDir
             && configAfter.CanonicalProduction.Database == configBefore.CanonicalProduction.Database,
             "Stable upgrade must preserve canonical production data paths.");
         Assert(File.ReadAllBytes(fixture.Database).SequenceEqual(databaseBefore), "Stable upgrade must not mutate the production database contents.");
-        Assert(ProfileValidator.ReadApplicationVersion(fixture.StableCheckout) == "0.8.1", "Checked-out backend version must agree with the release identity.");
+        Assert(ProfileValidator.ReadApplicationVersion(fixture.StableCheckout) == "0.8.2", "Checked-out backend version must agree with the release identity.");
         Assert(File.ReadAllText(fixture.PreviewMarker) == previewBefore, "Stable upgrade must not touch Preview data.");
         var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
         Assert(backups.Length == 1, "Stable upgrade must create exactly one synthetic production backup before mutation.");
@@ -1464,7 +1464,7 @@ static void UpgradesStableAfterBackupPreservingData()
 
 static void StableUpgradeRejectsBackendVersionMismatch()
 {
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.1"), targetApplicationVersion: "0.8.2");
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"), targetApplicationVersion: "0.8.1");
     try
     {
         var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
@@ -1492,14 +1492,14 @@ static void ShowsStablePinnedIdentity()
         DisplayName = "Hermes Finance — Stable",
         Type = "stable",
         Checkout = "C:\\synthetic\\stable",
-        ExpectedRef = "refs/tags/v0.8.1",
+        ExpectedRef = "refs/tags/v0.8.2",
         DataDir = "C:\\synthetic\\stable\\data",
         Database = "C:\\synthetic\\stable\\data\\finance.db",
         OpenBrowser = false,
     };
     // Stable must show pinned release tag/SHA + production data identity without manual JSON
     var label = LauncherUi.StableIdentityLabel(stable, "d04f46696a991ea59066b59d4870980ac4b69089");
-    Assert(label.Contains("v0.8.1", StringComparison.Ordinal), "Stable identity must show pinned release version/tag.");
+    Assert(label.Contains("v0.8.2", StringComparison.Ordinal), "Stable identity must show pinned release version/tag.");
     Assert(label.Contains("d04f466", StringComparison.Ordinal), "Stable identity must show short SHA.");
     Assert(label.Contains("production", StringComparison.OrdinalIgnoreCase), "Stable identity must show production data identity.");
     Assert(!label.Contains("UNRELEASED", StringComparison.OrdinalIgnoreCase), "Stable must not be marked unreleased.");
@@ -1533,7 +1533,7 @@ static void ShowsPreviewUnreleasedIdentity()
 static void OffersActionableMismatch()
 {
     var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
-    var stable = new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = "C:\\s", ExpectedRef = "refs/tags/v0.8.1", DataDir = "C:\\s\\data", Database = "C:\\s\\data\\finance.db", OpenBrowser = false };
+    var stable = new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = "C:\\s", ExpectedRef = "refs/tags/v0.8.2", DataDir = "C:\\s\\data", Database = "C:\\s\\data\\finance.db", OpenBrowser = false };
 
     var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
     var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
@@ -1549,7 +1549,7 @@ static void OffersActionableMismatch()
 
 static void ExposesSinglePrimaryCta()
 {
-    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.2");
     var config = new LauncherConfig
     {
         Version = 1,
@@ -1590,7 +1590,7 @@ static void ExposesSinglePrimaryCta()
 static void SummarizesChecksPlainLanguage()
 {
     // Human checks must be plain language, raw diagnostics secondary
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.2");
     var config = new LauncherConfig
     {
         Version = 1,
@@ -1655,7 +1655,7 @@ static void StripsRealUnknownFieldsOrFailsClosed()
             CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = database },
             Profiles =
             [
-                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.8.1", DataDir = dataDir, Database = database, OpenBrowser = false },
+                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.8.2", DataDir = dataDir, Database = database, OpenBrowser = false },
             ],
         };
         var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(valid)) as System.Text.Json.Nodes.JsonObject
@@ -1666,7 +1666,7 @@ static void StripsRealUnknownFieldsOrFailsClosed()
         File.WriteAllText(configPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
         var stripped = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(stripped.Profiles.Count == 1 && stripped.Profiles[0].ExpectedRef == "refs/tags/v0.8.1", "Stripped config must keep known fields intact.");
+        Assert(stripped.Profiles.Count == 1 && stripped.Profiles[0].ExpectedRef == "refs/tags/v0.8.2", "Stripped config must keep known fields intact.");
         Assert(diag.Contains("removed", StringComparison.OrdinalIgnoreCase) || diag.Contains("unknown", StringComparison.OrdinalIgnoreCase), "Unknown-field strip must be diagnosable.");
         var rewritten = File.ReadAllText(configPath);
         Assert(!rewritten.Contains("token", StringComparison.Ordinal), "Rewritten config must not keep the top-level unknown field.");
@@ -1701,7 +1701,7 @@ static void LeavesStaleStableRefUntouchedWhenCheckoutOffRelease()
         RunGit(checkout, "add", ".");
         RunGit(checkout, "commit", "-m", "synthetic stable at old release");
         RunGit(checkout, "tag", "v0.6.3");
-        // No v0.8.1 tag exists and HEAD is not on v0.8.1: migration must not fire.
+        // No v0.8.2 tag exists and HEAD is not on v0.8.2: migration must not fire.
         var configPath = Path.Combine(root, "launcher", "config.json");
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         var config = new LauncherConfig
@@ -1717,7 +1717,7 @@ static void LeavesStaleStableRefUntouchedWhenCheckoutOffRelease()
         var before = File.ReadAllText(configPath);
 
         var loaded = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.6.3", "Stale Stable ref must NOT be rewritten when the checkout is not proven at v0.8.1.");
+        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.6.3", "Stale Stable ref must NOT be rewritten when the checkout is not proven at v0.8.2.");
         Assert(File.ReadAllText(configPath) == before, "Config file must be byte-identical when migration is blocked.");
         Assert(diag.Contains("blocked", StringComparison.OrdinalIgnoreCase), "Blocked migration must be diagnosable.");
     }
@@ -1742,10 +1742,10 @@ static void MigratesStaleStableRefOnlyWhenCheckoutProvesRelease()
         RunGit(checkout, "add", ".");
         RunGit(checkout, "commit", "-m", "synthetic stable at old release");
         RunGit(checkout, "tag", "v0.6.3");
-        File.WriteAllText(Path.Combine(checkout, "release-marker.txt"), "synthetic v0.8.1 release");
+        File.WriteAllText(Path.Combine(checkout, "release-marker.txt"), "synthetic v0.8.2 release");
         RunGit(checkout, "add", "release-marker.txt");
-        RunGit(checkout, "commit", "-m", "synthetic stable at v0.8.1");
-        RunGit(checkout, "tag", "v0.8.1");
+        RunGit(checkout, "commit", "-m", "synthetic stable at v0.8.2");
+        RunGit(checkout, "tag", "v0.8.2");
         var configPath = Path.Combine(root, "launcher", "config.json");
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         var config = new LauncherConfig
@@ -1760,9 +1760,9 @@ static void MigratesStaleStableRefOnlyWhenCheckoutProvesRelease()
         File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 
         var loaded = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.8.1", "Stale Stable ref must migrate once HEAD is proven at the v0.8.1 release commit.");
+        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.8.2", "Stale Stable ref must migrate once HEAD is proven at the v0.8.2 release commit.");
         Assert(diag.Contains("migrated", StringComparison.OrdinalIgnoreCase), "Proven migration must be diagnosable.");
-        Assert(File.ReadAllText(configPath).Contains("refs/tags/v0.8.1", StringComparison.Ordinal), "Migrated file must persist the new expected_ref.");
+        Assert(File.ReadAllText(configPath).Contains("refs/tags/v0.8.2", StringComparison.Ordinal), "Migrated file must persist the new expected_ref.");
     }
     finally
     {
@@ -1772,7 +1772,7 @@ static void MigratesStaleStableRefOnlyWhenCheckoutProvesRelease()
 
 static void PortCollisionOffersRefreshNotStop()
 {
-    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.2");
     var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
     var portEx = new LauncherValidationException("Another Hermes instance is running; v1 is single-instance on port 8000.");
 
@@ -1807,7 +1807,7 @@ static void PortCollisionOffersRefreshNotStop()
 
 static void StableMismatchIsRecoveryOnly()
 {
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.2");
     var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
     var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
 
@@ -1854,7 +1854,7 @@ static void ApplyValidatedOn(MainForm form, ValidatedProfile validated)
 static void PreviewCurrentStartsPrimary()
 {
     var preview = PreviewProfileForCta();
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.2");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
@@ -1873,7 +1873,7 @@ static void PreviewCurrentStartsPrimary()
 static void PreviewBehindUpdatesPrimary()
 {
     var preview = PreviewProfileForCta();
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.2");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
@@ -1897,7 +1897,7 @@ static void PreviewBehindUpdatesPrimary()
 static void PreviewBehindMissingDepsOffersSingleSafePrimary()
 {
     var preview = PreviewProfileForCta();
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.2");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
@@ -1921,7 +1921,7 @@ static void PreviewBehindMissingDepsOffersSingleSafePrimary()
 
 static void StableReadyStartsPrimary()
 {
-    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.8.2");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
@@ -1936,7 +1936,7 @@ static void StableReadyStartsPrimary()
     Assert(primaries.Count == 1 && primaries[0] == "Запустить", $"Stable Ready must have exactly one primary CTA 'Запустить', found [{string.Join(",", primaries)}].");
 }
 
-// #302: a validated v0.8.1 Stable must never be called "Stable 0.8.0".
+// #302: a validated v0.8.2 Stable must never be called "Stable 0.8.0".
 // Older installs may carry the stale version inside display_name; the
 // owner title is derived from the profile without that stale token while
 // the version itself comes only from validated release identity.
@@ -1948,7 +1948,7 @@ static void OwnerTitleDerivesFromValidatedIdentity()
         DisplayName = "Hermes Finance — Stable 0.8.0",
         Type = "stable",
         Checkout = "C:\\synthetic\\stable",
-        ExpectedRef = "refs/tags/v0.8.1",
+        ExpectedRef = "refs/tags/v0.8.2",
         DataDir = "C:\\synthetic\\stable\\data",
         Database = "C:\\synthetic\\stable\\data\\finance.db",
         OpenBrowser = false,
@@ -1988,9 +1988,9 @@ static void OwnerTitleDerivesFromValidatedIdentity()
     ForceLayout(form, new Size(960, 820));
     var afterLabels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
     Assert(!afterLabels.Any(text => text.Contains("0.8.0", StringComparison.Ordinal)),
-        "A validated v0.8.1 Stable must never show Stable 0.8.0 anywhere.");
-    Assert(afterLabels.Any(text => text.Contains("v0.8.1", StringComparison.Ordinal)),
-        "The validated Stable identity must show the proven v0.8.1 release.");
+        "A validated v0.8.2 Stable must never show Stable 0.8.0 anywhere.");
+    Assert(afterLabels.Any(text => text.Contains("v0.8.2", StringComparison.Ordinal)),
+        "The validated Stable identity must show the proven v0.8.2 release.");
     var selectedName = (Label)typeof(MainForm)
         .GetField("_selectedName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .GetValue(form)!;
@@ -2087,7 +2087,7 @@ static void SetupFlowCreatesConcreteConfig()
         RunGit(stableCheckout, "config", "--local", "user.email", "hermes-safety-test");
         RunGit(stableCheckout, "add", ".");
         RunGit(stableCheckout, "commit", "-m", "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.8.1");
+        RunGit(stableCheckout, "tag", "v0.8.2");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         RunGit(previewCheckout, "init");
@@ -2099,7 +2099,7 @@ static void SetupFlowCreatesConcreteConfig()
 
         // Synthetic owner selections become a concrete valid config — no manual JSON.
         var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-        Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.8.1", "Setup must pin Stable to the v0.8.1 release.");
+        Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.8.2", "Setup must pin Stable to the v0.8.2 release.");
         Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Setup must point Preview at origin/main.");
         Assert(LauncherConfig.IsConcreteConfig(config), "Setup result must be concrete (absolute paths, no placeholders).");
 
@@ -2150,9 +2150,9 @@ static void SetupRejectsStableOffRelease()
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.8.1");
+        RunGit(stableCheckout, "tag", "v0.8.2");
         // Tag exists, but HEAD moved past the release commit.
-        CommitSyntheticFile(stableCheckout, "post-release.txt", "drifted past v0.8.1", "synthetic post-release drift");
+        CommitSyntheticFile(stableCheckout, "post-release.txt", "drifted past v0.8.2", "synthetic post-release drift");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
@@ -2161,7 +2161,7 @@ static void SetupRejectsStableOffRelease()
         try
         {
             LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-            throw new InvalidOperationException("Setup must reject a Stable checkout off the v0.8.1 release commit.");
+            throw new InvalidOperationException("Setup must reject a Stable checkout off the v0.8.2 release commit.");
         }
         catch (LauncherValidationException exception)
         {
@@ -2186,7 +2186,7 @@ static void SetupRejectsPreviewWithoutOriginMain()
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.8.1");
+        RunGit(stableCheckout, "tag", "v0.8.2");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         // A plain git repo: no refs/remotes/origin/main exists.
@@ -2220,7 +2220,7 @@ static void SetupRejectsPreviewSharingStableGitDir()
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.8.1");
+        RunGit(stableCheckout, "tag", "v0.8.2");
         RunGit(stableCheckout, "branch", "-M", "main");
         RunGit(stableCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
         // Linked worktree: same git-common-dir as Stable, HEAD at origin/main.
@@ -2255,7 +2255,7 @@ static void PreparedSetupPassesPreflightIdentity()
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.8.1");
+        RunGit(stableCheckout, "tag", "v0.8.2");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
@@ -2282,7 +2282,7 @@ static void PreparedSetupPassesPreflightIdentity()
 
 static void ConfigFailureOffersSetupAction()
 {
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.1");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.8.2");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
@@ -2461,7 +2461,7 @@ static string PublishedReleaseJson(
 static StableUpgradeFixture CreateStableUpgradeFixture(
     string releaseJson,
     bool annotatedTarget = true,
-    string targetApplicationVersion = "0.8.1")
+    string targetApplicationVersion = "0.8.2")
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
     var seed = Path.Combine(root, "seed");
@@ -2497,24 +2497,24 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     File.WriteAllText(
         Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
         $"__version__ = \"{targetApplicationVersion}\"\n");
-    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.1\n");
+    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.2\n");
     RunGit(seed, "add", ".");
-    RunGit(seed, "commit", "-m", "synthetic Stable v0.8.1 runtime");
+    RunGit(seed, "commit", "-m", "synthetic Stable v0.8.2 runtime");
     if (annotatedTarget)
     {
-        RunGit(seed, "tag", "-a", "v0.8.1", "-m", "synthetic published Stable v0.8.1");
+        RunGit(seed, "tag", "-a", "v0.8.2", "-m", "synthetic published Stable v0.8.2");
     }
     else
     {
-        RunGit(seed, "tag", "v0.8.1");
+        RunGit(seed, "tag", "v0.8.2");
     }
     RunGit(seed, "push", "origin", "main");
-    RunGit(seed, "push", "origin", "refs/tags/v0.8.1");
-    var targetSha = RunGit(seed, "rev-parse", "refs/tags/v0.8.1^{commit}");
+    RunGit(seed, "push", "origin", "refs/tags/v0.8.2");
+    var targetSha = RunGit(seed, "rev-parse", "refs/tags/v0.8.2^{commit}");
 
     RunGit(root, "clone", "-b", "main", remote, stableCheckout);
     RunGit(stableCheckout, "switch", "--detach", "refs/tags/v0.8.0");
-    Assert(RunGitMayFail(stableCheckout, "tag", "-d", "v0.8.1") == 0, "The synthetic Stable checkout must start without a local target tag.");
+    Assert(RunGitMayFail(stableCheckout, "tag", "-d", "v0.8.2") == 0, "The synthetic Stable checkout must start without a local target tag.");
     Directory.CreateDirectory(dataDir);
     var database = Path.Combine(dataDir, "finance.db");
     CreateSyntheticSqliteDatabase(database);
