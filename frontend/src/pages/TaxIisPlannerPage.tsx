@@ -154,7 +154,7 @@ export function TaxIisPlannerPage() {
         <h1>Налоги и ИИС</h1>
         <p className="page-header__description">
           Текущее состояние по сохранённым данным Hermes: без прогноза зарплаты и без расчётов по
-          ценным бумагам.
+          ценным бумагам. Текущие данные без прогноза до конца года.
         </p>
       </header>
 
@@ -212,14 +212,16 @@ function PlannerContent({
 }) {
   const salary = planner.salary_tax;
   const reportingMonth = planner.as_of.reporting_month;
+  const taxYear = planner.tax_year ?? salary.tax_year;
+  const taxYearPrefix = taxYear != null ? `Налоговый год ${taxYear} · ` : "";
 
   return (
     <>
       <p className="tax-iis-planner-page__as-of muted tiny">
         {reportingMonth
-          ? `Срез ${formatMonth(reportingMonth.year, reportingMonth.month)} · ${labelOf(MONTH_STATUS_LABELS, reportingMonth.status)} · снимок ${formatDate(reportingMonth.snapshot_date)}`
+          ? `${taxYearPrefix}Срез ${formatMonth(reportingMonth.year, reportingMonth.month)} · ${labelOf(MONTH_STATUS_LABELS, reportingMonth.status)} · снимок ${formatDate(reportingMonth.snapshot_date)}`
           : selectedMonth
-            ? `Выбран ${formatMonth(selectedMonth.year, selectedMonth.month)}, но приложение не получило отчётный срез.`
+            ? `${taxYearPrefix}Выбран ${formatMonth(selectedMonth.year, selectedMonth.month)}, но приложение не получило отчётный срез.`
             : "Нет отчётного месяца; зарплатный контекст недоступен."}
       </p>
 
