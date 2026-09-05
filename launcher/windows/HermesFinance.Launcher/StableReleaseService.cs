@@ -147,6 +147,7 @@ internal static class StableReleaseService
         // backup so a tracked current/target path, reparse traversal, or file
         // alias can never be discovered after the first mutation.
         EnsureProductionDataIsSafeForSwitch(profile, remoteTarget, releaseHandler);
+        AssertStableConfigTuple(configPath, profile);
         var productionSnapshot = ProductionDataSnapshot.Capture(profile);
         // This is the first mutating operation. The backup is created before
         // any tag fetch, checkout change, dependency preparation, or config
@@ -191,7 +192,7 @@ internal static class StableReleaseService
         // launcher never attempts a rollback of a checkout after a data race;
         // it fails closed and leaves the owner an explicit recovery signal.
         productionSnapshot.AssertUnchanged(profile);
-        var updatedConfig = LauncherConfig.UpdateStableExpectedRef(configPath, remoteTarget.Ref);
+        var updatedConfig = LauncherConfig.UpdateStableExpectedRef(configPath, remoteTarget.Ref, profile);
         productionSnapshot.AssertUnchanged(profile);
 
         return new StableUpgradeResult(current, remoteTarget, backup.Id, updatedConfig);
@@ -707,11 +708,28 @@ internal static class StableReleaseService
 
         var gitDirectory = ResolveGitDirectoryPath(profile.Checkout, "--git-dir");
         var commonDirectory = ResolveGitDirectoryPath(profile.Checkout, "--git-common-dir");
-        if (IsWithin(profile.DataDir, gitDirectory)
-            || IsWithin(profile.DataDir, commonDirectory))
+        if (PathsOverlap(profile.DataDir, gitDirectory)
+            || PathsOverlap(profile.DataDir, commonDirectory))
         {
             throw new LauncherValidationException(
                 "Stable production data overlaps Git metadata; upgrade is blocked before backup.");
+        }
+    }
+
+    private static void AssertStableConfigTuple(string configPath, ValidatedProfile profile)
+    {
+        try
+        {
+            ProfileValidator.AssertStableProductionTuple(LauncherConfig.Load(configPath), profile);
+        }
+        catch (LauncherValidationException)
+        {
+            throw;
+        }
+        catch (IOException exception)
+        {
+            throw new LauncherValidationException(
+                $"Stable canonical production identity cannot be re-proven before upgrade: {exception.Message}");
         }
     }
 
@@ -1230,6 +1248,9 @@ internal static class StableReleaseService
         || Path.GetFullPath(candidate).StartsWith(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(parent)) + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase);
+
+    private static bool PathsOverlap(string left, string right) =>
+        SamePath(left, right) || IsWithin(left, right) || IsWithin(right, left);
 
     private static string OneLine(string preferred, string fallback)
     {

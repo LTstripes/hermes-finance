@@ -63,6 +63,8 @@ var tests = new (string Name, Action Run)[]
     ("blocks a target Git path under production data before backup", BlocksTargetTrackedProductionSubtree),
     ("blocks a target Git collision with the production database before backup", BlocksTargetTrackedDatabase),
     ("fails closed when target Git tree proof is unavailable", BlocksUnavailableTargetTreeProof),
+    ("blocks production data containing Git metadata before backup", BlocksProductionDataContainingGitMetadata),
+    ("fails closed when the canonical tuple is rebound before persistence", BlocksStableConfigRebindBeforePersistence),
     ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
     ("blocks a target-only ignored hardlink alias before backup", BlocksTargetOnlyHardlinkAlias),
     ("blocks a target-only junction ancestor before backup", BlocksTargetOnlyJunctionAncestor),
@@ -1575,6 +1577,83 @@ static void BlocksUnavailableTargetTreeProof()
     }
 }
 
+static void BlocksProductionDataContainingGitMetadata()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        productionDataContainsGitMetadata: true);
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "Stable production data overlaps Git metadata; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksStableConfigRebindBeforePersistence()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
+    try
+    {
+        var reboundDataDir = Path.Combine(fixture.Root, "rebound-data");
+        var reboundDatabase = Path.Combine(reboundDataDir, "finance.db");
+        Directory.CreateDirectory(reboundDataDir);
+        File.WriteAllText(reboundDatabase, "synthetic rebound database\n");
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
+        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
+        fixture.ReleaseHandler.OnGitTreeRequest = () => RebindStableConfig(fixture, reboundDataDir, reboundDatabase);
+
+        AssertThrowsMessage(
+            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
+            "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A config tuple rebind must fail before switching Stable.");
+        Assert(RunGitMayFail(fixture.StableCheckout, "rev-parse", "--verify", "refs/tags/v0.8.2") != 0, "A config tuple rebind must fail before fetching the target tag.");
+        var rebound = LauncherConfig.Load(fixture.ConfigPath);
+        var stable = rebound.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(stable.DataDir == reboundDataDir && stable.Database == reboundDatabase, "The synthetic config rebind must remain observable after the guarded failure.");
+        Assert(stable.ExpectedRef == "refs/tags/v0.8.0", "A config tuple rebind must not be overwritten with the target release identity.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A config tuple rebind must fail before creating a production backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void RebindStableConfig(StableUpgradeFixture fixture, string dataDir, string database)
+{
+    var stable = fixture.Config.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+    var reboundStable = new LauncherProfile
+    {
+        Id = stable.Id,
+        DisplayName = stable.DisplayName,
+        Type = stable.Type,
+        Checkout = stable.Checkout,
+        ExpectedRef = stable.ExpectedRef,
+        DataDir = dataDir,
+        Database = database,
+        OpenBrowser = stable.OpenBrowser,
+    };
+    var rebound = new LauncherConfig
+    {
+        Version = fixture.Config.Version,
+        CanonicalProduction = new CanonicalProduction
+        {
+            Checkout = fixture.Config.CanonicalProduction.Checkout,
+            DataDir = dataDir,
+            Database = database,
+        },
+        Profiles = fixture.Config.Profiles
+            .Select(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase) ? reboundStable : profile)
+            .ToList(),
+    };
+    File.WriteAllText(fixture.ConfigPath, JsonSerializer.Serialize(rebound, new JsonSerializerOptions { WriteIndented = true }));
+}
+
 static void BlocksProductionHardlinkAlias()
 {
     var fixture = CreateStableUpgradeFixture(
@@ -2668,6 +2747,7 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     bool annotatedTarget = true,
     string targetApplicationVersion = "0.8.2",
     bool dataInsideCheckout = false,
+    bool productionDataContainsGitMetadata = false,
     string? currentTrackedPath = null,
     string? targetTrackedPath = null,
     bool databaseHardlinkToTrackedFile = false,
@@ -2764,6 +2844,14 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     else if (!trackedDatabasePath)
     {
         CreateSyntheticSqliteDatabase(database);
+    }
+    if (productionDataContainsGitMetadata)
+    {
+        RunGit(
+            stableCheckout,
+            "init",
+            "--separate-git-dir",
+            Path.Combine(dataDir, "git-meta"));
     }
     if (targetOnlyHardlinkToProduction)
     {
@@ -3327,6 +3415,7 @@ sealed class SyntheticReleaseHandler : HttpMessageHandler
 
     public int RequestCount { get; private set; }
     public int GitTreeRequestCount { get; private set; }
+    public Action? OnGitTreeRequest { get; set; }
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -3358,6 +3447,9 @@ sealed class SyntheticReleaseHandler : HttpMessageHandler
                 absolute.Length - GitTreeEndpointPrefix.Length - query.Length);
             if (_treeJsonByCommit.TryGetValue(commit, out var treeJson))
             {
+                var callback = OnGitTreeRequest;
+                OnGitTreeRequest = null;
+                callback?.Invoke();
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(treeJson, Encoding.UTF8, "application/json"),

@@ -18,7 +18,7 @@ Install the .NET 8 SDK, then run from this directory:
 .\package.ps1
 ```
 
-The script runs the automated safety harness (77 checks including #279 identity/CTA/config/setup and #298 Stable upgrade regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
+The script runs the automated safety harness (79 checks including #279 identity/CTA/config/setup and #298 Stable upgrade regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
 
 For an owner-facing install, run from this directory:
 

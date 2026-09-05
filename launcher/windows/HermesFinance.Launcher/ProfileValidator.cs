@@ -178,7 +178,8 @@ public static class ProfileValidator
             dataDir,
             database);
 
-        if (!SamePath(stable.Checkout, validated.Profile.Checkout)
+        if (!string.Equals(stable.Id, validated.Profile.Id, StringComparison.OrdinalIgnoreCase)
+            || !SamePath(stable.Checkout, validated.Profile.Checkout)
             || !SamePath(stable.DataDir, validated.Profile.DataDir)
             || !SamePath(stable.Database, validated.Profile.Database)
             || !SamePath(checkout, validated.Checkout)
