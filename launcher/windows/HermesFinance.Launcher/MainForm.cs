@@ -19,7 +19,9 @@ public sealed class MainForm : Form
         Dock = DockStyle.Fill,
         ColumnCount = 1,
         RowCount = 6,
-        Padding = new Padding(26, 22, 26, 20),
+        // #302: slightly tighter than #284 so the window reads compact
+        // without losing air between header / cards / selected / actions.
+        Padding = new Padding(22, 18, 22, 16),
         BackColor = WindowBackground,
     };
     private readonly HeaderLayoutPanel _header = new()
@@ -73,7 +75,12 @@ public sealed class MainForm : Form
         ForeColor = Color.FromArgb(164, 190, 225),
         BackColor = Color.FromArgb(22, 38, 64),
         Margin = new Padding(0, 10, 0, 10),
-        Padding = new Padding(12, 0, 12, 0),
+        // #302: narrow horizontal padding + wider header cell (184px) keep
+        // the loopback address on its own explicit line without wrapping
+        // the last digit at 125/150% scaling. NoWrap is intentionally NOT
+        // set: the explicit CRLF break must keep working.
+        Padding = new Padding(8, 0, 8, 0),
+        AutoEllipsis = false,
     };
     private readonly Label _profilesCaption = new()
     {
@@ -102,7 +109,7 @@ public sealed class MainForm : Form
     {
         Dock = DockStyle.Fill,
         BackColor = PanelBackground,
-        Padding = new Padding(18, 14, 18, 14),
+        Padding = new Padding(16, 12, 16, 12),
         Margin = new Padding(0, 0, 0, 8),
         // #284: at small window sizes the flex area scrolls instead of
         // silently clipping readiness/checks content.
@@ -122,11 +129,21 @@ public sealed class MainForm : Form
     };
     private readonly Label _selectedName = new()
     {
-        Dock = DockStyle.Fill,
+        // #302: AutoSize without Dock (same #284 rationale as the window
+        // header labels): a Dock-Fill label reports stale bounds as its
+        // preferred size, so the single AutoSize header row undermeasured
+        // and clipped Cyrillic titles at 125/150%. Anchored top+bottom it
+        // still fills the row height; width follows the text.
+        Dock = DockStyle.None,
+        Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom,
+        AutoSize = true,
         TextAlign = ContentAlignment.MiddleLeft,
-        Font = new Font("Segoe UI", 14F, FontStyle.Bold),
+        // #302: 13F matches card titles and keeps Cyrillic titles inside
+        // the single AutoSize header row at 125/150% scaling.
+        Font = new Font("Segoe UI", 13F, FontStyle.Bold),
         ForeColor = PrimaryText,
         AutoEllipsis = true,
+        Margin = new Padding(0),
     };
     private readonly Label _selectedType = new()
     {
@@ -275,7 +292,9 @@ public sealed class MainForm : Form
     {
         Text = "Открыть Hermes",
         Width = 132,
-        Height = 40,
+        // #302: secondary row is visually subordinate to the primary CTA
+        // row (40px): same labels, smaller footprint, still reachable.
+        Height = 34,
         Enabled = false,
         AccessibleName = "Открыть Hermes",
     };
@@ -283,21 +302,21 @@ public sealed class MainForm : Form
     {
         Text = "Обновить проверку",
         Width = 150,
-        Height = 40,
+        Height = 34,
         AccessibleName = "Обновить проверку",
     };
     private readonly Button _detailsToggle = new()
     {
         Text = "Диагностика и логи",
         Width = 154,
-        Height = 40,
+        Height = 34,
         AccessibleName = "Показать диагностику и логи",
     };
     private readonly Button _updatePreview = new()
     {
         Text = "Обновить Preview",
         Width = 138,
-        Height = 40,
+        Height = 34,
         Enabled = false,
         Visible = true,
         AccessibleName = "Обновить Preview",
@@ -306,7 +325,7 @@ public sealed class MainForm : Form
     {
         Text = "Обновить Stable",
         Width = 172,
-        Height = 40,
+        Height = 34,
         Enabled = false,
         Visible = false,
         AccessibleName = "Обновить Stable до опубликованного релиза",
@@ -315,7 +334,7 @@ public sealed class MainForm : Form
     {
         Text = "Обновить и запустить",
         Width = 162,
-        Height = 40,
+        Height = 34,
         Enabled = false,
         Visible = true,
         AccessibleName = "Обновить и запустить Preview",
@@ -324,7 +343,7 @@ public sealed class MainForm : Form
     {
         Text = "Настроить…",
         Width = 132,
-        Height = 40,
+        Height = 34,
         Enabled = false,
         AccessibleName = "Настроить профили Hermes",
     };
@@ -450,18 +469,20 @@ public sealed class MainForm : Form
                     DisplayName = "Hermes Finance — Stable",
                     Type = "stable",
                     Checkout = stableCheckout,
-                    ExpectedRef = "refs/tags/v0.7.0",
+                    // #302: synthetic smoke mirrors the canonical example
+                    // (pinned v0.8.1), not a stale pre-release copy.
+                    ExpectedRef = "refs/tags/v0.8.1",
                     DataDir = stableData,
                     Database = Path.Combine(stableData, "finance.db"),
                     OpenBrowser = false,
                 },
                 new LauncherProfile
                 {
-                    Id = "preview-0.7",
-                    DisplayName = "0.7 Preview",
+                    Id = "preview",
+                    DisplayName = "Hermes Finance — Preview",
                     Type = "preview",
                     Checkout = previewCheckout,
-                    ExpectedRef = "refs/heads/preview-0.7",
+                    ExpectedRef = "refs/remotes/origin/main",
                     DataDir = previewData,
                     Database = Path.Combine(previewData, "finance.db"),
                     OpenBrowser = false,
@@ -486,7 +507,9 @@ public sealed class MainForm : Form
         _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
 
         _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148));
+        // #302: 184px keeps "LOCAL ONLY / 127.0.0.1:8000" on its two
+        // explicit lines without wrapping the last digit at 125/150%.
+        _header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 184));
         _header.Controls.Add(_brand, 0, 0);
         _header.Controls.Add(_title, 0, 1);
         _header.Controls.Add(_subtitle, 0, 2);
@@ -503,11 +526,17 @@ public sealed class MainForm : Form
         var selectedHeader = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-        RowCount = 2,
+            // #302: a single AutoSize row — the old RowCount=2 left an empty
+            // second Percent row that stole half the header height and
+            // clipped the selected-profile title at larger font metrics.
+            RowCount = 1,
             BackColor = Color.Transparent,
             Margin = new Padding(0),
         };
+        selectedHeader.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         selectedHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
         selectedHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
         selectedHeader.Controls.Add(_selectedName, 0, 0);
@@ -525,11 +554,13 @@ public sealed class MainForm : Form
 
         _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270));
-        // #284: action rows are sized explicitly from wrapped content (see
+        // #302: action rows are sized explicitly from wrapped content (see
         // SizeActionRows) — an AutoSize row cannot measure a wrapping flow
         // panel, it collapses to a single column and eats the flex area.
+        // Primary row keeps the 48px touch target; the secondary row is
+        // deliberately slimmer (42px) so it reads subordinate.
         _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         _actions.Controls.Add(_actionButtons, 0, 0);
         _actions.Controls.Add(_secondaryButtons, 0, 1);
         _actions.Controls.Add(_lastLaunch, 1, 0);
@@ -1658,7 +1689,10 @@ public sealed class MainForm : Form
 
     private void SetSelectedIdentity(LauncherProfile profile)
     {
-        _selectedName.Text = profile.DisplayName;
+        // #302: the header title is the version-free owner title; the
+        // release version lives in _selectedType/_shaSummary derived from
+        // validated identity, never in a stale display_name copy.
+        _selectedName.Text = LauncherUi.OwnerTitle(profile);
         var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
         var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
         if (isStable)
@@ -2405,8 +2439,10 @@ public sealed class MainForm : Form
             var columnWidth = width > 0 ? width - 270 : 0;
             if (columnWidth > 0 && PrimaryActions is not null && SecondaryActions is not null)
             {
+                // #302: primary row keeps the 48px target, secondary stays
+                // slimmer so it reads subordinate to the single primary CTA.
                 var h0 = Math.Max(48, PrimaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
-                var h1 = Math.Max(48, SecondaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
+                var h1 = Math.Max(42, SecondaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
                 var basePreferred = base.GetPreferredSize(proposedSize);
                 return new Size(basePreferred.Width, h0 + h1);
             }
@@ -2428,7 +2464,9 @@ public sealed class MainForm : Form
 
         private void SyncRow(int row, FlowLayoutPanel panel, int width)
         {
-            var needed = Math.Max(48, panel.GetPreferredSize(new Size(width, 0)).Height);
+            // #302: row 0 (primary) keeps 48px, row 1 (secondary) 42px.
+            var min = row == 1 ? 42 : 48;
+            var needed = Math.Max(min, panel.GetPreferredSize(new Size(width, 0)).Height);
             if (RowStyles.Count > row && RowStyles[row].SizeType == SizeType.Absolute && (int)RowStyles[row].Height == needed)
             {
                 return;

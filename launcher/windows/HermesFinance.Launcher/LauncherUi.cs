@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Text.RegularExpressions;
 
 namespace HermesFinance.Launcher;
 
@@ -59,6 +60,27 @@ internal static class LauncherUi
         "experiment" => "Prepared sandbox runtime",
         _ => "Prepared Hermes Finance runtime",
     };
+
+    // #302: owner-facing card/selected titles must never contradict the
+    // validated release identity. Older installs may carry a stale version
+    // inside display_name (e.g. "Hermes Finance — Stable 0.8.0" or
+    // "0.7 Preview"); the version lives ONLY in the validated identity
+    // lines (ReleaseBadge/StableIdentityLabel/PreviewIdentityLabel), so the
+    // title is the display name with any stale version token stripped.
+    private static readonly Regex LeadingVersionToken = new(
+        @"^\s*v?\d+\.\d+(\.\d+)?\s+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex TrailingVersionToken = new(
+        @"\s+v?\d+\.\d+(\.\d+)?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    public static string OwnerTitle(LauncherProfile profile)
+    {
+        var raw = (profile.DisplayName ?? string.Empty).Trim();
+        var clean = TrailingVersionToken.Replace(LeadingVersionToken.Replace(raw, string.Empty), string.Empty).Trim();
+        return string.IsNullOrWhiteSpace(clean) ? raw : clean;
+    }
 
     public static string ReleaseBadge(string expectedRef)
     {
@@ -410,10 +432,12 @@ internal sealed class ProfileCard : Panel
     {
         Profile = profile;
         AccessibleRole = AccessibleRole.RadioButton;
-        AccessibleName = profile.DisplayName;
+        AccessibleName = LauncherUi.OwnerTitle(profile);
         Cursor = Cursors.Hand;
         Margin = new Padding(6, 4, 6, 6);
-        Height = 168;
+        // #302: taller than the #284 168px so the 13F title + identity +
+        // boundary rows keep air at 125/150% scaling instead of crowding.
+        Height = 188;
         BackColor = LauncherUi.CardBackgroundFor(profile.Type);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
 
@@ -422,11 +446,19 @@ internal sealed class ProfileCard : Panel
         _badge.ForeColor = LauncherUi.AccentFor(profile.Type);
         _badge.AutoSize = true;
 
-        _name.Text = profile.DisplayName;
-        _name.Font = new Font("Segoe UI", 14F, FontStyle.Bold);
+        _name.Text = LauncherUi.OwnerTitle(profile);
+        // #302: 13F keeps the hierarchy (header 19F > card 13F > body 9F)
+        // with enough air that Cyrillic ascenders/descenders do not clip
+        // at 125/150% scaling; the version lives in _identity/_description.
+        // AutoSize without Dock (same #284 rationale as the window header):
+        // a Dock-Fill label reports stale bounds as its preferred size and
+        // the AutoSize card row undermeasures at larger font metrics.
+        _name.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
         _name.ForeColor = Color.FromArgb(245, 248, 252);
         _name.AutoEllipsis = true;
-        _name.Dock = DockStyle.Fill;
+        _name.AutoSize = true;
+        _name.Dock = DockStyle.None;
+        _name.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom;
 
         var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
         var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
@@ -516,12 +548,16 @@ internal sealed class ProfileCard : Panel
         _state = state;
         _status.Text = LauncherUi.ReadinessLabel(state);
         _status.ForeColor = LauncherUi.StatusColor(state);
-        AccessibleDescription = $"{Profile.DisplayName}: {_status.Text}";
+        AccessibleDescription = $"{LauncherUi.OwnerTitle(Profile)}: {_status.Text}";
         Invalidate();
     }
 
     public void SetIdentity(string? headSha, string? targetSha)
     {
+        // #302: re-derive the title on every identity refresh so a stale
+        // display_name can never linger beside validated identity lines.
+        _name.Text = LauncherUi.OwnerTitle(Profile);
+        AccessibleName = LauncherUi.OwnerTitle(Profile);
         var isStable = Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
         var isPreview = Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
         if (isStable)
@@ -542,14 +578,22 @@ internal sealed class ProfileCard : Panel
     {
         if (Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
         {
+            // #302: title stays version-free; the pinned/current release
+            // comes from the validated upgrade when proven, otherwise from
+            // the configured expected_ref (honest pre-validation display).
+            _name.Text = LauncherUi.OwnerTitle(Profile);
+            AccessibleName = LauncherUi.OwnerTitle(Profile);
             _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha, upgrade);
+            var pinned = upgrade?.Current is { } current
+                ? LauncherUi.ReleaseBadge(current.Tag)
+                : LauncherUi.ReleaseBadge(Profile.ExpectedRef);
             if (upgrade?.TargetAvailable == true && upgrade.Target is { } target)
             {
-                _description.Text = $"Pinned {LauncherUi.ReleaseBadge(Profile.ExpectedRef)}  ·  доступен {LauncherUi.ReleaseBadge(target.Tag)}  ·  production";
+                _description.Text = $"Pinned {pinned}  ·  доступен {LauncherUi.ReleaseBadge(target.Tag)}  ·  production";
             }
             else
             {
-                _description.Text = $"Pinned {LauncherUi.ReleaseBadge(Profile.ExpectedRef)}  ·  production";
+                _description.Text = $"Pinned {pinned}  ·  production";
             }
         }
     }
