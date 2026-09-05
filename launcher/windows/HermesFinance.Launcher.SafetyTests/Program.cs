@@ -84,6 +84,9 @@ var tests = new (string Name, Action Run)[]
     ("layout fits Russian labels at 100, 125, and 150 percent scaling", LayoutFitsRussianLabelsWhenScaled),
     ("layout survives narrow and wide resizes", LayoutSurvivesCommonResizes),
     ("layout keeps cards comparable with one obvious primary CTA", LayoutKeepsCardsComparableAndPrimaryObvious),
+    ("owner title derives from validated identity, never stale display copy", OwnerTitleDerivesFromValidatedIdentity),
+    ("loopback badge keeps the address readable without digit wrap", LoopbackBadgeKeepsAddressReadable),
+    ("selected and card titles fit without clipping when scaled", SelectedAndCardTitlesFitWhenScaled),
 };
 
 var failures = 0;
@@ -1931,6 +1934,141 @@ static void StableReadyStartsPrimary()
     ApplyValidatedOn(form, validated);
     var primaries = EnabledPrimaries(form);
     Assert(primaries.Count == 1 && primaries[0] == "Запустить", $"Stable Ready must have exactly one primary CTA 'Запустить', found [{string.Join(",", primaries)}].");
+}
+
+// #302: a validated v0.8.1 Stable must never be called "Stable 0.8.0".
+// Older installs may carry the stale version inside display_name; the
+// owner title is derived from the profile without that stale token while
+// the version itself comes only from validated release identity.
+static void OwnerTitleDerivesFromValidatedIdentity()
+{
+    LauncherProfile StaleStable() => new()
+    {
+        Id = "stable",
+        DisplayName = "Hermes Finance — Stable 0.8.0",
+        Type = "stable",
+        Checkout = "C:\\synthetic\\stable",
+        ExpectedRef = "refs/tags/v0.8.1",
+        DataDir = "C:\\synthetic\\stable\\data",
+        Database = "C:\\synthetic\\stable\\data\\finance.db",
+        OpenBrowser = false,
+    };
+    Assert(LauncherUi.OwnerTitle(StaleStable()) == "Hermes Finance — Stable",
+        "OwnerTitle must strip the stale trailing version from a Stable display name.");
+    var stalePreview = new LauncherProfile
+    {
+        Id = "preview",
+        DisplayName = "Hermes Finance БЂ 0.7 Preview",
+        Type = "preview",
+        Checkout = "C:\\synthetic\\preview",
+        ExpectedRef = "refs/remotes/origin/main",
+        DataDir = "C:\\synthetic\\preview\\data",
+        Database = "C:\\synthetic\\preview\\data\\finance.db",
+        OpenBrowser = false,
+    };
+    Assert(LauncherUi.OwnerTitle(stalePreview) == "Hermes Finance — Preview",
+        "OwnerTitle must replace a legacy mojibake/version Preview display name with the canonical Unicode owner title.");
+
+    var stable = StaleStable();
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    });
+    ForceLayout(form, new Size(960, 820));
+    var beforeLabels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
+    Assert(!beforeLabels.Any(text => text.Contains("0.8.0", StringComparison.Ordinal)),
+        "No owner-facing label may show the stale 0.8.0 display copy, even before validation.");
+
+    var validated = new ValidatedProfile(
+        stable, stable.Checkout, stable.DataDir, stable.Database, "d04f46696a991ea59066b59d4870980ac4b69089",
+        "production", new DependencyStatus(true, true, "ready", "ready"));
+    ApplyValidatedOn(form, validated);
+    ForceLayout(form, new Size(960, 820));
+    var afterLabels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
+    Assert(!afterLabels.Any(text => text.Contains("0.8.0", StringComparison.Ordinal)),
+        "A validated v0.8.1 Stable must never show Stable 0.8.0 anywhere.");
+    Assert(afterLabels.Any(text => text.Contains("v0.8.1", StringComparison.Ordinal)),
+        "The validated Stable identity must show the proven v0.8.1 release.");
+    var selectedName = (Label)typeof(MainForm)
+        .GetField("_selectedName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form)!;
+    Assert(selectedName.Text == "Hermes Finance — Stable",
+        $"The selected-profile title must be the version-free owner title, found '{selectedName.Text}'.");
+}
+
+// #302: the LOCAL ONLY / 127.0.0.1:8000 badge must keep the address on its
+// own explicit line — the last digit must never wrap onto a separate line
+// at 100%, 125% or 150% scaling.
+static void LoopbackBadgeKeepsAddressReadable()
+{
+    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
+    {
+        var scenario = $"{factor * 100:0}% scaled";
+        using var form = MainForm.CreateSyntheticSmoke();
+        if (factor == 1f)
+        {
+            ForceLayout(form, new Size(960, 820));
+        }
+        else
+        {
+            ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
+        }
+        var pill = (Label)typeof(MainForm)
+            .GetField("_localPill", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(form)!;
+        const string address = "127.0.0.1:8000";
+        Assert(pill.Text.Contains(address, StringComparison.Ordinal),
+            $"{scenario}: the loopback badge must show the full {address}.");
+        var need = TextRenderer.MeasureText(address, pill.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+        var usable = pill.Width - pill.Padding.Horizontal;
+        Assert(need.Width <= usable + 1,
+            $"{scenario}: the address needs {need.Width}px but the badge fits {usable}px; the last digit would wrap.");
+        var needFull = TextRenderer.MeasureText(pill.Text, pill.Font, new Size(Math.Max(50, pill.Width), int.MaxValue), TextFormatFlags.WordBreak);
+        Assert(needFull.Height <= pill.Height + 2,
+            $"{scenario}: the badge needs height {needFull.Height} but is {pill.Height}; text clips.");
+    }
+}
+
+// #302: card titles and the selected-profile header must not clip at
+// supported scaling. AutoEllipsis labels are exempt from the generic
+// AssertLabelFits by design, so this covers them explicitly.
+static void SelectedAndCardTitlesFitWhenScaled()
+{
+    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
+    {
+        var scenario = $"{factor * 100:0}% scaled";
+        using var form = MainForm.CreateSyntheticSmoke();
+        if (factor == 1f)
+        {
+            ForceLayout(form, new Size(960, 820));
+        }
+        else
+        {
+            ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
+        }
+        var selectedName = (Label)typeof(MainForm)
+            .GetField("_selectedName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(form)!;
+        var needTitle = TextRenderer.MeasureText(selectedName.Text, selectedName.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+        Assert(needTitle.Width <= selectedName.Width + 1,
+            $"{scenario}: selected title '{selectedName.Text}' needs width {needTitle.Width} but the header fits {selectedName.Width}.");
+        Assert(needTitle.Height <= selectedName.Height + 2,
+            $"{scenario}: selected title needs height {needTitle.Height} but the header fits {selectedName.Height}.");
+        foreach (var card in AllControls(form).OfType<ProfileCard>().ToArray())
+        {
+            var cardName = (Label)typeof(ProfileCard)
+                .GetField("_name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(card)!;
+            var need = TextRenderer.MeasureText(cardName.Text, cardName.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            Assert(need.Width <= cardName.Width + 1,
+                $"{scenario}: card title '{cardName.Text}' needs width {need.Width} but the card fits {cardName.Width}.");
+            Assert(need.Height <= cardName.Height + 2,
+                $"{scenario}: card title needs height {need.Height} but the card fits {cardName.Height}.");
+        }
+        AssertLayoutClean(form, scenario);
+    }
 }
 
 static void SetupFlowCreatesConcreteConfig()
