@@ -159,7 +159,9 @@ describe("TaxIisPlannerPage", () => {
     expect(await screen.findAllByText(/1\s*111\s*111/)).not.toHaveLength(0);
     expect(screen.getByText(/Порог .*5\s*000\s*000/)).toBeInTheDocument();
     // Backend distance must not be replaced by a frontend threshold-minus-YTD guess.
-    expect(screen.queryByText(/2\s*500\s*000.*1\s*111\s*111|1\s*111\s*111.*2\s*500\s*000/)).toBeNull();
+    expect(
+      screen.queryByText(/2\s*500\s*000.*1\s*111\s*111|1\s*111\s*111.*2\s*500\s*000/),
+    ).toBeNull();
     expect(await screen.findByText(/2\s*500\s*000/)).toBeInTheDocument();
   });
 
@@ -170,7 +172,7 @@ describe("TaxIisPlannerPage", () => {
 
     await screen.findAllByText(/История зарплатного НДФЛ неполна/i);
     expect(screen.getByText(/Недоступно при неполной истории/)).toBeInTheDocument();
-    // Salary values must stay unavailable ("—"), never collapsed to an exact zero.
+    // Salary values must stay unavailable ("—"), never collapsed into an exact zero.
     expect(screen.queryByText("0 ₽", { exact: true })).toBeNull();
     expect(screen.queryByText("0%", { exact: true })).toBeNull();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
@@ -184,9 +186,7 @@ describe("TaxIisPlannerPage", () => {
     render(<TaxIisPlannerPage />);
 
     expect(await screen.findByText("Нет профилей ИИС")).toBeInTheDocument();
-    expect(
-      screen.getByText(/В сохранённых данных нет счетов с профилем ИИС/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/В сохранённых данных нет счетов с профилем ИИС/)).toBeInTheDocument();
     expect(screen.queryByText("Synthetic IIS")).toBeNull();
   });
 
