@@ -64,6 +64,7 @@ var tests = new (string Name, Action Run)[]
     ("blocks a target Git collision with the production database before backup", BlocksTargetTrackedDatabase),
     ("fails closed when target Git tree proof is unavailable", BlocksUnavailableTargetTreeProof),
     ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
+    ("blocks a target-only ignored hardlink alias before backup", BlocksTargetOnlyHardlinkAlias),
     ("fails before checkout and config mutation when target backend version disagrees", StableUpgradeRejectsBackendVersionMismatch),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
@@ -1591,6 +1592,24 @@ static void BlocksProductionHardlinkAlias()
     }
 }
 
+static void BlocksTargetOnlyHardlinkAlias()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        targetTrackedPath: "data/target-only.txt",
+        targetOnlyHardlinkToProduction: true);
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "Stable production data aliases a tracked release file; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
 static void AssertStableUpgradeBlockedBeforeMutation(
     StableUpgradeFixture fixture,
     string expectedMessage)
@@ -2632,7 +2651,8 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     string? currentTrackedPath = null,
     string? targetTrackedPath = null,
     bool databaseHardlinkToTrackedFile = false,
-    bool targetTreeProofAvailable = true)
+    bool targetTreeProofAvailable = true,
+    bool targetOnlyHardlinkToProduction = false)
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
     var seed = Path.Combine(root, "seed");
@@ -2724,12 +2744,23 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     {
         CreateSyntheticSqliteDatabase(database);
     }
+    if (targetOnlyHardlinkToProduction)
+    {
+        Assert(!string.IsNullOrWhiteSpace(targetTrackedPath), "Target-only hardlink setup requires a target tracked path.");
+        var targetOnlyPath = Path.Combine(
+            stableCheckout,
+            targetTrackedPath!.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(targetOnlyPath)!);
+        Assert(
+            NativeMethods.CreateHardLink(targetOnlyPath, database, IntPtr.Zero),
+            "Synthetic target-only hardlink alias setup must succeed.");
+    }
     CreateRuntimeLayout(previewCheckout);
     Directory.CreateDirectory(previewData);
     File.WriteAllText(previewMarker, "Preview untouched by Stable upgrade\n");
     Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
     var treeJsonByCommit = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    if (dataInsideCheckout && targetTreeProofAvailable)
+    if (targetTreeProofAvailable)
     {
         treeJsonByCommit[targetSha] = SyntheticGitTreeJson(seed, targetSha);
     }

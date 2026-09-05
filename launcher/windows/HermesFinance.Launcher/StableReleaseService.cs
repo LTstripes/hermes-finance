@@ -533,17 +533,12 @@ internal static class StableReleaseService
         AssertTrackedPathsDoNotCollide("current Stable release", currentTree, layout);
         AssertCurrentTrackedPathsHaveNoReparsePoints(profile.Checkout, currentTree);
 
-        // A data directory inside the checkout has no safe relative identity
-        // until the canonical full-path proof above succeeds. For an external
-        // data directory no checkout tree path can collide with it; the
-        // current-tree hardlink proof below still guards file aliases.
-        if (layout.RelativeDataDir is not null)
-        {
-            var targetTree = ReadTargetGitTree(target.CommitSha, releaseHandler);
-            AssertTrackedPathsDoNotCollide("target Stable release", targetTree, layout);
-        }
-
-        AssertNoProductionFileAliases(profile, currentTree);
+        // Read the exact target tree before the first mutation even when the
+        // data directory is external: an ignored target-only checkout path
+        // can still be a hardlink/reparse alias to production data.
+        var targetTree = ReadTargetGitTree(target.CommitSha, releaseHandler);
+        AssertTrackedPathsDoNotCollide("target Stable release", targetTree, layout);
+        AssertNoProductionFileAliases(profile, currentTree, targetTree);
     }
 
     private static void AssertNoReparseTraversal(string path, string description, bool allowMissingLeaf = false)
@@ -699,7 +694,8 @@ internal static class StableReleaseService
 
     private static void AssertNoProductionFileAliases(
         ValidatedProfile profile,
-        IReadOnlyList<GitTreeEntry> tree)
+        IReadOnlyList<GitTreeEntry> currentTree,
+        IReadOnlyList<GitTreeEntry> targetTree)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -722,9 +718,38 @@ internal static class StableReleaseService
                 $"Stable production data cannot be fully inspected before upgrade: {exception.Message}");
         }
 
-        var trackedFiles = tree
+        var checkoutPaths = currentTree
+            .Concat(targetTree)
+            .Select(entry => GetCheckoutPath(profile.Checkout, entry.Path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(path => File.Exists(path) || Directory.Exists(path))
+            .ToArray();
+        foreach (var checkoutPath in checkoutPaths)
+        {
+            try
+            {
+                if (IsReparsePoint(checkoutPath))
+                {
+                    throw new LauncherValidationException(
+                        "Stable checkout contains a target path with a symlink, junction, or reparse alias; upgrade is blocked before backup.");
+                }
+            }
+            catch (LauncherValidationException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new LauncherValidationException(
+                    $"Stable checkout target path safety cannot be proven before upgrade: {exception.Message}");
+            }
+        }
+
+        var trackedFiles = currentTree
+            .Concat(targetTree)
             .Where(entry => entry.Type.Equals("blob", StringComparison.Ordinal))
             .Select(entry => GetCheckoutPath(profile.Checkout, entry.Path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(File.Exists)
             .ToArray();
         foreach (var productionFile in productionFiles)
