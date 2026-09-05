@@ -2,6 +2,29 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.8.2] — 2026-09-05
+
+Release-prep maintenance after the published Stable `v0.8.1` release. This
+entry documents already integrated changes and synchronizes release identity;
+it does not add product behavior, financial formulas, provider writes or schema
+changes.
+
+### Included maintenance
+
+- launcher owner-safe Stable release update path and restart-safe process ownership / Stop recovery (#298, #299);
+- final owner-facing launcher visual/content polish (#302);
+- current-state Tax/IIS Planner Lite backend and owner UI without implicit year-end projection (#142);
+- Deterministic Financial Insights Engine v1 and AI Analysis Bundle integration in schema `1.2.0` (#143); the dedicated Insights UI remains deferred.
+
+### Not changed
+
+- canonical Alembic head remains `0036_broker_baseline_provenance`; no migration or schema semantics changed;
+- local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
+- no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
+- provider/network/file actions remain explicit owner actions; closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero;
+- #308 remains a non-blocking cosmetic follow-up;
+- private Stable/Preview/runtime data, `.env`, databases, backups, exports/PDFs and credentials are outside release preparation.
+
 ## [0.8.1] — 2026-09-04
 
 Release-prep maintenance on top of the published 0.8.0 state. This entry

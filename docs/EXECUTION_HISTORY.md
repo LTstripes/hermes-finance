@@ -51,6 +51,30 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Scope note:** 0.8.0 integrates Guided Monthly Close Wizard A–H, owner workflow/Alfa/reconciliation UX, safe instrument cleanup, explicit portfolio review package handoff, and guarded Windows launcher/package verification while preserving local-only/no-cloud/no-auth/provider-explicit-action boundaries.
 - **Follow-ups:** launcher normalization #277–#279; workspace cleanup #280; backend CI performance #282.
 
+# 0.8.1 release publication
+
+### M08-01-POST — published Hermes Finance v0.8.1 Stable release
+
+- **Published:** 2026-09-04 as a non-draft, non-prerelease GitHub Release.
+- **Released Stable identity:** annotated tag `v0.8.1`, tag object `853ffbbf1349db80e1941c6db2051ca9d81a2bf3`, peeled commit `0bb932f5b3711acbbd6ac52218a242a03bdcf99b`.
+- **Current state:** #143 is integrated in AI Analysis Bundle schema `1.2.0`; the dedicated Insights UI remains deferred.
+- **History boundary:** the M08-01 release-prep record below remains historical and is not rewritten by this publication-state entry.
+
+# 0.8.2 release preparation
+
+### M08-02 — prepare Hermes Finance v0.8.2 maintenance release
+
+- **Recorded:** 2026-09-05 as release-prep context from issue #309. This is not an accept/integrate verdict or a publication record.
+- **Implementation agent/tool:** Codex desktop; model not independently confirmed.
+- **Exact baseline `origin/main`:** `dccb64566494e95cc3858e7b6d6b04c4c1a2aa23`.
+- **Task branch:** `m08-02-release-082`.
+- **Scope:** synchronize version identity to `0.8.2`, health/release expectations, Windows launcher identity/config/tests, CHANGELOG, public notes, release record, README, Project Wiki and execution history for already integrated #298, #299, #302, #142 and #143 maintenance.
+- **Canonical Alembic head:** `0036_broker_baseline_provenance`; this task adds no migration and changes no schema semantics.
+- **Safety:** local single-user Windows-first loopback runtime; explicit provider/network/file actions; no cloud/auth/telemetry, trading/provider writes, automatic upload or background refresh; unknown/unavailable evidence remains explicit; private Stable/Preview/runtime data is not used.
+- **Known non-blocking follow-up:** #308 legacy version token in last-run footer copy is not required for this release-prep.
+- **Not done:** no product-function work, merge to `main`, tag `v0.8.2`, GitHub Release, `/release` request or Stable/Preview runtime action.
+- **References:** issue #309, permanent Release Control #124, `docs/releases/0.8.2.md`, `docs/release-notes-0.8.2.md` and `CHANGELOG.md`.
+
 # 0.8.1 release preparation
 
 ### M08-01 — prepare Hermes Finance v0.8.1 maintenance release

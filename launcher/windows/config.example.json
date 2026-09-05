@@ -11,7 +11,7 @@
       "display_name": "Hermes Finance — Stable",
       "type": "stable",
       "checkout": "<absolute-stable-checkout>",
-      "expected_ref": "refs/tags/v0.8.1",
+      "expected_ref": "refs/tags/v0.8.2",
       "data_dir": "<absolute-stable-data-dir>",
       "database": "<absolute-stable-database>",
       "open_browser": true

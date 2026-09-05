@@ -50,7 +50,7 @@ public sealed class SetupForm : Form
 
         var intro = new Label
         {
-            Text = "Выберите подготовленные каталоги. Stable — pinned release v0.8.1 и production-данные; Preview — изолированные данные, никогда не production. Ручной JSON не нужен.",
+            Text = "Выберите подготовленные каталоги. Stable — pinned release v0.8.2 и production-данные; Preview — изолированные данные, никогда не production. Ручной JSON не нужен.",
             Dock = DockStyle.Fill,
             AutoSize = false,
         };

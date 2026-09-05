@@ -37,19 +37,19 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущее дерево содержит release-prep maintenance **0.8.1** поверх опубликованной стабильной product identity **0.8.0**. Annotated tag `v0.8.0` (tag object `2f27d9e34271843d97eed1138bd8b388630bd7a8`) peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились `success`, GitHub Release опубликован 2026-09-02. Канонический исторический record 0.8.0 — `docs/releases/0.8.0.md`; текущий release-prep record — `docs/releases/0.8.1.md`.
+Текущее дерево содержит release-prep maintenance **0.8.2** после опубликованной стабильной product identity **0.8.1**. GitHub Release `v0.8.1` опубликован как Stable 2026-09-04; annotated tag object `853ffbbf1349db80e1941c6db2051ca9d81a2bf3` peel'ится в exact released main SHA `0bb932f5b3711acbbd6ac52218a242a03bdcf99b`. Предыдущий Git-тег `v0.8.0` (tag object `2f27d9e34271843d97eed1138bd8b388630bd7a8`) peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились `success`, GitHub Release опубликован 2026-09-02. Канонический исторический record 0.8.0 — `docs/releases/0.8.0.md`; текущий release-prep record — `docs/releases/0.8.2.md`.
 
-0.8.1 — release-prep maintenance поверх опубликованного 0.8.0: документирует уже интегрированные #277, #278, #279, #284, #285, #280 и verification-only #282/#292. Stable/Preview остаются разделёнными, owner actions явными, а текущая версия и release surfaces синхронизируются к 0.8.1. Публикация не утверждается этим task branch.
+0.8.2 — release-prep maintenance после опубликованного Stable-релиза 0.8.1: документирует уже интегрированные #298, #299, #302, current-state #142 и #143. Stable/Preview остаются разделёнными, owner actions явными, а текущая версия и release surfaces синхронизируются к 0.8.2. Публикация не утверждается этим task branch.
 
 Предыдущая опубликованная стабильная линия **0.7.0** сохранена как историческая identity: `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`, опубликована 2026-08-30 с owner Stable promotion `PASS`.
 
-Канонический Alembic head текущего 0.8 tree остаётся `0036_broker_baseline_provenance`; release-prep 0.8.1 не добавляет новую миграцию и не меняет schema semantics.
+Канонический Alembic head текущего 0.8 tree остаётся `0036_broker_baseline_provenance`; release-prep 0.8.2 не добавляет новую миграцию и не меняет schema semantics.
 
 Историческая подготовка публикации в issue #231 подготовила принятый R07 tree; post-release sync issue #234 фиксирует, что его опубликованная identity — `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`. Owner Stable promotion для 0.7.0 подтверждён как `PASS` 2026-08-30. Операционное наблюдение о разовой установке frontend-зависимостей при первом Stable start не меняет release identity или финансовую семантику.
 
 После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
 
-Текущая R07/R08 product surface включает owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner v1, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Release-prep maintenance 0.8.1 зафиксирован в `docs/releases/0.8.1.md`; опубликованный 0.8.0 и 0.7.0 остаются историческими identities.
+Текущая R07/R08 product surface включает owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner Lite, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher. Release-prep maintenance 0.8.2 зафиксирован в `docs/releases/0.8.2.md`; предыдущий 0.8.1 release-prep record, опубликованный 0.8.0 и 0.7.0 остаются историческими identities.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -90,7 +90,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - Freshness & Provenance Center с persisted clocks/reason codes без universal score и background refresh;
 - Reconciliation Center с normalized row states и compatibility diagnostics; Price/UchPrice/NKD/P&L — comparison-only;
 - current-state Tax/IIS Planner v1;
-- deterministic Insights backend v1 на persisted evidence без full UI/AI-bundle integration;
+- deterministic Insights backend v1 на persisted evidence с AI Analysis Bundle integration в schema `1.2.0`; dedicated Insights UI остаётся deferred;
 - XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed gaps/order/root states;
 - guarded Windows Stable/Preview launcher с owner Start/Stop controls, без Git branch/state mutation;
 - row-scoped selective apply: unrelated unresolved/conflicting rows не блокируют safe selected subset, selected unsafe/stale rows fail closed;
@@ -112,7 +112,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - фоновое обновление котировок или выплат;
 - production fallback на MOEX;
 - универсальный импорт любого Excel/PDF;
-- полный Insights UI и AI Analysis Bundle integration beyond deterministic backend v1;
+- dedicated Insights UI; AI Analysis Bundle integration уже присутствует в schema `1.2.0`;
 - projection expansion beyond current-state Tax/IIS Planner v1;
 
 ## 5. Технический контур
@@ -409,7 +409,7 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 
 - #141 Scenario Lab;
 - #142 projection expansion beyond current-state Tax/IIS v1;
-- #143 Insights UI and AI Analysis Bundle integration beyond deterministic backend v1;
+- #143 dedicated Insights UI; AI Analysis Bundle integration is present in schema `1.2.0`;
 - #203 Phase 2B test rehome/dedupe;
 - #202 residual workspace/ACL cleanup;
 - #229 owner workflow/Alfa UX consolidation.
@@ -428,3 +428,17 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 - **Safety contract:** local single-user Windows-first runtime на `127.0.0.1:8000`; no cloud/auth/telemetry; provider/network/file actions remain explicit owner actions; no trading/provider write operations; no automatic upload or background provider refresh; closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero.
 - **Schema/privacy:** canonical Alembic head remains `0036_broker_baseline_provenance`; no migration or schema semantics changed; Stable/Preview/runtime/private data, `.env`, databases, backups, exports/PDFs and credentials were not used.
 - **Not done:** #143 was not touched or started; no product refactor, merge, tag, GitHub Release or Stable/Preview runtime action was performed.
+
+## 22. Линия 0.8.2 / M08-02 maintenance release-prep
+
+`0.8.2` — release-prep maintenance после предыдущей линии 0.8.1. Issue #309 синхронизирует release identity и документацию для уже интегрированного состояния; это не новая продуктовая функция и не публикация.
+
+- **M08-02:** issue #309, дата release-prep — 2026-09-05.
+- **Exact baseline `origin/main`:** `dccb64566494e95cc3858e7b6d6b04c4c1a2aa23`.
+- **Task branch:** `m08-02-release-082`; target tag after integration — `v0.8.2`.
+- **Maintenance surface:** #298 (launcher owner-safe Stable release update path), #299 (restart-safe process ownership / Stop recovery), #302 (owner-facing launcher visual/content polish), #142 (current-state Tax/IIS Planner Lite backend/UI) и #143 (Deterministic Financial Insights Engine v1 and AI Analysis Bundle schema `1.2.0`).
+- **Version identity:** backend/frontend package metadata, generated lock metadata, `/api/health` and release-verification assertions, Windows launcher identity/config/tests, CHANGELOG, README, Project Wiki, execution history, release record and public notes report `0.8.2`.
+- **Safety contract:** local single-user Windows-first runtime на `127.0.0.1:8000`; no cloud/auth/telemetry; provider/network/file actions remain explicit owner actions; no trading/provider write operations; no automatic upload or background provider refresh; closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero.
+- **Schema/privacy:** canonical Alembic head remains `0036_broker_baseline_provenance`; no migration or schema semantics changed; Stable/Preview/runtime/private data, `.env`, databases, backups, exports/PDFs and credentials were not used.
+- **Known non-blocking follow-up:** #308 legacy version token in last-run footer copy is not required for this release-prep.
+- **Not done:** no product refactor, merge to `main`, tag `v0.8.2`, GitHub Release, `/release` request or Stable/Preview runtime action was performed.
