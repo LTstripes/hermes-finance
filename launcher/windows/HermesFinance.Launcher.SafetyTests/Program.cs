@@ -58,6 +58,12 @@ var tests = new (string Name, Action Run)[]
     ("fails closed before backup on dirty Stable checkout", StableUpgradeFailsClosedOnDirtyCheckout),
     ("fails closed when Stable target is not an annotated tag", StableUpgradeRejectsUnprovenTarget),
     ("upgrades Stable after backup and preserves production and Preview boundaries", UpgradesStableAfterBackupPreservingData),
+    ("allows a Git-safe Stable data directory inside the checkout", AllowsStableDataInsideCheckoutWhenGitSafe),
+    ("blocks a current Git-tracked production database before backup", BlocksCurrentTrackedProductionData),
+    ("blocks a target Git path under production data before backup", BlocksTargetTrackedProductionSubtree),
+    ("blocks a target Git collision with the production database before backup", BlocksTargetTrackedDatabase),
+    ("fails closed when target Git tree proof is unavailable", BlocksUnavailableTargetTreeProof),
+    ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
     ("fails before checkout and config mutation when target backend version disagrees", StableUpgradeRejectsBackendVersionMismatch),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
@@ -1462,6 +1468,146 @@ static void UpgradesStableAfterBackupPreservingData()
     }
 }
 
+static void AllowsStableDataInsideCheckoutWhenGitSafe()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true);
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
+        var databaseBefore = File.ReadAllBytes(fixture.Database);
+        var dataPathBefore = fixture.DataDir;
+        var result = StableReleaseService.Upgrade(
+            fixture.Profile,
+            status.Target!,
+            fixture.ConfigPath,
+            fixture.ReleaseHandler);
+
+        Assert(result.Target.CommitSha == fixture.TargetSha, "Inside-checkout upgrade must reach the proven target commit.");
+        Assert(fixture.ReleaseHandler.GitTreeRequestCount == 1, "Inside-checkout upgrade must prove the target Git tree before mutation.");
+        Assert(string.Equals(fixture.DataDir, dataPathBefore, StringComparison.OrdinalIgnoreCase), "Inside-checkout upgrade must preserve the production data directory path.");
+        Assert(File.Exists(fixture.Database), "Inside-checkout upgrade must preserve the production database path.");
+        Assert(File.ReadAllBytes(fixture.Database).SequenceEqual(databaseBefore), "Inside-checkout upgrade must preserve production database bytes.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Inside-checkout upgrade must switch only to the proven release tag.");
+        Assert(LauncherConfig.Load(fixture.ConfigPath).Profiles.Single(profile => profile.Type == "stable").ExpectedRef == "refs/tags/v0.8.2", "Inside-checkout config identity must update only after the verified switch.");
+        var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
+        Assert(backups.Length == 1, "Inside-checkout upgrade must create one verified production backup before Git mutation.");
+        Assert(File.ReadAllText(fixture.PreviewMarker).Contains("untouched", StringComparison.Ordinal), "Inside-checkout Stable upgrade must preserve Preview data.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksCurrentTrackedProductionData()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        currentTrackedPath: "data/finance.db");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "current Stable release tracks the canonical production database path; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksTargetTrackedProductionSubtree()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        targetTrackedPath: "data/tracked-release-file.txt");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "target Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksTargetTrackedDatabase()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        targetTrackedPath: "data/finance.db");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "target Stable release tracks the canonical production database path; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksUnavailableTargetTreeProof()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        targetTreeProofAvailable: false);
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "Stable target Git tree proof failed: public GitHub API returned HTTP 404.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksProductionHardlinkAlias()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        databaseHardlinkToTrackedFile: true);
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "Stable production data aliases a tracked release file; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void AssertStableUpgradeBlockedBeforeMutation(
+    StableUpgradeFixture fixture,
+    string expectedMessage)
+{
+    var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
+    var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
+    var beforeConfig = File.ReadAllText(fixture.ConfigPath);
+
+    AssertThrowsMessage(
+        () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
+        expectedMessage);
+    Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A pre-safety failure must not switch Stable.");
+    Assert(RunGitMayFail(fixture.StableCheckout, "rev-parse", "--verify", "refs/tags/v0.8.2") != 0, "A pre-safety failure must not fetch the target tag.");
+    Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A pre-safety failure must not rewrite launcher config.");
+    Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A pre-safety failure must not create a production backup.");
+}
+
 static void StableUpgradeRejectsBackendVersionMismatch()
 {
     var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"), targetApplicationVersion: "0.8.1");
@@ -2458,21 +2604,45 @@ static string PublishedReleaseJson(
         },
     });
 
+static string SyntheticGitTreeJson(string checkout, string commit)
+{
+    var output = RunGit(checkout, "ls-tree", "--full-tree", "-r", "-z", commit);
+    var tree = new List<object>();
+    foreach (var item in output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+    {
+        var separator = item.IndexOf('\t');
+        Assert(separator > 0, "Synthetic target Git tree must have valid metadata and path.");
+        var metadata = item[..separator].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        Assert(metadata.Length == 3, "Synthetic target Git tree must have mode, type, and SHA.");
+        tree.Add(new
+        {
+            path = item[(separator + 1)..],
+            mode = metadata[0],
+            type = metadata[1],
+        });
+    }
+    return JsonSerializer.Serialize(new { truncated = false, tree });
+}
+
 static StableUpgradeFixture CreateStableUpgradeFixture(
     string releaseJson,
     bool annotatedTarget = true,
-    string targetApplicationVersion = "0.8.2")
+    string targetApplicationVersion = "0.8.2",
+    bool dataInsideCheckout = false,
+    string? currentTrackedPath = null,
+    string? targetTrackedPath = null,
+    bool databaseHardlinkToTrackedFile = false,
+    bool targetTreeProofAvailable = true)
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
     var seed = Path.Combine(root, "seed");
     var remote = Path.Combine(root, "stable-origin.git");
     var stableCheckout = Path.Combine(root, "stable-checkout");
-    var dataDir = Path.Combine(root, "stable-data");
+    var dataDir = dataInsideCheckout ? Path.Combine(stableCheckout, "data") : Path.Combine(root, "stable-data");
     var previewCheckout = Path.Combine(root, "preview-checkout");
     var previewData = Path.Combine(root, "preview-data");
     var previewMarker = Path.Combine(previewData, "preview-marker.txt");
     var configPath = Path.Combine(root, "launcher", "config.json");
-    var releaseHandler = new SyntheticReleaseHandler(releaseJson);
     Directory.CreateDirectory(root);
     Directory.CreateDirectory(remote);
     RunGit(remote, "init", "--bare");
@@ -2482,10 +2652,20 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
         Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
         "__version__ = \"0.8.0\"\n");
     File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.0\n");
+    if (!string.IsNullOrWhiteSpace(currentTrackedPath))
+    {
+        var currentPath = Path.Combine(seed, currentTrackedPath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(currentPath)!);
+        File.WriteAllText(currentPath, "synthetic tracked production path\n");
+    }
     RunGit(seed, "init");
     RunGit(seed, "config", "user.name", "Hermes Stable Safety Test");
     RunGit(seed, "config", "user.email", "hermes-stable-safety-test");
     RunGit(seed, "add", ".");
+    if (!string.IsNullOrWhiteSpace(currentTrackedPath))
+    {
+        RunGit(seed, "add", "-f", currentTrackedPath);
+    }
     RunGit(seed, "commit", "-m", "synthetic Stable v0.8.0 runtime");
     RunGit(seed, "branch", "-M", "main");
     RunGit(seed, "tag", "-a", "v0.8.0", "-m", "synthetic published Stable v0.8.0");
@@ -2498,7 +2678,17 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
         Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
         $"__version__ = \"{targetApplicationVersion}\"\n");
     File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.2\n");
+    if (!string.IsNullOrWhiteSpace(targetTrackedPath))
+    {
+        var targetPath = Path.Combine(seed, targetTrackedPath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        File.WriteAllText(targetPath, "synthetic target collision\n");
+    }
     RunGit(seed, "add", ".");
+    if (!string.IsNullOrWhiteSpace(targetTrackedPath))
+    {
+        RunGit(seed, "add", "-f", targetTrackedPath);
+    }
     RunGit(seed, "commit", "-m", "synthetic Stable v0.8.2 runtime");
     if (annotatedTarget)
     {
@@ -2517,11 +2707,33 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     Assert(RunGitMayFail(stableCheckout, "tag", "-d", "v0.8.2") == 0, "The synthetic Stable checkout must start without a local target tag.");
     Directory.CreateDirectory(dataDir);
     var database = Path.Combine(dataDir, "finance.db");
-    CreateSyntheticSqliteDatabase(database);
+    var trackedDatabasePath = string.Equals(
+        currentTrackedPath,
+        "data/finance.db",
+        StringComparison.OrdinalIgnoreCase);
+    if (databaseHardlinkToTrackedFile)
+    {
+        Assert(
+            NativeMethods.CreateHardLink(
+                database,
+                Path.Combine(stableCheckout, "runtime-marker.txt"),
+                IntPtr.Zero),
+            "Synthetic Stable hardlink alias setup must succeed.");
+    }
+    else if (!trackedDatabasePath)
+    {
+        CreateSyntheticSqliteDatabase(database);
+    }
     CreateRuntimeLayout(previewCheckout);
     Directory.CreateDirectory(previewData);
     File.WriteAllText(previewMarker, "Preview untouched by Stable upgrade\n");
     Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+    var treeJsonByCommit = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    if (dataInsideCheckout && targetTreeProofAvailable)
+    {
+        treeJsonByCommit[targetSha] = SyntheticGitTreeJson(seed, targetSha);
+    }
+    var releaseHandler = new SyntheticReleaseHandler(releaseJson, treeJsonByCommit);
     var stable = new LauncherProfile
     {
         Id = "stable",
@@ -3009,31 +3221,62 @@ sealed class SyntheticReleaseHandler : HttpMessageHandler
 {
     private const string ReleasesEndpoint =
         "https://api.github.com/repos/LTstripes/hermes-finance/releases?per_page=100";
+    private const string GitTreeEndpointPrefix =
+        "https://api.github.com/repos/LTstripes/hermes-finance/git/trees/";
     private readonly string _releaseJson;
+    private readonly IReadOnlyDictionary<string, string> _treeJsonByCommit;
 
-    public SyntheticReleaseHandler(string releaseJson)
+    public SyntheticReleaseHandler(
+        string releaseJson,
+        IReadOnlyDictionary<string, string>? treeJsonByCommit = null)
     {
         _releaseJson = releaseJson;
+        _treeJsonByCommit = treeJsonByCommit
+            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public int RequestCount { get; private set; }
+    public int GitTreeRequestCount { get; private set; }
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
         RequestCount++;
-        if (request.Method != HttpMethod.Get
-            || !string.Equals(request.RequestUri?.AbsoluteUri, ReleasesEndpoint, StringComparison.Ordinal)
-            || request.Headers.Authorization is not null)
+        if (request.Method != HttpMethod.Get || request.Headers.Authorization is not null)
         {
             throw new InvalidOperationException("Synthetic Stable release discovery request was not an unauthenticated public GET.");
         }
 
-        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        if (string.Equals(request.RequestUri?.AbsoluteUri, ReleasesEndpoint, StringComparison.Ordinal))
         {
-            Content = new StringContent(_releaseJson, Encoding.UTF8, "application/json"),
-        });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_releaseJson, Encoding.UTF8, "application/json"),
+            });
+        }
+
+        var absolute = request.RequestUri?.AbsoluteUri;
+        if (absolute is not null
+            && absolute.StartsWith(GitTreeEndpointPrefix, StringComparison.Ordinal)
+            && absolute.EndsWith("?recursive=1", StringComparison.Ordinal))
+        {
+            GitTreeRequestCount++;
+            const string query = "?recursive=1";
+            var commit = absolute.Substring(
+                GitTreeEndpointPrefix.Length,
+                absolute.Length - GitTreeEndpointPrefix.Length - query.Length);
+            if (_treeJsonByCommit.TryGetValue(commit, out var treeJson))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(treeJson, Encoding.UTF8, "application/json"),
+                });
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        throw new InvalidOperationException("Synthetic Stable request used an unexpected public GitHub endpoint.");
     }
 }
 
