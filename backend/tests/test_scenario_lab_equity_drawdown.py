@@ -418,17 +418,19 @@ def test_28_no_network_calls(session, monkeypatch):
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "10"}})
     assert res.semantic_fingerprint
 
-# additional: decimal precision and rounding half up
+# additional: decimal precision and rounding half up — BLOCKER 3 split
 def test_drawdown_rounding_half_up(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
-    # 1 kopeck base, 33.333% drawdown -> stressed = 0.66667 kopecks -> 1? Half up: 0.666 -> 1? Decimal(1)* (66.667/100)=0.66667 -> 1 kopeck
     _position(session, month.id, acc.id, stock.id, "0.01")
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "33.333"}})
-    # 1 *0.66667=0.66667 -> rounds to 1
-    assert res.stressed["liquid_assets_kopecks"] in (0, 1)  # deterministic rounding check
-    # more precise: 0.01 =1 kopeck, 33.333% -> 0.66667 -> 1
-    assert res.stressed["per_position"][str(session.scalar(select(PositionSnapshot.id)))]["stressed_market_value_kopecks"] == 1
+    assert res.stressed["liquid_assets_kopecks"] in (0, 1)
+    pid = str(session.scalar(select(PositionSnapshot.id)))
+    assert res.base["per_position"][pid]["market_value_kopecks"] == 1
+    assert res.stressed["per_position"][pid]["market_value_kopecks"] == 1
+    assert "delta_kopecks" not in res.base["per_position"][pid]
+    assert "delta_kopecks" not in res.stressed["per_position"][pid]
+    assert res.impact["per_position"][pid]["delta_kopecks"] == 0
 
 def test_binary_float_rejected(session):
     month, acc = _basic_setup(session)
@@ -437,3 +439,122 @@ def test_binary_float_rejected(session):
     with pytest.raises(ValueError) as exc:
         evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": 20.0}})
     assert "invalid_drawdown_pct" in str(exc.value) or "binary" in str(exc.value).lower()
+
+# BLOCKER 2: distinct buckets remain distinct, unknown_asset_class, proper denominator, unassigned_cash
+def test_blocker2_distinct_buckets(session):
+    month = _month(session)
+    acc = create_account(session, name="A", account_type=AccountType.BROKERAGE)
+    stock = _stock(session, "S")
+    fund = _fund(session)
+    curr = _currency(session)
+    gold = _gold(session)
+    other = _other(session)
+    bond = _bond(session)
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    _position(session, month.id, acc.id, bond.id, "1000.00")
+    _position(session, month.id, acc.id, fund.id, "1000.00")
+    _position(session, month.id, acc.id, curr.id, "1000.00")
+    _position(session, month.id, acc.id, gold.id, "1000.00")
+    _position(session, month.id, acc.id, other.id, "1000.00")
+    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
+    aa = res.base["asset_allocation"]
+    # each distinct
+    assert aa["stock_kopecks"] == 100_000
+    assert aa["bond_kopecks"] == 100_000
+    assert aa["fund_kopecks"] == 100_000
+    assert aa["currency_kopecks"] == 100_000
+    assert aa["gold_kopecks"] == 100_000
+    assert aa["other_kopecks"] == 100_000
+    assert aa["unknown_asset_class_kopecks"] == 0
+    # stressed: only stock halved, others unchanged (denominator = liquid assets)
+    saa = res.stressed["asset_allocation"]
+    assert saa["stock_kopecks"] == 50_000
+    assert saa["bond_kopecks"] == 100_000
+    assert saa["fund_kopecks"] == 100_000
+    # legacy gold_other still computed as gold+other for back-compat
+    assert aa["gold_other_kopecks"] == 200_000
+
+def test_blocker2_unassigned_cash(session):
+    month = _month(session)
+    acc = create_account(session, name="A", account_type=AccountType.BROKERAGE)
+    stock = _stock(session)
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    create_cash_balance(session, reporting_month_id=month.id, name="Cash", amount="300.00")
+    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
+    # cash should appear as unassigned_cash in account allocation
+    unassigned = [x for x in res.base["account_allocation"] if x.get("unassigned")]
+    assert len(unassigned) == 1
+    assert unassigned[0]["amount_kopecks"] == 30_000
+    # asset allocation denominator includes cash
+    assert res.base["asset_allocation"]["cash_kopecks"] == 30_000
+    assert res.base["asset_allocation"]["denominator_kopecks"] == res.base["liquid_assets_kopecks"]
+
+def test_blocker3_per_position_split(session):
+    month, acc = _basic_setup(session)
+    stock = _stock(session)
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
+    pid = str(session.scalar(select(PositionSnapshot.id)))
+    # base only base, stressed only stressed
+    assert res.base["per_position"][pid]["market_value_kopecks"] == 100_000
+    assert res.stressed["per_position"][pid]["market_value_kopecks"] == 80_000
+    assert "market_value_kopecks" in res.base["per_position"][pid]
+    assert "market_value_kopecks" in res.stressed["per_position"][pid]
+    # delta in impact
+    assert res.impact["per_position"][pid]["delta_kopecks"] == -20_000
+    # base/stressed should NOT contain delta
+    assert "delta_kopecks" not in res.base["per_position"][pid]
+    assert "delta_kopecks" not in res.stressed["per_position"][pid]
+
+def test_blocker4_canonical_lossless(session):
+    month, acc = _basic_setup(session)
+    stock = _stock(session)
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    r1 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
+    r2 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20.00"}})
+    r3 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20.000"}})
+    assert r1.semantic_fingerprint == r2.semantic_fingerprint == r3.semantic_fingerprint
+    assert r1.normalized_shock_input["drawdown_pct"] == "20"
+    # 20.001 must be distinct
+    r4 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20.001"}})
+    assert r4.semantic_fingerprint != r1.semantic_fingerprint
+    assert r4.normalized_shock_input["drawdown_pct"] == "20.001"
+    # calculation uses canonical too: 20 and 20.00 give same stressed
+    assert r1.stressed["liquid_assets_kopecks"] == r2.stressed["liquid_assets_kopecks"]
+
+def test_blocker5_no_flow_reads_and_fingerprint_stable(session):
+    month, acc = _basic_setup(session)
+    stock = _stock(session)
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    # create flows—service must not read them, and fingerprint must be stable
+    bond = _bond(session)
+    create_expected_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=bond.id, flow_type="coupon", expected_date=date(2030, 6, 1), gross_amount="100.00", currency="RUB", source="src", source_as_of_date=date(2030,5,12), forecast_version="v1", is_confirmed=False)
+    create_investment_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=stock.id, flow_type="dividend", event_date=date(2030,5,10), gross_amount="10.00", tax_amount="0.00", commission_amount="0.00", net_amount="10.00", currency="RUB", source="test")
+    r1 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "10"}})
+    # mutate label (account name) — fingerprint must not change because labels stripped from fingerprint
+    acc.name = "Renamed"
+    session.commit()
+    r2 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "10"}})
+    # base_fingerprint includes frozen payload without labels, so account name change does NOT affect base fingerprint? Actually frozen payload does not contain name, so base_fp same; semantic fp also stripped labels => same
+    assert r1.base_fingerprint == r2.base_fingerprint
+    assert r1.semantic_fingerprint == r2.semantic_fingerprint
+
+def test_blocker6_excluded_position_not_applied(session):
+    month = _month(session)
+    acc_incl = create_account(session, name="Incl", account_type=AccountType.BROKERAGE)
+    acc_excl = create_account(session, name="Excl", account_type=AccountType.BROKERAGE, include_in_capital=False)
+    stock = _stock(session)
+    # position in excluded account — should NOT be counted as applied
+    _position(session, month.id, acc_incl.id, stock.id, "1000.00")
+    _position(session, month.id, acc_excl.id, stock.id, "1000.00")
+    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
+    # only incl stock should be stressed; excl remains 1000 but not counted
+    assert res.coverage["applied"] == 1
+    assert res.coverage["eligible_positions"] == 1
+    assert res.impact["known_scope_impact_kopecks"] == -50_000
+    # liquid assets only includes incl position + cash/deposits; excl not in denominator
+    # verify stressed liquid reflects only incl shock
+    assert res.base["liquid_assets_kopecks"] == 100_000
+    assert res.stressed["liquid_assets_kopecks"] == 50_000
+    # row_applicability still present for both but coverage not inflated
+    assert len(res.row_applicability) == 2

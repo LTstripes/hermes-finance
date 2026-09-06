@@ -91,15 +91,34 @@ def parse_drawdown_pct(raw: object) -> Decimal:
     return pct
 
 
+def canonical_drawdown_pct(pct: Decimal) -> Decimal:
+    """Lossless canonical Decimal: 20 == 20.0 == 20.00 -> same value, 20.001 distinct."""
+    # Use normalize to strip trailing zeros without losing precision.
+    # Decimal('20.00').normalize() -> 2E+1 -> format 'f' -> '20' but value stays 20.
+    # Keep the numeric value identical; string form is derived separately.
+    # For integers, normalize may produce exponent; quantize not needed.
+    # We return the numeric canonical value (same arithmetic value) without quantization.
+    # Using normalize preserves precision for non-trailing-zero cases.
+    try:
+        # Normalize removes trailing zeros; for 0 we keep 0
+        n = pct.normalize()
+    except Exception:
+        n = pct
+    # For values like 20.00, normalize gives 2E+1; keep numeric equivalence
+    # Ensure -0 becomes 0
+    if n == 0:
+        return Decimal(0)
+    return n
+
 def normalize_drawdown_pct(pct: Decimal) -> str:
-    # Normalized as string with minimal canonical form but deterministic.
-    # Keep two decimals for fingerprint stability as per contract decimal strings.
-    # Use quantize to 2 decimals HALF_UP for display? But preserve exact input for fingerprint?
-    # Contract says percentages as decimal strings where applicable, no binary float.
-    # We normalize to plain string without trailing zeros trimmed? Use format with removing exponent.
-    # For fingerprint stability we use quantize to 2 decimals.
-    q = pct.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return format(q, "f")
+    # Lossless canonical string: equivalent numerics map to same string.
+    # Use canonical Decimal then format 'f' to remove exponent.
+    c = canonical_drawdown_pct(pct)
+    # format with 'f' removes scientific notation; also remove trailing zeros already via normalize
+    s = format(c, "f")
+    # Ensure plain decimal without exponent, and without unnecessary plus sign
+    # normalize already stripped trailing zeros, so "20.10" -> "20.1"
+    return s
 
 
 def classify_applicability(instrument_type: object) -> RowApplicability:
