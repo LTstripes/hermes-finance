@@ -1,10 +1,15 @@
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal, DecimalException
+from decimal import ROUND_HALF_UP, Decimal, DecimalException, localcontext
 
 FINANCIAL_ROUNDING = ROUND_HALF_UP
 _KOPECKS_PER_RUBLE = Decimal(100)
 _BASIS_POINTS_PER_PERCENTAGE_POINT = Decimal(100)
 _BASIS_POINTS_PER_ONE = Decimal(10_000)
+# Division precision for stored-integer -> decimal conversions. The exact
+# quotient of a kopeck/basis-point integer by 100 or 10_000 needs at most 8
+# significant digits; 40 leaves a wide margin and makes every conversion
+# independent of the ambient decimal.getcontext() precision.
+_CONVERSION_PRECISION = 40
 
 
 def _require_stored_integer(value: object, *, name: str) -> int:
@@ -50,7 +55,10 @@ class RubleAmount:
         return cls(int(kopecks))
 
     def as_decimal(self) -> Decimal:
-        return Decimal(self.kopecks) / _KOPECKS_PER_RUBLE
+        with localcontext() as ctx:
+            ctx.prec = _CONVERSION_PRECISION
+            ctx.rounding = FINANCIAL_ROUNDING
+            return Decimal(self.kopecks) / _KOPECKS_PER_RUBLE
 
     def to_api(self) -> str:
         return format(self.as_decimal(), ".2f")
@@ -79,10 +87,16 @@ class PercentageRate:
         return cls(int(basis_points))
 
     def as_percentage(self) -> Decimal:
-        return Decimal(self.basis_points) / _BASIS_POINTS_PER_PERCENTAGE_POINT
+        with localcontext() as ctx:
+            ctx.prec = _CONVERSION_PRECISION
+            ctx.rounding = FINANCIAL_ROUNDING
+            return Decimal(self.basis_points) / _BASIS_POINTS_PER_PERCENTAGE_POINT
 
     def as_fraction(self) -> Decimal:
-        return Decimal(self.basis_points) / _BASIS_POINTS_PER_ONE
+        with localcontext() as ctx:
+            ctx.prec = _CONVERSION_PRECISION
+            ctx.rounding = FINANCIAL_ROUNDING
+            return Decimal(self.basis_points) / _BASIS_POINTS_PER_ONE
 
     def to_api(self) -> str:
         return format(self.as_percentage(), ".2f")

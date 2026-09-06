@@ -1,12 +1,17 @@
 """Pure domain for Scenario Lab v1 (r07-09).
 
 Deterministic, no I/O, no DB. Implements equity_drawdown semantics
-exactly as per docs/r07-09-scenario-lab-contract.md.
+exactly as per docs/r07-09-scenario-lab-contract.md and provides the
+deposit_rate_assumption rate-normalization helpers used by 141-B.
 
-Only supported shock in 141-A is equity_drawdown. All other shocks
-or multi-shock composition must fail with unsupported_composition_v1.
+Only supported shocks in this slice are equity_drawdown and
+deposit_rate_assumption. All other shocks or multi-shock composition
+must fail with unsupported_composition_v1.
 
 Money: integer kopecks, percentages as Decimal strings, ROUND_HALF_UP.
+Rate normalization for deposit_rate_assumption delegates to the canonical
+:mod:`hermes_finance.domain.values` ``PercentageRate`` contract instead of
+duplicating its basis-point semantics.
 """
 
 from __future__ import annotations
@@ -17,6 +22,8 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
 
+from hermes_finance.domain.values import PercentageRate
+
 CONTRACT_VERSION = "r07-09-v1"
 CALCULATION_VERSION = "r07-09-v1"
 SHOCK_SCHEMA_VERSION = "v1"
@@ -26,6 +33,12 @@ SUPPORTED_INSTRUMENT_TYPES = frozenset({"stock", "bond", "fund", "currency", "go
 
 class ShockType(StrEnum):
     EQUITY_DRAWDOWN = "equity_drawdown"
+    DEPOSIT_RATE_ASSUMPTION = "deposit_rate_assumption"
+
+
+class DepositTargetSelector(StrEnum):
+    ALL_ELIGIBLE_DEPOSITS = "all_eligible_deposits"
+    DEPOSIT_IDS = "deposit_ids"
 
 
 class RowApplicability(StrEnum):
@@ -194,6 +207,92 @@ def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> i
         # Single rounding at kopeck boundary only
         quantized = raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return int(quantized)
+
+
+# ---- deposit_rate_assumption rate helpers (141-B) ----
+#
+# Rate semantics are intentionally delegated to ``PercentageRate`` so the
+# deposit-rate shock does not grow a parallel basis-point model. The only
+# added work is the parse/validation of the absolute annual rate (NaN,
+# Infinity, negative and binary-float inputs are rejected) and the
+# context-independent Decimal guard around the basis-point conversion.
+
+# Context-independent guard for the basis-point conversion. The
+# PercentageRate.from_decimal formula ``pct * 100`` is exact up to ~16
+# decimal digits of input, well below the 28-digit default, so the guard
+# only has to survive an extremely small ambient precision.
+_RATE_PARSER_PRECISION = 40
+
+
+def parse_assumed_annual_rate_pct(raw: object) -> Decimal:
+    """Parse and validate an absolute annual rate (percentage points).
+
+    Binary float is rejected. NaN, Infinity and negative values are
+    rejected. The returned ``Decimal`` is canonicalized via
+    :func:`canonical_drawdown_pct` so equivalent inputs collapse to a
+    single canonical representation (independent of any ambient
+    ``decimal`` precision).
+
+    Raises ``ValueError`` with a code-prefixed message.
+    """
+    if isinstance(raw, bool):
+        raise ValueError("invalid_assumed_rate_pct: must be decimal string or int")
+    if isinstance(raw, int):
+        raw = str(raw)
+    if isinstance(raw, float):
+        raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
+    if isinstance(raw, Decimal):
+        pct = raw
+    elif isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("invalid_assumed_rate_pct: empty")
+        try:
+            pct = Decimal(raw)
+        except InvalidOperation as e:
+            raise ValueError("invalid_assumed_rate_pct: not a decimal") from e
+    else:
+        raise ValueError("invalid_assumed_rate_pct: unsupported type")
+    if not pct.is_finite():
+        raise ValueError("invalid_assumed_rate_pct: not finite")
+    if pct < Decimal("0"):
+        raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
+    return canonical_drawdown_pct(pct)
+
+
+def canonical_assumed_rate_basis_points(rate_pct: Decimal) -> int:
+    """Convert an absolute annual rate to integer basis points.
+
+    Delegates to the canonical :class:`PercentageRate` contract; a
+    localcontext guard keeps the conversion independent of the ambient
+    ``decimal`` context.
+    """
+    if isinstance(rate_pct, float):
+        raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
+    if not isinstance(rate_pct, Decimal):
+        raise TypeError("rate_pct must be Decimal")
+    if not rate_pct.is_finite():
+        raise ValueError("invalid_assumed_rate_pct: not finite")
+    if rate_pct < Decimal("0"):
+        raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
+    with localcontext() as ctx:
+        ctx.prec = _RATE_PARSER_PRECISION
+        ctx.rounding = ROUND_HALF_UP
+        # PercentageRate.from_decimal is the canonical contract; the
+        # localcontext is a defense-in-depth guard against a hostile
+        # ambient prec.
+        return PercentageRate.from_decimal(rate_pct).basis_points
+
+
+def normalized_rate_string(basis_points: int) -> str:
+    """Deterministic canonical decimal string for a basis-point rate.
+
+    Uses :class:`PercentageRate.to_api` so the Scenario Lab never holds
+    its own basis-point/percentage-point mapping.
+    """
+    if not isinstance(basis_points, int) or isinstance(basis_points, bool):
+        raise TypeError("basis_points must be int")
+    return PercentageRate(basis_points).to_api()
 
 
 def canonical_json_hash(obj: object) -> str:
