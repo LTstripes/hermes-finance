@@ -27,6 +27,11 @@ from hermes_finance.services.external_flows import (
     update_external_flow,
     update_external_transfer_link,
 )
+from hermes_finance.services.transfer_reconciliation import (
+    create_transfer_reconciliation_evidence,
+    delete_transfer_reconciliation_evidence,
+    list_transfer_reconciliation_evidence,
+)
 
 router = APIRouter(tags=["external-flows"])
 
@@ -143,6 +148,28 @@ class TransferLinkResponse(BaseModel):
     notes: str | None
 
 
+class TransferReconciliationEvidenceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(min_length=1, max_length=32)
+    amount: MoneyValue
+    source: str = Field(min_length=1, max_length=64)
+    evidence_reference: str = Field(min_length=1, max_length=128)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class TransferReconciliationEvidenceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    transfer_link_id: int
+    kind: str
+    amount: MoneyValue
+    source: str
+    evidence_reference: str
+    notes: str | None
+
+
 def _amount(money: MoneyValue) -> RubleAmount:
     return RubleAmount.from_api(money.amount)
 
@@ -183,6 +210,20 @@ def _transfer_link_response(session: Session, link: Any) -> TransferLinkResponse
         status=link.status,
         flow_ids=[flow.id for flow in transfer_link_legs(session, link.id)],
         notes=link.notes,
+    )
+
+
+def _reconciliation_evidence_response(
+    evidence: Any,
+) -> TransferReconciliationEvidenceResponse:
+    return TransferReconciliationEvidenceResponse(
+        id=evidence.id,
+        transfer_link_id=evidence.transfer_link_id,
+        kind=evidence.kind,
+        amount=_money(evidence.amount_kopecks, evidence.currency),
+        source=evidence.source,
+        evidence_reference=evidence.evidence_reference,
+        notes=evidence.notes,
     )
 
 
@@ -324,6 +365,57 @@ def delete_transfer_link_endpoint(
     session: Session = Depends(session_for_request),
 ) -> None:
     delete_external_transfer_link(session, link_id)
+
+
+@router.get(
+    "/api/transfer-links/{link_id}/reconciliation-evidence",
+    response_model=list[TransferReconciliationEvidenceResponse],
+)
+def list_transfer_reconciliation_evidence_endpoint(
+    link_id: int,
+    session: Session = Depends(session_for_request),
+) -> list[TransferReconciliationEvidenceResponse]:
+    return [
+        _reconciliation_evidence_response(evidence)
+        for evidence in list_transfer_reconciliation_evidence(
+            session,
+            transfer_link_id=link_id,
+        )
+    ]
+
+
+@router.post(
+    "/api/transfer-links/{link_id}/reconciliation-evidence",
+    response_model=TransferReconciliationEvidenceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_transfer_reconciliation_evidence_endpoint(
+    link_id: int,
+    payload: TransferReconciliationEvidenceCreate,
+    session: Session = Depends(session_for_request),
+) -> TransferReconciliationEvidenceResponse:
+    evidence = create_transfer_reconciliation_evidence(
+        session,
+        transfer_link_id=link_id,
+        kind=payload.kind,
+        amount=_amount(payload.amount),
+        currency=payload.amount.currency,
+        source=payload.source,
+        evidence_reference=payload.evidence_reference,
+        notes=payload.notes,
+    )
+    return _reconciliation_evidence_response(evidence)
+
+
+@router.delete(
+    "/api/transfer-reconciliation-evidence/{evidence_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_transfer_reconciliation_evidence_endpoint(
+    evidence_id: int,
+    session: Session = Depends(session_for_request),
+) -> None:
+    delete_transfer_reconciliation_evidence(session, evidence_id)
 
 
 @router.post(

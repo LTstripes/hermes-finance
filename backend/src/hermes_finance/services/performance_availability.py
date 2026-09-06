@@ -44,6 +44,7 @@ from hermes_finance.persistence import (
     ExternalFlow,
     ExternalFlowBoundaryGroup,
     ExternalFlowBoundaryGroupMember,
+    ExternalTransferReconciliationEvidence,
     InvestmentCashFlow,
     ObservedValuationPoint,
     ReportingMonth,
@@ -54,6 +55,9 @@ from hermes_finance.services.cash_boundary_coverage import (
 from hermes_finance.services.external_flows import (
     classify_external_flow,
     external_flow_transfer_status,
+)
+from hermes_finance.services.transfer_reconciliation import (
+    iter_transfer_reconciliation_evidence,
 )
 from hermes_finance.services.valuation_boundaries import to_observed_valuation_evidence
 from hermes_finance.services.valuation_points import valuation_point_for_month
@@ -771,13 +775,15 @@ def _twrr_boundary_reasons(
     flows: ExternalFlowCoverage,
     performance_currency: str,
     boundary_cache: dict[date, ValuationBoundaryEvidence],
+    targets: tuple[_BoundaryTarget, ...] | None = None,
 ) -> tuple[tuple[ExternalFlowBoundaryEvidence, ...], set[str]]:
-    targets = _external_flow_boundary_targets(
-        session,
-        flows=flows,
-        scope=scope,
-        account_id=account_id,
-    )
+    if targets is None:
+        targets = _external_flow_boundary_targets(
+            session,
+            flows=flows,
+            scope=scope,
+            account_id=account_id,
+        )
     evidence = [
         _observed_boundary_for_target(
             session,
@@ -803,6 +809,162 @@ def _twrr_boundary_reasons(
             reasons.add(_TWRR_ONLY_REASON)
         reasons.update(target_evidence.reason_codes)
     return tuple(evidence), reasons
+
+
+def _normalise_currency(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().upper()
+
+
+def _transfer_reconciliation_complete(
+    *,
+    source: ExternalFlow,
+    destination: ExternalFlow,
+    evidence: tuple[ExternalTransferReconciliationEvidence, ...],
+) -> bool:
+    """Check only exact, explicitly transfer-bound evidence.
+
+    Same-currency legs reconcile by exact minor-unit arithmetic.  For a
+    currency-changing transfer, an explicit FX explanation is sufficient for
+    this reconciliation check, while the normal performance-currency gate
+    remains authoritative for metric availability.
+    """
+
+    source_currency = _normalise_currency(source.currency)
+    destination_currency = _normalise_currency(destination.currency)
+    kinds = {
+        "internal_fee",
+        "internal_commission",
+        "internal_tax",
+        "fx_conversion_spread",
+    }
+    accepted = tuple(item for item in evidence if item.kind in kinds)
+    if source_currency != destination_currency:
+        return any(item.kind == "fx_conversion_spread" for item in accepted)
+
+    if destination.boundary_amount_kopecks > source.boundary_amount_kopecks:
+        return False
+    expected_difference = source.boundary_amount_kopecks - destination.boundary_amount_kopecks
+    if expected_difference == 0:
+        return True
+    return (
+        all(_normalise_currency(item.currency) == source_currency for item in accepted)
+        and sum(item.amount_kopecks for item in accepted) == expected_difference
+    )
+
+
+def _portfolio_transfer_safety(
+    session: Session,
+    *,
+    start_date: date,
+    end_date: date,
+    xirr_required_dates: set[date],
+    twrr_required_dates: set[date],
+    rows_by_account: dict[int, list[AccountPerformanceScopeMembership]],
+) -> tuple[set[str], set[str], set[str]]:
+    """Return (shared, xirr-only, twrr-only) transfer availability reasons.
+
+    The query intentionally loads links independently of the requested flow
+    interval.  A transfer is relevant when a leg is in the interval or its
+    transit intersects a valuation consumed by the selected metric.
+    """
+
+    if not xirr_required_dates and not twrr_required_dates:
+        return set(), set(), set()
+
+    rows = list(
+        session.scalars(
+            select(ExternalFlow)
+            .where(ExternalFlow.transfer_link_id.is_not(None))
+            .order_by(ExternalFlow.transfer_link_id, ExternalFlow.id)
+        )
+    )
+    legs_by_link: dict[int, list[ExternalFlow]] = defaultdict(list)
+    for row in rows:
+        assert row.transfer_link_id is not None
+        legs_by_link[row.transfer_link_id].append(row)
+
+    shared_reasons: set[str] = set()
+    xirr_reasons: set[str] = set()
+    twrr_reasons: set[str] = set()
+    evidence_by_link = iter_transfer_reconciliation_evidence(session, legs_by_link)
+    for link_id, legs in legs_by_link.items():
+        if len(legs) != 2:
+            continue
+        first, second = legs
+        if first.account_id == second.account_id or first.direction == second.direction:
+            continue
+
+        source = next(leg for leg in legs if leg.direction == "withdrawal")
+        destination = next(leg for leg in legs if leg.direction == "contribution")
+        transit_dates: set[date] = set()
+        if source.event_date < destination.event_date:
+            transit_dates = {
+                candidate
+                for candidate in xirr_required_dates | twrr_required_dates
+                if source.event_date <= candidate <= destination.event_date
+            }
+
+        leg_in_interval = any(start_date <= leg.event_date <= end_date for leg in legs)
+        if not leg_in_interval and not transit_dates:
+            continue
+
+        # Legs outside the requested interval can still make a transfer
+        # transit-relevant.  Reuse H2a's effective-dated cross-check for those
+        # legs because interval flow coverage does not inspect them.
+        if transit_dates:
+            for leg in legs:
+                if start_date <= leg.event_date <= end_date:
+                    continue
+                membership = _safe_scope_membership(leg.scope_membership)
+                if membership is ExternalFlowScopeMembership.UNKNOWN:
+                    shared_reasons.add(
+                        AvailabilityReasonCode.SCOPE_MEMBERSHIP_HISTORY_MISSING.value
+                    )
+                    continue
+                if leg.account_id not in rows_by_account:
+                    continue
+                effective = _membership_at(rows_by_account[leg.account_id], leg.event_date)
+                if (
+                    membership is ExternalFlowScopeMembership.STABLE_IN_SCOPE
+                    and effective is not True
+                ):
+                    shared_reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+                elif (
+                    membership is ExternalFlowScopeMembership.STABLE_OUT_OF_SCOPE
+                    and effective is not False
+                ):
+                    shared_reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+
+        classifications = [
+            classify_external_flow(
+                session,
+                leg.id,
+                scope=ExternalFlowScope.PORTFOLIO,
+            )
+            for leg in legs
+        ]
+        if any(
+            classification is not ExternalFlowClassification.INTERNAL_TRANSFER
+            for classification in classifications
+        ):
+            continue
+
+        if not _transfer_reconciliation_complete(
+            source=source,
+            destination=destination,
+            evidence=evidence_by_link.get(link_id, ()),
+        ):
+            shared_reasons.add(AvailabilityReasonCode.TRANSFER_RECONCILIATION_INCOMPLETE.value)
+
+        if transit_dates:
+            if transit_dates & xirr_required_dates:
+                xirr_reasons.add(AvailabilityReasonCode.TRANSFER_IN_TRANSIT_UNVALUED.value)
+            if transit_dates & twrr_required_dates:
+                twrr_reasons.add(AvailabilityReasonCode.TRANSFER_IN_TRANSIT_UNVALUED.value)
+
+    return shared_reasons, xirr_reasons, twrr_reasons
 
 
 def _metric(
@@ -891,6 +1053,37 @@ def performance_availability_for_interval(
     # Date-only boundary ordering is a TWRR-only limitation under #145 v2.
     xirr_reasons.discard(_TWRR_ONLY_REASON)
 
+    twrr_targets: tuple[_BoundaryTarget, ...] | None = None
+    if normalized_scope is PerformanceScope.PORTFOLIO:
+        twrr_targets = _external_flow_boundary_targets(
+            session,
+            flows=flows,
+            scope=normalized_scope,
+            account_id=account_id,
+        )
+    shared_transfer_reasons: set[str] = set()
+    xirr_transfer_reasons: set[str] = set()
+    twrr_transfer_reasons: set[str] = set()
+    if normalized_scope is PerformanceScope.PORTFOLIO:
+        (
+            shared_transfer_reasons,
+            xirr_transfer_reasons,
+            twrr_transfer_reasons,
+        ) = _portfolio_transfer_safety(
+            session,
+            start_date=start_date,
+            end_date=end_date,
+            xirr_required_dates={start_date, end_date},
+            twrr_required_dates={
+                start_date,
+                end_date,
+                *((target.event_date for target in twrr_targets) if twrr_targets else ()),
+            },
+            rows_by_account=rows_by_account,
+        )
+    xirr_reasons.update(shared_transfer_reasons)
+    xirr_reasons.update(xirr_transfer_reasons)
+
     xirr = _metric("xirr", xirr_reasons)
     twrr_reasons = set(xirr_reasons)
     external_flow_boundaries, boundary_reasons = _twrr_boundary_reasons(
@@ -900,8 +1093,11 @@ def performance_availability_for_interval(
         flows=flows,
         performance_currency=performance_currency,
         boundary_cache=boundary_cache,
+        targets=twrr_targets,
     )
     twrr_reasons.update(boundary_reasons)
+    twrr_reasons.update(shared_transfer_reasons)
+    twrr_reasons.update(twrr_transfer_reasons)
     twrr = _metric("twrr", twrr_reasons)
 
     all_reasons = set(xirr_reasons) | set(twrr.reason_codes)

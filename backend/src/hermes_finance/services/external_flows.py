@@ -25,7 +25,12 @@ from hermes_finance.domain import (
     ExternalTransferStatus,
     RubleAmount,
 )
-from hermes_finance.persistence import Account, ExternalFlow, ExternalTransferLink
+from hermes_finance.persistence import (
+    Account,
+    ExternalFlow,
+    ExternalTransferLink,
+    ExternalTransferReconciliationEvidence,
+)
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
@@ -157,6 +162,43 @@ def _transfer_legs(session: Session, link_id: int) -> list[ExternalFlow]:
             .order_by(ExternalFlow.id)
         )
     )
+
+
+def _require_no_transfer_reconciliation_evidence(
+    session: Session,
+    link: ExternalTransferLink,
+) -> None:
+    evidence_id = session.scalar(
+        select(ExternalTransferReconciliationEvidence.id)
+        .where(ExternalTransferReconciliationEvidence.transfer_link_id == link.id)
+        .limit(1)
+    )
+    if evidence_id is not None:
+        raise ValueError(
+            "transfer link legs cannot change while reconciliation evidence exists; "
+            "explicitly delete the evidence first"
+        )
+
+
+def require_no_transfer_reconciliation_evidence_for_month_deletion(
+    session: Session,
+    month_id: int,
+) -> None:
+    evidence_id = session.scalar(
+        select(ExternalTransferReconciliationEvidence.id)
+        .join(
+            ExternalFlow,
+            ExternalFlow.transfer_link_id
+            == ExternalTransferReconciliationEvidence.transfer_link_id,
+        )
+        .where(ExternalFlow.reporting_month_id == month_id)
+        .limit(1)
+    )
+    if evidence_id is not None:
+        raise ValueError(
+            "reporting month deletion would remove transfer legs with reconciliation evidence; "
+            "explicitly delete the evidence first"
+        )
 
 
 def _is_complete_transfer(legs: list[ExternalFlow]) -> bool:
@@ -369,6 +411,7 @@ def stage_create_external_flow(
             direction=normalized_direction,
         )
         _require_editable_transfer_legs(session, _transfer_legs(session, link.id))
+        _require_no_transfer_reconciliation_evidence(session, link)
 
     flow = ExternalFlow(
         reporting_month_id=reporting_month_id,
@@ -471,6 +514,8 @@ def stage_update_external_flow(
     ):
         old_legs = _transfer_legs(session, old_link.id)
         _require_editable_transfer_legs(session, old_legs)
+        if link_changed or account_id is not None or direction is not None:
+            _require_no_transfer_reconciliation_evidence(session, old_link)
         if new_link is old_link:
             _validate_new_link_leg(
                 session,
@@ -487,6 +532,7 @@ def stage_update_external_flow(
             direction=normalized_direction,
         )
         _require_editable_transfer_legs(session, new_legs)
+        _require_no_transfer_reconciliation_evidence(session, new_link)
 
     identity_changed = new_account_id != flow.account_id or (
         event_date is not None and event_date != flow.event_date
@@ -565,6 +611,7 @@ def delete_external_flow(session: Session, flow_id: int) -> None:
     link = _require_transfer_link(session, flow.transfer_link_id) if flow.transfer_link_id else None
     if link is not None:
         _require_editable_transfer_legs(session, _transfer_legs(session, link.id))
+        _require_no_transfer_reconciliation_evidence(session, link)
     session.delete(flow)
     session.flush()
     if link is not None:

@@ -24,11 +24,18 @@ from hermes_finance.services.external_flows import (
     classify_external_flow,
     create_external_flow,
     create_external_transfer_link,
+    delete_external_flow,
+    update_external_flow,
 )
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
     delete_reporting_month,
+)
+from hermes_finance.services.transfer_reconciliation import (
+    create_transfer_reconciliation_evidence,
+    delete_transfer_reconciliation_evidence,
+    list_transfer_reconciliation_evidence,
 )
 
 
@@ -234,6 +241,72 @@ def test_one_sided_transfer_stays_unresolved_until_explicit_second_leg(tmp_path:
         assert classify_external_flow(session, flow.id, scope="portfolio") == (
             ExternalFlowClassification.UNRESOLVED
         )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_reconciliation_evidence_locks_transfer_leg_identity(tmp_path: Path) -> None:
+    session, database, month_id, source_id, destination_id = _environment(tmp_path)
+    try:
+        link = create_external_transfer_link(session, transfer_key="evidence-locked-link")
+        old_leg = create_external_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=source_id,
+            event_date=date(2030, 5, 15),
+            boundary_amount="50.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            scope_membership="stable_in_scope",
+            transfer_link_id=link.id,
+        )
+        evidence = create_transfer_reconciliation_evidence(
+            session,
+            transfer_link_id=link.id,
+            kind="internal_fee",
+            amount="1.00",
+            currency="RUB",
+            source="synthetic-broker-statement",
+            evidence_reference="evidence-locked-leg-1",
+        )
+        replacement_leg = create_external_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=destination_id,
+            event_date=date(2030, 5, 16),
+            boundary_amount="49.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+
+        with pytest.raises(ValueError, match="reconciliation evidence"):
+            update_external_flow(session, replacement_leg.id, transfer_link_id=link.id)
+        with pytest.raises(ValueError, match="reconciliation evidence"):
+            update_external_flow(session, old_leg.id, account_id=destination_id)
+        with pytest.raises(ValueError, match="reconciliation evidence"):
+            update_external_flow(
+                session,
+                old_leg.id,
+                direction="contribution",
+                kind="external_contribution",
+            )
+        with pytest.raises(ValueError, match="reconciliation evidence"):
+            delete_external_flow(session, old_leg.id)
+        with pytest.raises(ValueError, match="reconciliation evidence"):
+            delete_reporting_month(session, month_id)
+
+        session.expire_all()
+        assert session.get(type(old_leg), old_leg.id).transfer_link_id == link.id
+        assert session.get(type(replacement_leg), replacement_leg.id).transfer_link_id is None
+        assert session.get(type(evidence), evidence.id) is not None
+        assert len(list_transfer_reconciliation_evidence(session, transfer_link_id=link.id)) == 1
+
+        delete_transfer_reconciliation_evidence(session, evidence.id)
+        update_external_flow(session, replacement_leg.id, transfer_link_id=link.id)
+        session.refresh(link)
+        assert link.status == "resolved"
     finally:
         session.close()
         database.engine.dispose()
