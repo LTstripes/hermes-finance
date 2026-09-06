@@ -65,6 +65,8 @@ var tests = new (string Name, Action Run)[]
     ("fails closed when target Git tree proof is unavailable", BlocksUnavailableTargetTreeProof),
     ("blocks production data containing Git metadata before backup", BlocksProductionDataContainingGitMetadata),
     ("fails closed when the canonical tuple is rebound before persistence", BlocksStableConfigRebindBeforePersistence),
+    ("blocks a Stable profile-ID rebind before backup", BlocksStableProfileIdRebindBeforeBackup),
+    ("refuses a Stable profile-ID rebind at expected-ref persistence", BlocksStableProfileIdRebindAtPersistence),
     ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
     ("blocks a target-only ignored hardlink alias before backup", BlocksTargetOnlyHardlinkAlias),
     ("blocks a target-only junction ancestor before backup", BlocksTargetOnlyJunctionAncestor),
@@ -1624,12 +1626,69 @@ static void BlocksStableConfigRebindBeforePersistence()
     }
 }
 
-static void RebindStableConfig(StableUpgradeFixture fixture, string dataDir, string database)
+static void BlocksStableProfileIdRebindBeforeBackup()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
+        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
+        fixture.ReleaseHandler.OnGitTreeRequest = () => RebindStableConfig(
+            fixture,
+            fixture.DataDir,
+            fixture.Database,
+            stableId: "rebound-stable");
+
+        AssertThrowsMessage(
+            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
+            "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A Stable profile-ID rebind must fail before switching Stable.");
+        Assert(RunGitMayFail(fixture.StableCheckout, "rev-parse", "--verify", "refs/tags/v0.8.2") != 0, "A Stable profile-ID rebind must fail before fetching the target tag.");
+        var rebound = LauncherConfig.Load(fixture.ConfigPath);
+        var stable = rebound.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(stable.Id == "rebound-stable", "The synthetic Stable profile-ID rebind must remain observable after the guarded failure.");
+        Assert(stable.ExpectedRef == "refs/tags/v0.8.0", "A Stable profile-ID rebind must not be overwritten with the target release identity.");
+        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A Stable profile-ID rebind must fail before creating a production backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksStableProfileIdRebindAtPersistence()
+{
+    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
+    try
+    {
+        RebindStableConfig(
+            fixture,
+            fixture.DataDir,
+            fixture.Database,
+            stableId: "rebound-stable");
+        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
+
+        AssertThrowsMessage(
+            () => LauncherConfig.UpdateStableExpectedRef(fixture.ConfigPath, "refs/tags/v0.8.2", fixture.Profile),
+            "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
+        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A Stable profile-ID rebind must be rejected before the atomic config write.");
+        var rebound = LauncherConfig.Load(fixture.ConfigPath);
+        var stable = rebound.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(stable.Id == "rebound-stable", "The rejected Stable profile-ID rebind must remain in the config for recovery.");
+        Assert(stable.ExpectedRef == "refs/tags/v0.8.0", "The rejected Stable profile-ID rebind must preserve the original expected_ref.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void RebindStableConfig(StableUpgradeFixture fixture, string dataDir, string database, string? stableId = null)
 {
     var stable = fixture.Config.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
     var reboundStable = new LauncherProfile
     {
-        Id = stable.Id,
+        Id = stableId ?? stable.Id,
         DisplayName = stable.DisplayName,
         Type = stable.Type,
         Checkout = stable.Checkout,
