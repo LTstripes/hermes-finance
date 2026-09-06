@@ -1,10 +1,10 @@
 # Hermes Finance 0.8.2
 
-Hermes Finance 0.8.2 is a maintenance release-prep candidate after the published Stable `v0.8.1` release. It documents already integrated owner-workflow, launcher and deterministic-analysis improvements without adding a new product line or changing financial formulas.
+Hermes Finance 0.8.2 is a published maintenance release after Stable `v0.8.1`. It documents already integrated owner-workflow, launcher and deterministic-analysis improvements without adding a new product line or changing financial formulas.
 
 ## Included maintenance
 
-- **Launcher Stable lifecycle (#298, #299):** owner-safe Stable release update discovery and upgrade path, restart-safe launcher process ownership, and reliable Stop recovery while preserving Stable/Preview separation and explicit owner actions.
+- **Launcher lifecycle (#299):** restart-safe process ownership and reliable Stop recovery while preserving Stable/Preview separation and explicit owner actions. The Stable self-update experiment (#298, follow-ups #311/#312) is closed `not_planned`; it is not a proven canonical update flow and is tracked for redesign in #313.
 - **Launcher presentation (#302):** final owner-facing visual and content polish, including canonical Stable/Preview identity presentation.
 - **Tax/IIS Planner Lite (#142):** current-state backend and owner UI for existing tax and IIS data; no implicit year-end projection or expanded projection scope.
 - **Deterministic Insights and AI Analysis Bundle (#143):** Deterministic Financial Insights Engine v1 is integrated with the additive AI Analysis Bundle schema `1.2.0`, backed by persisted evidence and without LLM/cloud calls or formula duplication; the dedicated Insights UI remains deferred.
@@ -17,5 +17,5 @@ Hermes Finance 0.8.2 is a maintenance release-prep candidate after the published
 - Closed months remain immutable until an explicit Reopen.
 - Unknown or unavailable financial evidence is not silently converted to zero.
 - The canonical Alembic head remains `0036_broker_baseline_provenance`; this maintenance release adds no migration and changes no schema semantics.
-- Private Stable/Preview/runtime databases, `.env` files, exports/PDFs, backups and provider credentials are never part of release preparation.
-- #308 is a known non-blocking cosmetic follow-up and is not required for v0.8.2 release-prep.
+- Private Stable/Preview/runtime databases, `.env` files, exports/PDFs, backups and provider credentials are never part of release preparation or publication.
+- #308 is a known non-blocking cosmetic follow-up and is not required for v0.8.2.

@@ -60,20 +60,31 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Current state:** #143 is integrated in AI Analysis Bundle schema `1.2.0`; the dedicated Insights UI remains deferred.
 - **History boundary:** the M08-01 release-prep record below remains historical and is not rewritten by this publication-state entry.
 
-# 0.8.2 release preparation
+# 0.8.2 release publication
 
-### M08-02 — prepare Hermes Finance v0.8.2 maintenance release
+### M08-02 — publish Hermes Finance v0.8.2 maintenance release
 
-- **Recorded:** 2026-09-05 as release-prep context from issue #309. This is not an accept/integrate verdict or a publication record.
+- **Published:** 2026-09-05 through the guarded release control on #124 after integration of issue #309.
 - **Implementation agent/tool:** Codex desktop; model not independently confirmed.
-- **Exact baseline `origin/main`:** `dccb64566494e95cc3858e7b6d6b04c4c1a2aa23`.
-- **Task branch:** `m08-02-release-082`.
+- **Released tag object:** `bfa1194d4151bb72882f4230f144b039d240eda9`.
+- **Released peeled commit:** `a22542d7b20ebdf34e38384004162d409f163ab3`.
 - **Scope:** synchronize version identity to `0.8.2`, health/release expectations, Windows launcher identity/config/tests, CHANGELOG, public notes, release record, README, Project Wiki and execution history for already integrated #298, #299, #302, #142 and #143 maintenance.
 - **Canonical Alembic head:** `0036_broker_baseline_provenance`; this task adds no migration and changes no schema semantics.
 - **Safety:** local single-user Windows-first loopback runtime; explicit provider/network/file actions; no cloud/auth/telemetry, trading/provider writes, automatic upload or background refresh; unknown/unavailable evidence remains explicit; private Stable/Preview/runtime data is not used.
-- **Known non-blocking follow-up:** #308 legacy version token in last-run footer copy is not required for this release-prep.
-- **Not done:** no product-function work, merge to `main`, tag `v0.8.2`, GitHub Release, `/release` request or Stable/Preview runtime action.
+- **Known non-blocking follow-up:** #308 legacy version token in last-run footer copy is not required for this release.
+- **Not done:** no product-function work or Stable/Preview runtime action was included in release preparation.
 - **References:** issue #309, permanent Release Control #124, `docs/releases/0.8.2.md`, `docs/release-notes-0.8.2.md` and `CHANGELOG.md`.
+
+# Post-v0.8.2 consolidation
+
+### #306 — repository/process review and three-workstream split
+
+- **Status:** accepted and integrated after the published `v0.8.2` release.
+- **Baseline:** canonical `main` `96f97b0424370be93e327587633c424ee6c33a8a` before the consolidation PR.
+- **Scope:** repository/issue/PR/branch audit; durable rules for scope expansion, verification budgets, canonical `main`, integration branches and model routing; correction of stale release/launcher documentation; no product or launcher redesign implementation.
+- **Lessons recorded:** #298/#311/#312 failed to provide a usable Stable self-update flow; the owner recovery path reached `v0.8.2`; #313 remains the backlog-only redesign.
+- **Privacy:** no Stable/Preview/runtime data, `.env`, databases, backups, exports or credentials were accessed.
+- **References:** `docs/CONSOLIDATION_2026-09-06.md`, #124, #127, #298, #306, #311, #312 and #313.
 
 # 0.8.1 release preparation
 

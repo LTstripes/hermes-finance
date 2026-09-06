@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Текущее дерево содержит release-prep maintenance **0.8.2** после опубликованной стабильной идентичности **0.8.1**. GitHub Release `v0.8.1` опубликован как Stable 2026-09-04; annotated tag object `853ffbbf1349db80e1941c6db2051ca9d81a2bf3` peel'ится в exact released main SHA `0bb932f5b3711acbbd6ac52218a242a03bdcf99b`. Исторический Git-тег `v0.8.0` peel'ится в exact released main SHA `ec185deab8d3fe949e7d579e5041d23216a6d73f`; exact-head PR CI run `33665746651`, post-merge exact-main CI run `33668924186` и guarded Release run `33669922698` завершились успешно 2026-09-02. В рамках #309 version identity синхронизируется к `0.8.2`; этот task branch ещё не создаёт tag или GitHub Release.
+Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в released main `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical `main` после post-release merge #312 — `96f97b0424370be93e327587633c424ee6c33a8a`; exact-main CI для него — run `34021826830`, `success`. Launcher Stable self-update не считается доказанным canonical flow: #298 закрыт `not_planned`, postmortem/redesign — #313.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -34,9 +34,12 @@ Backend-зависимости фиксируются `backend/uv.lock`, fronten
 
 ## Запуск — launcher-first (Windows)
 
-**Каноническая owner-точка входа — Windows launcher.** Никаких логов, PowerShell, Git и ручного JSON для обычного запуска.
+**Каноническая owner-точка входа для Start/Stop — Windows launcher.** Stable
+self-update не является доказанным canonical flow; release change выполняется
+явной recovery-операцией по точному опубликованному tag до запуска.
 
-1. Установите launcher один раз из подготовленного checkout (целевой pinned релиз `v0.8.2`; публикация выполняется отдельным guarded шагом):
+1. Установите launcher один раз из подготовленного checkout (pinned Stable
+release `v0.8.2`):
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
@@ -122,7 +125,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health
 
 ## Что доступно в 0.8.2
 
-Release-prep `0.8.2` фиксирует уже интегрированное состояние после предыдущей линии `0.8.1`: launcher Stable update/ownership и owner-facing polish (#298, #299, #302), current-state Tax/IIS Planner Lite (#142) и deterministic Financial Insights Engine v1 с AI Analysis Bundle schema `1.2.0` (#143). Product surface R07/R08 остаётся backend-authoritative; все provider- и owner-triggered действия остаются явными. Доступны:
+Published `0.8.2` фиксирует уже интегрированное состояние после предыдущей линии `0.8.1`: launcher ownership и owner-facing polish (#299, #302), current-state Tax/IIS Planner Lite (#142) и deterministic Financial Insights Engine v1 с AI Analysis Bundle schema `1.2.0` (#143). Эксперимент Stable self-update (#298, follow-ups #311/#312) закрыт `not_planned` и вынесен в #313; product surface остаётся backend-authoritative, все provider- и owner-triggered действия явны. Доступны:
 
 - **Дашборд** — KPI, графики капитала/пассивного дохода, распределение активов, инвестиционный результат и основная цель;
 - **Месяцы** — draft/closed lifecycle, клонирование, ввод данных, reopen/close и безопасное удаление draft вместе с его месячными данными;
@@ -143,7 +146,7 @@ Release-prep `0.8.2` фиксирует уже интегрированное с
 - **Tax/IIS Planner** — current-state v1 для фактических и текущих налоговых данных; расширение projection scope отложено.
 - **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; AI Analysis Bundle integration уже присутствует в schema `1.2.0`, а dedicated Insights UI остаётся deferred.
 - **XIRR и exact TWRR** — XIRR доступен для whole portfolio при однозначном валидном корне; TWRR использует persisted observed valuation boundaries и pre/post observations для потоков. Missing/gapped evidence, неизвестный порядок событий и неоднозначный XIRR root fail closed.
-- **Windows Stable/Preview launcher** — guarded runtime profiles, owner Prepare/Repair/Start/Stop controls, explicit Preview update, package/install verification и shortcut/start-stop smoke; Stable остаётся на pinned release identity, Preview — на отдельном unreleased checkout.
+- **Windows Stable/Preview launcher** — guarded runtime profiles, owner Prepare/Repair/Start/Stop controls, explicit Preview update, package/install verification и shortcut/start-stop smoke; Stable остаётся на pinned release identity, Preview — на отдельном unreleased checkout. Stable release update — recovery-only owner operation до решения #313.
 - **UI и verification** — #284 сохраняет visual/layout polish; #282 добавляет canonical backend CI lanes и slow-test telemetry как verification infrastructure; #292 закрепляет deterministic quote-freshness regression test. Эти изменения не являются новыми финансовыми функциями.
 
 В редакторе месяца доступны зарплата и прочие доходы, депозиты/cash, позиции, фактические и ожидаемые investment flows, расходы/savings, долги/недвижимость, ИИС и комментарии.
@@ -230,18 +233,18 @@ finance_data_YYYY-MM.json
 
 Export read-only и не изменяет месяц. Файлы могут содержать личные финансовые данные — проверяйте их перед передачей третьим лицам.
 
-## Обновление приложения — через launcher ( Stable pinned )
+## Обновление приложения — recovery-only owner operation (Stable pinned)
 
 1. Создайте backup в **Экспорт и бэкапы**.
 2. Остановите Hermes в launcher (`Остановить`) или закройте окно — `127.0.0.1:8000` должен освободиться.
-3. Подготовьте **отдельный Stable checkout** на неизменяемом release tag ( `git fetch origin && git switch --detach refs/tags/v0.8.2` ); launcher сам Git не меняет — это recovery-шаг вне ежедневного `Запустить`.
+3. Подготовьте **отдельный Stable checkout** на неизменяемом опубликованном release tag (например, `git fetch origin --tags && git switch --detach refs/tags/v0.8.2`). Launcher сам Git не меняет; это явная recovery-операция, а не launcher self-update.
 4. Для обновления packaged launcher и ярлыков выполните **из этого подготовленного checkout**:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-5. Откройте **Hermes Finance — Stable** в launcher. Launcher покажет `Release v0.8.2 · SHA <short> · production data` ( зелёная карточка ) и человеческую сводку 4 checks. Если зависимости missing/stale — единственная primary будет `Подготовить` ( `Исправить` — для принудительного восстановления ); обычный `Запустить` никогда не качает скрытно. После `Запустить` guarded startup применит Alembic к той же validated DB на `127.0.0.1:8000`.
+5. Откройте **Hermes Finance — Stable** в launcher. Launcher проверит pinned identity, границу данных и зависимости; если всё готово, `Запустить` вызовет guarded startup на той же validated DB и `127.0.0.1:8000`. При identity mismatch остаётся recovery-only guidance; launcher не должен притворяться, что выполнил обновление.
 
 ## Известные ограничения
 
@@ -345,7 +348,7 @@ python .\scripts\privacy_check.py
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
 ```
 
-Публикация `0.8.0` выполнена через guarded release process; её immutable identity и exact-main CI зафиксированы выше. Для release-prep `0.8.2` и будущей публикации применяется тот же процесс с exact `origin/main` SHA:
+Публикация `0.8.0` и `0.8.2` выполнена через guarded release process; immutable identity и exact-main CI зафиксированы выше. Для будущей публикации применяется тот же процесс с exact `origin/main` SHA:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
@@ -372,8 +375,8 @@ Active:
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — журнал исполнения;
 - [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения;
-- [`docs/releases/0.8.2.md`](docs/releases/0.8.2.md) — release-prep record текущего maintenance;
-- [`docs/release-notes-0.8.2.md`](docs/release-notes-0.8.2.md) — public notes целевого 0.8.2;
+- [`docs/releases/0.8.2.md`](docs/releases/0.8.2.md) — опубликованный release record 0.8.2;
+- [`docs/release-notes-0.8.2.md`](docs/release-notes-0.8.2.md) — public notes 0.8.2;
 - [`docs/releases/0.8.1.md`](docs/releases/0.8.1.md) — исторический release-prep record предыдущей линии;
 - [`docs/release-notes-0.8.1.md`](docs/release-notes-0.8.1.md) — исторические public notes предыдущей линии;
 - [`docs/releases/0.8.0.md`](docs/releases/0.8.0.md) — исторический record опубликованного 0.8.0.

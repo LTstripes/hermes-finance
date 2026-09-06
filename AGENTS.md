@@ -81,6 +81,19 @@ For a GitHub-native integrator without a local checkout, the equivalent requirem
 - Reviewers do not silently modify the candidate they are independently reviewing.
 - Parallel work is allowed only when scopes are genuinely independent.
 
+## Canonical main and integration workstreams
+
+- `main` is the only canonical source of truth and the only release source.
+- A long-lived `integration/*` branch is a staging/coordination line, never an
+  alternate main and never a release source.
+- Each implementation task still uses its own short-lived child branch and
+  separate physical workspace. Workers do not merge `main` or other workers.
+- The integrator may incorporate accepted `main` changes into an integration
+  branch when compatibility requires it; do not churn branches merely because
+  `main` advanced.
+- An integration milestone reaches `main` only after its own review, CI and
+  applicable UAT gates pass.
+
 ## Parallel task isolation — physical workspace invariant
 
 - **Never run two active write or verification tasks in the same physical working tree, even when they use different Git branches.**
@@ -109,7 +122,7 @@ Agent and development clones must not contain or link to:
 
 This prohibition includes copies, symlinks, junctions, hardlinks and other filesystem indirection.
 
-The production runtime clone is never an agent development workspace. Owner preview/experiment runtimes and their UAT copies are also never agent workspaces. A future Windows launcher may select only prepared runtime profiles (checkout + code identity + data location), not an arbitrary Git branch against one database; see [`docs/adr/0014-launcher-runtime-profile-safety.md`](docs/adr/0014-launcher-runtime-profile-safety.md).
+The production runtime clone is never an agent development workspace. Owner preview/experiment runtimes and their UAT copies are also never agent workspaces. The Windows launcher may select only prepared runtime profiles (checkout + code identity + data location), not an arbitrary Git branch against one database; see [`docs/adr/0014-launcher-runtime-profile-safety.md`](docs/adr/0014-launcher-runtime-profile-safety.md).
 
 Do not put machine-specific absolute local paths into tracked repository docs.
 
@@ -147,6 +160,11 @@ Keep these permanent. Detailed financial semantics live in `MASTER_SPEC.md` and 
 - Do not start the next task automatically.
 - Do not do unrelated cleanup “while here”.
 - If the contract is ambiguous or conflicts with `MASTER_SPEC` / an accepted ADR, stop and escalate. Do not guess.
+- If a bounded or microfix starts requiring new architecture, invariants,
+  test infrastructure, or materially more surface than accepted, **STOP**.
+  Report the expansion, root cause and options; the integrator must explicitly
+  re-scope before implementation continues. Do not hide architecture growth
+  behind “microfix” wording.
 
 ## Verification
 
@@ -158,6 +176,14 @@ Every task requires:
 - a final scope, diff and privacy review;
 - exact checks reported truthfully;
 - a final state read-back of `HEAD`, branch/remote and working tree, or the truthful GitHub-native equivalent when no local checkout exists.
+
+For implementation work, the normal verification sequence is targeted checks
+during iteration, one full relevant harness before worker handoff, then
+package/install smoke as the final gate when packaging or installation is in
+scope. Canonical PR CI and exact-main push CI remain mandatory when the task is
+integrated. Do not use the launcher Stable self-update as a proven canonical
+release path: until the #313 redesign is accepted, prefer small composable
+owner operations and the documented recovery path.
 
 Do not claim a full suite passed unless that suite actually ran and passed.
 

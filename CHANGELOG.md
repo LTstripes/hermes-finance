@@ -4,10 +4,11 @@
 
 ## [0.8.2] — 2026-09-05
 
-Release-prep maintenance after the published Stable `v0.8.1` release. This
-entry documents already integrated changes and synchronizes release identity;
-it does not add product behavior, financial formulas, provider writes or schema
-changes.
+Published maintenance release after Stable `v0.8.1`. This entry documents
+already integrated changes and does not add product behavior, financial
+formulas, provider writes or schema changes. The launcher Stable self-update
+experiment is not a proven canonical flow; it is closed `not_planned` and
+tracked for redesign in #313.
 
 ### Included maintenance
 
