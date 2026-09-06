@@ -26,6 +26,7 @@ from hermes_finance.services.reporting_months import ClosedReportingMonthError
 
 _COVERAGE_REASON = "not_computable_external_flows_incomplete"
 _DEFAULT_PROVENANCE_KIND = "owner_attestation"
+ACCEPTED_AUTHORITATIVE_PROVENANCE_KINDS = frozenset({"owner_attestation"})
 
 
 class CashBoundaryCoverageNotFoundError(LookupError):
@@ -38,13 +39,6 @@ def _normalize_text(value: str, *, field: str, max_length: int) -> str:
         raise ValueError(f"{field} must not be empty")
     if len(normalized) > max_length:
         raise ValueError(f"{field} must not exceed {max_length} characters")
-    return normalized
-
-
-def _normalize_provenance_kind(value: str) -> str:
-    normalized = _normalize_text(value, field="provenance_kind", max_length=64)
-    if normalized != _DEFAULT_PROVENANCE_KIND:
-        raise ValueError(f"unsupported cash-boundary provenance kind: {normalized!r}")
     return normalized
 
 
@@ -136,7 +130,7 @@ def stage_create_cash_boundary_coverage(
     )
     _require_account(session, account_id)
     normalized_state = _coerce_state(coverage_state)
-    normalized_provenance = _normalize_provenance_kind(provenance_kind)
+    normalized_provenance = _normalize_text(provenance_kind, field="provenance_kind", max_length=64)
     normalized_reference = (
         None
         if provenance_reference is None
@@ -217,7 +211,9 @@ def stage_update_cash_boundary_coverage(
     if coverage_state is not None:
         coverage.coverage_state = _coerce_state(coverage_state).value
     if provenance_kind is not None:
-        coverage.provenance_kind = _normalize_provenance_kind(provenance_kind)
+        coverage.provenance_kind = _normalize_text(
+            provenance_kind, field="provenance_kind", max_length=64
+        )
     if provenance_reference is not None:
         coverage.provenance_reference = _normalize_text(
             provenance_reference, field="provenance_reference", max_length=128
@@ -314,7 +310,9 @@ def _account_is_covered(
         key=lambda row: (row.covered_from, row.covered_to, row.id),
     )
     if not relevant or any(
-        row.coverage_state != CashBoundaryCoverageState.COMPLETE.value for row in relevant
+        row.coverage_state != CashBoundaryCoverageState.COMPLETE.value
+        or row.provenance_kind not in ACCEPTED_AUTHORITATIVE_PROVENANCE_KINDS
+        for row in relevant
     ):
         return False
     cursor = start_date

@@ -12,6 +12,7 @@ from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, PerformanceAvailabilityStatus, PerformanceScope
 from hermes_finance.main import create_app
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
+from hermes_finance.persistence import CashBoundaryCoverage as CashBoundaryCoverageRecord
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.cash_boundary_coverage import (
@@ -169,6 +170,34 @@ def test_complete_coverage_does_not_suppress_canonical_contribution(tmp_path: Pa
         assert [item.id for item in result.external_flows.flows] == [flow.id]
         assert result.external_flows.flows[0].boundary_amount_kopecks == 2_500
         assert result.xirr.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_unsupported_persisted_provenance_does_not_unlock_exact_metrics(tmp_path: Path) -> None:
+    session, database, january, february, account = _environment(tmp_path)
+    try:
+        session.add(
+            CashBoundaryCoverageRecord(
+                account_id=account.id,
+                covered_from=START,
+                covered_to=END,
+                coverage_state="complete",
+                provenance_kind="provider_import",
+            )
+        )
+        session.commit()
+        _close(session, january, february)
+        result = _availability(session, account.id)
+
+        assert result.cash_boundary_coverage.status == "unknown"
+        assert result.cash_boundary_coverage.evidence[0].provenance_kind == "provider_import"
+        assert result.cash_boundary_coverage.missing_or_incomplete_account_ids == (account.id,)
+        assert not result.xirr.is_available
+        assert not result.twrr.is_available
+        assert "not_computable_external_flows_incomplete" in result.xirr.reason_codes
+        assert "not_computable_external_flows_incomplete" in result.twrr.reason_codes
     finally:
         session.close()
         database.engine.dispose()
