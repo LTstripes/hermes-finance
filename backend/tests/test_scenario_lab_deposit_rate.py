@@ -990,6 +990,58 @@ def test_rate_normalization_independent_of_ambient_precision():
                 assert normalized_rate_string(bp) == api, (ambient_prec, raw)
 
 
+def test_rate_exact_half_up_boundaries_context_invariant():
+    """Exact half-up boundaries with 55-digit tails — no fixed prec truncation.
+
+    0.0049...999 -> 0 bp, 0.0050...001 -> 1 bp, under any ambient prec.
+    Regression for the integrator blocker where prec=40 truncated tails.
+    """
+    from decimal import Decimal, localcontext
+
+    from hermes_finance.domain.scenario_lab import canonical_assumed_rate_basis_points
+    from hermes_finance.domain.values import PercentageRate
+
+    low = "0.0049999999999999999999999999999999999999999999999999999"
+    high = "0.0050000000000000000000000000000000000000000000000000001"
+    for ambient_prec in (2, 5, 10, 28, 60):
+        with localcontext() as ctx:
+            ctx.prec = ambient_prec
+            # via canonical contract directly
+            assert PercentageRate.from_decimal(Decimal(low)).basis_points == 0, ambient_prec
+            assert PercentageRate.from_decimal(Decimal(high)).basis_points == 1, ambient_prec
+            # via scenario helper (delegates to same contract)
+            assert canonical_assumed_rate_basis_points(Decimal(low)) == 0, ambient_prec
+            assert canonical_assumed_rate_basis_points(Decimal(high)) == 1, ambient_prec
+            # end-to-end via evaluate_scenario_lab path also uses same semantics
+            # (parse -> canonical -> PercentageRate), test through parse
+            from hermes_finance.domain.scenario_lab import parse_assumed_annual_rate_pct
+
+            assert canonical_assumed_rate_basis_points(parse_assumed_annual_rate_pct(low)) == 0
+            assert canonical_assumed_rate_basis_points(parse_assumed_annual_rate_pct(high)) == 1
+
+
+def test_ruble_and_rate_exact_boundaries_context_invariant():
+    """RubleAmount and deposit-interest also exact under hostile prec."""
+    from decimal import Decimal, localcontext
+
+    from hermes_finance.domain.deposits import calculate_deposit_expected_monthly_interest_kopecks
+    from hermes_finance.domain.values import RubleAmount
+
+    # RubleAmount: 0.005 -> 1 kop? No, 0.005 *100 =0.5 -> 1 kop half-up
+    # exact tails: 0.0049... -> 0, 0.0050... -> 1
+    low_amt = "0.0049999999999999999999999999999999999999999999999999999"
+    high_amt = "0.0050000000000000000000000000000000000000000000000000001"
+    for ambient_prec in (2, 5, 28):
+        with localcontext() as ctx:
+            ctx.prec = ambient_prec
+            assert RubleAmount.from_decimal(Decimal(low_amt)).kopecks == 0
+            assert RubleAmount.from_decimal(Decimal(high_amt)).kopecks == 1
+            # deposit interest: balance 60_000 (600 RUB) at 1bp -> exactly 0.5 kop -> 1
+            # deposit calculation is integer rational, context must not affect
+            assert calculate_deposit_expected_monthly_interest_kopecks(60_000, 1) == 1
+            assert calculate_deposit_expected_monthly_interest_kopecks(12_000_000, 1200) == 120_000
+
+
 def test_deposit_interest_independent_of_ambient_precision():
     """calculate_deposit_expected_monthly_interest_kopecks ignores ambient
     precision: balance * rate / 12 with whole-kopeck HALF_UP rounding."""

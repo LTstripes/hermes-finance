@@ -1,15 +1,10 @@
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal, DecimalException, localcontext
+from decimal import Decimal, DecimalException
 
-FINANCIAL_ROUNDING = ROUND_HALF_UP
+FINANCIAL_ROUNDING = __import__("decimal").ROUND_HALF_UP
 _KOPECKS_PER_RUBLE = Decimal(100)
 _BASIS_POINTS_PER_PERCENTAGE_POINT = Decimal(100)
 _BASIS_POINTS_PER_ONE = Decimal(10_000)
-# Division precision for stored-integer -> decimal conversions. The exact
-# quotient of a kopeck/basis-point integer by 100 or 10_000 needs at most 8
-# significant digits; 40 leaves a wide margin and makes every conversion
-# independent of the ambient decimal.getcontext() precision.
-_CONVERSION_PRECISION = 40
 
 
 def _require_stored_integer(value: object, *, name: str) -> int:
@@ -35,6 +30,45 @@ def _parse_api_decimal(value: object, *, name: str) -> Decimal:
         raise ValueError(f"{name} must be a decimal string") from error
 
 
+def _scaled_half_up(d: Decimal, scale_exp: int) -> int:
+    """Exact integer of round_half_up(d * 10**scale_exp).
+
+    Uses the Decimal tuple (sign, digits, exponent) as exact rational
+    m * 10**exp, so no context precision ever truncates.  Ties go away
+    from zero (ROUND_HALF_UP).  scale_exp is 2 for *100 conversions.
+    """
+    sign, digits, exp = d.as_tuple()
+    if not digits:
+        return 0
+    m = 0
+    for dig in digits:
+        m = m * 10 + dig
+    total_exp = exp + scale_exp
+    is_negative = bool(sign)
+    if total_exp >= 0:
+        result = m * (10 ** total_exp)
+    else:
+        divisor = 10 ** (-total_exp)
+        q, r = divmod(m, divisor)
+        if r * 2 >= divisor:
+            q += 1
+        result = q
+    return -result if is_negative else result
+
+
+def _int_scaled_to_decimal(n: int, scale: int) -> Decimal:
+    """Exact Decimal for n / 10**scale without any context."""
+    if n == 0:
+        return Decimal(0)
+    sign = "-" if n < 0 else ""
+    s = str(abs(n)).zfill(scale + 1)
+    if scale == 0:
+        return Decimal(sign + s)
+    int_part = s[:-scale].lstrip("0") or "0"
+    frac_part = s[-scale:]
+    return Decimal(f"{sign}{int_part}.{frac_part}")
+
+
 @dataclass(frozen=True, slots=True)
 class RubleAmount:
     """An exact RUB amount stored as integer kopecks."""
@@ -51,14 +85,11 @@ class RubleAmount:
     @classmethod
     def from_decimal(cls, amount: Decimal) -> "RubleAmount":
         amount = _require_finite_decimal(amount, name="amount")
-        kopecks = (amount * _KOPECKS_PER_RUBLE).to_integral_value(rounding=FINANCIAL_ROUNDING)
+        kopecks = _scaled_half_up(amount, 2)
         return cls(int(kopecks))
 
     def as_decimal(self) -> Decimal:
-        with localcontext() as ctx:
-            ctx.prec = _CONVERSION_PRECISION
-            ctx.rounding = FINANCIAL_ROUNDING
-            return Decimal(self.kopecks) / _KOPECKS_PER_RUBLE
+        return _int_scaled_to_decimal(self.kopecks, 2)
 
     def to_api(self) -> str:
         return format(self.as_decimal(), ".2f")
@@ -81,22 +112,14 @@ class PercentageRate:
     @classmethod
     def from_decimal(cls, percentage_points: Decimal) -> "PercentageRate":
         percentage = _require_finite_decimal(percentage_points, name="percentage rate")
-        basis_points = (percentage * _BASIS_POINTS_PER_PERCENTAGE_POINT).to_integral_value(
-            rounding=FINANCIAL_ROUNDING
-        )
+        basis_points = _scaled_half_up(percentage, 2)
         return cls(int(basis_points))
 
     def as_percentage(self) -> Decimal:
-        with localcontext() as ctx:
-            ctx.prec = _CONVERSION_PRECISION
-            ctx.rounding = FINANCIAL_ROUNDING
-            return Decimal(self.basis_points) / _BASIS_POINTS_PER_PERCENTAGE_POINT
+        return _int_scaled_to_decimal(self.basis_points, 2)
 
     def as_fraction(self) -> Decimal:
-        with localcontext() as ctx:
-            ctx.prec = _CONVERSION_PRECISION
-            ctx.rounding = FINANCIAL_ROUNDING
-            return Decimal(self.basis_points) / _BASIS_POINTS_PER_ONE
+        return _int_scaled_to_decimal(self.basis_points, 4)
 
     def to_api(self) -> str:
         return format(self.as_percentage(), ".2f")

@@ -217,12 +217,9 @@ def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> i
 # Infinity, negative and binary-float inputs are rejected) and the
 # context-independent Decimal guard around the basis-point conversion.
 
-# Context-independent guard for the basis-point conversion. The
-# PercentageRate.from_decimal formula ``pct * 100`` is exact up to ~16
-# decimal digits of input, well below the 28-digit default, so the guard
-# only has to survive an extremely small ambient precision.
-_RATE_PARSER_PRECISION = 40
-
+# Context-independent guard for the basis-point conversion.
+# Delegated to PercentageRate which is now exact integer/rational.
+_RATE_PARSER_PRECISION = 40  # kept for reference, not used as semantic bound
 
 def parse_assumed_annual_rate_pct(raw: object) -> Decimal:
     """Parse and validate an absolute annual rate (percentage points).
@@ -263,9 +260,8 @@ def parse_assumed_annual_rate_pct(raw: object) -> Decimal:
 def canonical_assumed_rate_basis_points(rate_pct: Decimal) -> int:
     """Convert an absolute annual rate to integer basis points.
 
-    Delegates to the canonical :class:`PercentageRate` contract; a
-    localcontext guard keeps the conversion independent of the ambient
-    ``decimal`` context.
+    Delegates to the canonical :class:`PercentageRate` contract which is
+    now exact rational (no fixed precision bound).
     """
     if isinstance(rate_pct, float):
         raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
@@ -275,13 +271,7 @@ def canonical_assumed_rate_basis_points(rate_pct: Decimal) -> int:
         raise ValueError("invalid_assumed_rate_pct: not finite")
     if rate_pct < Decimal("0"):
         raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
-    with localcontext() as ctx:
-        ctx.prec = _RATE_PARSER_PRECISION
-        ctx.rounding = ROUND_HALF_UP
-        # PercentageRate.from_decimal is the canonical contract; the
-        # localcontext is a defense-in-depth guard against a hostile
-        # ambient prec.
-        return PercentageRate.from_decimal(rate_pct).basis_points
+    return PercentageRate.from_decimal(rate_pct).basis_points
 
 
 def normalized_rate_string(basis_points: int) -> str:
