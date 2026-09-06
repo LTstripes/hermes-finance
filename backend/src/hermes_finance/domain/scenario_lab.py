@@ -91,34 +91,59 @@ def parse_drawdown_pct(raw: object) -> Decimal:
     return pct
 
 
+def _canonical_string_from_decimal(pct: Decimal) -> str:
+    """Lossless canonical fixed-point string without context rounding.
+
+    - strip leading '+'
+    - strip trailing zeros and trailing dot
+    - canonical zero to "0"
+    - uses string manipulation, never Decimal.normalize() which rounds >28 digits
+    """
+    # Use fixed-point rendering to avoid exponent; preserves exact value
+    s = format(pct, "f")
+    # strip leading '+'
+    if s.startswith("+"):
+        s = s[1:]
+    # Remove trailing zeros after decimal point
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    # Handle empty, sign-only, or negative zero
+    if s in ("", "-", "-0"):
+        s = "0"
+    elif s.startswith("-"):
+        # After stripping, "-0.00" becomes "-0" -> canonical "0"
+        try:
+            if Decimal(s) == 0:
+                s = "0"
+        except Exception:
+            s = "0" if s in ("-0", "-") else s
+    else:
+        try:
+            if Decimal(s) == 0:
+                s = "0"
+        except Exception:
+            pass
+        if s == "-0":
+            s = "0"
+    # Edge: string like "000" without dot stays "000" -> Decimal("000")==0 -> already "0"
+    # For non-zero leading zeros, Decimal will normalize on reconstruction, but keep s as is?
+    # Ensure canonical string has no leading '+' and no trailing exponent
+    return s
+
+
 def canonical_drawdown_pct(pct: Decimal) -> Decimal:
-    """Lossless canonical Decimal: 20 == 20.0 == 20.00 -> same value, 20.001 distinct."""
-    # Use normalize to strip trailing zeros without losing precision.
-    # Decimal('20.00').normalize() -> 2E+1 -> format 'f' -> '20' but value stays 20.
-    # Keep the numeric value identical; string form is derived separately.
-    # For integers, normalize may produce exponent; quantize not needed.
-    # We return the numeric canonical value (same arithmetic value) without quantization.
-    # Using normalize preserves precision for non-trailing-zero cases.
-    try:
-        # Normalize removes trailing zeros; for 0 we keep 0
-        n = pct.normalize()
-    except Exception:
-        n = pct
-    # For values like 20.00, normalize gives 2E+1; keep numeric equivalence
-    # Ensure -0 becomes 0
-    if n == 0:
-        return Decimal(0)
-    return n
+    """Lossless canonical Decimal: 20 == 20.0 == 20.00 -> same value, 20.001 distinct.
+
+    Implemented via string manipulation, not Decimal.normalize() which may round
+    when context precision is 28.
+    """
+    s = _canonical_string_from_decimal(pct)
+    return Decimal(s)
+
 
 def normalize_drawdown_pct(pct: Decimal) -> str:
-    # Lossless canonical string: equivalent numerics map to same string.
-    # Use canonical Decimal then format 'f' to remove exponent.
-    c = canonical_drawdown_pct(pct)
-    # format with 'f' removes scientific notation; also remove trailing zeros already via normalize
-    s = format(c, "f")
-    # Ensure plain decimal without exponent, and without unnecessary plus sign
-    # normalize already stripped trailing zeros, so "20.10" -> "20.1"
-    return s
+    """Lossless canonical string: equivalent numerics map to same string."""
+    return _canonical_string_from_decimal(pct)
 
 
 def classify_applicability(instrument_type: object) -> RowApplicability:

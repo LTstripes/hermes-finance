@@ -1,15 +1,16 @@
 """Read-only, persisted-data-only portfolio allocation metrics (R07-06A).
 
 The service assembles the current reporting-month snapshot and delegates all
-percentage arithmetic to the framework-independent risk-allocation domain
-module. It never constructs a provider, performs network I/O, writes to the
-database, or infers issuer/currency/maturity metadata.
+percentage arithmetic and bucket aggregation to the framework-independent
+risk-allocation domain module (canonical builder). It never constructs a
+provider, performs network I/O, writes to the database, or infers
+issuer/currency/maturity metadata.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,14 +18,17 @@ from sqlalchemy.orm import Session
 from hermes_finance.domain import ExpectedCashFlowType, InstrumentType, RubleAmount
 from hermes_finance.domain.risk_allocation import (
     AllocationMetric,
-    AllocationSlice,
     ConcentrationItem,
     ConcentrationMetric,
     MetricSupport,
     RiskAllocationResult,
+    RiskDepositInput,
+    RiskPositionInput,
     RiskSupportStatus,
     SupportIssue,
-    percentage,
+    build_account_allocation,
+    build_asset_allocation,
+    build_top_positions,
     support_from_issues,
 )
 from hermes_finance.persistence import (
@@ -126,77 +130,6 @@ def _amount_is_valid(amount: object) -> bool:
     return isinstance(amount, int) and not isinstance(amount, bool) and amount >= 0
 
 
-def _money(kopecks: int) -> RubleAmount:
-    return RubleAmount(kopecks)
-
-
-def _allocation_metric(
-    amounts: dict[str, int],
-    *,
-    denominator_kopecks: int,
-    covered_kopecks: int,
-    unallocated_kopecks: int,
-    support: MetricSupport,
-    excluded: tuple[SupportIssue, ...],
-    account_ids: dict[str, int] | None = None,
-    labels: dict[str, str] | None = None,
-    instrument_types: dict[str, str] | None = None,
-) -> AllocationMetric:
-    slices: list[AllocationSlice] = []
-    for key, amount in sorted(amounts.items(), key=lambda item: (-item[1], item[0])):
-        if amount == 0:
-            continue
-        slices.append(
-            AllocationSlice(
-                key=key,
-                label=labels.get(key, key) if labels is not None else key,
-                amount=_money(amount),
-                share_pct=percentage(amount, denominator_kopecks),
-                account_id=account_ids.get(key) if account_ids is not None else None,
-                instrument_type=(
-                    instrument_types.get(key) if instrument_types is not None else None
-                ),
-            )
-        )
-    return AllocationMetric(
-        support=support,
-        denominator=_money(denominator_kopecks),
-        covered_amount=_money(covered_kopecks),
-        unallocated_amount=_money(unallocated_kopecks),
-        coverage_pct=percentage(covered_kopecks, denominator_kopecks),
-        items=tuple(slices),
-        excluded=excluded,
-    )
-
-
-def _concentration_metric(
-    items: list[ConcentrationItem],
-    *,
-    denominator_kopecks: int,
-    top_n: int,
-    issues: tuple[SupportIssue, ...],
-    extra_reason_codes: tuple[str, ...] = (),
-    is_approximate: bool = False,
-) -> ConcentrationMetric:
-    ordered = sorted(items, key=lambda item: (-item.amount.kopecks, item.key))
-    selected = ordered[:top_n]
-    selected_amount = sum(item.amount.kopecks for item in selected)
-    with_shares = tuple(
-        replace(item, share_pct=percentage(item.amount.kopecks, denominator_kopecks))
-        for item in selected
-    )
-    return ConcentrationMetric(
-        support=support_from_issues(issues, extra_reason_codes=extra_reason_codes),
-        denominator=_money(denominator_kopecks),
-        top_n=top_n,
-        top_amount=_money(selected_amount),
-        top_share_pct=percentage(selected_amount, denominator_kopecks),
-        items=with_shares,
-        excluded=issues,
-        is_approximate=is_approximate,
-    )
-
-
 def _event_currency_map(
     session: Session,
     events: tuple[CashFlowLadderEvent, ...],
@@ -290,7 +223,7 @@ def _flow_items(
                 f"{aggregate.account_name} / "
                 f"{aggregate.instrument_name or f'instrument {aggregate.instrument_id}'}"
             ),
-            amount=_money(aggregate.amount_kopecks),
+            amount=RubleAmount(aggregate.amount_kopecks),
             share_pct=None,
             account_id=aggregate.account_id,
             account_name=aggregate.account_name,
@@ -309,6 +242,37 @@ def _static_unavailable(reason_code: str) -> MetricSupport:
     return MetricSupport(
         status=RiskSupportStatus.UNAVAILABLE,
         reason_codes=(reason_code,),
+    )
+
+
+def _flow_concentration_metric(
+    items: list[ConcentrationItem],
+    *,
+    denominator_kopecks: int,
+    top_n: int,
+    issues: tuple[SupportIssue, ...],
+    extra_reason_codes: tuple[str, ...] = (),
+    is_approximate: bool = False,
+) -> ConcentrationMetric:
+    from hermes_finance.domain.risk_allocation import percentage as domain_percentage
+    from dataclasses import replace
+
+    ordered = sorted(items, key=lambda item: (-item.amount.kopecks, item.key))
+    selected = ordered[:top_n]
+    selected_amount = sum(item.amount.kopecks for item in selected)
+    with_shares = tuple(
+        replace(item, share_pct=domain_percentage(item.amount.kopecks, denominator_kopecks))
+        for item in selected
+    )
+    return ConcentrationMetric(
+        support=support_from_issues(issues, extra_reason_codes=extra_reason_codes),
+        denominator=RubleAmount(denominator_kopecks),
+        top_n=top_n,
+        top_amount=RubleAmount(selected_amount),
+        top_share_pct=domain_percentage(selected_amount, denominator_kopecks),
+        items=with_shares,
+        excluded=issues,
+        is_approximate=is_approximate,
     )
 
 
@@ -371,15 +335,13 @@ def risk_allocation_for_month(
         ).all()
         authoritative_liquid_capital = liquid_capital_for_month(session, reporting_month_id)
 
-    asset_amounts: dict[str, int] = defaultdict(int)
-    account_amounts: dict[int, int] = defaultdict(int)
-    account_names: dict[int, str] = {}
     valuation_issues: list[SupportIssue] = []
     asset_class_issues: list[SupportIssue] = []
     currency_issues: list[SupportIssue] = []
     safe_positions: list[_SafePosition] = []
     valid_cash_kopecks = 0
-    unknown_asset_class_kopecks = 0
+    account_names: dict[int, str] = {}
+    instrument_names: dict[int, str] = {}
 
     for cash in cash_rows:
         currency_state = _currency_support(cash.currency)
@@ -403,9 +365,6 @@ def risk_allocation_for_month(
             continue
         valid_cash_kopecks += cash.amount_kopecks
 
-    if valid_cash_kopecks:
-        asset_amounts["cash"] += valid_cash_kopecks
-
     for deposit, account_name in deposit_rows:
         if not _amount_is_valid(deposit.balance_kopecks):
             valuation_issues.append(
@@ -417,8 +376,6 @@ def risk_allocation_for_month(
                 )
             )
             continue
-        asset_amounts["deposits"] += deposit.balance_kopecks
-        account_amounts[deposit.account_id] += deposit.balance_kopecks
         account_names[deposit.account_id] = account_name
 
     for snapshot, account_name, instrument_name, instrument_type, currency in position_rows:
@@ -462,74 +419,60 @@ def risk_allocation_for_month(
                 amount_kopecks=snapshot.market_value_kopecks,
             )
         )
-        if kind is None:
-            unknown_asset_class_kopecks += snapshot.market_value_kopecks
-        else:
-            asset_amounts[kind] += snapshot.market_value_kopecks
-        account_amounts[snapshot.account_id] += snapshot.market_value_kopecks
         account_names[snapshot.account_id] = account_name
+        instrument_names[snapshot.instrument_id] = instrument_name
 
     denominator_kopecks = authoritative_liquid_capital.total_assets.kopecks
     valuation_issue_tuple = tuple(valuation_issues)
     asset_class_issue_tuple = tuple(asset_class_issues)
     allocation_support = support_from_issues(valuation_issue_tuple + asset_class_issue_tuple)
-    asset_amounts_for_metric = dict(asset_amounts)
-    if unknown_asset_class_kopecks:
-        asset_amounts_for_metric["unknown_asset_class"] = unknown_asset_class_kopecks
-    known_asset_class_kopecks = sum(asset_amounts.values())
     account_support = support_from_issues(
         valuation_issue_tuple,
         extra_reason_codes=("cash_not_account_linked",) if cash_rows else (),
     )
-    asset_metric = _allocation_metric(
-        asset_amounts_for_metric,
-        denominator_kopecks=denominator_kopecks,
-        covered_kopecks=known_asset_class_kopecks,
-        unallocated_kopecks=unknown_asset_class_kopecks,
-        support=allocation_support,
-        excluded=valuation_issue_tuple + asset_class_issue_tuple,
-        instrument_types={kind.value: kind.value for kind in InstrumentType},
-        labels={"unknown_asset_class": "Unknown asset class"},
+
+    # Build pure inputs for canonical builder (R1)
+    domain_deposits = tuple(
+        RiskDepositInput(account_id=dep.account_id, amount_kopecks=dep.balance_kopecks)
+        for dep, _ in deposit_rows
+        if _amount_is_valid(dep.balance_kopecks)
     )
-    account_metric = _allocation_metric(
-        {
-            **{f"account:{account_id}": amount for account_id, amount in account_amounts.items()},
-            **({"unassigned_cash": valid_cash_kopecks} if valid_cash_kopecks else {}),
-        },
-        denominator_kopecks=denominator_kopecks,
-        covered_kopecks=sum(account_amounts.values()),
-        unallocated_kopecks=valid_cash_kopecks,
-        support=account_support,
-        excluded=valuation_issue_tuple,
-        account_ids={f"account:{account_id}": account_id for account_id in account_amounts},
-        labels={
-            f"account:{account_id}": account_name
-            for account_id, account_name in account_names.items()
-        }
-        | {"unassigned_cash": "Unassigned cash"},
+    # Deposits already filtered to valid; safe_positions are valid
+    domain_positions = tuple(
+        RiskPositionInput(
+            position_id=p.position_id,
+            account_id=p.account_id,
+            instrument_id=p.instrument_id,
+            instrument_type=p.instrument_type,
+            amount_kopecks=p.amount_kopecks,
+        )
+        for p in safe_positions
     )
 
-    top_position_items = [
-        ConcentrationItem(
-            key=f"position:{position.position_id}",
-            label=f"{position.account_name} / {position.instrument_name}",
-            amount=_money(position.amount_kopecks),
-            share_pct=None,
-            account_id=position.account_id,
-            account_name=position.account_name,
-            instrument_id=position.instrument_id,
-            instrument_name=position.instrument_name,
-            instrument_type=position.instrument_type,
-            position_id=position.position_id,
-        )
-        for position in safe_positions
-        if position.amount_kopecks > 0
-    ]
-    top_positions = _concentration_metric(
-        top_position_items,
-        denominator_kopecks=denominator_kopecks,
+    asset_metric = build_asset_allocation(
+        cash_kopecks=valid_cash_kopecks,
+        deposits=domain_deposits,
+        positions=domain_positions,
+        liquid_assets_kopecks=denominator_kopecks,
+        support=allocation_support,
+        excluded=valuation_issue_tuple + asset_class_issue_tuple,
+    )
+    account_metric = build_account_allocation(
+        cash_kopecks=valid_cash_kopecks,
+        deposits=domain_deposits,
+        positions=domain_positions,
+        liquid_assets_kopecks=denominator_kopecks,
+        support=account_support,
+        excluded=valuation_issue_tuple,
+        account_names=account_names,
+    )
+    top_positions = build_top_positions(
+        positions=domain_positions,
+        liquid_assets_kopecks=denominator_kopecks,
         top_n=top_n,
         issues=valuation_issue_tuple,
+        account_names=account_names,
+        instrument_names=instrument_names,
     )
 
     with session.no_autoflush:
@@ -561,7 +504,7 @@ def risk_allocation_for_month(
     redemption_extra = deposit_reason + (("no_dated_payouts",) if not has_redemption_events else ())
     payout_denominator = sum(item.amount.kopecks for item in payout_items)
     redemption_denominator = sum(item.amount.kopecks for item in redemption_items)
-    payout_metric = _concentration_metric(
+    payout_metric = _flow_concentration_metric(
         payout_items,
         denominator_kopecks=payout_denominator,
         top_n=top_n,
@@ -569,7 +512,7 @@ def risk_allocation_for_month(
         extra_reason_codes=payout_extra,
         is_approximate=any(item.is_approximate for item in payout_items),
     )
-    redemption_metric = _concentration_metric(
+    redemption_metric = _flow_concentration_metric(
         redemption_items,
         denominator_kopecks=redemption_denominator,
         top_n=top_n,
@@ -597,7 +540,7 @@ def risk_allocation_for_month(
         reporting_month_id=reporting_month_id,
         as_of_date=month.snapshot_date,
         base_currency=BASE_CURRENCY,
-        liquid_assets_total=_money(denominator_kopecks),
+        liquid_assets_total=RubleAmount(denominator_kopecks),
         allocation_by_asset_class=asset_metric,
         allocation_by_account=account_metric,
         top_positions=top_positions,

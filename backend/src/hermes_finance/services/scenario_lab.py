@@ -1,6 +1,8 @@
 """Service adapter for Scenario Lab 141-A — equity_drawdown only.
 
 Read-only, no provider/network/fx, no writes. Composes canonical read models.
+Uses pure canonical Risk projection builder from domain/risk_allocation for
+both base and stressed allocations (R1), implements R2-R5 fixes.
 """
 
 from __future__ import annotations
@@ -17,9 +19,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.goal_achievement import calculate_goal_achievement_forecast
-from hermes_finance.domain.liquid_capital import calculate_liquid_capital
+from hermes_finance.domain.liquid_capital import AccountAmount, calculate_liquid_capital
 from hermes_finance.domain.liquid_capital import LiquidCapitalInput
-from hermes_finance.domain.risk_allocation import percentage
+from hermes_finance.domain.risk_allocation import (
+    RiskDepositInput,
+    RiskPositionInput,
+    RiskSupportStatus,
+    SupportIssue,
+    MetricSupport,
+    build_account_allocation,
+    build_asset_allocation,
+    build_top_positions,
+    percentage,
+    support_from_issues,
+)
 from hermes_finance.domain.scenario_lab import (
     CALCULATION_VERSION,
     CONTRACT_VERSION,
@@ -27,7 +40,6 @@ from hermes_finance.domain.scenario_lab import (
     MetricSupportStatus,
     RowApplicability,
     canonical_drawdown_pct,
-    canonical_json_hash,
     classify_applicability,
     normalize_drawdown_pct,
     parse_drawdown_pct,
@@ -113,6 +125,7 @@ class ScenarioLabEvaluation:
     affected_canonical_refs: dict
     generated_at: str | None
     warnings: tuple[str, ...] = ()
+    presentation_metadata: dict | None = None
 
 
 def evaluate_scenario_lab(
@@ -133,7 +146,7 @@ def evaluate_scenario_lab(
     _validate_single_shock(shock)
     payload = shock["equity_drawdown"]
     raw_pct = parse_drawdown_pct(payload["drawdown_pct"])
-    # BLOCKER 4: use canonical for both string and calculation (lossless)
+    # R3: lossless canonical via string manipulation
     canonical_pct = canonical_drawdown_pct(raw_pct)
     pct_str = normalize_drawdown_pct(canonical_pct)
 
@@ -177,12 +190,14 @@ def evaluate_scenario_lab(
             for row in pos_rows
         }
         account_names: dict[int, str] = {}
+        instrument_names: dict[int, str] = {}
         for dep, name, _inc in deposit_rows:
             account_names[dep.account_id] = name
         for snap, inst_name, _type in pos_rows:
             acc = session.get(Account, snap.account_id)
             if acc is not None:
                 account_names[snap.account_id] = acc.name
+            instrument_names[snap.instrument_id] = inst_name
 
         debt_rows = list(
             session.scalars(
@@ -193,7 +208,6 @@ def evaluate_scenario_lab(
         capital_goals = [
             g for g in all_goals if g.is_active and g.goal_type == "capital" and g.calculation_mode == "liquid_capital_net"
         ]
-        # BLOCKER 5: no ExpectedCashFlow / InvestmentCashFlow reads (passive income is unavailable by definition)
 
     frozen_payload = {
         "reporting_month": {
@@ -246,8 +260,11 @@ def evaluate_scenario_lab(
         "eligible_deposit_ids": eligible_deposit_ids,
     }
 
-    # BLOCKER 6: positions with include_in_capital=false must NOT be counted as applied
-    # BLOCKER 3: per_position split
+    # Build lookup for eligible positions only (R5)
+    eligible_set = set(eligible_position_ids)
+    pos_by_id = {p["id"]: p for p in frozen_payload["positions"]}
+
+    # R5 + R2: row_applicability only for eligible; excluded absent
     row_applicability: dict[str, str] = {}
     base_per_position: dict[str, dict] = {}
     stressed_per_position: dict[str, dict] = {}
@@ -258,59 +275,59 @@ def evaluate_scenario_lab(
     coverage_unknown = 0
     known_scope_delta = 0
 
+    # Need to populate stressed_positions for all eligible only; for base we keep all?
+    # But per_position should also only contain eligible (R5)
     for p in frozen_payload["positions"]:
-        appl = classify_applicability(p["instrument_type"])
-        row_applicability[str(p["id"])] = appl.value
-        base_v = int(p["market_value_kopecks"])
+        pid = p["id"]
         incl = bool(p["include_in_capital"])
+        base_v = int(p["market_value_kopecks"])
+        # For excluded, stressed = base, not in row_applicability/impact/coverage
         if not incl:
-            # Not eligible: never applied, delta 0
+            stressed_positions[pid] = base_v
+            continue
+        appl = classify_applicability(p["instrument_type"])
+        row_applicability[str(pid)] = appl.value
+        if appl == RowApplicability.APPLIED:
+            stressed_v = stressed_market_value_kopecks(base_v, canonical_pct)
+            delta = stressed_v - base_v
+            coverage_applied += 1
+            known_scope_delta += delta
+        elif appl == RowApplicability.UNKNOWN:
             stressed_v = base_v
             delta = 0
-            # do not count towards coverage
+            coverage_unknown += 1
         else:
-            if appl == RowApplicability.APPLIED:
-                stressed_v = stressed_market_value_kopecks(base_v, canonical_pct)
-                delta = stressed_v - base_v
-                coverage_applied += 1
-                known_scope_delta += delta
-            elif appl == RowApplicability.UNKNOWN:
-                stressed_v = base_v
-                delta = 0
-                coverage_unknown += 1
-            else:
-                stressed_v = base_v
-                delta = 0
-                coverage_not += 1
-        stressed_positions[p["id"]] = stressed_v
-        # BLOCKER 3: distinct dicts
-        base_per_position[str(p["id"])] = {
+            stressed_v = base_v
+            delta = 0
+            coverage_not += 1
+        stressed_positions[pid] = stressed_v
+        # R2: per_position keep only market values, no applicability
+        base_per_position[str(pid)] = {
             "market_value_kopecks": base_v,
             "market_value": _money_api(base_v),
-            "applicability": appl.value,
             "account_id": p["account_id"],
             "instrument_id": p["instrument_id"],
             "instrument_type": p["instrument_type"],
             "include_in_capital": incl,
         }
-        stressed_per_position[str(p["id"])] = {
+        stressed_per_position[str(pid)] = {
             "market_value_kopecks": stressed_v,
             "market_value": _money_api(stressed_v),
-            "applicability": appl.value,
             "account_id": p["account_id"],
             "instrument_id": p["instrument_id"],
             "instrument_type": p["instrument_type"],
             "include_in_capital": incl,
         }
-        impact_per_position[str(p["id"])] = {
+        impact_per_position[str(pid)] = {
             "delta_kopecks": delta,
             "delta": _money_api(delta) if delta >= 0 else "-" + _money_api(-delta),
             "applicability": appl.value,
         }
 
-    total_positions = len(frozen_payload["positions"])
+    # Also need stressed_positions for non-eligible already set
+
     coverage = {
-        "total_positions": total_positions,
+        "total_positions": len(eligible_position_ids),
         "eligible_positions": len(eligible_position_ids),
         "applied": coverage_applied,
         "not_applicable": coverage_not,
@@ -325,17 +342,67 @@ def evaluate_scenario_lab(
 
     cash_total = sum(c.amount_kopecks for c in cash_rows if c.include_in_capital)
     deposits_total = sum(d.balance_kopecks for d, _n, inc in deposit_rows if inc)
-    stressed_securities = 0
+    # Build domain inputs for canonical builder (R1)
+    # Base positions eligible only
+    base_domain_positions = tuple(
+        RiskPositionInput(
+            position_id=p["id"],
+            account_id=p["account_id"],
+            instrument_id=p["instrument_id"],
+            instrument_type=p["instrument_type"],
+            amount_kopecks=int(p["market_value_kopecks"]),
+        )
+        for p in frozen_payload["positions"] if p["include_in_capital"]
+    )
+    stressed_domain_positions = tuple(
+        RiskPositionInput(
+            position_id=p["id"],
+            account_id=p["account_id"],
+            instrument_id=p["instrument_id"],
+            instrument_type=p["instrument_type"],
+            amount_kopecks=stressed_positions[p["id"]],
+        )
+        for p in frozen_payload["positions"] if p["include_in_capital"]
+    )
+    domain_deposits = tuple(
+        RiskDepositInput(account_id=d.account_id, amount_kopecks=int(d.balance_kopecks))
+        for d, _n, inc in deposit_rows if inc
+    )
+
+    # Prepare supports for builder (asset/account)
+    # Valuation issues: for eligible positions only? but we keep empty for scenario (no valuation check)
+    # Instead we treat has_unknown as asset unknown support
+    # Use domain support helpers
+
+    # For scenario, we need to compute support for asset/account from unknown applicability
+    # We'll create metric supports via domain logic but map to scenario's metric_support
+    # The canonical builder will be called with SUPPORTED or UNKNOWN based on has_unknown
+    from hermes_finance.domain.risk_allocation import RiskSupportStatus as DomainRiskStatus
+
+    if has_unknown:
+        asset_support_domain = MetricSupport(status=DomainRiskStatus.UNKNOWN, reason_codes=("instrument_type_not_authoritative",))
+        account_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)  # account not affected by unknown type
+        top_issues: tuple[SupportIssue, ...] = ()
+    else:
+        asset_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)
+        account_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)
+        top_issues = ()
+
+    # Include cash_not_account_linked reason if needed
+    if cash_total:
+        # domain account support would have cash_not_account_linked; we handle separately for scenario metric_support?
+        # Keep domain support for builder as above, but scenario metric_support will be derived later
+        pass
+
+    stressed_securities = sum(stressed_positions[pid] for pid in eligible_position_ids)
+    # Keep stressed_by_account for liquid capital calculation
     stressed_by_account: dict[int, int] = defaultdict(int)
     for d, _n, inc in deposit_rows:
         if inc:
             stressed_by_account[d.account_id] += int(d.balance_kopecks)
-    for p in frozen_payload["positions"]:
-        if p["include_in_capital"]:
-            stressed_securities += stressed_positions[p["id"]]
-            stressed_by_account[p["account_id"]] += stressed_positions[p["id"]]
-
-    from hermes_finance.domain.liquid_capital import AccountAmount
+    for pid in eligible_position_ids:
+        p = pos_by_id[pid]
+        stressed_by_account[p["account_id"]] += stressed_positions[pid]
 
     stressed_input = LiquidCapitalInput(
         cash=RubleAmount(cash_total),
@@ -354,116 +421,139 @@ def evaluate_scenario_lab(
     )
     stressed_liquid = calculate_liquid_capital(stressed_input)
 
-    # BLOCKER 2: canonical R07-06A asset allocation — keep distinct buckets + unknown_asset_class
-    def _asset_breakdown(stressed: bool) -> dict:
-        by_type: dict[str, int] = defaultdict(int)
-        unknown_kopecks = 0
-        for p in frozen_payload["positions"]:
-            if not p["include_in_capital"]:
-                continue
-            val = stressed_positions[p["id"]] if stressed else int(p["market_value_kopecks"])
-            itype = p["instrument_type"]
-            if isinstance(itype, str) and itype in ("stock", "bond", "fund", "currency", "gold", "other"):
-                by_type[itype] += val
-            else:
-                unknown_kopecks += val
-        denom = base_liquid.total_assets.kopecks if not stressed else stressed_liquid.total_assets.kopecks
+    # R1: use canonical builder for both base and stressed
+    def _allocation_metric_to_dict(metric) -> dict:
+        # Convert AllocationMetric to scenario asset_allocation dict with distinct buckets
+        buckets = {item.key: item.amount.kopecks for item in metric.items}
+        # Ensure all R07-06A buckets present
         result: dict[str, Any] = {
-            "cash_kopecks": cash_total,
-            "cash": _money_api(cash_total),
-            "deposits_kopecks": deposits_total,
-            "deposits": _money_api(deposits_total),
-            "unknown_asset_class_kopecks": unknown_kopecks,
-            "unknown_asset_class": _money_api(unknown_kopecks),
-            "denominator_kopecks": denom,
+            "cash_kopecks": buckets.get("cash", 0),
+            "cash": _money_api(buckets.get("cash", 0)),
+            "deposits_kopecks": buckets.get("deposits", 0),
+            "deposits": _money_api(buckets.get("deposits", 0)),
+            "unknown_asset_class_kopecks": buckets.get("unknown_asset_class", 0),
+            "unknown_asset_class": _money_api(buckets.get("unknown_asset_class", 0)),
+            "denominator_kopecks": metric.denominator.kopecks,
         }
         for k in ("stock", "bond", "fund", "currency", "gold", "other"):
-            result[f"{k}_kopecks"] = by_type.get(k, 0)
-            result[f"{k}"] = _money_api(by_type.get(k, 0))
-            # share pct per R07-06A denominator
-            pct = percentage(by_type.get(k, 0), denom) if denom > 0 else None
+            val = buckets.get(k, 0)
+            result[f"{k}_kopecks"] = val
+            result[f"{k}"] = _money_api(val)
+            # find share_pct from metric items
+            pct = next((item.share_pct for item in metric.items if item.key == k), None)
+            # Also need cash/deposits/unknown share
             result[f"{k}_share_pct"] = format(pct, ".2f") if pct is not None else None
-        # legacy aliases for back-compat with earlier dashboards (stocks->stock etc)
-        result["stocks_kopecks"] = by_type.get("stock", 0)
-        result["stocks"] = _money_api(by_type.get("stock", 0))
-        result["bonds_kopecks"] = by_type.get("bond", 0)
-        result["bonds"] = _money_api(by_type.get("bond", 0))
-        result["gold_other_kopecks"] = by_type.get("gold", 0) + by_type.get("other", 0)
-        result["gold_other"] = _money_api(result["gold_other_kopecks"])
-        # cash/deposits shares also
         for k in ("cash", "deposits", "unknown_asset_class"):
-            pct = percentage(result[f"{k}_kopecks"], denom) if denom > 0 else None
+            pct = next((item.share_pct for item in metric.items if item.key == k), None)
             result[f"{k}_share_pct"] = format(pct, ".2f") if pct is not None else None
         return result
 
-    base_asset = _asset_breakdown(False)
-    stressed_asset = _asset_breakdown(True)
-
-    def _account_allocation(stressed: bool) -> list[dict]:
-        acc_totals: dict[int, int] = defaultdict(int)
-        for d, _n, inc in deposit_rows:
-            if inc:
-                acc_totals[d.account_id] += int(d.balance_kopecks)
-        for p in frozen_payload["positions"]:
-            if p["include_in_capital"]:
-                val = stressed_positions[p["id"]] if stressed else int(p["market_value_kopecks"])
-                acc_totals[p["account_id"]] += val
-        denominator = base_liquid.total_assets.kopecks if not stressed else stressed_liquid.total_assets.kopecks
+    def _account_metric_to_list(metric) -> list[dict]:
+        # Convert account AllocationMetric to scenario list, keep only ids (R4)
         result = []
-        for aid in sorted(acc_totals.keys()):
-            amt = acc_totals[aid]
-            pct_val = percentage(amt, denominator) if denominator > 0 else None
-            result.append({
-                "account_id": aid,
-                "account_name": account_names.get(aid, f"account {aid}"),
-                "amount_kopecks": amt,
-                "amount": _money_api(amt),
-                "share_pct": format(pct_val, ".2f") if pct_val is not None else None,
-            })
-        if cash_total:
-            pct_val = percentage(cash_total, denominator) if denominator > 0 else None
-            result.append({
-                "account_id": None,
-                "account_name": "Unassigned cash",
-                "amount_kopecks": cash_total,
-                "amount": _money_api(cash_total),
-                "share_pct": format(pct_val, ".2f") if pct_val is not None else None,
-                "unassigned": True,
-            })
+        for item in metric.items:
+            if item.key == "unassigned_cash":
+                result.append({
+                    "account_id": None,
+                    "amount_kopecks": item.amount.kopecks,
+                    "amount": _money_api(item.amount.kopecks),
+                    "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
+                    "unassigned": True,
+                })
+            else:
+                # key is account:<id>
+                result.append({
+                    "account_id": item.account_id,
+                    "amount_kopecks": item.amount.kopecks,
+                    "amount": _money_api(item.amount.kopecks),
+                    "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
+                })
+        # Sort as builder does: (-amount, key)
         result.sort(key=lambda x: (-x["amount_kopecks"], str(x["account_id"])))
         return result
 
-    base_account_alloc = _account_allocation(False)
-    stressed_account_alloc = _account_allocation(True)
-
-    def _top_positions(stressed: bool, top_n: int) -> list[dict]:
-        items = []
-        denominator = base_liquid.total_assets.kopecks if not stressed else stressed_liquid.total_assets.kopecks
-        for p in frozen_payload["positions"]:
-            if not p["include_in_capital"]:
-                continue
-            val = stressed_positions[p["id"]] if stressed else int(p["market_value_kopecks"])
-            if val <= 0:
-                continue
-            pct_val = percentage(val, denominator) if denominator > 0 else None
-            iname = next((iname for snap, iname, _t in pos_rows if snap.id == p["id"]), f"instrument {p['instrument_id']}")
-            items.append({
-                "position_id": p["id"],
-                "account_id": p["account_id"],
-                "account_name": account_names.get(p["account_id"], ""),
-                "instrument_id": p["instrument_id"],
-                "instrument_name": iname,
-                "instrument_type": p["instrument_type"],
-                "amount_kopecks": val,
-                "amount": _money_api(val),
-                "share_pct": format(pct_val, ".2f") if pct_val is not None else None,
-                "applicability": row_applicability[str(p["id"])],
+    def _top_metric_to_list(metric) -> list[dict]:
+        result = []
+        for item in metric.items:
+            # R4: keep only ids, no names; keep applicability? we have it in metric? but builder's top items don't have applicability
+            # need to add applicability from row_applicability
+            pid = item.position_id
+            appl = row_applicability.get(str(pid), "not_applicable") if pid is not None else None
+            result.append({
+                "position_id": item.position_id,
+                "account_id": item.account_id,
+                "instrument_id": item.instrument_id,
+                "instrument_type": item.instrument_type,
+                "amount_kopecks": item.amount.kopecks,
+                "amount": _money_api(item.amount.kopecks),
+                "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
+                # R4: do NOT include account_name/instrument_name
+                # Keep applicability only if needed? For top_positions we keep it? But R2 says only row_applicability and impact; remove from top?
+                # To satisfy R4/R2 strictly, we remove applicability from top as well.
+                # We'll keep it out of normative, but include for legacy check? Better exclude.
             })
-        items.sort(key=lambda x: (-x["amount_kopecks"], x["position_id"]))
-        return items[:top_n]
+        result.sort(key=lambda x: (-x["amount_kopecks"], x["position_id"]))
+        return result
 
-    base_top = _top_positions(False, top_n)
-    stressed_top = _top_positions(True, top_n)
+    # Build base metrics via canonical builder
+    base_asset_metric = build_asset_allocation(
+        cash_kopecks=cash_total,
+        deposits=domain_deposits,
+        positions=base_domain_positions,
+        liquid_assets_kopecks=base_liquid.total_assets.kopecks,
+        support=asset_support_domain,
+        excluded=(),
+    )
+    base_account_metric = build_account_allocation(
+        cash_kopecks=cash_total,
+        deposits=domain_deposits,
+        positions=base_domain_positions,
+        liquid_assets_kopecks=base_liquid.total_assets.kopecks,
+        support=account_support_domain,
+        excluded=(),
+        account_names=None,  # R4: no names in normative, will be in presentation_metadata
+    )
+    base_top_metric = build_top_positions(
+        positions=base_domain_positions,
+        liquid_assets_kopecks=base_liquid.total_assets.kopecks,
+        top_n=top_n,
+        issues=(),
+        account_names=None,
+        instrument_names=None,
+    )
+
+    stressed_asset_metric = build_asset_allocation(
+        cash_kopecks=cash_total,
+        deposits=domain_deposits,
+        positions=stressed_domain_positions,
+        liquid_assets_kopecks=stressed_liquid.total_assets.kopecks,
+        support=asset_support_domain,
+        excluded=(),
+    )
+    stressed_account_metric = build_account_allocation(
+        cash_kopecks=cash_total,
+        deposits=domain_deposits,
+        positions=stressed_domain_positions,
+        liquid_assets_kopecks=stressed_liquid.total_assets.kopecks,
+        support=account_support_domain,
+        excluded=(),
+        account_names=None,
+    )
+    stressed_top_metric = build_top_positions(
+        positions=stressed_domain_positions,
+        liquid_assets_kopecks=stressed_liquid.total_assets.kopecks,
+        top_n=top_n,
+        issues=(),
+        account_names=None,
+        instrument_names=None,
+    )
+
+    base_asset = _allocation_metric_to_dict(base_asset_metric)
+    stressed_asset = _allocation_metric_to_dict(stressed_asset_metric)
+    base_account_alloc = _account_metric_to_list(base_account_metric)
+    stressed_account_alloc = _account_metric_to_list(stressed_account_metric)
+    base_top = _top_metric_to_list(base_top_metric)
+    stressed_top = _top_metric_to_list(stressed_top_metric)
 
     base_goals_list = []
     stressed_goals_list = []
@@ -597,8 +687,13 @@ def evaluate_scenario_lab(
         "drawdown_pct": pct_str,
     }
 
-    # BLOCKER 5: fingerprint must cover full normative DTO without mutable labels
-    # Strip mutable labels (account_name, instrument_name) for deterministic fingerprint
+    # Presentation metadata excluded from fingerprint (R4)
+    presentation_metadata = {
+        "account_names": dict(sorted(account_names.items())),
+        "instrument_names": dict(sorted(instrument_names.items())),
+    }
+
+    # Fingerprint: strip to normative fields only (no names, no applicability in per_position)
     def _strip_account_alloc(lst: list[dict]) -> list[dict]:
         return [
             {
@@ -619,7 +714,6 @@ def evaluate_scenario_lab(
                 "instrument_type": x["instrument_type"],
                 "amount_kopecks": x["amount_kopecks"],
                 "share_pct": x.get("share_pct"),
-                "applicability": x.get("applicability"),
             }
             for x in sorted(lst, key=lambda v: v["position_id"])
         ]
@@ -650,7 +744,7 @@ def evaluate_scenario_lab(
         "account_allocation": _strip_account_alloc(base_account_alloc),
         "top_positions": _strip_top(base_top),
         "capital_goals": _strip_goals(base_goals_list),
-        "per_position": {k: {"market_value_kopecks": v["market_value_kopecks"], "applicability": v["applicability"]} for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))},
+        "per_position": {k: {"market_value_kopecks": v["market_value_kopecks"]} for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))},
         "passive_income_effect": base_metrics["passive_income_effect"],
     }
     fingerprint_input_stressed = {
@@ -663,7 +757,7 @@ def evaluate_scenario_lab(
         "account_allocation": _strip_account_alloc(stressed_account_alloc),
         "top_positions": _strip_top(stressed_top),
         "capital_goals": _strip_goals(stressed_goals_list),
-        "per_position": {k: {"market_value_kopecks": v["market_value_kopecks"], "applicability": v["applicability"]} for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))},
+        "per_position": {k: {"market_value_kopecks": v["market_value_kopecks"]} for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))},
         "passive_income_effect": stressed_metrics["passive_income_effect"],
     }
 
@@ -706,4 +800,5 @@ def evaluate_scenario_lab(
         affected_canonical_refs=dict(sorted(affected_refs.items())),
         generated_at=gen_str,
         warnings=(),
+        presentation_metadata=presentation_metadata,
     )
