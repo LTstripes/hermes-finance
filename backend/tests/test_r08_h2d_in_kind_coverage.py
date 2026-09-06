@@ -44,7 +44,12 @@ END = date(2030, 2, 28)
 MID = date(2030, 2, 15)
 
 
-def _environment(tmp_path: Path, *, account_type: AccountType = AccountType.BROKERAGE):
+def _environment(
+    tmp_path: Path,
+    *,
+    account_type: AccountType = AccountType.BROKERAGE,
+    with_positions: bool = True,
+):
     database = create_database(tmp_path / "h2d.db")
     Base.metadata.create_all(database.engine)
     session = database.session_factory()
@@ -53,7 +58,7 @@ def _environment(tmp_path: Path, *, account_type: AccountType = AccountType.BROK
     account = create_account(session, name="Synthetic H2d Account", account_type=account_type)
     instrument = create_instrument(session, name="Synthetic H2d Bond", instrument_type="bond")
     for month in (january, february):
-        if account_type is not AccountType.CASH:
+        if with_positions:
             create_position_snapshot(
                 session,
                 reporting_month_id=month.id,
@@ -213,7 +218,7 @@ def test_cash_only_account_without_position_history_has_no_in_kind_requirement(
     tmp_path: Path,
 ) -> None:
     session, database, january, february, account, _ = _environment(
-        tmp_path, account_type=AccountType.CASH
+        tmp_path, account_type=AccountType.CASH, with_positions=False
     )
     try:
         coverage = in_kind_boundary_coverage_for_interval(
@@ -259,6 +264,46 @@ def test_generic_account_with_position_history_requires_coverage(tmp_path: Path)
         )
         assert coverage.account_ids == (account.id,)
         assert coverage.status == "unknown"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_other_without_position_history_with_explicit_movement_fails_closed(
+    tmp_path: Path,
+) -> None:
+    session, database, january, february, account, instrument = _environment(
+        tmp_path, account_type=AccountType.OTHER, with_positions=False
+    )
+    try:
+        create_cash_boundary_coverage(
+            session, account_id=account.id, covered_from=START, covered_to=END
+        )
+        create_in_kind_movement(
+            session,
+            reporting_month_id=february.id,
+            event_date=MID,
+            movement_kind=InKindMovementKind.EXTERNAL_IN,
+            destination_account_id=account.id,
+            instrument_id=instrument.id,
+            quantity="1",
+        )
+        _close(session, january, february)
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account.id,
+        )
+        assert result.in_kind_boundary_coverage.account_ids == ()
+        assert result.in_kind_boundary_coverage.status == "complete"
+        assert result.in_kind_boundary_coverage.reason_codes == (
+            "not_computable_in_kind_movement_unvalued",
+        )
+        assert "not_computable_in_kind_movement_unvalued" in result.reason_codes
+        assert not result.xirr.is_available
+        assert not result.twrr.is_available
     finally:
         session.close()
         database.engine.dispose()
