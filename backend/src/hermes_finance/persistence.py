@@ -195,6 +195,62 @@ class AccountPerformanceScopeMembership(Base):
     include_in_returns: Mapped[bool] = mapped_column(nullable=False)
 
 
+class CashBoundaryCoverage(Base):
+    """Affirmative completeness evidence for one account/date interval.
+
+    This is evidence about whether all owner cash crossings are represented;
+    it deliberately stores no amount and is not a cash-flow ledger.
+    """
+
+    __tablename__ = "cash_boundary_coverages"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "covered_from",
+            "covered_to",
+            name="uq_cash_boundary_coverages_account_interval",
+        ),
+        CheckConstraint(
+            "covered_to >= covered_from",
+            name="ck_cash_boundary_coverages_interval",
+        ),
+        CheckConstraint(
+            "coverage_state IN ('complete', 'unknown')",
+            name="ck_cash_boundary_coverages_state",
+        ),
+        CheckConstraint(
+            "length(trim(provenance_kind)) > 0",
+            name="ck_cash_boundary_coverages_provenance_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    covered_from: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_to: Mapped[date] = mapped_column(Date, nullable=False)
+    coverage_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    @property
+    def state(self) -> str:
+        """Compatibility spelling for callers using the domain vocabulary."""
+
+        return self.coverage_state
+
+
 class IisProfile(Base):
     __tablename__ = "iis_profiles"
     __table_args__ = (UniqueConstraint("account_id", name="uq_iis_profiles_account_id"),)

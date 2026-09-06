@@ -27,6 +27,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
@@ -104,6 +105,12 @@ def _environment(
             )
         )
         session.commit()
+        create_cash_boundary_coverage(
+            session,
+            account_id=account.id,
+            covered_from=START,
+            covered_to=END,
+        )
     return session, database, january.id, february.id, account.id
 
 
@@ -291,6 +298,12 @@ def test_resolved_transfer_is_internal_for_portfolio_and_external_for_account(
             )
         )
         session.commit()
+        create_cash_boundary_coverage(
+            session,
+            account_id=destination.id,
+            covered_from=START,
+            covered_to=END,
+        )
         link = create_external_transfer_link(session, transfer_key="synthetic-resolved")
         source_flow = create_external_flow(
             session,
@@ -370,9 +383,15 @@ def test_missing_opening_and_closing_snapshot_dates_fail_closed(tmp_path: Path) 
         )
 
         assert missing_opening.opening_valuation.point is None
-        assert missing_opening.xirr.reason_codes == ("not_computable_opening_valuation_missing",)
+        assert missing_opening.xirr.reason_codes == (
+            "not_computable_external_flows_incomplete",
+            "not_computable_opening_valuation_missing",
+        )
         assert missing_closing.closing_valuation.point is None
-        assert missing_closing.xirr.reason_codes == ("not_computable_closing_valuation_missing",)
+        assert missing_closing.xirr.reason_codes == (
+            "not_computable_closing_valuation_missing",
+            "not_computable_external_flows_incomplete",
+        )
     finally:
         session.close()
         database.engine.dispose()

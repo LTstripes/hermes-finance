@@ -10,7 +10,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = BACKEND_ROOT / "alembic.ini"
-REVISION = "0036_broker_baseline_provenance"
+REVISION = "0037_cash_boundary_coverage"
 PREVIOUS_REVISION = "0026_t_invest_price_source_and_provenance"
 STATEMENT_PREVIOUS_REVISION = "0027_applied_provider_payouts"
 

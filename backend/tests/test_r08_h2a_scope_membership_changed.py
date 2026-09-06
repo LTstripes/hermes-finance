@@ -22,6 +22,7 @@ from hermes_finance.domain import AccountType, PerformanceAvailabilityStatus, Pe
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import create_external_flow
 from hermes_finance.services.instruments import create_instrument
@@ -87,6 +88,13 @@ def _env(tmp_path: Path):
         )
         create_cash_balance(
             session, reporting_month_id=month.id, account_id=acc_b.id, name="Cash B", amount="0.00"
+        )
+    for account in (acc_a, acc_b):
+        create_cash_boundary_coverage(
+            session,
+            account_id=account.id,
+            covered_from=START,
+            covered_to=END,
         )
     return session, database, jan, feb, acc_a, acc_b
 

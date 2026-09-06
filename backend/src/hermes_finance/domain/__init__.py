@@ -1,6 +1,12 @@
 """Framework-independent financial domain primitives."""
 
 from hermes_finance.domain.accounts import AccountStatus, AccountType
+from hermes_finance.domain.cash_boundary_coverage import (
+    CashBoundaryCoverage,
+    CashBoundaryCoverageEvidence,
+    CashBoundaryCoverageState,
+    CashBoundaryCoverageStatus,
+)
 from hermes_finance.domain.cash_flows import ExpectedCashFlowType, InvestmentCashFlowType
 from hermes_finance.domain.debts import DebtType
 from hermes_finance.domain.deposits import DepositType
@@ -91,6 +97,10 @@ from hermes_finance.domain.xirr import (
 
 __all__ = [
     "FINANCIAL_ROUNDING",
+    "CashBoundaryCoverage",
+    "CashBoundaryCoverageEvidence",
+    "CashBoundaryCoverageState",
+    "CashBoundaryCoverageStatus",
     "AccountStatus",
     "AccountType",
     "DebtType",
