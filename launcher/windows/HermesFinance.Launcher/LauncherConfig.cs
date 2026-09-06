@@ -30,7 +30,10 @@ public sealed class LauncherConfig
     /// write is atomic from the launcher's point of view and never changes the
     /// canonical production data paths.
     /// </summary>
-    internal static LauncherConfig UpdateStableExpectedRef(string configPath, string expectedRef)
+    internal static LauncherConfig UpdateStableExpectedRef(
+        string configPath,
+        string expectedRef,
+        ValidatedProfile expectedProfile)
     {
         if (string.IsNullOrWhiteSpace(configPath) || !Path.IsPathFullyQualified(configPath))
         {
@@ -44,6 +47,7 @@ public sealed class LauncherConfig
 
         var config = Load(configPath);
         ProfileValidator.ValidateConfiguration(config);
+        ProfileValidator.AssertStableProductionTuple(config, expectedProfile);
         var stable = config.Profiles.SingleOrDefault(
             profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
         if (stable is null)

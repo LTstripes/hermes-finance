@@ -145,6 +145,52 @@ public static class ProfileValidator
         }
     }
 
+    /// <summary>
+    /// Re-proves the canonical Stable tuple after an explicit release-upgrade
+    /// action has reloaded launcher config. The caller must still perform the
+    /// release-specific filesystem/Git safety proof; this method only keeps
+    /// the profile, canonical production tuple, and the already validated
+    /// paths bound to one identity.
+    /// </summary>
+    internal static void AssertStableProductionTuple(LauncherConfig config, ValidatedProfile validated)
+    {
+        ValidateConfiguration(config);
+        var stable = config.Profiles.SingleOrDefault(
+            profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        if (stable is null || !validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new LauncherValidationException("Stable upgrade is blocked: the canonical Stable profile is missing.");
+        }
+
+        var canonicalCheckout = ResolveExistingDirectory(config.CanonicalProduction.Checkout, "canonical production checkout");
+        var canonicalDataDir = ResolveExistingDirectory(config.CanonicalProduction.DataDir, "canonical production data_dir");
+        var canonicalDatabase = ResolvePotentialFile(config.CanonicalProduction.Database, "canonical production database");
+        var checkout = ResolveExistingDirectory(stable.Checkout, "Stable checkout");
+        var dataDir = ResolveExistingDirectory(stable.DataDir, "Stable data_dir");
+        var database = ResolvePotentialFile(stable.Database, "Stable database");
+
+        AssertProfileTuple(
+            stable,
+            canonicalCheckout,
+            canonicalDataDir,
+            canonicalDatabase,
+            checkout,
+            dataDir,
+            database);
+
+        if (!string.Equals(stable.Id, validated.Profile.Id, StringComparison.OrdinalIgnoreCase)
+            || !SamePath(stable.Checkout, validated.Profile.Checkout)
+            || !SamePath(stable.DataDir, validated.Profile.DataDir)
+            || !SamePath(stable.Database, validated.Profile.Database)
+            || !SamePath(checkout, validated.Checkout)
+            || !SamePath(dataDir, validated.DataDir)
+            || !SamePath(database, validated.Database))
+        {
+            throw new LauncherValidationException(
+                "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
+        }
+    }
+
     public static ProcessStartInfo BuildStartCommand(ValidatedProfile profile)
     {
         var powershell = Path.Combine(
@@ -514,7 +560,7 @@ public static class ProfileValidator
         return new ProcessOutput(process.ExitCode, standardOutput, standardError);
     }
 
-    private static bool SameFileIdentity(string left, string right)
+    internal static bool SameFileIdentity(string left, string right)
     {
         if (!OperatingSystem.IsWindows())
         {

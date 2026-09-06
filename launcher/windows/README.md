@@ -18,7 +18,7 @@ Install the .NET 8 SDK, then run from this directory:
 .\package.ps1
 ```
 
-The script runs the automated safety harness (59 checks including #279 identity/CTA/config/setup and #298 Stable upgrade regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
+The script runs the automated safety harness (81 checks including #279 identity/CTA/config/setup and #298 Stable upgrade regressions) and publishes a self-contained single-file `win-x64` executable to `artifacts\win-x64\HermesFinance.Launcher.exe`. Build artifacts are ignored and must not be committed.
 
 For an owner-facing install, run from this directory:
 
@@ -74,6 +74,7 @@ Before PowerShell, it fail-closes with **человеческой сводкой
 - `identity does not match` на Preview → `Обновить Preview`; на Stable → recovery-only `Обновить проверку` (launcher обновляет Stable только по отдельному доказанному release target, не по mismatch);
 - грязный/конфликтный или unexpected Stable checkout → `Обновить проверку`; upgrade и backup до очистки не запускаются;
 - отсутствующий/черновой/prerelease release, lightweight tag, несоответствие tag/commit/version или недоступный GitHub → Stable upgrade остаётся заблокированным;
+- tracked collision with canonical production data, identity sidecar, database or backup paths, or an unsafe reparse/hardlink alias → Stable upgrade fails closed before backup;
 - `sidecar`/`unstamped data` → `Обновить проверку` после исправления sidecar;
 - `schema`/`alembic` → `Обновить проверку` (схема несовместима);
 - `port 8000` занят внешним процессом → launcher **не** предлагает ложный `Остановить` (чужие процессы не останавливает); primary — `Обновить проверку` после ручной остановки;
@@ -89,7 +90,7 @@ After a successful preflight it invokes only the selected checkout's existing gu
 Stable release discovery and upgrade are separate owner actions:
 
 1. After Hermes is stopped, the owner presses `Обновить проверку`. The launcher validates the current Stable checkout, then reads the published GitHub releases and `origin` tag refs without fetching, switching, creating a backup or writing config. It accepts only a strict published, non-draft, non-prerelease `vX.Y.Z` whose remote tag is annotated and peels to one exact commit. Stable is never resolved to `main`.
-2. If a newer target is proven, the launcher shows `Обновить Stable до vX.Y.Z`. Pressing it re-reads publication metadata and tag proof immediately before mutation, then creates one verified SQLite online backup in the existing `data/backups/` contract before any Git/config mutation.
+2. If a newer target is proven, the launcher shows `Обновить Stable до vX.Y.Z`. Pressing it re-reads publication metadata and tag proof immediately before mutation, then creates one verified SQLite online backup in the existing `data/backups/` contract before any Git/config mutation. The canonical production `data_dir` may remain inside the Stable checkout: the launcher first proves the canonical tuple, rejects reparse-point and hardlink aliases, and verifies that both the current release tree and the exact target release tree contain no tracked path under production data, the identity sidecar, the database, or backups. An unprovable or colliding tree fails closed before backup.
 3. It fetches only the proven tag ref, verifies the annotated tag object, peeled commit and target `hermes_finance.__version__`, detaches only the configured Stable checkout at that tag, and re-checks cleanliness and identity. It writes the Stable `expected_ref` only after those proofs succeed. A dirty, unexpected, changed or unproven checkout fails closed.
 4. If the new release needs dependencies, the launcher invokes the existing locked preparation mechanism (`uv sync --locked` and `npm ci`) as part of this explicit upgrade action. It never starts Hermes automatically; the owner gets a fresh `Запустить` CTA after preflight. Runtime/backend `/api/health` version must match the launcher release identity before `Running` is shown.
 

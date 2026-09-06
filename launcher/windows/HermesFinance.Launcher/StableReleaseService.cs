@@ -58,8 +58,11 @@ internal static class StableReleaseService
 {
     private const string ReleasesEndpoint =
         "https://api.github.com/repos/LTstripes/hermes-finance/releases?per_page=100";
+    private const string GitTreeEndpoint =
+        "https://api.github.com/repos/LTstripes/hermes-finance/git/trees/";
     private const string BackupScriptName = "launcher-production-backup.py";
     private const string BackupDirectoryName = "backups";
+    private const string DataIdentityFilename = ".hermes-data-identity.json";
     private const string BackupFilenamePattern =
         "^finance_backup_\\d{8}T\\d{12}Z(?:-\\d+)?\\.sqlite3$";
     private static readonly Regex ReleaseTagPattern = new(
@@ -118,18 +121,7 @@ internal static class StableReleaseService
         }
 
         var config = LauncherConfig.Load(configPath);
-        ProfileValidator.ValidateConfiguration(config);
-        var configuredStable = config.Profiles.SingleOrDefault(
-            candidate => candidate.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        if (configuredStable is null
-            || !SamePath(configuredStable.Checkout, profile.Checkout)
-            || !SamePath(configuredStable.DataDir, profile.DataDir)
-            || !SamePath(configuredStable.Database, profile.Database))
-        {
-            throw new LauncherValidationException("Stable upgrade is blocked: launcher config identity changed; refresh the launcher state.");
-        }
-
-        EnsureProductionDataIsOutsideCheckout(profile);
+        ProfileValidator.AssertStableProductionTuple(config, profile);
         var current = ProveCurrentRelease(profile);
         var published = ReadPublishedReleases(releaseHandler);
         var publishedTarget = published.SingleOrDefault(
@@ -151,6 +143,11 @@ internal static class StableReleaseService
             throw new LauncherValidationException("Stable upgrade target identity changed; the immutable tag proof no longer matches.");
         }
 
+        // This is a read-only proof. It must finish before the snapshot and
+        // backup so a tracked current/target path, reparse traversal, or file
+        // alias can never be discovered after the first mutation.
+        EnsureProductionDataIsSafeForSwitch(profile, remoteTarget, releaseHandler);
+        AssertStableConfigTuple(configPath, profile);
         var productionSnapshot = ProductionDataSnapshot.Capture(profile);
         // This is the first mutating operation. The backup is created before
         // any tag fetch, checkout change, dependency preparation, or config
@@ -195,7 +192,7 @@ internal static class StableReleaseService
         // launcher never attempts a rollback of a checkout after a data race;
         // it fails closed and leaves the owner an explicit recovery signal.
         productionSnapshot.AssertUnchanged(profile);
-        var updatedConfig = LauncherConfig.UpdateStableExpectedRef(configPath, remoteTarget.Ref);
+        var updatedConfig = LauncherConfig.UpdateStableExpectedRef(configPath, remoteTarget.Ref, profile);
         productionSnapshot.AssertUnchanged(profile);
 
         return new StableUpgradeResult(current, remoteTarget, backup.Id, updatedConfig);
@@ -224,20 +221,18 @@ internal static class StableReleaseService
         command.ArgumentList.Add("--database");
         command.ArgumentList.Add(profile.Database);
         command.ArgumentList.Add("--backup-dir");
-        command.ArgumentList.Add(Path.Combine(Path.GetDirectoryName(profile.Database)!, BackupDirectoryName));
+        command.ArgumentList.Add(GetBackupDirectory(profile));
         return command;
     }
 
     private static StableBackupMetadata CreateProductionBackup(ValidatedProfile profile)
     {
-        var backupDirectory = Path.GetFullPath(
-            Path.Combine(Path.GetDirectoryName(profile.Database)!, BackupDirectoryName));
+        var backupDirectory = GetBackupDirectory(profile);
         if (!IsWithin(backupDirectory, profile.DataDir))
         {
             throw new LauncherValidationException("Stable backup directory must remain inside canonical production data.");
         }
-        if (Directory.Exists(backupDirectory)
-            && new DirectoryInfo(backupDirectory).LinkTarget is not null)
+        if (Directory.Exists(backupDirectory) && IsReparsePoint(backupDirectory))
         {
             throw new LauncherValidationException("Stable backup directory is a reparse point; backup is blocked.");
         }
@@ -509,21 +504,551 @@ internal static class StableReleaseService
         AssertClean(profile.Checkout);
     }
 
-    private static void EnsureProductionDataIsOutsideCheckout(ValidatedProfile profile)
+    private static void EnsureProductionDataIsSafeForSwitch(
+        ValidatedProfile profile,
+        StableReleaseIdentity target,
+        HttpMessageHandler? releaseHandler)
     {
-        if (IsWithin(profile.DataDir, profile.Checkout))
-        {
-            throw new LauncherValidationException("Stable production data must be outside the mutable release checkout before upgrade.");
-        }
         if (!File.Exists(profile.Database))
         {
             throw new LauncherValidationException("Stable production database is missing; the required backup cannot be created.");
         }
-        if ((File.GetAttributes(profile.Database) & FileAttributes.ReparsePoint) != 0)
+
+        // Validate both the raw configured paths and the resolved paths. The
+        // former catches a reparse-point alias that ProfileValidator resolved
+        // before it produced the ValidatedProfile; the latter protects this
+        // operation if a path changed between validation and the upgrade.
+        AssertNoReparseTraversal(profile.Profile.Checkout, "Stable checkout");
+        AssertNoReparseTraversal(profile.Profile.DataDir, "Stable production data_dir");
+        AssertNoReparseTraversal(profile.Profile.Database, "Stable production database");
+        AssertNoReparseTraversal(profile.Checkout, "Stable checkout");
+        AssertNoReparseTraversal(profile.DataDir, "Stable production data_dir");
+        AssertNoReparseTraversal(profile.Database, "Stable production database");
+
+        var backupDirectory = GetBackupDirectory(profile);
+        AssertNoReparseTraversal(backupDirectory, "Stable production backup directory", allowMissingLeaf: true);
+        AssertProductionDataDoesNotOverlapGitMetadata(profile);
+
+        var layout = ProductionGitLayout.Create(profile, backupDirectory);
+        var currentTree = ReadTrackedGitTree(profile.Checkout, "HEAD");
+        AssertTrackedPathsDoNotCollide("current Stable release", currentTree, layout);
+        AssertTrackedPathAncestorsHaveNoReparsePoints(
+            profile.Checkout,
+            currentTree,
+            "current Stable release",
+            requireLeaf: true);
+
+        // Read the exact target tree before the first mutation even when the
+        // data directory is external: an ignored target-only checkout path
+        // can still be a hardlink/reparse alias to production data.
+        var targetTree = ReadTargetGitTree(target.CommitSha, releaseHandler);
+        AssertTrackedPathsDoNotCollide("target Stable release", targetTree, layout);
+        AssertTrackedPathAncestorsHaveNoReparsePoints(
+            profile.Checkout,
+            targetTree,
+            "target Stable release",
+            requireLeaf: false);
+        AssertNoProductionFileAliases(profile, currentTree, targetTree);
+    }
+
+    private static void AssertNoReparseTraversal(string path, string description, bool allowMissingLeaf = false)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
         {
-            throw new LauncherValidationException("Stable production database is a reparse point; backup is blocked.");
+            throw new LauncherValidationException($"{description} path cannot be proven safe for Stable upgrade.");
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            throw new LauncherValidationException($"{description} path cannot be proven safe for Stable upgrade.");
+        }
+
+        var current = root;
+        foreach (var component in fullPath[root.Length..].Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, component);
+            var exists = File.Exists(current) || Directory.Exists(current);
+            if (!exists)
+            {
+                if (allowMissingLeaf && SamePath(current, fullPath))
+                {
+                    return;
+                }
+                throw new LauncherValidationException(
+                    $"{description} path cannot be proven safe for Stable upgrade because it is missing.");
+            }
+
+            try
+            {
+                if (IsReparsePoint(current))
+                {
+                    throw new LauncherValidationException(
+                        $"{description} path uses a symlink, junction, or reparse point; Stable upgrade is blocked.");
+                }
+            }
+            catch (LauncherValidationException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new LauncherValidationException(
+                    $"{description} path cannot be proven safe for Stable upgrade: {exception.Message}");
+            }
         }
     }
+
+    private static void AssertTrackedPathsDoNotCollide(
+        string treeDescription,
+        IReadOnlyList<GitTreeEntry> tree,
+        ProductionGitLayout layout)
+    {
+        foreach (var entry in tree)
+        {
+            if (entry.Mode.Equals("120000", StringComparison.Ordinal))
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} contains a tracked symlink; production data safety cannot be proven before upgrade.");
+            }
+
+            if (layout.RelativeDatabase is not null
+                && SameGitPath(entry.Path, layout.RelativeDatabase))
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} tracks the canonical production database path; upgrade is blocked before backup.");
+            }
+            if (layout.RelativeIdentity is not null
+                && SameGitPath(entry.Path, layout.RelativeIdentity))
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} tracks the canonical production data identity; upgrade is blocked before backup.");
+            }
+            if (layout.RelativeBackupDirectory is not null
+                && IsGitPathWithin(entry.Path, layout.RelativeBackupDirectory))
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} tracks the canonical production backup path; upgrade is blocked before backup.");
+            }
+            if (layout.RelativeDataDir is not null
+                && IsGitPathWithin(entry.Path, layout.RelativeDataDir))
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} tracks a path under the canonical production data directory; upgrade is blocked before backup.");
+            }
+        }
+    }
+
+    private static void AssertTrackedPathAncestorsHaveNoReparsePoints(
+        string checkout,
+        IReadOnlyList<GitTreeEntry> tree,
+        string treeDescription,
+        bool requireLeaf)
+    {
+        foreach (var entry in tree)
+        {
+            var fullPath = GetCheckoutPath(checkout, entry.Path);
+            var root = Path.GetPathRoot(fullPath);
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} path safety cannot be proven before upgrade.");
+            }
+
+            var current = root;
+            var missing = false;
+            foreach (var component in fullPath[root.Length..].Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, component);
+                if (!File.Exists(current) && !Directory.Exists(current))
+                {
+                    missing = true;
+                    break;
+                }
+
+                try
+                {
+                    if (IsReparsePoint(current))
+                    {
+                        throw new LauncherValidationException(
+                            $"{treeDescription} tracked path uses a symlink, junction, or reparse point; upgrade is blocked before backup.");
+                    }
+                }
+                catch (LauncherValidationException)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw new LauncherValidationException(
+                        $"{treeDescription} path safety cannot be proven before upgrade: {exception.Message}");
+                }
+            }
+
+            if (requireLeaf && missing)
+            {
+                throw new LauncherValidationException(
+                    $"{treeDescription} tracked path is missing; upgrade is blocked before backup.");
+            }
+        }
+    }
+
+    private static void AssertProductionDataDoesNotOverlapGitMetadata(ValidatedProfile profile)
+    {
+        if (IsWithin(profile.Checkout, profile.DataDir) && !SamePath(profile.Checkout, profile.DataDir))
+        {
+            throw new LauncherValidationException(
+                "Stable production data contains the mutable checkout; upgrade is blocked before backup.");
+        }
+
+        var gitDirectory = ResolveGitDirectoryPath(profile.Checkout, "--git-dir");
+        var commonDirectory = ResolveGitDirectoryPath(profile.Checkout, "--git-common-dir");
+        if (PathsOverlap(profile.DataDir, gitDirectory)
+            || PathsOverlap(profile.DataDir, commonDirectory))
+        {
+            throw new LauncherValidationException(
+                "Stable production data overlaps Git metadata; upgrade is blocked before backup.");
+        }
+    }
+
+    private static void AssertStableConfigTuple(string configPath, ValidatedProfile profile)
+    {
+        try
+        {
+            ProfileValidator.AssertStableProductionTuple(LauncherConfig.Load(configPath), profile);
+        }
+        catch (LauncherValidationException)
+        {
+            throw;
+        }
+        catch (IOException exception)
+        {
+            throw new LauncherValidationException(
+                $"Stable canonical production identity cannot be re-proven before upgrade: {exception.Message}");
+        }
+    }
+
+    private static string ResolveGitDirectoryPath(string checkout, string option)
+    {
+        var value = RunGit(checkout, "rev-parse", option).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new LauncherValidationException(
+                "Stable Git metadata boundary cannot be proven before upgrade.");
+        }
+        return Path.GetFullPath(Path.IsPathFullyQualified(value) ? value : Path.Combine(checkout, value));
+    }
+
+    private static void AssertNoProductionFileAliases(
+        ValidatedProfile profile,
+        IReadOnlyList<GitTreeEntry> currentTree,
+        IReadOnlyList<GitTreeEntry> targetTree)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new LauncherValidationException(
+                "Stable production file identity cannot be proven outside Windows; upgrade is blocked.");
+        }
+
+        IReadOnlyList<string> productionFiles;
+        try
+        {
+            productionFiles = EnumerateProductionFiles(profile.DataDir);
+        }
+        catch (LauncherValidationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new LauncherValidationException(
+                $"Stable production data cannot be fully inspected before upgrade: {exception.Message}");
+        }
+
+        var checkoutPaths = currentTree
+            .Concat(targetTree)
+            .SelectMany(entry => ExistingCheckoutPathPrefixes(profile.Checkout, entry.Path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(path => File.Exists(path) || Directory.Exists(path))
+            .ToArray();
+        foreach (var checkoutPath in checkoutPaths)
+        {
+            try
+            {
+                if (IsReparsePoint(checkoutPath))
+                {
+                    throw new LauncherValidationException(
+                        "Stable checkout contains a target path with a symlink, junction, or reparse alias; upgrade is blocked before backup.");
+                }
+            }
+            catch (LauncherValidationException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new LauncherValidationException(
+                    $"Stable checkout target path safety cannot be proven before upgrade: {exception.Message}");
+            }
+        }
+
+        var trackedFiles = checkoutPaths
+            .Where(File.Exists)
+            .ToArray();
+        foreach (var productionFile in productionFiles)
+        {
+            foreach (var trackedFile in trackedFiles)
+            {
+                try
+                {
+                    if (ProfileValidator.SameFileIdentity(productionFile, trackedFile))
+                    {
+                        throw new LauncherValidationException(
+                            "Stable production data aliases a tracked release file; upgrade is blocked before backup.");
+                    }
+                }
+                catch (LauncherValidationException)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw new LauncherValidationException(
+                        $"Stable production file identity cannot be proven before upgrade: {exception.Message}");
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> ExistingCheckoutPathPrefixes(string checkout, string gitPath)
+    {
+        var checkoutFull = Path.GetFullPath(checkout);
+        var fullPath = GetCheckoutPath(checkoutFull, gitPath);
+        var relative = Path.GetRelativePath(checkoutFull, fullPath)
+            .Replace(Path.DirectorySeparatorChar, '/');
+        var current = checkoutFull;
+        foreach (var component in relative.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, component);
+            if (!File.Exists(current) && !Directory.Exists(current))
+            {
+                yield break;
+            }
+            yield return current;
+        }
+    }
+
+    private static IReadOnlyList<string> EnumerateProductionFiles(string dataDir)
+    {
+        var files = new List<string>();
+        VisitProductionDirectory(new DirectoryInfo(dataDir), files);
+        return files;
+    }
+
+    private static void VisitProductionDirectory(DirectoryInfo directory, ICollection<string> files)
+    {
+        if (IsReparsePoint(directory.FullName))
+        {
+            throw new LauncherValidationException(
+                "Stable production data contains a symlink, junction, or reparse point; upgrade is blocked.");
+        }
+
+        foreach (var entry in directory.EnumerateFileSystemInfos("*", SearchOption.TopDirectoryOnly))
+        {
+            if (IsReparsePoint(entry.FullName))
+            {
+                throw new LauncherValidationException(
+                    "Stable production data contains a symlink, junction, or reparse point; upgrade is blocked.");
+            }
+            if (entry is DirectoryInfo childDirectory)
+            {
+                VisitProductionDirectory(childDirectory, files);
+            }
+            else
+            {
+                files.Add(entry.FullName);
+            }
+        }
+    }
+
+    private static IReadOnlyList<GitTreeEntry> ReadTrackedGitTree(string checkout, string reference)
+    {
+        var output = RunGit(checkout, "ls-tree", "--full-tree", "-r", "-z", reference);
+        var entries = new List<GitTreeEntry>();
+        foreach (var item in output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = item.IndexOf('\t');
+            if (separator <= 0)
+            {
+                throw new LauncherValidationException(
+                    "Current Stable release tree returned an invalid Git path; production data safety cannot be proven.");
+            }
+            var metadata = item[..separator].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (metadata.Length != 3)
+            {
+                throw new LauncherValidationException(
+                    "Current Stable release tree returned an invalid Git entry; production data safety cannot be proven.");
+            }
+            entries.Add(new GitTreeEntry(
+                NormalizeGitPath(item[(separator + 1)..]),
+                metadata[0],
+                metadata[1]));
+        }
+        return entries;
+    }
+
+    private static IReadOnlyList<GitTreeEntry> ReadTargetGitTree(
+        string commitSha,
+        HttpMessageHandler? releaseHandler)
+    {
+        if (!IsSha(commitSha))
+        {
+            throw new LauncherValidationException(
+                "Stable target commit identity is invalid; target Git tree safety cannot be proven.");
+        }
+
+        var endpoint = GitTreeEndpoint + commitSha + "?recursive=1";
+        using var client = CreateGitHubClient(releaseHandler);
+        string responseBody;
+        try
+        {
+            using var response = client.GetAsync(endpoint).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new LauncherValidationException(
+                    $"Stable target Git tree proof failed: public GitHub API returned HTTP {(int)response.StatusCode}.");
+            }
+            responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        }
+        catch (LauncherValidationException)
+        {
+            throw;
+        }
+        catch (TaskCanceledException)
+        {
+            throw new LauncherValidationException(
+                "Stable target Git tree proof failed: public GitHub API request timed out.");
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new LauncherValidationException(
+                $"Stable target Git tree proof failed: {OneLine(exception.Message, "public GitHub API unavailable")}");
+        }
+        catch (IOException exception)
+        {
+            throw new LauncherValidationException(
+                $"Stable target Git tree proof failed: {OneLine(exception.Message, "public GitHub API unavailable")}");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("truncated", out var truncated)
+                || truncated.ValueKind != JsonValueKind.False
+                || !root.TryGetProperty("tree", out var tree)
+                || tree.ValueKind != JsonValueKind.Array)
+            {
+                throw new LauncherValidationException(
+                    "Stable target Git tree proof returned an incomplete or truncated result.");
+            }
+
+            var entries = new List<GitTreeEntry>();
+            foreach (var item in tree.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("path", out var path)
+                    || path.ValueKind != JsonValueKind.String
+                    || !item.TryGetProperty("mode", out var mode)
+                    || mode.ValueKind != JsonValueKind.String
+                    || !item.TryGetProperty("type", out var type)
+                    || type.ValueKind != JsonValueKind.String)
+                {
+                    throw new LauncherValidationException(
+                        "Stable target Git tree proof returned an invalid entry.");
+                }
+                entries.Add(new GitTreeEntry(
+                    NormalizeGitPath(path.GetString()!),
+                    mode.GetString()!,
+                    type.GetString()!));
+            }
+            return entries;
+        }
+        catch (JsonException exception)
+        {
+            throw new LauncherValidationException(
+                $"Stable target Git tree proof returned invalid JSON: {exception.Message}");
+        }
+    }
+
+    private static HttpClient CreateGitHubClient(HttpMessageHandler? releaseHandler)
+    {
+        var client = releaseHandler is null
+            ? new HttpClient()
+            : new HttpClient(releaseHandler, disposeHandler: false);
+        client.Timeout = TimeSpan.FromSeconds(15);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("HermesFinance.Launcher/1.0");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
+        return client;
+    }
+
+    private static string GetCheckoutPath(string checkout, string gitPath)
+    {
+        var relative = gitPath.Replace('/', Path.DirectorySeparatorChar);
+        var path = Path.GetFullPath(Path.Combine(checkout, relative));
+        if (!IsWithin(path, checkout))
+        {
+            throw new LauncherValidationException(
+                "A tracked Git path escapes the Stable checkout; production data safety cannot be proven.");
+        }
+        return path;
+    }
+
+    private static string NormalizeGitPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Contains('\\'))
+        {
+            throw new LauncherValidationException(
+                "A tracked Git path is not a safe relative path; production data safety cannot be proven.");
+        }
+        var components = path.Split('/', StringSplitOptions.None);
+        if (components.Any(component => string.IsNullOrEmpty(component) || component is "." or ".."))
+        {
+            throw new LauncherValidationException(
+                "A tracked Git path is not a normalized relative path; production data safety cannot be proven.");
+        }
+        return string.Join('/', components);
+    }
+
+    private static string? ToGitRelativePath(string checkout, string path)
+    {
+        var checkoutFull = Path.GetFullPath(checkout);
+        var pathFull = Path.GetFullPath(path);
+        if (!IsWithin(pathFull, checkoutFull))
+        {
+            return null;
+        }
+        var relative = Path.GetRelativePath(checkoutFull, pathFull);
+        return relative == "." ? "" : NormalizeGitPath(relative.Replace(Path.DirectorySeparatorChar, '/'));
+    }
+
+    private static bool SameGitPath(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsGitPathWithin(string path, string parent) =>
+        string.IsNullOrEmpty(parent)
+        || SameGitPath(path, parent)
+        || path.StartsWith(parent + "/", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsReparsePoint(string path) =>
+        (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
     private static void AssertClean(string checkout)
     {
@@ -708,11 +1233,24 @@ internal static class StableReleaseService
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
             StringComparison.OrdinalIgnoreCase);
 
+    private static string GetBackupDirectory(ValidatedProfile profile)
+    {
+        var databaseDirectory = Path.GetDirectoryName(profile.Database);
+        if (string.IsNullOrWhiteSpace(databaseDirectory))
+        {
+            throw new LauncherValidationException("Stable production backup directory cannot be resolved safely.");
+        }
+        return Path.GetFullPath(Path.Combine(databaseDirectory, BackupDirectoryName));
+    }
+
     private static bool IsWithin(string candidate, string parent) =>
         SamePath(candidate, parent)
         || Path.GetFullPath(candidate).StartsWith(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(parent)) + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase);
+
+    private static bool PathsOverlap(string left, string right) =>
+        SamePath(left, right) || IsWithin(left, right) || IsWithin(right, left);
 
     private static string OneLine(string preferred, string fallback)
     {
@@ -723,6 +1261,39 @@ internal static class StableReleaseService
     private sealed record PublishedRelease(string Tag, StableVersion VersionValue, string? ReleaseUrl)
     {
         public string Version => VersionValue.Text;
+    }
+
+    private sealed record GitTreeEntry(string Path, string Mode, string Type);
+
+    private sealed record ProductionGitLayout(
+        string? RelativeDataDir,
+        string? RelativeDatabase,
+        string? RelativeIdentity,
+        string? RelativeBackupDirectory)
+    {
+        public static ProductionGitLayout Create(ValidatedProfile profile, string backupDirectory)
+        {
+            var relativeDataDir = ToGitRelativePath(profile.Checkout, profile.DataDir);
+            var relativeDatabase = ToGitRelativePath(profile.Checkout, profile.Database);
+            var relativeIdentity = ToGitRelativePath(
+                profile.Checkout,
+                Path.Combine(profile.DataDir, DataIdentityFilename));
+            var relativeBackupDirectory = ToGitRelativePath(profile.Checkout, backupDirectory);
+
+            if ((relativeDataDir is null) != (relativeDatabase is null)
+                || (relativeDataDir is null) != (relativeIdentity is null)
+                || (relativeDataDir is null) != (relativeBackupDirectory is null))
+            {
+                throw new LauncherValidationException(
+                    "Stable production data paths do not have one canonical checkout boundary; upgrade is blocked.");
+            }
+
+            return new ProductionGitLayout(
+                relativeDataDir,
+                relativeDatabase,
+                relativeIdentity,
+                relativeBackupDirectory);
+        }
     }
 
     private sealed record RemoteTagProof(string TagObjectSha, string CommitSha);
