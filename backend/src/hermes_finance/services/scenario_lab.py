@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.deposits import (
@@ -44,6 +43,7 @@ from hermes_finance.domain.risk_allocation import (
     build_asset_allocation,
     build_top_positions,
 )
+from hermes_finance.domain.scenario_frozen_base import FrozenScenarioBase
 from hermes_finance.domain.scenario_lab import (
     CALCULATION_VERSION,
     CONTRACT_VERSION,
@@ -52,7 +52,6 @@ from hermes_finance.domain.scenario_lab import (
     RowApplicability,
     canonical_assumed_rate_basis_points,
     canonical_drawdown_pct,
-    canonical_json_hash,
     classify_applicability,
     normalize_drawdown_pct,
     normalized_rate_string,
@@ -63,22 +62,10 @@ from hermes_finance.domain.scenario_lab import (
 )
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
-    APP_SETTINGS_ID,
-    Account,
-    AppSettings,
-    CashBalance,
-    Debt,
     DepositSnapshot,
-    Goal,
-    Instrument,
-    PositionSnapshot,
     ReportingMonth,
 )
-from hermes_finance.services.cash_flow_ladder import build_cash_flow_ladder
-from hermes_finance.services.passive_income import passive_income_for_months
-from hermes_finance.services.payout_calendar import merged_payout_calendar
-from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
-from hermes_finance.services.settings import parse_passive_income_history_start_month
+from hermes_finance.services.scenario_frozen_base import materialize_frozen_base
 
 # ---- errors with machine-readable codes ----
 
@@ -193,6 +180,94 @@ def _base_fingerprint(frozen_payload: dict) -> str:
         frozen_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _scenario_payload_from_frozen(frozen: FrozenScenarioBase) -> dict[str, Any]:
+    """Pure in-memory dict adapter over the immutable FrozenScenarioBase.
+
+    Bridges existing metric families to the frozen DTOs; every value is
+    copied verbatim from the frozen capture. No DB access.
+    """
+    return {
+        "reporting_month": {
+            "id": frozen.reporting_month_id,
+            "year": frozen.year,
+            "month": frozen.month,
+            "snapshot_date": frozen.snapshot_date.isoformat(),
+            "status": frozen.status,
+        },
+        "cash": [
+            {
+                "id": row.id,
+                "account_id": row.account_id,
+                "amount_kopecks": row.amount_kopecks,
+                "currency": row.currency,
+                "include_in_capital": row.include_in_capital,
+            }
+            for row in frozen.cash
+        ],
+        "deposits": [
+            {
+                "id": d.id,
+                "account_id": d.account_id,
+                "balance_kopecks": d.balance_kopecks,
+                "include_in_capital": d.include_in_capital,
+            }
+            for d in frozen.deposits
+        ],
+        "positions": [
+            {
+                "id": p.id,
+                "account_id": p.account_id,
+                "instrument_id": p.instrument_id,
+                "instrument_type": p.instrument_type,
+                "market_value_kopecks": p.market_value_kopecks,
+                "include_in_capital": p.include_in_capital,
+            }
+            for p in frozen.positions
+        ],
+        "debts": [
+            {
+                "id": d.id,
+                "balance_kopecks": d.balance_kopecks,
+                "include_in_liquid_capital": d.include_in_liquid_capital,
+            }
+            for d in frozen.debts
+        ],
+        "goals": [
+            {
+                "id": g.id,
+                "target_kopecks": g.target_kopecks,
+                "is_active": g.is_active,
+                "goal_type": g.goal_type,
+            }
+            for g in frozen.capital_goals
+        ],
+    }
+
+
+def _forecast_inputs_from_frozen(frozen: FrozenScenarioBase) -> ForecastPassiveIncomeInput:
+    """Map the frozen forecast inputs into the canonical pure-domain input."""
+    return ForecastPassiveIncomeInput(
+        expected_flows=tuple(
+            ExpectedFlow(
+                flow_type=flow.flow_type,
+                net_amount_kopecks=flow.net_amount_kopecks,
+                is_approximate=flow.is_approximate,
+            )
+            for flow in frozen.forecast.expected_flows
+        ),
+        dividend_months=tuple(
+            MonthlyPassiveIncome(
+                year=item.year, month=item.month, amount=RubleAmount(item.amount_kopecks)
+            )
+            for item in frozen.forecast.dividend_months
+        ),
+        history_start_month=frozen.forecast.history_start_month,
+        deposit_snapshot_monthly_interest_kopecks=(
+            frozen.forecast.deposit_snapshot_monthly_interest_kopecks
+        ),
+    )
 
 
 def _money_api(kopecks: int) -> str:
@@ -317,134 +392,6 @@ def _strip_goals(lst: list[dict]) -> list[dict]:
         ],
         key=lambda v: v["goal_id"],
     )
-
-
-def _capture_frozen_scenario_base(
-    session: Session, reporting_month_id: int
-) -> tuple[ReportingMonth, dict[str, Any], dict[int, str], dict[int, str], list[CashBalance]]:
-    """Single frozen-base capture phase shared by all Scenario shocks.
-
-    One ``no_autoflush`` block reads ReportingMonth identity, cash/deposit/
-    position/debt facts, account inclusion flags, instrument classification
-    and relevant capital Goal inputs. The returned payload dict is the
-    immutable semantic base for every later calculation; no semantic
-    calculation re-reads the DB after this phase. Presentation name maps
-    travel separately and stay outside semantic fingerprints.
-    """
-    with session.no_autoflush:
-        month: ReportingMonth | None = session.get(ReportingMonth, reporting_month_id)
-        if month is None:
-            raise ReportingMonthNotFoundError(f"reporting month {reporting_month_id} was not found")
-
-        cash_rows = list(
-            session.scalars(
-                select(CashBalance)
-                .where(CashBalance.reporting_month_id == reporting_month_id)
-                .order_by(CashBalance.id)
-            )
-        )
-        deposit_rows = list(
-            session.execute(
-                select(DepositSnapshot, Account.name, Account.include_in_capital)
-                .join(Account, DepositSnapshot.account_id == Account.id)
-                .where(DepositSnapshot.reporting_month_id == reporting_month_id)
-                .order_by(DepositSnapshot.id)
-            ).all()
-        )
-        pos_rows = list(
-            session.execute(
-                select(PositionSnapshot, Instrument.name, Instrument.instrument_type)
-                .join(Instrument, PositionSnapshot.instrument_id == Instrument.id)
-                .where(PositionSnapshot.reporting_month_id == reporting_month_id)
-                .order_by(PositionSnapshot.id)
-            ).all()
-        )
-        pos_accounts = {
-            row[0].id: session.get(Account, row[0].account_id).include_in_capital
-            if session.get(Account, row[0].account_id) is not None
-            else True
-            for row in pos_rows
-        }
-        account_names: dict[int, str] = {}
-        instrument_names: dict[int, str] = {}
-        for dep, name, _inc in deposit_rows:
-            account_names[dep.account_id] = name
-        for snap, inst_name, _type in pos_rows:
-            acc = session.get(Account, snap.account_id)
-            if acc is not None:
-                account_names[snap.account_id] = acc.name
-            instrument_names[snap.instrument_id] = inst_name
-
-        debt_rows = list(
-            session.scalars(
-                select(Debt).where(Debt.reporting_month_id == reporting_month_id).order_by(Debt.id)
-            )
-        )
-        all_goals = list(session.scalars(select(Goal).order_by(Goal.id)).all())
-        capital_goals = [
-            g
-            for g in all_goals
-            if g.is_active
-            and g.goal_type == "capital"
-            and g.calculation_mode == "liquid_capital_net"
-        ]
-
-    frozen_payload = {
-        "reporting_month": {
-            "id": month.id,
-            "year": month.year,
-            "month": month.month,
-            "snapshot_date": month.snapshot_date.isoformat(),
-            "status": month.status,
-        },
-        "cash": [
-            {
-                "id": c.id,
-                "amount_kopecks": c.amount_kopecks,
-                "currency": c.currency,
-                "include_in_capital": c.include_in_capital,
-            }
-            for c in sorted(cash_rows, key=lambda x: x.id)
-        ],
-        "deposits": [
-            {
-                "id": d.id,
-                "account_id": d.account_id,
-                "balance_kopecks": d.balance_kopecks,
-                "include_in_capital": bool(inc),
-            }
-            for d, _name, inc in sorted(deposit_rows, key=lambda x: x[0].id)
-        ],
-        "positions": [
-            {
-                "id": snap.id,
-                "account_id": snap.account_id,
-                "instrument_id": snap.instrument_id,
-                "instrument_type": itype,
-                "market_value_kopecks": snap.market_value_kopecks,
-                "include_in_capital": bool(pos_accounts.get(snap.id, True)),
-            }
-            for snap, _iname, itype in sorted(pos_rows, key=lambda x: x[0].id)
-        ],
-        "debts": [
-            {
-                "id": d.id,
-                "balance_kopecks": d.current_balance_kopecks,
-                "include_in_liquid_capital": d.include_in_liquid_capital,
-            }
-            for d in sorted(debt_rows, key=lambda x: x.id)
-        ],
-        "goals": [
-            {
-                "id": g.id,
-                "target_kopecks": g.target_value_kopecks,
-                "is_active": g.is_active,
-                "goal_type": g.goal_type,
-            }
-            for g in sorted(capital_goals, key=lambda x: x.id)
-        ],
-    }
-    return month, frozen_payload, account_names, instrument_names, cash_rows
 
 
 def _frozen_capital_metrics(
@@ -626,7 +573,7 @@ def _frozen_capital_metrics(
         target_kopecks = int(g["target_kopecks"])
         base_calc = calculate_goal_achievement_forecast(
             goal_id=gid,
-            reporting_month_id=month.id,
+            reporting_month_id=month.reporting_month_id,
             as_of_date=month.snapshot_date,
             current_value=base_liquid.liquid_capital_net,
             target_value=RubleAmount(target_kopecks),
@@ -634,7 +581,7 @@ def _frozen_capital_metrics(
         )
         stressed_calc = calculate_goal_achievement_forecast(
             goal_id=gid,
-            reporting_month_id=month.id,
+            reporting_month_id=month.reporting_month_id,
             as_of_date=month.snapshot_date,
             current_value=stressed_liquid.liquid_capital_net,
             target_value=RubleAmount(target_kopecks),
@@ -742,11 +689,13 @@ def evaluate_scenario_lab(
     if not 1 <= top_n <= 100:
         raise ScenarioLabError("invalid_top_n", "top_n 1..100")
 
-    month, frozen_payload, account_names, instrument_names, cash_rows = (
-        _capture_frozen_scenario_base(session, reporting_month_id)
-    )
+    frozen = materialize_frozen_base(session, reporting_month_id)
 
-    base_fp = _base_fingerprint(frozen_payload)
+    frozen_payload = _scenario_payload_from_frozen(frozen)
+    month = frozen  # shim exposing .id/.year/.month/.snapshot_date/.status
+    account_names = dict(frozen.account_names)
+    instrument_names = dict(frozen.instrument_names)
+    base_fp = frozen.base_fingerprint
 
     eligible_position_ids = _sorted_ids(
         [p["id"] for p in frozen_payload["positions"] if p["include_in_capital"]]
@@ -948,21 +897,15 @@ def evaluate_scenario_lab(
     )
 
     affected_refs = {
-        "reporting_month_id": month.id,
+        "reporting_month_id": month.reporting_month_id,
         "position_ids": _sorted_ids([p["id"] for p in frozen_payload["positions"]]),
         "account_ids": _sorted_ids(list(account_names.keys())),
         "instrument_ids": _sorted_ids([p["instrument_id"] for p in frozen_payload["positions"]]),
         "deposit_ids": eligible_deposit_ids,
-        "cash_ids": _sorted_ids([c.id for c in cash_rows]),
+        "cash_ids": _sorted_ids([row.id for row in frozen.cash]),
     }
 
-    reporting_month_dict = {
-        "id": month.id,
-        "year": month.year,
-        "month": month.month,
-        "snapshot_date": month.snapshot_date.isoformat(),
-        "status": month.status,
-    }
+    reporting_month_dict = dict(_scenario_payload_from_frozen(month)["reporting_month"])
     normalized_shock = {
         "shock_type": "equity_drawdown",
         "drawdown_pct": pct_str,
@@ -1067,89 +1010,6 @@ def evaluate_scenario_lab(
 # operates on the captured tuple and the canonical pure calculators.
 
 
-def _load_frozen_deposit_rows(
-    session: Session,
-    reporting_month_id: int,
-) -> list[DepositSnapshot]:
-    """Frozen canonical DepositSnapshot rows for the selected month.
-
-    Called once during the shared materialization phase; the returned rows
-    are the only deposit facts any Scenario calculation may use afterwards.
-    Eligibility for deposit-interest semantics covers every snapshot row of
-    the month (capital inclusion is a separate concept).
-    """
-    with session.no_autoflush:
-        deposit_snapshots = list(
-            session.scalars(
-                select(DepositSnapshot)
-                .where(DepositSnapshot.reporting_month_id == reporting_month_id)
-                .order_by(DepositSnapshot.id)
-            )
-        )
-    return deposit_snapshots
-
-
-def _load_frozen_forecast_inputs(
-    session: Session,
-    reporting_month_id: int,
-) -> ForecastPassiveIncomeInput:
-    """Frozen canonical forecast input for the deposit-rate shock."""
-    with session.no_autoflush:
-        merged_months = merged_payout_calendar(
-            session, reporting_month_id=reporting_month_id, forecast_version="v1"
-        )
-        expected_flows: list[ExpectedFlow] = []
-        for calendar_month in merged_months:
-            for flow in calendar_month.items:
-                if flow.flow_type == "redemption":
-                    continue
-                expected_flows.append(
-                    ExpectedFlow(
-                        flow_type=flow.flow_type,
-                        net_amount_kopecks=flow.expected_net_amount.kopecks,
-                        is_approximate=bool(flow.is_approximate),
-                    )
-                )
-        deposit_monthly = session.scalars(
-            select(DepositSnapshot.expected_monthly_interest_kopecks).where(
-                DepositSnapshot.reporting_month_id == reporting_month_id
-            )
-        ).all()
-        deposit_monthly_sum = sum(deposit_monthly) if deposit_monthly else None
-
-        from hermes_finance.domain.reporting import ReportingMonthStatus
-
-        closed_months = session.execute(
-            select(ReportingMonth.id, ReportingMonth.year, ReportingMonth.month)
-            .where(ReportingMonth.status == ReportingMonthStatus.CLOSED.value)
-            .order_by(ReportingMonth.year, ReportingMonth.month)
-        ).all()
-        results_by_month = passive_income_for_months(
-            session, [month_id for month_id, _, _ in closed_months]
-        )
-        dividend_months: list[MonthlyPassiveIncome] = []
-        for month_id, year, month_number in closed_months:
-            dividend_months.append(
-                MonthlyPassiveIncome(
-                    year=year,
-                    month=month_number,
-                    amount=results_by_month[month_id].breakdown.dividends,
-                )
-            )
-        settings = session.scalar(
-            select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID)
-        )
-        history_start = parse_passive_income_history_start_month(
-            settings.passive_income_history_start_month if settings is not None else None
-        )
-    return ForecastPassiveIncomeInput(
-        expected_flows=tuple(expected_flows),
-        dividend_months=tuple(dividend_months),
-        history_start_month=history_start,
-        deposit_snapshot_monthly_interest_kopecks=deposit_monthly_sum,
-    )
-
-
 def _project_forecast(
     base_inputs: ForecastPassiveIncomeInput,
     *,
@@ -1194,12 +1054,12 @@ def _project_forecast(
 def _project_ladder(ladder: Any, *, deposit_monthly: int | None) -> list[dict]:
     months: list[dict] = []
     for month in ladder.months:
-        coupon = month.coupon.kopecks
-        dividend = month.dividend.kopecks
-        other = month.other_capital_income.kopecks
-        redemption = month.redemption_principal.kopecks
+        coupon = month.coupon_kopecks
+        dividend = month.dividend_kopecks
+        other = month.other_capital_income_kopecks
+        redemption = month.redemption_principal_kopecks
         if deposit_monthly is None:
-            deposit_kopecks = month.deposit_interest.kopecks
+            deposit_kopecks = month.deposit_interest_kopecks
         else:
             deposit_kopecks = deposit_monthly
         passive = coupon + dividend + deposit_kopecks + other
@@ -1233,12 +1093,12 @@ def _ladder_window_dict(window: Any) -> dict:
         "days": window.days,
         "from_date": window.from_date.isoformat(),
         "to_date": window.to_date.isoformat(),
-        "passive_income_kopecks": window.passive_income.kopecks,
-        "passive_income": _money_api(window.passive_income.kopecks),
-        "redemption_principal_kopecks": window.redemption_principal.kopecks,
-        "redemption_principal": _money_api(window.redemption_principal.kopecks),
-        "total_cash_flow_kopecks": window.total_cash_flow.kopecks,
-        "total_cash_flow": _money_api(window.total_cash_flow.kopecks),
+        "passive_income_kopecks": window.passive_income_kopecks,
+        "passive_income": _money_api(window.passive_income_kopecks),
+        "redemption_principal_kopecks": window.redemption_principal_kopecks,
+        "redemption_principal": _money_api(window.redemption_principal_kopecks),
+        "total_cash_flow_kopecks": window.total_cash_flow_kopecks,
+        "total_cash_flow": _money_api(window.total_cash_flow_kopecks),
         "events": [
             {
                 "expected_date": event.expected_date.isoformat(),
@@ -1246,12 +1106,12 @@ def _ladder_window_dict(window: Any) -> dict:
                 "component": event.component,
                 "account_id": event.account_id,
                 "instrument_id": event.instrument_id,
-                "expected_net_amount_kopecks": event.expected_net_amount.kopecks,
+                "expected_net_amount_kopecks": event.expected_net_amount_kopecks,
                 "is_approximate": bool(event.is_approximate),
-                "source_kind": str(event.source_kind.value),
+                "source_kind": str(event.source_kind),
                 "source_id": int(event.source_id),
             }
-            for event in window.items
+            for event in window.events
         ],
     }
 
@@ -1325,80 +1185,6 @@ def _project_deposit_rows(
     return base_rows, stressed_rows, impact_rows, applicability, stressed_total - base_total
 
 
-def _frozen_base_fingerprint_for_deposit_rate(
-    *,
-    reporting_month: ReportingMonth,
-    deposit_snapshots: list[DepositSnapshot],
-    forecast_inputs: ForecastPassiveIncomeInput,
-    ladder: Any,
-) -> str:
-    payload = {
-        "reporting_month": {
-            "id": reporting_month.id,
-            "year": reporting_month.year,
-            "month": reporting_month.month,
-            "snapshot_date": reporting_month.snapshot_date.isoformat(),
-            "status": reporting_month.status,
-        },
-        "deposits": sorted(
-            [
-                {
-                    "id": deposit.id,
-                    "account_id": deposit.account_id,
-                    "deposit_type": deposit.deposit_type,
-                    "balance_kopecks": deposit.balance_kopecks,
-                    "annual_rate_basis_points": deposit.annual_rate_basis_points,
-                    "expected_monthly_interest_kopecks": deposit.expected_monthly_interest_kopecks,
-                }
-                for deposit in deposit_snapshots
-            ],
-            key=lambda item: item["id"],
-        ),
-        "forecast": {
-            "expected_flows": [
-                {
-                    "flow_type": flow.flow_type,
-                    "net_amount_kopecks": flow.net_amount_kopecks,
-                    "is_approximate": flow.is_approximate,
-                }
-                for flow in forecast_inputs.expected_flows
-            ],
-            "dividend_months": [
-                {
-                    "year": dividend.year,
-                    "month": dividend.month,
-                    "amount_kopecks": dividend.amount.kopecks,
-                }
-                for dividend in forecast_inputs.dividend_months
-            ],
-            "history_start_month": (
-                f"{forecast_inputs.history_start_month[0]:04d}-{forecast_inputs.history_start_month[1]:02d}"
-                if forecast_inputs.history_start_month is not None
-                else None
-            ),
-            "deposit_snapshot_monthly_interest_kopecks": (
-                forecast_inputs.deposit_snapshot_monthly_interest_kopecks
-            ),
-        },
-        "ladder_months": [
-            {
-                "year": month.year,
-                "month": month.month,
-                "coupon_kopecks": month.coupon.kopecks,
-                "dividend_kopecks": month.dividend.kopecks,
-                "deposit_interest_kopecks": month.deposit_interest.kopecks,
-                "other_capital_income_kopecks": month.other_capital_income.kopecks,
-                "redemption_principal_kopecks": month.redemption_principal.kopecks,
-                "passive_income_kopecks": month.passive_income.kopecks,
-                "total_cash_flow_kopecks": month.total_cash_flow.kopecks,
-                "is_approximate": bool(month.is_approximate),
-            }
-            for month in ladder.months
-        ],
-    }
-    return canonical_json_hash(payload)
-
-
 def _strip_deposit_rows_for_fingerprint(rows: dict[str, dict]) -> dict:
     return {
         key: {
@@ -1445,13 +1231,14 @@ def _evaluate_deposit_rate_assumption(
 ) -> ScenarioLabEvaluation:
     rate_basis_points, rate_string, requested_ids, all_eligible = _parse_deposit_rate_input(payload)
 
-    # Materialization phase: shared frozen base + deposit ORM rows.
-    # Every semantic calculation below operates on these captures only.
-    month, frozen_payload, account_names, instrument_names, _cash_rows = (
-        _capture_frozen_scenario_base(session, reporting_month_id)
-    )
-    deposit_snapshots = _load_frozen_deposit_rows(session, reporting_month_id)
-    deposit_by_id = {deposit.id: deposit for deposit in deposit_snapshots}
+    # Single materialization phase: every semantic input below comes
+    # from this one FrozenScenarioBase capture; no further DB reads.
+    frozen = materialize_frozen_base(session, reporting_month_id)
+    frozen_payload = _scenario_payload_from_frozen(frozen)
+    month = frozen  # shim exposing .id/.year/.month/.snapshot_date/.status
+    account_names = dict(frozen.account_names)
+    deposit_snapshots = frozen.deposits
+    deposit_by_id = {deposit.id: deposit for deposit in frozen.deposits}
 
     if all_eligible:
         target_ids = sorted(deposit_by_id)
@@ -1465,8 +1252,8 @@ def _evaluate_deposit_rate_assumption(
         target_ids = sorted(requested_ids)
     target_set = set(target_ids)
 
-    base_forecast_inputs = _load_frozen_forecast_inputs(session, reporting_month_id)
-    ladder = build_cash_flow_ladder(session, reporting_month_id=reporting_month_id)
+    base_forecast_inputs = _forecast_inputs_from_frozen(frozen)
+    ladder = frozen.ladder
 
     base_rows, stressed_rows, impact_rows, applicability, total_delta = _project_deposit_rows(
         deposit_snapshots,
@@ -1506,12 +1293,7 @@ def _evaluate_deposit_rate_assumption(
         has_unknown=False,
     )
 
-    base_fp = _frozen_base_fingerprint_for_deposit_rate(
-        reporting_month=month,
-        deposit_snapshots=deposit_snapshots,
-        forecast_inputs=base_forecast_inputs,
-        ladder=ladder,
-    )
+    base_fp = frozen.base_fingerprint
 
     if all_eligible:
         selector = "all_eligible_deposits"
@@ -1596,7 +1378,7 @@ def _evaluate_deposit_rate_assumption(
     )
 
     affected_refs = {
-        "reporting_month_id": reporting_month_id,
+        "reporting_month_id": frozen.reporting_month_id,
         "deposit_ids": _sorted_ids([deposit.id for deposit in deposit_snapshots]),
         "account_ids": _sorted_ids([deposit.account_id for deposit in deposit_snapshots]),
         "position_ids": [],
@@ -1604,13 +1386,7 @@ def _evaluate_deposit_rate_assumption(
         "cash_ids": [],
     }
 
-    reporting_month_dict = {
-        "id": month.id,
-        "year": month.year,
-        "month": month.month,
-        "snapshot_date": month.snapshot_date.isoformat(),
-        "status": month.status,
-    }
+    reporting_month_dict = dict(_scenario_payload_from_frozen(month)["reporting_month"])
     normalized_shock = {
         "shock_type": "deposit_rate_assumption",
         "assumed_annual_rate_pct": rate_string,

@@ -22,6 +22,7 @@ from hermes_finance.persistence import (
     DepositSnapshot,
     ExpectedCashFlow,
     Goal,
+    Instrument,
     InvestmentCashFlow,
     PositionSnapshot,
     ReportingMonth,
@@ -1041,3 +1042,145 @@ def test_full_scenario_eval_independent_of_ambient_precision(session):
         assert other.impact == first.impact
         assert other.normalized_target_scope == first.normalized_target_scope
         assert other.normalized_shock_input == first.normalized_shock_input
+
+
+# ---------------------------------------------------------------------------
+# Single-capture internal-consistency regressions.
+#
+# materialize_frozen_base is the ONLY DB read phase. The hooks below mutate
+# the database between capture stages (via the canonical read-model
+# dependencies the materializer composes) and prove that a running
+# evaluation never observes a mixture of DB states: every surface keeps
+# describing the single captured snapshot.
+# ---------------------------------------------------------------------------
+
+
+def _capture_stage_mutation(session, month, account, *, stage_probe):
+    """Insert a new deposit from a second session at the given capture stage.
+
+    ``stage_probe`` is a monkeypatched canonical read-model function used by
+    the materializer; it fires the mutation exactly once, then delegates.
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    import hermes_finance.services.scenario_frozen_base as sfb
+
+    mutated = {"done": False}
+
+    def patched(session_arg, *args, **kwargs):
+        if not mutated["done"]:
+            mutated["done"] = True
+            engine = session.get_bind()
+            second = SASession(engine)
+            try:
+                second.add(
+                    DepositSnapshot(
+                        reporting_month_id=month.id,
+                        account_id=account.id,
+                        name="Late",
+                        deposit_type="deposit",
+                        balance_kopecks=5_000_000,
+                        annual_rate_basis_points=600,
+                        expected_monthly_interest_kopecks=25_000,
+                        actual_interest_received_kopecks=0,
+                    )
+                )
+                second.commit()
+            finally:
+                second.close()
+        return stage_probe(session_arg, *args, **kwargs)
+
+    return sfb, patched
+
+
+def test_deposit_frozen_base_consistent_under_mutation_between_capture_stages(
+    session, monkeypatch
+):
+    """A deposit committed while the materializer is mid-capture (between its
+    read-model stages) must not leak into the running evaluation: the frozen
+    base, target scope, fingerprints and every surface stay one consistent
+    pre-mutation snapshot."""
+    month, account = _month(session), _account(session)
+    d1 = _deposit(session, month.id, account.id, balance="100000.00", annual_rate="6.00", name="A")
+    shock_payload = {**RATE_ALL, "all_eligible_deposits": True}
+    shock = {"deposit_rate_assumption": shock_payload}
+
+    # pre-mutation reference evaluation
+    reference = evaluate_scenario_lab(session, month.id, shock)
+
+    import hermes_finance.services.scenario_frozen_base as sfb
+
+    stage = sfb._capture_stage_build_cash_flow_ladder
+    _, patched = _capture_stage_mutation(
+        session, month, account, stage_probe=stage
+    )
+    monkeypatch.setattr(sfb, "_capture_stage_build_cash_flow_ladder", patched)
+
+    running = evaluate_scenario_lab(session, month.id, shock)
+
+    assert running.base_fingerprint == reference.base_fingerprint
+    assert running.semantic_fingerprint == reference.semantic_fingerprint
+    assert running.normalized_target_scope["deposit_ids"] == [d1.id]
+    assert running.normalized_target_scope == reference.normalized_target_scope
+    assert running.base == reference.base
+    assert running.stressed == reference.stressed
+    assert running.impact == reference.impact
+    assert running.coverage == reference.coverage
+    # the late deposit exists in the DB now but never entered the result
+    assert set(running.base["per_deposit"]) == {str(d1.id)}
+
+
+def test_equity_frozen_base_consistent_under_mutation_between_capture_stages(
+    session, monkeypatch
+):
+    """Same internal-consistency guarantee for the equity shock: positions
+    committed mid-capture do not enter the running evaluation."""
+    from hermes_finance.domain import InstrumentType
+
+    month, account = _month(session), _account(session)
+    stock = create_instrument(session, name="LateStock", instrument_type=InstrumentType.STOCK)
+    _position(session, month.id, account.id, stock.id, "1000.00")
+    shock = {"equity_drawdown": {"drawdown_pct": "20"}}
+    reference = evaluate_scenario_lab(session, month.id, shock)
+
+    from sqlalchemy.orm import Session as SASession
+
+    import hermes_finance.services.scenario_frozen_base as sfb
+
+    engine = session.get_bind()
+    orig_merged = sfb._capture_stage_merged_payout_calendar
+    mutated = {"done": False}
+
+    def patched_merged(session_arg, *args, **kwargs):
+        if not mutated["done"]:
+            mutated["done"] = True
+            second = SASession(engine)
+            try:
+                create_instrument(second, name="LateBond", instrument_type=InstrumentType.BOND)
+                late_bond = second.scalar(
+                    select(Instrument.id).where(Instrument.name == "LateBond")
+                )
+                create_position_snapshot(
+                    second,
+                    reporting_month_id=month.id,
+                    account_id=account.id,
+                    instrument_id=late_bond,
+                    quantity="1",
+                    average_cost_per_unit="1.00",
+                    market_price_per_unit="999999.00",
+                    price_date=date(2030, 5, 12),
+                )
+                second.commit()
+            finally:
+                second.close()
+        return orig_merged(session_arg, *args, **kwargs)
+
+    monkeypatch.setattr(sfb, "_capture_stage_merged_payout_calendar", patched_merged)
+
+    running = evaluate_scenario_lab(session, month.id, shock)
+
+    assert running.base_fingerprint == reference.base_fingerprint
+    assert running.semantic_fingerprint == reference.semantic_fingerprint
+    assert running.base == reference.base
+    assert running.stressed == reference.stressed
+    assert running.impact == reference.impact

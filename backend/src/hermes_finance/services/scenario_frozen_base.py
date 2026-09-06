@@ -15,8 +15,11 @@ No writes, no network, no provider refresh, no transaction isolation changes.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from sqlalchemy import select
 
+from hermes_finance.domain import RubleAmount
 from hermes_finance.domain.cash_flows import ExpectedCashFlowType
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.scenario_frozen_base import (
@@ -52,6 +55,29 @@ from hermes_finance.services.passive_income import passive_income_for_months
 from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 from hermes_finance.services.settings import parse_passive_income_history_start_month
+
+
+def _capture_stage_merged_payout_calendar(session, *, reporting_month_id, forecast_version):
+    """Capture-stage indirection for the merged payout calendar read.
+
+    Exists so tests can hook a mutation between capture stages; production
+    behavior is the plain canonical read model.
+    """
+    return merged_payout_calendar(
+        session, reporting_month_id=reporting_month_id, forecast_version=forecast_version
+    )
+
+
+def _capture_stage_passive_income_for_months(session, month_ids):
+    """Capture-stage indirection for the actual passive-income history read."""
+    return passive_income_for_months(session, month_ids)
+
+
+def _capture_stage_build_cash_flow_ladder(session, *, reporting_month_id, forecast_version):
+    """Capture-stage indirection for the R07-05 ladder base read."""
+    return build_cash_flow_ladder(
+        session, reporting_month_id=reporting_month_id, forecast_version=forecast_version
+    )
 
 
 def _coerce_window(window) -> FrozenUpcomingWindow:
@@ -164,7 +190,7 @@ def materialize_frozen_base(
             instrument_names[instrument.id] = instrument.name
 
         # --- canonical forecast inputs (merged calendar window + actual dividends) ---
-        merged_months = merged_payout_calendar(
+        merged_months = _capture_stage_merged_payout_calendar(
             session,
             reporting_month_id=reporting_month_id,
             forecast_version=version,
@@ -185,19 +211,22 @@ def materialize_frozen_base(
                     )
                 )
 
-        deposit_monthly_values = session.scalars(
-            select(DepositSnapshot.expected_monthly_interest_kopecks).where(
-                DepositSnapshot.reporting_month_id == reporting_month_id
-            )
-        ).all()
-        deposit_monthly_sum = sum(deposit_monthly_values) if deposit_monthly_values else None
+        # Deposit monthly-interest sum derives from the deposit rows already
+        # captured in this same materialization phase (no second DB read of
+        # the deposit table — a later re-read could observe a different DB
+        # state and mix snapshots inside one evaluation).
+        deposit_monthly_sum = (
+            sum(snapshot.expected_monthly_interest_kopecks for snapshot, _n, _i in deposit_rows)
+            if deposit_rows
+            else None
+        )
 
         closed_months = session.execute(
             select(ReportingMonth.id, ReportingMonth.year, ReportingMonth.month)
             .where(ReportingMonth.status == ReportingMonthStatus.CLOSED.value)
             .order_by(ReportingMonth.year, ReportingMonth.month)
         ).all()
-        results_by_month = passive_income_for_months(
+        results_by_month = _capture_stage_passive_income_for_months(
             session, [month_id for month_id, _, _ in closed_months]
         )
         dividend_months: list[FrozenDividendMonth] = []
@@ -215,9 +244,43 @@ def materialize_frozen_base(
         )
 
         # --- canonical ladder base ---
-        ladder = build_cash_flow_ladder(
+        ladder = _capture_stage_build_cash_flow_ladder(
             session, reporting_month_id=reporting_month_id, forecast_version=version
         )
+        # Keep the ladder on the SAME captured snapshot as the deposit rows:
+        # the ladder service re-reads DepositSnapshot internally, which could
+        # observe a later DB state than the already-frozen deposit facts.
+        # The captured monthly interest sum is authoritative here; replacing
+        # the flat deposit_interest component (and the derived passive/total
+        # sums) makes the frozen ladder internally consistent even if a
+        # concurrent commit lands between capture stages. The upcoming
+        # windows never contain deposit rows (undated estimates), so they
+        # stay untouched.
+        if deposit_rows:
+            frozen_deposit_monthly = sum(
+                snapshot.expected_monthly_interest_kopecks
+                for snapshot, _n, _i in deposit_rows
+            )
+        else:
+            frozen_deposit_monthly = 0
+        reconciled_months = []
+        for item in ladder.months:
+            deposit_component = item.deposit_interest.kopecks
+            if deposit_component != frozen_deposit_monthly:
+                passive = (
+                    item.passive_income.kopecks
+                    - deposit_component
+                    + frozen_deposit_monthly
+                )
+                total = passive + item.redemption_principal.kopecks
+                item = replace(
+                    item,
+                    deposit_interest=RubleAmount(frozen_deposit_monthly),
+                    passive_income=RubleAmount(passive),
+                    total_cash_flow=RubleAmount(total),
+                )
+            reconciled_months.append(item)
+        ladder = replace(ladder, months=tuple(reconciled_months))
 
     # ---- assemble immutable frozen facts (no further reads) ----
     frozen_cash = tuple(
