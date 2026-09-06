@@ -44,6 +44,8 @@ class PerformanceAvailabilityReasonCode(StrEnum):
     SCOPE_MEMBERSHIP_CHANGED = "not_computable_scope_membership_changed"
     CURRENCY_CONVERSION_INCOMPLETE = "not_computable_currency_conversion_incomplete"
     TRANSFER_IDENTITY_UNRESOLVED = "not_computable_transfer_identity_unresolved"
+    TRANSFER_IN_TRANSIT_UNVALUED = "not_computable_transfer_in_transit_unvalued"
+    TRANSFER_RECONCILIATION_INCOMPLETE = "not_computable_transfer_reconciliation_incomplete"
     VALUATION_BOUNDARY_MISSING = "not_computable_valuation_boundary_missing"
     VALUATION_BOUNDARY_ORDER_UNKNOWN = "not_computable_valuation_boundary_order_unknown"
 

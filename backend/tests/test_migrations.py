@@ -231,6 +231,23 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "created_at",
             "updated_at",
         ]
+        assert [
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(external_transfer_reconciliation_evidence)"
+            )
+        ] == [
+            "id",
+            "transfer_link_id",
+            "kind",
+            "amount_kopecks",
+            "currency",
+            "source",
+            "evidence_reference",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expected_cash_flows)")] == [
             "id",
             "reporting_month_id",

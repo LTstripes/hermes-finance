@@ -969,6 +969,63 @@ class ExternalFlow(Base):
         return self.transfer_link_id
 
 
+class ExternalTransferReconciliationEvidence(Base):
+    """One canonical, transfer-specific explanation of a leg amount difference."""
+
+    __tablename__ = "external_transfer_reconciliation_evidence"
+    __table_args__ = (
+        Index(
+            "ix_external_transfer_reconciliation_evidence_transfer",
+            "transfer_link_id",
+        ),
+        CheckConstraint(
+            "kind IN ('internal_fee', 'internal_commission', 'internal_tax', "
+            "'fx_conversion_spread')",
+            name="ck_external_transfer_reconciliation_evidence_kind",
+        ),
+        CheckConstraint(
+            "amount_kopecks >= 0",
+            name="ck_external_transfer_reconciliation_evidence_amount_nonnegative",
+        ),
+        CheckConstraint(
+            "length(trim(currency)) = 3",
+            name="ck_external_transfer_reconciliation_evidence_currency_length",
+        ),
+        CheckConstraint(
+            "length(trim(source)) > 0",
+            name="ck_external_transfer_reconciliation_evidence_source_nonempty",
+        ),
+        CheckConstraint(
+            "length(trim(evidence_reference)) > 0",
+            name="ck_external_transfer_reconciliation_evidence_reference_nonempty",
+        ),
+        UniqueConstraint(
+            "evidence_reference",
+            name="uq_external_transfer_reconciliation_evidence_reference",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    transfer_link_id: Mapped[int] = mapped_column(
+        ForeignKey("external_transfer_links.id", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class ExternalFlowBoundaryGroup(Base):
     """Explicit same-date external-flow group used by observed boundaries."""
 

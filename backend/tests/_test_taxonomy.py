@@ -62,6 +62,7 @@ _CI_LANE_OVERRIDES = {
     "test_r08_03a_valuation_boundaries.py": "ci_core",
     "test_r08_h2a_scope_membership_changed.py": "ci_core",
     "test_r08_h2b_cash_boundary.py": "ci_core",
+    "test_r08_h2c_transfer_transit.py": "ci_core",
     "test_salary_cardinality.py": "ci_core",
     "test_salary_tax_opening.py": "ci_core",
     "test_tax_iis_planner.py": "ci_core",
