@@ -70,6 +70,12 @@ var tests = new (string Name, Action Run)[]
     ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
     ("blocks a target-only ignored hardlink alias before backup", BlocksTargetOnlyHardlinkAlias),
     ("blocks a target-only junction ancestor before backup", BlocksTargetOnlyJunctionAncestor),
+    ("allows the canonical empty data placeholder", AllowsCanonicalEmptyDataGitKeep),
+    ("allows the canonical empty data placeholder in target release", AllowsCanonicalEmptyDataGitKeepInTarget),
+    ("blocks a non-gitkeep file under production data before backup", BlocksNonGitKeepFileUnderData),
+    ("blocks a nested gitkeep under production data before backup", BlocksNestedGitKeepUnderData),
+    ("blocks a non-empty canonical gitkeep before backup", BlocksNonEmptyCanonicalGitKeep),
+    ("blocks a gitkeep that collides with the backup directory", BlocksGitKeepInBackupDirectory),
     ("fails before checkout and config mutation when target backend version disagrees", StableUpgradeRejectsBackendVersionMismatch),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
@@ -1768,6 +1774,121 @@ static void BlocksTargetOnlyJunctionAncestor()
     }
 }
 
+static void AllowsCanonicalEmptyDataGitKeep()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        currentTrackedPath: "data/.gitkeep",
+        currentTrackedContent: "");
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
+        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler);
+        Assert(result.Target.CommitSha == fixture.TargetSha, "Canonical empty data/.gitkeep must be allowed for current release.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Upgrade with canonical gitkeep must switch to target.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void AllowsCanonicalEmptyDataGitKeepInTarget()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        targetTrackedPath: "data/.gitkeep",
+        targetTrackedContent: "");
+    try
+    {
+        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
+        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler);
+        Assert(result.Target.CommitSha == fixture.TargetSha, "Canonical empty data/.gitkeep must be allowed for target release.");
+        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Upgrade with target gitkeep must switch to target.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksNonGitKeepFileUnderData()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        currentTrackedPath: "data/readme.txt");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "current Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksNestedGitKeepUnderData()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        targetTrackedPath: "data/subdir/.gitkeep",
+        targetTrackedContent: "");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "target Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksNonEmptyCanonicalGitKeep()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        currentTrackedPath: "data/.gitkeep",
+        currentTrackedContent: "not empty\n");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "current Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
+static void BlocksGitKeepInBackupDirectory()
+{
+    var fixture = CreateStableUpgradeFixture(
+        PublishedReleaseJson("v0.8.2"),
+        dataInsideCheckout: true,
+        targetTrackedPath: "data/backups/.gitkeep",
+        targetTrackedContent: "");
+    try
+    {
+        AssertStableUpgradeBlockedBeforeMutation(
+            fixture,
+            "target Stable release tracks the canonical production backup path; upgrade is blocked before backup.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(fixture.Root);
+    }
+}
+
 static void AssertStableUpgradeBlockedBeforeMutation(
     StableUpgradeFixture fixture,
     string expectedMessage)
@@ -2796,6 +2917,7 @@ static string SyntheticGitTreeJson(string checkout, string commit)
             path = item[(separator + 1)..],
             mode = metadata[0],
             type = metadata[1],
+            sha = metadata[2],
         });
     }
     return JsonSerializer.Serialize(new { truncated = false, tree });
@@ -2812,7 +2934,9 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     bool databaseHardlinkToTrackedFile = false,
     bool targetTreeProofAvailable = true,
     bool targetOnlyHardlinkToProduction = false,
-    bool targetOnlyJunctionToProduction = false)
+    bool targetOnlyJunctionToProduction = false,
+    string? currentTrackedContent = null,
+    string? targetTrackedContent = null)
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
     var seed = Path.Combine(root, "seed");
@@ -2836,7 +2960,14 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     {
         var currentPath = Path.Combine(seed, currentTrackedPath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(currentPath)!);
-        File.WriteAllText(currentPath, "synthetic tracked production path\n");
+        if (currentTrackedContent is not null)
+        {
+            File.WriteAllText(currentPath, currentTrackedContent);
+        }
+        else
+        {
+            File.WriteAllText(currentPath, "synthetic tracked production path\n");
+        }
     }
     RunGit(seed, "init");
     RunGit(seed, "config", "user.name", "Hermes Stable Safety Test");
@@ -2862,7 +2993,14 @@ static StableUpgradeFixture CreateStableUpgradeFixture(
     {
         var targetPath = Path.Combine(seed, targetTrackedPath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-        File.WriteAllText(targetPath, "synthetic target collision\n");
+        if (targetTrackedContent is not null)
+        {
+            File.WriteAllText(targetPath, targetTrackedContent);
+        }
+        else
+        {
+            File.WriteAllText(targetPath, "synthetic target collision\n");
+        }
     }
     RunGit(seed, "add", ".");
     if (!string.IsNullOrWhiteSpace(targetTrackedPath))

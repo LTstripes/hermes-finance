@@ -63,6 +63,8 @@ internal static class StableReleaseService
     private const string BackupScriptName = "launcher-production-backup.py";
     private const string BackupDirectoryName = "backups";
     private const string DataIdentityFilename = ".hermes-data-identity.json";
+    private const string EmptyGitKeepBlobSha = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391";
+    private const string GitKeepFileName = ".gitkeep";
     private const string BackupFilenamePattern =
         "^finance_backup_\\d{8}T\\d{12}Z(?:-\\d+)?\\.sqlite3$";
     private static readonly Regex ReleaseTagPattern = new(
@@ -633,6 +635,10 @@ internal static class StableReleaseService
                 throw new LauncherValidationException(
                     $"{treeDescription} tracks the canonical production backup path; upgrade is blocked before backup.");
             }
+            if (IsHarmlessCanonicalGitKeep(entry, layout))
+            {
+                continue;
+            }
             if (layout.RelativeDataDir is not null
                 && IsGitPathWithin(entry.Path, layout.RelativeDataDir))
             {
@@ -640,6 +646,57 @@ internal static class StableReleaseService
                     $"{treeDescription} tracks a path under the canonical production data directory; upgrade is blocked before backup.");
             }
         }
+    }
+
+    private static bool IsHarmlessCanonicalGitKeep(GitTreeEntry entry, ProductionGitLayout layout)
+    {
+        if (layout.RelativeDataDir is null)
+        {
+            return false;
+        }
+
+        var expected = layout.RelativeDataDir + "/" + GitKeepFileName;
+        if (!SameGitPath(entry.Path, expected))
+        {
+            return false;
+        }
+
+        if (!entry.Type.Equals("blob", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!entry.Mode.Equals("100644", StringComparison.Ordinal)
+            && !entry.Mode.Equals("100755", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(entry.Sha)
+            && !entry.Sha.Equals(EmptyGitKeepBlobSha, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (layout.RelativeDatabase is not null
+            && SameGitPath(entry.Path, layout.RelativeDatabase))
+        {
+            return false;
+        }
+
+        if (layout.RelativeIdentity is not null
+            && SameGitPath(entry.Path, layout.RelativeIdentity))
+        {
+            return false;
+        }
+
+        if (layout.RelativeBackupDirectory is not null
+            && IsGitPathWithin(entry.Path, layout.RelativeBackupDirectory))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static void AssertTrackedPathAncestorsHaveNoReparsePoints(
@@ -770,11 +827,55 @@ internal static class StableReleaseService
                 $"Stable production data cannot be fully inspected before upgrade: {exception.Message}");
         }
 
+        // The canonical empty data placeholder (<data_dir>/.gitkeep) is
+        // intentionally tracked as an empty blob. When the production data
+        // directory lives inside the checkout, that file exists both as a
+        // tracked release entry and as a file under the production directory.
+        // That is not a hardlink alias and must not be treated as one.
+        var allowedPlaceholderPath = Path.Combine(profile.DataDir, GitKeepFileName);
+        var isAllowedPlaceholderPresent = false;
+        try
+        {
+            if (File.Exists(allowedPlaceholderPath)
+                && !IsReparsePoint(allowedPlaceholderPath)
+                && new FileInfo(allowedPlaceholderPath).Length == 0)
+            {
+                var layoutForAlias = ProductionGitLayout.Create(profile, GetBackupDirectory(profile));
+                if (layoutForAlias.RelativeDataDir is not null)
+                {
+                    var expected = layoutForAlias.RelativeDataDir + "/" + GitKeepFileName;
+                    var hasAllowedEntry = currentTree.Concat(targetTree)
+                        .Any(entry => SameGitPath(entry.Path, expected)
+                            && entry.Type.Equals("blob", StringComparison.Ordinal)
+                            && (entry.Mode.Equals("100644", StringComparison.Ordinal) || entry.Mode.Equals("100755", StringComparison.Ordinal))
+                            && (string.IsNullOrEmpty(entry.Sha) || entry.Sha.Equals(EmptyGitKeepBlobSha, StringComparison.OrdinalIgnoreCase)));
+                    if (hasAllowedEntry)
+                    {
+                        isAllowedPlaceholderPresent = true;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // If the placeholder state cannot be proven, fall through to the
+            // strict alias check and fail closed.
+            isAllowedPlaceholderPresent = false;
+        }
+
+        if (isAllowedPlaceholderPresent)
+        {
+            productionFiles = productionFiles
+                .Where(path => !SamePath(path, allowedPlaceholderPath))
+                .ToArray();
+        }
+
         var checkoutPaths = currentTree
             .Concat(targetTree)
             .SelectMany(entry => ExistingCheckoutPathPrefixes(profile.Checkout, entry.Path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(path => File.Exists(path) || Directory.Exists(path))
+            .Where(path => !isAllowedPlaceholderPresent || !SamePath(path, allowedPlaceholderPath))
             .ToArray();
         foreach (var checkoutPath in checkoutPaths)
         {
@@ -897,7 +998,8 @@ internal static class StableReleaseService
             entries.Add(new GitTreeEntry(
                 NormalizeGitPath(item[(separator + 1)..]),
                 metadata[0],
-                metadata[1]));
+                metadata[1],
+                metadata[2]));
         }
         return entries;
     }
@@ -973,10 +1075,15 @@ internal static class StableReleaseService
                     throw new LauncherValidationException(
                         "Stable target Git tree proof returned an invalid entry.");
                 }
+                var sha = item.TryGetProperty("sha", out var shaProperty)
+                    && shaProperty.ValueKind == JsonValueKind.String
+                    ? shaProperty.GetString() ?? string.Empty
+                    : string.Empty;
                 entries.Add(new GitTreeEntry(
                     NormalizeGitPath(path.GetString()!),
                     mode.GetString()!,
-                    type.GetString()!));
+                    type.GetString()!,
+                    sha));
             }
             return entries;
         }
@@ -1263,7 +1370,7 @@ internal static class StableReleaseService
         public string Version => VersionValue.Text;
     }
 
-    private sealed record GitTreeEntry(string Path, string Mode, string Type);
+    private sealed record GitTreeEntry(string Path, string Mode, string Type, string Sha);
 
     private sealed record ProductionGitLayout(
         string? RelativeDataDir,
