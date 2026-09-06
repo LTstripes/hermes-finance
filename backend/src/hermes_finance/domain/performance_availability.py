@@ -40,6 +40,7 @@ class PerformanceAvailabilityReasonCode(StrEnum):
     SCOPE_COVERAGE_INCOMPLETE = "not_computable_scope_coverage_incomplete"
     SCOPE_CASH_UNCLASSIFIED = "not_computable_scope_cash_unclassified"
     SCOPE_MEMBERSHIP_HISTORY_MISSING = "not_computable_scope_membership_history_missing"
+    SCOPE_MEMBERSHIP_CHANGED = "not_computable_scope_membership_changed"
     CURRENCY_CONVERSION_INCOMPLETE = "not_computable_currency_conversion_incomplete"
     TRANSFER_IDENTITY_UNRESOLVED = "not_computable_transfer_identity_unresolved"
     VALUATION_BOUNDARY_MISSING = "not_computable_valuation_boundary_missing"
