@@ -61,9 +61,17 @@ Current R08 remains authoritative for its released scope:
 
 ## Accepted PERF-H1 hardening contract
 
-Independent review of the additive PERF-H1 v2 contract returned `ACCEPT`.
-The contract does not redesign R08; it closes four edge cases that can
-otherwise produce false exact results.
+Independent review of PERF-H1 v2 returned `ACCEPT`. A subsequent independent
+Astra audit found two additional completeness gaps in canonical R08. Direct
+baseline inspection confirmed both gaps: interval membership coverage currently
+permits known `false -> true` / `true -> false` changes, while external-flow
+coverage currently becomes `COMPLETE` from the absence of known blockers rather
+than from affirmative boundary-history coverage. PERF-H1 is therefore finalized
+as v3 with six additive sections A-F below.
+
+The contract does not redesign R08. Its policy remains:
+
+**false unavailable > false exact**.
 
 ### H1-A — asynchronous owned-account transfer transit
 
@@ -109,6 +117,11 @@ from this closed set:
 - tax charged inside scope;
 - accepted FX conversion/spread evidence under an existing currency contract.
 
+Reconciliation evidence must identify the specific transfer it explains; one
+fee/tax item cannot be reused to reconcile multiple overlapping transfers. FX
+reconciliation never bypasses the existing performance-currency completeness
+gate.
+
 No other unexplained reconciliation category is allowed without a future
 accepted contract. An unexplained difference remains fail-closed with:
 
@@ -117,7 +130,9 @@ accepted contract. An unexplained difference remains fail-closed with:
 Partially linked/one-legged transfers continue using the existing unresolved
 transfer reason. Overlapping transit intervals are evaluated independently;
 intersection with any unvalued transit interval blocks the affected required
-whole-portfolio valuation.
+whole-portfolio valuation. Detection must not be limited to transfer legs whose
+own event dates fall inside the requested interval: a transit interval may span
+a required valuation even when both leg dates lie outside that request window.
 
 ### H1-B — in-kind securities crossing a performance boundary
 
@@ -129,7 +144,8 @@ that no in-kind movement occurred. Exact performance therefore requires
 explicit in-kind boundary coverage for accounts capable of holding transferable
 investment instruments.
 
-For current v1, that population is deterministic:
+For current v1, that population is deterministic and restricted to accounts
+that are historically relevant to the selected performance scope:
 
 - canonical account type `brokerage`;
 - canonical account type `iis`;
@@ -141,13 +157,18 @@ an in-kind coverage requirement merely because they exist.
 
 Minimum coverage states:
 
-- `COMPLETE` — the required interval is explicitly covered and every in-kind
-  boundary movement is known;
+- `COMPLETE` — the required account/interval is explicitly covered and every
+  in-kind boundary movement is known, including the valid case where there
+  were none;
 - `UNKNOWN` — Hermes cannot establish whether such movement occurred.
 
-Coverage may be established only by explicit owner attestation or a future
-accepted authoritative statement/import contract. Existing history is never
-automatically migrated to `COMPLETE`.
+`COMPLETE` means the history is known; it does not mean the movement set is
+empty. A known but unvalued movement continues to block exact performance.
+Coverage must retain account/interval identity and provenance. It may be
+established only by explicit owner attestation or a future accepted authoritative
+statement/import contract. Existing history is never automatically migrated to
+`COMPLETE`. Corrections that change closed historical evidence must preserve the
+existing explicit reopen semantics rather than silently mutating closed history.
 
 Unknown coverage:
 
@@ -229,14 +250,101 @@ Expected/provider calendar events are not proof of realised payment. Accepted
 actual-cash evidence is required; otherwise the affected interval remains
 `not_computable_external_flows_incomplete`.
 
+A proven direct payout is sufficient boundary-flow evidence for the payment,
+but it never substitutes for the observed pre/post valuation boundaries required
+by exact TWRR. Internal tax/commission is not added a second time on top of a
+valuation that already reflects that cost.
+
+### H1-E — stable whole-portfolio scope membership
+
+Gap-free effective-dated membership history is necessary but not sufficient for
+exact whole-portfolio return. Current R08 can know that an account changed from
+out-of-scope to in-scope (or the reverse) while opening and closing valuations
+select different portfolio compositions. Without an accepted scope-transition
+value, that composition change can be misreported as investment return.
+
+Until a future accepted scope-transition valuation contract exists, exact
+whole-portfolio XIRR/TWRR is available only when every historically relevant
+account has one constant `include_in_returns` state for every date in the closed
+requested interval `[start_date, end_date]`.
+
+A transition strictly before `start_date` or strictly after `end_date` is
+irrelevant. A transition whose effective date lies inside the requested closed
+interval makes exact whole-portfolio performance unavailable. No synthetic
+contribution/withdrawal is created from the entering/leaving account value.
+
+New stable reason:
+
+`not_computable_scope_membership_changed`
+
+Explicit flow-level membership evidence must also agree with the effective-dated
+history at that flow's `event_date`:
+
+- `stable_in_scope` requires effective membership `true` on that date;
+- `stable_out_of_scope` requires effective membership `false` on that date;
+- `unknown` retains the existing non-authoritative fail-closed behavior.
+
+A contradiction is scope-coverage failure and must not be silently resolved in
+favour of either record. The existing `not_computable_scope_coverage_incomplete`
+reason may represent this inconsistency; response metadata should identify the
+affected account/flow evidence.
+
+This restriction applies to whole-portfolio performance. Existing explicit
+account-scope fail-closed membership rules remain authoritative.
+
+### H1-F — explicit cash-boundary history coverage
+
+The absence of known bad `ExternalFlow` or legacy deposit/withdrawal rows is not
+proof that all owner cash crossings were captured. A missing contribution or
+withdrawal can otherwise appear as investment return even when valuations are
+perfectly observed.
+
+Exact XIRR/TWRR therefore requires affirmative cash-boundary history coverage
+for every account historically included in the selected performance scope over
+the requested interval. In-kind coverage and cash-boundary coverage are
+independent proofs; satisfying one never satisfies the other.
+
+Minimum coverage states:
+
+- `COMPLETE` — authoritative/owner-confirmed evidence establishes that all
+  owner cash boundary crossings for the covered account/interval are known and
+  represented under the accepted `ExternalFlow` contract, including the valid
+  case of zero crossings;
+- `UNKNOWN` — completeness cannot be established.
+
+Coverage may be established by explicit owner attestation or a future accepted
+authoritative statement/import contract. Existing historical intervals are not
+automatically migrated to `COMPLETE` merely because no blocking rows exist or a
+reporting month is closed.
+
+`COMPLETE` is a completeness assertion, not a replacement for the flows
+it covers: any known contribution/withdrawal still requires its canonical
+`ExternalFlow` evidence and all ordinary amount/date/currency/transfer rules.
+A direct payout covered by H1-D is part of cash-boundary history and must be
+represented explicitly; expected/provider calendar evidence remains
+insufficient.
+
+When cash-boundary coverage is `UNKNOWN`, exact performance remains
+`NOT_COMPUTABLE` using the existing stable reason:
+
+`not_computable_external_flows_incomplete`
+
+Coverage persistence must retain account/interval identity and provenance.
+Corrections to evidence belonging to closed historical months must preserve
+explicit reopen semantics; closing a month alone never attests cash-boundary
+completeness.
+
 ## New stable reason codes from H1
 
 - `not_computable_transfer_in_transit_unvalued`
 - `not_computable_transfer_reconciliation_incomplete`
 - `not_computable_in_kind_boundary_coverage_unknown`
 - `not_computable_in_kind_movement_unvalued`
+- `not_computable_scope_membership_changed`
 
-Existing R08 reasons remain authoritative where applicable.
+Cash-boundary coverage intentionally reuses
+`not_computable_external_flows_incomplete`. Existing R08 reasons remain
+authoritative where applicable.
 
 ## Normative regression vectors
 
@@ -247,42 +355,60 @@ Existing R08 reasons remain authoritative where applicable.
    all other prerequisites are complete.
 3. External owner flow on 12 Feb during the 10 -> 15 Feb transit: XIRR is not
    blocked solely by the unsafe TWRR boundary; exact TWRR is blocked.
-4. Transfer 100,000 -> 99,900 with no accepted reconciliation: unavailable.
-   With authoritative 100 RUB internal fee evidence: may reconcile.
-5. Brokerage/IIS interval with unknown in-kind coverage: exact performance is
+4. A transit interval spanning a required valuation is detected even when both
+   transfer-leg dates themselves lie outside the requested metric interval.
+5. Transfer 100,000 -> 99,900 with no accepted reconciliation: unavailable.
+   With authoritative 100 RUB internal fee evidence linked to that transfer:
+   may reconcile.
+6. Brokerage/IIS interval with unknown in-kind coverage: exact performance is
    unavailable.
-6. Known external transfer of shares without accepted event-date non-cash
+7. Known external transfer of shares without accepted event-date non-cash
    valuation: exact performance is unavailable.
-7. Withdrawal processing debits 100,000 from scope, pays owner 87,000 and
+8. Withdrawal processing debits 100,000 from scope, pays owner 87,000 and
    withholds 13,000 inside scope: external withdrawal 87,000 + internal tax
    cost 13,000.
-8. Standalone in-scope tax with no owner withdrawal: no external flow.
-9. Retained dividend: no external flow.
-10. Dividend enters brokerage cash then owner withdraws it: separate internal
+9. Standalone in-scope tax with no owner withdrawal: no external flow.
+10. Retained dividend: no external flow.
+11. Dividend enters brokerage cash then owner withdraws it: separate internal
     income event + external withdrawal; no double counting.
-11. Direct gross dividend 10,000 with 1,300 withheld outside scope and 8,700
+12. Direct gross dividend 10,000 with 1,300 withheld outside scope and 8,700
     paid directly to owner: external withdrawal 8,700; no internal 1,300 tax
-    event.
+    event. Exact TWRR still requires its ordinary observed boundary evidence.
+13. Portfolio A remains worth 100 while portfolio account B remains worth 50
+    but B changes `include_in_returns=false -> true` inside the interval:
+    whole-portfolio exact XIRR/TWRR are unavailable rather than reporting a
+    synthetic +50% return.
+14. `ExternalFlow.scope_membership=stable_in_scope` on a date where effective
+    membership is false: scope coverage is inconsistent and exact performance
+    is unavailable.
+15. Opening valuation 100, closing valuation 200, no recorded flow rows and no
+    affirmative cash-boundary coverage: exact performance is unavailable rather
+    than inferring +100% return.
+16. The same interval with explicit COMPLETE cash-boundary coverage and zero
+    actual owner crossings may proceed if every other prerequisite is complete.
 
 ## New workstream sequence
 
 1. `PERF-R0` — reconciliation and durable documentation (#315).
-2. `PERF-H1` — accepted additive hardening contract (recorded here).
-3. `PERF-H2a` — transfer-in-transit and reconciliation fail-closed implementation.
-4. `PERF-H2b` — in-kind boundary coverage persistence/fail-closed implementation.
-5. `PERF-H3` — tax/direct-payout regression and evidence hardening.
-6. Owner-only performance readiness UAT on Preview/copy DB; implementation
+2. `PERF-H1` — accepted/finalized additive hardening contract (recorded here).
+3. `PERF-H2a` — stable whole-portfolio membership gate.
+4. `PERF-H2b` — explicit cash-boundary completeness coverage.
+5. `PERF-H2c` — transfer-in-transit and reconciliation fail-closed implementation.
+6. `PERF-H2d` — in-kind boundary coverage persistence/fail-closed implementation.
+7. `PERF-H3` — tax/direct-payout regression and evidence hardening.
+8. Owner-only performance readiness UAT on Preview/copy DB; implementation
    agents receive only sanitized outcomes.
-7. Account-level XIRR using the accepted availability foundation and existing
+9. Account-level XIRR using the accepted availability foundation and existing
    solver semantics.
-8. Account-level exact TWRR using the accepted observed-boundary foundation.
-9. `PERF-04A` — attribution contract, then bounded attribution slices.
+10. Account-level exact TWRR using the accepted observed-boundary foundation.
+11. `PERF-04A` — attribution contract, then bounded attribution slices.
 
 The long-history synthetic performance benchmark may run in parallel if it
 changes no financial semantics.
 
 ## Deferred until owner need / separate contract
 
+- supported valuation semantics for portfolio-scope membership transitions;
 - full non-cash `ExternalAssetFlow` model;
 - historical FX provider/conversion expansion;
 - margin/negative-cash performance semantics;
