@@ -861,6 +861,7 @@ def _portfolio_transfer_safety(
     end_date: date,
     xirr_required_dates: set[date],
     twrr_required_dates: set[date],
+    rows_by_account: dict[int, list[AccountPerformanceScopeMembership]],
 ) -> tuple[set[str], set[str], set[str]]:
     """Return (shared, xirr-only, twrr-only) transfer availability reasons.
 
@@ -895,20 +896,6 @@ def _portfolio_transfer_safety(
         if first.account_id == second.account_id or first.direction == second.direction:
             continue
 
-        classifications = [
-            classify_external_flow(
-                session,
-                leg.id,
-                scope=ExternalFlowScope.PORTFOLIO,
-            )
-            for leg in legs
-        ]
-        if any(
-            classification is not ExternalFlowClassification.INTERNAL_TRANSFER
-            for classification in classifications
-        ):
-            continue
-
         source = next(leg for leg in legs if leg.direction == "withdrawal")
         destination = next(leg for leg in legs if leg.direction == "contribution")
         transit_dates: set[date] = set()
@@ -921,6 +908,47 @@ def _portfolio_transfer_safety(
 
         leg_in_interval = any(start_date <= leg.event_date <= end_date for leg in legs)
         if not leg_in_interval and not transit_dates:
+            continue
+
+        # Legs outside the requested interval can still make a transfer
+        # transit-relevant.  Reuse H2a's effective-dated cross-check for those
+        # legs because interval flow coverage does not inspect them.
+        if transit_dates:
+            for leg in legs:
+                if start_date <= leg.event_date <= end_date:
+                    continue
+                membership = _safe_scope_membership(leg.scope_membership)
+                if membership is ExternalFlowScopeMembership.UNKNOWN:
+                    shared_reasons.add(
+                        AvailabilityReasonCode.SCOPE_MEMBERSHIP_HISTORY_MISSING.value
+                    )
+                    continue
+                if leg.account_id not in rows_by_account:
+                    continue
+                effective = _membership_at(rows_by_account[leg.account_id], leg.event_date)
+                if (
+                    membership is ExternalFlowScopeMembership.STABLE_IN_SCOPE
+                    and effective is not True
+                ):
+                    shared_reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+                elif (
+                    membership is ExternalFlowScopeMembership.STABLE_OUT_OF_SCOPE
+                    and effective is not False
+                ):
+                    shared_reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+
+        classifications = [
+            classify_external_flow(
+                session,
+                leg.id,
+                scope=ExternalFlowScope.PORTFOLIO,
+            )
+            for leg in legs
+        ]
+        if any(
+            classification is not ExternalFlowClassification.INTERNAL_TRANSFER
+            for classification in classifications
+        ):
             continue
 
         if not _transfer_reconciliation_complete(
@@ -1051,6 +1079,7 @@ def performance_availability_for_interval(
                 end_date,
                 *((target.event_date for target in twrr_targets) if twrr_targets else ()),
             },
+            rows_by_account=rows_by_account,
         )
     xirr_reasons.update(shared_transfer_reasons)
     xirr_reasons.update(xirr_transfer_reasons)

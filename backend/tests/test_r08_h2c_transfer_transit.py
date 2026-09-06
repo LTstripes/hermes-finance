@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -498,6 +499,69 @@ def test_transfer_legs_outside_interval_still_block_transit_at_opening(tmp_path:
         )
         assert not result.xirr.is_available
         assert "not_computable_transfer_in_transit_unvalued" in result.xirr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_transit_leg_outside_interval_checks_effective_membership(tmp_path: Path) -> None:
+    closing_date = date(2030, 2, 1)
+    session, database, month_ids, accounts = _environment(tmp_path, end_date=closing_date)
+    try:
+        membership = session.scalar(
+            select(AccountPerformanceScopeMembership).where(
+                AccountPerformanceScopeMembership.account_id == accounts[0]
+            )
+        )
+        assert membership is not None
+        membership.effective_to = date(2030, 1, 14)
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=accounts[0],
+                effective_from=date(2030, 1, 15),
+                effective_to=date(2030, 1, 20),
+                include_in_returns=False,
+            )
+        )
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=accounts[0],
+                effective_from=date(2030, 1, 21),
+                include_in_returns=True,
+            )
+        )
+        session.commit()
+
+        link = create_external_transfer_link(session, transfer_key="outside-membership-check")
+        _leg(
+            session,
+            month_id=min(month_ids),
+            account_id=accounts[0],
+            event_date=date(2030, 1, 15),
+            amount="1000.00",
+            direction="withdrawal",
+            transfer_link_id=link.id,
+        )
+        _leg(
+            session,
+            month_id=max(month_ids),
+            account_id=accounts[1],
+            event_date=date(2030, 2, 15),
+            amount="1000.00",
+            direction="contribution",
+            transfer_link_id=link.id,
+        )
+        _close(session, month_ids)
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=closing_date,
+            scope=PerformanceScope.PORTFOLIO,
+        )
+        assert not result.xirr.is_available
+        assert not result.twrr.is_available
+        assert "not_computable_scope_coverage_incomplete" in result.xirr.reason_codes
+        assert "not_computable_scope_coverage_incomplete" in result.twrr.reason_codes
     finally:
         session.close()
         database.engine.dispose()
