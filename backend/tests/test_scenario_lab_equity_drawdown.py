@@ -854,3 +854,37 @@ def test_blocker_b_frozen_base_concurrency(session, tmp_path, monkeypatch):
     res2 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}})
     assert res2.base_fingerprint == base_fp_before
     assert res2.semantic_fingerprint == sem_fp_before
+
+
+# ---- Astra exact Decimal boundary regression (independent review defect) ----
+def test_astra_exact_decimal_boundary_regression():
+    """Astra defect: base=1, pct=50.000...01 => 0 and 49.999...99 =>1 under any ambient prec."""
+    from decimal import Decimal, getcontext
+    from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks
+
+    pct_a = Decimal("50.00000000000000000000000000001")
+    pct_b = Decimal("49.99999999999999999999999999999")
+
+    # ambient prec 10
+    getcontext().prec = 10
+    a_low = stressed_market_value_kopecks(1, pct_a)
+    b_low = stressed_market_value_kopecks(1, pct_b)
+
+    # ambient prec 50
+    getcontext().prec = 50
+    a_high = stressed_market_value_kopecks(1, pct_a)
+    b_high = stressed_market_value_kopecks(1, pct_b)
+
+    # reset
+    getcontext().prec = 28
+
+    assert a_low == 0
+    assert a_high == 0
+    assert a_low == a_high
+    assert b_low == 1
+    assert b_high == 1
+    assert b_low == b_high
+
+    # also verify swapped: direct expectations
+    assert stressed_market_value_kopecks(1, Decimal("50.00000000000000000000000000001")) == 0
+    assert stressed_market_value_kopecks(1, Decimal("49.99999999999999999999999999999")) == 1
