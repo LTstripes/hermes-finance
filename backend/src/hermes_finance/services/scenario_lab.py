@@ -38,6 +38,7 @@ from hermes_finance.domain.risk_allocation import (
 from hermes_finance.domain.scenario_lab import (
     CALCULATION_VERSION,
     CONTRACT_VERSION,
+    FX_CANDIDATE_TARGET_CURRENCY,
     FX_TRANSLATION_BASIS_UNAVAILABLE,
     MISSING_CURRENCY,
     SHOCK_SCHEMA_VERSION,
@@ -128,10 +129,10 @@ def _money_api(kopecks: int) -> str:
 
 
 def _fx_aggregate_support(
-    coverage_applied: int, coverage_unknown: int
+    coverage_candidate: int, coverage_unknown: int
 ) -> tuple[MetricSupportStatus, list[str]]:
-    """Map FX coverage to aggregate support. Matching target rows win as unavailable."""
-    if coverage_applied > 0:
+    """Map FX coverage to aggregate support. Known candidate rows win as unavailable."""
+    if coverage_candidate > 0:
         reasons = [FX_TRANSLATION_BASIS_UNAVAILABLE]
         if coverage_unknown > 0:
             reasons.append(MISSING_CURRENCY)
@@ -349,6 +350,7 @@ def evaluate_scenario_lab(
     coverage_applied = 0
     coverage_not = 0
     coverage_unknown = 0
+    coverage_candidate = 0
     known_scope_delta = 0
 
     # Need to populate stressed_positions for all eligible only; for base we keep all?
@@ -363,7 +365,7 @@ def evaluate_scenario_lab(
             continue
         if shock_type == ShockType.FX_TRANSLATION_SHOCK.value:
             assert target_currency is not None
-            appl = classify_fx_applicability(
+            fx_row = classify_fx_applicability(
                 p.get("currency"),
                 target_currency=target_currency,
                 reporting_currency=reporting_currency,
@@ -372,12 +374,16 @@ def evaluate_scenario_lab(
             # stressed money from Instrument.currency * (1 + pct/100).
             stressed_v = base_v
             delta = 0
-            if appl == RowApplicability.APPLIED:
-                coverage_applied += 1
-            elif appl == RowApplicability.UNKNOWN:
+            if fx_row.candidate_target_currency:
+                coverage_candidate += 1
+                row_token = FX_CANDIDATE_TARGET_CURRENCY
+            elif fx_row.exact_applicability == RowApplicability.UNKNOWN:
                 coverage_unknown += 1
+                row_token = RowApplicability.UNKNOWN.value
             else:
                 coverage_not += 1
+                row_token = RowApplicability.NOT_APPLICABLE.value
+            fx_reasons = list(fx_row_reason_codes(fx_row))
         else:
             appl = classify_applicability(p["instrument_type"])
             if appl == RowApplicability.APPLIED:
@@ -393,7 +399,9 @@ def evaluate_scenario_lab(
                 stressed_v = base_v
                 delta = 0
                 coverage_not += 1
-        row_applicability[str(pid)] = appl.value
+            row_token = appl.value
+            fx_reasons = None
+        row_applicability[str(pid)] = row_token
         stressed_positions[pid] = stressed_v
         # R2: per_position keep only market values, no applicability
         base_per_position[str(pid)] = {
@@ -415,10 +423,10 @@ def evaluate_scenario_lab(
         impact_entry = {
             "delta_kopecks": delta,
             "delta": _money_api(delta) if delta >= 0 else "-" + _money_api(-delta),
-            "applicability": appl.value,
+            "applicability": row_token,
         }
         if shock_type == ShockType.FX_TRANSLATION_SHOCK.value:
-            impact_entry["reason_codes"] = list(fx_row_reason_codes(appl))
+            impact_entry["reason_codes"] = fx_reasons or []
         impact_per_position[str(pid)] = impact_entry
 
     # Also need stressed_positions for non-eligible already set
@@ -434,6 +442,8 @@ def evaluate_scenario_lab(
         if known_scope_delta >= 0
         else "-" + _money_api(-known_scope_delta),
     }
+    if shock_type == ShockType.FX_TRANSLATION_SHOCK.value:
+        coverage["candidate_target_currency"] = coverage_candidate
 
     has_unknown = coverage_unknown > 0
 
@@ -518,7 +528,7 @@ def evaluate_scenario_lab(
     from hermes_finance.domain.risk_allocation import RiskSupportStatus as DomainRiskStatus
 
     if shock_type == ShockType.FX_TRANSLATION_SHOCK.value:
-        fx_status, fx_reasons = _fx_aggregate_support(coverage_applied, coverage_unknown)
+        fx_status, fx_reasons = _fx_aggregate_support(coverage_candidate, coverage_unknown)
         _fx_domain_status = {
             MetricSupportStatus.UNAVAILABLE: DomainRiskStatus.UNAVAILABLE,
             MetricSupportStatus.UNKNOWN: DomainRiskStatus.UNKNOWN,
@@ -818,7 +828,7 @@ def evaluate_scenario_lab(
     }
 
     if shock_type == ShockType.FX_TRANSLATION_SHOCK.value:
-        fx_agg_status, fx_agg_reason = _fx_aggregate_support(coverage_applied, coverage_unknown)
+        fx_agg_status, fx_agg_reason = _fx_aggregate_support(coverage_candidate, coverage_unknown)
         agg_status = fx_agg_status.value
         agg_reason = fx_agg_reason
         per_position_status = agg_status

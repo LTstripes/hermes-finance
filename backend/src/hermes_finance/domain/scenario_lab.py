@@ -29,6 +29,7 @@ SUPPORTED_INSTRUMENT_TYPES = frozenset({"stock", "bond", "fund", "currency", "go
 CANONICAL_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 FX_TRANSLATION_BASIS_UNAVAILABLE = "fx_translation_basis_unavailable"
 MISSING_CURRENCY = "missing_currency"
+FX_CANDIDATE_TARGET_CURRENCY = "candidate_target_currency"
 
 
 class ShockType(StrEnum):
@@ -58,6 +59,19 @@ class NormalizedShockInput:
 @dataclass(frozen=True, slots=True)
 class MetricSupport:
     status: MetricSupportStatus
+    reason_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class FxRowClassification:
+    """Exact FX applicability kept separate from candidate-currency scope.
+
+    exact_applicability is never APPLIED on the current schema: a matching
+    currency tag is candidate scope only and is not exact shock application.
+    """
+
+    exact_applicability: RowApplicability | None
+    candidate_target_currency: bool
     reason_codes: tuple[str, ...] = ()
 
 
@@ -232,31 +246,42 @@ def classify_fx_applicability(
     *,
     target_currency: str,
     reporting_currency: str,
-) -> RowApplicability:
+) -> FxRowClassification:
     """Classify a capital-eligible position for fx_translation_shock.
 
     Instrument.currency is candidate-scope metadata only. A match against
     target_currency is not exact applicability: translation basis is absent
-    in the current schema, so the service must not transform money values.
+    in the current schema, so the service must not transform money values
+    and must not report row-level applied.
 
     Reporting-currency exposure is not FX translation (Addition 1).
     """
     parsed = try_parse_position_currency(currency)
     if parsed is None:
-        return RowApplicability.UNKNOWN
+        return FxRowClassification(
+            exact_applicability=RowApplicability.UNKNOWN,
+            candidate_target_currency=False,
+            reason_codes=(MISSING_CURRENCY,),
+        )
     if parsed == reporting_currency:
-        return RowApplicability.NOT_APPLICABLE
+        return FxRowClassification(
+            exact_applicability=RowApplicability.NOT_APPLICABLE,
+            candidate_target_currency=False,
+        )
     if parsed == target_currency:
-        return RowApplicability.APPLIED
-    return RowApplicability.NOT_APPLICABLE
+        return FxRowClassification(
+            exact_applicability=None,
+            candidate_target_currency=True,
+            reason_codes=(FX_TRANSLATION_BASIS_UNAVAILABLE,),
+        )
+    return FxRowClassification(
+        exact_applicability=RowApplicability.NOT_APPLICABLE,
+        candidate_target_currency=False,
+    )
 
 
-def fx_row_reason_codes(applicability: RowApplicability) -> tuple[str, ...]:
-    if applicability == RowApplicability.APPLIED:
-        return (FX_TRANSLATION_BASIS_UNAVAILABLE,)
-    if applicability == RowApplicability.UNKNOWN:
-        return (MISSING_CURRENCY,)
-    return ()
+def fx_row_reason_codes(classification: FxRowClassification) -> tuple[str, ...]:
+    return classification.reason_codes
 
 
 def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> int:

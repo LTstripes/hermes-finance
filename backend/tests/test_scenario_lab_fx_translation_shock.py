@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session as SASession
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, GoalType, InstrumentType
 from hermes_finance.domain.scenario_lab import (
+    FX_CANDIDATE_TARGET_CURRENCY,
     FX_TRANSLATION_BASIS_UNAVAILABLE,
     MISSING_CURRENCY,
     RowApplicability,
@@ -156,26 +157,23 @@ def test_signed_pct_canonical_and_range():
 
 
 def test_classify_fx_reporting_currency_not_applicable():
-    assert (
-        classify_fx_applicability("RUB", target_currency="RUB", reporting_currency="RUB")
-        == RowApplicability.NOT_APPLICABLE
-    )
-    assert (
-        classify_fx_applicability("USD", target_currency="USD", reporting_currency="RUB")
-        == RowApplicability.APPLIED
-    )
-    assert (
-        classify_fx_applicability("EUR", target_currency="USD", reporting_currency="RUB")
-        == RowApplicability.NOT_APPLICABLE
-    )
-    assert (
-        classify_fx_applicability("  ", target_currency="USD", reporting_currency="RUB")
-        == RowApplicability.UNKNOWN
-    )
-    assert (
-        classify_fx_applicability("US", target_currency="USD", reporting_currency="RUB")
-        == RowApplicability.UNKNOWN
-    )
+    rub = classify_fx_applicability("RUB", target_currency="RUB", reporting_currency="RUB")
+    assert rub.exact_applicability == RowApplicability.NOT_APPLICABLE
+    assert rub.candidate_target_currency is False
+    usd = classify_fx_applicability("USD", target_currency="USD", reporting_currency="RUB")
+    assert usd.exact_applicability is None
+    assert usd.exact_applicability != RowApplicability.APPLIED
+    assert usd.candidate_target_currency is True
+    assert FX_TRANSLATION_BASIS_UNAVAILABLE in usd.reason_codes
+    eur = classify_fx_applicability("EUR", target_currency="USD", reporting_currency="RUB")
+    assert eur.exact_applicability == RowApplicability.NOT_APPLICABLE
+    assert eur.candidate_target_currency is False
+    blank = classify_fx_applicability("  ", target_currency="USD", reporting_currency="RUB")
+    assert blank.exact_applicability == RowApplicability.UNKNOWN
+    assert blank.candidate_target_currency is False
+    invalid = classify_fx_applicability("US", target_currency="USD", reporting_currency="RUB")
+    assert invalid.exact_applicability == RowApplicability.UNKNOWN
+    assert invalid.candidate_target_currency is False
 
 
 # ---- service acceptance ----
@@ -241,7 +239,10 @@ def test_matching_usd_not_naively_multiplied(session):
     assert res.stressed["liquid_assets_kopecks"] != 110_000
     assert res.impact["liquid_assets_delta_kopecks"] == 0
     assert res.impact["per_position"][pid]["delta_kopecks"] == 0
-    assert res.row_applicability[pid] == "applied"
+    assert res.row_applicability[pid] != "applied"
+    assert res.row_applicability[pid] == FX_CANDIDATE_TARGET_CURRENCY
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 1
     assert FX_TRANSLATION_BASIS_UNAVAILABLE in res.impact["per_position"][pid]["reason_codes"]
     _assert_fx_sensitive_status(res, "unavailable", FX_TRANSLATION_BASIS_UNAVAILABLE)
 
@@ -253,6 +254,8 @@ def test_different_currency_not_applicable(session):
     res = evaluate_scenario_lab(session, month.id, _fx("USD", "10"))
     pid = str(pos.id)
     assert res.row_applicability[pid] == "not_applicable"
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 0
     assert res.impact["per_position"][pid]["reason_codes"] == []
     assert res.base["liquid_assets_kopecks"] == res.stressed["liquid_assets_kopecks"] == 100_000
     _assert_fx_sensitive_status(res, "supported")
@@ -270,6 +273,8 @@ def test_missing_invalid_currency_unknown_never_not_applicable(session):
     assert res.row_applicability[str(p_blank.id)] == "unknown"
     assert res.row_applicability[str(p_invalid.id)] == "unknown"
     assert res.row_applicability[str(p_blank.id)] != "not_applicable"
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 0
     assert MISSING_CURRENCY in res.impact["per_position"][str(p_blank.id)]["reason_codes"]
     assert MISSING_CURRENCY in res.impact["per_position"][str(p_invalid.id)]["reason_codes"]
     _assert_fx_sensitive_status(res, "unknown", MISSING_CURRENCY)
@@ -282,6 +287,7 @@ def test_empty_target_scope_supported_unchanged(session):
     res = evaluate_scenario_lab(session, month.id, _fx("USD", "10"))
     assert res.row_applicability[str(pos.id)] == "not_applicable"
     assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 0
     assert res.coverage["unknown"] == 0
     assert res.base["liquid_assets_kopecks"] == res.stressed["liquid_assets_kopecks"]
     assert res.impact["liquid_assets_delta_kopecks"] == 0
@@ -296,6 +302,7 @@ def test_unknown_only_aggregate_unknown(session):
     res = evaluate_scenario_lab(session, month.id, _fx("USD", "10"))
     assert res.row_applicability[str(pos.id)] == "unknown"
     assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 0
     assert res.coverage["unknown"] == 1
     assert res.base["liquid_assets_kopecks"] == res.stressed["liquid_assets_kopecks"] == 100_000
     _assert_fx_sensitive_status(res, "unknown", MISSING_CURRENCY)
@@ -307,7 +314,8 @@ def test_matching_scope_aggregate_unavailable_numeric_base_known(session):
     usd = _instrument(session, "USD-stock", currency="USD")
     _position(session, month.id, acc.id, usd.id, "1000.00")
     res = evaluate_scenario_lab(session, month.id, _fx("USD", "10"))
-    assert res.coverage["applied"] == 1
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 1
     assert res.coverage["unknown"] == 0
     assert res.base["liquid_assets_kopecks"] == 100_000
     assert res.stressed["liquid_assets_kopecks"] == 100_000
@@ -323,9 +331,11 @@ def test_mixed_matching_and_unknown_coverage(session):
     p_usd = _position(session, month.id, acc.id, usd.id, "1000.00")
     p_unk = _position(session, month.id, acc.id, mystery.id, "400.00")
     res = evaluate_scenario_lab(session, month.id, _fx("USD", "10"))
-    assert res.row_applicability[str(p_usd.id)] == "applied"
+    assert res.row_applicability[str(p_usd.id)] != "applied"
+    assert res.row_applicability[str(p_usd.id)] == FX_CANDIDATE_TARGET_CURRENCY
     assert res.row_applicability[str(p_unk.id)] == "unknown"
-    assert res.coverage["applied"] == 1
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 1
     assert res.coverage["unknown"] == 1
     _assert_fx_sensitive_status(
         res, "unavailable", FX_TRANSLATION_BASIS_UNAVAILABLE, MISSING_CURRENCY
@@ -356,6 +366,7 @@ def test_excluded_capital_rows_do_not_contaminate(session):
     assert str(p_rub.id) in res.row_applicability
     assert res.row_applicability[str(p_rub.id)] == "not_applicable"
     assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 0
     assert res.coverage["unknown"] == 0
     assert res.coverage["eligible_positions"] == 1
     _assert_fx_sensitive_status(res, "supported")
@@ -451,7 +462,10 @@ def test_frozen_payload_concurrent_writer(session, monkeypatch):
     assert res.stressed["liquid_assets_kopecks"] != 1100
     assert res.stressed["liquid_assets_kopecks"] != 2000
     assert res.metric_support["liquid_assets"]["status"] == "unavailable"
-    assert res.row_applicability[str(pos.id)] == "applied"
+    assert res.row_applicability[str(pos.id)] != "applied"
+    assert res.row_applicability[str(pos.id)] == FX_CANDIDATE_TARGET_CURRENCY
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 1
     monkeypatch.setattr(sl, "calculate_liquid_capital", orig_calc)
 
 
@@ -492,6 +506,8 @@ def test_reporting_currency_target_is_not_fx(session):
     pos = _position(session, month.id, acc.id, rub.id, "1000.00")
     res = evaluate_scenario_lab(session, month.id, _fx("RUB", "10"))
     assert res.row_applicability[str(pos.id)] == "not_applicable"
+    assert res.coverage["applied"] == 0
+    assert res.coverage["candidate_target_currency"] == 0
     _assert_fx_sensitive_status(res, "supported")
     assert res.base["liquid_assets_kopecks"] == res.stressed["liquid_assets_kopecks"]
 
