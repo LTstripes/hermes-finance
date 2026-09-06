@@ -376,7 +376,7 @@ def evaluate_scenario_lab(
             delta = 0
             if fx_row.candidate_target_currency:
                 coverage_candidate += 1
-                row_token = FX_CANDIDATE_TARGET_CURRENCY
+                row_token = RowApplicability.UNKNOWN.value
             elif fx_row.exact_applicability == RowApplicability.UNKNOWN:
                 coverage_unknown += 1
                 row_token = RowApplicability.UNKNOWN.value
@@ -443,7 +443,7 @@ def evaluate_scenario_lab(
         else "-" + _money_api(-known_scope_delta),
     }
     if shock_type == ShockType.FX_TRANSLATION_SHOCK.value:
-        coverage["candidate_target_currency"] = coverage_candidate
+        coverage[FX_CANDIDATE_TARGET_CURRENCY] = coverage_candidate
 
     has_unknown = coverage_unknown > 0
 

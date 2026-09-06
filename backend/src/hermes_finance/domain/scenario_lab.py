@@ -66,11 +66,14 @@ class MetricSupport:
 class FxRowClassification:
     """Exact FX applicability kept separate from candidate-currency scope.
 
-    exact_applicability is never APPLIED on the current schema: a matching
-    currency tag is candidate scope only and is not exact shock application.
+    exact_applicability is never APPLIED on the current schema and stays
+    inside applied | not_applicable | unknown. A matching currency tag is
+    candidate scope only; while translation basis is absent the exact
+    applicability state is unknown, distinguished from missing_currency by
+    candidate_target_currency and fx_translation_basis_unavailable.
     """
 
-    exact_applicability: RowApplicability | None
+    exact_applicability: RowApplicability
     candidate_target_currency: bool
     reason_codes: tuple[str, ...] = ()
 
@@ -252,7 +255,8 @@ def classify_fx_applicability(
     Instrument.currency is candidate-scope metadata only. A match against
     target_currency is not exact applicability: translation basis is absent
     in the current schema, so the service must not transform money values
-    and must not report row-level applied.
+    and must not report row-level applied. Exact applicability is unknown
+    until a translation basis exists.
 
     Reporting-currency exposure is not FX translation (Addition 1).
     """
@@ -270,7 +274,7 @@ def classify_fx_applicability(
         )
     if parsed == target_currency:
         return FxRowClassification(
-            exact_applicability=None,
+            exact_applicability=RowApplicability.UNKNOWN,
             candidate_target_currency=True,
             reason_codes=(FX_TRANSLATION_BASIS_UNAVAILABLE,),
         )
