@@ -1,10 +1,11 @@
 """Pure domain for Scenario Lab v1 (r07-09).
 
-Deterministic, no I/O, no DB. Implements equity_drawdown semantics
-exactly as per docs/r07-09-scenario-lab-contract.md.
+Deterministic, no I/O, no DB. Implements equity_drawdown and
+deposit_rate_assumption semantics exactly as per
+docs/r07-09-scenario-lab-contract.md.
 
-Only supported shock in 141-A is equity_drawdown. All other shocks
-or multi-shock composition must fail with unsupported_composition_v1.
+Only supported shocks are equity_drawdown and deposit_rate_assumption.
+Multi-shock composition must fail with unsupported_composition_v1.
 
 Money: integer kopecks, percentages as Decimal strings, ROUND_HALF_UP.
 """
@@ -14,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
 
@@ -27,6 +27,12 @@ SUPPORTED_INSTRUMENT_TYPES = frozenset({"stock", "bond", "fund", "currency", "go
 
 class ShockType(StrEnum):
     EQUITY_DRAWDOWN = "equity_drawdown"
+    DEPOSIT_RATE_ASSUMPTION = "deposit_rate_assumption"
+
+
+class DepositTargetSelector(StrEnum):
+    ALL_ELIGIBLE_DEPOSITS = "all_eligible_deposits"
+    DEPOSIT_IDS = "deposit_ids"
 
 
 class RowApplicability(StrEnum):
@@ -157,6 +163,63 @@ def classify_applicability(instrument_type: object) -> RowApplicability:
     if v == "stock":
         return RowApplicability.APPLIED
     return RowApplicability.NOT_APPLICABLE
+
+
+def parse_assumed_annual_rate_pct(raw: object) -> Decimal:
+    """Parse and validate assumed_annual_rate_pct (absolute annual %).
+
+    Raises ValueError with a machine-readable code in the message:
+    ``invalid_assumed_rate_pct``. Binary float input is forbidden;
+    NaN/Infinity/negative values are rejected; no arbitrary upper bound.
+    """
+    if isinstance(raw, bool):
+        raise ValueError("invalid_assumed_rate_pct: must be decimal string or int")
+    if isinstance(raw, int):
+        raw = str(raw)
+    if isinstance(raw, float):
+        raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
+    if isinstance(raw, Decimal):
+        pct = raw
+    elif isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("invalid_assumed_rate_pct: empty")
+        try:
+            pct = Decimal(raw)
+        except InvalidOperation as e:
+            raise ValueError("invalid_assumed_rate_pct: not a decimal") from e
+    else:
+        raise ValueError("invalid_assumed_rate_pct: unsupported type")
+    if not pct.is_finite():
+        raise ValueError("invalid_assumed_rate_pct: not finite")
+    if pct < Decimal("0"):
+        raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
+    return pct
+
+
+def canonical_rate_basis_points(rate_pct: Decimal) -> int:
+    """Normalize a percentage rate through canonical PercentageRate semantics.
+
+    ``PercentageRate`` stores integer basis points; conversion rounds with
+    ROUND_HALF_UP at the basis-point boundary (e.g. 12.345% -> 1235 bp).
+    """
+    if isinstance(rate_pct, float):
+        raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
+    if not isinstance(rate_pct, Decimal):
+        raise TypeError("rate_pct must be Decimal")
+    if not rate_pct.is_finite():
+        raise ValueError("invalid_assumed_rate_pct: not finite")
+    if rate_pct < Decimal("0"):
+        raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
+    basis_points = (rate_pct * Decimal(100)).to_integral_value(rounding=ROUND_HALF_UP)
+    return int(basis_points)
+
+
+def normalized_rate_string(basis_points: int) -> str:
+    """Deterministic canonical decimal string for a basis-point rate."""
+    if not isinstance(basis_points, int) or isinstance(basis_points, bool):
+        raise TypeError("basis_points must be int")
+    return format(Decimal(basis_points) / Decimal(100), ".2f")
 
 
 def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> int:
