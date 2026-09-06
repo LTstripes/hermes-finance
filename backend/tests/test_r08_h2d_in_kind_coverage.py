@@ -205,7 +205,9 @@ def test_complete_coverage_with_known_movement_without_valuation_fails_closed(
             account_id=account.id,
         )
         assert result.in_kind_boundary_coverage.status == "complete"
-        assert [item.id for item in result.in_kind_boundary_coverage.known_movements] == [movement.id]
+        assert [item.id for item in result.in_kind_boundary_coverage.known_movements] == [
+            movement.id
+        ]
         assert result.reason_codes == ("not_computable_in_kind_movement_unvalued",)
         assert not result.xirr.is_available
         assert not result.twrr.is_available
@@ -249,11 +251,15 @@ def test_generic_account_with_position_history_requires_coverage(tmp_path: Path)
         tmp_path, account_type=AccountType.OTHER
     )
     try:
-        rows = {account.id: [AccountPerformanceScopeMembership(
-            account_id=account.id,
-            effective_from=date(2029, 1, 1),
-            include_in_returns=True,
-        )]}
+        rows = {
+            account.id: [
+                AccountPerformanceScopeMembership(
+                    account_id=account.id,
+                    effective_from=date(2029, 1, 1),
+                    include_in_returns=True,
+                )
+            ]
+        }
         coverage = in_kind_boundary_coverage_for_interval(
             session,
             scope=PerformanceScope.ACCOUNT,

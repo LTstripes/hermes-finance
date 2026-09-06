@@ -188,7 +188,9 @@ def stage_create_in_kind_boundary_coverage(
     return coverage
 
 
-def create_in_kind_boundary_coverage(session: Session, **kwargs: object) -> InKindBoundaryCoverageRecord:
+def create_in_kind_boundary_coverage(
+    session: Session, **kwargs: object
+) -> InKindBoundaryCoverageRecord:
     coverage = stage_create_in_kind_boundary_coverage(session, **kwargs)
     session.commit()
     session.refresh(coverage)
@@ -433,12 +435,13 @@ def _required_account_ids(
     rows_by_account: dict[int, list[object]],
 ) -> tuple[int, ...]:
     accounts = {
-        account.id: account
-        for account in session.scalars(select(Account).order_by(Account.id))
+        account.id: account for account in session.scalars(select(Account).order_by(Account.id))
     }
     position_history_ids = set(
         session.scalars(
-            select(PositionSnapshot.account_id).where(PositionSnapshot.price_date <= end_date).distinct()
+            select(PositionSnapshot.account_id)
+            .where(PositionSnapshot.price_date <= end_date)
+            .distinct()
         )
     )
     relevant_ids = {
@@ -546,22 +549,26 @@ def in_kind_boundary_coverage_for_interval(
         end_date=end_date,
         rows_by_account=rows_by_account,
     )
-    rows = list(
-        session.scalars(
-            select(InKindBoundaryCoverageRecord)
-            .where(
-                InKindBoundaryCoverageRecord.account_id.in_(required_ids),
-                InKindBoundaryCoverageRecord.covered_to >= start_date,
-                InKindBoundaryCoverageRecord.covered_from <= end_date,
-            )
-            .order_by(
-                InKindBoundaryCoverageRecord.account_id,
-                InKindBoundaryCoverageRecord.covered_from,
-                InKindBoundaryCoverageRecord.covered_to,
-                InKindBoundaryCoverageRecord.id,
+    rows = (
+        list(
+            session.scalars(
+                select(InKindBoundaryCoverageRecord)
+                .where(
+                    InKindBoundaryCoverageRecord.account_id.in_(required_ids),
+                    InKindBoundaryCoverageRecord.covered_to >= start_date,
+                    InKindBoundaryCoverageRecord.covered_from <= end_date,
+                )
+                .order_by(
+                    InKindBoundaryCoverageRecord.account_id,
+                    InKindBoundaryCoverageRecord.covered_from,
+                    InKindBoundaryCoverageRecord.covered_to,
+                    InKindBoundaryCoverageRecord.id,
+                )
             )
         )
-    ) if required_ids else []
+        if required_ids
+        else []
+    )
     rows_by_required_account: dict[int, list[InKindBoundaryCoverageRecord]] = {
         current_account_id: [] for current_account_id in required_ids
     }
@@ -585,20 +592,24 @@ def in_kind_boundary_coverage_for_interval(
             rows_by_account=rows_by_account,
         )
     )
-    movements = list(
-        session.scalars(
-            select(InKindMovementRecord)
-            .where(
-                InKindMovementRecord.event_date >= start_date,
-                InKindMovementRecord.event_date <= end_date,
-                (
-                    InKindMovementRecord.source_account_id.in_(historically_in_scope_ids)
-                    | InKindMovementRecord.destination_account_id.in_(historically_in_scope_ids)
-                ),
+    movements = (
+        list(
+            session.scalars(
+                select(InKindMovementRecord)
+                .where(
+                    InKindMovementRecord.event_date >= start_date,
+                    InKindMovementRecord.event_date <= end_date,
+                    (
+                        InKindMovementRecord.source_account_id.in_(historically_in_scope_ids)
+                        | InKindMovementRecord.destination_account_id.in_(historically_in_scope_ids)
+                    ),
+                )
+                .order_by(InKindMovementRecord.event_date, InKindMovementRecord.id)
             )
-            .order_by(InKindMovementRecord.event_date, InKindMovementRecord.id)
         )
-    ) if historically_in_scope_ids else []
+        if historically_in_scope_ids
+        else []
+    )
     evidence = tuple(
         InKindBoundaryCoverageEvidence(
             id=row.id,

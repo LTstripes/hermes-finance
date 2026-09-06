@@ -148,9 +148,7 @@ def create_in_kind_boundary_coverage_endpoint(
     payload: InKindBoundaryCoverageCreate,
     session: Session = Depends(session_for_request),
 ) -> InKindBoundaryCoverageResponse:
-    return _coverage_response(
-        create_in_kind_boundary_coverage(session, **payload.model_dump())
-    )
+    return _coverage_response(create_in_kind_boundary_coverage(session, **payload.model_dump()))
 
 
 @coverage_router.get("/{coverage_id}", response_model=InKindBoundaryCoverageResponse)
@@ -182,10 +180,14 @@ def list_in_kind_movements_endpoint(
     account_id: int | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> list[InKindMovementResponse]:
-    return [_movement_response(row) for row in list_in_kind_movements(session, account_id=account_id)]
+    return [
+        _movement_response(row) for row in list_in_kind_movements(session, account_id=account_id)
+    ]
 
 
-@movement_router.post("", response_model=InKindMovementResponse, status_code=status.HTTP_201_CREATED)
+@movement_router.post(
+    "", response_model=InKindMovementResponse, status_code=status.HTTP_201_CREATED
+)
 def create_in_kind_movement_endpoint(
     payload: InKindMovementCreate,
     session: Session = Depends(session_for_request),

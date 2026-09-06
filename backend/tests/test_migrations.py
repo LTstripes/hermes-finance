@@ -1844,15 +1844,16 @@ def test_in_kind_boundary_coverage_migration_is_additive_and_amount_free(tmp_pat
         }
         assert "in_kind_boundary_coverages" in tables
         assert "in_kind_movements" in tables
-        assert connection.execute("SELECT COUNT(*) FROM in_kind_boundary_coverages").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM in_kind_boundary_coverages").fetchone() == (
+            0,
+        )
         assert connection.execute("SELECT COUNT(*) FROM in_kind_movements").fetchone() == (0,)
         coverage_sql = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' "
             "AND name = 'in_kind_boundary_coverages'"
         ).fetchone()[0]
         movement_sql = connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' "
-            "AND name = 'in_kind_movements'"
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'in_kind_movements'"
         ).fetchone()[0]
         assert "amount" not in coverage_sql.lower()
         assert "amount" not in movement_sql.lower()

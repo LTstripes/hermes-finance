@@ -98,15 +98,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["reporting_month_id"], ["reporting_months.id"], ondelete="RESTRICT"
         ),
-        sa.ForeignKeyConstraint(
-            ["source_account_id"], ["accounts.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["destination_account_id"], ["accounts.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["instrument_id"], ["instruments.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["source_account_id"], ["accounts.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["destination_account_id"], ["accounts.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["instrument_id"], ["instruments.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -118,14 +112,14 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
-    movement_count = connection.execute(sa.text("SELECT COUNT(*) FROM in_kind_movements")).scalar_one()
+    movement_count = connection.execute(
+        sa.text("SELECT COUNT(*) FROM in_kind_movements")
+    ).scalar_one()
     coverage_count = connection.execute(
         sa.text("SELECT COUNT(*) FROM in_kind_boundary_coverages")
     ).scalar_one()
     if movement_count or coverage_count:
-        raise RuntimeError(
-            "cannot downgrade 0039_in_kind_boundary_coverage while evidence exists"
-        )
+        raise RuntimeError("cannot downgrade 0039_in_kind_boundary_coverage while evidence exists")
     op.drop_index("ix_in_kind_movements_event_date", table_name="in_kind_movements")
     op.drop_table("in_kind_movements")
     op.drop_index(
