@@ -30,6 +30,8 @@ The response contains:
   provenance;
 - `scope_membership` with effective-dated account evidence for the whole
   interval;
+- `cash_boundary_coverage` with affirmative per-account cash-history evidence,
+  state and provenance;
 - `external_flows` with sanitized exact flow metadata, classification,
   transfer status, legacy unclassified row IDs and coverage reasons;
 - `external_flow_boundaries` with deterministic pre/post observed valuation
@@ -64,6 +66,25 @@ scope selection. Every account relevant to a portfolio request, or the
 explicit account request, must have gap-free non-overlapping effective-dated
 membership evidence over the requested interval. The present account flag is
 never used to rewrite history.
+
+### Cash-boundary history coverage
+
+Exact performance additionally requires affirmative cash-boundary coverage for
+every account historically included in the selected scope over the interval.
+Coverage is `complete` only when the owner has explicitly attested that all
+owner cash crossings are known, including the valid zero-crossing case. The
+current accepted provenance is `owner_attestation`; the persisted provenance
+fields leave room for a future authoritative source without treating a
+provider/import value as authoritative today.
+
+Missing, partial, overlapping, ambiguous or `unknown` coverage remains
+`unknown` and contributes the existing
+`not_computable_external_flows_incomplete` reason to both XIRR and TWRR. No
+flow rows, closed months, current account state, successful valuation,
+in-kind evidence or heuristics can infer completeness. Complete coverage is
+not a flow ledger and does not replace canonical `ExternalFlow` validation for
+any known contribution, withdrawal or direct payout. Coverage writes affecting
+closed reporting months require the existing explicit reopen lifecycle.
 
 ### External-flow completeness
 

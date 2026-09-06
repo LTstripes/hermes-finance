@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 
+from hermes_finance.domain.cash_boundary_coverage import CashBoundaryCoverage
 from hermes_finance.domain.external_flows import (
     ExternalFlowClassification,
     ExternalFlowScopeMembership,
@@ -141,6 +142,7 @@ class PerformanceAvailability:
     opening_valuation: ValuationBoundaryEvidence
     closing_valuation: ValuationBoundaryEvidence
     scope_membership: ScopeMembershipCoverage
+    cash_boundary_coverage: CashBoundaryCoverage
     external_flows: ExternalFlowCoverage
     external_flow_boundaries: tuple[ExternalFlowBoundaryEvidence, ...]
     xirr: PerformanceMetricPrerequisites

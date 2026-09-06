@@ -16,6 +16,7 @@ from hermes_finance.api.broker_identity_mappings import (
 from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
+from hermes_finance.api.cash_boundary_coverage import router as cash_boundary_coverage_router
 from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
 from hermes_finance.api.close_readiness import router as close_readiness_router
 from hermes_finance.api.comments import router as comments_router
@@ -121,6 +122,7 @@ def create_app(
     application.include_router(positions_router)
     application.include_router(deposits_router)
     application.include_router(cash_router)
+    application.include_router(cash_boundary_coverage_router)
     application.include_router(cash_flow_ladder_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)

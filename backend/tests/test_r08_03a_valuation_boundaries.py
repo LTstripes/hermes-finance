@@ -25,6 +25,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
@@ -95,6 +96,12 @@ def _environment(tmp_path: Path) -> tuple[Session, object, int, int, int]:
         )
     )
     session.commit()
+    create_cash_boundary_coverage(
+        session,
+        account_id=account.id,
+        covered_from=START,
+        covered_to=END,
+    )
     return session, database, january.id, february.id, account.id
 
 
@@ -657,6 +664,12 @@ def test_portfolio_internal_transfer_does_not_create_boundary_group_requirement(
             )
         )
         session.commit()
+        create_cash_boundary_coverage(
+            session,
+            account_id=destination.id,
+            covered_from=START,
+            covered_to=END,
+        )
         source_flow = create_external_flow(
             session,
             reporting_month_id=february_id,

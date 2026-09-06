@@ -1793,3 +1793,66 @@ def test_broker_baseline_provenance_migration_is_additive_and_empty(tmp_path: Pa
         assert "broker_identity_mappings" in tables
     finally:
         connection.close()
+
+
+def test_cash_boundary_coverage_migration_is_additive_and_amount_free(tmp_path: Path) -> None:
+    database_path = tmp_path / "cash-boundary-coverage.db"
+    previous = run_alembic(database_path, "upgrade", "0036_broker_baseline_provenance")
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "cash_boundary_coverages" not in tables
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(cash_boundary_coverages)")
+        ] == [
+            "id",
+            "account_id",
+            "covered_from",
+            "covered_to",
+            "coverage_state",
+            "provenance_kind",
+            "provenance_reference",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM cash_boundary_coverages").fetchone() == (0,)
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'cash_boundary_coverages'"
+        ).fetchone()[0]
+        assert "amount" not in table_sql.lower()
+        assert "coverage_state IN ('complete', 'unknown')" in table_sql
+        assert "uq_cash_boundary_coverages_account_interval" in table_sql
+        indexes = list(connection.execute("PRAGMA index_list(cash_boundary_coverages)"))
+        assert any(row[1] == "ix_cash_boundary_coverages_account_interval" for row in indexes)
+        assert any(row[2] for row in indexes)
+        foreign_keys = list(connection.execute("PRAGMA foreign_key_list(cash_boundary_coverages)"))
+        assert {row[2] for row in foreign_keys} == {"accounts"}
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0036_broker_baseline_provenance")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "cash_boundary_coverages" not in tables
+    finally:
+        connection.close()

@@ -18,6 +18,7 @@ from hermes_finance.domain import AccountType, PerformanceAvailabilityStatus
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import create_external_flow
 from hermes_finance.services.instruments import create_instrument
@@ -91,6 +92,12 @@ def _environment(
         )
     )
     session.commit()
+    create_cash_boundary_coverage(
+        session,
+        account_id=account.id,
+        covered_from=START,
+        covered_to=END,
+    )
     return session, database, january.id, february.id, account.id
 
 

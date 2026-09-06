@@ -98,6 +98,28 @@ class ScopeMembershipCoverageOut(BaseModel):
     reason_codes: list[str]
 
 
+class CashBoundaryCoverageEvidenceOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    account_id: int
+    covered_from: date
+    covered_to: date
+    state: str
+    provenance_kind: str
+    provenance_reference: str | None
+
+
+class CashBoundaryCoverageOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    account_ids: list[int]
+    evidence: list[CashBoundaryCoverageEvidenceOut]
+    missing_or_incomplete_account_ids: list[int]
+    reason_codes: list[str]
+
+
 class ExternalFlowEvidenceOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -175,6 +197,7 @@ class PerformanceAvailabilityResponse(BaseModel):
     opening_valuation: ValuationBoundaryOut
     closing_valuation: ValuationBoundaryOut
     scope_membership: ScopeMembershipCoverageOut
+    cash_boundary_coverage: CashBoundaryCoverageOut
     external_flows: ExternalFlowCoverageOut
     external_flow_boundaries: list[ExternalFlowBoundaryOut]
     xirr: PerformanceMetricPrerequisitesOut
@@ -328,6 +351,26 @@ def _response(result: PerformanceAvailability) -> PerformanceAvailabilityRespons
                 result.scope_membership.missing_or_ambiguous_account_ids
             ),
             reason_codes=list(result.scope_membership.reason_codes),
+        ),
+        cash_boundary_coverage=CashBoundaryCoverageOut(
+            status=result.cash_boundary_coverage.status,
+            account_ids=list(result.cash_boundary_coverage.account_ids),
+            evidence=[
+                CashBoundaryCoverageEvidenceOut(
+                    id=item.id,
+                    account_id=item.account_id,
+                    covered_from=item.covered_from,
+                    covered_to=item.covered_to,
+                    state=item.state.value,
+                    provenance_kind=item.provenance_kind,
+                    provenance_reference=item.provenance_reference,
+                )
+                for item in result.cash_boundary_coverage.evidence
+            ],
+            missing_or_incomplete_account_ids=list(
+                result.cash_boundary_coverage.missing_or_incomplete_account_ids
+            ),
+            reason_codes=list(result.cash_boundary_coverage.reason_codes),
         ),
         external_flows=ExternalFlowCoverageOut(
             status=result.external_flows.status,
