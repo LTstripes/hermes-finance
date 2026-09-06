@@ -1,18 +1,22 @@
 """Pure domain for Scenario Lab v1 (r07-09).
 
-Deterministic, no I/O, no DB. Implements equity_drawdown semantics
-exactly as per docs/r07-09-scenario-lab-contract.md.
+Deterministic, no I/O, no DB. Implements equity_drawdown and
+fx_translation_shock baseline semantics exactly as per
+docs/r07-09-scenario-lab-contract.md.
 
-Only supported shock in 141-A is equity_drawdown. All other shocks
-or multi-shock composition must fail with unsupported_composition_v1.
+v1 accepts exactly one shock. Multi-shock composition must fail with
+unsupported_composition_v1.
 
 Money: integer kopecks, percentages as Decimal strings, ROUND_HALF_UP.
+FX matching-currency rows are candidate scope only: Instrument.currency
+is not a translation basis and must not invent stressed money values.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
@@ -22,10 +26,14 @@ CALCULATION_VERSION = "r07-09-v1"
 SHOCK_SCHEMA_VERSION = "v1"
 
 SUPPORTED_INSTRUMENT_TYPES = frozenset({"stock", "bond", "fund", "currency", "gold", "other"})
+CANONICAL_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
+FX_TRANSLATION_BASIS_UNAVAILABLE = "fx_translation_basis_unavailable"
+MISSING_CURRENCY = "missing_currency"
 
 
 class ShockType(StrEnum):
     EQUITY_DRAWDOWN = "equity_drawdown"
+    FX_TRANSLATION_SHOCK = "fx_translation_shock"
 
 
 class RowApplicability(StrEnum):
@@ -90,6 +98,57 @@ def parse_drawdown_pct(raw: object) -> Decimal:
     return pct
 
 
+def parse_reporting_value_change_pct(raw: object) -> Decimal:
+    """Parse signed reporting-currency change pct. Binary float and bool rejected.
+
+    Values below -100 are invalid: the contractual translation factor would be
+    negative. No arbitrary positive cap is applied.
+    """
+    if isinstance(raw, bool):
+        raise ValueError("invalid_reporting_value_change_pct: must be decimal string or number")
+    if isinstance(raw, (int, float)):
+        if isinstance(raw, float):
+            raise ValueError("invalid_reporting_value_change_pct: binary float not allowed")
+        raw = str(raw)
+    if isinstance(raw, Decimal):
+        pct = raw
+    elif isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("invalid_reporting_value_change_pct: empty")
+        try:
+            pct = Decimal(raw)
+        except InvalidOperation as e:
+            raise ValueError("invalid_reporting_value_change_pct: not a decimal") from e
+    else:
+        raise ValueError("invalid_reporting_value_change_pct: unsupported type")
+    if not pct.is_finite():
+        raise ValueError("invalid_reporting_value_change_pct: not finite")
+    if pct < Decimal("-100"):
+        raise ValueError("invalid_reporting_value_change_pct: below -100")
+    return pct
+
+
+def parse_target_currency(raw: object) -> str:
+    """Trim + uppercase canonical three-letter currency identifier. Fail closed."""
+    if isinstance(raw, bool) or not isinstance(raw, str):
+        raise ValueError("invalid_target_currency: must be a string")
+    normalized = raw.strip().upper()
+    if not CANONICAL_CURRENCY_RE.fullmatch(normalized):
+        raise ValueError("invalid_target_currency: canonical three-letter identifier required")
+    return normalized
+
+
+def try_parse_position_currency(currency: object) -> str | None:
+    """Return canonical currency or None when metadata is missing/blank/invalid."""
+    if isinstance(currency, bool) or not isinstance(currency, str):
+        return None
+    normalized = currency.strip().upper()
+    if not CANONICAL_CURRENCY_RE.fullmatch(normalized):
+        return None
+    return normalized
+
+
 def _canonical_string_from_decimal(pct: Decimal) -> str:
     """Lossless canonical fixed-point string without context rounding.
 
@@ -145,6 +204,16 @@ def normalize_drawdown_pct(pct: Decimal) -> str:
     return _canonical_string_from_decimal(pct)
 
 
+def canonical_reporting_value_change_pct(pct: Decimal) -> Decimal:
+    """Lossless canonical Decimal for signed FX reporting-value change pct."""
+    return Decimal(_canonical_string_from_decimal(pct))
+
+
+def normalize_reporting_value_change_pct(pct: Decimal) -> str:
+    """Lossless canonical string for signed FX reporting-value change pct."""
+    return _canonical_string_from_decimal(pct)
+
+
 def classify_applicability(instrument_type: object) -> RowApplicability:
     if not isinstance(instrument_type, str):
         return RowApplicability.UNKNOWN
@@ -156,6 +225,38 @@ def classify_applicability(instrument_type: object) -> RowApplicability:
     if v == "stock":
         return RowApplicability.APPLIED
     return RowApplicability.NOT_APPLICABLE
+
+
+def classify_fx_applicability(
+    currency: object,
+    *,
+    target_currency: str,
+    reporting_currency: str,
+) -> RowApplicability:
+    """Classify a capital-eligible position for fx_translation_shock.
+
+    Instrument.currency is candidate-scope metadata only. A match against
+    target_currency is not exact applicability: translation basis is absent
+    in the current schema, so the service must not transform money values.
+
+    Reporting-currency exposure is not FX translation (Addition 1).
+    """
+    parsed = try_parse_position_currency(currency)
+    if parsed is None:
+        return RowApplicability.UNKNOWN
+    if parsed == reporting_currency:
+        return RowApplicability.NOT_APPLICABLE
+    if parsed == target_currency:
+        return RowApplicability.APPLIED
+    return RowApplicability.NOT_APPLICABLE
+
+
+def fx_row_reason_codes(applicability: RowApplicability) -> tuple[str, ...]:
+    if applicability == RowApplicability.APPLIED:
+        return (FX_TRANSLATION_BASIS_UNAVAILABLE,)
+    if applicability == RowApplicability.UNKNOWN:
+        return (MISSING_CURRENCY,)
+    return ()
 
 
 def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> int:
