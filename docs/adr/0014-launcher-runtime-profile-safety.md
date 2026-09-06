@@ -37,6 +37,16 @@ alembic upgrade head
 
 This ADR defines the safety contract. It does not ship an executable.
 
+### Operating status after the 0.8.2 closeout
+
+The profile isolation and fail-closed safety contract remains accepted, but the
+launcher-driven Stable self-update experiment (#298, follow-ups #311/#312) is
+not a proven canonical owner flow. #298 is closed `not_planned`; the owner used
+an explicit recovery operation to reach `v0.8.2`, and #313 contains the
+backlog-only redesign review. Until that review is accepted, use the documented
+small owner update/start operations for release changes. This status note does
+not implement or select a redesign.
+
 ## Decision
 
 A launcher **profile** is a prepared runtime tuple, not a branch name:

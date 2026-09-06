@@ -34,6 +34,13 @@ release/version/compatibility gate или task-acceptance contract; issue ID с�
 4. Если targeted test падает вне заявленного scope, остановись и разберись с причиной; не расширяй scope автоматически.
 5. После стабилизации implementation переходи к финальному local verification gate ниже.
 
+Для worker handoff соблюдай отдельный бюджет проверок: targeted tests во время
+итерации → один полный relevant harness после стабилизации и перед передачей
+worker-результата → package/install smoke как финальный gate, если упаковка или
+установка входит в scope. Для launcher-работы это не означает повторять полный
+serial harness после каждой правки; его можно разделять на логические lanes,
+но покрытие release/production safety ослаблять нельзя.
+
 RED-first не обязателен для docs-only, механического formatting/refactor без изменения поведения и задач, где воспроизводимый failing test не даёт дополнительной уверенности.
 
 ## 3. Финальный local verification gate по типу задачи
@@ -111,6 +118,9 @@ GitHub Actions может канонически запускать больше
 - Не дублируй локально unrelated suite только ради совпадения со всеми CI jobs.
 - Если task-card/iteration contract требует commit + push + exact-HEAD CI, задача не считается завершённой до зелёного CI точного финального SHA.
 - После CI не вноси semantic changes без повторной релевантной локальной проверки и нового exact-HEAD CI.
+- Для интеграции обязательны оба удалённых доказательства: зелёный PR CI на
+  принятом candidate и зелёный canonical exact-main push CI на точном merge SHA.
+  Ни одно из них не заменяет другое.
 
 ## 6. Что писать в отчёте
 

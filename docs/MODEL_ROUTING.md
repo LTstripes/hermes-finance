@@ -19,6 +19,13 @@ A named owner start command assigns the task. It does not, by itself, lock a pro
 
 Claim a provider/model identity only when it is runtime-confirmed. Worker summaries are context, not proof.
 
+Observed routing note: Spark/Muse-class models are acceptable for bounded UI,
+documentation and deterministic test work and may be unexpectedly strong on
+those surfaces. That does not lower the review bar: financial contract
+semantics, migrations, reconciliation, tax/performance meaning, privacy and
+runtime boundaries require independent senior/integrator review regardless of
+the builder model.
+
 ## Risk classes
 
 ### Low risk

@@ -1,11 +1,11 @@
 # Hermes Finance Windows launcher — owner-first entry point
 
-`HermesFinance.Launcher.exe` — каноническая owner-точка входа ( ADR 0014, R09-LAUNCH03 #279 ). Никаких логов, PowerShell, Git и ручного JSON для обычного запуска. Launcher показывает **только** локально настроенные runtime-профили ( не список Git-веток ). Git-мутация возможна только после явного owner-действия: `Обновить Preview` до `origin/main` или `Обновить Stable до vX.Y.Z` после доказательства опубликованного immutable release.
+`HermesFinance.Launcher.exe` — owner-точка входа для подготовленных runtime-профилей и Start/Stop (ADR 0014, R09-LAUNCH03 #279). Launcher показывает **только** локально настроенные runtime-профили, не список Git-веток. Stable self-update не является доказанным canonical flow: #298 закрыт `not_planned`, а redesign находится в #313. До его принятия release update выполняется отдельной явной owner recovery-операцией.
 
 **Что видит владелец без логов:**
 
 - **Stable** — зелёная карточка `STABLE · PRODUCTION` с pinned production identity: `Release v0.8.2` + короткий SHA + `Canonical production data` + `production` data boundary. Может открыть только canonical production DB.
-- Если `Обновить проверку` явно обнаружила новый опубликованный release, Stable показывает current → target identity и кнопку `Обновить Stable до vX.Y.Z`. Само `Обновить проверку` остаётся read-only: оно не делает backup, fetch, switch, config write или start.
+- `Обновить проверку` остаётся read-only preflight; она не является обещанием рабочего Stable self-update и не делает backup, fetch, switch, config write или start.
 - **Preview** — фиолетовая `PREVIEW · ISOLATED` с `main / UNRELEASED` + `Isolated UAT / synthetic data`, строка `main <current> → <target> · UNRELEASED` + короткий SHA. Никогда не смешивает данные со Stable.
 - **Ровно одна primary CTA** подсвечена по состоянию: `Обновить Preview` / `Подготовить` / `Исправить` / `Запустить` / `Открыть Hermes` / `Остановить` — остальные вторичны или отключены.
 - **4 проверки человеческим языком** (кратко, без путей): Code identity, Data boundary, Locked dependencies, Loopback service + Alembic. Raw-диагностика — вторичный скрытый слой.
@@ -33,7 +33,7 @@ This packages the launcher, copies it and its bundled helpers (`launcher-schema-
 `%LOCALAPPDATA%\HermesFinance\launcher\config.json` — launcher-first, без placeholder-файлов:
 
 - если файла нет — launcher **не создаёт** placeholder из `config.example.json` (там `<absolute-...>` заглушки). Вместо этого fail closed с actionable guidance: run `install.ps1`, откройте launcher, нажмите «Обновить проверку». Авто-создание срабатывает только если bundled шаблон сам concrete (абсолютные пути, валидная shape) — shipped `config.example.json` таковым не является;
-- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0`/`v0.8.0`/`v0.8.1` — миграция на `v0.8.2` только при доказанной безопасности (Stable checkout существует, чист, HEAD == `v0.8.2^{commit}`); иначе config **не меняется**, preflight покажет recovery-only guidance;
+- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0`/`v0.8.0`/`v0.8.1` — release update выполняется recovery-only по документированной owner-операции; launcher config **не меняется** от одного read-only preflight;
 - если есть неизвестные поля — schema-aware strip (top-level / canonical / profile allowlists); что не чинится — fail closed без изменения файла.
 
 Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с доказательством identity теми же preflight-инвариантами: Stable чист и `HEAD == refs/tags/v0.8.2`, Preview чист, на `refs/remotes/origin/main` и независим от Stable; без fetch/сети). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
@@ -51,7 +51,7 @@ For an owner UAT copy, follow ADR 0014 §7: create/select a production backup by
  - `Подготовить` — если locked зависимости missing/stale (offline проверка, сеть только по явному нажатию);
  - `Исправить` — принудительно восстанавливает обе среды (даже если сейчас ready);
  - `Запустить` — только когда всё готово (Stable Ready; Preview current + deps ready), обычный старт без скрытых download/install и без release discovery (`UV_OFFLINE=1`);
- - `Обновить Stable до vX.Y.Z` — только если найден опубликованный non-prerelease с точным immutable annotated `refs/tags/vX.Y.Z`, remote tag доказан и target SHA новее текущего. Эта кнопка — единственный Stable upgrade CTA;
+ - Stable release update — **непроверенный canonical launcher flow**; при mismatch используется recovery-only guidance, описанная в корневом README и #313;
  - `Обновить Preview` — Preview behind `origin/main` + deps ready (primary; `Запустить` не предлагается пока висит подготовленное обновление);
  - `Обновить и запустить` — Preview behind + deps missing: единственная primary CTA безопасной цепочки (обновление → подготовка locked-зависимостей → запуск); `Подготовить`/`Запустить` не конкурируют;
  - `Обновить Preview` / `Обновить и запустить` — только для Preview, `fetch origin/main` + `ff-only` с проверкой чистоты/identity, показывает target SHA.
@@ -85,16 +85,17 @@ Raw-детали — только в `Диагностика и логи`.
 
 After a successful preflight it invokes only the selected checkout's existing guarded `scripts/start-local.ps1` with `HERMES_FINANCE_DATABASE_PATH` set to the validated profile DB (takes precedence over `.env`). The script remains responsible for frontend build, migrations, loopback bind and its three health probes. The window streams logs, keeps the last launch status visible, and opens `http://127.0.0.1:8000` only after readiness.
 
-## Explicit Stable upgrade lifecycle
+## Stable release update status
 
-Stable release discovery and upgrade are separate owner actions:
-
-1. After Hermes is stopped, the owner presses `Обновить проверку`. The launcher validates the current Stable checkout, then reads the published GitHub releases and `origin` tag refs without fetching, switching, creating a backup or writing config. It accepts only a strict published, non-draft, non-prerelease `vX.Y.Z` whose remote tag is annotated and peels to one exact commit. Stable is never resolved to `main`.
-2. If a newer target is proven, the launcher shows `Обновить Stable до vX.Y.Z`. Pressing it re-reads publication metadata and tag proof immediately before mutation, then creates one verified SQLite online backup in the existing `data/backups/` contract before any Git/config mutation. The canonical production `data_dir` may remain inside the Stable checkout: the launcher first proves the canonical tuple, rejects reparse-point and hardlink aliases, and verifies that both the current release tree and the exact target release tree contain no tracked path under production data, the identity sidecar, the database, or backups. An unprovable or colliding tree fails closed before backup.
-3. It fetches only the proven tag ref, verifies the annotated tag object, peeled commit and target `hermes_finance.__version__`, detaches only the configured Stable checkout at that tag, and re-checks cleanliness and identity. It writes the Stable `expected_ref` only after those proofs succeed. A dirty, unexpected, changed or unproven checkout fails closed.
-4. If the new release needs dependencies, the launcher invokes the existing locked preparation mechanism (`uv sync --locked` and `npm ci`) as part of this explicit upgrade action. It never starts Hermes automatically; the owner gets a fresh `Запустить` CTA after preflight. Runtime/backend `/api/health` version must match the launcher release identity before `Running` is shown.
-
-The canonical production `data_dir` and database path stay unchanged, and the production DB/identity sidecar are checked for concurrent mutation around the upgrade. Preview checkout, Preview data and Preview identity are never read or copied by this lifecycle. `Обновить проверку` is always a check, never a disguised upgrade.
+The launcher still enforces the runtime-profile, identity, data-boundary and
+loopback safety checks needed for Start/Stop. However, the #298 experiment and
+follow-ups #311/#312 failed to produce a usable owner self-update flow. Do not
+describe release discovery, backup, Git mutation and package preparation inside
+the launcher as the canonical update path. Use an explicit recovery operation
+that proves the published annotated tag, backs up before mutation, prepares
+locked dependencies, verifies the exact release identity and never auto-starts.
+The redesign options are backlog-only in #313; this README does not choose or
+implement one.
 
 ## Synthetic UI smoke
 
