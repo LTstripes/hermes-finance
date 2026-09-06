@@ -1,10 +1,9 @@
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import FINANCIAL_ROUNDING, DepositType, PercentageRate, RubleAmount
+from hermes_finance.domain import DepositType, PercentageRate, RubleAmount
 from hermes_finance.persistence import Account, DepositSnapshot
 from hermes_finance.services._guard import (
     require_editable_child_month,
@@ -58,10 +57,11 @@ def _normalize_rate(annual_rate: PercentageRate | str) -> int:
 
 
 def _compute_expected_monthly_interest(balance_kopecks: int, annual_rate_basis_points: int) -> int:
-    monthly = (
-        Decimal(balance_kopecks) * Decimal(annual_rate_basis_points) / Decimal(10_000) / Decimal(12)
+    from hermes_finance.domain.deposits import calculate_deposit_expected_monthly_interest_kopecks
+
+    return calculate_deposit_expected_monthly_interest_kopecks(
+        balance_kopecks, annual_rate_basis_points
     )
-    return int(monthly.to_integral_value(rounding=FINANCIAL_ROUNDING))
 
 
 def list_deposit_snapshots(session: Session) -> list[DepositSnapshot]:
