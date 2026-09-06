@@ -9,7 +9,6 @@ issuer/currency/maturity metadata.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -17,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ExpectedCashFlowType, InstrumentType, RubleAmount
 from hermes_finance.domain.risk_allocation import (
-    AllocationMetric,
     ConcentrationItem,
     ConcentrationMetric,
     MetricSupport,
@@ -254,8 +252,9 @@ def _flow_concentration_metric(
     extra_reason_codes: tuple[str, ...] = (),
     is_approximate: bool = False,
 ) -> ConcentrationMetric:
-    from hermes_finance.domain.risk_allocation import percentage as domain_percentage
     from dataclasses import replace
+
+    from hermes_finance.domain.risk_allocation import percentage as domain_percentage
 
     ordered = sorted(items, key=lambda item: (-item.amount.kopecks, item.key))
     selected = ordered[:top_n]

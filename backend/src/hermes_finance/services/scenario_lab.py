@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -19,19 +18,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.goal_achievement import calculate_goal_achievement_forecast
-from hermes_finance.domain.liquid_capital import AccountAmount, calculate_liquid_capital
-from hermes_finance.domain.liquid_capital import LiquidCapitalInput
+from hermes_finance.domain.liquid_capital import (
+    AccountAmount,
+    LiquidCapitalInput,
+    calculate_liquid_capital,
+)
 from hermes_finance.domain.risk_allocation import (
+    MetricSupport,
     RiskDepositInput,
     RiskPositionInput,
-    RiskSupportStatus,
-    SupportIssue,
-    MetricSupport,
     build_account_allocation,
     build_asset_allocation,
     build_top_positions,
-    percentage,
-    support_from_issues,
 )
 from hermes_finance.domain.scenario_lab import (
     CALCULATION_VERSION,
@@ -57,11 +55,10 @@ from hermes_finance.persistence import (
     PositionSnapshot,
     ReportingMonth,
 )
-from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
-
 # ---- errors with machine-readable codes ----
+
 
 class ScenarioLabError(ValueError):
     def __init__(self, code: str, message: str) -> None:
@@ -70,6 +67,7 @@ class ScenarioLabError(ValueError):
 
 
 # ---- helpers ----
+
 
 def _validate_single_shock(shock: dict[str, Any]) -> None:
     if not isinstance(shock, dict):
@@ -95,7 +93,9 @@ def _sorted_ids(values: list[int]) -> list[int]:
 
 
 def _base_fingerprint(frozen_payload: dict) -> str:
-    canonical = json.dumps(frozen_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    canonical = json.dumps(
+        frozen_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -104,6 +104,7 @@ def _money_api(kopecks: int) -> str:
 
 
 # ---- main evaluation ----
+
 
 @dataclass(frozen=True, slots=True)
 class ScenarioLabEvaluation:
@@ -206,7 +207,11 @@ def evaluate_scenario_lab(
         )
         all_goals = list(session.scalars(select(Goal).order_by(Goal.id)).all())
         capital_goals = [
-            g for g in all_goals if g.is_active and g.goal_type == "capital" and g.calculation_mode == "liquid_capital_net"
+            g
+            for g in all_goals
+            if g.is_active
+            and g.goal_type == "capital"
+            and g.calculation_mode == "liquid_capital_net"
         ]
 
     frozen_payload = {
@@ -218,7 +223,12 @@ def evaluate_scenario_lab(
             "status": month.status,
         },
         "cash": [
-            {"id": c.id, "amount_kopecks": c.amount_kopecks, "currency": c.currency, "include_in_capital": c.include_in_capital}
+            {
+                "id": c.id,
+                "amount_kopecks": c.amount_kopecks,
+                "currency": c.currency,
+                "include_in_capital": c.include_in_capital,
+            }
             for c in sorted(cash_rows, key=lambda x: x.id)
         ],
         "deposits": [
@@ -242,27 +252,36 @@ def evaluate_scenario_lab(
             for snap, _iname, itype in sorted(pos_rows, key=lambda x: x[0].id)
         ],
         "debts": [
-            {"id": d.id, "balance_kopecks": d.current_balance_kopecks, "include_in_liquid_capital": d.include_in_liquid_capital}
+            {
+                "id": d.id,
+                "balance_kopecks": d.current_balance_kopecks,
+                "include_in_liquid_capital": d.include_in_liquid_capital,
+            }
             for d in sorted(debt_rows, key=lambda x: x.id)
         ],
         "goals": [
-            {"id": g.id, "target_kopecks": g.target_value_kopecks, "is_active": g.is_active, "goal_type": g.goal_type}
+            {
+                "id": g.id,
+                "target_kopecks": g.target_value_kopecks,
+                "is_active": g.is_active,
+                "goal_type": g.goal_type,
+            }
             for g in sorted(capital_goals, key=lambda x: x.id)
         ],
     }
     base_fp = _base_fingerprint(frozen_payload)
 
-    eligible_position_ids = _sorted_ids([p["id"] for p in frozen_payload["positions"] if p["include_in_capital"]])
-    eligible_deposit_ids = _sorted_ids([d["id"] for d in frozen_payload["deposits"] if d["include_in_capital"]])
+    eligible_position_ids = _sorted_ids(
+        [p["id"] for p in frozen_payload["positions"] if p["include_in_capital"]]
+    )
+    eligible_deposit_ids = _sorted_ids(
+        [d["id"] for d in frozen_payload["deposits"] if d["include_in_capital"]]
+    )
     normalized_target_scope = {
         "selector": "all_eligible",
         "eligible_position_ids": eligible_position_ids,
         "eligible_deposit_ids": eligible_deposit_ids,
     }
-
-    # Build lookup for eligible positions only (R5)
-    eligible_set = set(eligible_position_ids)
-    pos_by_id = {p["id"]: p for p in frozen_payload["positions"]}
 
     # R5 + R2: row_applicability only for eligible; excluded absent
     row_applicability: dict[str, str] = {}
@@ -333,16 +352,24 @@ def evaluate_scenario_lab(
         "not_applicable": coverage_not,
         "unknown": coverage_unknown,
         "known_scope_impact_kopecks": known_scope_delta,
-        "known_scope_impact": _money_api(known_scope_delta) if known_scope_delta >= 0 else "-" + _money_api(-known_scope_delta),
+        "known_scope_impact": _money_api(known_scope_delta)
+        if known_scope_delta >= 0
+        else "-" + _money_api(-known_scope_delta),
     }
 
     has_unknown = coverage_unknown > 0
 
     # BLOCKER B: build liquid capital from frozen_payload only — no DB re-read, no liquid_capital_for_month
     cash_total = sum(c["amount_kopecks"] for c in frozen_payload["cash"] if c["include_in_capital"])
-    deposits_total = sum(d["balance_kopecks"] for d in frozen_payload["deposits"] if d["include_in_capital"])
-    debts_total = sum(d["balance_kopecks"] for d in frozen_payload["debts"] if d["include_in_liquid_capital"])
-    securities_total_base = sum(p["market_value_kopecks"] for p in frozen_payload["positions"] if p["include_in_capital"])
+    deposits_total = sum(
+        d["balance_kopecks"] for d in frozen_payload["deposits"] if d["include_in_capital"]
+    )
+    debts_total = sum(
+        d["balance_kopecks"] for d in frozen_payload["debts"] if d["include_in_liquid_capital"]
+    )
+    securities_total_base = sum(
+        p["market_value_kopecks"] for p in frozen_payload["positions"] if p["include_in_capital"]
+    )
     # Build domain inputs for canonical builder (R1) from frozen
     base_domain_positions = tuple(
         RiskPositionInput(
@@ -352,7 +379,8 @@ def evaluate_scenario_lab(
             instrument_type=p["instrument_type"],
             amount_kopecks=int(p["market_value_kopecks"]),
         )
-        for p in frozen_payload["positions"] if p["include_in_capital"]
+        for p in frozen_payload["positions"]
+        if p["include_in_capital"]
     )
     stressed_domain_positions = tuple(
         RiskPositionInput(
@@ -362,24 +390,33 @@ def evaluate_scenario_lab(
             instrument_type=p["instrument_type"],
             amount_kopecks=stressed_positions[p["id"]],
         )
-        for p in frozen_payload["positions"] if p["include_in_capital"]
+        for p in frozen_payload["positions"]
+        if p["include_in_capital"]
     )
     domain_deposits = tuple(
         RiskDepositInput(account_id=d["account_id"], amount_kopecks=int(d["balance_kopecks"]))
-        for d in frozen_payload["deposits"] if d["include_in_capital"]
+        for d in frozen_payload["deposits"]
+        if d["include_in_capital"]
     )
     # Per-account deposit/securities tuples for liquid capital — built from frozen only
     _frozen_deposit_accounts = tuple(
         AccountAmount(account_id=d["account_id"], amount=RubleAmount(int(d["balance_kopecks"])))
-        for d in frozen_payload["deposits"] if d["include_in_capital"]
+        for d in frozen_payload["deposits"]
+        if d["include_in_capital"]
     )
     _frozen_securities_accounts_base = tuple(
-        AccountAmount(account_id=p["account_id"], amount=RubleAmount(int(p["market_value_kopecks"])))
-        for p in frozen_payload["positions"] if p["include_in_capital"]
+        AccountAmount(
+            account_id=p["account_id"], amount=RubleAmount(int(p["market_value_kopecks"]))
+        )
+        for p in frozen_payload["positions"]
+        if p["include_in_capital"]
     )
     _frozen_securities_accounts_stressed = tuple(
-        AccountAmount(account_id=p["account_id"], amount=RubleAmount(int(stressed_positions[p["id"]])))
-        for p in frozen_payload["positions"] if p["include_in_capital"]
+        AccountAmount(
+            account_id=p["account_id"], amount=RubleAmount(int(stressed_positions[p["id"]]))
+        )
+        for p in frozen_payload["positions"]
+        if p["include_in_capital"]
     )
     base_liquid_input = LiquidCapitalInput(
         cash=RubleAmount(cash_total),
@@ -403,13 +440,15 @@ def evaluate_scenario_lab(
     from hermes_finance.domain.risk_allocation import RiskSupportStatus as DomainRiskStatus
 
     if has_unknown:
-        asset_support_domain = MetricSupport(status=DomainRiskStatus.UNKNOWN, reason_codes=("instrument_type_not_authoritative",))
-        account_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)  # account not affected by unknown type
-        top_issues: tuple[SupportIssue, ...] = ()
+        asset_support_domain = MetricSupport(
+            status=DomainRiskStatus.UNKNOWN, reason_codes=("instrument_type_not_authoritative",)
+        )
+        account_support_domain = MetricSupport(
+            status=DomainRiskStatus.SUPPORTED
+        )  # account not affected by unknown type
     else:
         asset_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)
         account_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)
-        top_issues = ()
 
     # Include cash_not_account_linked reason if needed
     if cash_total:
@@ -461,21 +500,29 @@ def evaluate_scenario_lab(
         result = []
         for item in metric.items:
             if item.key == "unassigned_cash":
-                result.append({
-                    "account_id": None,
-                    "amount_kopecks": item.amount.kopecks,
-                    "amount": _money_api(item.amount.kopecks),
-                    "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
-                    "unassigned": True,
-                })
+                result.append(
+                    {
+                        "account_id": None,
+                        "amount_kopecks": item.amount.kopecks,
+                        "amount": _money_api(item.amount.kopecks),
+                        "share_pct": format(item.share_pct, ".2f")
+                        if item.share_pct is not None
+                        else None,
+                        "unassigned": True,
+                    }
+                )
             else:
                 # key is account:<id>
-                result.append({
-                    "account_id": item.account_id,
-                    "amount_kopecks": item.amount.kopecks,
-                    "amount": _money_api(item.amount.kopecks),
-                    "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
-                })
+                result.append(
+                    {
+                        "account_id": item.account_id,
+                        "amount_kopecks": item.amount.kopecks,
+                        "amount": _money_api(item.amount.kopecks),
+                        "share_pct": format(item.share_pct, ".2f")
+                        if item.share_pct is not None
+                        else None,
+                    }
+                )
         # Sort as builder does: (-amount, key)
         result.sort(key=lambda x: (-x["amount_kopecks"], str(x["account_id"])))
         return result
@@ -484,22 +531,23 @@ def evaluate_scenario_lab(
         result = []
         for item in metric.items:
             # R4: keep only ids, no names; keep applicability? we have it in metric? but builder's top items don't have applicability
-            # need to add applicability from row_applicability
-            pid = item.position_id
-            appl = row_applicability.get(str(pid), "not_applicable") if pid is not None else None
-            result.append({
-                "position_id": item.position_id,
-                "account_id": item.account_id,
-                "instrument_id": item.instrument_id,
-                "instrument_type": item.instrument_type,
-                "amount_kopecks": item.amount.kopecks,
-                "amount": _money_api(item.amount.kopecks),
-                "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
-                # R4: do NOT include account_name/instrument_name
-                # Keep applicability only if needed? For top_positions we keep it? But R2 says only row_applicability and impact; remove from top?
-                # To satisfy R4/R2 strictly, we remove applicability from top as well.
-                # We'll keep it out of normative, but include for legacy check? Better exclude.
-            })
+            result.append(
+                {
+                    "position_id": item.position_id,
+                    "account_id": item.account_id,
+                    "instrument_id": item.instrument_id,
+                    "instrument_type": item.instrument_type,
+                    "amount_kopecks": item.amount.kopecks,
+                    "amount": _money_api(item.amount.kopecks),
+                    "share_pct": format(item.share_pct, ".2f")
+                    if item.share_pct is not None
+                    else None,
+                    # R4: do NOT include account_name/instrument_name
+                    # Keep applicability only if needed? For top_positions we keep it? But R2 says only row_applicability and impact; remove from top?
+                    # To satisfy R4/R2 strictly, we remove applicability from top as well.
+                    # We'll keep it out of normative, but include for legacy check? Better exclude.
+                }
+            )
         result.sort(key=lambda x: (-x["amount_kopecks"], x["position_id"]))
         return result
 
@@ -593,9 +641,15 @@ def evaluate_scenario_lab(
                 "target": _money_api(_target_kopecks),
                 "current_kopecks": calc.current_value.kopecks if calc.current_value else None,
                 "current": _money_api(calc.current_value.kopecks) if calc.current_value else None,
-                "remaining_kopecks": calc.remaining_amount.kopecks if calc.remaining_amount else None,
-                "remaining": _money_api(calc.remaining_amount.kopecks) if calc.remaining_amount else None,
-                "progress_pct": format(calc.progress_pct, ".2f") if calc.progress_pct is not None else None,
+                "remaining_kopecks": calc.remaining_amount.kopecks
+                if calc.remaining_amount
+                else None,
+                "remaining": _money_api(calc.remaining_amount.kopecks)
+                if calc.remaining_amount
+                else None,
+                "progress_pct": format(calc.progress_pct, ".2f")
+                if calc.progress_pct is not None
+                else None,
                 "status": calc.status,
             }
 
@@ -613,8 +667,13 @@ def evaluate_scenario_lab(
         "account_allocation": base_account_alloc,
         "top_positions": base_top,
         "capital_goals": sorted(base_goals_list, key=lambda x: x["goal_id"]),
-        "per_position": {k: v for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))},
-        "passive_income_effect": {"status": "unavailable", "reason": "no_deterministic_income_relationship"},
+        "per_position": {
+            k: v for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+        "passive_income_effect": {
+            "status": "unavailable",
+            "reason": "no_deterministic_income_relationship",
+        },
         "future_cash_flow_rows_unchanged": True,
     }
     stressed_metrics = {
@@ -628,19 +687,43 @@ def evaluate_scenario_lab(
         "account_allocation": stressed_account_alloc,
         "top_positions": stressed_top,
         "capital_goals": sorted(stressed_goals_list, key=lambda x: x["goal_id"]),
-        "per_position": {k: v for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))},
-        "passive_income_effect": {"status": "unavailable", "reason": "no_deterministic_income_relationship"},
+        "per_position": {
+            k: v for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+        "passive_income_effect": {
+            "status": "unavailable",
+            "reason": "no_deterministic_income_relationship",
+        },
         "future_cash_flow_rows_unchanged": True,
     }
 
     impact = {
-        "liquid_assets_delta_kopecks": stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks,
-        "liquid_assets_delta": _money_api(stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks) if (stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks) >= 0 else "-" + _money_api(-(stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks)),
-        "liquid_capital_net_delta_kopecks": stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks,
-        "liquid_capital_net_delta": _money_api(stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks) if (stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks) >= 0 else "-" + _money_api(-(stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks)),
+        "liquid_assets_delta_kopecks": stressed_liquid.total_assets.kopecks
+        - base_liquid.total_assets.kopecks,
+        "liquid_assets_delta": _money_api(
+            stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks
+        )
+        if (stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks) >= 0
+        else "-"
+        + _money_api(-(stressed_liquid.total_assets.kopecks - base_liquid.total_assets.kopecks)),
+        "liquid_capital_net_delta_kopecks": stressed_liquid.liquid_capital_net.kopecks
+        - base_liquid.liquid_capital_net.kopecks,
+        "liquid_capital_net_delta": _money_api(
+            stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks
+        )
+        if (stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks)
+        >= 0
+        else "-"
+        + _money_api(
+            -(stressed_liquid.liquid_capital_net.kopecks - base_liquid.liquid_capital_net.kopecks)
+        ),
         "known_scope_impact_kopecks": known_scope_delta,
-        "known_scope_impact": _money_api(known_scope_delta) if known_scope_delta >= 0 else "-" + _money_api(-known_scope_delta),
-        "per_position": {k: v for k, v in sorted(impact_per_position.items(), key=lambda kv: int(kv[0]))},
+        "known_scope_impact": _money_api(known_scope_delta)
+        if known_scope_delta >= 0
+        else "-" + _money_api(-known_scope_delta),
+        "per_position": {
+            k: v for k, v in sorted(impact_per_position.items(), key=lambda kv: int(kv[0]))
+        },
     }
 
     def _support_for_aggregates() -> MetricSupportStatus:
@@ -658,7 +741,10 @@ def evaluate_scenario_lab(
         "top_positions": {"status": agg_status, "reason_codes": agg_reason},
         "capital_goals": {"status": agg_status, "reason_codes": agg_reason},
         "per_position": {"status": "supported", "reason_codes": []},
-        "passive_income_effect": {"status": "unavailable", "reason_codes": ["no_deterministic_income_relationship"]},
+        "passive_income_effect": {
+            "status": "unavailable",
+            "reason_codes": ["no_deterministic_income_relationship"],
+        },
         "dividends": {"status": "supported", "reason_codes": []},
         "coupons": {"status": "supported", "reason_codes": []},
         "redemption": {"status": "supported", "reason_codes": []},
@@ -750,12 +836,17 @@ def evaluate_scenario_lab(
         "liquid_capital_net_kopecks": base_metrics["liquid_capital_net_kopecks"],
         "debts_included_kopecks": base_metrics["debts_included_kopecks"],
         "asset_allocation": {
-            k: v for k, v in base_asset.items() if k.endswith("_kopecks") or k.endswith("_share_pct")
+            k: v
+            for k, v in base_asset.items()
+            if k.endswith("_kopecks") or k.endswith("_share_pct")
         },
         "account_allocation": _strip_account_alloc(base_account_alloc),
         "top_positions": _strip_top(base_top),
         "capital_goals": _strip_goals(base_goals_list),
-        "per_position": {k: {"market_value_kopecks": v["market_value_kopecks"]} for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))},
+        "per_position": {
+            k: {"market_value_kopecks": v["market_value_kopecks"]}
+            for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))
+        },
         "passive_income_effect": base_metrics["passive_income_effect"],
     }
     fingerprint_input_stressed = {
@@ -763,12 +854,17 @@ def evaluate_scenario_lab(
         "liquid_capital_net_kopecks": stressed_metrics["liquid_capital_net_kopecks"],
         "debts_included_kopecks": stressed_metrics["debts_included_kopecks"],
         "asset_allocation": {
-            k: v for k, v in stressed_asset.items() if k.endswith("_kopecks") or k.endswith("_share_pct")
+            k: v
+            for k, v in stressed_asset.items()
+            if k.endswith("_kopecks") or k.endswith("_share_pct")
         },
         "account_allocation": _strip_account_alloc(stressed_account_alloc),
         "top_positions": _strip_top(stressed_top),
         "capital_goals": _strip_goals(stressed_goals_list),
-        "per_position": {k: {"market_value_kopecks": v["market_value_kopecks"]} for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))},
+        "per_position": {
+            k: {"market_value_kopecks": v["market_value_kopecks"]}
+            for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))
+        },
         "passive_income_effect": stressed_metrics["passive_income_effect"],
     }
 
@@ -790,7 +886,9 @@ def evaluate_scenario_lab(
         affected_refs=dict(sorted(affected_refs.items())),
     )
 
-    gen_str = generated_at.astimezone(timezone.utc).isoformat() if generated_at is not None else None
+    gen_str = (
+        generated_at.astimezone(timezone.utc).isoformat() if generated_at is not None else None
+    )
 
     return ScenarioLabEvaluation(
         contract_version=CONTRACT_VERSION,

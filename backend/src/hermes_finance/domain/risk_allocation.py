@@ -24,7 +24,9 @@ from hermes_finance.domain.values import FINANCIAL_ROUNDING, RubleAmount
 
 _PERCENT_SCALE = Decimal("0.01")
 
-VALID_ASSET_TYPES: frozenset[str] = frozenset({"stock", "bond", "fund", "currency", "gold", "other"})
+VALID_ASSET_TYPES: frozenset[str] = frozenset(
+    {"stock", "bond", "fund", "currency", "gold", "other"}
+)
 
 
 class RiskSupportStatus(StrEnum):
@@ -111,6 +113,7 @@ class RiskAllocationResult:
 
 
 # ---- immutable input DTOs for pure canonical builder (R1) ----
+
 
 @dataclass(frozen=True, slots=True)
 class RiskPositionInput:
@@ -237,6 +240,7 @@ def _concentration_metric(
 
 # ---- Pure canonical builder (R1): shared by risk_allocation and scenario_lab ----
 
+
 def _valid_asset_type(itype: str | None) -> str | None:
     if isinstance(itype, str) and itype in VALID_ASSET_TYPES:
         return itype
@@ -355,8 +359,14 @@ def build_top_positions(
         # To satisfy R4 remove names from normative, we exclude account_name/instrument_name from item when not needed.
         # Caller decides: if account_names/instrument_names not provided, names stay None.
         acc_name = (account_names or {}).get(pos.account_id) if account_names is not None else None
-        inst_name = (instrument_names or {}).get(pos.instrument_id) if instrument_names is not None else None
-        label = f"{acc_name} / {inst_name}" if acc_name and inst_name else f"position:{pos.position_id}"
+        inst_name = (
+            (instrument_names or {}).get(pos.instrument_id)
+            if instrument_names is not None
+            else None
+        )
+        label = (
+            f"{acc_name} / {inst_name}" if acc_name and inst_name else f"position:{pos.position_id}"
+        )
         if acc_name and not inst_name:
             label = f"{acc_name} / instrument {pos.instrument_id}"
         elif inst_name and not acc_name:
@@ -371,7 +381,9 @@ def build_top_positions(
                 account_name=acc_name,
                 instrument_id=pos.instrument_id,
                 instrument_name=inst_name,
-                instrument_type=pos.instrument_type if pos.instrument_type in VALID_ASSET_TYPES else None,
+                instrument_type=pos.instrument_type
+                if pos.instrument_type in VALID_ASSET_TYPES
+                else None,
                 position_id=pos.position_id,
             )
         )

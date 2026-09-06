@@ -8,11 +8,20 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, GoalType, InstrumentType
-from hermes_finance.persistence import Base, CashBalance, Debt, DepositSnapshot, ExpectedCashFlow, Goal, Instrument, InvestmentCashFlow, PositionSnapshot, ReportingMonth
+from hermes_finance.persistence import (
+    Base,
+    CashBalance,
+    Debt,
+    DepositSnapshot,
+    ExpectedCashFlow,
+    Goal,
+    InvestmentCashFlow,
+    PositionSnapshot,
+    ReportingMonth,
+)
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.debts import create_debt
@@ -46,11 +55,24 @@ def _stock(session, name="S"):
     return create_instrument(session, name=name, instrument_type=InstrumentType.STOCK)
 
 
-def _fund(session): return create_instrument(session, name="Fund", instrument_type=InstrumentType.FUND)
-def _bond(session): return create_instrument(session, name="Bond", instrument_type=InstrumentType.BOND)
-def _gold(session): return create_instrument(session, name="Gold", instrument_type=InstrumentType.GOLD)
-def _currency(session): return create_instrument(session, name="Currency", instrument_type=InstrumentType.CURRENCY)
-def _other(session): return create_instrument(session, name="Other", instrument_type=InstrumentType.OTHER)
+def _fund(session):
+    return create_instrument(session, name="Fund", instrument_type=InstrumentType.FUND)
+
+
+def _bond(session):
+    return create_instrument(session, name="Bond", instrument_type=InstrumentType.BOND)
+
+
+def _gold(session):
+    return create_instrument(session, name="Gold", instrument_type=InstrumentType.GOLD)
+
+
+def _currency(session):
+    return create_instrument(session, name="Currency", instrument_type=InstrumentType.CURRENCY)
+
+
+def _other(session):
+    return create_instrument(session, name="Other", instrument_type=InstrumentType.OTHER)
 
 
 def _position(session, month_id, account_id, instrument_id, amount="1000.00"):
@@ -108,7 +130,16 @@ def test_3_100_percent_drawdown(session):
 
 
 # 4-8 not applicable types
-@pytest.mark.parametrize("factory,expected", [(_fund, "not_applicable"), (_bond, "not_applicable"), (_gold, "not_applicable"), (_currency, "not_applicable"), (_other, "not_applicable")])
+@pytest.mark.parametrize(
+    "factory,expected",
+    [
+        (_fund, "not_applicable"),
+        (_bond, "not_applicable"),
+        (_gold, "not_applicable"),
+        (_currency, "not_applicable"),
+        (_other, "not_applicable"),
+    ],
+)
 def test_4_8_not_applicable(session, factory, expected):
     month, acc = _basic_setup(session)
     inst = factory(session)
@@ -127,13 +158,16 @@ def test_9_unknown(session, monkeypatch):
     pos = _position(session, month.id, acc.id, stock.id, "1000.00")
     # patch the service-level classify to force unknown for this test
     import hermes_finance.services.scenario_lab as sl
+
     orig = sl.classify_applicability
+
     def fake(itype):
         # force unknown for the instrument of this pos
         if itype == "stock":
             # we still want stock to be unknown for this specific test, so return unknown
             return sl.RowApplicability.UNKNOWN
         return orig(itype)
+
     monkeypatch.setattr(sl, "classify_applicability", fake)
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
     assert res.row_applicability[str(pos.id)] == "unknown"
@@ -146,19 +180,22 @@ def test_10_unknown_blocks_exact_but_known_scope(session, monkeypatch):
     stock = _stock(session, "Stock1")
     stock2 = _stock(session, "Stock2")
     # second will be made unknown via patch selective by position id
-    p_stock = _position(session, month.id, acc.id, stock.id, "1000.00")
-    p_unknown = _position(session, month.id, acc.id, stock2.id, "400.00")
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    _position(session, month.id, acc.id, stock2.id, "400.00")
     import hermes_finance.services.scenario_lab as sl
+
     orig = sl.classify_applicability
     # we need to distinguish: first stock stays applied, second becomes unknown
     # We'll base on a counter: first call -> applied, second -> unknown ; but classification is per instrument_type 'stock' identical
     # So we patch to return unknown on second invocation
     calls = {"n": 0}
+
     def fake(itype):
         calls["n"] += 1
         if calls["n"] == 2:
             return sl.RowApplicability.UNKNOWN
         return orig(itype)
+
     # Actually positions are iterated in id order, so second position will be second call
     monkeypatch.setattr(sl, "classify_applicability", fake)
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
@@ -178,7 +215,14 @@ def test_11_debts_unchanged(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
-    create_debt(session, reporting_month_id=month.id, debt_type="credit_card", name="CC", current_balance="300.00", include_in_liquid_capital=True)
+    create_debt(
+        session,
+        reporting_month_id=month.id,
+        debt_type="credit_card",
+        name="CC",
+        current_balance="300.00",
+        include_in_liquid_capital=True,
+    )
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
     assert res.base["debts_included_kopecks"] == 30_000
     assert res.stressed["debts_included_kopecks"] == 30_000
@@ -253,7 +297,13 @@ def test_16_capital_goal(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
-    goal = create_goal(session, name="Cap", goal_type=GoalType.CAPITAL, target_value="5000.00", calculation_mode="liquid_capital_net")
+    goal = create_goal(
+        session,
+        name="Cap",
+        goal_type=GoalType.CAPITAL,
+        target_value="5000.00",
+        calculation_mode="liquid_capital_net",
+    )
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
     base_g = next(g for g in res.base["capital_goals"] if g["goal_id"] == goal.id)
     stressed_g = next(g for g in res.stressed["capital_goals"] if g["goal_id"] == goal.id)
@@ -280,9 +330,22 @@ def test_18_dividends_unchanged(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
-    create_investment_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=stock.id, flow_type="dividend", event_date=date(2030, 5, 10), gross_amount="100.00", tax_amount="0.00", commission_amount="0.00", net_amount="100.00", currency="RUB", source="test")
+    create_investment_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        instrument_id=stock.id,
+        flow_type="dividend",
+        event_date=date(2030, 5, 10),
+        gross_amount="100.00",
+        tax_amount="0.00",
+        commission_amount="0.00",
+        net_amount="100.00",
+        currency="RUB",
+        source="test",
+    )
     before = session.scalars(select(InvestmentCashFlow)).all()
-    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
+    evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
     after = session.scalars(select(InvestmentCashFlow)).all()
     assert len(before) == len(after) == 1
     assert before[0].net_amount_kopecks == after[0].net_amount_kopecks == 10_000
@@ -293,8 +356,21 @@ def test_19_coupons_unchanged(session):
     month, acc = _basic_setup(session)
     bond = _bond(session)
     _position(session, month.id, acc.id, bond.id, "1000.00")
-    create_investment_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=bond.id, flow_type="coupon", event_date=date(2030, 5, 10), gross_amount="50.00", tax_amount="0", commission_amount="0", net_amount="50.00", currency="RUB", source="test")
-    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
+    create_investment_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        instrument_id=bond.id,
+        flow_type="coupon",
+        event_date=date(2030, 5, 10),
+        gross_amount="50.00",
+        tax_amount="0",
+        commission_amount="0",
+        net_amount="50.00",
+        currency="RUB",
+        source="test",
+    )
+    evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
     # coupon flow still there
     flows = session.scalars(select(InvestmentCashFlow)).all()
     assert flows[0].net_amount_kopecks == 5000
@@ -305,8 +381,21 @@ def test_20_redemption_unchanged(session):
     month, acc = _basic_setup(session)
     bond = _bond(session)
     _position(session, month.id, acc.id, bond.id, "1000.00")
-    create_investment_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=bond.id, flow_type="redemption", event_date=date(2030, 5, 10), gross_amount="1000.00", tax_amount="0", commission_amount="0", net_amount="1000.00", currency="RUB", source="test")
-    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
+    create_investment_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        instrument_id=bond.id,
+        flow_type="redemption",
+        event_date=date(2030, 5, 10),
+        gross_amount="1000.00",
+        tax_amount="0",
+        commission_amount="0",
+        net_amount="1000.00",
+        currency="RUB",
+        source="test",
+    )
+    evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "50"}})
     flows = session.scalars(select(InvestmentCashFlow)).all()
     assert flows[0].flow_type == "redemption"
     assert flows[0].net_amount_kopecks == 100_000
@@ -317,9 +406,22 @@ def test_21_future_cash_flows_unchanged(session):
     month, acc = _basic_setup(session)
     bond = _bond(session)
     _position(session, month.id, acc.id, bond.id, "1000.00")
-    create_expected_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=bond.id, flow_type="coupon", expected_date=date(2030, 6, 1), gross_amount="100.00", currency="RUB", source="src", source_as_of_date=date(2030, 5, 12), forecast_version="v1", is_confirmed=False)
+    create_expected_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        instrument_id=bond.id,
+        flow_type="coupon",
+        expected_date=date(2030, 6, 1),
+        gross_amount="100.00",
+        currency="RUB",
+        source="src",
+        source_as_of_date=date(2030, 5, 12),
+        forecast_version="v1",
+        is_confirmed=False,
+    )
     before = session.scalars(select(ExpectedCashFlow)).all()
-    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
+    evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
     after = session.scalars(select(ExpectedCashFlow)).all()
     assert len(before) == len(after) == 1
     assert before[0].expected_net_amount_kopecks == after[0].expected_net_amount_kopecks
@@ -343,8 +445,18 @@ def test_23_generated_at_not_in_fingerprint(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
-    r1 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "15"}}, generated_at=datetime(2030, 5, 12, 10, 0, tzinfo=timezone.utc))
-    r2 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "15"}}, generated_at=datetime(2030, 5, 12, 11, 0, tzinfo=timezone.utc))
+    r1 = evaluate_scenario_lab(
+        session,
+        month.id,
+        {"equity_drawdown": {"drawdown_pct": "15"}},
+        generated_at=datetime(2030, 5, 12, 10, 0, tzinfo=timezone.utc),
+    )
+    r2 = evaluate_scenario_lab(
+        session,
+        month.id,
+        {"equity_drawdown": {"drawdown_pct": "15"}},
+        generated_at=datetime(2030, 5, 12, 11, 0, tzinfo=timezone.utc),
+    )
     assert r1.semantic_fingerprint == r2.semantic_fingerprint
     assert r1.generated_at != r2.generated_at
 
@@ -355,7 +467,11 @@ def test_24_combined_rejected(session):
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
     with pytest.raises(ScenarioLabError) as exc:
-        evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "10"}, "fx_translation_shock": {"pct": "10"}})
+        evaluate_scenario_lab(
+            session,
+            month.id,
+            {"equity_drawdown": {"drawdown_pct": "10"}, "fx_translation_shock": {"pct": "10"}},
+        )
     assert exc.value.code == "unsupported_composition_v1"
 
 
@@ -384,10 +500,32 @@ def test_27_no_db_mutation(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
     pos = _position(session, month.id, acc.id, stock.id, "1000.00")
-    cash = create_cash_balance(session, reporting_month_id=month.id, name="Cash", amount="500.00")
-    deposit = create_deposit_snapshot(session, reporting_month_id=month.id, account_id=acc.id, name="Dep", deposit_type="deposit", balance="2000.00", annual_rate="5.00")
-    debt = create_debt(session, reporting_month_id=month.id, debt_type="credit_card", name="Debt", current_balance="100.00", include_in_liquid_capital=True)
-    goal = create_goal(session, name="G", goal_type=GoalType.CAPITAL, target_value="10000.00", calculation_mode="liquid_capital_net")
+    create_cash_balance(session, reporting_month_id=month.id, name="Cash", amount="500.00")
+    create_deposit_snapshot(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        name="Dep",
+        deposit_type="deposit",
+        balance="2000.00",
+        annual_rate="5.00",
+    )
+    create_debt(
+        session,
+        reporting_month_id=month.id,
+        debt_type="credit_card",
+        name="Debt",
+        current_balance="100.00",
+        include_in_liquid_capital=True,
+    )
+    create_goal(
+        session,
+        name="G",
+        goal_type=GoalType.CAPITAL,
+        target_value="10000.00",
+        calculation_mode="liquid_capital_net",
+    )
+
     # counts before
     def counts():
         return {
@@ -398,6 +536,7 @@ def test_27_no_db_mutation(session):
             "debts": session.scalar(select(func.count()).select_from(Debt)),
             "goals": session.scalar(select(func.count()).select_from(Goal)),
         }
+
     before = counts()
     before_pos_value = session.get(PositionSnapshot, pos.id).market_value_kopecks
     evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "30"}})
@@ -415,7 +554,10 @@ def test_28_no_network_calls(session, monkeypatch):
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
     import socket
-    def _fail(*a, **kw): raise AssertionError("network call attempted")
+
+    def _fail(*a, **kw):
+        raise AssertionError("network call attempted")
+
     monkeypatch.setattr(socket, "socket", _fail)
     # also guard httpx if imported
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "10"}})
@@ -441,6 +583,7 @@ def test_drawdown_rounding_half_up(session):
     assert res.row_applicability[pid] == "applied"
     assert res.impact["per_position"][pid]["applicability"] == "applied"
 
+
 def test_binary_float_rejected(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
@@ -448,6 +591,7 @@ def test_binary_float_rejected(session):
     with pytest.raises(ValueError) as exc:
         evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": 20.0}})
     assert "invalid_drawdown_pct" in str(exc.value) or "binary" in str(exc.value).lower()
+
 
 # BLOCKER 2: distinct buckets remain distinct, unknown_asset_class, proper denominator, unassigned_cash
 def test_blocker2_distinct_buckets(session):
@@ -484,6 +628,7 @@ def test_blocker2_distinct_buckets(session):
     assert "gold_other_kopecks" not in aa
     assert "gold_other" not in aa
 
+
 def test_blocker2_unassigned_cash(session):
     month = _month(session)
     acc = create_account(session, name="A", account_type=AccountType.BROKERAGE)
@@ -499,6 +644,7 @@ def test_blocker2_unassigned_cash(session):
     assert res.base["asset_allocation"]["cash_kopecks"] == 30_000
     assert res.base["asset_allocation"]["denominator_kopecks"] == res.base["liquid_assets_kopecks"]
 
+
 def test_blocker3_per_position_split(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
@@ -508,6 +654,7 @@ def test_blocker3_per_position_split(session):
     # base only base, stressed only stressed
     assert res.base["per_position"][pid]["market_value_kopecks"] == 100_000
     assert res.stressed["per_position"][pid]["market_value_kopecks"] == 80_000
+
 
 def test_blocker4_canonical_lossless(session):
     month, acc = _basic_setup(session)
@@ -525,14 +672,41 @@ def test_blocker4_canonical_lossless(session):
     # calculation uses canonical too: 20 and 20.00 give same stressed
     assert r1.stressed["liquid_assets_kopecks"] == r2.stressed["liquid_assets_kopecks"]
 
+
 def test_blocker5_no_flow_reads_and_fingerprint_stable(session):
     month, acc = _basic_setup(session)
     stock = _stock(session)
     _position(session, month.id, acc.id, stock.id, "1000.00")
     # create flows—service must not read them, and fingerprint must be stable
     bond = _bond(session)
-    create_expected_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=bond.id, flow_type="coupon", expected_date=date(2030, 6, 1), gross_amount="100.00", currency="RUB", source="src", source_as_of_date=date(2030,5,12), forecast_version="v1", is_confirmed=False)
-    create_investment_cash_flow(session, reporting_month_id=month.id, account_id=acc.id, instrument_id=stock.id, flow_type="dividend", event_date=date(2030,5,10), gross_amount="10.00", tax_amount="0.00", commission_amount="0.00", net_amount="10.00", currency="RUB", source="test")
+    create_expected_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        instrument_id=bond.id,
+        flow_type="coupon",
+        expected_date=date(2030, 6, 1),
+        gross_amount="100.00",
+        currency="RUB",
+        source="src",
+        source_as_of_date=date(2030, 5, 12),
+        forecast_version="v1",
+        is_confirmed=False,
+    )
+    create_investment_cash_flow(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        instrument_id=stock.id,
+        flow_type="dividend",
+        event_date=date(2030, 5, 10),
+        gross_amount="10.00",
+        tax_amount="0.00",
+        commission_amount="0.00",
+        net_amount="10.00",
+        currency="RUB",
+        source="test",
+    )
     r1 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "10"}})
     # mutate label (account name) — fingerprint must not change because labels stripped from fingerprint
     acc.name = "Renamed"
@@ -542,10 +716,13 @@ def test_blocker5_no_flow_reads_and_fingerprint_stable(session):
     assert r1.base_fingerprint == r2.base_fingerprint
     assert r1.semantic_fingerprint == r2.semantic_fingerprint
 
+
 def test_blocker6_excluded_position_not_applied(session):
     month = _month(session)
     acc_incl = create_account(session, name="Incl", account_type=AccountType.BROKERAGE)
-    acc_excl = create_account(session, name="Excl", account_type=AccountType.BROKERAGE, include_in_capital=False)
+    acc_excl = create_account(
+        session, name="Excl", account_type=AccountType.BROKERAGE, include_in_capital=False
+    )
     stock = _stock(session)
     # position in excluded account — should NOT be counted as applied
     pos_incl = _position(session, month.id, acc_incl.id, stock.id, "1000.00")
@@ -569,11 +746,14 @@ def test_blocker6_excluded_position_not_applied(session):
     assert str(pos_excl.id) not in res.stressed["per_position"]
     assert len(res.row_applicability) == 1
 
+
 # ---- R1-R5 residual regressions ----
+
 
 def test_r1_base_allocation_equals_canonical_risk(session):
     """R1: base Scenario allocation equals canonical Risk allocation for unshocked values."""
     from hermes_finance.services.risk_allocation import risk_allocation_for_month
+
     month = _month(session)
     acc = create_account(session, name="A", account_type=AccountType.BROKERAGE)
     stock = _stock(session, "S")
@@ -583,12 +763,29 @@ def test_r1_base_allocation_equals_canonical_risk(session):
     _position(session, month.id, acc.id, bond.id, "789.00")
     _position(session, month.id, acc.id, fund.id, "100.00")
     create_cash_balance(session, reporting_month_id=month.id, name="Cash", amount="500.00")
-    create_deposit_snapshot(session, reporting_month_id=month.id, account_id=acc.id, name="Dep", deposit_type="deposit", balance="200.00", annual_rate="5.00")
+    create_deposit_snapshot(
+        session,
+        reporting_month_id=month.id,
+        account_id=acc.id,
+        name="Dep",
+        deposit_type="deposit",
+        balance="200.00",
+        annual_rate="5.00",
+    )
     risk = risk_allocation_for_month(session, month.id, top_n=5)
-    scen = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}}, top_n=5)
+    scen = evaluate_scenario_lab(
+        session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}}, top_n=5
+    )
     # Compare asset allocation buckets (distinct R07-06A)
     risk_asset = {item.key: item.amount.kopecks for item in risk.allocation_by_asset_class.items}
-    risk_asset["unknown_asset_class"] = next((i.amount.kopecks for i in risk.allocation_by_asset_class.items if i.key=="unknown_asset_class"), 0)
+    risk_asset["unknown_asset_class"] = next(
+        (
+            i.amount.kopecks
+            for i in risk.allocation_by_asset_class.items
+            if i.key == "unknown_asset_class"
+        ),
+        0,
+    )
     scen_asset = scen.base["asset_allocation"]
     for k in ("stock", "bond", "fund", "currency", "gold", "other", "cash", "deposits"):
         assert scen_asset.get(f"{k}_kopecks", 0) == risk_asset.get(k, 0), f"mismatch {k}"
@@ -596,8 +793,16 @@ def test_r1_base_allocation_equals_canonical_risk(session):
     assert scen_asset["unknown_asset_class_kopecks"] == risk_asset.get("unknown_asset_class", 0)
     assert scen_asset["denominator_kopecks"] == risk.liquid_assets_total.kopecks
     # account allocation: compare amounts per account
-    risk_acct = {f"account:{item.account_id}": item.amount.kopecks for item in risk.allocation_by_account.items if item.key.startswith("account:")}
-    scen_acct = { f"account:{x['account_id']}": x["amount_kopecks"] for x in scen.base["account_allocation"] if x["account_id"] is not None}
+    risk_acct = {
+        f"account:{item.account_id}": item.amount.kopecks
+        for item in risk.allocation_by_account.items
+        if item.key.startswith("account:")
+    }
+    scen_acct = {
+        f"account:{x['account_id']}": x["amount_kopecks"]
+        for x in scen.base["account_allocation"]
+        if x["account_id"] is not None
+    }
     assert risk_acct == scen_acct
     # top positions amounts should match (scenario stripped names but amounts same)
     risk_top = sorted([i.amount.kopecks for i in risk.top_positions.items], reverse=True)
@@ -617,25 +822,37 @@ def test_r3_long_decimal_lossless(session):
     long_pct = "33.33333333333333333333333333333"  # 32 decimal places >28
     r1 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": long_pct}})
     # canonical string should be exactly input stripped (no rounding, no exponent)
-    assert r1.normalized_shock_input["drawdown_pct"] == long_pct.lstrip("+").rstrip("0").rstrip(".") or r1.normalized_shock_input["drawdown_pct"] == long_pct
+    assert (
+        r1.normalized_shock_input["drawdown_pct"] == long_pct.lstrip("+").rstrip("0").rstrip(".")
+        or r1.normalized_shock_input["drawdown_pct"] == long_pct
+    )
     # trailing zeros stripped but precision retained
     long_with_zeros = long_pct + "000"
-    r2 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": long_with_zeros}})
+    r2 = evaluate_scenario_lab(
+        session, month.id, {"equity_drawdown": {"drawdown_pct": long_with_zeros}}
+    )
     assert r1.semantic_fingerprint == r2.semantic_fingerprint
     assert r1.normalized_shock_input["drawdown_pct"] == r2.normalized_shock_input["drawdown_pct"]
     # distinct value must be distinct
     slightly_different = "33.33333333333333333333333333334"
-    r3 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": slightly_different}})
+    r3 = evaluate_scenario_lab(
+        session, month.id, {"equity_drawdown": {"drawdown_pct": slightly_different}}
+    )
     assert r3.semantic_fingerprint != r1.semantic_fingerprint
     # Ensure calculation used exact Decimal from canonical string
     from hermes_finance.domain.scenario_lab import canonical_drawdown_pct, parse_drawdown_pct
+
     pct = parse_drawdown_pct(long_pct)
     canon = canonical_drawdown_pct(pct)
     assert str(canon) == long_pct or str(canon) == long_pct.rstrip("0").rstrip(".")
     # Check that + prefix and zero variants canonical to same
-    r_plus = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "+"+long_pct}})
+    r_plus = evaluate_scenario_lab(
+        session, month.id, {"equity_drawdown": {"drawdown_pct": "+" + long_pct}}
+    )
     assert r_plus.semantic_fingerprint == r1.semantic_fingerprint
-    r_zero = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0.000"}})
+    r_zero = evaluate_scenario_lab(
+        session, month.id, {"equity_drawdown": {"drawdown_pct": "0.000"}}
+    )
     assert r_zero.normalized_shock_input["drawdown_pct"] == "0"
 
 
@@ -694,12 +911,14 @@ def test_r5_excluded_absent_from_impact_and_row_applicability(session):
     """R5: excluded positions absent from row_applicability and impact, not counted."""
     month = _month(session)
     acc_inc = create_account(session, name="Inc", account_type=AccountType.BROKERAGE)
-    acc_ex = create_account(session, name="Ex", account_type=AccountType.BROKERAGE, include_in_capital=False)
+    acc_ex = create_account(
+        session, name="Ex", account_type=AccountType.BROKERAGE, include_in_capital=False
+    )
     s = _stock(session, "S")
     b = _bond(session)
-    p_inc_stock = _position(session, month.id, acc_inc.id, s.id, "1000.00")
+    _position(session, month.id, acc_inc.id, s.id, "1000.00")
     p_ex_stock = _position(session, month.id, acc_ex.id, s.id, "2000.00")
-    p_inc_bond = _position(session, month.id, acc_inc.id, b.id, "500.00")
+    _position(session, month.id, acc_inc.id, b.id, "500.00")
     res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "20"}})
     # eligible only
     assert len(res.row_applicability) == 2
@@ -711,9 +930,9 @@ def test_r5_excluded_absent_from_impact_and_row_applicability(session):
     assert res.coverage["not_applicable"] == 1  # bond
     assert res.coverage["unknown"] == 0
 
+
 # ---- BLOCKER A: context-independent stressed_market_value_kopecks ----
 def test_blocker_a_boundary_half_up():
-    from decimal import Decimal
     from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks
 
     # base 1 kopeck, hair-trigger around 50%
@@ -725,7 +944,8 @@ def test_blocker_a_boundary_half_up():
 
 
 def test_blocker_a_ambient_context_invariance():
-    from decimal import Decimal, getcontext
+    from decimal import getcontext
+
     from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks
 
     pct = Decimal("33.33333333333333333333333333333")
@@ -740,20 +960,24 @@ def test_blocker_a_ambient_context_invariance():
     getcontext().prec = 28
     # also 0% and 100% invariance under low prec
     getcontext().prec = 5
-    assert stressed_market_value_kopecks(12345, Decimal("20")) == stressed_market_value_kopecks(12345, Decimal("20"))
+    assert stressed_market_value_kopecks(12345, Decimal("20")) == stressed_market_value_kopecks(
+        12345, Decimal("20")
+    )
     getcontext().prec = 28
 
 
 def test_blocker_a_float_rejection_and_long_decimal():
-    from decimal import Decimal
-    from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks, parse_drawdown_pct, canonical_drawdown_pct
-    import pytest as _pytest
+    from hermes_finance.domain.scenario_lab import (
+        canonical_drawdown_pct,
+        parse_drawdown_pct,
+        stressed_market_value_kopecks,
+    )
 
     # float must be rejected
-    with _pytest.raises((ValueError, TypeError)):
+    with pytest.raises((ValueError, TypeError)):
         stressed_market_value_kopecks(100, 20.0)  # type: ignore
     # Decimal from float is allowed as Decimal type, but parse_drawdown_pct rejects float
-    with _pytest.raises((ValueError, TypeError)):
+    with pytest.raises((ValueError, TypeError)):
         parse_drawdown_pct(20.0)
 
     # >28 digits lossless canonical
@@ -767,11 +991,15 @@ def test_blocker_a_float_rejection_and_long_decimal():
     # calculation uses high precision without rounding
     v = stressed_market_value_kopecks(100_000, canon)
     # compute expected with high prec manually
-    from decimal import localcontext, ROUND_HALF_UP
+    from decimal import ROUND_HALF_UP, localcontext
 
     with localcontext() as ctx:
         ctx.prec = 60
-        expected = int((Decimal(100_000) * (Decimal(100) - canon) / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        expected = int(
+            (Decimal(100_000) * (Decimal(100) - canon) / Decimal(100)).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
     assert v == expected
 
 
@@ -793,6 +1021,7 @@ def test_blocker_b_frozen_base_concurrency(session, tmp_path, monkeypatch):
     Proves liquid capital is derived from frozen_payload, not re-read.
     """
     from sqlalchemy.orm import Session as SASession
+
     from hermes_finance.persistence import PositionSnapshot
 
     month, acc = _basic_setup(session)
@@ -859,7 +1088,8 @@ def test_blocker_b_frozen_base_concurrency(session, tmp_path, monkeypatch):
 # ---- Astra exact Decimal boundary regression (independent review defect) ----
 def test_astra_exact_decimal_boundary_regression():
     """Astra defect: base=1, pct=50.000...01 => 0 and 49.999...99 =>1 under any ambient prec."""
-    from decimal import Decimal, getcontext
+    from decimal import getcontext
+
     from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks
 
     pct_a = Decimal("50.00000000000000000000000000001")
