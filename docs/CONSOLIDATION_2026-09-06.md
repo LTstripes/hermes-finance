@@ -118,41 +118,35 @@ the exact SHA is the post-merge read-back recorded in the #306 closeout report.
 
 No first task above has begun. No release/tag is created by this consolidation.
 
-## 2026-09-06 correction — Investment Performance reconciliation
+## Post-audit correction — Investment Performance v1
 
-After the three workstreams were created, independent review of the proposed
-PERF-01 contract found a material roadmap/documentation mismatch: the canonical
-baseline already contains the accepted R08 performance foundation and released
-whole-portfolio XIRR/exact-TWRR implementation.
+The performance row above records the state of the #306 audit when it was
+performed. Subsequent PERF-R0 reconciliation (#315) verified against canonical
+baseline `49b290df5d407fafff05a8aac6e3c081fdd8ea45` that the planned
+`PERF-01 -> PERF-02 -> PERF-03` sequence duplicates already accepted R08 work:
 
-The historical #306 audit above is preserved as-written. This correction
-supersedes only its statement that the first Performance task is a new PERF-01
-flow/valuation contract.
+- #145/#179/#190/#197/#213/#214 already provide the dated external-flow,
+  valuation, availability and observed-boundary foundation;
+- #146 already provides production whole-portfolio XIRR;
+- #147/#215 already provide production exact whole-portfolio TWRR.
 
-Canonical reconciliation is recorded in:
+Therefore the original performance first-task wording is superseded for future
+execution. Do not reimplement PERF-01/02/03 as a second performance stack.
 
-`docs/PERFORMANCE_V1_RECONCILIATION_2026-09-06.md`
+Independent hardening reviews then identified six additive false-exact gaps,
+recorded normatively in `docs/PERFORMANCE_V1_RECONCILIATION_2026-09-06.md`:
 
-and tracked by #315.
+1. stable whole-portfolio membership over the requested interval;
+2. affirmative completeness of owner cash-boundary history;
+3. asynchronous internal-transfer transit and leg reconciliation;
+4. in-kind boundary-history coverage;
+5. tax/fee boundary semantics;
+6. direct realised payout semantics.
 
-Reconciled status:
+The corrected implementation sequence is:
 
-- PERF-01-equivalent foundation: **DONE** via #145/#179/#190/#197/#213/#214;
-- whole-portfolio XIRR: **DONE** via #146;
-- whole-portfolio exact TWRR: **DONE** via #147/#215;
-- attribution: still not started.
+`membership gate -> cash-boundary coverage -> transfer transit/reconciliation -> in-kind coverage -> tax/direct-payout hardening -> owner UAT -> account XIRR -> account exact TWRR -> attribution`.
 
-The new Performance workstream sequence is therefore:
-
-1. PERF-R0 reconciliation (#315);
-2. accepted PERF-H1 additive edge-case hardening;
-3. PERF-H2a async-transfer transit/reconciliation fail-closed implementation;
-4. PERF-H2b in-kind boundary coverage persistence/fail-closed implementation;
-5. PERF-H3 tax/direct-payout evidence/regression hardening;
-6. owner-only performance readiness UAT on Preview/copy DB;
-7. account-level XIRR;
-8. account-level exact TWRR;
-9. attribution contract and bounded attribution slices.
-
-Do not create a second performance ledger, availability API, XIRR implementation
-or TWRR implementation merely to follow the stale pre-reconciliation wording.
+This addendum is a reconciliation correction, not a rewrite of the historical
+#306 audit. `main` remains the sole canonical/release source and
+`integration/performance-v1` remains staging only.
