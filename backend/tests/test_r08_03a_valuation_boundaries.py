@@ -439,7 +439,10 @@ def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: P
         )
 
         assert not result.twrr.is_available
-        assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert result.twrr.reason_codes == (
+            "not_computable_scope_coverage_incomplete",
+            "not_computable_valuation_boundary_order_unknown",
+        )
         assert len(result.external_flow_boundaries) == 1
         boundary = result.external_flow_boundaries[0]
         assert boundary.flow_ids == tuple(sorted((selected_flow.id, unselected_flow.id)))

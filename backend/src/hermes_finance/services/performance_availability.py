@@ -178,6 +178,28 @@ def _membership_at(
     return matches[0].include_in_returns
 
 
+def _has_membership_transition_inside(
+    rows: list[AccountPerformanceScopeMembership],
+    *,
+    start_date: date,
+    end_date: date,
+) -> bool:
+    """Return True when include_in_returns changes on a date in [start_date, end_date]."""
+
+    if not rows:
+        return False
+    ordered = sorted(rows, key=lambda row: (row.effective_from, row.id))
+    for index, row in enumerate(ordered):
+        if row.effective_from < start_date or row.effective_from > end_date:
+            continue
+        if index == 0:
+            continue
+        previous = ordered[index - 1]
+        if previous.include_in_returns != row.include_in_returns:
+            return True
+    return False
+
+
 def _scope_membership_coverage(
     session: Session,
     *,
@@ -211,6 +233,11 @@ def _scope_membership_coverage(
             for row in rows
         ):
             reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+
+        if scope is PerformanceScope.PORTFOLIO and _has_membership_transition_inside(
+            rows, start_date=start_date, end_date=end_date
+        ):
+            reasons.add(AvailabilityReasonCode.SCOPE_MEMBERSHIP_CHANGED.value)
 
     if scope is PerformanceScope.PORTFOLIO and not account_ids:
         reasons.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
@@ -393,13 +420,36 @@ def _external_flow_coverage(
             scope=scope,
             account_id=account_id,
         )
-        if not _flow_is_relevant(classification):
+        # Validate flow-level scope_membership against effective membership before
+        # deciding relevance: a contradiction must fail closed even when the
+        # classifier would otherwise report NOT_IN_SCOPE (e.g. stable_out_of_scope
+        # while effective membership is true).
+        membership = _safe_scope_membership(flow.scope_membership)
+        stable_contradiction: set[str] = set()
+        if (
+            membership is not ExternalFlowScopeMembership.UNKNOWN
+            and flow.account_id in rows_by_account
+        ):
+            effective = _membership_at(rows_by_account.get(flow.account_id, []), flow.event_date)
+            if membership is ExternalFlowScopeMembership.STABLE_IN_SCOPE and effective is not True:
+                stable_contradiction.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+            elif (
+                membership is ExternalFlowScopeMembership.STABLE_OUT_OF_SCOPE
+                and effective is not False
+            ):
+                stable_contradiction.add(AvailabilityReasonCode.SCOPE_COVERAGE_INCOMPLETE.value)
+
+        # Skip flows that are not in scope only when there is no stable
+        # membership contradiction to report; otherwise the inconsistency itself
+        # must make the interval fail closed. UNKNOWN remains non-authoritative
+        # only when the flow is otherwise relevant.
+        if not _flow_is_relevant(classification) and not stable_contradiction:
             continue
 
         flow_reasons = set(flow_reasons)
-        membership = _safe_scope_membership(flow.scope_membership)
         if membership is ExternalFlowScopeMembership.UNKNOWN:
             flow_reasons.add(AvailabilityReasonCode.SCOPE_MEMBERSHIP_HISTORY_MISSING.value)
+        flow_reasons.update(stable_contradiction)
         if (
             not isinstance(flow.boundary_amount_kopecks, int)
             or isinstance(flow.boundary_amount_kopecks, bool)
