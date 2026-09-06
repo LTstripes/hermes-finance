@@ -15,7 +15,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
 
 CONTRACT_VERSION = "r07-09-v1"
@@ -160,16 +160,41 @@ def classify_applicability(instrument_type: object) -> RowApplicability:
 
 
 def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> int:
-    """Compute stressed value: base * (1 - pct/100) rounded HALF_UP to kopecks."""
+    """Compute stressed value: base * (1 - pct/100) rounded HALF_UP to kopecks.
+
+    Context-independent: precision is derived from operands (significant digits of
+    canonical pct + digits of base_kopecks + guard). Entire expression
+    100-pct, /100, *base is executed under that localcontext. Final rounding
+    is a single quantize ROUND_HALF_UP at the kopeck boundary.
+    """
     if not isinstance(base_kopecks, int) or isinstance(base_kopecks, bool):
         raise TypeError("base_kopecks must be int")
     if base_kopecks < 0:
         raise ValueError("base_kopecks must be >=0")
-    # Decimal arithmetic
-    factor = (Decimal(100) - drawdown_pct) / Decimal(100)
-    raw = Decimal(base_kopecks) * factor
-    # quantize to 0
-    return int(raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if isinstance(drawdown_pct, float):
+        raise ValueError("invalid_drawdown_pct: binary float not allowed")
+    if not isinstance(drawdown_pct, Decimal):
+        raise TypeError("drawdown_pct must be Decimal")
+    if not drawdown_pct.is_finite():
+        raise ValueError("invalid_drawdown_pct: not finite")
+    # Derive precision from operands: significant digits of canonical pct + digits of base + guard
+    canonical_str = _canonical_string_from_decimal(drawdown_pct)
+    sig_part = canonical_str.replace("-", "").replace(".", "").lstrip("0")
+    sig_digits = len(sig_part) if sig_part else 1
+    digits_base = len(str(abs(base_kopecks))) if base_kopecks != 0 else 1
+    guard = 10
+    prec = sig_digits + digits_base + guard
+    # Guard against excessively small prec (minimum 28 to cover typical 28-digit contexts)
+    if prec < 28:
+        prec = 28
+    with localcontext() as ctx:
+        ctx.prec = prec
+        ctx.rounding = ROUND_HALF_UP
+        factor = (Decimal(100) - drawdown_pct) / Decimal(100)
+        raw = Decimal(base_kopecks) * factor
+        # Single rounding at kopeck boundary only
+        quantized = raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return int(quantized)
 
 
 def canonical_json_hash(obj: object) -> str:

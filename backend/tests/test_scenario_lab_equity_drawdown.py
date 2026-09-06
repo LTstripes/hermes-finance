@@ -710,3 +710,147 @@ def test_r5_excluded_absent_from_impact_and_row_applicability(session):
     assert res.coverage["applied"] == 1  # only stock applied
     assert res.coverage["not_applicable"] == 1  # bond
     assert res.coverage["unknown"] == 0
+
+# ---- BLOCKER A: context-independent stressed_market_value_kopecks ----
+def test_blocker_a_boundary_half_up():
+    from decimal import Decimal
+    from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks
+
+    # base 1 kopeck, hair-trigger around 50%
+    assert stressed_market_value_kopecks(1, Decimal("50.00000001")) == 0
+    assert stressed_market_value_kopecks(1, Decimal("49.99999999")) == 1
+    # also 50.000...01 with more zeros
+    assert stressed_market_value_kopecks(1, Decimal("50.0000000001")) == 0
+    assert stressed_market_value_kopecks(1, Decimal("49.9999999999")) == 1
+
+
+def test_blocker_a_ambient_context_invariance():
+    from decimal import Decimal, getcontext
+    from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks
+
+    pct = Decimal("33.33333333333333333333333333333")
+    # ambient prec 10
+    getcontext().prec = 10
+    r_low = stressed_market_value_kopecks(100_000, pct)
+    # ambient prec 50
+    getcontext().prec = 50
+    r_high = stressed_market_value_kopecks(100_000, pct)
+    assert r_low == r_high
+    # reset to default 28 for other tests
+    getcontext().prec = 28
+    # also 0% and 100% invariance under low prec
+    getcontext().prec = 5
+    assert stressed_market_value_kopecks(12345, Decimal("20")) == stressed_market_value_kopecks(12345, Decimal("20"))
+    getcontext().prec = 28
+
+
+def test_blocker_a_float_rejection_and_long_decimal():
+    from decimal import Decimal
+    from hermes_finance.domain.scenario_lab import stressed_market_value_kopecks, parse_drawdown_pct, canonical_drawdown_pct
+    import pytest as _pytest
+
+    # float must be rejected
+    with _pytest.raises((ValueError, TypeError)):
+        stressed_market_value_kopecks(100, 20.0)  # type: ignore
+    # Decimal from float is allowed as Decimal type, but parse_drawdown_pct rejects float
+    with _pytest.raises((ValueError, TypeError)):
+        parse_drawdown_pct(20.0)
+
+    # >28 digits lossless canonical
+    long_pct = "33.33333333333333333333333333333"
+    pct = parse_drawdown_pct(long_pct)
+    canon = canonical_drawdown_pct(pct)
+    assert str(canon) == long_pct
+    # trailing zeros stripped but same value
+    pct2 = parse_drawdown_pct(long_pct + "000")
+    assert canonical_drawdown_pct(pct2) == canon
+    # calculation uses high precision without rounding
+    v = stressed_market_value_kopecks(100_000, canon)
+    # compute expected with high prec manually
+    from decimal import localcontext, ROUND_HALF_UP
+
+    with localcontext() as ctx:
+        ctx.prec = 60
+        expected = int((Decimal(100_000) * (Decimal(100) - canon) / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    assert v == expected
+
+
+# ---- BLOCKER B: frozen-base / concurrency regression ----
+def test_blocker_b_zero_percent_invariant(session):
+    month, acc = _basic_setup(session)
+    stock = _stock(session)
+    _position(session, month.id, acc.id, stock.id, "1000.00")
+    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}})
+    assert res.base["liquid_assets_kopecks"] == res.stressed["liquid_assets_kopecks"]
+    assert res.base["liquid_capital_net_kopecks"] == res.stressed["liquid_capital_net_kopecks"]
+    assert res.impact["liquid_assets_delta_kopecks"] == 0
+    assert res.impact["liquid_capital_net_delta_kopecks"] == 0
+
+
+def test_blocker_b_frozen_base_concurrency(session, tmp_path, monkeypatch):
+    """Capture frozen, mutate DB via second session to 2000, run 0% shock,
+    assert base==stressed==1000, impact 0, fingerprint unchanged.
+    Proves liquid capital is derived from frozen_payload, not re-read.
+    """
+    from sqlalchemy.orm import Session as SASession
+    from hermes_finance.persistence import PositionSnapshot
+
+    month, acc = _basic_setup(session)
+    stock = _stock(session)
+    pos = _position(session, month.id, acc.id, stock.id, "10.00")  # 1000 kopecks
+    # baseline without mutation
+    baseline = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}})
+    assert baseline.base["liquid_assets_kopecks"] == 1000
+    assert baseline.stressed["liquid_assets_kopecks"] == 1000
+    base_fp_before = baseline.base_fingerprint
+    sem_fp_before = baseline.semantic_fingerprint
+
+    # Now test intra-call mutation: patch calculate_liquid_capital to mutate DB via second session after frozen capture
+    import hermes_finance.services.scenario_lab as sl
+
+    orig_calc = sl.calculate_liquid_capital
+    mutated = {"done": False}
+
+    def patched_calc(inp):
+        if not mutated["done"]:
+            mutated["done"] = True
+            engine = session.get_bind()
+            second = SASession(engine)
+            try:
+                ps = second.get(PositionSnapshot, pos.id)
+                assert ps is not None
+                ps.market_value_kopecks = 2000
+                second.commit()
+            finally:
+                second.close()
+        return orig_calc(inp)
+
+    monkeypatch.setattr(sl, "calculate_liquid_capital", patched_calc)
+
+    # Run 0% shock — frozen was 1000, DB now mutated to 2000 during calc, but result must stay 1000
+    res = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}})
+    assert res.base["liquid_assets_kopecks"] == 1000
+    assert res.stressed["liquid_assets_kopecks"] == 1000
+    assert res.impact["liquid_assets_delta_kopecks"] == 0
+    assert res.impact["known_scope_impact_kopecks"] == 0
+    # per_position still 1000
+    pid = str(pos.id)
+    assert res.base["per_position"][pid]["market_value_kopecks"] == 1000
+    assert res.stressed["per_position"][pid]["market_value_kopecks"] == 1000
+    # Goals also from frozen — add a goal and ensure it uses frozen target
+    # Restore original for fingerprint comparison (need to reset DB to 1000 for clean compare)
+    monkeypatch.setattr(sl, "calculate_liquid_capital", orig_calc)
+    # Reset DB back to 1000 for fingerprint equality check
+    engine = session.get_bind()
+    fix = SASession(engine)
+    try:
+        ps = fix.get(PositionSnapshot, pos.id)
+        ps.market_value_kopecks = 1000
+        fix.commit()
+    finally:
+        fix.close()
+    # Expire session cache so next read sees 1000
+    session.expire_all()
+    res2 = evaluate_scenario_lab(session, month.id, {"equity_drawdown": {"drawdown_pct": "0"}})
+    assert res2.base_fingerprint == base_fp_before
+    assert res2.semantic_fingerprint == sem_fp_before

@@ -338,12 +338,12 @@ def evaluate_scenario_lab(
 
     has_unknown = coverage_unknown > 0
 
-    base_liquid = liquid_capital_for_month(session, reporting_month_id)
-
-    cash_total = sum(c.amount_kopecks for c in cash_rows if c.include_in_capital)
-    deposits_total = sum(d.balance_kopecks for d, _n, inc in deposit_rows if inc)
-    # Build domain inputs for canonical builder (R1)
-    # Base positions eligible only
+    # BLOCKER B: build liquid capital from frozen_payload only — no DB re-read, no liquid_capital_for_month
+    cash_total = sum(c["amount_kopecks"] for c in frozen_payload["cash"] if c["include_in_capital"])
+    deposits_total = sum(d["balance_kopecks"] for d in frozen_payload["deposits"] if d["include_in_capital"])
+    debts_total = sum(d["balance_kopecks"] for d in frozen_payload["debts"] if d["include_in_liquid_capital"])
+    securities_total_base = sum(p["market_value_kopecks"] for p in frozen_payload["positions"] if p["include_in_capital"])
+    # Build domain inputs for canonical builder (R1) from frozen
     base_domain_positions = tuple(
         RiskPositionInput(
             position_id=p["id"],
@@ -365,9 +365,32 @@ def evaluate_scenario_lab(
         for p in frozen_payload["positions"] if p["include_in_capital"]
     )
     domain_deposits = tuple(
-        RiskDepositInput(account_id=d.account_id, amount_kopecks=int(d.balance_kopecks))
-        for d, _n, inc in deposit_rows if inc
+        RiskDepositInput(account_id=d["account_id"], amount_kopecks=int(d["balance_kopecks"]))
+        for d in frozen_payload["deposits"] if d["include_in_capital"]
     )
+    # Per-account deposit/securities tuples for liquid capital — built from frozen only
+    _frozen_deposit_accounts = tuple(
+        AccountAmount(account_id=d["account_id"], amount=RubleAmount(int(d["balance_kopecks"])))
+        for d in frozen_payload["deposits"] if d["include_in_capital"]
+    )
+    _frozen_securities_accounts_base = tuple(
+        AccountAmount(account_id=p["account_id"], amount=RubleAmount(int(p["market_value_kopecks"])))
+        for p in frozen_payload["positions"] if p["include_in_capital"]
+    )
+    _frozen_securities_accounts_stressed = tuple(
+        AccountAmount(account_id=p["account_id"], amount=RubleAmount(int(stressed_positions[p["id"]])))
+        for p in frozen_payload["positions"] if p["include_in_capital"]
+    )
+    base_liquid_input = LiquidCapitalInput(
+        cash=RubleAmount(cash_total),
+        deposits=RubleAmount(deposits_total),
+        securities=RubleAmount(securities_total_base),
+        included_debts=RubleAmount(debts_total),
+        other_liquid_assets=RubleAmount(0),
+        deposit_accounts=_frozen_deposit_accounts,
+        securities_accounts=_frozen_securities_accounts_base,
+    )
+    base_liquid = calculate_liquid_capital(base_liquid_input)
 
     # Prepare supports for builder (asset/account)
     # Valuation issues: for eligible positions only? but we keep empty for scenario (no valuation check)
@@ -395,31 +418,16 @@ def evaluate_scenario_lab(
         pass
 
     stressed_securities = sum(stressed_positions[pid] for pid in eligible_position_ids)
-    # Keep stressed_by_account for liquid capital calculation
-    stressed_by_account: dict[int, int] = defaultdict(int)
-    for d, _n, inc in deposit_rows:
-        if inc:
-            stressed_by_account[d.account_id] += int(d.balance_kopecks)
-    for pid in eligible_position_ids:
-        p = pos_by_id[pid]
-        stressed_by_account[p["account_id"]] += stressed_positions[pid]
-
-    stressed_input = LiquidCapitalInput(
+    stressed_liquid_input = LiquidCapitalInput(
         cash=RubleAmount(cash_total),
         deposits=RubleAmount(deposits_total),
         securities=RubleAmount(stressed_securities),
-        included_debts=base_liquid.total_debts_included,
+        included_debts=RubleAmount(debts_total),
         other_liquid_assets=RubleAmount(0),
-        deposit_accounts=tuple(
-            AccountAmount(account_id=d.account_id, amount=RubleAmount(int(d.balance_kopecks)))
-            for d, _n, inc in deposit_rows if inc
-        ),
-        securities_accounts=tuple(
-            AccountAmount(account_id=p["account_id"], amount=RubleAmount(stressed_positions[p["id"]]))
-            for p in frozen_payload["positions"] if p["include_in_capital"]
-        ),
+        deposit_accounts=_frozen_deposit_accounts,
+        securities_accounts=_frozen_securities_accounts_stressed,
     )
-    stressed_liquid = calculate_liquid_capital(stressed_input)
+    stressed_liquid = calculate_liquid_capital(stressed_liquid_input)
 
     # R1: use canonical builder for both base and stressed
     def _allocation_metric_to_dict(metric) -> dict:
@@ -557,29 +565,32 @@ def evaluate_scenario_lab(
 
     base_goals_list = []
     stressed_goals_list = []
-    for g in capital_goals:
+    # BLOCKER B: Goals from frozen_payload only — do not re-read DB
+    for g in frozen_payload["goals"]:
+        gid = int(g["id"])
+        target_kopecks = int(g["target_kopecks"])
         base_calc = calculate_goal_achievement_forecast(
-            goal_id=g.id,
+            goal_id=gid,
             reporting_month_id=month.id,
             as_of_date=month.snapshot_date,
             current_value=base_liquid.liquid_capital_net,
-            target_value=RubleAmount(g.target_value_kopecks),
+            target_value=RubleAmount(target_kopecks),
             source_forecast_version=None,
         )
         stressed_calc = calculate_goal_achievement_forecast(
-            goal_id=g.id,
+            goal_id=gid,
             reporting_month_id=month.id,
             as_of_date=month.snapshot_date,
             current_value=stressed_liquid.liquid_capital_net,
-            target_value=RubleAmount(g.target_value_kopecks),
+            target_value=RubleAmount(target_kopecks),
             source_forecast_version=None,
         )
 
-        def _goal_dict(calc):
+        def _goal_dict(calc, _target_kopecks=target_kopecks):
             return {
                 "goal_id": calc.goal_id,
-                "target_kopecks": g.target_value_kopecks,
-                "target": _money_api(g.target_value_kopecks),
+                "target_kopecks": _target_kopecks,
+                "target": _money_api(_target_kopecks),
                 "current_kopecks": calc.current_value.kopecks if calc.current_value else None,
                 "current": _money_api(calc.current_value.kopecks) if calc.current_value else None,
                 "remaining_kopecks": calc.remaining_amount.kopecks if calc.remaining_amount else None,
