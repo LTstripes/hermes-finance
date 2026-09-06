@@ -117,3 +117,42 @@ the exact SHA is the post-merge read-back recorded in the #306 closeout report.
 | `integration/decision-support-v1` | #141 Scenario Lab contract-only slice; deterministic read-only semantics, no write-back/forecast claims | not started |
 
 No first task above has begun. No release/tag is created by this consolidation.
+
+## 2026-09-06 correction — Investment Performance reconciliation
+
+After the three workstreams were created, independent review of the proposed
+PERF-01 contract found a material roadmap/documentation mismatch: the canonical
+baseline already contains the accepted R08 performance foundation and released
+whole-portfolio XIRR/exact-TWRR implementation.
+
+The historical #306 audit above is preserved as-written. This correction
+supersedes only its statement that the first Performance task is a new PERF-01
+flow/valuation contract.
+
+Canonical reconciliation is recorded in:
+
+`docs/PERFORMANCE_V1_RECONCILIATION_2026-09-06.md`
+
+and tracked by #315.
+
+Reconciled status:
+
+- PERF-01-equivalent foundation: **DONE** via #145/#179/#190/#197/#213/#214;
+- whole-portfolio XIRR: **DONE** via #146;
+- whole-portfolio exact TWRR: **DONE** via #147/#215;
+- attribution: still not started.
+
+The new Performance workstream sequence is therefore:
+
+1. PERF-R0 reconciliation (#315);
+2. accepted PERF-H1 additive edge-case hardening;
+3. PERF-H2a async-transfer transit/reconciliation fail-closed implementation;
+4. PERF-H2b in-kind boundary coverage persistence/fail-closed implementation;
+5. PERF-H3 tax/direct-payout evidence/regression hardening;
+6. owner-only performance readiness UAT on Preview/copy DB;
+7. account-level XIRR;
+8. account-level exact TWRR;
+9. attribution contract and bounded attribution slices.
+
+Do not create a second performance ledger, availability API, XIRR implementation
+or TWRR implementation merely to follow the stale pre-reconciliation wording.
