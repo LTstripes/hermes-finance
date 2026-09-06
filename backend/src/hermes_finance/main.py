@@ -32,6 +32,12 @@ from hermes_finance.api.external_flows import router as external_flows_router
 from hermes_finance.api.freshness_provenance import router as freshness_provenance_router
 from hermes_finance.api.goals import router as goals_router
 from hermes_finance.api.iis import router as iis_router
+from hermes_finance.api.in_kind_boundary_coverage import (
+    coverage_router as in_kind_boundary_coverage_router,
+)
+from hermes_finance.api.in_kind_boundary_coverage import (
+    movement_router as in_kind_movement_router,
+)
 from hermes_finance.api.incomes import router as incomes_router
 from hermes_finance.api.instrument_mappings import router as instrument_mappings_router
 from hermes_finance.api.instruments import router as instruments_router
@@ -123,6 +129,8 @@ def create_app(
     application.include_router(deposits_router)
     application.include_router(cash_router)
     application.include_router(cash_boundary_coverage_router)
+    application.include_router(in_kind_boundary_coverage_router)
+    application.include_router(in_kind_movement_router)
     application.include_router(cash_flow_ladder_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)

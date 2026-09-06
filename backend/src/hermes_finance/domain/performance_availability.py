@@ -17,6 +17,7 @@ from hermes_finance.domain.external_flows import (
     ExternalFlowScopeMembership,
     ExternalTransferStatus,
 )
+from hermes_finance.domain.in_kind_boundary_coverage import InKindBoundaryCoverage
 from hermes_finance.domain.valuation_boundaries import ExternalFlowBoundaryEvidence
 from hermes_finance.domain.valuation_points import (
     PerformanceScope,
@@ -48,6 +49,8 @@ class PerformanceAvailabilityReasonCode(StrEnum):
     TRANSFER_RECONCILIATION_INCOMPLETE = "not_computable_transfer_reconciliation_incomplete"
     VALUATION_BOUNDARY_MISSING = "not_computable_valuation_boundary_missing"
     VALUATION_BOUNDARY_ORDER_UNKNOWN = "not_computable_valuation_boundary_order_unknown"
+    IN_KIND_BOUNDARY_COVERAGE_UNKNOWN = "not_computable_in_kind_boundary_coverage_unknown"
+    IN_KIND_MOVEMENT_UNVALUED = "not_computable_in_kind_movement_unvalued"
 
     # Existing R08-01B point-level reasons remain part of the read contract.
     SNAPSHOT_DATE_MISSING = "not_computable_snapshot_date_missing"
@@ -145,6 +148,7 @@ class PerformanceAvailability:
     closing_valuation: ValuationBoundaryEvidence
     scope_membership: ScopeMembershipCoverage
     cash_boundary_coverage: CashBoundaryCoverage
+    in_kind_boundary_coverage: InKindBoundaryCoverage
     external_flows: ExternalFlowCoverage
     external_flow_boundaries: tuple[ExternalFlowBoundaryEvidence, ...]
     xirr: PerformanceMetricPrerequisites

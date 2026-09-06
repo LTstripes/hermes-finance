@@ -21,6 +21,7 @@ from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import create_external_flow
+from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
@@ -97,6 +98,9 @@ def _environment(
         account_id=account.id,
         covered_from=START,
         covered_to=END,
+    )
+    attest_in_kind_boundary_history(
+        session, account_id=account.id, covered_from=START, covered_to=END
     )
     return session, database, january.id, february.id, account.id
 

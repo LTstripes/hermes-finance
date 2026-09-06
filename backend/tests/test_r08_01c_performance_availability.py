@@ -33,6 +33,7 @@ from hermes_finance.services.external_flows import (
     create_external_flow,
     create_external_transfer_link,
 )
+from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
@@ -110,6 +111,9 @@ def _environment(
             account_id=account.id,
             covered_from=START,
             covered_to=END,
+        )
+        attest_in_kind_boundary_history(
+            session, account_id=account.id, covered_from=START, covered_to=END
         )
     return session, database, january.id, february.id, account.id
 
@@ -304,6 +308,9 @@ def test_resolved_transfer_is_internal_for_portfolio_and_external_for_account(
             covered_from=START,
             covered_to=END,
         )
+        attest_in_kind_boundary_history(
+            session, account_id=destination.id, covered_from=START, covered_to=END
+        )
         link = create_external_transfer_link(session, transfer_key="synthetic-resolved")
         source_flow = create_external_flow(
             session,
@@ -385,12 +392,14 @@ def test_missing_opening_and_closing_snapshot_dates_fail_closed(tmp_path: Path) 
         assert missing_opening.opening_valuation.point is None
         assert missing_opening.xirr.reason_codes == (
             "not_computable_external_flows_incomplete",
+            "not_computable_in_kind_boundary_coverage_unknown",
             "not_computable_opening_valuation_missing",
         )
         assert missing_closing.closing_valuation.point is None
         assert missing_closing.xirr.reason_codes == (
             "not_computable_closing_valuation_missing",
             "not_computable_external_flows_incomplete",
+            "not_computable_in_kind_boundary_coverage_unknown",
         )
     finally:
         session.close()

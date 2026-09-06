@@ -25,6 +25,14 @@ from hermes_finance.domain.external_flows import (
 )
 from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
+from hermes_finance.domain.in_kind_boundary_coverage import (
+    InKindBoundaryCoverage,
+    InKindBoundaryCoverageEvidence,
+    InKindBoundaryCoverageState,
+    InKindBoundaryCoverageStatus,
+    InKindMovementEvidence,
+    InKindMovementKind,
+)
 from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.instruments import InstrumentType, MarketMappingState
 from hermes_finance.domain.month_close_workflow import (
@@ -120,6 +128,12 @@ __all__ = [
     "GoalType",
     "InvestmentCashFlowType",
     "IncomeType",
+    "InKindBoundaryCoverage",
+    "InKindBoundaryCoverageEvidence",
+    "InKindBoundaryCoverageState",
+    "InKindBoundaryCoverageStatus",
+    "InKindMovementEvidence",
+    "InKindMovementKind",
     "InstrumentType",
     "MarketMappingState",
     "GuidedCloseAction",

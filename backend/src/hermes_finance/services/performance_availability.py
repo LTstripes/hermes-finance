@@ -56,6 +56,9 @@ from hermes_finance.services.external_flows import (
     classify_external_flow,
     external_flow_transfer_status,
 )
+from hermes_finance.services.in_kind_boundary_coverage import (
+    in_kind_boundary_coverage_for_interval,
+)
 from hermes_finance.services.transfer_reconciliation import (
     iter_transfer_reconciliation_evidence,
 )
@@ -1015,6 +1018,14 @@ def performance_availability_for_interval(
         end_date=end_date,
         rows_by_account=rows_by_account,
     )
+    in_kind_boundary_coverage = in_kind_boundary_coverage_for_interval(
+        session,
+        scope=normalized_scope,
+        account_id=account_id,
+        start_date=start_date,
+        end_date=end_date,
+        rows_by_account=rows_by_account,
+    )
 
     boundary_cache: dict[date, ValuationBoundaryEvidence] = {}
     opening = _resolve_boundary(
@@ -1047,6 +1058,7 @@ def performance_availability_for_interval(
     xirr_reasons = set(currency_reasons)
     xirr_reasons.update(membership.reason_codes)
     xirr_reasons.update(cash_boundary_coverage.reason_codes)
+    xirr_reasons.update(in_kind_boundary_coverage.reason_codes)
     xirr_reasons.update(opening.reason_codes)
     xirr_reasons.update(closing.reason_codes)
     xirr_reasons.update(flows.reason_codes)
@@ -1118,6 +1130,7 @@ def performance_availability_for_interval(
         closing_valuation=closing,
         scope_membership=membership,
         cash_boundary_coverage=cash_boundary_coverage,
+        in_kind_boundary_coverage=in_kind_boundary_coverage,
         external_flows=flows,
         external_flow_boundaries=external_flow_boundaries,
         xirr=xirr,

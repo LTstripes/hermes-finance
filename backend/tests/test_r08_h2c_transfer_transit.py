@@ -19,6 +19,7 @@ from hermes_finance.services.external_flows import (
     create_external_flow,
     create_external_transfer_link,
 )
+from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
@@ -106,6 +107,12 @@ def _environment(
             )
         session.commit()
         create_cash_boundary_coverage(
+            session,
+            account_id=account.id,
+            covered_from=start_date,
+            covered_to=end_date,
+        )
+        attest_in_kind_boundary_history(
             session,
             account_id=account.id,
             covered_from=start_date,
