@@ -843,7 +843,9 @@ def _transfer_reconciliation_complete(
     if source_currency != destination_currency:
         return any(item.kind == "fx_conversion_spread" for item in accepted)
 
-    expected_difference = abs(source.boundary_amount_kopecks - destination.boundary_amount_kopecks)
+    if destination.boundary_amount_kopecks > source.boundary_amount_kopecks:
+        return False
+    expected_difference = source.boundary_amount_kopecks - destination.boundary_amount_kopecks
     if expected_difference == 0:
         return True
     return (

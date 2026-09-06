@@ -376,6 +376,41 @@ def test_unequal_legs_require_transfer_specific_evidence(tmp_path: Path) -> None
         reconciled_database.engine.dispose()
 
 
+def test_destination_gain_is_not_reconciled_as_internal_fee(tmp_path: Path) -> None:
+    session, database, month_ids, accounts = _environment(tmp_path)
+    try:
+        link, *_ = _transfer(
+            session,
+            month_ids,
+            accounts,
+            source_date=date(2030, 2, 10),
+            destination_date=date(2030, 2, 15),
+            source_amount="999.00",
+            destination_amount="1000.00",
+        )
+        create_transfer_reconciliation_evidence(
+            session,
+            transfer_link_id=link.id,
+            kind="internal_fee",
+            amount="1.00",
+            currency="RUB",
+            source="synthetic-broker-statement",
+            evidence_reference="fee-cannot-explain-gain",
+        )
+        _close(session, month_ids)
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="portfolio",
+        )
+        assert not result.xirr.is_available
+        assert "not_computable_transfer_reconciliation_incomplete" in result.xirr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_evidence_for_one_overlapping_transfer_does_not_reconcile_another(
     tmp_path: Path,
 ) -> None:
