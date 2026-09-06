@@ -117,3 +117,36 @@ the exact SHA is the post-merge read-back recorded in the #306 closeout report.
 | `integration/decision-support-v1` | #141 Scenario Lab contract-only slice; deterministic read-only semantics, no write-back/forecast claims | not started |
 
 No first task above has begun. No release/tag is created by this consolidation.
+
+## Post-audit correction — Investment Performance v1
+
+The performance row above records the state of the #306 audit when it was
+performed. Subsequent PERF-R0 reconciliation (#315) verified against canonical
+baseline `49b290df5d407fafff05a8aac6e3c081fdd8ea45` that the planned
+`PERF-01 -> PERF-02 -> PERF-03` sequence duplicates already accepted R08 work:
+
+- #145/#179/#190/#197/#213/#214 already provide the dated external-flow,
+  valuation, availability and observed-boundary foundation;
+- #146 already provides production whole-portfolio XIRR;
+- #147/#215 already provide production exact whole-portfolio TWRR.
+
+Therefore the original performance first-task wording is superseded for future
+execution. Do not reimplement PERF-01/02/03 as a second performance stack.
+
+Independent hardening reviews then identified six additive false-exact gaps,
+recorded normatively in `docs/PERFORMANCE_V1_RECONCILIATION_2026-09-06.md`:
+
+1. stable whole-portfolio membership over the requested interval;
+2. affirmative completeness of owner cash-boundary history;
+3. asynchronous internal-transfer transit and leg reconciliation;
+4. in-kind boundary-history coverage;
+5. tax/fee boundary semantics;
+6. direct realised payout semantics.
+
+The corrected implementation sequence is:
+
+`membership gate -> cash-boundary coverage -> transfer transit/reconciliation -> in-kind coverage -> tax/direct-payout hardening -> owner UAT -> account XIRR -> account exact TWRR -> attribution`.
+
+This addendum is a reconciliation correction, not a rewrite of the historical
+#306 audit. `main` remains the sole canonical/release source and
+`integration/performance-v1` remains staging only.
