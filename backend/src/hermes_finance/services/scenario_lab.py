@@ -1,4 +1,4 @@
-"""Service adapter for Scenario Lab v1 (141-A equity + 141-B deposit rate).
+"""Service adapter for Scenario Lab v1 (141-A equity + 141-B deposit rate + 141-C inflation).
 
 Read-only, no provider/network/fx, no writes. Composes canonical read models.
 Uses pure canonical Risk projection builder from domain/risk_allocation for
@@ -8,6 +8,11 @@ both base and stressed allocations (R1), implements R2-R5 fixes.
 the canonical PercentageRate contract stays the single source of rate
 semantics, and ``calculate_deposit_expected_monthly_interest_kopecks`` is
 the only deposit-interest calculator.
+
+141-C inflation_real_value shock is a secondary real-value presentation on
+the same frozen base: nominal facts never change and only the month-known
+future cash-flow rows are re-expressed in base-period purchasing power via
+the pure domain real-value discount helpers.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -55,8 +61,10 @@ from hermes_finance.domain.scenario_lab import (
     classify_applicability,
     normalize_drawdown_pct,
     normalized_rate_string,
+    parse_annual_inflation_pct,
     parse_assumed_annual_rate_pct,
     parse_drawdown_pct,
+    real_value_kopecks,
     semantic_fingerprint_payload,
     stressed_market_value_kopecks,
 )
@@ -86,7 +94,7 @@ def _validate_single_shock(shock: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if len(keys) != 1:
         raise ScenarioLabError("unsupported_composition_v1", "exactly one shock required")
     only = keys[0]
-    if only not in {"equity_drawdown", "deposit_rate_assumption"}:
+    if only not in {"equity_drawdown", "deposit_rate_assumption", "inflation_real_value"}:
         raise ScenarioLabError("unsupported_shock_type_v1", f"unsupported shock {only}")
     payload = shock[only]
     if not isinstance(payload, dict):
@@ -342,9 +350,7 @@ def _top_metric_to_list(metric: Any) -> list[dict[str, Any]]:
                 "instrument_type": item.instrument_type,
                 "amount_kopecks": item.amount.kopecks,
                 "amount": _money_api(item.amount.kopecks),
-                "share_pct": format(item.share_pct, ".2f")
-                if item.share_pct is not None
-                else None,
+                "share_pct": format(item.share_pct, ".2f") if item.share_pct is not None else None,
             }
         )
     result.sort(key=lambda x: (-x["amount_kopecks"], x["position_id"]))
@@ -491,9 +497,7 @@ def _frozen_capital_metrics(
         account_support_domain = MetricSupport(status=DomainRiskStatus.SUPPORTED)
 
     stressed_securities = sum(
-        stressed_positions[p["id"]]
-        for p in frozen_payload["positions"]
-        if p["include_in_capital"]
+        stressed_positions[p["id"]] for p in frozen_payload["positions"] if p["include_in_capital"]
     )
     stressed_liquid = calculate_liquid_capital(
         LiquidCapitalInput(
@@ -666,6 +670,7 @@ def evaluate_scenario_lab(
     Currently supported shocks:
     - ``equity_drawdown`` (141-A)
     - ``deposit_rate_assumption`` (141-B)
+    - ``inflation_real_value`` (141-C)
 
     Combined shocks raise ``ScenarioLabError(code=unsupported_composition_v1)``.
     Invalid input is rejected with a deterministic machine-readable code.
@@ -674,6 +679,10 @@ def evaluate_scenario_lab(
     shock_type, payload = _validate_single_shock(shock)
     if shock_type == "deposit_rate_assumption":
         return _evaluate_deposit_rate_assumption(
+            session, reporting_month_id, payload, top_n=top_n, generated_at=generated_at
+        )
+    if shock_type == "inflation_real_value":
+        return _evaluate_inflation_real_value(
             session, reporting_month_id, payload, top_n=top_n, generated_at=generated_at
         )
     # --- equity_drawdown path (141-A, unchanged) ---
@@ -998,6 +1007,7 @@ def evaluate_scenario_lab(
         presentation_metadata=presentation_metadata,
     )
 
+
 # ----------------------------------------------------------------------------
 # 141-B deposit_rate_assumption
 # ----------------------------------------------------------------------------
@@ -1038,9 +1048,7 @@ def _project_forecast(
             "expected_deposit_interest": breakdown.expected_deposit_interest.to_api(),
             "expected_coupon_net_kopecks": breakdown.expected_coupon_net.kopecks,
             "expected_coupon_net": breakdown.expected_coupon_net.to_api(),
-            "expected_dividend_component_kopecks": (
-                breakdown.expected_dividend_component.kopecks
-            ),
+            "expected_dividend_component_kopecks": (breakdown.expected_dividend_component.kopecks),
             "expected_dividend_component": breakdown.expected_dividend_component.to_api(),
             "other_expected_capital_income_kopecks": (
                 breakdown.other_expected_capital_income.kopecks
@@ -1273,9 +1281,7 @@ def _evaluate_deposit_rate_assumption(
         base_deposit_monthly = None
         stressed_deposit_monthly = None
 
-    base_forecast = _project_forecast(
-        base_forecast_inputs, deposit_monthly=base_deposit_monthly
-    )
+    base_forecast = _project_forecast(base_forecast_inputs, deposit_monthly=base_deposit_monthly)
     stressed_forecast = _project_forecast(
         base_forecast_inputs, deposit_monthly=stressed_deposit_monthly
     )
@@ -1306,9 +1312,7 @@ def _evaluate_deposit_rate_assumption(
     }
 
     applied_count = sum(1 for value in applicability.values() if value == "applied")
-    not_applicable_count = sum(
-        1 for value in applicability.values() if value == "not_applicable"
-    )
+    not_applicable_count = sum(1 for value in applicability.values() if value == "not_applicable")
     forecast_delta_kopecks = (
         stressed_forecast["annual_total_kopecks"] - base_forecast["annual_total_kopecks"]
     )
@@ -1327,8 +1331,7 @@ def _evaluate_deposit_rate_assumption(
         "known_scope_monthly_interest_delta_kopecks": total_delta,
         "known_scope_monthly_interest_delta": _money_signed(total_delta),
         "per_deposit": {
-            key: value
-            for key, value in sorted(impact_rows.items(), key=lambda kv: int(kv[0]))
+            key: value for key, value in sorted(impact_rows.items(), key=lambda kv: int(kv[0]))
         },
     }
     coverage = {
@@ -1411,8 +1414,7 @@ def _evaluate_deposit_rate_assumption(
         "top_positions": cap["base_top"],
         "capital_goals": sorted(cap["base_goals"], key=lambda x: x["goal_id"]),
         "per_deposit": {
-            key: value
-            for key, value in sorted(base_rows.items(), key=lambda kv: int(kv[0]))
+            key: value for key, value in sorted(base_rows.items(), key=lambda kv: int(kv[0]))
         },
         "forecast_passive_income": base_forecast,
         "cash_flow_ladder": base_ladder_dict,
@@ -1431,8 +1433,7 @@ def _evaluate_deposit_rate_assumption(
         "top_positions": cap["stressed_top"],
         "capital_goals": sorted(cap["stressed_goals"], key=lambda x: x["goal_id"]),
         "per_deposit": {
-            key: value
-            for key, value in sorted(stressed_rows.items(), key=lambda kv: int(kv[0]))
+            key: value for key, value in sorted(stressed_rows.items(), key=lambda kv: int(kv[0]))
         },
         "forecast_passive_income": stressed_forecast,
         "cash_flow_ladder": stressed_ladder_dict,
@@ -1536,8 +1537,7 @@ def _evaluate_deposit_rate_assumption(
     presentation_metadata = {
         "account_names": dict(sorted(account_names.items())),
         "deposit_names": {
-            deposit.id: deposit.name
-            for deposit in sorted(deposit_snapshots, key=lambda d: d.id)
+            deposit.id: deposit.name for deposit in sorted(deposit_snapshots, key=lambda d: d.id)
         },
     }
     return ScenarioLabEvaluation(
@@ -1554,6 +1554,461 @@ def _evaluate_deposit_rate_assumption(
         stressed=stressed_metrics,
         impact=impact,
         row_applicability=dict(sorted(applicability.items(), key=lambda kv: int(kv[0]))),
+        metric_support=dict(sorted(metric_support.items())),
+        coverage=coverage,
+        affected_canonical_refs=dict(sorted(affected_refs.items())),
+        generated_at=gen_str,
+        warnings=(),
+        presentation_metadata=presentation_metadata,
+    )
+
+
+# ----------------------------------------------------------------------------
+# 141-C inflation_real_value
+# ----------------------------------------------------------------------------
+#
+# Inflation is a secondary real-value presentation shock (contract section 9
+# and the section 11 semantic matrix): it never mutates nominal financial
+# facts. Liquid capital, allocation/concentration, current Goals, the
+# nominal passive-income forecast, the nominal future cash-flow ladder and
+# nominal redemption/principal stay unchanged; the stressed state only
+# re-expresses month-known future cash flows in base-period purchasing power
+# with the explicit v1 monthly convention
+# ``real_value = nominal / (1 + annual_inflation/12) ^ months_ahead``.
+# Future-capital purchasing power and inflation-adjusted Goal coverage stay
+# unavailable: v1 has no future capital trajectory and no Goal price-basis
+# contract. The only DB read happens once at the top of the evaluation;
+# everything else operates on the captured FrozenScenarioBase.
+
+
+def _validate_inflation_payload(payload: dict[str, Any]) -> None:
+    if "annual_inflation_pct" not in payload:
+        raise ScenarioLabError("invalid_inflation_pct", "annual_inflation_pct required")
+    extra = set(payload.keys()) - {"annual_inflation_pct"}
+    if extra:
+        raise ScenarioLabError("invalid_shock_input", f"unexpected fields {extra}")
+
+
+def _month_key(year: int, month: int) -> str:
+    return f"{year:04d}-{month:02d}"
+
+
+def _forecast_fingerprint_dict(forecast: dict) -> dict:
+    return {
+        "annual_total_kopecks": forecast["annual_total_kopecks"],
+        "monthly_total_kopecks": forecast["monthly_total_kopecks"],
+        "breakdown": {
+            "expected_deposit_interest_kopecks": forecast["breakdown"][
+                "expected_deposit_interest_kopecks"
+            ],
+            "expected_coupon_net_kopecks": forecast["breakdown"]["expected_coupon_net_kopecks"],
+            "expected_dividend_component_kopecks": forecast["breakdown"][
+                "expected_dividend_component_kopecks"
+            ],
+            "other_expected_capital_income_kopecks": forecast["breakdown"][
+                "other_expected_capital_income_kopecks"
+            ],
+        },
+        "is_approximate": forecast["is_approximate"],
+    }
+
+
+def _strip_real_value_rows_for_fingerprint(rows: dict[str, dict]) -> dict:
+    return {
+        key: {
+            "year": row["year"],
+            "month": row["month"],
+            "months_ahead": row["months_ahead"],
+            "is_approximate": row["is_approximate"],
+            "nominal_income_kopecks": row["nominal_income_kopecks"],
+            "real_income_kopecks": row["real_income_kopecks"],
+            "nominal_redemption_kopecks": row["nominal_redemption_kopecks"],
+            "real_redemption_kopecks": row["real_redemption_kopecks"],
+            "nominal_total_cash_flow_kopecks": row["nominal_total_cash_flow_kopecks"],
+            "real_total_cash_flow_kopecks": row["real_total_cash_flow_kopecks"],
+        }
+        for key, row in rows.items()
+    }
+
+
+def _project_real_value_rows(
+    ladder_months: list[dict[str, Any]],
+    *,
+    base_year: int,
+    base_month: int,
+    inflation_pct: Decimal,
+) -> tuple[dict[str, dict], dict[str, dict], dict[str, int]]:
+    """Real-value presentation for the month-known ladder grid.
+
+    Returns ``(base_rows, stressed_rows, family_deltas)``. Each rows dict
+    is keyed by ``YYYY-MM``. Base rows present the no-inflation baseline
+    (real value equals nominal for every month, including ``months_ahead
+    == 0`` — contract Addition 2). Stressed rows discount each nominal
+    amount once by the assumed annual inflation over the deterministic
+    calendar-month distance from the base reporting month.
+
+    Income (passive income), redemption/principal and total cash flow
+    stay separate categories: every nominal amount is a canonical money
+    boundary rounded a single time with ROUND_HALF_UP.
+    """
+    base_rows: dict[str, dict] = {}
+    stressed_rows: dict[str, dict] = {}
+    for nominal in ladder_months:
+        year = int(nominal["year"])
+        month_number = int(nominal["month"])
+        months_ahead = (year - base_year) * 12 + (month_number - base_month)
+        if months_ahead < 0:
+            raise ScenarioLabError(
+                "invalid_month_grid",
+                f"ladder month {year:04d}-{month_number:02d} precedes the base reporting month",
+            )
+        key = _month_key(year, month_number)
+        nominal_income = int(nominal["passive_income_kopecks"])
+        nominal_redemption = int(nominal["redemption_principal_kopecks"])
+        nominal_total = int(nominal["total_cash_flow_kopecks"])
+        real_income = real_value_kopecks(nominal_income, inflation_pct, months_ahead)
+        real_redemption = real_value_kopecks(nominal_redemption, inflation_pct, months_ahead)
+        real_total = real_value_kopecks(nominal_total, inflation_pct, months_ahead)
+        is_approximate = bool(nominal["is_approximate"])
+        common = {
+            "year": year,
+            "month": month_number,
+            "months_ahead": months_ahead,
+            "is_approximate": is_approximate,
+            "nominal_income_kopecks": nominal_income,
+            "nominal_income": _money_api(nominal_income),
+            "nominal_redemption_kopecks": nominal_redemption,
+            "nominal_redemption": _money_api(nominal_redemption),
+            "nominal_total_cash_flow_kopecks": nominal_total,
+            "nominal_total_cash_flow": _money_api(nominal_total),
+        }
+        base_rows[key] = {
+            **common,
+            "real_income_kopecks": nominal_income,
+            "real_income": _money_api(nominal_income),
+            "income_delta_kopecks": 0,
+            "income_delta": "0.00",
+            "real_redemption_kopecks": nominal_redemption,
+            "real_redemption": _money_api(nominal_redemption),
+            "redemption_delta_kopecks": 0,
+            "redemption_delta": "0.00",
+            "real_total_cash_flow_kopecks": nominal_total,
+            "real_total_cash_flow": _money_api(nominal_total),
+            "total_cash_flow_delta_kopecks": 0,
+            "total_cash_flow_delta": "0.00",
+        }
+        stressed_rows[key] = {
+            **common,
+            "real_income_kopecks": real_income,
+            "real_income": _money_api(real_income),
+            "income_delta_kopecks": real_income - nominal_income,
+            "income_delta": _money_signed(real_income - nominal_income),
+            "real_redemption_kopecks": real_redemption,
+            "real_redemption": _money_api(real_redemption),
+            "redemption_delta_kopecks": real_redemption - nominal_redemption,
+            "redemption_delta": _money_signed(real_redemption - nominal_redemption),
+            "real_total_cash_flow_kopecks": real_total,
+            "real_total_cash_flow": _money_api(real_total),
+            "total_cash_flow_delta_kopecks": real_total - nominal_total,
+            "total_cash_flow_delta": _money_signed(real_total - nominal_total),
+        }
+    family_deltas = {
+        "income": sum(row["income_delta_kopecks"] for row in stressed_rows.values()),
+        "redemption": sum(row["redemption_delta_kopecks"] for row in stressed_rows.values()),
+        "total": sum(row["total_cash_flow_delta_kopecks"] for row in stressed_rows.values()),
+    }
+    return base_rows, stressed_rows, family_deltas
+
+
+def _evaluate_inflation_real_value(
+    session: Session,
+    reporting_month_id: int,
+    payload: dict[str, Any],
+    *,
+    top_n: int,
+    generated_at: datetime | None,
+) -> ScenarioLabEvaluation:
+    _validate_inflation_payload(payload)
+    try:
+        inflation_pct = parse_annual_inflation_pct(payload["annual_inflation_pct"])
+    except (TypeError, ValueError) as error:
+        raise ScenarioLabError("invalid_inflation_pct", str(error)) from error
+    pct_str = normalize_drawdown_pct(inflation_pct)
+
+    if not isinstance(top_n, int) or isinstance(top_n, bool):
+        raise ScenarioLabError("invalid_top_n", "top_n must be int")
+    if not 1 <= top_n <= 100:
+        raise ScenarioLabError("invalid_top_n", "top_n 1..100")
+
+    # Single materialization phase: every semantic input below comes
+    # from this one FrozenScenarioBase capture; no further DB reads.
+    frozen = materialize_frozen_base(session, reporting_month_id)
+    frozen_payload = _scenario_payload_from_frozen(frozen)
+    month = frozen  # shim exposing .id/.year/.month/.snapshot_date/.status
+    account_names = dict(frozen.account_names)
+    base_year = frozen.year
+    base_month = frozen.month
+
+    # Capital surfaces: inflation never moves principal, cash, positions,
+    # deposits or debts — stressed position values equal base by design.
+    stressed_positions = {p["id"]: p["market_value_kopecks"] for p in frozen_payload["positions"]}
+    cap = _frozen_capital_metrics(
+        frozen_payload,
+        month,
+        stressed_positions,
+        top_n=top_n,
+        has_unknown=False,
+    )
+
+    # Nominal forecast and ladder are identical under base and stressed;
+    # only the real-value presentation of the month-known rows changes.
+    base_forecast_inputs = _forecast_inputs_from_frozen(frozen)
+    deposit_monthly = frozen.forecast.deposit_snapshot_monthly_interest_kopecks
+    forecast = _project_forecast(base_forecast_inputs, deposit_monthly=deposit_monthly)
+    nominal_ladder = _ladder_dict(frozen.ladder, deposit_monthly=deposit_monthly)
+
+    base_real_rows, stressed_real_rows, family_deltas = _project_real_value_rows(
+        nominal_ladder["months"],
+        base_year=base_year,
+        base_month=base_month,
+        inflation_pct=inflation_pct,
+    )
+    impact_per_month = {
+        key: {
+            "months_ahead": row["months_ahead"],
+            "income_delta_kopecks": row["income_delta_kopecks"],
+            "income_delta": row["income_delta"],
+            "redemption_delta_kopecks": row["redemption_delta_kopecks"],
+            "redemption_delta": row["redemption_delta"],
+            "total_cash_flow_delta_kopecks": row["total_cash_flow_delta_kopecks"],
+            "total_cash_flow_delta": row["total_cash_flow_delta"],
+        }
+        for key, row in sorted(stressed_real_rows.items())
+    }
+
+    income_delta = family_deltas["income"]
+    redemption_delta = family_deltas["redemption"]
+    total_delta = family_deltas["total"]
+
+    impact = {
+        "liquid_assets_delta_kopecks": 0,
+        "liquid_assets_delta": "0.00",
+        "liquid_capital_net_delta_kopecks": 0,
+        "liquid_capital_net_delta": "0.00",
+        "future_income_real_value_delta_kopecks": income_delta,
+        "future_income_real_value_delta": _money_signed(income_delta),
+        "future_redemption_real_value_delta_kopecks": redemption_delta,
+        "future_redemption_real_value_delta": _money_signed(redemption_delta),
+        "future_total_cash_flow_real_value_delta_kopecks": total_delta,
+        "future_total_cash_flow_real_value_delta": _money_signed(total_delta),
+        "per_month": impact_per_month,
+    }
+
+    coverage = {
+        "total_months": len(base_real_rows),
+        "eligible_months": len(base_real_rows),
+        "applied": len(base_real_rows),
+        "not_applicable": 0,
+        "unknown": 0,
+        "known_scope_income_real_value_delta_kopecks": income_delta,
+        "known_scope_income_real_value_delta": _money_signed(income_delta),
+        "known_scope_redemption_real_value_delta_kopecks": redemption_delta,
+        "known_scope_redemption_real_value_delta": _money_signed(redemption_delta),
+        "known_scope_total_cash_flow_real_value_delta_kopecks": total_delta,
+        "known_scope_total_cash_flow_real_value_delta": _money_signed(total_delta),
+    }
+
+    metric_support = {
+        "liquid_assets": {"status": "supported", "reason_codes": []},
+        "liquid_capital_net": {"status": "supported", "reason_codes": []},
+        "asset_allocation": {"status": "supported", "reason_codes": []},
+        "account_allocation": {"status": "supported", "reason_codes": []},
+        "top_positions": {"status": "supported", "reason_codes": []},
+        "capital_goals": {"status": "supported", "reason_codes": []},
+        "forecast_passive_income": {"status": "supported", "reason_codes": []},
+        "cash_flow_ladder": {"status": "supported", "reason_codes": []},
+        "deposit_interest": {"status": "supported", "reason_codes": []},
+        "coupons": {"status": "supported", "reason_codes": []},
+        "dividends": {"status": "supported", "reason_codes": []},
+        "other_capital_income": {"status": "supported", "reason_codes": []},
+        "redemption": {"status": "supported", "reason_codes": []},
+        "historical_actual_passive_income": {"status": "supported", "reason_codes": []},
+        "debts": {"status": "supported", "reason_codes": []},
+        "current_capital_real_value": {"status": "supported", "reason_codes": []},
+        "future_income_real_value": {"status": "supported", "reason_codes": []},
+        "future_redemption_real_value": {"status": "supported", "reason_codes": []},
+        "future_total_cash_flow_real_value": {"status": "supported", "reason_codes": []},
+        "future_capital_purchasing_power": {
+            "status": "unavailable",
+            "reason_codes": ["no_future_capital_trajectory"],
+        },
+        "inflation_adjusted_goal_coverage": {
+            "status": "unavailable",
+            "reason_codes": ["goal_price_basis_not_defined"],
+        },
+    }
+
+    assumptions = (
+        "nominal_values_unchanged",
+        "liquid_capital_unchanged",
+        "allocation_unchanged",
+        "capital_goals_unchanged",
+        "nominal_forecast_unchanged",
+        "nominal_cash_flows_unchanged",
+        "redemption_unchanged",
+        "future_income_real_value_changed",
+        "future_redemption_real_value_changed",
+        "future_total_cash_flow_real_value_changed",
+        "future_capital_purchasing_power_unavailable",
+        "inflation_adjusted_goal_unavailable",
+        "v1_monthly_inflation_convention",
+        "no_future_capital_trajectory",
+        "no_goal_price_basis",
+        "no_probabilistic_forecast",
+        "no_provider_network_access",
+    )
+
+    affected_refs = {
+        "reporting_month_id": frozen.reporting_month_id,
+        "deposit_ids": [],
+        "account_ids": [],
+        "position_ids": [],
+        "instrument_ids": [],
+        "cash_ids": [],
+    }
+
+    reporting_month_dict = dict(_scenario_payload_from_frozen(month)["reporting_month"])
+    normalized_shock = {
+        "shock_type": "inflation_real_value",
+        "annual_inflation_pct": pct_str,
+    }
+    normalized_target_scope = {
+        "selector": "cash_flow_ladder_months",
+        "ladder_months": list(base_real_rows.keys()),
+    }
+
+    current_capital_effect = {
+        "status": "unchanged",
+        "basis": "base_period_purchasing_power",
+        "affected": False,
+    }
+    future_capital_effect = {
+        "status": "unavailable",
+        "reason": "no_future_capital_trajectory",
+    }
+    inflation_goal_effect = {
+        "status": "unavailable",
+        "reason": "goal_price_basis_not_defined",
+    }
+
+    base_metrics = {
+        "liquid_assets_kopecks": cap["base_liquid"].total_assets.kopecks,
+        "liquid_assets": _money_api(cap["base_liquid"].total_assets.kopecks),
+        "liquid_capital_net_kopecks": cap["base_liquid"].liquid_capital_net.kopecks,
+        "liquid_capital_net": _money_api(cap["base_liquid"].liquid_capital_net.kopecks),
+        "debts_included_kopecks": cap["base_liquid"].total_debts_included.kopecks,
+        "debts_included": _money_api(cap["base_liquid"].total_debts_included.kopecks),
+        "asset_allocation": cap["base_asset"],
+        "account_allocation": cap["base_account_alloc"],
+        "top_positions": cap["base_top"],
+        "capital_goals": sorted(cap["base_goals"], key=lambda x: x["goal_id"]),
+        "forecast_passive_income": forecast,
+        "cash_flow_ladder": nominal_ladder,
+        "cash_flow_real_value": dict(sorted(base_real_rows.items())),
+        "current_capital_real_value_effect": current_capital_effect,
+        "future_capital_purchasing_power_effect": future_capital_effect,
+        "inflation_adjusted_goal_effect": inflation_goal_effect,
+    }
+    stressed_metrics = {
+        "liquid_assets_kopecks": cap["stressed_liquid"].total_assets.kopecks,
+        "liquid_assets": _money_api(cap["stressed_liquid"].total_assets.kopecks),
+        "liquid_capital_net_kopecks": cap["stressed_liquid"].liquid_capital_net.kopecks,
+        "liquid_capital_net": _money_api(cap["stressed_liquid"].liquid_capital_net.kopecks),
+        "debts_included_kopecks": cap["stressed_liquid"].total_debts_included.kopecks,
+        "debts_included": _money_api(cap["stressed_liquid"].total_debts_included.kopecks),
+        "asset_allocation": cap["stressed_asset"],
+        "account_allocation": cap["stressed_account_alloc"],
+        "top_positions": cap["stressed_top"],
+        "capital_goals": sorted(cap["stressed_goals"], key=lambda x: x["goal_id"]),
+        "forecast_passive_income": forecast,
+        "cash_flow_ladder": nominal_ladder,
+        "cash_flow_real_value": dict(sorted(stressed_real_rows.items())),
+        "current_capital_real_value_effect": current_capital_effect,
+        "future_capital_purchasing_power_effect": future_capital_effect,
+        "inflation_adjusted_goal_effect": inflation_goal_effect,
+    }
+
+    fingerprint_input_base = {
+        "liquid_assets_kopecks": base_metrics["liquid_assets_kopecks"],
+        "liquid_capital_net_kopecks": base_metrics["liquid_capital_net_kopecks"],
+        "debts_included_kopecks": base_metrics["debts_included_kopecks"],
+        "asset_allocation": {
+            k: v
+            for k, v in cap["base_asset"].items()
+            if k.endswith("_kopecks") or k.endswith("_share_pct")
+        },
+        "account_allocation": _strip_account_alloc(cap["base_account_alloc"]),
+        "top_positions": _strip_top(cap["base_top"]),
+        "capital_goals": _strip_goals(cap["base_goals"]),
+        "forecast_passive_income": _forecast_fingerprint_dict(forecast),
+        "cash_flow_ladder": _ladder_fingerprint_dict(nominal_ladder),
+        "cash_flow_real_value": _strip_real_value_rows_for_fingerprint(base_real_rows),
+    }
+    fingerprint_input_stressed = {
+        "liquid_assets_kopecks": stressed_metrics["liquid_assets_kopecks"],
+        "liquid_capital_net_kopecks": stressed_metrics["liquid_capital_net_kopecks"],
+        "debts_included_kopecks": stressed_metrics["debts_included_kopecks"],
+        "asset_allocation": {
+            k: v
+            for k, v in cap["stressed_asset"].items()
+            if k.endswith("_kopecks") or k.endswith("_share_pct")
+        },
+        "account_allocation": _strip_account_alloc(cap["stressed_account_alloc"]),
+        "top_positions": _strip_top(cap["stressed_top"]),
+        "capital_goals": _strip_goals(cap["stressed_goals"]),
+        "forecast_passive_income": _forecast_fingerprint_dict(forecast),
+        "cash_flow_ladder": _ladder_fingerprint_dict(nominal_ladder),
+        "cash_flow_real_value": _strip_real_value_rows_for_fingerprint(stressed_real_rows),
+    }
+
+    semantic_fp = semantic_fingerprint_payload(
+        contract_version=CONTRACT_VERSION,
+        calculation_version=CALCULATION_VERSION,
+        shock_schema_version=SHOCK_SCHEMA_VERSION,
+        reporting_month=reporting_month_dict,
+        base_fingerprint=frozen.base_fingerprint,
+        normalized_shock=normalized_shock,
+        normalized_target_scope=normalized_target_scope,
+        assumptions=list(assumptions),
+        base=fingerprint_input_base,
+        stressed=fingerprint_input_stressed,
+        impact=impact,
+        row_applicability={key: "applied" for key in sorted(base_real_rows)},
+        metric_support=dict(sorted(metric_support.items())),
+        coverage=coverage,
+        affected_refs=dict(sorted(affected_refs.items())),
+    )
+
+    gen_str = (
+        generated_at.astimezone(timezone.utc).isoformat() if generated_at is not None else None
+    )
+    presentation_metadata = {
+        "account_names": dict(sorted(account_names.items())),
+    }
+    return ScenarioLabEvaluation(
+        contract_version=CONTRACT_VERSION,
+        calculation_version=CALCULATION_VERSION,
+        shock_schema_version=SHOCK_SCHEMA_VERSION,
+        reporting_month=reporting_month_dict,
+        base_fingerprint=frozen.base_fingerprint,
+        semantic_fingerprint=semantic_fp,
+        normalized_shock_input=normalized_shock,
+        normalized_target_scope=normalized_target_scope,
+        assumptions=assumptions,
+        base=base_metrics,
+        stressed=stressed_metrics,
+        impact=impact,
+        row_applicability={key: "applied" for key in sorted(base_real_rows)},
         metric_support=dict(sorted(metric_support.items())),
         coverage=coverage,
         affected_canonical_refs=dict(sorted(affected_refs.items())),

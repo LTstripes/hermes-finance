@@ -1145,9 +1145,7 @@ def _capture_stage_mutation(session, month, account, *, stage_probe):
     return sfb, patched
 
 
-def test_deposit_frozen_base_consistent_under_mutation_between_capture_stages(
-    session, monkeypatch
-):
+def test_deposit_frozen_base_consistent_under_mutation_between_capture_stages(session, monkeypatch):
     """A deposit committed while the materializer is mid-capture (between its
     read-model stages) must not leak into the running evaluation: the frozen
     base, target scope, fingerprints and every surface stay one consistent
@@ -1163,9 +1161,7 @@ def test_deposit_frozen_base_consistent_under_mutation_between_capture_stages(
     import hermes_finance.services.scenario_frozen_base as sfb
 
     stage = sfb._capture_stage_build_cash_flow_ladder
-    _, patched = _capture_stage_mutation(
-        session, month, account, stage_probe=stage
-    )
+    _, patched = _capture_stage_mutation(session, month, account, stage_probe=stage)
     monkeypatch.setattr(sfb, "_capture_stage_build_cash_flow_ladder", patched)
 
     running = evaluate_scenario_lab(session, month.id, shock)
@@ -1182,9 +1178,7 @@ def test_deposit_frozen_base_consistent_under_mutation_between_capture_stages(
     assert set(running.base["per_deposit"]) == {str(d1.id)}
 
 
-def test_equity_frozen_base_consistent_under_mutation_between_capture_stages(
-    session, monkeypatch
-):
+def test_equity_frozen_base_consistent_under_mutation_between_capture_stages(session, monkeypatch):
     """Same internal-consistency guarantee for the equity shock: positions
     committed mid-capture do not enter the running evaluation."""
     from hermes_finance.domain import InstrumentType

@@ -46,7 +46,7 @@ def _scaled_half_up(d: Decimal, scale_exp: int) -> int:
     total_exp = exp + scale_exp
     is_negative = bool(sign)
     if total_exp >= 0:
-        result = m * (10 ** total_exp)
+        result = m * (10**total_exp)
     else:
         divisor = 10 ** (-total_exp)
         q, r = divmod(m, divisor)

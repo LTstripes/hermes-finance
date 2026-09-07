@@ -258,8 +258,7 @@ def materialize_frozen_base(
         # stay untouched.
         if deposit_rows:
             frozen_deposit_monthly = sum(
-                snapshot.expected_monthly_interest_kopecks
-                for snapshot, _n, _i in deposit_rows
+                snapshot.expected_monthly_interest_kopecks for snapshot, _n, _i in deposit_rows
             )
         else:
             frozen_deposit_monthly = 0
@@ -267,11 +266,7 @@ def materialize_frozen_base(
         for item in ladder.months:
             deposit_component = item.deposit_interest.kopecks
             if deposit_component != frozen_deposit_monthly:
-                passive = (
-                    item.passive_income.kopecks
-                    - deposit_component
-                    + frozen_deposit_monthly
-                )
+                passive = item.passive_income.kopecks - deposit_component + frozen_deposit_monthly
                 total = passive + item.redemption_principal.kopecks
                 item = replace(
                     item,
