@@ -1,4 +1,4 @@
-"""Service adapter for Scenario Lab v1 (141-A equity + 141-B deposit rate + 141-C inflation).
+"""Service adapter for Scenario Lab v1 (equity + deposit rate + inflation + FX baseline).
 
 Read-only, no provider/network/fx, no writes. Composes canonical read models.
 Uses pure canonical Risk projection builder from domain/risk_allocation for
@@ -13,6 +13,12 @@ the only deposit-interest calculator.
 the same frozen base: nominal facts never change and only the month-known
 future cash-flow rows are re-expressed in base-period purchasing power via
 the pure domain real-value discount helpers.
+
+fx_translation_shock (canonical FX baseline reconciled from main) never
+invents stressed money from Instrument.currency: matching target-currency
+rows stay untransformed, reported as unknown candidate scope with
+fx_translation_basis_unavailable while no authoritative translation basis
+exists.
 """
 
 from __future__ import annotations
@@ -53,17 +59,25 @@ from hermes_finance.domain.scenario_frozen_base import FrozenScenarioBase
 from hermes_finance.domain.scenario_lab import (
     CALCULATION_VERSION,
     CONTRACT_VERSION,
+    FX_TRANSLATION_BASIS_UNAVAILABLE,
+    MISSING_CURRENCY,
     SHOCK_SCHEMA_VERSION,
     MetricSupportStatus,
     RowApplicability,
     canonical_assumed_rate_basis_points,
     canonical_drawdown_pct,
+    canonical_reporting_value_change_pct,
     classify_applicability,
+    classify_fx_applicability,
+    fx_row_reason_codes,
     normalize_drawdown_pct,
+    normalize_reporting_value_change_pct,
     normalized_rate_string,
     parse_annual_inflation_pct,
     parse_assumed_annual_rate_pct,
     parse_drawdown_pct,
+    parse_reporting_value_change_pct,
+    parse_target_currency,
     real_value_kopecks,
     semantic_fingerprint_payload,
     stressed_market_value_kopecks,
@@ -94,7 +108,12 @@ def _validate_single_shock(shock: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if len(keys) != 1:
         raise ScenarioLabError("unsupported_composition_v1", "exactly one shock required")
     only = keys[0]
-    if only not in {"equity_drawdown", "deposit_rate_assumption", "inflation_real_value"}:
+    if only not in {
+        "equity_drawdown",
+        "deposit_rate_assumption",
+        "inflation_real_value",
+        "fx_translation_shock",
+    }:
         raise ScenarioLabError("unsupported_shock_type_v1", f"unsupported shock {only}")
     payload = shock[only]
     if not isinstance(payload, dict):
@@ -204,6 +223,7 @@ def _scenario_payload_from_frozen(frozen: FrozenScenarioBase) -> dict[str, Any]:
             "snapshot_date": frozen.snapshot_date.isoformat(),
             "status": frozen.status,
         },
+        "reporting_currency": frozen.reporting_currency,
         "cash": [
             {
                 "id": row.id,
@@ -229,6 +249,7 @@ def _scenario_payload_from_frozen(frozen: FrozenScenarioBase) -> dict[str, Any]:
                 "account_id": p.account_id,
                 "instrument_id": p.instrument_id,
                 "instrument_type": p.instrument_type,
+                "currency": p.currency,
                 "market_value_kopecks": p.market_value_kopecks,
                 "include_in_capital": p.include_in_capital,
             }
@@ -407,15 +428,22 @@ def _frozen_capital_metrics(
     *,
     top_n: int,
     has_unknown: bool,
+    risk_support: MetricSupport | None = None,
 ) -> dict[str, Any]:
     """Canonical capital read-model surfaces from the frozen payload only.
 
     Liquid capital, asset/account allocations, top positions and capital
     Goal achievement for base and stressed position values — no DB access.
-    Shocks that do not move positions (deposit rate) pass base values as
-    ``stressed_positions`` and the two families are identical by
+    Shocks that do not move positions (deposit rate, FX baseline) pass base
+    values as ``stressed_positions`` and the two families are identical by
     construction. Deposit principal enters liquid capital unchanged: the
     deposit-rate shock re-prices forecast interest, never principal.
+
+    ``risk_support`` overrides the builder support state for both the asset
+    and account allocation families (used by fx_translation_shock, whose
+    aggregates become unavailable/unknown when candidate target-currency
+    exposure exists without a translation basis); the equity path keeps
+    using ``has_unknown``.
     """
     cash_total = sum(c["amount_kopecks"] for c in frozen_payload["cash"] if c["include_in_capital"])
     deposits_total = sum(
@@ -487,7 +515,10 @@ def _frozen_capital_metrics(
 
     from hermes_finance.domain.risk_allocation import RiskSupportStatus as DomainRiskStatus
 
-    if has_unknown:
+    if risk_support is not None:
+        asset_support_domain = risk_support
+        account_support_domain = risk_support
+    elif has_unknown:
         asset_support_domain = MetricSupport(
             status=DomainRiskStatus.UNKNOWN, reason_codes=("instrument_type_not_authoritative",)
         )
@@ -671,6 +702,7 @@ def evaluate_scenario_lab(
     - ``equity_drawdown`` (141-A)
     - ``deposit_rate_assumption`` (141-B)
     - ``inflation_real_value`` (141-C)
+    - ``fx_translation_shock`` (canonical FX baseline from main)
 
     Combined shocks raise ``ScenarioLabError(code=unsupported_composition_v1)``.
     Invalid input is rejected with a deterministic machine-readable code.
@@ -683,6 +715,10 @@ def evaluate_scenario_lab(
         )
     if shock_type == "inflation_real_value":
         return _evaluate_inflation_real_value(
+            session, reporting_month_id, payload, top_n=top_n, generated_at=generated_at
+        )
+    if shock_type == "fx_translation_shock":
+        return _evaluate_fx_translation_shock(
             session, reporting_month_id, payload, top_n=top_n, generated_at=generated_at
         )
     # --- equity_drawdown path (141-A, unchanged) ---
@@ -2009,6 +2045,371 @@ def _evaluate_inflation_real_value(
         stressed=stressed_metrics,
         impact=impact,
         row_applicability={key: "applied" for key in sorted(base_real_rows)},
+        metric_support=dict(sorted(metric_support.items())),
+        coverage=coverage,
+        affected_canonical_refs=dict(sorted(affected_refs.items())),
+        generated_at=gen_str,
+        warnings=(),
+        presentation_metadata=presentation_metadata,
+    )
+
+
+# ----------------------------------------------------------------------------
+# fx_translation_shock — canonical FX baseline reconciled from main (PR #326).
+# ----------------------------------------------------------------------------
+#
+# Reconciles the accepted main FX baseline onto the frozen-base
+# architecture. FX semantics are deliberately conservative: a matching
+# target-currency tag is candidate scope ONLY. The current schema has no
+# authoritative translation basis, so candidate rows are never multiplied
+# by (1 + pct/100): they stay untransformed, are reported as row-level
+# ``unknown`` with ``fx_translation_basis_unavailable``, and make the
+# exact capital aggregates ``unavailable`` (not silently exact).
+# Reporting-currency rows are not FX at all (Addition 1). Missing or
+# non-canonical currency metadata stays ``unknown``/``missing_currency``,
+# never guessed and never ``not_applicable``. No network, no live FX,
+# no provider access; a single frozen base capture feeds every surface.
+
+
+def _fx_aggregate_support(
+    coverage_candidate: int, coverage_unknown: int
+) -> tuple[MetricSupportStatus, list[str]]:
+    """Map FX row coverage to aggregate metric support.
+
+    Known candidate target-currency rows win as ``unavailable`` (the
+    translation basis is absent); purely missing/invalid currency rows
+    are ``unknown``; an empty affected scope stays ``supported``.
+    """
+    if coverage_candidate > 0:
+        reasons = [FX_TRANSLATION_BASIS_UNAVAILABLE]
+        if coverage_unknown > 0:
+            reasons.append(MISSING_CURRENCY)
+        return MetricSupportStatus.UNAVAILABLE, reasons
+    if coverage_unknown > 0:
+        return MetricSupportStatus.UNKNOWN, [MISSING_CURRENCY]
+    return MetricSupportStatus.SUPPORTED, []
+
+
+def _evaluate_fx_translation_shock(
+    session: Session,
+    reporting_month_id: int,
+    payload: dict[str, Any],
+    *,
+    top_n: int,
+    generated_at: datetime | None,
+) -> ScenarioLabEvaluation:
+    required = {"target_currency", "reporting_value_change_pct"}
+    missing = required - set(payload.keys())
+    if missing:
+        raise ScenarioLabError("invalid_shock_input", f"missing fields {sorted(missing)}")
+    extra = set(payload.keys()) - required
+    if extra:
+        raise ScenarioLabError("invalid_shock_input", f"unexpected fields {extra}")
+
+    # Parse errors propagate as ValueError with machine-readable prefixes,
+    # matching the accepted main baseline behavior for this shock.
+    target_currency = parse_target_currency(payload["target_currency"])
+    raw_pct = parse_reporting_value_change_pct(payload["reporting_value_change_pct"])
+    canonical_pct = canonical_reporting_value_change_pct(raw_pct)
+    pct_str = normalize_reporting_value_change_pct(canonical_pct)
+
+    if not isinstance(top_n, int) or isinstance(top_n, bool):
+        raise ScenarioLabError("invalid_top_n", "top_n must be int")
+    if not 1 <= top_n <= 100:
+        raise ScenarioLabError("invalid_top_n", "top_n 1..100")
+
+    # Single materialization phase: every semantic input below comes
+    # from this one FrozenScenarioBase capture; no further DB reads.
+    frozen = materialize_frozen_base(session, reporting_month_id)
+    frozen_payload = _scenario_payload_from_frozen(frozen)
+    month = frozen  # shim exposing .id/.year/.month/.snapshot_date/.status
+    account_names = dict(frozen.account_names)
+    instrument_names = dict(frozen.instrument_names)
+    reporting_currency = frozen.reporting_currency
+    base_fp = frozen.base_fingerprint
+
+    eligible_position_ids = _sorted_ids(
+        [p["id"] for p in frozen_payload["positions"] if p["include_in_capital"]]
+    )
+    eligible_deposit_ids = _sorted_ids(
+        [d["id"] for d in frozen_payload["deposits"] if d["include_in_capital"]]
+    )
+    normalized_target_scope = {
+        "selector": "all_eligible",
+        "eligible_position_ids": eligible_position_ids,
+        "eligible_deposit_ids": eligible_deposit_ids,
+        "target_currency": target_currency,
+        "reporting_currency": reporting_currency,
+    }
+
+    # R5 + R2: row_applicability only for eligible; excluded absent.
+    row_applicability: dict[str, str] = {}
+    base_per_position: dict[str, dict] = {}
+    stressed_per_position: dict[str, dict] = {}
+    impact_per_position: dict[str, dict] = {}
+    stressed_positions: dict[int, int] = {}
+    coverage_not = 0
+    coverage_unknown = 0
+    coverage_candidate = 0
+
+    for p in frozen_payload["positions"]:
+        pid = p["id"]
+        incl = bool(p["include_in_capital"])
+        base_v = int(p["market_value_kopecks"])
+        if not incl:
+            stressed_positions[pid] = base_v
+            continue
+        fx_row = classify_fx_applicability(
+            p.get("currency"),
+            target_currency=target_currency,
+            reporting_currency=reporting_currency,
+        )
+        if fx_row.candidate_target_currency:
+            coverage_candidate += 1
+            row_token = RowApplicability.UNKNOWN.value
+        elif fx_row.exact_applicability == RowApplicability.UNKNOWN:
+            coverage_unknown += 1
+            row_token = RowApplicability.UNKNOWN.value
+        else:
+            coverage_not += 1
+            row_token = RowApplicability.NOT_APPLICABLE.value
+        fx_reasons = list(fx_row_reason_codes(fx_row))
+        # Candidate FX scope is not a translation basis: never transform
+        # stressed money from Instrument.currency * (1 + pct/100).
+        stressed_v = base_v
+        delta = 0
+        row_applicability[str(pid)] = row_token
+        stressed_positions[pid] = stressed_v
+        base_per_position[str(pid)] = {
+            "market_value_kopecks": base_v,
+            "market_value": _money_api(base_v),
+            "account_id": p["account_id"],
+            "instrument_id": p["instrument_id"],
+            "instrument_type": p["instrument_type"],
+            "include_in_capital": incl,
+        }
+        stressed_per_position[str(pid)] = {
+            "market_value_kopecks": stressed_v,
+            "market_value": _money_api(stressed_v),
+            "account_id": p["account_id"],
+            "instrument_id": p["instrument_id"],
+            "instrument_type": p["instrument_type"],
+            "include_in_capital": incl,
+        }
+        impact_per_position[str(pid)] = {
+            "delta_kopecks": delta,
+            "delta": "0.00",
+            "applicability": row_token,
+            "reason_codes": fx_reasons,
+        }
+
+    coverage = {
+        "total_positions": len(eligible_position_ids),
+        "eligible_positions": len(eligible_position_ids),
+        "applied": 0,
+        "not_applicable": coverage_not,
+        "unknown": coverage_unknown,
+        "candidate_target_currency": coverage_candidate,
+        "known_scope_impact_kopecks": 0,
+        "known_scope_impact": "0.00",
+    }
+
+    fx_status, fx_reasons = _fx_aggregate_support(coverage_candidate, coverage_unknown)
+
+    from hermes_finance.domain.risk_allocation import RiskSupportStatus as DomainRiskStatus
+
+    risk_support = MetricSupport(
+        status={
+            MetricSupportStatus.UNAVAILABLE: DomainRiskStatus.UNAVAILABLE,
+            MetricSupportStatus.UNKNOWN: DomainRiskStatus.UNKNOWN,
+            MetricSupportStatus.SUPPORTED: DomainRiskStatus.SUPPORTED,
+        }[fx_status],
+        reason_codes=tuple(fx_reasons),
+    )
+    cap = _frozen_capital_metrics(
+        frozen_payload,
+        month,
+        stressed_positions,
+        top_n=top_n,
+        has_unknown=False,
+        risk_support=risk_support,
+    )
+
+    agg_status = fx_status.value
+    agg_reason = list(fx_reasons)
+    metric_support = {
+        "liquid_assets": {"status": agg_status, "reason_codes": agg_reason},
+        "liquid_capital_net": {"status": agg_status, "reason_codes": agg_reason},
+        "asset_allocation": {"status": agg_status, "reason_codes": agg_reason},
+        "account_allocation": {"status": agg_status, "reason_codes": agg_reason},
+        "top_positions": {"status": agg_status, "reason_codes": agg_reason},
+        "capital_goals": {"status": agg_status, "reason_codes": agg_reason},
+        "per_position": {"status": agg_status, "reason_codes": agg_reason},
+        "passive_income_effect": {
+            "status": "unavailable",
+            "reason_codes": ["no_deterministic_income_relationship"],
+        },
+        "dividends": {"status": "supported", "reason_codes": []},
+        "coupons": {"status": "supported", "reason_codes": []},
+        "redemption": {"status": "supported", "reason_codes": []},
+        "future_cash_flows": {"status": "supported", "reason_codes": []},
+        "debts": {"status": "supported", "reason_codes": []},
+    }
+
+    assumptions = (
+        "no_live_fx_lookup",
+        "no_inferred_fx_exposure",
+        "no_hedge_inference",
+        "no_ticker_name_issuer_domicile_inference",
+        "future_cash_flow_rows_unchanged",
+        "no_probabilistic_forecast",
+        "no_provider_network",
+    )
+
+    affected_refs = {
+        "reporting_month_id": frozen.reporting_month_id,
+        "position_ids": _sorted_ids([p["id"] for p in frozen_payload["positions"]]),
+        "account_ids": _sorted_ids(list(account_names.keys())),
+        "instrument_ids": _sorted_ids([p["instrument_id"] for p in frozen_payload["positions"]]),
+        "deposit_ids": eligible_deposit_ids,
+        "cash_ids": _sorted_ids([row.id for row in frozen.cash]),
+    }
+
+    reporting_month_dict = dict(_scenario_payload_from_frozen(month)["reporting_month"])
+    normalized_shock = {
+        "shock_type": "fx_translation_shock",
+        "target_currency": target_currency,
+        "reporting_value_change_pct": pct_str,
+    }
+
+    presentation_metadata = {
+        "account_names": dict(sorted(account_names.items())),
+        "instrument_names": dict(sorted(instrument_names.items())),
+    }
+
+    passive_income_effect = {
+        "status": "unavailable",
+        "reason": "no_deterministic_income_relationship",
+    }
+    base_metrics = {
+        "liquid_assets_kopecks": cap["base_liquid"].total_assets.kopecks,
+        "liquid_assets": _money_api(cap["base_liquid"].total_assets.kopecks),
+        "liquid_capital_net_kopecks": cap["base_liquid"].liquid_capital_net.kopecks,
+        "liquid_capital_net": _money_api(cap["base_liquid"].liquid_capital_net.kopecks),
+        "debts_included_kopecks": cap["base_liquid"].total_debts_included.kopecks,
+        "debts_included": _money_api(cap["base_liquid"].total_debts_included.kopecks),
+        "asset_allocation": cap["base_asset"],
+        "account_allocation": cap["base_account_alloc"],
+        "top_positions": cap["base_top"],
+        "capital_goals": sorted(cap["base_goals"], key=lambda x: x["goal_id"]),
+        "per_position": {
+            k: v for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+        "passive_income_effect": passive_income_effect,
+        "future_cash_flow_rows_unchanged": True,
+    }
+    stressed_metrics = {
+        "liquid_assets_kopecks": cap["stressed_liquid"].total_assets.kopecks,
+        "liquid_assets": _money_api(cap["stressed_liquid"].total_assets.kopecks),
+        "liquid_capital_net_kopecks": cap["stressed_liquid"].liquid_capital_net.kopecks,
+        "liquid_capital_net": _money_api(cap["stressed_liquid"].liquid_capital_net.kopecks),
+        "debts_included_kopecks": cap["stressed_liquid"].total_debts_included.kopecks,
+        "debts_included": _money_api(cap["stressed_liquid"].total_debts_included.kopecks),
+        "asset_allocation": cap["stressed_asset"],
+        "account_allocation": cap["stressed_account_alloc"],
+        "top_positions": cap["stressed_top"],
+        "capital_goals": sorted(cap["stressed_goals"], key=lambda x: x["goal_id"]),
+        "per_position": {
+            k: v for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+        "passive_income_effect": passive_income_effect,
+        "future_cash_flow_rows_unchanged": True,
+    }
+
+    impact = {
+        "liquid_assets_delta_kopecks": 0,
+        "liquid_assets_delta": "0.00",
+        "liquid_capital_net_delta_kopecks": 0,
+        "liquid_capital_net_delta": "0.00",
+        "known_scope_impact_kopecks": 0,
+        "known_scope_impact": "0.00",
+        "per_position": {
+            k: v for k, v in sorted(impact_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+    }
+
+    fingerprint_input_base = {
+        "liquid_assets_kopecks": base_metrics["liquid_assets_kopecks"],
+        "liquid_capital_net_kopecks": base_metrics["liquid_capital_net_kopecks"],
+        "debts_included_kopecks": base_metrics["debts_included_kopecks"],
+        "asset_allocation": {
+            k: v
+            for k, v in cap["base_asset"].items()
+            if k.endswith("_kopecks") or k.endswith("_share_pct")
+        },
+        "account_allocation": _strip_account_alloc(cap["base_account_alloc"]),
+        "top_positions": _strip_top(cap["base_top"]),
+        "capital_goals": _strip_goals(cap["base_goals"]),
+        "per_position": {
+            k: {"market_value_kopecks": v["market_value_kopecks"]}
+            for k, v in sorted(base_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+        "passive_income_effect": passive_income_effect,
+    }
+    fingerprint_input_stressed = {
+        "liquid_assets_kopecks": stressed_metrics["liquid_assets_kopecks"],
+        "liquid_capital_net_kopecks": stressed_metrics["liquid_capital_net_kopecks"],
+        "debts_included_kopecks": stressed_metrics["debts_included_kopecks"],
+        "asset_allocation": {
+            k: v
+            for k, v in cap["stressed_asset"].items()
+            if k.endswith("_kopecks") or k.endswith("_share_pct")
+        },
+        "account_allocation": _strip_account_alloc(cap["stressed_account_alloc"]),
+        "top_positions": _strip_top(cap["stressed_top"]),
+        "capital_goals": _strip_goals(cap["stressed_goals"]),
+        "per_position": {
+            k: {"market_value_kopecks": v["market_value_kopecks"]}
+            for k, v in sorted(stressed_per_position.items(), key=lambda kv: int(kv[0]))
+        },
+        "passive_income_effect": passive_income_effect,
+    }
+
+    semantic_fp = semantic_fingerprint_payload(
+        contract_version=CONTRACT_VERSION,
+        calculation_version=CALCULATION_VERSION,
+        shock_schema_version=SHOCK_SCHEMA_VERSION,
+        reporting_month=reporting_month_dict,
+        base_fingerprint=base_fp,
+        normalized_shock=normalized_shock,
+        normalized_target_scope=normalized_target_scope,
+        assumptions=list(assumptions),
+        base=fingerprint_input_base,
+        stressed=fingerprint_input_stressed,
+        impact=impact,
+        row_applicability=dict(sorted(row_applicability.items(), key=lambda kv: int(kv[0]))),
+        metric_support=dict(sorted(metric_support.items())),
+        coverage=coverage,
+        affected_refs=dict(sorted(affected_refs.items())),
+    )
+
+    gen_str = (
+        generated_at.astimezone(timezone.utc).isoformat() if generated_at is not None else None
+    )
+    return ScenarioLabEvaluation(
+        contract_version=CONTRACT_VERSION,
+        calculation_version=CALCULATION_VERSION,
+        shock_schema_version=SHOCK_SCHEMA_VERSION,
+        reporting_month=reporting_month_dict,
+        base_fingerprint=base_fp,
+        semantic_fingerprint=semantic_fp,
+        normalized_shock_input=normalized_shock,
+        normalized_target_scope=normalized_target_scope,
+        assumptions=assumptions,
+        base=base_metrics,
+        stressed=stressed_metrics,
+        impact=impact,
+        row_applicability=dict(sorted(row_applicability.items(), key=lambda kv: int(kv[0]))),
         metric_support=dict(sorted(metric_support.items())),
         coverage=coverage,
         affected_canonical_refs=dict(sorted(affected_refs.items())),

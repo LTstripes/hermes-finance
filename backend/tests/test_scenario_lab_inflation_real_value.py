@@ -571,7 +571,7 @@ def test_14_combined_shock_rejected(session):
     assert exc.value.code == "unsupported_composition_v1"
     with pytest.raises(ScenarioLabError) as exc:
         evaluate_scenario_lab(
-            session, month.id, {"fx_translation_shock": {"target_currency": "USD"}}
+            session, month.id, {"gold_price_shock": {"gold_price_change_pct": "10"}}
         )
     assert exc.value.code == "unsupported_shock_type_v1"
 

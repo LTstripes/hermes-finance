@@ -56,6 +56,7 @@ class FrozenPosition:
     instrument_type: str | None
     market_value_kopecks: int
     include_in_capital: bool
+    currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +196,7 @@ def canonical_json_hash(obj: Any) -> str:
 def compute_frozen_base_fingerprint(
     *,
     reporting_month: dict[str, Any],
+    reporting_currency: str,
     cash: list[dict[str, Any]],
     deposits: list[dict[str, Any]],
     positions: list[dict[str, Any]],
@@ -206,9 +208,12 @@ def compute_frozen_base_fingerprint(
     """Deterministic semantic fingerprint of the frozen base.
 
     Names/labels are intentionally excluded; only normative financial facts
-    participate.
+    participate. ``reporting_currency`` and per-position ``currency`` tags
+    are normative base facts (the FX baseline must never silently treat a
+    currency-tagged row as reporting-currency exposure).
     """
     payload = {
+        "reporting_currency": reporting_currency,
         "reporting_month": reporting_month,
         "cash": sorted(cash, key=lambda item: item["id"]),
         "deposits": sorted(deposits, key=lambda item: item["id"]),

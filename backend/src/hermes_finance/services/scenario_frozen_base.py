@@ -40,6 +40,7 @@ from hermes_finance.domain.scenario_frozen_base import (
 )
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
+    DEFAULT_BASE_CURRENCY,
     Account,
     AppSettings,
     CashBalance,
@@ -160,7 +161,12 @@ def materialize_frozen_base(
         )
         pos_rows = list(
             session.execute(
-                select(PositionSnapshot, Instrument.name, Instrument.instrument_type)
+                select(
+                    PositionSnapshot,
+                    Instrument.name,
+                    Instrument.instrument_type,
+                    Instrument.currency,
+                )
                 .join(Instrument, PositionSnapshot.instrument_id == Instrument.id)
                 .where(PositionSnapshot.reporting_month_id == reporting_month_id)
                 .order_by(PositionSnapshot.id)
@@ -310,8 +316,9 @@ def materialize_frozen_base(
             instrument_type=instrument_type,
             market_value_kopecks=snapshot.market_value_kopecks,
             include_in_capital=bool(account_include_flags.get(snapshot.account_id, True)),
+            currency=currency,
         )
-        for snapshot, _instrument_name, instrument_type in sorted(
+        for snapshot, _instrument_name, instrument_type, currency in sorted(
             pos_rows, key=lambda item: item[0].id
         )
     )
@@ -376,10 +383,11 @@ def materialize_frozen_base(
             "account_id": snapshot.account_id,
             "instrument_id": snapshot.instrument_id,
             "instrument_type": instrument_type,
+            "currency": currency,
             "market_value_kopecks": snapshot.market_value_kopecks,
             "include_in_capital": bool(account_include_flags.get(snapshot.account_id, True)),
         }
-        for snapshot, _instrument_name, instrument_type in sorted(
+        for snapshot, _instrument_name, instrument_type, currency in sorted(
             pos_rows, key=lambda item: item[0].id
         )
     ]
@@ -436,6 +444,7 @@ def materialize_frozen_base(
     ]
     base_fingerprint = compute_frozen_base_fingerprint(
         reporting_month=reporting_month_dict,
+        reporting_currency=DEFAULT_BASE_CURRENCY,
         cash=cash_dicts,
         deposits=deposit_dicts,
         positions=position_dicts,
@@ -451,7 +460,7 @@ def materialize_frozen_base(
         month=month.month,
         snapshot_date=month.snapshot_date,
         status=month.status,
-        reporting_currency="RUB",
+        reporting_currency=DEFAULT_BASE_CURRENCY,
         cash=frozen_cash,
         deposits=frozen_deposits,
         positions=frozen_positions,
