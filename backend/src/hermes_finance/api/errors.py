@@ -251,12 +251,26 @@ def register_error_handlers(application: FastAPI) -> None:
 
     @application.exception_handler(ValueError)
     async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+        # Scenario Lab domain validators raise plain ValueError with a
+        # machine-readable prefix ("invalid_target_currency: ...",
+        # "invalid_reporting_value_change_pct: ...",
+        # "invalid_drawdown_pct: ..."). For scenario-lab paths we
+        # surface that prefix as the exact error.code so owner tooling
+        # can branch without parsing messages. All other paths keep
+        # generic unprocessable.
+        message = str(exc)
+        code = "unprocessable"
+        if "scenario-lab" in request.url.path and ":" in message:
+            prefix = message.split(":", 1)[0].strip()
+            if prefix.startswith("invalid_"):
+                code = prefix
         logger.info(
-            "%s path=%s status=422 code=unprocessable",
+            "%s path=%s status=422 code=%s",
             exc.__class__.__name__,
             request.url.path,
+            code,
         )
-        return _error_response(422, "unprocessable", str(exc))
+        return _error_response(422, code, message)
 
     # Scenario handlers are registered alongside the generic ValueError and
     # LookupError handlers; Starlette resolves handlers by walking the

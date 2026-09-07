@@ -46,6 +46,11 @@ class ScenarioLabShockRequest(BaseModel):
     envelope with their machine-readable codes. Only the optional
     ``top_n`` evaluation control is exposed; no implementation or DB
     controls are reachable from the API.
+
+    ``top_n`` is intentionally typed as ``Any`` without Pydantic range
+    validation so the canonical service validator can return the exact
+    ``invalid_top_n`` machine-readable code instead of a generic
+    Pydantic ``unprocessable``. Service defaults to 5 when omitted.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -54,10 +59,8 @@ class ScenarioLabShockRequest(BaseModel):
         description="exactly one supported Scenario Lab shock payload, e.g. "
         '{"equity_drawdown": {"drawdown_pct": "10"}}'
     )
-    top_n: int | None = Field(
+    top_n: Any = Field(
         default=None,
-        ge=1,
-        le=100,
         description="optional top-positions count for allocation surfaces (service default 5)",
     )
 

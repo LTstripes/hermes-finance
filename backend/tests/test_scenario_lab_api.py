@@ -435,31 +435,112 @@ def test_malformed_extra_fields_fail_closed(session, client):
     assert body.status_code == 422
     assert body.json()["error"]["code"] == "unprocessable"
 
-    # Invalid evaluation control.
+    # Invalid evaluation control — must surface canonical invalid_top_n
+    # (service validator), not generic Pydantic validation.
     body = _post_scenario(client, month_id, EQUITY_10, top_n=0)
     assert body.status_code == 422
-    assert body.json()["error"]["code"] == "unprocessable"
+    assert body.json()["error"]["code"] == "invalid_top_n"
 
     # Invalid shock-specific input (binary float in a rate field) fails
-    # closed with the machine-readable prefix preserved.
+    # closed with the exact machine-readable error.code preserved.
     body = _post_scenario(
         client,
         month_id,
         {"fx_translation_shock": {"target_currency": "USD", "reporting_value_change_pct": 10.0}},
     )
     assert body.status_code == 422
-    assert "invalid_reporting_value_change_pct" in body.json()["error"]["message"]
+    assert body.json()["error"]["code"] == "invalid_reporting_value_change_pct"
 
     # Invalid shock payload type.
     body = _post_scenario(client, month_id, {"equity_drawdown": {"drawdown_pct": 12.0}})
     assert body.status_code == 422
-    assert "invalid_drawdown_pct" in body.json()["error"]["message"]
+    assert body.json()["error"]["code"] == "invalid_drawdown_pct"
 
 
 def test_missing_month_not_found(client):
     body = _post_scenario(client, 999_999, EQUITY_10)
     assert body.status_code == 404
     assert body.json()["error"]["code"] == "reporting_month_not_found"
+
+
+def test_fx_validation_codes_are_exact_and_export_parity(session, client):
+    """Integrator blocker regression: FX validation must surface exact codes.
+
+    ``invalid_target_currency`` and
+    ``invalid_reporting_value_change_pct`` must be the error.code itself,
+    not a generic unprocessable, on both the normal and export surfaces.
+    """
+    month_id = _seed_equity(session)
+    _commit(session)
+
+    # invalid_target_currency — empty / malformed currency tag
+    body = _post_scenario(
+        client,
+        month_id,
+        {"fx_translation_shock": {"target_currency": "", "reporting_value_change_pct": "10"}},
+    )
+    assert body.status_code == 422
+    assert body.json()["error"]["code"] == "invalid_target_currency"
+
+    export = _export_scenario(
+        client,
+        month_id,
+        {"fx_translation_shock": {"target_currency": "", "reporting_value_change_pct": "10"}},
+    )
+    assert export.status_code == 422
+    assert export.json()["error"]["code"] == "invalid_target_currency"
+
+    # invalid_reporting_value_change_pct — binary float must preserve exact code
+    body = _post_scenario(
+        client,
+        month_id,
+        {"fx_translation_shock": {"target_currency": "USD", "reporting_value_change_pct": 10.0}},
+    )
+    assert body.status_code == 422
+    assert body.json()["error"]["code"] == "invalid_reporting_value_change_pct"
+
+    export = _export_scenario(
+        client,
+        month_id,
+        {"fx_translation_shock": {"target_currency": "USD", "reporting_value_change_pct": 10.0}},
+    )
+    assert export.status_code == 422
+    assert export.json()["error"]["code"] == "invalid_reporting_value_change_pct"
+
+    # Another invalid_reporting_value_change_pct shape — non-numeric string
+    body = _post_scenario(
+        client,
+        month_id,
+        {
+            "fx_translation_shock": {
+                "target_currency": "USD",
+                "reporting_value_change_pct": "not-a-number",
+            }
+        },
+    )
+    assert body.status_code == 422
+    assert body.json()["error"]["code"] == "invalid_reporting_value_change_pct"
+
+
+def test_invalid_top_n_canonical_code_and_export_parity(session, client):
+    """invalid_top_n must be canonical on both surfaces, not Pydantic generic."""
+    month_id = _seed_equity(session)
+    _commit(session)
+
+    for bad in (0, 101, -1):
+        body = _post_scenario(client, month_id, EQUITY_10, top_n=bad)
+        assert body.status_code == 422
+        assert body.json()["error"]["code"] == "invalid_top_n"
+
+        export = _export_scenario(client, month_id, EQUITY_10, top_n=bad)
+        assert export.status_code == 422
+        assert export.json()["error"]["code"] == "invalid_top_n"
+
+    # Valid top_n stays successful on both surfaces
+    body = _post_scenario(client, month_id, EQUITY_10, top_n=5)
+    assert body.status_code == 200
+    export = _export_scenario(client, month_id, EQUITY_10, top_n=5)
+    assert export.status_code == 200
 
 
 # ---------------------------------------------------------------------------
