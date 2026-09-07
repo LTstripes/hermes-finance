@@ -14,6 +14,7 @@ import "./styles/month-workspace-v03.css";
 import "./styles/analytics-v03.css";
 import "./styles/risk-allocation.css";
 import "./styles/tax-iis-planner.css";
+import "./styles/scenario-lab.css";
 import "./styles/reconciliation-center.css";
 import "./styles/portfolio-review-package.css";
 

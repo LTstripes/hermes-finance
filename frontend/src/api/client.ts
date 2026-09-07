@@ -143,18 +143,26 @@ function filenameFromContentDisposition(value: string | null): string | null {
   return match?.[1] ?? null;
 }
 
+export type ApiDownloadOptions = Omit<RequestInit, "body"> & {
+  /** JSON body for POST downloads (for example deterministic export endpoints). */
+  body?: unknown;
+};
+
 export async function apiDownload(
   path: string,
-  options: Omit<RequestInit, "body"> = {},
+  options: ApiDownloadOptions = {},
 ): Promise<ApiDownload> {
+  const { body, headers, ...rest } = options;
   let response: Response;
   try {
     response = await fetch(path, {
-      ...options,
+      ...rest,
       headers: {
         Accept: "application/octet-stream",
-        ...options.headers,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...headers,
       },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (cause) {
     throw new ApiClientError(0, {
