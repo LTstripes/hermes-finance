@@ -429,69 +429,24 @@ def _valid_nonnegative_investment_flow(row: InvestmentCashFlow) -> bool:
     )
 
 
-def _internal_cost_amount(row: InvestmentCashFlow) -> int | None:
-    """Return one explicitly typed standalone cost, or None when malformed."""
-
-    gross = _nonnegative_int(row.gross_amount_kopecks)
-    tax = _nonnegative_int(row.tax_amount_kopecks)
-    commission = _nonnegative_int(row.commission_amount_kopecks)
-    net = row.net_amount_kopecks
-    if (
-        gross is None
-        or tax is None
-        or commission is None
-        or isinstance(net, bool)
-        or not isinstance(net, int)
-        or net != gross - tax - commission
-    ):
-        return None
-    if gross != 0:
-        return None
-    if row.flow_type == "tax":
-        if tax <= 0 or commission != 0 or net != -tax:
-            return None
-        return tax
-    if row.flow_type == "commission":
-        if commission <= 0 or tax != 0 or net != -commission:
-            return None
-        return commission
-    return None
-
-
 def _withdrawal_boundary_amounts(
     row: InvestmentCashFlow,
     *,
     standalone_costs: tuple[InvestmentCashFlow, ...],
 ) -> tuple[int, ...]:
-    """Return only amounts supported by explicit withdrawal/cost arithmetic.
+    """Return only amounts supported by the withdrawal row's own arithmetic.
 
     The canonical boundary remains the already-persisted ``ExternalFlow``.
-    A legacy withdrawal is used only as corroborating evidence.  Embedded
-    tax/commission is authoritative for that row; separately persisted costs
-    are accepted only when the primary row carries no embedded costs and every
-    same-account/date cost is explicitly typed and valid.
+    A legacy withdrawal is used only as corroborating evidence.  The current
+    persisted evidence has no transaction-specific identity for linking a
+    standalone tax/commission row to that withdrawal, so any such link is
+    ambiguous and must fail closed.  Embedded tax/commission is authoritative
+    for the withdrawal row itself.
     """
 
-    if not _valid_nonnegative_investment_flow(row):
+    if standalone_costs or not _valid_nonnegative_investment_flow(row):
         return ()
-    embedded_cost = row.tax_amount_kopecks + row.commission_amount_kopecks
-    if embedded_cost:
-        if standalone_costs:
-            return ()
-        return (row.net_amount_kopecks,)
-    if not standalone_costs:
-        return (row.net_amount_kopecks,)
-
-    costs: list[int] = []
-    for cost_row in standalone_costs:
-        amount = _internal_cost_amount(cost_row)
-        if amount is None:
-            return ()
-        costs.append(amount)
-    boundary_amount = row.net_amount_kopecks - sum(costs)
-    if boundary_amount < 0:
-        return ()
-    return (boundary_amount,)
+    return (row.net_amount_kopecks,)
 
 
 def _external_withdrawals_by_key(

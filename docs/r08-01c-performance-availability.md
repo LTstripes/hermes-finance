@@ -97,20 +97,25 @@ scope. An unknown persisted flow membership is non-authoritative.
 Legacy `investment_cash_flows.deposit` and `withdrawal` rows remain legacy
 evidence. A legacy withdrawal can stop being an unclassified blocker only when
 one canonical in-scope `ExternalFlow` already proves the same account/date/
-currency boundary and the legacy row's explicit gross/tax/commission/net
-arithmetic, including any separately typed same-date internal cost rows,
-deterministically reconciles to that boundary. The legacy row is never
-reclassified and no gross/net field is guessed as the boundary amount. A
-legacy deposit, an ambiguous match, or malformed arithmetic still blocks with
+currency boundary and the withdrawal row's own explicit
+gross/tax/commission/net arithmetic deterministically reconciles to that
+boundary. A standalone tax/commission row is never attached to a withdrawal
+by account/date/currency: the current persisted evidence has no
+transaction-specific identity for that association, so the reconciliation
+remains ambiguous and blocks. The legacy row is never reclassified and no
+gross/net field is guessed as the boundary amount. A legacy deposit, an
+ambiguous match, or malformed arithmetic still blocks with
 `not_computable_external_flows_incomplete`.
 
 Internal tax and commission rows are cost evidence only. They do not create an
-`ExternalFlow`; when they are used to reconcile one explicit withdrawal, the
-existing canonical boundary remains the only XIRR/TWRR input. A realised
-coupon/dividend outside brokerage cash likewise requires an explicit
-same-account/date/currency external withdrawal whose boundary equals the
-validated actual receipt. Its income row is corroboration and is not injected
-into return math; missing or ambiguous holding provenance remains fail-closed.
+`ExternalFlow`. A standalone cost remains internal cost but cannot reconcile a
+withdrawal without transaction-specific identity. Embedded cost fields in one
+withdrawal row may corroborate its canonical boundary; the existing canonical
+boundary remains the only XIRR/TWRR input. A realised coupon/dividend outside
+brokerage cash likewise requires an explicit same-account/date/currency
+external withdrawal whose boundary equals the validated actual receipt. Its
+income row is corroboration and is not injected into return math; missing or
+ambiguous holding provenance remains fail-closed.
 
 Expected cash flows and provider payout calendar rows do not become realised
 performance flows. Without one valid actual income event for the same

@@ -76,7 +76,37 @@ def _investment_flow(
     )
 
 
-def test_internal_withholding_reconciles_to_actual_external_boundary(tmp_path: Path) -> None:
+def test_embedded_withholding_reconciles_to_actual_external_boundary(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        legacy = _investment_flow(
+            session,
+            february_id,
+            account_id,
+            None,
+            flow_type="withdrawal",
+            gross="10000.00",
+            tax="1300.00",
+            net="8700.00",
+        )
+        boundary = _external_withdrawal(session, february_id, account_id, "8700.00")
+
+        result = _availability(session, january_id, february_id, account_id)
+
+        assert result.xirr.is_available
+        assert result.external_flows.legacy_unclassified_flow_ids == ()
+        assert [
+            (flow.id, flow.boundary_amount_kopecks) for flow in result.external_flows.flows
+        ] == [(boundary.id, 870_000)]
+        assert legacy.id not in result.external_flows.legacy_unclassified_flow_ids
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_unrelated_same_day_tax_and_commission_do_not_reconcile_withdrawal(
+    tmp_path: Path,
+) -> None:
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:
         legacy = _investment_flow(
@@ -98,17 +128,28 @@ def test_internal_withholding_reconciles_to_actual_external_boundary(tmp_path: P
             tax="1300.00",
             net="-1300.00",
         )
-        boundary = _external_withdrawal(session, february_id, account_id, "8700.00")
+        commission = _investment_flow(
+            session,
+            february_id,
+            account_id,
+            None,
+            flow_type="commission",
+            gross="0.00",
+            commission="200.00",
+            net="-200.00",
+        )
+        boundary = _external_withdrawal(session, february_id, account_id, "8500.00")
 
         result = _availability(session, january_id, february_id, account_id)
 
-        assert result.xirr.is_available
-        assert result.external_flows.legacy_unclassified_flow_ids == ()
-        assert [
-            (flow.id, flow.boundary_amount_kopecks) for flow in result.external_flows.flows
-        ] == [(boundary.id, 870_000)]
-        assert legacy.id not in result.external_flows.legacy_unclassified_flow_ids
+        assert not result.xirr.is_available
+        assert result.external_flows.legacy_unclassified_flow_ids == (legacy.id,)
+        assert [flow.boundary_amount_kopecks for flow in result.external_flows.flows] == [
+            boundary.boundary_amount_kopecks
+        ]
         assert tax.net_amount_kopecks == -130_000
+        assert commission.net_amount_kopecks == -20_000
+        assert "not_computable_external_flows_incomplete" in result.xirr.reason_codes
     finally:
         session.close()
         database.engine.dispose()
