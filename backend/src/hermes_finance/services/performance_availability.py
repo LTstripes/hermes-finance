@@ -40,7 +40,9 @@ from hermes_finance.persistence import (
     DEFAULT_BASE_CURRENCY,
     Account,
     AccountPerformanceScopeMembership,
+    AppliedProviderPayout,
     AppSettings,
+    ExpectedCashFlow,
     ExternalFlow,
     ExternalFlowBoundaryGroup,
     ExternalFlowBoundaryGroupMember,
@@ -66,6 +68,9 @@ from hermes_finance.services.valuation_boundaries import to_observed_valuation_e
 from hermes_finance.services.valuation_points import valuation_point_for_month
 
 _LEGACY_BOUNDARY_FLOW_TYPES = ("deposit", "withdrawal")
+_RECONCILIATION_COST_FLOW_TYPES = ("tax", "commission")
+_REALIZED_INCOME_FLOW_TYPES = ("coupon", "dividend")
+_CALENDAR_PAYOUT_FLOW_TYPES = ("coupon", "dividend")
 _TWRR_ONLY_REASON = AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value
 
 
@@ -371,7 +376,7 @@ def _flow_is_relevant(
     return classification is not ExternalFlowClassification.NOT_IN_SCOPE
 
 
-def _legacy_flow_ids(
+def _selected_investment_cash_flows(
     session: Session,
     *,
     scope: PerformanceScope,
@@ -379,17 +384,18 @@ def _legacy_flow_ids(
     start_date: date,
     end_date: date,
     rows_by_account: dict[int, list[AccountPerformanceScopeMembership]],
-) -> tuple[int, ...]:
+    flow_types: tuple[str, ...],
+) -> tuple[InvestmentCashFlow, ...]:
     statement = select(InvestmentCashFlow).where(
         InvestmentCashFlow.event_date >= start_date,
         InvestmentCashFlow.event_date <= end_date,
-        InvestmentCashFlow.flow_type.in_(_LEGACY_BOUNDARY_FLOW_TYPES),
+        InvestmentCashFlow.flow_type.in_(flow_types),
     )
     if scope is PerformanceScope.ACCOUNT:
         assert account_id is not None
         statement = statement.where(InvestmentCashFlow.account_id == account_id)
 
-    ids: list[int] = []
+    selected: list[InvestmentCashFlow] = []
     for row in session.scalars(
         statement.order_by(InvestmentCashFlow.event_date, InvestmentCashFlow.id)
     ):
@@ -397,8 +403,306 @@ def _legacy_flow_ids(
             membership = _membership_at(rows_by_account.get(row.account_id, []), row.event_date)
             if membership is False:
                 continue
-        ids.append(row.id)
+        selected.append(row)
+    return tuple(selected)
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _valid_nonnegative_investment_flow(row: InvestmentCashFlow) -> bool:
+    gross = _nonnegative_int(row.gross_amount_kopecks)
+    tax = _nonnegative_int(row.tax_amount_kopecks)
+    commission = _nonnegative_int(row.commission_amount_kopecks)
+    net = row.net_amount_kopecks
+    return (
+        gross is not None
+        and tax is not None
+        and commission is not None
+        and not isinstance(net, bool)
+        and isinstance(net, int)
+        and net >= 0
+        and net == gross - tax - commission
+    )
+
+
+def _internal_cost_amount(row: InvestmentCashFlow) -> int | None:
+    """Return one explicitly typed standalone cost, or None when malformed."""
+
+    gross = _nonnegative_int(row.gross_amount_kopecks)
+    tax = _nonnegative_int(row.tax_amount_kopecks)
+    commission = _nonnegative_int(row.commission_amount_kopecks)
+    net = row.net_amount_kopecks
+    if (
+        gross is None
+        or tax is None
+        or commission is None
+        or isinstance(net, bool)
+        or not isinstance(net, int)
+        or net != gross - tax - commission
+    ):
+        return None
+    if gross != 0:
+        return None
+    if row.flow_type == "tax":
+        if tax <= 0 or commission != 0 or net != -tax:
+            return None
+        return tax
+    if row.flow_type == "commission":
+        if commission <= 0 or tax != 0 or net != -commission:
+            return None
+        return commission
+    return None
+
+
+def _withdrawal_boundary_amounts(
+    row: InvestmentCashFlow,
+    *,
+    standalone_costs: tuple[InvestmentCashFlow, ...],
+) -> tuple[int, ...]:
+    """Return only amounts supported by explicit withdrawal/cost arithmetic.
+
+    The canonical boundary remains the already-persisted ``ExternalFlow``.
+    A legacy withdrawal is used only as corroborating evidence.  Embedded
+    tax/commission is authoritative for that row; separately persisted costs
+    are accepted only when the primary row carries no embedded costs and every
+    same-account/date cost is explicitly typed and valid.
+    """
+
+    if not _valid_nonnegative_investment_flow(row):
+        return ()
+    embedded_cost = row.tax_amount_kopecks + row.commission_amount_kopecks
+    if embedded_cost:
+        if standalone_costs:
+            return ()
+        return (row.net_amount_kopecks,)
+    if not standalone_costs:
+        return (row.net_amount_kopecks,)
+
+    costs: list[int] = []
+    for cost_row in standalone_costs:
+        amount = _internal_cost_amount(cost_row)
+        if amount is None:
+            return ()
+        costs.append(amount)
+    boundary_amount = row.net_amount_kopecks - sum(costs)
+    if boundary_amount < 0:
+        return ()
+    return (boundary_amount,)
+
+
+def _external_withdrawals_by_key(
+    flows: tuple[ExternalFlowEvidence, ...],
+) -> dict[tuple[int, date, str], list[ExternalFlowEvidence]]:
+    by_key: dict[tuple[int, date, str], list[ExternalFlowEvidence]] = defaultdict(list)
+    for flow in flows:
+        if (
+            flow.classification is ExternalFlowClassification.EXTERNAL_WITHDRAWAL
+            and flow.scope_membership is ExternalFlowScopeMembership.STABLE_IN_SCOPE
+            and _nonnegative_int(flow.boundary_amount_kopecks) is not None
+        ):
+            by_key[(flow.account_id, flow.event_date, flow.currency)].append(flow)
+    return by_key
+
+
+def _legacy_flow_ids(
+    *,
+    investment_rows: tuple[InvestmentCashFlow, ...],
+    external_flows: tuple[ExternalFlowEvidence, ...],
+) -> tuple[int, ...]:
+    legacy_rows = tuple(
+        row for row in investment_rows if row.flow_type in _LEGACY_BOUNDARY_FLOW_TYPES
+    )
+    costs_by_key: dict[tuple[int, date, str], list[InvestmentCashFlow]] = defaultdict(list)
+    withdrawals_by_key: dict[tuple[int, date, str], list[InvestmentCashFlow]] = defaultdict(list)
+    for row in investment_rows:
+        key = (row.account_id, row.event_date, _normalise_currency(row.currency))
+        if row.flow_type in _RECONCILIATION_COST_FLOW_TYPES:
+            costs_by_key[key].append(row)
+        elif row.flow_type == "withdrawal":
+            withdrawals_by_key[key].append(row)
+
+    external_by_key = _external_withdrawals_by_key(external_flows)
+    ids: list[int] = []
+    for row in legacy_rows:
+        if row.flow_type == "deposit":
+            ids.append(row.id)
+            continue
+
+        key = (row.account_id, row.event_date, _normalise_currency(row.currency))
+        withdrawal_rows = withdrawals_by_key[key]
+        candidate_flows = external_by_key.get(key, [])
+        if len(withdrawal_rows) != 1 or len(candidate_flows) != 1:
+            ids.append(row.id)
+            continue
+        amounts = _withdrawal_boundary_amounts(
+            row,
+            standalone_costs=tuple(costs_by_key[key]),
+        )
+        if len(amounts) != 1 or amounts[0] != candidate_flows[0].boundary_amount_kopecks:
+            ids.append(row.id)
     return tuple(ids)
+
+
+def _valid_income_evidence(row: InvestmentCashFlow) -> bool:
+    return (
+        row.flow_type in _REALIZED_INCOME_FLOW_TYPES
+        and row.instrument_id is not None
+        and isinstance(row.source, str)
+        and bool(row.source.strip())
+        and _valid_nonnegative_investment_flow(row)
+    )
+
+
+def _direct_payout_reason_codes(
+    *,
+    external_flows: tuple[ExternalFlowEvidence, ...],
+    income_rows: tuple[InvestmentCashFlow, ...],
+) -> set[str]:
+    """Validate direct-payout corroboration without creating another flow.
+
+    An explicit external withdrawal remains the only performance boundary.  A
+    same-account/date/currency income row may corroborate it only when its
+    validated net amount equals that boundary and its account/holding source
+    is unambiguous.  Gross is never substituted for net.
+    """
+
+    income_by_key: dict[tuple[int, date, str], list[InvestmentCashFlow]] = defaultdict(list)
+    for row in income_rows:
+        income_by_key[(row.account_id, row.event_date, _normalise_currency(row.currency))].append(
+            row
+        )
+
+    reasons: set[str] = set()
+    for flow in external_flows:
+        if flow.classification is not ExternalFlowClassification.EXTERNAL_WITHDRAWAL:
+            continue
+        key = (flow.account_id, flow.event_date, flow.currency)
+        same_key = income_by_key.get(key, [])
+        exact = [
+            row
+            for row in same_key
+            if _valid_income_evidence(row)
+            and row.net_amount_kopecks == flow.boundary_amount_kopecks
+        ]
+        if same_key:
+            if len(same_key) != 1 or len(exact) != 1:
+                reasons.add(AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value)
+            continue
+
+        # If the only matching economic income is attached to another
+        # selected account, the withdrawal cannot be assigned to its
+        # generating holding from the available provenance.
+        elsewhere = [
+            row
+            for row in income_rows
+            if row.account_id != flow.account_id
+            and row.event_date == flow.event_date
+            and _normalise_currency(row.currency) == flow.currency
+            and _valid_income_evidence(row)
+            and row.net_amount_kopecks == flow.boundary_amount_kopecks
+        ]
+        if elsewhere:
+            reasons.add(AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value)
+    return reasons
+
+
+def _calendar_payout_reason_codes(
+    session: Session,
+    *,
+    scope: PerformanceScope,
+    account_id: int | None,
+    start_date: date,
+    end_date: date,
+    rows_by_account: dict[int, list[AccountPerformanceScopeMembership]],
+    actual_income_rows: tuple[InvestmentCashFlow, ...],
+) -> set[str]:
+    """Require independent actual income evidence for payout calendar rows.
+
+    Expected/provider rows are never converted into ``ExternalFlow``.  A
+    calendar row is considered reconciled only by one valid actual event with
+    the same account, holding, kind and settlement date; calendar amounts are
+    not interpreted as gross or net.
+    """
+
+    expected_statement = select(ExpectedCashFlow).where(
+        ExpectedCashFlow.expected_date >= start_date,
+        ExpectedCashFlow.expected_date <= end_date,
+        ExpectedCashFlow.flow_type.in_(_CALENDAR_PAYOUT_FLOW_TYPES),
+    )
+    provider_statement = select(AppliedProviderPayout).where(
+        AppliedProviderPayout.payment_date >= start_date,
+        AppliedProviderPayout.payment_date <= end_date,
+        AppliedProviderPayout.event_kind.in_(_CALENDAR_PAYOUT_FLOW_TYPES),
+        AppliedProviderPayout.lifecycle == "active",
+    )
+    if scope is PerformanceScope.ACCOUNT:
+        assert account_id is not None
+        expected_statement = expected_statement.where(ExpectedCashFlow.account_id == account_id)
+        provider_statement = provider_statement.where(
+            AppliedProviderPayout.account_id == account_id
+        )
+
+    actual_by_key: dict[tuple[int, int | None, str, date, str], list[InvestmentCashFlow]] = (
+        defaultdict(list)
+    )
+    for row in actual_income_rows:
+        if not _valid_income_evidence(row):
+            continue
+        actual_by_key[
+            (
+                row.account_id,
+                row.instrument_id,
+                row.flow_type,
+                row.event_date,
+                _normalise_currency(row.currency),
+            )
+        ].append(row)
+
+    reasons: set[str] = set()
+    for row in session.scalars(
+        expected_statement.order_by(ExpectedCashFlow.expected_date, ExpectedCashFlow.id)
+    ):
+        if scope is PerformanceScope.PORTFOLIO:
+            membership = _membership_at(rows_by_account.get(row.account_id, []), row.expected_date)
+            if membership is False:
+                continue
+        actuals = actual_by_key.get(
+            (
+                row.account_id,
+                row.instrument_id,
+                row.flow_type,
+                row.expected_date,
+                _normalise_currency(row.currency),
+            ),
+            [],
+        )
+        if len(actuals) != 1:
+            reasons.add(AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value)
+
+    for row in session.scalars(
+        provider_statement.order_by(AppliedProviderPayout.payment_date, AppliedProviderPayout.id)
+    ):
+        if scope is PerformanceScope.PORTFOLIO:
+            membership = _membership_at(rows_by_account.get(row.account_id, []), row.payment_date)
+            if membership is False:
+                continue
+        actuals = actual_by_key.get(
+            (
+                row.account_id,
+                row.instrument_id,
+                row.event_kind,
+                row.payment_date,
+                _normalise_currency(row.currency),
+            ),
+            [],
+        )
+        if len(actuals) != 1:
+            reasons.add(AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value)
+    return reasons
 
 
 def _external_flow_coverage(
@@ -495,16 +799,46 @@ def _external_flow_coverage(
             )
         )
 
-    legacy_ids = _legacy_flow_ids(
+    investment_rows = _selected_investment_cash_flows(
         session,
         scope=scope,
         account_id=account_id,
         start_date=start_date,
         end_date=end_date,
         rows_by_account=rows_by_account,
+        flow_types=(
+            _LEGACY_BOUNDARY_FLOW_TYPES
+            + _RECONCILIATION_COST_FLOW_TYPES
+            + _REALIZED_INCOME_FLOW_TYPES
+        ),
+    )
+    legacy_ids = _legacy_flow_ids(
+        investment_rows=investment_rows,
+        external_flows=tuple(evidence),
     )
     if legacy_ids:
         reasons.add(AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value)
+
+    actual_income_rows = tuple(
+        row for row in investment_rows if row.flow_type in _REALIZED_INCOME_FLOW_TYPES
+    )
+    reasons.update(
+        _direct_payout_reason_codes(
+            external_flows=tuple(evidence),
+            income_rows=actual_income_rows,
+        )
+    )
+    reasons.update(
+        _calendar_payout_reason_codes(
+            session,
+            scope=scope,
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            rows_by_account=rows_by_account,
+            actual_income_rows=actual_income_rows,
+        )
+    )
 
     if not reasons:
         status = CoverageStatus.COMPLETE.value
