@@ -54,3 +54,14 @@ Expected: NOT_COMPUTABLE with not_computable_in_kind_boundary_coverage_unknown (
 Existing generic-position test uses ordinary quote dates and does not exercise disagreement between reporting/snapshot and quote clocks. Minimal reproducer: docs/audits/evidence/test_false_exact_closure.py::test_audit_quote_clock_hides_known_positions_from_in_kind_gate. `1 passed` asserts current defective behavior, not acceptance. Production remains unchanged.
 
 Fix direction only: establish instrument-capable history from the canonical reporting/snapshot existence semantics; do not let a quote timestamp suppress already-consumed position evidence. Preserve UNKNOWN and optionally independently reject inadmissible valuation clocks. No fix implemented.
+
+## Confirmed finding F2 — HIGH / reproduced
+Scope: whole-portfolio XIRR and exact TWRR. Confidence: confirmed synthetic service reproduction; no assumptions about solver formulas.
+
+Production: `services/performance_availability.py::_portfolio_transfer_safety` lines 1193-1199, 1253-1257 checks transit only for source.event_date < destination.event_date. Same-date linked legs are internal but produce no unsafe valuation dates. `services/valuation_points.py::_scope_membership_coverage` lines 195-210 records date-only boundary-order ambiguity; availability removes the TWRR-only reason from XIRR and TWRR subsequently inherits that filtered set. Internal transfers create no external-flow split to restore it.
+
+Scenario: stable in-scope accounts A/B, positions total 2,000 RUB, A opening cash 1,000 RUB, both linked 1,000 RUB legs dated February 28. Closing cash observations are zero, consistent with observation after departure and before arrival on that date. Opening/closing totals are 3,000/2,000 RUB. All cash/in-kind coverage COMPLETE and transfer amounts reconcile. Missing: intraday ordering/continuity provenance proving transferred capital was in the aggregate closing valuation.
+
+Expected: NOT_COMPUTABLE for the required ambiguous/unvalued transfer boundary. H1-A forbids assuming same-day order without explicit provenance. Actual: both production metric services AVAILABLE; TWRR reports a negative exact return from omitted transferred capital. Date equality does not prove instantaneous settlement or synchronized account observations.
+
+Existing H2c tests cover strictly increasing leg dates, including interval endpoints, but not equal leg dates at a required valuation with missing order/continuity evidence. Reproducer: `test_audit_same_day_internal_transfer_boundary_has_no_order_proof` in the audit evidence file. Fix direction: keep same-day internal transfer valuation continuity/order as an independent financial prerequisite, so XIRR's external-flow date-order exemption cannot erase it. Do not synthesize transit valuation. No fix implemented.

@@ -26,6 +26,69 @@ from hermes_finance.services.portfolio_xirr import portfolio_xirr_for_interval
 from hermes_finance.services.positions import update_position_snapshot
 
 
+def test_audit_same_day_internal_transfer_boundary_has_no_order_proof(tmp_path):
+    from test_r08_h2c_transfer_transit import _environment as transfer_environment
+    from test_r08_h2c_transfer_transit import _close, _transfer
+    from hermes_finance.persistence import CashBalance
+    from hermes_finance.services.cash import update_cash_balance
+
+    session, database, months, accounts = transfer_environment(tmp_path)
+    try:
+        cash = session.scalar(select(CashBalance).where(
+            CashBalance.reporting_month_id == min(months), CashBalance.account_id == accounts[0],
+        ))
+        update_cash_balance(session, cash.id, amount="1000.00")
+        _transfer(session, months, accounts, source_date=END, destination_date=END)
+        # Required closing snapshot is date-only; no persisted assertion proves
+        # whether both account observations fall before, between, or after legs.
+        _close(session, months)
+        result = performance_availability_for_interval(session, start_date=START, end_date=END)
+        assert result.xirr.is_available and result.twrr.is_available
+        assert portfolio_xirr_for_interval(session, start_date=START, end_date=END).is_available
+        twrr = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert twrr.is_available and twrr.return_rate < 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_audit_deleted_flow_leaves_prior_cash_attestation_complete(tmp_path):
+    from hermes_finance.persistence import CashBalance, CashBoundaryCoverage
+    from hermes_finance.services.cash import update_cash_balance
+    from hermes_finance.services.cash_boundary_coverage import update_cash_boundary_coverage
+    from hermes_finance.services.external_flows import create_external_flow, delete_external_flow
+    from hermes_finance.services.reporting_months import close_reporting_month, reopen_reporting_month
+
+    session, database, january, february, account = _environment(tmp_path)
+    try:
+        flow = create_external_flow(
+            session, reporting_month_id=february, account_id=account,
+            event_date=date(2030, 2, 15), boundary_amount="100.00",
+            direction="contribution", kind="external_contribution", scope_membership="stable_in_scope",
+        )
+        cash = session.scalar(select(CashBalance).where(CashBalance.reporting_month_id == february))
+        update_cash_balance(session, cash.id, amount="400.00")
+        coverage = session.scalar(select(CashBoundaryCoverage))
+        update_cash_boundary_coverage(session, coverage.id, provenance_reference="synthetic-original-complete")
+        _close_two_months(session, january, february)
+        before = portfolio_xirr_for_interval(session, start_date=START, end_date=END)
+        assert before.is_available and before.annualized_rate == 0
+        # Start a replacement/correction of the canonical event; no new owner
+        # attestation confirms the now-empty event set. Close alone is not proof.
+        reopen_reporting_month(session, february)
+        delete_external_flow(session, flow.id)
+        close_reporting_month(session, february)
+        result = performance_availability_for_interval(session, start_date=START, end_date=END)
+        assert coverage.coverage_state == "complete"
+        assert result.xirr.is_available and result.twrr.is_available
+        after = portfolio_xirr_for_interval(session, start_date=START, end_date=END)
+        assert after.is_available and after.annualized_rate > 0
+        assert portfolio_twrr_for_interval(session, start_date=START, end_date=END).return_rate > 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_audit_quote_clock_hides_known_positions_from_in_kind_gate(tmp_path):
     session, database, january, february, account = _environment(tmp_path)
     try:
