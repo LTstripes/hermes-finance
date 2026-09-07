@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClientError, formatApiError, type ApiDownload } from "../api/client";
 import { listMonths } from "../api/months";
@@ -192,12 +192,14 @@ function defaultMonth(months: ReportingMonth[]): ReportingMonth | null {
   return sorted.find((month) => month.status === "closed") ?? sorted[0] ?? null;
 }
 
-/** Normalize an owner-typed percent/rate: "10,5" → "10.5". Returns null when not numeric. */
-function normalizePercentInput(raw: string): string | null {
+/** Normalize an owner-typed percent/rate: "10,5" → "10.5". Returns null when not a decimal string. No financial caps here. */
+function normalizeDecimalInput(raw: string, allowSigned: boolean): string | null {
   const value = raw.trim().replace(/\s/g, "").replace(",", ".");
-  if (!/^\d{1,4}(\.\d{1,4})?$/.test(value)) {
-    return null;
-  }
+  if (value === "" || value === "." || value === "-." || value === "-") return null;
+  const pattern = allowSigned ? /^-?\d+(\.\d+)?$/ : /^\d+(\.\d+)?$/;
+  if (!pattern.test(value)) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
   return value;
 }
 
@@ -205,6 +207,12 @@ function isWithinRange(value: string | null, max: number): boolean {
   if (value == null) return false;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= max;
+}
+
+function isAtLeast(value: string | null, min: number): boolean {
+  if (value == null) return false;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= min;
 }
 
 function parseMoneyOrNull(value: unknown): string | null {
@@ -242,6 +250,8 @@ export function ScenarioLabPage() {
   const [resultError, setResultError] = useState<string | null>(null);
   const [resultErrorCode, setResultErrorCode] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -274,6 +284,10 @@ export function ScenarioLabPage() {
   );
 
   const invalidateResult = useCallback(() => {
+    requestSeqRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setRunning(false);
     setResult(null);
     setResultError(null);
     setResultErrorCode(null);
@@ -282,16 +296,16 @@ export function ScenarioLabPage() {
 
   const scenarioParamValid = useMemo(() => {
     if (scenarioType === "equity_drawdown") {
-      return isWithinRange(normalizePercentInput(equityPct), 100);
+      return isWithinRange(normalizeDecimalInput(equityPct, false), 100);
     }
     if (scenarioType === "deposit_rate_assumption") {
-      return normalizePercentInput(depositRate) != null;
+      return normalizeDecimalInput(depositRate, false) != null;
     }
     if (scenarioType === "inflation_real_value") {
-      return isWithinRange(normalizePercentInput(inflationPct), 100);
+      return normalizeDecimalInput(inflationPct, false) != null;
     }
     if (scenarioType === "fx_translation_shock") {
-      return fxCurrency.trim() !== "" && isWithinRange(normalizePercentInput(fxPct), 100);
+      return fxCurrency.trim() !== "" && isAtLeast(normalizeDecimalInput(fxPct, true), -100);
     }
     return false;
   }, [depositRate, equityPct, fxCurrency, fxPct, inflationPct, scenarioType]);
@@ -300,24 +314,24 @@ export function ScenarioLabPage() {
 
   const buildShock = useCallback((): ScenarioLabShock | null => {
     if (scenarioType === "equity_drawdown") {
-      const drawdownPct = normalizePercentInput(equityPct);
+      const drawdownPct = normalizeDecimalInput(equityPct, false);
       if (drawdownPct == null) return null;
       return { equity_drawdown: { drawdown_pct: drawdownPct } };
     }
     if (scenarioType === "deposit_rate_assumption") {
-      const rate = normalizePercentInput(depositRate);
+      const rate = normalizeDecimalInput(depositRate, false);
       if (rate == null) return null;
       return {
         deposit_rate_assumption: { assumed_annual_rate_pct: rate, all_eligible_deposits: true },
       };
     }
     if (scenarioType === "inflation_real_value") {
-      const pct = normalizePercentInput(inflationPct);
+      const pct = normalizeDecimalInput(inflationPct, false);
       if (pct == null) return null;
       return { inflation_real_value: { annual_inflation_pct: pct } };
     }
     if (scenarioType === "fx_translation_shock") {
-      const pct = normalizePercentInput(fxPct);
+      const pct = normalizeDecimalInput(fxPct, true);
       if (fxCurrency.trim() === "" || pct == null) return null;
       return {
         fx_translation_shock: {
@@ -333,18 +347,28 @@ export function ScenarioLabPage() {
     if (selectedMonthId == null || !canCalculate) return;
     const shock = buildShock();
     if (!shock) return;
+    requestSeqRef.current += 1;
+    const seq = requestSeqRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setRunning(true);
     setResultError(null);
     setResultErrorCode(null);
     setExportNotice(null);
     try {
-      const evaluation = await evaluateScenarioLab(selectedMonthId, shock);
+      const evaluation = await evaluateScenarioLab(selectedMonthId, shock, controller.signal);
+      if (seq !== requestSeqRef.current || controller.signal.aborted) return;
       setResult(evaluation);
     } catch (cause) {
+      if (seq !== requestSeqRef.current || controller.signal.aborted) return;
       setResultError(formatApiError(cause));
       setResultErrorCode(cause instanceof ApiClientError ? cause.code : null);
     } finally {
-      setRunning(false);
+      if (seq === requestSeqRef.current) {
+        abortRef.current = null;
+        setRunning(false);
+      }
     }
   }
 

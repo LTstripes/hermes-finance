@@ -864,4 +864,111 @@ describe("ScenarioLabPage", () => {
     await screen.findByLabelText("Размер просадки акций, %");
     expect(screen.getByRole("button", { name: "Скачать JSON" })).toBeDisabled();
   });
+
+  it("FX signed validation allows -10 and 150 (no positive cap, lower bound -100)", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = mockFetchRouter({
+      "GET /api/months": () => jsonResponse(MONTHS),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ScenarioLabPage />);
+    await screen.findByLabelText("Размер просадки акций, %");
+    await selectScenario(user, "fx_translation_shock");
+    const pctInput = screen.getByLabelText("Изменение стоимости в отчёте, %");
+    const calcButton = screen.getByRole("button", { name: "Рассчитать сценарий" });
+    expect(calcButton).toBeDisabled();
+    await user.clear(pctInput);
+    await user.type(pctInput, "-10");
+    expect(calcButton).toBeEnabled();
+    await user.clear(pctInput);
+    await user.type(pctInput, "150");
+    expect(calcButton).toBeEnabled();
+    await user.clear(pctInput);
+    await user.type(pctInput, "-101");
+    expect(calcButton).toBeDisabled();
+  });
+
+  it("deposit and inflation accept large values without artificial 100 cap", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = mockFetchRouter({
+      "GET /api/months": () => jsonResponse(MONTHS),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ScenarioLabPage />);
+    await screen.findByLabelText("Размер просадки акций, %");
+    await selectScenario(user, "deposit_rate_assumption");
+    const depositInput = screen.getByLabelText("Гипотетическая годовая ставка по вкладам, %");
+    await user.type(depositInput, "250");
+    expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeEnabled();
+
+    await selectScenario(user, "inflation_real_value");
+    const inflationInput = screen.getByLabelText("Годовая инфляция, %");
+    await user.type(inflationInput, "250");
+    expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeEnabled();
+  });
+
+  it("does not publish stale result when reporting month changes during pending calculation", async () => {
+    const user = userEvent.setup();
+    let resolvePending: (value: Response) => void = () => undefined;
+    const pending = new Promise<Response>((resolve) => {
+      resolvePending = resolve;
+    });
+    const envelope = equityEnvelope();
+    const { fetchMock } = mockFetchRouter({
+      "GET /api/months": () => jsonResponse(MONTHS),
+      "POST /api/months/1/scenario-lab": () => pending,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ScenarioLabPage />);
+    await screen.findByLabelText("Размер просадки акций, %");
+    await user.type(screen.getByLabelText("Размер просадки акций, %"), "10");
+    await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
+    // While pending, switch month to June (id 2).
+    await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "2");
+    // Resolve the stale request for month 1 — must be ignored.
+    resolvePending(jsonResponse(envelope));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      screen.queryByRole("heading", { level: 2, name: /Май\s*2030\s*·\s*Падение акций/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Результат появится после нажатия «Рассчитать сценарий»/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not publish stale result when scenario or parameters change during pending calculation", async () => {
+    const user = userEvent.setup();
+    let resolvePending: (value: Response) => void = () => undefined;
+    const pending = new Promise<Response>((resolve) => {
+      resolvePending = resolve;
+    });
+    const envelope = equityEnvelope();
+    const { fetchMock } = mockFetchRouter({
+      "GET /api/months": () => jsonResponse(MONTHS),
+      "POST /api/months/1/scenario-lab": () => pending,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ScenarioLabPage />);
+    await screen.findByLabelText("Размер просадки акций, %");
+    await user.type(screen.getByLabelText("Размер просадки акций, %"), "10");
+    await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
+    // Change scenario while pending — invalidates stale equity result.
+    await selectScenario(user, "deposit_rate_assumption");
+    resolvePending(jsonResponse(envelope));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      screen.queryByRole("heading", { level: 2, name: /Май\s*2030\s*·\s*Падение акций/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Результат появится после нажатия «Рассчитать сценарий»/),
+    ).toBeInTheDocument();
+    // Deposit controls are visible, equity stale result is gone.
+    expect(
+      screen.getByLabelText("Гипотетическая годовая ставка по вкладам, %"),
+    ).toBeInTheDocument();
+  });
 });
