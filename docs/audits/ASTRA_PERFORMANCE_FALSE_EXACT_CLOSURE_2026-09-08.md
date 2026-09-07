@@ -41,3 +41,16 @@ Static paths inspected: services/performance_availability.py (membership, cash-f
 Rejected at static level: later shared gates overwrite earlier unavailable (reason sets are unioned); cash COMPLETE substitutes for in-kind UNKNOWN (independent reason union); a known movement on an other/no-position account is filtered by coverage population (separate historically-in-scope movement query); transition at end is omitted (closed interval comparison); standalone same-day tax reconciles a withdrawal (H3 explicitly refuses it).
 
 Open, not findings: (1) position history for in-kind population uses quote price_date rather than reporting/snapshot history, while valuation consumes those same rows without that predicate; (2) re-open/edit/delete can leave prior completeness attestation untouched; (3) same-day or reversed transfer legs bypass the strictly increasing transit-date check; (4) H3 legacy/income corroboration has no common evidence-consumption identity. Next: minimal synthetic probes, prioritizing (1) and (3). No tests run yet.
+
+## Confirmed finding F1 — HIGH / reproduced
+Scope: whole-portfolio XIRR and exact TWRR; account availability also uses the same gate. Confidence: confirmed synthetic service/API-adapter reproduction.
+
+`services/in_kind_boundary_coverage.py::_required_account_ids` lines 434-470 (notably the PositionSnapshot.price_date <= end_date filter) uses the quote clock to establish position-history existence. `services/valuation_points.py::valuation_point_for_month` lines 259-293 consumes those same positions by reporting_month_id without that price-date predicate.
+
+Minimal scenario: stable in-scope other account, January/February persisted positions plus cash/deposits, closed boundary snapshots worth 3,400 RUB each, cash coverage COMPLETE, in-kind explicitly UNKNOWN. Position quote dates are March 1 (later than February 28 requested end), accepted through update_position_snapshot. There is no affirmative in-kind evidence. The instrument-bearing account disappears from required_ids; UNKNOWN is never read.
+
+Expected: NOT_COMPUTABLE with not_computable_in_kind_boundary_coverage_unknown (or an independent valuation evidence blocker). Actual: both metric services and API response adapters return available / exact / value 0 / empty reasons. An unrecorded in-kind crossing cannot be excluded from these persisted facts. Quote date is not evidence that the account held no instruments during its reporting snapshots.
+
+Existing generic-position test uses ordinary quote dates and does not exercise disagreement between reporting/snapshot and quote clocks. Minimal reproducer: docs/audits/evidence/test_false_exact_closure.py::test_audit_quote_clock_hides_known_positions_from_in_kind_gate. `1 passed` asserts current defective behavior, not acceptance. Production remains unchanged.
+
+Fix direction only: establish instrument-capable history from the canonical reporting/snapshot existence semantics; do not let a quote timestamp suppress already-consumed position evidence. Preserve UNKNOWN and optionally independently reject inadmissible valuation clocks. No fix implemented.
