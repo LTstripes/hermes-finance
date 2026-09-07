@@ -27,8 +27,12 @@ from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.instruments import InstrumentDeletionBlockedError
 from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
-from hermes_finance.services.reporting_months import ClosedReportingMonthError
+from hermes_finance.services.reporting_months import (
+    ClosedReportingMonthError,
+    ReportingMonthNotFoundError,
+)
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
+from hermes_finance.services.scenario_lab import ScenarioLabError
 from hermes_finance.services.statement_import_retract import StatementRetractError
 from hermes_finance.services.tax_brackets import TaxBracketYearLockedError
 
@@ -253,3 +257,45 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(422, "unprocessable", str(exc))
+
+    # Scenario handlers are registered alongside the generic ValueError and
+    # LookupError handlers; Starlette resolves handlers by walking the
+    # exception MRO (most derived class first), so the concrete
+    # ScenarioLabError (a ValueError subclass) and
+    # ReportingMonthNotFoundError (a LookupError subclass) branches win
+    # over their bases. The service machine-readable codes
+    # (unsupported_composition_v1, unsupported_shock_type_v1,
+    # invalid_shock_input, invalid_top_n, ...) are preserved verbatim in
+    # the unified error envelope.
+
+    @application.exception_handler(ScenarioLabError)
+    async def _scenario_lab_error_handler(request: Request, exc: ScenarioLabError) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=422 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(422, exc.code, str(exc))
+
+    @application.exception_handler(ReportingMonthNotFoundError)
+    async def _reporting_month_not_found_handler(
+        request: Request, exc: ReportingMonthNotFoundError
+    ) -> JSONResponse:
+        # Scenario Lab requires a distinct machine-readable code so
+        # owner tooling can distinguish a missing month deterministically,
+        # but the historical global mapping is 404/not_found. We keep
+        # backward compatibility: scenario-lab paths surface
+        # reporting_month_not_found while all other callers keep not_found.
+        path = request.url.path
+        if "scenario-lab" in path:
+            code = "reporting_month_not_found"
+        else:
+            code = "not_found"
+        logger.info(
+            "%s path=%s status=404 code=%s",
+            exc.__class__.__name__,
+            path,
+            code,
+        )
+        return _error_response(404, code, str(exc))

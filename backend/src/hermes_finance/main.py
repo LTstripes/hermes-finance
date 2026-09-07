@@ -50,6 +50,7 @@ from hermes_finance.api.quote_preview import router as quote_preview_router
 from hermes_finance.api.risk_allocation import router as risk_allocation_router
 from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
+from hermes_finance.api.scenario_lab import router as scenario_lab_router
 from hermes_finance.api.settings import router as settings_router
 from hermes_finance.api.statement_import import router as statement_import_router
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
@@ -140,6 +141,7 @@ def create_app(
     application.include_router(ai_analysis_bundle_router)
     application.include_router(portfolio_review_package_router)
     application.include_router(goals_router)
+    application.include_router(scenario_lab_router)
 
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])
     async def health() -> HealthResponse:

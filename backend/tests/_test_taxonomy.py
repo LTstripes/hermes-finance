@@ -63,6 +63,7 @@ _CI_LANE_OVERRIDES = {
     "test_salary_cardinality.py": "ci_core",
     "test_salary_tax_opening.py": "ci_core",
     "test_tax_iis_planner.py": "ci_core",
+    "test_scenario_lab_api.py": "ci_core",
     "test_scenario_lab_deposit_rate.py": "ci_core",
     "test_scenario_lab_equity_drawdown.py": "ci_core",
     "test_scenario_lab_inflation_real_value.py": "ci_core",
