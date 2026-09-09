@@ -31,6 +31,8 @@ from hermes_finance.services.in_kind_boundary_coverage import (
 )
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import performance_availability_for_interval
+from hermes_finance.services.portfolio_twrr import portfolio_twrr_for_interval
+from hermes_finance.services.portfolio_xirr import portfolio_xirr_for_interval
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
@@ -270,6 +272,40 @@ def test_generic_account_with_position_history_requires_coverage(tmp_path: Path)
         )
         assert coverage.account_ids == (account.id,)
         assert coverage.status == "unknown"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_late_quote_dates_do_not_hide_persisted_positions_from_exact_metrics(
+    tmp_path: Path,
+) -> None:
+    session, database, january, february, account, _ = _environment(tmp_path)
+    try:
+        for position in session.scalars(select(PositionSnapshot)):
+            position.price_date = date(2030, 3, 1)
+        session.commit()
+        create_cash_boundary_coverage(
+            session, account_id=account.id, covered_from=START, covered_to=END
+        )
+        _close(session, january, february)
+
+        availability = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.PORTFOLIO,
+        )
+        assert availability.in_kind_boundary_coverage.account_ids == (account.id,)
+        assert availability.in_kind_boundary_coverage.status == "unknown"
+        assert "not_computable_in_kind_boundary_coverage_unknown" in availability.reason_codes
+
+        xirr = portfolio_xirr_for_interval(session, start_date=START, end_date=END)
+        twrr = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert not xirr.is_available
+        assert not twrr.is_available
+        assert "not_computable_in_kind_boundary_coverage_unknown" in xirr.reason_codes
+        assert "not_computable_in_kind_boundary_coverage_unknown" in twrr.reason_codes
     finally:
         session.close()
         database.engine.dispose()
