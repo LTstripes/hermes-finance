@@ -1197,6 +1197,15 @@ def _portfolio_transfer_safety(
                 for candidate in xirr_required_dates | twrr_required_dates
                 if source.event_date <= candidate <= destination.event_date
             }
+        elif source.event_date > destination.event_date:
+            # C1: reverse chronology is not an empty transit interval. A
+            # required valuation inside the unordered leg interval fails
+            # closed; no ordering is inferred and classification is unchanged.
+            transit_dates = {
+                candidate
+                for candidate in xirr_required_dates | twrr_required_dates
+                if destination.event_date <= candidate <= source.event_date
+            }
 
         leg_in_interval = any(start_date <= leg.event_date <= end_date for leg in legs)
         if not leg_in_interval and not transit_dates:

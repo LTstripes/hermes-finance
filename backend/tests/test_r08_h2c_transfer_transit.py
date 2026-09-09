@@ -9,7 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
-from hermes_finance.domain import AccountType, PerformanceScope
+from hermes_finance.domain import (
+    AccountType,
+    ExternalFlowClassification,
+    ExternalFlowScope,
+    PerformanceScope,
+)
 from hermes_finance.persistence import (
     AccountPerformanceScopeMembership,
     Base,
@@ -26,6 +31,7 @@ from hermes_finance.services.cash_boundary_coverage import (
 )
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
+    classify_external_flow,
     create_external_flow,
     create_external_transfer_link,
 )
@@ -739,6 +745,88 @@ def test_fx_evidence_does_not_bypass_currency_completeness(tmp_path: Path) -> No
         )
         assert "not_computable_currency_conversion_incomplete" in result.xirr.reason_codes
         assert "not_computable_transfer_reconciliation_incomplete" not in result.xirr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_reverse_date_transfer_with_required_closing_inside_blocks_both_metrics(
+    tmp_path: Path,
+) -> None:
+    """C1: reverse-date legs must not be treated as an empty transit interval."""
+
+    session, database, month_ids, accounts = _environment(tmp_path, end_date=MID_CLOSING)
+    try:
+        _link, source, destination = _transfer(
+            session,
+            month_ids,
+            accounts,
+            source_date=date(2030, 2, 15),
+            destination_date=date(2030, 2, 10),
+        )
+        _close(session, month_ids)
+
+        assert source.event_date > destination.event_date
+        assert destination.event_date < MID_CLOSING < source.event_date
+        for leg in (source, destination):
+            assert (
+                classify_external_flow(
+                    session,
+                    leg.id,
+                    scope=ExternalFlowScope.PORTFOLIO,
+                )
+                is ExternalFlowClassification.INTERNAL_TRANSFER
+            )
+
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=MID_CLOSING,
+            scope=PerformanceScope.PORTFOLIO,
+        )
+        assert not result.xirr.is_available
+        assert not result.twrr.is_available
+        assert "not_computable_transfer_in_transit_unvalued" in result.xirr.reason_codes
+        assert "not_computable_transfer_in_transit_unvalued" in result.twrr.reason_codes
+
+        xirr = portfolio_xirr_for_interval(session, start_date=START, end_date=MID_CLOSING)
+        twrr = portfolio_twrr_for_interval(session, start_date=START, end_date=MID_CLOSING)
+        assert not xirr.is_available
+        assert not twrr.is_available
+        assert "not_computable_transfer_in_transit_unvalued" in xirr.reason_codes
+        assert "not_computable_transfer_in_transit_unvalued" in twrr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_reverse_date_transfer_without_required_valuation_intersection_does_not_block(
+    tmp_path: Path,
+) -> None:
+    """Control: reverse-date legs without a required date inside stay available."""
+
+    session, database, month_ids, accounts = _environment(tmp_path)
+    try:
+        _link, source, destination = _transfer(
+            session,
+            month_ids,
+            accounts,
+            source_date=date(2030, 2, 15),
+            destination_date=date(2030, 2, 10),
+        )
+        _close(session, month_ids)
+
+        assert source.event_date > destination.event_date
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="portfolio",
+        )
+        assert result.xirr.is_available
+        assert result.twrr.is_available
+        assert "not_computable_transfer_in_transit_unvalued" not in result.xirr.reason_codes
+        assert "not_computable_transfer_in_transit_unvalued" not in result.twrr.reason_codes
     finally:
         session.close()
         database.engine.dispose()
