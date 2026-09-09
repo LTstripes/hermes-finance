@@ -440,7 +440,8 @@ def _required_account_ids(
     position_history_ids = set(
         session.scalars(
             select(PositionSnapshot.account_id)
-            .where(PositionSnapshot.price_date <= end_date)
+            .join(ReportingMonth, ReportingMonth.id == PositionSnapshot.reporting_month_id)
+            .where(ReportingMonth.snapshot_date <= end_date)
             .distinct()
         )
     )
