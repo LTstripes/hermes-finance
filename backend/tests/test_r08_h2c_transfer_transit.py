@@ -10,10 +10,20 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, PerformanceScope
-from hermes_finance.persistence import AccountPerformanceScopeMembership, Base, CashBalance
+from hermes_finance.persistence import (
+    AccountPerformanceScopeMembership,
+    Base,
+    CashBalance,
+)
+from hermes_finance.persistence import (
+    CashBoundaryCoverage as CashBoundaryCoverageRecord,
+)
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance, update_cash_balance
-from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
@@ -193,7 +203,26 @@ def _transfer(
         currency=destination_currency,
         transfer_link_id=link.id,
     )
+    _reaffirm_cash_coverage(session, accounts)
     return link, source, destination
+
+
+def _reaffirm_cash_coverage(session: Session, accounts: tuple[int, int]) -> None:
+    """Explicitly reaffirm the fixture's coverage after creating transfer legs."""
+
+    for account_id in accounts:
+        coverage = session.scalar(
+            select(CashBoundaryCoverageRecord).where(
+                CashBoundaryCoverageRecord.account_id == account_id
+            )
+        )
+        assert coverage is not None
+        attest_cash_boundary_history(
+            session,
+            account_id=account_id,
+            covered_from=coverage.covered_from,
+            covered_to=coverage.covered_to,
+        )
 
 
 def _month_id_for(month_ids: dict[int, int], event_date: date) -> int:
@@ -224,6 +253,7 @@ def test_required_closing_valuation_inside_transit_blocks_both_metrics(tmp_path:
             direction="contribution",
             transfer_link_id=link.id,
         )
+        _reaffirm_cash_coverage(session, accounts)
         _close(session, month_ids)
         result = performance_availability_for_interval(
             session,
@@ -323,6 +353,7 @@ def test_transit_without_required_valuation_intersection_does_not_block(tmp_path
             direction="contribution",
             transfer_link_id=link.id,
         )
+        _reaffirm_cash_coverage(session, accounts)
         _close(session, month_ids)
         result = performance_availability_for_interval(
             session,
@@ -369,6 +400,7 @@ def test_unrelated_twrr_boundary_inside_transit_only_blocks_twrr(tmp_path: Path)
             kind="external_contribution",
             scope_membership="stable_in_scope",
         )
+        _reaffirm_cash_coverage(session, accounts)
         _close(session, month_ids)
         result = performance_availability_for_interval(
             session,
@@ -515,6 +547,7 @@ def test_evidence_for_one_overlapping_transfer_does_not_reconcile_another(
             direction="contribution",
             transfer_link_id=second.id,
         )
+        _reaffirm_cash_coverage(session, accounts)
         create_transfer_reconciliation_evidence(
             session,
             transfer_link_id=first.id,
@@ -560,6 +593,7 @@ def test_transfer_legs_outside_interval_still_block_transit_at_opening(tmp_path:
             direction="contribution",
             transfer_link_id=link.id,
         )
+        _reaffirm_cash_coverage(session, accounts)
         _close(session, month_ids)
         result = performance_availability_for_interval(
             session,
@@ -621,6 +655,7 @@ def test_transit_leg_outside_interval_checks_effective_membership(tmp_path: Path
             direction="contribution",
             transfer_link_id=link.id,
         )
+        _reaffirm_cash_coverage(session, accounts)
         _close(session, month_ids)
         result = performance_availability_for_interval(
             session,
@@ -659,6 +694,7 @@ def test_account_scope_does_not_inherit_portfolio_transit_block(tmp_path: Path) 
             direction="contribution",
             transfer_link_id=link.id,
         )
+        _reaffirm_cash_coverage(session, accounts)
         _close(session, month_ids)
         result = performance_availability_for_interval(
             session,

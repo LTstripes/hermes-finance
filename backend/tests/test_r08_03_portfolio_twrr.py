@@ -22,7 +22,10 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
-from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import create_external_flow
 from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
@@ -190,6 +193,9 @@ def test_portfolio_twrr_chains_explicit_persisted_boundaries(tmp_path: Path) -> 
                 relation="post_external_flow",
                 external_flow_id=flow.id,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
@@ -274,6 +280,9 @@ def test_portfolio_twrr_group_plus_standalone_same_day_fails_closed(tmp_path: Pa
                 relation=relation,
                 **boundary_kwargs,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
@@ -309,6 +318,9 @@ def test_portfolio_twrr_missing_one_boundary_fails_closed(tmp_path: Path) -> Non
             provenance_kind="synthetic_missing_post",
             relation="pre_external_flow",
             external_flow_id=flow.id,
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_interval(session, january_id, february_id)
         result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
@@ -356,6 +368,9 @@ def test_portfolio_twrr_api_returns_period_value_without_annualizing(tmp_path: P
                 relation=relation,
                 external_flow_id=flow.id,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
         session.close()
 

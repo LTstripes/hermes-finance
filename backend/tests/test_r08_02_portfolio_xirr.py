@@ -22,7 +22,10 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
-from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import create_external_flow
 from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
@@ -250,6 +253,9 @@ def test_portfolio_xirr_applies_contribution_and_withdrawal_signs(tmp_path: Path
             kind="external_contribution",
             scope_membership="stable_in_scope",
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         close_reporting_month(session, opening_month_id)
         close_reporting_month(session, closing_month_id)
         result = portfolio_xirr_for_interval(
@@ -279,6 +285,9 @@ def test_portfolio_xirr_withdrawal_is_positive_investor_receipt(tmp_path: Path) 
             direction="withdrawal",
             kind="external_withdrawal",
             scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         close_reporting_month(session, opening_month_id)
         close_reporting_month(session, closing_month_id)

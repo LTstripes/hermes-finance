@@ -25,7 +25,10 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
-from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
@@ -161,6 +164,9 @@ def test_explicit_flow_pre_post_observations_make_twrr_boundary_available(
             relation=ValuationBoundaryRelation.POST_EXTERNAL_FLOW,
             external_flow_id=flow.id,
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -224,6 +230,9 @@ def test_same_day_group_is_deterministic_and_uses_group_observations(tmp_path: P
                 relation=relation,
                 boundary_group_id=group.id,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -306,6 +315,9 @@ def test_multiple_same_day_boundary_groups_are_order_unknown(tmp_path: Path) -> 
                     relation=relation,
                     boundary_group_id=group_id,
                 )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -363,6 +375,9 @@ def test_scope_specific_boundary_groups_can_share_one_external_flow(tmp_path: Pa
                     relation=relation,
                     boundary_group_id=group_id,
                 )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         account_result = performance_availability_for_interval(
@@ -439,6 +454,9 @@ def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: P
                 relation=relation,
                 boundary_group_id=group.id,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -480,6 +498,9 @@ def test_partial_or_unrelated_boundary_evidence_remains_fail_closed(tmp_path: Pa
             relation="pre_external_flow",
             external_flow_id=flow.id,
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -511,6 +532,9 @@ def test_same_day_flows_without_explicit_group_are_order_unknown(tmp_path: Path)
             direction="withdrawal",
             kind="external_withdrawal",
             scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_interval(session, january_id, february_id)
 
@@ -594,6 +618,9 @@ def test_availability_rejects_non_boundary_observation_dates(tmp_path: Path) -> 
             )
         )
         session.commit()
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -702,6 +729,12 @@ def test_portfolio_internal_transfer_does_not_create_boundary_group_requirement(
             transfer_key="synthetic-boundary-transfer",
             flow_ids=[source_flow.id, destination_flow.id],
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        attest_cash_boundary_history(
+            session, account_id=destination.id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = performance_availability_for_interval(
@@ -745,6 +778,9 @@ def test_availability_api_exposes_observed_boundary_evidence(tmp_path: Path) -> 
             provenance_kind="synthetic_api_observation",
             relation="post_external_flow",
             external_flow_id=flow.id,
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_interval(session, january_id, february_id)
     finally:

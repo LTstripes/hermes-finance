@@ -27,7 +27,10 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
-from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
@@ -197,6 +200,9 @@ def test_mid_interval_external_flow_is_xirr_ready_but_twrr_boundary_missing(
             kind="external_contribution",
             scope_membership="stable_in_scope",
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_two_months(session, january_id, february_id)
         result = performance_availability_for_interval(
             session,
@@ -231,6 +237,9 @@ def test_same_day_flow_is_xirr_ready_but_twrr_order_unknown(tmp_path: Path) -> N
             direction="contribution",
             kind="external_contribution",
             scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_two_months(session, january_id, february_id)
         result = performance_availability_for_interval(
@@ -333,6 +342,12 @@ def test_resolved_transfer_is_internal_for_portfolio_and_external_for_account(
             kind="external_contribution",
             scope_membership="stable_in_scope",
             transfer_link_id=link.id,
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        attest_cash_boundary_history(
+            session, account_id=destination.id, covered_from=START, covered_to=END
         )
         _close_two_months(session, january_id, february_id)
 
@@ -533,6 +548,9 @@ def test_currency_and_unresolved_transfer_fail_closed(tmp_path: Path) -> None:
             scope_membership="stable_in_scope",
             currency="USD",
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_two_months(session, january_id, february_id)
         foreign = performance_availability_for_interval(
             session,
@@ -557,6 +575,9 @@ def test_currency_and_unresolved_transfer_fail_closed(tmp_path: Path) -> None:
             kind="external_withdrawal",
             scope_membership="stable_in_scope",
             transfer_link_id=link.id,
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_two_months(session, january_id, february_id)
         unresolved = performance_availability_for_interval(

@@ -169,7 +169,32 @@ def attest_cash_boundary_history(
     provenance_reference: str | None = None,
     notes: str | None = None,
 ) -> CashBoundaryCoverageRecord:
-    """Persist the currently accepted authoritative source: owner attestation."""
+    """Create or explicitly reaffirm owner attestation for one exact interval."""
+
+    _validate_interval(covered_from, covered_to)
+    _require_account(session, account_id)
+    existing = session.scalar(
+        select(CashBoundaryCoverageRecord).where(
+            CashBoundaryCoverageRecord.account_id == account_id,
+            CashBoundaryCoverageRecord.covered_from == covered_from,
+            CashBoundaryCoverageRecord.covered_to == covered_to,
+        )
+    )
+    if existing is not None:
+        require_editable_cash_boundary_interval(
+            session, covered_from=covered_from, covered_to=covered_to
+        )
+        existing.coverage_state = CashBoundaryCoverageState.COMPLETE.value
+        existing.provenance_kind = _DEFAULT_PROVENANCE_KIND
+        existing.provenance_reference = (
+            None
+            if provenance_reference is None
+            else _normalize_text(provenance_reference, field="provenance_reference", max_length=128)
+        )
+        existing.notes = notes
+        session.commit()
+        session.refresh(existing)
+        return existing
 
     return create_cash_boundary_coverage(
         session,
@@ -252,6 +277,40 @@ def revoke_cash_boundary_coverage(
         provenance_reference=provenance_reference,
         notes=notes,
     )
+
+
+def invalidate_cash_boundary_coverages_for_external_flow(
+    session: Session,
+    *,
+    account_id: int,
+    event_date: date,
+) -> tuple[int, ...]:
+    """Invalidate COMPLETE cash evidence intersecting one canonical flow.
+
+    A material flow mutation changes the represented cash event set.  Existing
+    attestations therefore become UNKNOWN until the owner explicitly confirms
+    the corrected history again.  This internal invalidation is a mutation
+    consequence, not an evidence edit, so it remains allowed when a reopened
+    flow belongs to an interval that also contains other closed months.
+    """
+
+    rows = list(
+        session.scalars(
+            select(CashBoundaryCoverageRecord).where(
+                CashBoundaryCoverageRecord.account_id == account_id,
+                CashBoundaryCoverageRecord.coverage_state
+                == CashBoundaryCoverageState.COMPLETE.value,
+                CashBoundaryCoverageRecord.covered_from <= event_date,
+                CashBoundaryCoverageRecord.covered_to >= event_date,
+            )
+        )
+    )
+    invalidated_ids = tuple(row.id for row in rows)
+    for row in rows:
+        row.coverage_state = CashBoundaryCoverageState.UNKNOWN.value
+    if rows:
+        session.flush()
+    return invalidated_ids
 
 
 def _overlaps(row: CashBoundaryCoverageRecord, *, start_date: date, end_date: date) -> bool:

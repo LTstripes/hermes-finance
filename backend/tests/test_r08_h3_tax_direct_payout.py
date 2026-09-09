@@ -16,6 +16,7 @@ from hermes_finance.persistence import (
     InvestmentCashFlow,
     PositionSnapshot,
 )
+from hermes_finance.services.cash_boundary_coverage import attest_cash_boundary_history
 from hermes_finance.services.external_flows import create_external_flow
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
@@ -37,7 +38,7 @@ def _availability(session, january_id: int, february_id: int, account_id: int):
 
 
 def _external_withdrawal(session, february_id: int, account_id: int, amount: str):
-    return create_external_flow(
+    flow = create_external_flow(
         session,
         reporting_month_id=february_id,
         account_id=account_id,
@@ -47,6 +48,8 @@ def _external_withdrawal(session, february_id: int, account_id: int, amount: str
         kind="external_withdrawal",
         scope_membership="stable_in_scope",
     )
+    attest_cash_boundary_history(session, account_id=account_id, covered_from=START, covered_to=END)
+    return flow
 
 
 def _investment_flow(

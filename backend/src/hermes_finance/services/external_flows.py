@@ -36,6 +36,9 @@ from hermes_finance.services._guard import (
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.cash_boundary_coverage import (
+    invalidate_cash_boundary_coverages_for_external_flow,
+)
 
 
 class ExternalFlowNotFoundError(LookupError):
@@ -430,6 +433,9 @@ def stage_create_external_flow(
     session.flush()
     if link is not None:
         _refresh_transfer_status(session, link)
+    invalidate_cash_boundary_coverages_for_external_flow(
+        session, account_id=account_id, event_date=event_date
+    )
     return flow
 
 
@@ -487,6 +493,16 @@ def stage_update_external_flow(
 
     new_account_id = flow.account_id if account_id is None else account_id
     new_account = _require_account(session, new_account_id)
+    old_material_signature = (
+        flow.account_id,
+        flow.event_date,
+        flow.boundary_amount_kopecks,
+        flow.direction,
+        flow.kind,
+        flow.currency,
+        flow.scope_membership,
+        flow.transfer_link_id,
+    )
     current_kind = ExternalFlowKind(flow.kind)
     current_direction = ExternalFlowDirection(flow.direction)
     normalized_scope_membership = (
@@ -568,6 +584,26 @@ def stage_update_external_flow(
         _refresh_transfer_status(session, old_link)
     if new_link is not None and new_link is not old_link:
         _refresh_transfer_status(session, new_link)
+    new_material_signature = (
+        flow.account_id,
+        flow.event_date,
+        flow.boundary_amount_kopecks,
+        flow.direction,
+        flow.kind,
+        flow.currency,
+        flow.scope_membership,
+        flow.transfer_link_id,
+    )
+    if old_material_signature != new_material_signature:
+        for affected_account_id, affected_event_date in {
+            (old_material_signature[0], old_material_signature[1]),
+            (flow.account_id, flow.event_date),
+        }:
+            invalidate_cash_boundary_coverages_for_external_flow(
+                session,
+                account_id=affected_account_id,
+                event_date=affected_event_date,
+            )
     return flow
 
 
@@ -608,6 +644,8 @@ def update_external_flow(
 def delete_external_flow(session: Session, flow_id: int) -> None:
     flow = _require_external_flow(session, flow_id)
     require_editable_child_month(session, flow)
+    affected_account_id = flow.account_id
+    affected_event_date = flow.event_date
     link = _require_transfer_link(session, flow.transfer_link_id) if flow.transfer_link_id else None
     if link is not None:
         _require_editable_transfer_legs(session, _transfer_legs(session, link.id))
@@ -616,6 +654,11 @@ def delete_external_flow(session: Session, flow_id: int) -> None:
     session.flush()
     if link is not None:
         _refresh_transfer_status(session, link)
+    invalidate_cash_boundary_coverages_for_external_flow(
+        session,
+        account_id=affected_account_id,
+        event_date=affected_event_date,
+    )
     session.commit()
 
 
