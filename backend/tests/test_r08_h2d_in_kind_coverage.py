@@ -280,7 +280,9 @@ def test_generic_account_with_position_history_requires_coverage(tmp_path: Path)
 def test_late_quote_dates_do_not_hide_persisted_positions_from_exact_metrics(
     tmp_path: Path,
 ) -> None:
-    session, database, january, february, account, _ = _environment(tmp_path)
+    session, database, january, february, account, _ = _environment(
+        tmp_path, account_type=AccountType.OTHER
+    )
     try:
         for position in session.scalars(select(PositionSnapshot)):
             position.price_date = date(2030, 3, 1)
