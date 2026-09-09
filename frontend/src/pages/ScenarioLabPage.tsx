@@ -43,6 +43,8 @@ import { INSTRUMENT_TYPE_LABELS, labelOf, MONTH_STATUS_LABELS } from "../lib/lab
 
 const FX_TRANSLATION_BASIS_UNAVAILABLE = "fx_translation_basis_unavailable";
 const FX_STRESS_UNAVAILABLE_TITLE = "Недоступен точный пересчёт";
+const FX_UNKNOWN_DATA_TITLE = "Нет данных для точного пересчёта";
+const FX_EMPTY_SCOPE_TITLE = "Нет позиций в валюте шока";
 
 const SCENARIO_OPTIONS: {
   value: ScenarioShockType;
@@ -132,6 +134,7 @@ const METRIC_LABELS: Record<string, string> = {
 const REASON_LABELS: Record<string, string> = {
   fx_translation_basis_unavailable:
     "Нет авторитетной базы валютного пересчёта: точный стресс-результат не рассчитывается",
+  missing_currency: "Валюта инструмента отсутствует или некорректна",
   instrument_type_not_authoritative:
     "Тип инструмента — не авторитетный признак акций (без look-through в фонды)",
   no_deterministic_income_relationship: "У сценария нет детерминированной связи с этим доходом",
@@ -662,8 +665,9 @@ function ScenarioParameterFields({
         />
       </Field>
       <p className="muted tiny scenario-lab__parameter-hint scenario-lab__parameter-hint--wide">
-        Кандидаты — инструменты с валютой, отличной от валюты отчёта. Пока нет авторитетной базы
-        пересчёта, результат останется «Недоступен точный пересчёт», а не нулевым.
+        Кандидаты — инструменты с валютой, отличной от валюты отчёта. Если ни одна позиция не
+        совпала с валютой шока, затронутый скоуп пуст и точный эффект — 0; иначе без авторитетной
+        базы пересчёта результат недоступен и не выдаётся за ноль.
       </p>
     </div>
   );
@@ -1168,29 +1172,66 @@ function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
   const positionIds = Object.keys(evaluation.impact.per_position).sort(
     (a, b) => Number(a) - Number(b),
   );
+  // Relevant aggregate support comes from the server envelope (#334): the
+  // backend maps candidate/unknown row coverage to liquid_assets (and the
+  // sibling capital aggregates) as unavailable / unknown / supported.
+  // Fall back across the sibling aggregates defensively; when in doubt the
+  // UI fails closed to the conservative unavailable presentation (#332).
   const liquidSupport = metricSupportFor(evaluation, "liquid_assets");
+  const fxSupport =
+    liquidSupport ??
+    metricSupportFor(evaluation, "liquid_capital_net") ??
+    metricSupportFor(evaluation, "per_position");
+  const fxStatus = fxSupport?.status ?? "unavailable";
+  const targetCurrency = evaluation.normalized_shock_input.target_currency;
 
   return (
     <Panel label="Валютный шок" title="Кандидаты и доступность пересчёта">
-      <div
-        className="scenario-lab__limitation"
-        role="note"
-        aria-label={FX_STRESS_UNAVAILABLE_TITLE}
-      >
-        <strong>{FX_STRESS_UNAVAILABLE_TITLE}</strong>
-        <p>
-          Валюта инструмента — только кандидатный признак. Авторитетная база валютного пересчёта
-          отсутствует, поэтому точное стрессовое значение в рублях не рассчитывается и не выдаётся
-          за успешный нулевой эффект.
-        </p>
-        {liquidSupport && liquidSupport.reason_codes.length > 0 ? (
-          <span className="scenario-lab__reason-chips">
-            {liquidSupport.reason_codes.map((code) => (
-              <code key={code}>{code}</code>
-            ))}
-          </span>
-        ) : null}
-      </div>
+      {fxStatus === "supported" ? (
+        <div className="scenario-lab__empty-scope" role="status" aria-label={FX_EMPTY_SCOPE_TITLE}>
+          <strong>{FX_EMPTY_SCOPE_TITLE}</strong>
+          <p>
+            Ни одна позиция не совпала с выбранной валютой {targetCurrency}: затронутый скоуп пуст,
+            поэтому точный эффект сценария для этого снимка — 0, а ликвидные активы и капитал
+            остаются на базовом уровне.
+          </p>
+        </div>
+      ) : fxStatus === "unknown" ? (
+        <div className="scenario-lab__limitation" role="note" aria-label={FX_UNKNOWN_DATA_TITLE}>
+          <strong>{FX_UNKNOWN_DATA_TITLE}</strong>
+          <p>
+            По части позиций валюта отсутствует или некорректна, поэтому точный эффект в рублях
+            неизвестен и не выдаётся за уверенный ноль.
+          </p>
+          {fxSupport && fxSupport.reason_codes.length > 0 ? (
+            <span className="scenario-lab__reason-chips">
+              {fxSupport.reason_codes.map((code) => (
+                <code key={code}>{code}</code>
+              ))}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          className="scenario-lab__limitation"
+          role="note"
+          aria-label={FX_STRESS_UNAVAILABLE_TITLE}
+        >
+          <strong>{FX_STRESS_UNAVAILABLE_TITLE}</strong>
+          <p>
+            Валюта инструмента — только кандидатный признак. Авторитетная база валютного пересчёта
+            отсутствует, поэтому точное стрессовое значение в рублях не рассчитывается и не выдаётся
+            за успешный нулевой эффект.
+          </p>
+          {liquidSupport && liquidSupport.reason_codes.length > 0 ? (
+            <span className="scenario-lab__reason-chips">
+              {liquidSupport.reason_codes.map((code) => (
+                <code key={code}>{code}</code>
+              ))}
+            </span>
+          ) : null}
+        </div>
+      )}
 
       <div className="scenario-lab__coverage-line">
         <span>

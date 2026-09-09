@@ -520,6 +520,153 @@ function fxEnvelope(month: typeof MONTH_MAY = MONTH_MAY) {
   };
 }
 
+function fxEmptyScopeEnvelope(month: typeof MONTH_MAY = MONTH_MAY) {
+  // Owner UAT shape (#333): 0 candidates, 0 unknown, only not-applicable rows.
+  // Server aggregate support stays `supported` with exact zero impact.
+  const baseBlock = {
+    liquid_assets: "150000.00",
+    liquid_assets_kopecks: 15000000,
+    liquid_capital_net: "150000.00",
+    liquid_capital_net_kopecks: 15000000,
+    debts_included: "0.00",
+    debts_included_kopecks: 0,
+    per_position: {
+      "1": stockRow(1, 10, "100000.00", 10000000),
+      "2": bondRow(2, 11, "50000.00", 5000000),
+    },
+  };
+  return {
+    contract_version: "r07-09-v1",
+    calculation_version: "r07-09-v1",
+    shock_schema_version: "v1",
+    reporting_month: month,
+    base_fingerprint: "fp-base-fx-empty",
+    semantic_fingerprint: "fp-sem-fx-empty",
+    normalized_shock_input: {
+      shock_type: "fx_translation_shock",
+      target_currency: "USD",
+      reporting_value_change_pct: "10",
+    },
+    normalized_target_scope: {
+      selector: "all_eligible",
+      target_currency: "USD",
+      reporting_currency: "RUB",
+    },
+    assumptions: ["no_live_fx_lookup", "no_inferred_fx_exposure", "no_probabilistic_forecast"],
+    base: baseBlock,
+    stressed: baseBlock,
+    impact: {
+      known_scope_impact: "0.00",
+      known_scope_impact_kopecks: 0,
+      liquid_assets_delta: "0.00",
+      liquid_assets_delta_kopecks: 0,
+      liquid_capital_net_delta: "0.00",
+      liquid_capital_net_delta_kopecks: 0,
+      per_position: {
+        "1": positionImpact("not_applicable", "0.00", 0),
+        "2": positionImpact("not_applicable", "0.00", 0),
+      },
+    },
+    row_applicability: { "1": "not_applicable", "2": "not_applicable" },
+    metric_support: {
+      liquid_assets: { status: "supported", reason_codes: [] },
+      liquid_capital_net: { status: "supported", reason_codes: [] },
+      per_position: { status: "supported", reason_codes: [] },
+      redemption: { status: "supported", reason_codes: [] },
+    },
+    coverage: {
+      applied: 0,
+      candidate_target_currency: 0,
+      not_applicable: 2,
+      unknown: 0,
+      total_positions: 2,
+      eligible_positions: 2,
+      known_scope_impact: "0.00",
+      known_scope_impact_kopecks: 0,
+    },
+    affected_canonical_refs: { reporting_month_id: month.id, position_ids: [1, 2] },
+    warnings: [],
+    generated_at: null,
+    presentation_metadata: {
+      account_names: { "1": "Брокер" },
+      instrument_names: { "10": "Акция США", "11": "ОФЗ" },
+    },
+  };
+}
+
+function fxUnknownEnvelope(month: typeof MONTH_MAY = MONTH_MAY) {
+  // Missing/invalid currency only: no candidates, server aggregate is `unknown`.
+  const baseBlock = {
+    liquid_assets: "150000.00",
+    liquid_assets_kopecks: 15000000,
+    liquid_capital_net: "150000.00",
+    liquid_capital_net_kopecks: 15000000,
+    debts_included: "0.00",
+    debts_included_kopecks: 0,
+    per_position: {
+      "1": stockRow(1, 10, "100000.00", 10000000),
+      "2": bondRow(2, 11, "50000.00", 5000000),
+    },
+  };
+  return {
+    contract_version: "r07-09-v1",
+    calculation_version: "r07-09-v1",
+    shock_schema_version: "v1",
+    reporting_month: month,
+    base_fingerprint: "fp-base-fx-unknown",
+    semantic_fingerprint: "fp-sem-fx-unknown",
+    normalized_shock_input: {
+      shock_type: "fx_translation_shock",
+      target_currency: "USD",
+      reporting_value_change_pct: "10",
+    },
+    normalized_target_scope: {
+      selector: "all_eligible",
+      target_currency: "USD",
+      reporting_currency: "RUB",
+    },
+    assumptions: ["no_live_fx_lookup", "no_inferred_fx_exposure", "no_probabilistic_forecast"],
+    base: baseBlock,
+    stressed: baseBlock,
+    impact: {
+      known_scope_impact: "0.00",
+      known_scope_impact_kopecks: 0,
+      liquid_assets_delta: "0.00",
+      liquid_assets_delta_kopecks: 0,
+      liquid_capital_net_delta: "0.00",
+      liquid_capital_net_delta_kopecks: 0,
+      per_position: {
+        "1": positionImpact("unknown", "0.00", 0, ["missing_currency"]),
+        "2": positionImpact("not_applicable", "0.00", 0),
+      },
+    },
+    row_applicability: { "1": "unknown", "2": "not_applicable" },
+    metric_support: {
+      liquid_assets: { status: "unknown", reason_codes: ["missing_currency"] },
+      liquid_capital_net: { status: "unknown", reason_codes: ["missing_currency"] },
+      per_position: { status: "unknown", reason_codes: ["missing_currency"] },
+      redemption: { status: "supported", reason_codes: [] },
+    },
+    coverage: {
+      applied: 0,
+      candidate_target_currency: 0,
+      not_applicable: 1,
+      unknown: 1,
+      total_positions: 2,
+      eligible_positions: 2,
+      known_scope_impact: "0.00",
+      known_scope_impact_kopecks: 0,
+    },
+    affected_canonical_refs: { reporting_month_id: month.id, position_ids: [1, 2] },
+    warnings: [],
+    generated_at: null,
+    presentation_metadata: {
+      account_names: { "1": "Брокер" },
+      instrument_names: { "10": "Акция США", "11": "ОФЗ" },
+    },
+  };
+}
+
 const CALCULATE = "Рассчитать сценарий";
 
 async function selectScenario(user: ReturnType<typeof userEvent.setup>, value: string) {
@@ -709,6 +856,9 @@ describe("ScenarioLabPage", () => {
     // Explicit limitation callout, machine reason code survives into the UI.
     expect(screen.getByText("Недоступен точный пересчёт")).toBeInTheDocument();
     expect(screen.getAllByText("fx_translation_basis_unavailable").length).toBeGreaterThan(0);
+    // The other two FX states must not leak into an unavailable result.
+    expect(screen.queryByText("Нет данных для точного пересчёта")).not.toBeInTheDocument();
+    expect(screen.queryByText("Нет позиций в валюте шока")).not.toBeInTheDocument();
     // Candidate scope is explicit, not a success.
     expect(screen.getByText(/Кандидаты \(валюта совпадает\):/)).toBeInTheDocument();
     expect(screen.getAllByText(/^Недоступно$/).length).toBeGreaterThan(0);
@@ -726,6 +876,76 @@ describe("ScenarioLabPage", () => {
       true,
     );
     expect(rows.some((row) => row.textContent?.includes("Акция США"))).toBe(true);
+  });
+
+  it("FX empty affected scope renders a supported zero no-op without the unavailable callout", async () => {
+    const user = userEvent.setup();
+    const envelope = fxEmptyScopeEnvelope();
+    const { fetchMock, bodies } = mockFetchRouter({
+      "GET /api/months": () => jsonResponse(MONTHS),
+      "POST /api/months/1/scenario-lab": () => jsonResponse(envelope),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ScenarioLabPage />);
+    await screen.findByLabelText("Размер просадки акций, %");
+    await selectScenario(user, "fx_translation_shock");
+    await user.type(screen.getByLabelText("Изменение стоимости в отчёте, %"), "10");
+    await user.click(screen.getByRole("button", { name: CALCULATE }));
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: /Май\s*2030\s*·\s*Валютный шок/ }),
+    ).toBeInTheDocument();
+    expect(bodies[0].body).toEqual({
+      shock: { fx_translation_shock: { target_currency: "USD", reporting_value_change_pct: "10" } },
+    });
+
+    // No unavailable/unknown limitation: the affected scope is empty and supported.
+    expect(screen.queryByText("Недоступен точный пересчёт")).not.toBeInTheDocument();
+    expect(screen.queryByText("Нет данных для точного пересчёта")).not.toBeInTheDocument();
+    expect(screen.queryByText("fx_translation_basis_unavailable")).not.toBeInTheDocument();
+    // Explicit no-matching-candidates no-op message naming the target currency.
+    expect(screen.getByText("Нет позиций в валюте шока")).toBeInTheDocument();
+    expect(screen.getByText(/выбранной валютой USD/)).toBeInTheDocument();
+    // Supported zero result stays visible: calculated badges, base money, known-scope impact.
+    expect(screen.getAllByText(/^Рассчитано$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/150\s*000\s*₽/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Известный скоуп · влияние/)).toBeInTheDocument();
+    expect(screen.queryByText("точный стресс-пересчёт недоступен")).not.toBeInTheDocument();
+  });
+
+  it("FX unknown currency metadata renders an unknown limitation, not zero certainty", async () => {
+    const user = userEvent.setup();
+    const envelope = fxUnknownEnvelope();
+    const { fetchMock, bodies } = mockFetchRouter({
+      "GET /api/months": () => jsonResponse(MONTHS),
+      "POST /api/months/1/scenario-lab": () => jsonResponse(envelope),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ScenarioLabPage />);
+    await screen.findByLabelText("Размер просадки акций, %");
+    await selectScenario(user, "fx_translation_shock");
+    await user.type(screen.getByLabelText("Изменение стоимости в отчёте, %"), "10");
+    await user.click(screen.getByRole("button", { name: CALCULATE }));
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: /Май\s*2030\s*·\s*Валютный шок/ }),
+    ).toBeInTheDocument();
+    expect(bodies[0].body).toEqual({
+      shock: { fx_translation_shock: { target_currency: "USD", reporting_value_change_pct: "10" } },
+    });
+
+    // Unknown state is visible and distinct from both unavailable and empty-scope.
+    expect(screen.queryByText("Недоступен точный пересчёт")).not.toBeInTheDocument();
+    expect(screen.queryByText("Нет позиций в валюте шока")).not.toBeInTheDocument();
+    expect(screen.getByText("Нет данных для точного пересчёта")).toBeInTheDocument();
+    expect(screen.getAllByText("missing_currency").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Неизвестно$/).length).toBeGreaterThan(0);
+    // Empty-scope zero-certainty message must not appear for unknown data.
+    expect(
+      screen.queryByText(/точный эффект сценария для этого снимка — 0/),
+    ).not.toBeInTheDocument();
   });
 
   it("shows deterministic machine-readable validation errors", async () => {

@@ -158,6 +158,26 @@
   color: #7a5214;
 }
 
+.scenario-lab__empty-scope {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgb(39 115 76 / 28%);
+  border-radius: var(--radius);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.scenario-lab__empty-scope strong {
+  color: var(--green);
+}
+
+.scenario-lab__empty-scope p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .scenario-lab__limitation p {
   margin: 0;
   line-height: 1.5;
