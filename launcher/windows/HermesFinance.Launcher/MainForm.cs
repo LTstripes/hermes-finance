@@ -1021,7 +1021,7 @@ public sealed class MainForm : Form
             SetDependencyActions(enabled: false, preparationRequired: false);
             SetReadiness(profile, LauncherReadinessState.Starting);
             AppendDiagnostic("Starting selected checkout's existing guarded startup and waiting for health probes.");
-            SetLastLaunchStatus($"Последний запуск: стартует {profile.DisplayName}");
+            SetLastLaunchStatus($"Последний запуск: стартует {LauncherUi.OwnerTitle(profile)}");
             StartProcess(validated);
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
@@ -1305,7 +1305,7 @@ public sealed class MainForm : Form
         AttachProcess(profile, recovered.Process, () => recovered.Marker.ProcessStartTimeUtcTicks);
         _ready = true;
         SetReadiness(profile.Profile, LauncherReadinessState.Running);
-        SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
+        SetLastLaunchStatus($"Последний запуск: готов — {LauncherUi.OwnerTitle(profile.Profile)}");
         AppendDiagnostic("Recovered a launcher-owned Hermes process after launcher restart.");
     }
 
@@ -1445,7 +1445,7 @@ public sealed class MainForm : Form
         _ready = true;
         SetReadiness(profile.Profile, LauncherReadinessState.Running);
         ApplyPrimaryPlan(profile.Profile, LauncherReadinessState.Running, profile, null);
-        SetLastLaunchStatus($"Последний запуск: готов — {profile.Profile.DisplayName}");
+        SetLastLaunchStatus($"Последний запуск: готов — {LauncherUi.OwnerTitle(profile.Profile)}");
         AppendDiagnostic(version is null
             ? "Health marker and data identity passed; backend package version was unavailable in this legacy/synthetic runtime. Raw logs remain in «Диагностика»."
             : $"Health checks passed with backend version {version}; it matches launcher release identity. Raw logs remain in «Диагностика».");

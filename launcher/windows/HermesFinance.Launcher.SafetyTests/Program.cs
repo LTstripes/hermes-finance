@@ -103,6 +103,7 @@ var tests = new (string Name, Action Run)[]
     ("layout survives narrow and wide resizes", LayoutSurvivesCommonResizes),
     ("layout keeps cards comparable with one obvious primary CTA", LayoutKeepsCardsComparableAndPrimaryObvious),
     ("owner title derives from validated identity, never stale display copy", OwnerTitleDerivesFromValidatedIdentity),
+    ("last-run footer derives from validated owner title, never stale display copy", LastRunFooterDerivesFromValidatedIdentity),
     ("loopback badge keeps the address readable without digit wrap", LoopbackBadgeKeepsAddressReadable),
     ("selected and card titles fit without clipping when scaled", SelectedAndCardTitlesFitWhenScaled),
 };
@@ -2440,6 +2441,94 @@ static void OwnerTitleDerivesFromValidatedIdentity()
         .GetValue(form)!;
     Assert(selectedName.Text == "Hermes Finance — Stable",
         $"The selected-profile title must be the version-free owner title, found '{selectedName.Text}'.");
+}
+
+// #308: bottom-right last-run footer must never surface stale
+// profiles[].display_name (e.g. "Hermes Finance — Stable 0.8.0").
+// The footer label is normalized through LauncherUi.OwnerTitle and the
+// time suffix "  ·  HH:mm" stays intact.
+static void LastRunFooterDerivesFromValidatedIdentity()
+{
+    LauncherProfile StaleStable() => new()
+    {
+        Id = "stable",
+        DisplayName = "Hermes Finance — Stable 0.8.0",
+        Type = "stable",
+        Checkout = "C:\\synthetic\\stable",
+        ExpectedRef = "refs/tags/v0.8.2",
+        DataDir = "C:\\synthetic\\stable\\data",
+        Database = "C:\\synthetic\\stable\\data\\finance.db",
+        OpenBrowser = false,
+    };
+
+    // LauncherUi.OwnerTitle itself is the canonical normalization.
+    Assert(LauncherUi.OwnerTitle(StaleStable()) == "Hermes Finance — Stable",
+        "OwnerTitle must normalize a stale Stable display_name for the footer.");
+    var startFooter = $"Последний запуск: стартует {LauncherUi.OwnerTitle(StaleStable())}";
+    Assert(startFooter == "Последний запуск: стартует Hermes Finance — Stable",
+        $"Start footer must use the normalized owner title, found '{startFooter}'.");
+    Assert(!startFooter.Contains("0.8.0", StringComparison.Ordinal),
+        "Start footer must not leak the stale 0.8.0 version.");
+    Assert(startFooter.Contains("стартует", StringComparison.Ordinal),
+        "Start footer must preserve the status text.");
+
+    var stalePreview = new LauncherProfile
+    {
+        Id = "preview",
+        DisplayName = "Hermes Finance БЂ 0.7 Preview",
+        Type = "preview",
+        Checkout = "C:\\synthetic\\preview",
+        ExpectedRef = "refs/remotes/origin/main",
+        DataDir = "C:\\synthetic\\preview\\data",
+        Database = "C:\\synthetic\\preview\\data\\finance.db",
+        OpenBrowser = false,
+    };
+    Assert(LauncherUi.OwnerTitle(stalePreview) == "Hermes Finance — Preview",
+        "OwnerTitle must normalize a mojibake Preview display_name for the footer.");
+
+    // Presentation-only: no state-machine, runtime, or release changes.
+    // Ready/recovered footers share the same path — prove the actual
+    // MainForm wiring does not use raw DisplayName.
+    var stable = StaleStable();
+    using var form = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stable],
+    });
+    var validated = new ValidatedProfile(
+        stable, stable.Checkout, stable.DataDir, stable.Database, "d04f46696a991ea59066b59d4870980ac4b69089",
+        "production", new DependencyStatus(true, true, "ready", "ready"));
+    var completeReady = typeof(MainForm).GetMethod("CompleteReady", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException("Could not find CompleteReady for last-run footer.");
+    completeReady.Invoke(form, [validated, "v0.8.2"]);
+    var lastLaunch = GetPrivate<Label>(form, "_lastLaunch").Text;
+    Assert(lastLaunch.Contains("Hermes Finance — Stable", StringComparison.Ordinal),
+        $"Ready footer must show the normalized owner title, found '{lastLaunch}'.");
+    Assert(!lastLaunch.Contains("0.8.0", StringComparison.Ordinal),
+        $"Ready footer must not leak stale 0.8.0, found '{lastLaunch}'.");
+    Assert(lastLaunch.Contains("готов —", StringComparison.Ordinal),
+        "Ready footer must preserve the ready status text.");
+    Assert(lastLaunch.Contains(" · ", StringComparison.Ordinal),
+        "Ready footer must preserve the ' · HH:mm' time separator.");
+
+    using var formPreview = new MainForm(new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
+        Profiles = [stalePreview],
+    });
+    var validatedPreview = new ValidatedProfile(
+        stalePreview, stalePreview.Checkout, stalePreview.DataDir, stalePreview.Database, "abc1234",
+        "preview", new DependencyStatus(true, true, "ready", "ready"));
+    completeReady.Invoke(formPreview, [validatedPreview, null]);
+    var lastPreview = GetPrivate<Label>(formPreview, "_lastLaunch").Text;
+    Assert(lastPreview.Contains("Hermes Finance — Preview", StringComparison.Ordinal),
+        $"Recovered/ready Preview footer must show normalized title, found '{lastPreview}'.");
+    Assert(!lastPreview.Contains("БЂ", StringComparison.Ordinal) && !lastPreview.Contains("0.7", StringComparison.Ordinal),
+        $"Preview footer must not leak mojibake/stale version, found '{lastPreview}'.");
+    Assert(lastPreview.Contains(" · ", StringComparison.Ordinal),
+        "Preview footer must preserve the time suffix.");
 }
 
 // #302: the LOCAL ONLY / 127.0.0.1:8000 badge must keep the address on its
