@@ -16,6 +16,7 @@ import { MonthlyCloseWorkflowPage } from "../pages/MonthlyCloseWorkflowPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
 import { RiskAllocationPage } from "../pages/RiskAllocationPage";
+import { ScenarioLabPage } from "../pages/ScenarioLabPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
@@ -45,6 +46,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="goals" element={<GoalsPage />} />
             <Route path="tax-iis-planner" element={<TaxIisPlannerPage />} />
+            <Route path="scenario-lab" element={<ScenarioLabPage />} />
             <Route path="export" element={<ExportPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

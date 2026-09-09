@@ -1,15 +1,23 @@
 """Pure domain for Scenario Lab v1 (r07-09).
 
-Deterministic, no I/O, no DB. Implements equity_drawdown and
-fx_translation_shock baseline semantics exactly as per
-docs/r07-09-scenario-lab-contract.md.
+Deterministic, no I/O, no DB. Implements equity_drawdown semantics
+exactly as per docs/r07-09-scenario-lab-contract.md, the
+deposit_rate_assumption rate-normalization helpers used by 141-B, the
+inflation_real_value helpers (annual-inflation parse + real-value
+discount at a whole-kopeck money boundary) used by 141-C, and the
+fx_translation_shock candidate-scope helpers of the canonical FX
+baseline.
 
-v1 accepts exactly one shock. Multi-shock composition must fail with
-unsupported_composition_v1.
+v1 accepts exactly one shock; multi-shock composition must fail with
+unsupported_composition_v1. Supported shocks: equity_drawdown,
+deposit_rate_assumption, inflation_real_value, fx_translation_shock.
 
 Money: integer kopecks, percentages as Decimal strings, ROUND_HALF_UP.
-FX matching-currency rows are candidate scope only: Instrument.currency
-is not a translation basis and must not invent stressed money values.
+Rate normalization for deposit_rate_assumption delegates to the canonical
+:mod:`hermes_finance.domain.values` ``PercentageRate`` contract instead of
+duplicating its basis-point semantics. FX matching-currency rows are
+candidate scope only: Instrument.currency is not a translation basis and
+must not invent stressed money values.
 """
 
 from __future__ import annotations
@@ -20,6 +28,8 @@ import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
+
+from hermes_finance.domain.values import PercentageRate
 
 CONTRACT_VERSION = "r07-09-v1"
 CALCULATION_VERSION = "r07-09-v1"
@@ -34,7 +44,14 @@ FX_CANDIDATE_TARGET_CURRENCY = "candidate_target_currency"
 
 class ShockType(StrEnum):
     EQUITY_DRAWDOWN = "equity_drawdown"
+    DEPOSIT_RATE_ASSUMPTION = "deposit_rate_assumption"
+    INFLATION_REAL_VALUE = "inflation_real_value"
     FX_TRANSLATION_SHOCK = "fx_translation_shock"
+
+
+class DepositTargetSelector(StrEnum):
+    ALL_ELIGIBLE_DEPOSITS = "all_eligible_deposits"
+    DEPOSIT_IDS = "deposit_ids"
 
 
 class RowApplicability(StrEnum):
@@ -322,6 +339,190 @@ def stressed_market_value_kopecks(base_kopecks: int, drawdown_pct: Decimal) -> i
         factor = (Decimal(100) - drawdown_pct) / Decimal(100)
         raw = Decimal(base_kopecks) * factor
         # Single rounding at kopeck boundary only
+        quantized = raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return int(quantized)
+
+
+# ---- deposit_rate_assumption rate helpers (141-B) ----
+#
+# Rate semantics are intentionally delegated to ``PercentageRate`` so the
+# deposit-rate shock does not grow a parallel basis-point model. The only
+# added work is the parse/validation of the absolute annual rate (NaN,
+# Infinity, negative and binary-float inputs are rejected) and the
+# context-independent Decimal guard around the basis-point conversion.
+
+# Context-independent guard for the basis-point conversion.
+# Delegated to PercentageRate which is now exact integer/rational.
+_RATE_PARSER_PRECISION = 40  # kept for reference, not used as semantic bound
+
+
+def parse_assumed_annual_rate_pct(raw: object) -> Decimal:
+    """Parse and validate an absolute annual rate (percentage points).
+
+    Binary float is rejected. NaN, Infinity and negative values are
+    rejected. The returned ``Decimal`` is canonicalized via
+    :func:`canonical_drawdown_pct` so equivalent inputs collapse to a
+    single canonical representation (independent of any ambient
+    ``decimal`` precision).
+
+    Raises ``ValueError`` with a code-prefixed message.
+    """
+    if isinstance(raw, bool):
+        raise ValueError("invalid_assumed_rate_pct: must be decimal string or int")
+    if isinstance(raw, int):
+        raw = str(raw)
+    if isinstance(raw, float):
+        raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
+    if isinstance(raw, Decimal):
+        pct = raw
+    elif isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("invalid_assumed_rate_pct: empty")
+        try:
+            pct = Decimal(raw)
+        except InvalidOperation as e:
+            raise ValueError("invalid_assumed_rate_pct: not a decimal") from e
+    else:
+        raise ValueError("invalid_assumed_rate_pct: unsupported type")
+    if not pct.is_finite():
+        raise ValueError("invalid_assumed_rate_pct: not finite")
+    if pct < Decimal("0"):
+        raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
+    return canonical_drawdown_pct(pct)
+
+
+def canonical_assumed_rate_basis_points(rate_pct: Decimal) -> int:
+    """Convert an absolute annual rate to integer basis points.
+
+    Delegates to the canonical :class:`PercentageRate` contract which is
+    now exact rational (no fixed precision bound).
+    """
+    if isinstance(rate_pct, float):
+        raise ValueError("invalid_assumed_rate_pct: binary float not allowed")
+    if not isinstance(rate_pct, Decimal):
+        raise TypeError("rate_pct must be Decimal")
+    if not rate_pct.is_finite():
+        raise ValueError("invalid_assumed_rate_pct: not finite")
+    if rate_pct < Decimal("0"):
+        raise ValueError("invalid_assumed_rate_pct: negative rate not allowed")
+    return PercentageRate.from_decimal(rate_pct).basis_points
+
+
+def normalized_rate_string(basis_points: int) -> str:
+    """Deterministic canonical decimal string for a basis-point rate.
+
+    Uses :class:`PercentageRate.to_api` so the Scenario Lab never holds
+    its own basis-point/percentage-point mapping.
+    """
+    if not isinstance(basis_points, int) or isinstance(basis_points, bool):
+        raise TypeError("basis_points must be int")
+    return PercentageRate(basis_points).to_api()
+
+
+# ---- inflation_real_value helpers (141-C) ----
+#
+# V1 uses the explicit monthly convention from the contract
+# (docs/r07-09-scenario-lab-contract.md section 9):
+#
+#     monthly_rate = annual_inflation_pct / 12
+#     real_value = nominal_future_value / (1 + monthly_rate) ^ months_ahead
+#
+# with ``months_ahead`` the deterministic calendar-month distance from
+# the base reporting month to the cash-flow month. Decimal semantics;
+# rounding happens only at the whole-kopeck money boundary. The
+# discount itself is a pure presentation conversion — it never mutates
+# the nominal amount.
+
+_INFLATION_GUARD_PRECISION = 30  # guard digits above operand size
+
+
+def parse_annual_inflation_pct(raw: object) -> Decimal:
+    """Parse and validate an absolute annual inflation percentage.
+
+    Binary float is rejected. NaN, Infinity and negative values are
+    rejected (a negative annual inflation assumption is not defined by
+    the v1 contract). The returned ``Decimal`` is canonicalized via
+    :func:`canonical_drawdown_pct` so equivalent inputs collapse to a
+    single canonical representation.
+
+    Raises ``ValueError`` with a code-prefixed message.
+    """
+    if isinstance(raw, bool):
+        raise ValueError("invalid_inflation_pct: must be decimal string or int")
+    if isinstance(raw, int):
+        raw = str(raw)
+    if isinstance(raw, float):
+        raise ValueError("invalid_inflation_pct: binary float not allowed")
+    if isinstance(raw, Decimal):
+        pct = raw
+    elif isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("invalid_inflation_pct: empty")
+        try:
+            pct = Decimal(raw)
+        except InvalidOperation as e:
+            raise ValueError("invalid_inflation_pct: not a decimal") from e
+    else:
+        raise ValueError("invalid_inflation_pct: unsupported type")
+    if not pct.is_finite():
+        raise ValueError("invalid_inflation_pct: not finite")
+    if pct < Decimal("0"):
+        raise ValueError("invalid_inflation_pct: negative inflation not allowed")
+    return canonical_drawdown_pct(pct)
+
+
+def real_value_kopecks(
+    nominal_kopecks: int,
+    annual_inflation_pct: Decimal,
+    months_ahead: int,
+) -> int:
+    """Convert a nominal amount to its real-value equivalent in kopecks.
+
+    ``real_value = nominal / (1 + annual/1200) ^ months_ahead`` with a
+    single ROUND_HALF_UP rounding at the whole-kopeck money boundary.
+    ``months_ahead == 0`` (or a zero nominal) returns the nominal
+    unchanged: ``real_value == nominal_value`` (contract Addition 2).
+
+    Context-independent: the whole expression runs under a localcontext
+    whose precision is derived from the operand sizes plus a guard, so
+    an ambient ``decimal.getcontext().prec`` of 2 or 60 cannot change
+    the result.
+    """
+    if isinstance(nominal_kopecks, bool) or not isinstance(nominal_kopecks, int):
+        raise TypeError("nominal_kopecks must be int")
+    if isinstance(months_ahead, bool) or not isinstance(months_ahead, int):
+        raise TypeError("months_ahead must be int")
+    if months_ahead < 0:
+        raise ValueError("months_ahead must be >= 0")
+    if isinstance(annual_inflation_pct, float):
+        raise ValueError("invalid_inflation_pct: binary float not allowed")
+    if not isinstance(annual_inflation_pct, Decimal):
+        raise TypeError("annual_inflation_pct must be Decimal")
+    if not annual_inflation_pct.is_finite():
+        raise ValueError("invalid_inflation_pct: not finite")
+    if annual_inflation_pct < Decimal("0"):
+        raise ValueError("invalid_inflation_pct: negative inflation not allowed")
+    if months_ahead == 0 or nominal_kopecks == 0:
+        return nominal_kopecks
+
+    # Precision from operand sizes: significant digits of the rate plus
+    # digits of the nominal plus one digit per power step plus guard.
+    canonical_str = _canonical_string_from_decimal(annual_inflation_pct)
+    sig_part = canonical_str.replace("-", "").replace(".", "").lstrip("0")
+    sig_digits = len(sig_part) if sig_part else 1
+    digits_base = len(str(abs(nominal_kopecks)))
+    prec = sig_digits + digits_base + months_ahead + _INFLATION_GUARD_PRECISION
+    if prec < 60:
+        prec = 60
+    with localcontext() as ctx:
+        ctx.prec = prec
+        ctx.rounding = ROUND_HALF_UP
+        monthly_rate = annual_inflation_pct / Decimal(1200)
+        discount_denominator = (Decimal(1) + monthly_rate) ** months_ahead
+        raw = Decimal(nominal_kopecks) / discount_denominator
+        # Single rounding at the kopeck money boundary only.
         quantized = raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return int(quantized)
 
