@@ -39,9 +39,12 @@ from hermes_finance.services.valuation_boundaries import (  # noqa: E402
 def test_audit_reverse_date_transfer_skips_required_twrr_transit_boundary(
     tmp_path: Path,
 ) -> None:
-    """Reverse settlement dates bypass transit even with a required midpoint."""
+    """Reverse settlement dates bypass transit even with a required closing date."""
 
-    session, database, month_ids, accounts = h2c._environment(tmp_path)
+    session, database, month_ids, accounts = h2c._environment(
+        tmp_path,
+        end_date=h2c.MID_CLOSING,
+    )
     try:
         _link, source, destination = h2c._transfer(
             session,
@@ -50,44 +53,18 @@ def test_audit_reverse_date_transfer_skips_required_twrr_transit_boundary(
             source_date=date(2030, 2, 15),
             destination_date=date(2030, 2, 10),
         )
-        owner_flow = create_external_flow(
-            session,
-            reporting_month_id=max(month_ids),
-            account_id=accounts[0],
-            event_date=h2c.MID_CLOSING,
-            boundary_amount="100.00",
-            direction="contribution",
-            kind="external_contribution",
-            scope_membership="stable_in_scope",
-        )
-        h2c._reaffirm_cash_coverage(session, accounts)
-        for relation, value in (
-            ("pre_external_flow", "3000.00"),
-            ("post_external_flow", "3100.00"),
-        ):
-            create_observed_valuation_point(
-                session,
-                reporting_month_id=max(month_ids),
-                scope="portfolio",
-                observed_date=h2c.MID_CLOSING,
-                total_value=value,
-                performance_currency="RUB",
-                provenance_kind="synthetic-post-hardening-reverse-date",
-                relation=relation,
-                external_flow_id=owner_flow.id,
-            )
         h2c._close(session, month_ids)
 
         availability = performance_availability_for_interval(
             session,
             start_date=h2c.START,
-            end_date=h2c.END,
+            end_date=h2c.MID_CLOSING,
             scope="portfolio",
         )
         twrr = portfolio_twrr_for_interval(
             session,
             start_date=h2c.START,
-            end_date=h2c.END,
+            end_date=h2c.MID_CLOSING,
         )
 
         assert source.event_date > destination.event_date
