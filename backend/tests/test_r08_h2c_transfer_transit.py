@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, PerformanceScope
-from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
+from hermes_finance.persistence import AccountPerformanceScopeMembership, Base, CashBalance
 from hermes_finance.services.accounts import create_account
-from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash import create_cash_balance, update_cash_balance
 from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
@@ -24,6 +24,8 @@ from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
 )
+from hermes_finance.services.portfolio_twrr import portfolio_twrr_for_interval
+from hermes_finance.services.portfolio_xirr import portfolio_xirr_for_interval
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.transfer_reconciliation import (
@@ -233,6 +235,67 @@ def test_required_closing_valuation_inside_transit_blocks_both_metrics(tmp_path:
         assert not result.twrr.is_available
         assert "not_computable_transfer_in_transit_unvalued" in result.xirr.reason_codes
         assert "not_computable_transfer_in_transit_unvalued" in result.twrr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_same_day_internal_transfer_at_closing_boundary_fails_closed_without_order_proof(
+    tmp_path: Path,
+) -> None:
+    session, database, month_ids, accounts = _environment(tmp_path)
+    try:
+        cash = session.scalar(
+            select(CashBalance).where(
+                CashBalance.reporting_month_id == min(month_ids),
+                CashBalance.account_id == accounts[0],
+            )
+        )
+        assert cash is not None
+        update_cash_balance(session, cash.id, amount="1000.00")
+        _, source, _ = _transfer(
+            session, month_ids, accounts, source_date=END, destination_date=END
+        )
+        _close(session, month_ids)
+
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope=PerformanceScope.PORTFOLIO
+        )
+        reason = "not_computable_valuation_boundary_order_unknown"
+        assert reason in result.closing_valuation.reason_codes
+        assert not result.xirr.is_available
+        assert not result.twrr.is_available
+        assert reason in result.xirr.reason_codes
+        assert reason in result.twrr.reason_codes
+
+        xirr = portfolio_xirr_for_interval(session, start_date=START, end_date=END)
+        twrr = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert not xirr.is_available
+        assert not twrr.is_available
+        assert reason in xirr.reason_codes
+        assert reason in twrr.reason_codes
+        assert source.event_date == END
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_same_day_internal_transfer_without_required_boundary_stays_available(
+    tmp_path: Path,
+) -> None:
+    session, database, month_ids, accounts = _environment(tmp_path)
+    try:
+        _transfer(
+            session, month_ids, accounts, source_date=MID_CLOSING, destination_date=MID_CLOSING
+        )
+        _close(session, month_ids)
+
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope=PerformanceScope.PORTFOLIO
+        )
+        assert result.xirr.is_available
+        assert result.twrr.is_available
+        assert "not_computable_valuation_boundary_order_unknown" not in result.reason_codes
     finally:
         session.close()
         database.engine.dispose()

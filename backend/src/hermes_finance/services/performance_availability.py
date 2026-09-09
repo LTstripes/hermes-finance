@@ -1250,6 +1250,17 @@ def _portfolio_transfer_safety(
         ):
             shared_reasons.add(AvailabilityReasonCode.TRANSFER_RECONCILIATION_INCOMPLETE.value)
 
+        same_day_boundary_dates = {
+            candidate
+            for candidate in xirr_required_dates | twrr_required_dates
+            if source.event_date == destination.event_date == candidate
+        }
+        if same_day_boundary_dates:
+            if same_day_boundary_dates & xirr_required_dates:
+                xirr_reasons.add(_TWRR_ONLY_REASON)
+            if same_day_boundary_dates & twrr_required_dates:
+                twrr_reasons.add(_TWRR_ONLY_REASON)
+
         if transit_dates:
             if transit_dates & xirr_required_dates:
                 xirr_reasons.add(AvailabilityReasonCode.TRANSFER_IN_TRANSIT_UNVALUED.value)
@@ -1387,6 +1398,8 @@ def performance_availability_for_interval(
 
     xirr = _metric("xirr", xirr_reasons)
     twrr_reasons = set(xirr_reasons)
+    twrr_reasons.update(opening.reason_codes)
+    twrr_reasons.update(closing.reason_codes)
     external_flow_boundaries, boundary_reasons = _twrr_boundary_reasons(
         session,
         scope=normalized_scope,
