@@ -37,7 +37,7 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в exact released main SHA `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical development `main` — `96f97b0424370be93e327587633c424ee6c33a8a`; exact-main CI run `34021826830` завершился `success`. Канонический historical record — `docs/releases/0.8.2.md`; consolidation report — `docs/CONSOLIDATION_2026-09-06.md`.
+Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в exact released main SHA `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical development `main` — `420e10046a7adbe17078dcd47d8b803927f0a86a` (merge PR #335, Decision Support v1 — Scenario Lab, 2026-09-09); exact-main push CI run `34384056201`: все продуктовые гейты зелёные (backend lanes, frontend, privacy guard, Windows production smoke, release safety, launcher safety), `Synthetic visual audit` упал только по окружению раннера (Chromium apt hash mismatch) и не связан с содержимым merge. Предыдущий pre-integration baseline `96f97b0424370be93e327587633c424ee6c33a8a` (exact-main CI run `34021826830`, `success`) остаётся историческим. Канонический historical record — `docs/releases/0.8.2.md`; consolidation report — `docs/CONSOLIDATION_2026-09-06.md`; Decision Support v1 closeout — `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`.
 
 0.8.2 — опубликованный maintenance release после Stable 0.8.1: документирует уже интегрированные #299, #302, current-state #142 и #143. Эксперимент Stable self-update (#298, #311, #312) закрыт `not_planned`; он не является доказанным canonical owner flow и вынесен в backlog/redesign #313. Stable/Preview остаются разделёнными, owner actions явными.
 
@@ -92,6 +92,7 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - current-state Tax/IIS Planner v1;
 - deterministic Insights backend v1 на persisted evidence с AI Analysis Bundle integration в schema `1.2.0`; dedicated Insights UI остаётся deferred;
 - XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed gaps/order/root states;
+- Scenario Lab v1 (development `main`, ещё не в опубликованном Stable): детерминированный read-only owner what-if инструмент — ровно один шок за запуск (equity drawdown, deposit absolute-rate assumption, inflation real-value / purchasing-power view, conservative FX translation candidate-scope baseline); owner-facing API + deterministic JSON export + UI в Планирование → Сценарии; без записей, без market forecasts/probabilities, без background/provider refresh; unsupported/missing metadata остаётся `unknown` / `unavailable` и никогда не угадывается;
 - guarded Windows Stable/Preview launcher с owner Start/Stop controls, без Git branch/state mutation;
 - row-scoped selective apply: unrelated unresolved/conflicting rows не блокируют safe selected subset, selected unsafe/stale rows fail closed;
 - UI/visual-audit polish, semantic test-taxonomy/verification work; Backend CI timeout временно 30 минут после release unblock, durable split/telemetry tracked в #282;
@@ -114,6 +115,10 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - универсальный импорт любого Excel/PDF;
 - dedicated Insights UI; AI Analysis Bundle integration уже присутствует в schema `1.2.0`;
 - projection expansion beyond current-state Tax/IIS Planner v1;
+- issuer impairment — ждёт authoritative issuer identity;
+- exact FX translation — ждёт authoritative native-value/base-FX semantics;
+- multi-shock composition;
+- Monte Carlo / VaR / probabilities / correlations.
 
 ## 5. Технический контур
 
@@ -407,7 +412,7 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 
 ### Deferred
 
-- #141 Scenario Lab;
+- #141 Scenario Lab — completed: merged to canonical `main` via PR #335 (см. раздел 24);
 - #142 projection expansion beyond current-state Tax/IIS v1;
 - #143 dedicated Insights UI; AI Analysis Bundle integration is present in schema `1.2.0`;
 - #203 Phase 2B test rehome/dedupe;
@@ -446,7 +451,20 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 
 The mandatory transition gate after the release is recorded in
 [`docs/CONSOLIDATION_2026-09-06.md`](CONSOLIDATION_2026-09-06.md). `main` remains
-the only canonical/release source. The three staging lines are
+the only canonical/release source. The three staging lines were
 `integration/monthly-close-uat`, `integration/performance-v1` and
 `integration/decision-support-v1`; each task still starts from its own child
-branch and isolated workspace.
+branch and isolated workspace. The Decision Support staging line has since
+completed and merged via PR #335 — see section 24.
+
+## 24. Decision Support v1 closeout (2026-09-09)
+
+Staging workstream `integration/decision-support-v1` завершён первым coherent milestone и интегрирован в canonical `main` через PR #335 (merge `420e10046a7adbe17078dcd47d8b803927f0a86a`).
+
+- Staging tip: `26cf35afa3cb9e8803cff66473454ea768f191f7`; parent feature #141 closed completed; roadmap #127 получил completed-workstream status comment.
+- Поставлено: Scenario Lab v1 — детерминированный read-only what-if (equity drawdown, deposit absolute-rate assumption, inflation real-value, conservative FX candidate-scope baseline), `POST /api/months/{id}/scenario-lab` + `/export`, UI Планирование → Сценарии; архитектура `FrozenScenarioBase` (capture-once → pure projection).
+- Owner Preview UAT #333 — `PASS` на isolated copy DB; найденный им FX empty-scope кейс закрыт в #334 (re-UAT `PASS`).
+- Сознательные границы: issuer impairment, exact FX translation, multi-shock composition, Monte Carlo/VaR/probabilities/correlations — deferred (см. раздел 4).
+- Полная запись: [`docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`](DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md); execution journal — `docs/EXECUTION_HISTORY.md`.
+
+Future work стартует от canonical `main`, а не от старой integration-ветки. Опубликованный Stable `0.8.2` этим merge не меняется: Scenario Lab находится на development `main` до будущей публикации.

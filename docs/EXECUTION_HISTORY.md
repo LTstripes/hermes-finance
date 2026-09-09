@@ -549,3 +549,64 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 Pre-R04 attribution remains available across Git history, `docs/history/HERMES_TASKS.md`, release backlogs, owner-review/follow-up docs, ADRs and `CHANGELOG.md`.
 
 Do not invent missing executor/model attribution during backfill. A later documentation-only pass may reconstruct older releases from verifiable records if the owner wants a complete project-history article dataset.
+
+---
+
+# Decision Support v1 closeout
+
+### DS-V1-CLOSEOUT — Scenario Lab workstream completed and integrated (2026-09-09)
+
+- **Status:** accepted and integrated into canonical `main` via PR #335
+  (head `integration/decision-support-v1` → `main`), merge
+  `420e10046a7adbe17078dcd47d8b803927f0a86a`, merged 2026-09-09.
+- **Staging tip:** `26cf35afa3cb9e8803cff66473454ea768f191f7` (#334 FX
+  empty-scope UI fix).
+- **Parent feature:** #141 closed completed; roadmap #127 received the
+  completed-workstream status comment and stays open as umbrella.
+- **Actual sequence:**
+  1. post-v0.8.2 workstream baseline and contract-first start (#306
+     consolidation, three-workstream split);
+  2. Scenario Lab contract/adversarial review;
+  3. 141-A equity implementation and fixes;
+  4. 141-B deposit-rate + `FrozenScenarioBase` refactor (single capture →
+     pure projection);
+  5. 141-C inflation real-value;
+  6. reconciliation with the canonical `main` FX baseline;
+  7. #329 read-only API + deterministic JSON export;
+  8. #332 owner UI (plus integrator blockers: signed FX validation,
+     stale-result race);
+  9. #333 owner Preview UAT on an isolated copy DB — `PASS`;
+  10. #334 FX empty-scope presentation fix discovered by real UAT —
+      completed, re-UAT `PASS`;
+  11. PR #335 → canonical `main` merge `420e10046a7adbe17078dcd47d8b803927f0a86a`.
+- **Defects caught before merge (why they matter):** ambient `Decimal`
+  precision bugs in equity/rate/deposit math (local decimal context
+  leaked into domain math); mixed frozen/live DB reads during Scenario
+  capture (broke the frozen-base guarantee); invalid
+  `metric_support=unchanged` state (hid limitation semantics); API
+  machine-readable validation code loss (UI/debug needs exact codes);
+  client range narrowing vs backend semantics (FX signed `>= -100`, no
+  positive cap; only equity `0..100`); stale async result race
+  (in-flight POST could publish a stale result as current); FX
+  empty-scope `supported` result presented as `unavailable`, caught by
+  owner UAT.
+- **Verification on the exact merged `main`:** push CI run `34384056201`
+  — backend lanes, frontend, privacy guard, Windows production smoke,
+  release safety and launcher safety all green; `Synthetic visual audit`
+  failed on runner environment only (Playwright Chromium apt install
+  hash mismatch), unrelated to merge content.
+- **Delivered:** deterministic read-only Scenario Lab (equity drawdown,
+  deposit absolute-rate assumption, inflation real-value, conservative
+  FX candidate-scope baseline), owner API + deterministic JSON export,
+  UI under Planning → `Сценарии`. No writes, no forecasts, no
+  probabilities, no background/provider refresh; `unknown` /
+  `unavailable` never guessed.
+- **Deferred (explicit):** issuer impairment, exact FX translation,
+  multi-shock composition, Monte Carlo / VaR / probabilities /
+  correlations.
+- **Follow-up:** future work starts from canonical `main`, not from
+  `integration/decision-support-v1`. Published Stable `0.8.2` is
+  unchanged by this merge.
+- **References:** #141, #329, #332, #333, #334, PR #335, #127,
+  `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`,
+  `docs/r07-09-scenario-lab-contract.md`, `docs/PROJECT_WIKI.md` §24.

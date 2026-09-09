@@ -2,6 +2,25 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [Unreleased]
+
+Development `main` после `0.8.2` (интегрировано через PR #335, merge `420e10046a7adbe17078dcd47d8b803927f0a86a`). Это не новая опубликованная версия: Stable остаётся `0.8.2`, пока будущий релиз её не сменит.
+
+### Scenario Lab v1 (parent #141, closed completed)
+
+- детерминированный read-only Scenario Lab: equity drawdown, deposit absolute-rate assumption, inflation real-value / purchasing-power view, conservative FX translation candidate-scope baseline;
+- owner-facing API (`POST /api/months/{id}/scenario-lab`), deterministic JSON export (`.../scenario-lab/export`) и UI в Планирование → Сценарии;
+- exact/frozen calculation hardening: `FrozenScenarioBase` (capture-once → pure projection), exact `Decimal` domain math, machine-readable validation codes, защита от stale async result;
+- FX empty-scope кейс из owner Preview UAT (#333 `PASS`): пустой затронутый скоуп — supported с точным нулевым эффектом, `unknown`/`unavailable` никогда не выдаются за ноль (#334, re-UAT `PASS`);
+- owner Preview UAT выполнен на isolated copy DB; production данные не использовались.
+
+### Not changed
+
+- canonical Alembic head remains `0036_broker_baseline_provenance`; no migration or schema semantics changed;
+- local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
+- no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
+- issuer impairment, exact FX translation, multi-shock composition и Monte Carlo / VaR / probabilities / correlations остаются deferred.
+
 ## [0.8.2] — 2026-09-05
 
 Published maintenance release after Stable `v0.8.1`. This entry documents

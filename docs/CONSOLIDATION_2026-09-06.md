@@ -117,3 +117,18 @@ the exact SHA is the post-merge read-back recorded in the #306 closeout report.
 | `integration/decision-support-v1` | #141 Scenario Lab contract-only slice; deterministic read-only semantics, no write-back/forecast claims | not started |
 
 No first task above has begun. No release/tag is created by this consolidation.
+
+## Post-consolidation status note (2026-09-09)
+
+The historical 2026-09-06 baseline above is preserved as context; this
+block only records what happened next.
+
+The Decision Support workstream created by the three-workstream split has
+completed its first coherent milestone and merged to canonical `main` via
+PR #335 (merge `420e10046a7adbe17078dcd47d8b803927f0a86a`, 2026-09-09):
+Scenario Lab v1 (parent #141 closed completed), owner UAT #333 `PASS`,
+UAT-discovered FX fix #334 with re-UAT `PASS`. Exact-main push CI run
+`34384056201` is green on all product gates; `Synthetic visual audit`
+failed on runner environment only. Future work starts from canonical
+`main`, not from `integration/decision-support-v1`. Full record:
+`docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`.

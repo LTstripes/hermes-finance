@@ -2,7 +2,7 @@
 
 Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
 
-Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в released main `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical `main` после post-release merge #312 — `96f97b0424370be93e327587633c424ee6c33a8a`; exact-main CI для него — run `34021826830`, `success`. Launcher Stable self-update не считается доказанным canonical flow: #298 закрыт `not_planned`, postmortem/redesign — #313.
+Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в released main `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical `main` после merge PR #335 (Decision Support v1 — Scenario Lab, 2026-09-09) — `420e10046a7adbe17078dcd47d8b803927f0a86a`; exact-main push CI для него — run `34384056201` (все продуктовые гейты зелёные; `Synthetic visual audit` упал только по окружению раннера). Launcher Stable self-update не считается доказанным canonical flow: #298 закрыт `not_planned`, postmortem/redesign — #313.
 
 Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
 
@@ -259,7 +259,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\insta
 
 ### Явно отложено за пределы 0.7.0
 
-- #141 Scenario Lab;
+- #141 Scenario Lab — completed на development `main` через PR #335 (merge `420e10046a7adbe17078dcd47d8b803927f0a86a`, 2026-09-09); в опубликованном Stable `0.8.2` его нет до будущего релиза;
 - #142 projection expansion за пределы current-state Tax/IIS v1;
 - #143 dedicated Insights UI; AI Analysis Bundle integration уже присутствует в schema `1.2.0`;
 - #203 Phase 2B test rehome/dedupe;
