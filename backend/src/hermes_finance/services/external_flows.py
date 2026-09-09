@@ -28,8 +28,10 @@ from hermes_finance.domain import (
 from hermes_finance.persistence import (
     Account,
     ExternalFlow,
+    ExternalFlowBoundaryGroupMember,
     ExternalTransferLink,
     ExternalTransferReconciliationEvidence,
+    ObservedValuationPoint,
 )
 from hermes_finance.services._guard import (
     require_editable_child_month,
@@ -50,6 +52,40 @@ class ExternalTransferLinkNotFoundError(LookupError):
 
 
 _UNSET = object()
+
+
+def _invalidate_observed_valuation_points_for_flow(
+    session: Session,
+    flow_id: int,
+) -> tuple[int, ...]:
+    """Delete observed TWRR boundary evidence linked to one canonical flow.
+
+    A material flow mutation changes the economic event the persisted
+    pre/post valuations were observed against.  The old points therefore
+    become unsuitable for exact TWRR and are removed, so exact TWRR stays
+    ``NOT_COMPUTABLE`` (``VALUATION_BOUNDARY_MISSING``) until the owner
+    captures fresh explicit pre/post evidence.  Cash re-attestation alone
+    cannot restore the boundary.  Only the existing persisted model is
+    used — no flow revision column is introduced.
+    """
+
+    group_ids = select(ExternalFlowBoundaryGroupMember.boundary_group_id).where(
+        ExternalFlowBoundaryGroupMember.external_flow_id == flow_id,
+    )
+    points = list(
+        session.scalars(
+            select(ObservedValuationPoint).where(
+                (ObservedValuationPoint.external_flow_id == flow_id)
+                | (ObservedValuationPoint.boundary_group_id.in_(group_ids)),
+            )
+        )
+    )
+    invalidated_ids = tuple(point.id for point in points)
+    for point in points:
+        session.delete(point)
+    if points:
+        session.flush()
+    return invalidated_ids
 
 
 def _normalize_text(value: str, *, field: str, max_length: int) -> str:
@@ -595,6 +631,7 @@ def stage_update_external_flow(
         flow.transfer_link_id,
     )
     if old_material_signature != new_material_signature:
+        _invalidate_observed_valuation_points_for_flow(session, flow.id)
         for affected_account_id, affected_event_date in {
             (old_material_signature[0], old_material_signature[1]),
             (flow.account_id, flow.event_date),
@@ -650,6 +687,7 @@ def delete_external_flow(session: Session, flow_id: int) -> None:
     if link is not None:
         _require_editable_transfer_legs(session, _transfer_legs(session, link.id))
         _require_no_transfer_reconciliation_evidence(session, link)
+    _invalidate_observed_valuation_points_for_flow(session, flow.id)
     session.delete(flow)
     session.flush()
     if link is not None:

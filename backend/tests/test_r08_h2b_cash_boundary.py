@@ -34,6 +34,7 @@ from hermes_finance.services.external_flows import (
 from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import performance_availability_for_interval
+from hermes_finance.services.portfolio_twrr import portfolio_twrr_for_interval
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
@@ -309,13 +310,8 @@ def test_material_flow_mutation_invalidates_complete_coverage_until_reaffirmed(
 
         reopen_reporting_month(session, february.id)
         if mutation == "delete":
-            for point in session.scalars(
-                select(ObservedValuationPoint).where(
-                    ObservedValuationPoint.external_flow_id == flow.id
-                )
-            ):
-                session.delete(point)
-            session.flush()
+            # delete_external_flow removes the linked observed TWRR boundary
+            # points itself (C2 fail-closed invalidation); no manual cleanup.
             delete_external_flow(session, flow.id)
         else:
             update_external_flow(session, flow.id, boundary_amount="125.00")
@@ -346,7 +342,24 @@ def test_material_flow_mutation_invalidates_complete_coverage_until_reaffirmed(
         assert reaffirmed.provenance_kind == "owner_attestation"
         assert restored.cash_boundary_coverage.status == "complete"
         assert restored.xirr.is_available
-        assert restored.twrr.is_available
+        if mutation == "correction":
+            # C2: cash re-attestation alone must not restore exact TWRR.
+            # The material correction deleted the observed pre/post boundary
+            # points, so fresh explicit boundary evidence is required.
+            assert not restored.twrr.is_available
+            assert "not_computable_valuation_boundary_missing" in restored.twrr.reason_codes
+            reopen_reporting_month(session, february.id)
+            _add_flow_valuation_boundaries(
+                session,
+                month_id=february.id,
+                account_id=account.id,
+                flow_id=flow.id,
+            )
+            close_reporting_month(session, february.id)
+            with_fresh_evidence = _availability(session, account.id)
+            assert with_fresh_evidence.twrr.is_available
+        else:
+            assert restored.twrr.is_available
     finally:
         session.close()
         database.engine.dispose()
@@ -385,6 +398,14 @@ def test_metadata_only_flow_update_preserves_complete_coverage(tmp_path: Path) -
         assert result.cash_boundary_coverage.status == "complete"
         assert result.xirr.is_available
         assert result.twrr.is_available
+        assert [
+            point.total_value_kopecks
+            for point in session.scalars(
+                select(ObservedValuationPoint)
+                .where(ObservedValuationPoint.external_flow_id == flow.id)
+                .order_by(ObservedValuationPoint.id)
+            )
+        ] == [10_000, 20_000]
     finally:
         session.close()
         database.engine.dispose()
@@ -487,6 +508,161 @@ def test_one_missing_in_scope_account_blocks_portfolio_cash_completeness(tmp_pat
         assert result.cash_boundary_coverage.missing_or_incomplete_account_ids == (second.id,)
         assert not result.xirr.is_available
         assert not result.twrr.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def _add_portfolio_flow_valuation_boundaries(session, *, month_id: int, flow_id: int) -> None:
+    for relation, value in (("pre_external_flow", "100.00"), ("post_external_flow", "200.00")):
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=month_id,
+            scope="portfolio",
+            observed_date=MID,
+            total_value=value,
+            performance_currency="RUB",
+            provenance_kind="synthetic-c2-portfolio-boundary",
+            relation=relation,
+            external_flow_id=flow_id,
+        )
+
+
+def test_c2_material_correction_invalidates_portfolio_twrr_boundary(tmp_path: Path) -> None:
+    """C2 regression: corrected flow amount must not reuse old boundary values.
+
+    Mirrors the post-hardening audit reproducer: after a material correction
+    and cash re-attestation, exact TWRR must be NOT_COMPUTABLE while XIRR
+    (which does not consume observed TWRR boundary points) stays available.
+    """
+
+    session, database, january, february, account = _environment(tmp_path)
+    try:
+        flow = create_external_flow(
+            session,
+            reporting_month_id=february.id,
+            account_id=account.id,
+            event_date=MID,
+            boundary_amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session,
+            account_id=account.id,
+            covered_from=START,
+            covered_to=END,
+        )
+        _add_portfolio_flow_valuation_boundaries(session, month_id=february.id, flow_id=flow.id)
+        _close(session, january, february)
+
+        initial = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert initial.is_available
+        assert initial.return_rate == 0
+
+        reopen_reporting_month(session, february.id)
+        update_external_flow(session, flow.id, boundary_amount="125.00")
+        assert (
+            list(
+                session.scalars(
+                    select(ObservedValuationPoint).where(
+                        ObservedValuationPoint.external_flow_id == flow.id
+                    )
+                )
+            )
+            == []
+        )
+        reopen_reporting_month(session, january.id)
+        attest_cash_boundary_history(
+            session,
+            account_id=account.id,
+            covered_from=START,
+            covered_to=END,
+            provenance_reference="synthetic-c2-re-attestation",
+        )
+        _close(session, january, february)
+
+        assert flow.boundary_amount_kopecks == 12_500
+        availability = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="portfolio",
+        )
+        after = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert availability.cash_boundary_coverage.status == "complete"
+        assert availability.xirr.is_available
+        assert not availability.twrr.is_available
+        assert "not_computable_valuation_boundary_missing" in availability.twrr.reason_codes
+        assert not after.is_available
+        assert "not_computable_valuation_boundary_missing" in after.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_c2_fresh_portfolio_boundary_evidence_restores_exact_twrr(
+    tmp_path: Path,
+) -> None:
+    """C2 control: fresh explicit pre/post evidence restores exact TWRR."""
+
+    session, database, january, february, account = _environment(tmp_path)
+    try:
+        flow = create_external_flow(
+            session,
+            reporting_month_id=february.id,
+            account_id=account.id,
+            event_date=MID,
+            boundary_amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session,
+            account_id=account.id,
+            covered_from=START,
+            covered_to=END,
+        )
+        _add_portfolio_flow_valuation_boundaries(session, month_id=february.id, flow_id=flow.id)
+        _close(session, january, february)
+
+        reopen_reporting_month(session, february.id)
+        update_external_flow(session, flow.id, boundary_amount="125.00")
+        reopen_reporting_month(session, january.id)
+        attest_cash_boundary_history(
+            session,
+            account_id=account.id,
+            covered_from=START,
+            covered_to=END,
+            provenance_reference="synthetic-c2-re-attestation",
+        )
+        _close(session, january, february)
+        blocked = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert not blocked.is_available
+
+        reopen_reporting_month(session, february.id)
+        for relation, value in (
+            ("pre_external_flow", "125.00"),
+            ("post_external_flow", "250.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february.id,
+                scope="portfolio",
+                observed_date=MID,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic-c2-fresh-boundary",
+                relation=relation,
+                external_flow_id=flow.id,
+            )
+        _close(session, january, february)
+
+        restored = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
+        assert restored.is_available
+        assert restored.return_rate == 0
     finally:
         session.close()
         database.engine.dispose()
