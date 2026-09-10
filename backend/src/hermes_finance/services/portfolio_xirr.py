@@ -1,8 +1,10 @@
 """Whole-portfolio XIRR service (R08-02).
 
 This service consumes the accepted R08-01C availability contract.  It does
-not classify flows, select neighboring valuations, infer missing values, or
-convert currencies.  Only the portfolio scope is exposed in this first slice.
+does not classify flows, select neighboring valuations, infer missing values, or
+convert currencies.  Accepted R08-02 portfolio semantics stay unchanged; the
+account scope introduced for #146 reuses the exact same availability,
+classification and solver path with the requested account's own evidence.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from hermes_finance.services.performance_availability import (
 
 @dataclass(frozen=True, slots=True)
 class PortfolioXirrResult:
-    """Exact whole-portfolio XIRR plus explicit availability metadata."""
+    """Exact XIRR for one scope plus explicit availability metadata."""
 
     scope: PerformanceScope
     start_date: date
@@ -44,6 +46,7 @@ class PortfolioXirrResult:
     annualized_rate: Decimal | None
     reason_codes: tuple[str, ...] = ()
     iterations: int = 0
+    account_id: int | None = None
 
     @property
     def is_available(self) -> bool:
@@ -60,6 +63,8 @@ class PortfolioXirrResult:
 
 def _unavailable(
     *,
+    scope: PerformanceScope,
+    account_id: int | None,
     start_date: date,
     end_date: date,
     performance_currency: str,
@@ -67,7 +72,8 @@ def _unavailable(
     iterations: int = 0,
 ) -> PortfolioXirrResult:
     return PortfolioXirrResult(
-        scope=PerformanceScope.PORTFOLIO,
+        scope=scope,
+        account_id=account_id if scope is PerformanceScope.ACCOUNT else None,
         start_date=start_date,
         end_date=end_date,
         performance_currency=performance_currency,
@@ -119,22 +125,27 @@ def _cash_flows_from_availability(
     return tuple(cash_flows)
 
 
-def portfolio_xirr_for_interval(
+def _xirr_for_scope_interval(
     session: Session,
     *,
     start_date: date,
     end_date: date,
+    scope: PerformanceScope,
+    account_id: int | None,
 ) -> PortfolioXirrResult:
-    """Calculate XIRR for the whole portfolio when R08-01C permits it."""
+    """Reuse the accepted availability, translation and solver path per scope."""
 
     availability = performance_availability_for_interval(
         session,
         start_date=start_date,
         end_date=end_date,
-        scope=PerformanceScope.PORTFOLIO,
+        scope=scope,
+        account_id=account_id,
     )
     if not availability.xirr.is_available:
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
@@ -144,6 +155,8 @@ def portfolio_xirr_for_interval(
     cash_flows = _cash_flows_from_availability(availability)
     if cash_flows and isinstance(cash_flows[0], str):
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
@@ -153,6 +166,8 @@ def portfolio_xirr_for_interval(
     solver_result = calculate_xirr(cash_flows)
     if not solver_result.is_available:
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
@@ -160,7 +175,8 @@ def portfolio_xirr_for_interval(
             iterations=solver_result.iterations,
         )
     return PortfolioXirrResult(
-        scope=PerformanceScope.PORTFOLIO,
+        scope=scope,
+        account_id=account_id if scope is PerformanceScope.ACCOUNT else None,
         start_date=start_date,
         end_date=end_date,
         performance_currency=availability.performance_currency,
@@ -172,6 +188,23 @@ def portfolio_xirr_for_interval(
     )
 
 
+def portfolio_xirr_for_interval(
+    session: Session,
+    *,
+    start_date: date,
+    end_date: date,
+) -> PortfolioXirrResult:
+    """Calculate XIRR for the whole portfolio when R08-01C permits it."""
+
+    return _xirr_for_scope_interval(
+        session,
+        start_date=start_date,
+        end_date=end_date,
+        scope=PerformanceScope.PORTFOLIO,
+        account_id=None,
+    )
+
+
 def xirr_for_interval(
     session: Session,
     *,
@@ -180,18 +213,23 @@ def xirr_for_interval(
     scope: PerformanceScope | str = PerformanceScope.PORTFOLIO,
     account_id: int | None = None,
 ) -> PortfolioXirrResult:
-    """Generic entry point that intentionally rejects account XIRR for R08-02."""
+    """Generic entry point for the accepted portfolio and account scopes."""
 
     try:
         normalized_scope = PerformanceScope(scope)
     except ValueError as error:
         raise ValueError(f"unsupported XIRR scope: {scope!r}") from error
-    if normalized_scope is not PerformanceScope.PORTFOLIO or account_id is not None:
-        raise ValueError("R08-02 XIRR supports portfolio scope only")
-    return portfolio_xirr_for_interval(
+    if normalized_scope is PerformanceScope.ACCOUNT:
+        if account_id is None:
+            raise ValueError("account_id is required for account XIRR scope")
+    elif account_id is not None:
+        raise ValueError("account_id must be omitted for portfolio XIRR scope")
+    return _xirr_for_scope_interval(
         session,
         start_date=start_date,
         end_date=end_date,
+        scope=normalized_scope,
+        account_id=account_id,
     )
 
 
