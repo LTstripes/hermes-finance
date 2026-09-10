@@ -212,3 +212,43 @@ def test_planned_budget_crud_and_comparison(client: TestClient) -> None:
     deleted = client.delete(f"/api/planned-budget/{line['id']}")
     assert deleted.status_code == 204, deleted.text
     assert client.get(f"/api/planned-budget/{line['id']}").status_code == 404
+
+
+def test_comparison_keeps_absent_side_null_and_explicit_zero_distinct(
+    client: TestClient,
+) -> None:
+    """#336 blocker: an absent side must serialize as null, never as 0.00."""
+    month_id = _month(client)
+    # The owner entered a plan line and stated an explicit zero.
+    planned = client.post(
+        "/api/planned-budget",
+        json={
+            "reporting_month_id": month_id,
+            "category": "Подписки",
+            "planned_amount": _rub("0.00"),
+            "expense_type": "other",
+        },
+    )
+    assert planned.status_code == 201, planned.text
+    # An actual with no plan line at all.
+    actual = client.post(
+        "/api/expenses",
+        json={
+            "reporting_month_id": month_id,
+            "category": "Еда",
+            "amount": _rub("12000.00"),
+            "expense_type": "mandatory",
+        },
+    )
+    assert actual.status_code == 201, actual.text
+
+    response = client.get(f"/api/planned-budget/comparison?month_id={month_id}")
+    assert response.status_code == 200, response.text
+    by_key = {(row["category"], row["expense_type"]): row for row in response.json()}
+
+    # Explicit owner-entered zero survives as 0.00 ...
+    assert by_key[("Подписки", "other")]["planned"] == _rub("0.00")
+    # ... while the missing counterpart stays absent.
+    assert by_key[("Подписки", "other")]["actual"] is None
+    assert by_key[("Еда", "mandatory")]["planned"] is None
+    assert by_key[("Еда", "mandatory")]["actual"] == _rub("12000.00")

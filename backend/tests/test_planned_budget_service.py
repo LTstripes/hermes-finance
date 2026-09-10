@@ -145,7 +145,7 @@ def test_plan_and_actuals_compare_by_exact_key(tmp_path: Path) -> None:
             amount="50000.00",
             expense_type=ExpenseType.MANDATORY,
         )
-        # Actual with no plan line still appears, with a zero plan counterpart.
+        # An actual with no plan line still appears separately, with no plan side.
         create_expense_entry(
             session,
             reporting_month_id=month_id,
@@ -164,8 +164,8 @@ def test_plan_and_actuals_compare_by_exact_key(tmp_path: Path) -> None:
         assert by_key[("Аренда", "mandatory")].planned == RubleAmount(4_900_000)
         assert by_key[("Аренда", "mandatory")].actual == RubleAmount(5_000_000)
         assert by_key[("Аренда", "comfortable")].planned == RubleAmount(700_000)
-        assert by_key[("Аренда", "comfortable")].actual == RubleAmount(0)
-        assert by_key[("Еда", "mandatory")].planned == RubleAmount(0)
+        assert by_key[("Аренда", "comfortable")].actual is None
+        assert by_key[("Еда", "mandatory")].planned is None
         assert by_key[("Еда", "mandatory")].actual == RubleAmount(1_200_000)
 
         # Writing a plan never creates or mutates actual expense entries.
@@ -180,6 +180,48 @@ def test_comparison_is_empty_without_plan_or_actuals(tmp_path: Path) -> None:
     try:
         month_id = _month(session)
         assert plan_vs_actual(session, month_id) == []
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_absent_side_is_none_while_explicit_zero_is_kept(tmp_path: Path) -> None:
+    """#336 blocker: "план не введён" must stay distinguishable from a plan of 0."""
+    session, database = session_for(tmp_path)
+    try:
+        month_id = _month(session)
+        # The owner entered a plan line and stated an explicit zero.
+        create_planned_budget_line(
+            session,
+            reporting_month_id=month_id,
+            category="Подписки",
+            planned_amount="0.00",
+            expense_type=ExpenseType.OTHER,
+        )
+        # An actual with no plan line at all.
+        create_expense_entry(
+            session,
+            reporting_month_id=month_id,
+            category="Еда",
+            amount="12000.00",
+            expense_type=ExpenseType.MANDATORY,
+        )
+
+        by_key = {
+            (row.category, row.expense_type): row for row in plan_vs_actual(session, month_id)
+        }
+
+        explicit_zero = by_key[("Подписки", "other")]
+        assert explicit_zero.planned == RubleAmount(0)
+        assert explicit_zero.planned is not None
+        assert explicit_zero.actual is None
+
+        absent_plan = by_key[("Еда", "mandatory")]
+        assert absent_plan.planned is None
+        assert absent_plan.actual == RubleAmount(1_200_000)
+
+        # Both keys stay separate rows; neither is force-joined into the other.
+        assert len(by_key) == 2
     finally:
         session.close()
         database.engine.dispose()

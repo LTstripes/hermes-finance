@@ -876,8 +876,8 @@ export type PlannedBudgetUpdate = {
 export type PlanVsActualRow = {
   category: string;
   expense_type: string;
-  planned: MoneyValue;
-  actual: MoneyValue;
+  planned: MoneyValue | null;
+  actual: MoneyValue | null;
 };
 
 export type MonthlyComment = {

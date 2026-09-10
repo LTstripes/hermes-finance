@@ -51,10 +51,16 @@ class PlannedBudgetResponse(BaseModel):
 
 
 class PlanVsActualRow(BaseModel):
+    """Plan/actual pair for one exact ``(category, expense_type)`` key.
+
+    ``planned``/``actual`` are ``null`` when that side was never entered;
+    an explicit owner-entered zero is serialized as ``"0.00"``.
+    """
+
     category: str
     expense_type: str
-    planned: MoneyValue
-    actual: MoneyValue
+    planned: MoneyValue | None
+    actual: MoneyValue | None
 
 
 def _validate_expense_type(value: str) -> str:
@@ -71,6 +77,10 @@ def _amount(money: MoneyValue) -> RubleAmount:
 
 def _money(kopecks: int) -> MoneyValue:
     return MoneyValue(amount=RubleAmount(kopecks).to_api(), currency="RUB")
+
+
+def _maybe_money(amount: RubleAmount | None) -> MoneyValue | None:
+    return None if amount is None else _money(amount.kopecks)
 
 
 def _response(line: object) -> PlannedBudgetResponse:
@@ -104,8 +114,8 @@ def planned_vs_actual_endpoint(
         PlanVsActualRow(
             category=row.category,
             expense_type=row.expense_type,
-            planned=_money(row.planned.kopecks),
-            actual=_money(row.actual.kopecks),
+            planned=_maybe_money(row.planned),
+            actual=_maybe_money(row.actual),
         )
         for row in plan_vs_actual(session, month_id)
     ]

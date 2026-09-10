@@ -224,4 +224,47 @@ describe("MonthBudgetSection planned budget", () => {
     expect(screen.getByText("План")).toBeInTheDocument();
     expect(screen.getByText("Факт")).toBeInTheDocument();
   });
+
+  it("keeps an absent plan side distinct from an explicit zero plan", async () => {
+    setup({
+      plan: [planLine],
+      comparison: [
+        {
+          category: "Еда",
+          expense_type: "mandatory",
+          planned: null,
+          actual: { amount: "12000.00", currency: "RUB" },
+        },
+        {
+          category: "Подписки",
+          expense_type: "other",
+          planned: { amount: "0.00", currency: "RUB" },
+          actual: null,
+        },
+      ],
+    });
+    await screen.findByText("План расходов");
+
+    const absentPlanRow = screen.getByText("Еда").closest("tr");
+    expect(absentPlanRow).not.toBeNull();
+    const absentCells = within(absentPlanRow as HTMLElement).getAllByRole("cell");
+    // The plan side was never entered: it must not read as a zero plan.
+    expect(absentCells[2].textContent).toBe("—");
+    expect(absentCells[3].textContent).toMatch(/12\s*000\s*₽/);
+
+    const explicitZeroRow = screen.getByText("Подписки").closest("tr");
+    expect(explicitZeroRow).not.toBeNull();
+    const zeroCells = within(explicitZeroRow as HTMLElement).getAllByRole("cell");
+    // An owner-entered zero stays an explicit zero.
+    expect(zeroCells[2].textContent).toMatch(/^0\s*₽$/);
+    expect(zeroCells[3].textContent).toBe("—");
+  });
+
+  it("does not present an empty plan as an entered zero plan", async () => {
+    setup({ plan: [], comparison: [] });
+    await screen.findByText("Плана нет — это нормально, закрытию месяца он не нужен.");
+    expect(screen.getByText("план не введён")).toBeInTheDocument();
+    expect(screen.getByText("План не введён")).toBeInTheDocument();
+    expect(screen.queryByText(/^план 0\s*₽$/)).not.toBeInTheDocument();
+  });
 });

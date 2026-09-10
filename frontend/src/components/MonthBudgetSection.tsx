@@ -540,7 +540,13 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
       </Panel>
 
       <Panel
-        action={<Badge>план {formatMoney(plannedTotal)}</Badge>}
+        action={
+          plan.length === 0 ? (
+            <Badge>план не введён</Badge>
+          ) : (
+            <Badge>план {formatMoney(plannedTotal)}</Badge>
+          )
+        }
         label="Бюджет"
         title="План расходов"
       >
@@ -550,6 +556,10 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
             План — это намерение, а не факт. Фактические расходы выше не считаются бюджетом
             автоматически. Сопоставление ниже группирует план и факт по точной паре «категория +
             тип»; одинаковые строки суммируются.
+          </p>
+          <p>
+            «—» в сопоставлении означает, что сторона не введена вовсе. «0 ₽» — это явный ноль
+            владельца, а не пустое место.
           </p>
         </details>
         {plan.length === 0 ? (
@@ -695,7 +705,13 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
         )}
         <div className="totals-bar">
           <span>
-            Итого план: <strong>{formatMoney(plannedTotal)}</strong>
+            {plan.length === 0 ? (
+              "План не введён"
+            ) : (
+              <>
+                Итого план: <strong>{formatMoney(plannedTotal)}</strong>
+              </>
+            )}
           </span>
         </div>
         {comparison.length > 0 ? (
@@ -713,8 +729,12 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
                 <tr key={`${row.category}::${row.expense_type}`}>
                   <Td>{row.category}</Td>
                   <Td>{labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.planned))}</Td>
-                  <Td numeric>{formatMoney(moneyAmount(row.actual))}</Td>
+                  <Td numeric>
+                    {row.planned === null ? "—" : formatMoney(moneyAmount(row.planned))}
+                  </Td>
+                  <Td numeric>
+                    {row.actual === null ? "—" : formatMoney(moneyAmount(row.actual))}
+                  </Td>
                 </tr>
               ))}
             </tbody>

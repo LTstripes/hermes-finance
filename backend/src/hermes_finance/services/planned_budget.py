@@ -27,10 +27,17 @@ class PlannedBudgetLineNotFoundError(LookupError):
 
 @dataclass(frozen=True, slots=True)
 class PlannedVsActual:
+    """One ``(category, expense_type)`` key seen on the plan and/or actual side.
+
+    A side is ``None`` when nothing was entered for that key. An explicit
+    owner-entered ``0`` stays ``RubleAmount(0)``, so "не введено" and "введён
+    ноль" never collapse into the same value.
+    """
+
     category: str
     expense_type: str
-    planned: RubleAmount
-    actual: RubleAmount
+    planned: RubleAmount | None
+    actual: RubleAmount | None
 
 
 def _normalize_text(value: str, *, field: str) -> str:
@@ -157,20 +164,25 @@ def _actuals_by_key(session: Session, reporting_month_id: int) -> dict[tuple[str
 def plan_vs_actual(session: Session, reporting_month_id: int) -> list[PlannedVsActual]:
     """Group plan and actuals by exact ``(category, expense_type)``.
 
-    Duplicate lines on either side are summed. Keys present on only one
-    side are reported with a zero counterpart — never force-joined to a
-    different key. Ordering is stable: ``(category, expense_type)``.
+    Duplicate lines on either side are summed. A side that was never entered
+    stays ``None`` — an absent plan must never read as an explicit zero plan,
+    and an absent actual must never read as a zero actual. Keys present on
+    only one side are still reported separately and are never force-joined to
+    a different key. Ordering is stable: ``(category, expense_type)``.
     """
     planned = _sums_by_key(session, reporting_month_id)
     actuals = _actuals_by_key(session, reporting_month_id)
-    rows = [
-        PlannedVsActual(
-            category=category,
-            expense_type=expense_type,
-            planned=RubleAmount(planned.get(key, 0)),
-            actual=RubleAmount(actuals.get(key, 0)),
+    rows: list[PlannedVsActual] = []
+    for key in sorted(set(planned) | set(actuals)):
+        category, expense_type = key
+        planned_kopecks = planned.get(key)
+        actual_kopecks = actuals.get(key)
+        rows.append(
+            PlannedVsActual(
+                category=category,
+                expense_type=expense_type,
+                planned=None if planned_kopecks is None else RubleAmount(planned_kopecks),
+                actual=None if actual_kopecks is None else RubleAmount(actual_kopecks),
+            )
         )
-        for key in sorted(set(planned) | set(actuals))
-        for category, expense_type in (key,)
-    ]
     return rows
