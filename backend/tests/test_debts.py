@@ -144,3 +144,77 @@ def test_debt_validation_rejects_bad_inputs(tmp_path: Path) -> None:
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_debt_rate_zero_is_distinct_from_unknown(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        first_id, _ = build_environment(session)
+        unknown = create_debt(
+            session,
+            reporting_month_id=first_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Unknown Rate Card",
+            current_balance="10000.00",
+        )
+        assert unknown.annual_rate_basis_points is None
+        zero = create_debt(
+            session,
+            reporting_month_id=first_id,
+            debt_type=DebtType.OTHER,
+            name="Zero Rate Loan",
+            current_balance="50000.00",
+            annual_rate="0",
+        )
+        assert zero.annual_rate_basis_points == 0
+        rated = update_debt(session, unknown.id, annual_rate="19.90")
+        assert rated.annual_rate_basis_points == 1990
+        cleared = update_debt(session, rated.id, annual_rate=None)
+        assert cleared.annual_rate_basis_points is None
+        # Omitted nullable fields keep their stored value.
+        kept = update_debt(session, zero.id, name="Zero Rate Loan Renamed")
+        assert kept.annual_rate_basis_points == 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_debt_due_and_end_dates_stay_separate(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        first_id, _ = build_environment(session)
+        debt = create_debt(
+            session,
+            reporting_month_id=first_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Dated Card",
+            current_balance="10000.00",
+            next_due_date=date(2030, 5, 20),
+            contract_end_date=date(2032, 5, 20),
+        )
+        assert debt.next_due_date == date(2030, 5, 20)
+        assert debt.contract_end_date == date(2032, 5, 20)
+        updated = update_debt(session, debt.id, next_due_date=None)
+        assert updated.next_due_date is None
+        assert updated.contract_end_date == date(2032, 5, 20)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_debt_rate_rejects_negative(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        first_id, _ = build_environment(session)
+        with pytest.raises(ValueError, match="must not be negative"):
+            create_debt(
+                session,
+                reporting_month_id=first_id,
+                debt_type=DebtType.CREDIT_CARD,
+                name="Synthetic",
+                current_balance="1.00",
+                annual_rate="-0.5",
+            )
+    finally:
+        session.close()
+        database.engine.dispose()

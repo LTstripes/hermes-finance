@@ -28,6 +28,7 @@ from hermes_finance.persistence import (
     IncomeEntry,
     InvestmentCashFlow,
     MonthlyComment,
+    PlannedBudgetLine,
     PositionQuoteProvenance,
     PositionSnapshot,
     PropertySnapshot,
@@ -44,6 +45,7 @@ from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
 from hermes_finance.services.month_clone import clone_reporting_month
+from hermes_finance.services.planned_budget import create_planned_budget_line
 from hermes_finance.services.positions import apply_snapshot_market_quote, create_position_snapshot
 from hermes_finance.services.properties import create_property_snapshot
 from hermes_finance.services.reporting_months import (
@@ -504,6 +506,74 @@ def test_clone_does_not_fabricate_quote_apply_provenance(tmp_path: Path) -> None
             == []
         )
         assert session.scalars(select(PositionQuoteProvenance)).all().__len__() == 1
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_clone_copies_debt_terms_plan_and_clears_due_date(tmp_path: Path) -> None:
+    """#336: stable terms and the plan carry over; the next due date is re-confirmed."""
+    session, database = _session(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2031, month=3, snapshot_date=date(2031, 3, 31))
+        create_debt(
+            session,
+            reporting_month_id=month.id,
+            debt_type="credit_card",
+            name="Карта",
+            current_balance=RubleAmount(45_000_00),
+            annual_rate="19.90",
+            next_due_date=date(2031, 4, 20),
+            contract_end_date=date(2033, 4, 20),
+        )
+        create_property_snapshot(
+            session,
+            reporting_month_id=month.id,
+            name="Квартира",
+            estimated_value=RubleAmount(15_000_000_00),
+            mortgage_balance=RubleAmount(5_000_000_00),
+            monthly_payment=RubleAmount(75_000_00),
+            mortgage_annual_rate="9.25",
+        )
+        create_planned_budget_line(
+            session,
+            reporting_month_id=month.id,
+            category="Аренда",
+            planned_amount=RubleAmount(48_000_00),
+            expense_type="mandatory",
+        )
+
+        target = clone_reporting_month(
+            session,
+            month.id,
+            target_year=2031,
+            target_month=4,
+            snapshot_date=date(2031, 4, 30),
+        )
+
+        debt = session.scalar(select(Debt).where(Debt.reporting_month_id == target.id))
+        assert debt is not None
+        assert debt.annual_rate_basis_points == 1990
+        assert debt.contract_end_date == date(2033, 4, 20)
+        assert debt.next_due_date is None
+
+        snapshot = session.scalar(
+            select(PropertySnapshot).where(PropertySnapshot.reporting_month_id == target.id)
+        )
+        assert snapshot is not None
+        assert snapshot.mortgage_annual_rate_basis_points == 925
+
+        plan = session.scalars(
+            select(PlannedBudgetLine).where(PlannedBudgetLine.reporting_month_id == target.id)
+        ).all()
+        assert [(row.category, row.expense_type, row.planned_amount_kopecks) for row in plan] == [
+            ("Аренда", "mandatory", 48_000_00)
+        ]
+
+        # The source month keeps its own confirmed due date.
+        source_debt = session.scalar(select(Debt).where(Debt.reporting_month_id == month.id))
+        assert source_debt is not None
+        assert source_debt.next_due_date == date(2031, 4, 20)
     finally:
         session.close()
         database.engine.dispose()

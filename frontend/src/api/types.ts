@@ -820,6 +820,9 @@ export type DebtEntry = {
   name: string;
   current_balance: MoneyValue;
   include_in_liquid_capital: boolean;
+  annual_rate: string | null;
+  next_due_date: string | null;
+  contract_end_date: string | null;
   notes: string | null;
 };
 
@@ -828,6 +831,9 @@ export type DebtUpdate = {
   name?: string;
   current_balance?: MoneyValue;
   include_in_liquid_capital?: boolean;
+  annual_rate?: string | null;
+  next_due_date?: string | null;
+  contract_end_date?: string | null;
   notes?: string | null;
 };
 
@@ -838,6 +844,7 @@ export type PropertySnapshot = {
   estimated_value: MoneyValue;
   mortgage_balance: MoneyValue;
   monthly_payment: MoneyValue;
+  mortgage_annual_rate: string | null;
   notes: string | null;
 };
 
@@ -846,7 +853,31 @@ export type PropertyUpdate = {
   estimated_value?: MoneyValue;
   mortgage_balance?: MoneyValue;
   monthly_payment?: MoneyValue;
+  mortgage_annual_rate?: string | null;
   notes?: string | null;
+};
+
+export type PlannedBudgetLine = {
+  id: number;
+  reporting_month_id: number;
+  category: string;
+  planned_amount: MoneyValue;
+  expense_type: string;
+  notes: string | null;
+};
+
+export type PlannedBudgetUpdate = {
+  category?: string;
+  planned_amount?: MoneyValue;
+  expense_type?: string;
+  notes?: string | null;
+};
+
+export type PlanVsActualRow = {
+  category: string;
+  expense_type: string;
+  planned: MoneyValue;
+  actual: MoneyValue;
 };
 
 export type MonthlyComment = {

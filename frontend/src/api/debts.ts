@@ -12,6 +12,9 @@ export function createDebt(
     name: string;
     current_balance: { amount: string; currency: string };
     include_in_liquid_capital?: boolean;
+    annual_rate?: string | null;
+    next_due_date?: string | null;
+    contract_end_date?: string | null;
     notes?: string | null;
   },
   signal?: AbortSignal,

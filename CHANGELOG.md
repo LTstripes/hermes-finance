@@ -14,9 +14,16 @@ Development `main` после `0.8.2` (интегрировано через PR 
 - FX empty-scope кейс из owner Preview UAT (#333 `PASS`): пустой затронутый скоуп — supported с точным нулевым эффектом, `unknown`/`unavailable` никогда не выдаются за ноль (#334, re-UAT `PASS`);
 - owner Preview UAT выполнен на isolated copy DB; production данные не использовались.
 
+### Financial context completeness (#336)
+
+- долги получили owner-entered ставку (APR, basis points) и раздельные `next_due_date` / `contract_end_date`; недвижимость — годовую ставку ипотеки;
+- новый month-local плановый бюджет (`planned_budget_lines`) хранится отдельно от фактических расходов; сверка план/факт идёт по точной паре `(category, expense_type)`;
+- `null` означает «неизвестно», `0` — реальный ноль; миграция `0037_336_financial_context` только добавляет nullable-поля и не досчитывает прошлые данные;
+- клонирование месяца переносит ставки, окончание договора и план, а `next_due_date` подтверждается в новом месяце заново.
+
 ### Not changed
 
-- canonical Alembic head remains `0036_broker_baseline_provenance`; no migration or schema semantics changed;
+- canonical Alembic head is now `0037_336_financial_context`; the migration is additive owner-entered capture only — no new formulas, provider, runtime or DB semantics changed;
 - local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
 - no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
 - issuer impairment, exact FX translation, multi-shock composition и Monte Carlo / VaR / probabilities / correlations остаются deferred.

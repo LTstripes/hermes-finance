@@ -15,8 +15,9 @@ Copied
 - cash balances;
 - mandatory expenses only;
 - saving allocations;
-- debts;
-- property snapshots;
+- debts (rate and contract-end terms copied; ``next_due_date`` cleared);
+- property snapshots (mortgage rate copied);
+- planned budget lines (copied as a draft starting point);
 - recurring salary income entries (salary settings template; ``received_at``
   cleared).
 
@@ -27,6 +28,7 @@ Not copied
 - expected cash flows (forecast versions stay month-local);
 - non-mandatory expenses;
 - bonus / cashback / non-recurring incomes;
+- debt ``next_due_date`` values (event-like; re-confirmed in the draft month);
 - monthly comments.
 """
 
@@ -46,6 +48,7 @@ from hermes_finance.persistence import (
     DepositSnapshot,
     ExpenseEntry,
     IncomeEntry,
+    PlannedBudgetLine,
     PositionSnapshot,
     PropertySnapshot,
     ReportingMonth,
@@ -181,6 +184,9 @@ def _copy_debts(session: Session, *, source_id: int, target_id: int) -> None:
                 name=row.name,
                 current_balance_kopecks=row.current_balance_kopecks,
                 include_in_liquid_capital=row.include_in_liquid_capital,
+                annual_rate_basis_points=row.annual_rate_basis_points,
+                next_due_date=None,
+                contract_end_date=row.contract_end_date,
                 notes=row.notes,
             )
         )
@@ -198,6 +204,23 @@ def _copy_properties(session: Session, *, source_id: int, target_id: int) -> Non
                 estimated_value_kopecks=row.estimated_value_kopecks,
                 mortgage_balance_kopecks=row.mortgage_balance_kopecks,
                 monthly_payment_kopecks=row.monthly_payment_kopecks,
+                mortgage_annual_rate_basis_points=row.mortgage_annual_rate_basis_points,
+                notes=row.notes,
+            )
+        )
+
+
+def _copy_planned_budget(session: Session, *, source_id: int, target_id: int) -> None:
+    rows = session.scalars(
+        select(PlannedBudgetLine).where(PlannedBudgetLine.reporting_month_id == source_id)
+    )
+    for row in rows:
+        session.add(
+            PlannedBudgetLine(
+                reporting_month_id=target_id,
+                category=row.category,
+                planned_amount_kopecks=row.planned_amount_kopecks,
+                expense_type=row.expense_type,
                 notes=row.notes,
             )
         )
@@ -287,6 +310,7 @@ def clone_reporting_month(
         _copy_savings(session, source_id=source_id, target_id=target_id)
         _copy_debts(session, source_id=source_id, target_id=target_id)
         _copy_properties(session, source_id=source_id, target_id=target_id)
+        _copy_planned_budget(session, source_id=source_id, target_id=target_id)
         _copy_salary_settings(session, source_id=source_id, target_id=target_id)
 
         session.commit()

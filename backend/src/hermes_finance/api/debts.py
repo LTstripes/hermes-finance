@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
-from hermes_finance.domain import DebtType, RubleAmount
+from hermes_finance.domain import DebtType, PercentageRate, RubleAmount
 from hermes_finance.services.debts import (
+    _UNSET,
     create_debt,
     delete_debt,
     get_debt,
@@ -27,6 +30,9 @@ class DebtCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     current_balance: MoneyValue
     include_in_liquid_capital: bool = True
+    annual_rate: str | None = Field(default=None, min_length=1)
+    next_due_date: date | None = None
+    contract_end_date: date | None = None
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -37,6 +43,9 @@ class DebtUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     current_balance: MoneyValue | None = None
     include_in_liquid_capital: bool | None = None
+    annual_rate: str | None = Field(default=None, min_length=1)
+    next_due_date: date | None = None
+    contract_end_date: date | None = None
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -49,6 +58,9 @@ class DebtResponse(BaseModel):
     name: str
     current_balance: MoneyValue
     include_in_liquid_capital: bool
+    annual_rate: str | None
+    next_due_date: date | None
+    contract_end_date: date | None
     notes: str | None
 
 
@@ -68,6 +80,12 @@ def _money(kopecks: int) -> MoneyValue:
     return MoneyValue(amount=RubleAmount(kopecks).to_api(), currency="RUB")
 
 
+def _rate(basis_points: int | None) -> str | None:
+    if basis_points is None:
+        return None
+    return PercentageRate(basis_points).to_api()
+
+
 def _response(debt: object) -> DebtResponse:
     return DebtResponse(
         id=debt.id,
@@ -76,6 +94,9 @@ def _response(debt: object) -> DebtResponse:
         name=debt.name,
         current_balance=_money(debt.current_balance_kopecks),
         include_in_liquid_capital=debt.include_in_liquid_capital,
+        annual_rate=_rate(debt.annual_rate_basis_points),
+        next_due_date=debt.next_due_date,
+        contract_end_date=debt.contract_end_date,
         notes=debt.notes,
     )
 
@@ -102,6 +123,9 @@ def create_debt_endpoint(
         name=payload.name,
         current_balance=_amount(payload.current_balance),
         include_in_liquid_capital=payload.include_in_liquid_capital,
+        annual_rate=payload.annual_rate,
+        next_due_date=payload.next_due_date,
+        contract_end_date=payload.contract_end_date,
         notes=payload.notes,
     )
     return _response(debt)
@@ -132,6 +156,13 @@ def update_debt_endpoint(
         if payload.current_balance is not None
         else None,
         include_in_liquid_capital=payload.include_in_liquid_capital,
+        annual_rate=payload.annual_rate if "annual_rate" in payload.model_fields_set else _UNSET,
+        next_due_date=payload.next_due_date
+        if "next_due_date" in payload.model_fields_set
+        else _UNSET,
+        contract_end_date=payload.contract_end_date
+        if "contract_end_date" in payload.model_fields_set
+        else _UNSET,
         notes=payload.notes,
     )
     return _response(debt)

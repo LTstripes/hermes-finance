@@ -23,7 +23,7 @@ import {
   OverflowMenu,
   OverflowMenuItem,
 } from "./ui";
-import { formatMoney } from "../lib/format";
+import { formatDate, formatMoney, formatPercent, normalizeRateInput } from "../lib/format";
 import { DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
@@ -34,6 +34,9 @@ type DebtDraft = {
   debt_type: string;
   current_balance: string;
   include_in_liquid_capital: boolean;
+  annual_rate: string;
+  next_due_date: string;
+  contract_end_date: string;
 };
 
 type PropertyDraft = {
@@ -41,6 +44,7 @@ type PropertyDraft = {
   estimated_value: string;
   mortgage_balance: string;
   monthly_payment: string;
+  mortgage_annual_rate: string;
 };
 
 export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Props) {
@@ -56,10 +60,14 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
   const [debtName, setDebtName] = useState("Кредитка");
   const [debtType, setDebtType] = useState("credit_card");
   const [debtBal, setDebtBal] = useState("");
+  const [debtRate, setDebtRate] = useState("");
+  const [debtDue, setDebtDue] = useState("");
+  const [debtEnd, setDebtEnd] = useState("");
   const [propName, setPropName] = useState("");
   const [propValue, setPropValue] = useState("");
   const [propMortgage, setPropMortgage] = useState("");
   const [propPayment, setPropPayment] = useState("");
+  const [propRate, setPropRate] = useState("");
   const [debtDraftTouched, setDebtDraftTouched] = useState(false);
   const [propertyDraftTouched, setPropertyDraftTouched] = useState(false);
   const [delDebt, setDelDebt] = useState<DebtEntry | null>(null);
@@ -137,14 +145,23 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       if (!debtName.trim() || !normalizeMoneyInput(debtBal)) {
         throw new Error("Имя и баланс долга обязательны");
       }
+      if (debtRate.trim() !== "" && normalizeRateInput(debtRate) == null) {
+        throw new Error("Ставка — неотрицательное число, пусто — неизвестно");
+      }
       await createDebt({
         reporting_month_id: monthId,
         debt_type: debtType,
         name: debtName.trim(),
         current_balance: rub(debtBal),
         include_in_liquid_capital: true,
+        annual_rate: normalizeRateInput(debtRate),
+        next_due_date: debtDue || null,
+        contract_end_date: debtEnd || null,
       });
       setDebtBal("");
+      setDebtRate("");
+      setDebtDue("");
+      setDebtEnd("");
       setDebtDraftTouched(false);
       await load();
     } catch (err) {
@@ -164,11 +181,17 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       if (!editDebt.name.trim() || !normalizeMoneyInput(editDebt.current_balance)) {
         throw new Error("Имя и баланс долга обязательны");
       }
+      if (editDebt.annual_rate.trim() !== "" && normalizeRateInput(editDebt.annual_rate) == null) {
+        throw new Error("Ставка — неотрицательное число, пусто — неизвестно");
+      }
       await updateDebt(editingDebtId, {
         name: editDebt.name.trim(),
         debt_type: editDebt.debt_type,
         current_balance: rub(editDebt.current_balance),
         include_in_liquid_capital: editDebt.include_in_liquid_capital,
+        annual_rate: normalizeRateInput(editDebt.annual_rate),
+        next_due_date: editDebt.next_due_date || null,
+        contract_end_date: editDebt.contract_end_date || null,
       });
       setEditingDebtId(null);
       setEditDebt(null);
@@ -195,11 +218,18 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       ) {
         throw new Error("Заполни название, стоимость, остаток ипотеки и платёж");
       }
+      if (
+        editProp.mortgage_annual_rate.trim() !== "" &&
+        normalizeRateInput(editProp.mortgage_annual_rate) == null
+      ) {
+        throw new Error("Ставка ипотеки — неотрицательное число, пусто — неизвестно");
+      }
       await updateProperty(editingPropId, {
         name: editProp.name.trim(),
         estimated_value: rub(editProp.estimated_value),
         mortgage_balance: rub(editProp.mortgage_balance),
         monthly_payment: rub(editProp.monthly_payment),
+        mortgage_annual_rate: normalizeRateInput(editProp.mortgage_annual_rate),
       });
       setEditingPropId(null);
       setEditProp(null);
@@ -224,17 +254,22 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       ) {
         throw new Error("Заполни название, стоимость, остаток ипотеки и платёж");
       }
+      if (propRate.trim() !== "" && normalizeRateInput(propRate) == null) {
+        throw new Error("Ставка ипотеки — неотрицательное число, пусто — неизвестно");
+      }
       await createProperty({
         reporting_month_id: monthId,
         name: propName.trim(),
         estimated_value: rub(propValue),
         mortgage_balance: rub(propMortgage),
         monthly_payment: rub(propPayment),
+        mortgage_annual_rate: normalizeRateInput(propRate),
       });
       setPropName("");
       setPropValue("");
       setPropMortgage("");
       setPropPayment("");
+      setPropRate("");
       setPropertyDraftTouched(false);
       await load();
     } catch (err) {
@@ -270,6 +305,9 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                 <Th className="month-debts-table__name">Название</Th>
                 <Th className="month-debts-table__type">Тип</Th>
                 <Th numeric>Баланс</Th>
+                <Th>Ставка</Th>
+                <Th>Ближайший платёж</Th>
+                <Th>Окончание</Th>
                 <Th className="month-debts-table__inclusion">Учёт</Th>
                 <Th className="month-debts-table__actions">Действия</Th>
               </tr>
@@ -316,6 +354,50 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                         />
                       ) : (
                         formatMoney(moneyAmount(row.current_balance))
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Годовая ставка долга"
+                          onChange={(e) =>
+                            setEditDebt({ ...editDebt, annual_rate: e.target.value })
+                          }
+                          placeholder="неизвестно"
+                          value={editDebt.annual_rate}
+                        />
+                      ) : (
+                        <span className="muted tiny">
+                          {formatPercent(row.annual_rate, { digits: 2, empty: "не указано" })}
+                        </span>
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Ближайший обязательный платёж"
+                          onChange={(e) =>
+                            setEditDebt({ ...editDebt, next_due_date: e.target.value })
+                          }
+                          type="date"
+                          value={editDebt.next_due_date}
+                        />
+                      ) : (
+                        <span className="muted tiny">{formatDate(row.next_due_date)}</span>
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Окончание договора"
+                          onChange={(e) =>
+                            setEditDebt({ ...editDebt, contract_end_date: e.target.value })
+                          }
+                          type="date"
+                          value={editDebt.contract_end_date}
+                        />
+                      ) : (
+                        <span className="muted tiny">{formatDate(row.contract_end_date)}</span>
                       )}
                     </Td>
                     <Td>
@@ -375,6 +457,9 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                                   debt_type: row.debt_type,
                                   current_balance: moneyAmount(row.current_balance),
                                   include_in_liquid_capital: row.include_in_liquid_capital,
+                                  annual_rate: row.annual_rate ?? "",
+                                  next_due_date: row.next_due_date ?? "",
+                                  contract_end_date: row.contract_end_date ?? "",
                                 });
                               }}
                             >
@@ -441,6 +526,39 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                   value={debtBal}
                 />
               </Field>
+              <Field htmlFor="debt-rate" label="Годовая ставка, % (пусто — неизвестно)">
+                <Input
+                  id="debt-rate"
+                  onChange={(e) => {
+                    setDebtRate(e.target.value);
+                    setDebtDraftTouched(true);
+                  }}
+                  placeholder="неизвестно"
+                  value={debtRate}
+                />
+              </Field>
+              <Field htmlFor="debt-due" label="Ближайший платёж">
+                <Input
+                  id="debt-due"
+                  onChange={(e) => {
+                    setDebtDue(e.target.value);
+                    setDebtDraftTouched(true);
+                  }}
+                  type="date"
+                  value={debtDue}
+                />
+              </Field>
+              <Field htmlFor="debt-end" label="Окончание договора">
+                <Input
+                  id="debt-end"
+                  onChange={(e) => {
+                    setDebtEnd(e.target.value);
+                    setDebtDraftTouched(true);
+                  }}
+                  type="date"
+                  value={debtEnd}
+                />
+              </Field>
             </div>
             <Button disabled={busy} type="submit" variant="primary">
               Добавить долг
@@ -471,6 +589,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                 <Th numeric>Стоимость</Th>
                 <Th numeric>Ипотека</Th>
                 <Th numeric>Платёж / мес</Th>
+                <Th>Ставка</Th>
                 <Th className="month-property-table__actions">Действия</Th>
               </tr>
             </thead>
@@ -532,6 +651,25 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                         formatMoney(moneyAmount(row.monthly_payment))
                       )}
                     </Td>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Годовая ставка ипотеки"
+                          onChange={(e) =>
+                            setEditProp({ ...editProp, mortgage_annual_rate: e.target.value })
+                          }
+                          placeholder="неизвестно"
+                          value={editProp.mortgage_annual_rate}
+                        />
+                      ) : (
+                        <span className="muted tiny">
+                          {formatPercent(row.mortgage_annual_rate, {
+                            digits: 2,
+                            empty: "не указано",
+                          })}
+                        </span>
+                      )}
+                    </Td>
                     <Td className="month-property-table__actions">
                       <div className="row-actions">
                         {editing ? (
@@ -568,6 +706,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                                   estimated_value: moneyAmount(row.estimated_value),
                                   mortgage_balance: moneyAmount(row.mortgage_balance),
                                   monthly_payment: moneyAmount(row.monthly_payment),
+                                  mortgage_annual_rate: row.mortgage_annual_rate ?? "",
                                 });
                               }}
                             >
@@ -663,6 +802,17 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                   }}
                   required
                   value={propPayment}
+                />
+              </Field>
+              <Field htmlFor="prop-rate" label="Годовая ставка, % (пусто — неизвестно)">
+                <Input
+                  id="prop-rate"
+                  onChange={(e) => {
+                    setPropRate(e.target.value);
+                    setPropertyDraftTouched(true);
+                  }}
+                  placeholder="неизвестно"
+                  value={propRate}
                 />
               </Field>
             </div>

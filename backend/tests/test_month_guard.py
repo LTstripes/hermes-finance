@@ -1,8 +1,8 @@
 """B19-R2 regression: closed-month immutability for all month-scoped child entities.
 
 Every month-scoped child table (income_entries, expense_entries,
-saving_allocations, debts, property_snapshots, deposit_snapshots,
-position_snapshots, cash_balances, investment_cash_flows,
+saving_allocations, planned_budget_lines, debts, property_snapshots,
+deposit_snapshots, position_snapshots, cash_balances, investment_cash_flows,
 expected_cash_flows, monthly_comments) must refuse create/update/delete
 while the parent reporting month is CLOSED (PROJECT_WIKI section 7, item 7).
 
@@ -40,6 +40,7 @@ from hermes_finance.persistence import (
     IncomeEntry,
     InvestmentCashFlow,
     MonthlyComment,
+    PlannedBudgetLine,
     PositionSnapshot,
     PropertySnapshot,
     SavingAllocation,
@@ -88,6 +89,11 @@ from hermes_finance.services.investment_cash_flows import (
     create_investment_cash_flow,
     delete_investment_cash_flow,
     update_investment_cash_flow,
+)
+from hermes_finance.services.planned_budget import (
+    create_planned_budget_line,
+    delete_planned_budget_line,
+    update_planned_budget_line,
 )
 from hermes_finance.services.positions import (
     create_position_snapshot,
@@ -162,6 +168,21 @@ MONTH_SCOPED_CASES = [
         ),
         "update": lambda session, row: update_saving_allocation(session, row.id, amount="11000.00"),
         "delete": lambda session, row: delete_saving_allocation(session, row.id),
+    },
+    {
+        "id": "planned_budget_lines",
+        "model": PlannedBudgetLine,
+        "create": lambda session, month_id: create_planned_budget_line(
+            session,
+            reporting_month_id=month_id,
+            category="Synthetic Rent",
+            planned_amount="48000.00",
+            expense_type=ExpenseType.MANDATORY,
+        ),
+        "update": lambda session, row: update_planned_budget_line(
+            session, row.id, planned_amount="49000.00"
+        ),
+        "delete": lambda session, row: delete_planned_budget_line(session, row.id),
     },
     {
         "id": "debts",
