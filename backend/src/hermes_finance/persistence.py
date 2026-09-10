@@ -1539,6 +1539,10 @@ class Debt(Base):
         CheckConstraint(
             "current_balance_kopecks >= 0", name="ck_debts_current_balance_nonnegative"
         ),
+        CheckConstraint(
+            "annual_rate_basis_points IS NULL OR annual_rate_basis_points >= 0",
+            name="ck_debts_annual_rate_nonnegative",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1551,6 +1555,33 @@ class Debt(Base):
     include_in_liquid_capital: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("1")
     )
+    annual_rate_basis_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    contract_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class PlannedBudgetLine(Base):
+    __tablename__ = "planned_budget_lines"
+    __table_args__ = (
+        Index("ix_planned_budget_lines_month", "reporting_month_id"),
+        CheckConstraint(
+            "expense_type IN ('mandatory', 'comfortable', 'other')",
+            name="ck_planned_budget_lines_expense_type",
+        ),
+        CheckConstraint(
+            "planned_amount_kopecks >= 0",
+            name="ck_planned_budget_lines_amount_nonnegative",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(128), nullable=False)
+    planned_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expense_type: Mapped[str] = mapped_column(String(16), nullable=False)
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 
@@ -1566,6 +1597,10 @@ class PropertySnapshot(Base):
         CheckConstraint(
             "monthly_payment_kopecks >= 0", name="ck_property_snapshots_payment_nonnegative"
         ),
+        CheckConstraint(
+            "mortgage_annual_rate_basis_points IS NULL OR mortgage_annual_rate_basis_points >= 0",
+            name="ck_property_snapshots_mortgage_rate_nonnegative",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1576,6 +1611,7 @@ class PropertySnapshot(Base):
     estimated_value_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     mortgage_balance_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     monthly_payment_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    mortgage_annual_rate_basis_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
 

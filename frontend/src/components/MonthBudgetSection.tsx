@@ -2,8 +2,20 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import { formatApiError } from "../api/client";
 import { createExpense, deleteExpense, listExpenses, updateExpense } from "../api/expenses";
+import {
+  createPlannedBudget,
+  deletePlannedBudget,
+  listPlannedBudget,
+  plannedVsActual,
+  updatePlannedBudget,
+} from "../api/plannedBudget";
 import { createSaving, deleteSaving, listSavings, updateSaving } from "../api/savings";
-import type { ExpenseEntry, SavingAllocation } from "../api/types";
+import type {
+  ExpenseEntry,
+  PlannedBudgetLine,
+  PlanVsActualRow,
+  SavingAllocation,
+} from "../api/types";
 import {
   Badge,
   Button,
@@ -40,9 +52,18 @@ type SavingDraft = {
   notes: string;
 };
 
+type PlanDraft = {
+  category: string;
+  expense_type: string;
+  planned_amount: string;
+  notes: string;
+};
+
 export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) {
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [savings, setSavings] = useState<SavingAllocation[]>([]);
+  const [plan, setPlan] = useState<PlannedBudgetLine[]>([]);
+  const [comparison, setComparison] = useState<PlanVsActualRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -54,20 +75,30 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
   const [savDest, setSavDest] = useState("");
   const [savAmount, setSavAmount] = useState("");
   const [savNotes, setSavNotes] = useState("");
+  const [planCategory, setPlanCategory] = useState("");
+  const [planAmount, setPlanAmount] = useState("");
+  const [planType, setPlanType] = useState("mandatory");
+  const [planNotes, setPlanNotes] = useState("");
   const [expenseDraftTouched, setExpenseDraftTouched] = useState(false);
   const [savingDraftTouched, setSavingDraftTouched] = useState(false);
+  const [planDraftTouched, setPlanDraftTouched] = useState(false);
   const [delExpense, setDelExpense] = useState<ExpenseEntry | null>(null);
   const [delSaving, setDelSaving] = useState<SavingAllocation | null>(null);
+  const [delPlan, setDelPlan] = useState<PlannedBudgetLine | null>(null);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
   const [editExpense, setEditExpense] = useState<ExpenseDraft | null>(null);
   const [editingSavingId, setEditingSavingId] = useState<number | null>(null);
   const [editSaving, setEditSaving] = useState<SavingDraft | null>(null);
+  const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
+  const [editPlan, setEditPlan] = useState<PlanDraft | null>(null);
 
   const localDirty =
     expenseDraftTouched ||
     savingDraftTouched ||
+    planDraftTouched ||
     editingExpenseId !== null ||
-    editingSavingId !== null;
+    editingSavingId !== null ||
+    editingPlanId !== null;
 
   useEffect(() => {
     onDirtyChange?.(localDirty);
@@ -78,13 +109,17 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
       setLoading(true);
       setError(null);
       try {
-        const [e, s] = await Promise.all([
+        const [e, s, p, c] = await Promise.all([
           listExpenses(monthId, signal),
           listSavings(monthId, signal),
+          listPlannedBudget(monthId, signal),
+          plannedVsActual(monthId, signal),
         ]);
         if (!signal?.aborted) {
           setExpenses(e);
           setSavings(s);
+          setPlan(p);
+          setComparison(c);
         }
       } catch (err) {
         if (!signal?.aborted) setError(formatApiError(err));
@@ -118,6 +153,10 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
   const savingsTotal = useMemo(
     () => sumMoneyAmounts(savings.map((x) => moneyAmount(x.amount))),
     [savings],
+  );
+  const plannedTotal = useMemo(
+    () => sumMoneyAmounts(plan.map((x) => moneyAmount(x.planned_amount))),
+    [plan],
   );
 
   async function addExpense(event: FormEvent) {
@@ -216,6 +255,59 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
       setSavAmount("");
       setSavNotes("");
       setSavingDraftTouched(false);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addPlan(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!planCategory.trim() || !normalizeMoneyInput(planAmount)) {
+        throw new Error("Категория и сумма плана обязательны");
+      }
+      await createPlannedBudget({
+        reporting_month_id: monthId,
+        category: planCategory.trim(),
+        planned_amount: rub(planAmount),
+        expense_type: planType,
+        notes: planNotes.trim() || null,
+      });
+      setPlanCategory("");
+      setPlanAmount("");
+      setPlanNotes("");
+      setPlanDraftTouched(false);
+      await load();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSavePlanEdit() {
+    if (editingPlanId == null || !editPlan) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      if (!editPlan.category.trim() || !normalizeMoneyInput(editPlan.planned_amount)) {
+        throw new Error("Категория и сумма плана обязательны");
+      }
+      await updatePlannedBudget(editingPlanId, {
+        category: editPlan.category.trim(),
+        planned_amount: rub(editPlan.planned_amount),
+        expense_type: editPlan.expense_type,
+        notes: editPlan.notes.trim() || null,
+      });
+      setEditingPlanId(null);
+      setEditPlan(null);
       await load();
     } catch (err) {
       setActionError(formatApiError(err));
@@ -448,6 +540,265 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
       </Panel>
 
       <Panel
+        action={
+          plan.length === 0 ? (
+            <Badge>план не введён</Badge>
+          ) : (
+            <Badge>план {formatMoney(plannedTotal)}</Badge>
+          )
+        }
+        label="Бюджет"
+        title="План расходов"
+      >
+        <details className="field-details">
+          <summary>О плане</summary>
+          <p>
+            План — это намерение, а не факт. Фактические расходы выше не считаются бюджетом
+            автоматически. Сопоставление ниже группирует план и факт по точной паре «категория +
+            тип»; одинаковые строки суммируются.
+          </p>
+          <p>
+            «—» в сопоставлении означает, что сторона не введена вовсе. «0 ₽» — это явный ноль
+            владельца, а не пустое место.
+          </p>
+        </details>
+        {plan.length === 0 ? (
+          <EmptyState
+            description="Плана нет — это нормально, закрытию месяца он не нужен."
+            inline
+            title="Пусто"
+          />
+        ) : (
+          <Table className="month-budget-table">
+            <thead>
+              <tr>
+                <Th>Категория</Th>
+                <Th>Тип</Th>
+                <Th numeric>Сумма плана</Th>
+                <Th className="month-budget-table__notes">Комментарий</Th>
+                <Th className="month-budget-table__actions">Действия</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.map((row) => {
+                const editing = editingPlanId === row.id && editPlan;
+                return (
+                  <tr key={row.id}>
+                    <Td>
+                      {editing ? (
+                        <Input
+                          aria-label="Категория плана"
+                          onChange={(e) => setEditPlan({ ...editPlan, category: e.target.value })}
+                          value={editPlan.category}
+                        />
+                      ) : (
+                        row.category
+                      )}
+                    </Td>
+                    <Td>
+                      {editing ? (
+                        <Select
+                          aria-label="Тип плана"
+                          onChange={(e) =>
+                            setEditPlan({ ...editPlan, expense_type: e.target.value })
+                          }
+                          value={editPlan.expense_type}
+                        >
+                          <option value="mandatory">Обязательный</option>
+                          <option value="comfortable">Комфортный</option>
+                          <option value="other">Прочее</option>
+                        </Select>
+                      ) : (
+                        <span
+                          className={
+                            row.expense_type === "mandatory"
+                              ? "badge badge--closed"
+                              : "badge badge--draft"
+                          }
+                        >
+                          {labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}
+                        </span>
+                      )}
+                    </Td>
+                    <Td numeric>
+                      {editing ? (
+                        <Input
+                          aria-label="Сумма плана"
+                          className="input--money"
+                          onChange={(e) =>
+                            setEditPlan({ ...editPlan, planned_amount: e.target.value })
+                          }
+                          value={editPlan.planned_amount}
+                        />
+                      ) : (
+                        formatMoney(moneyAmount(row.planned_amount))
+                      )}
+                    </Td>
+                    <Td className="month-budget-table__notes">
+                      {editing ? (
+                        <Input
+                          aria-label="Комментарий плана"
+                          onChange={(e) => setEditPlan({ ...editPlan, notes: e.target.value })}
+                          value={editPlan.notes}
+                        />
+                      ) : (
+                        <span className="muted tiny">{row.notes ?? "—"}</span>
+                      )}
+                    </Td>
+                    <Td className="month-budget-table__actions">
+                      <div className="row-actions">
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleSavePlanEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingPlanId(null);
+                                setEditPlan(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <OverflowMenu label={`Действия для плана «${row.category}»`}>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly}
+                              onClick={() => {
+                                setEditingPlanId(row.id);
+                                setEditPlan({
+                                  category: row.category,
+                                  expense_type: row.expense_type,
+                                  planned_amount: moneyAmount(row.planned_amount),
+                                  notes: row.notes ?? "",
+                                });
+                              }}
+                            >
+                              Изменить
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              danger
+                              disabled={busy || readOnly}
+                              onClick={() => setDelPlan(row)}
+                            >
+                              Удалить
+                            </OverflowMenuItem>
+                          </OverflowMenu>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+        <div className="totals-bar">
+          <span>
+            {plan.length === 0 ? (
+              "План не введён"
+            ) : (
+              <>
+                Итого план: <strong>{formatMoney(plannedTotal)}</strong>
+              </>
+            )}
+          </span>
+        </div>
+        {comparison.length > 0 ? (
+          <Table className="month-budget-table">
+            <thead>
+              <tr>
+                <Th>Категория</Th>
+                <Th>Тип</Th>
+                <Th numeric>План</Th>
+                <Th numeric>Факт</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.map((row) => (
+                <tr key={`${row.category}::${row.expense_type}`}>
+                  <Td>{row.category}</Td>
+                  <Td>{labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}</Td>
+                  <Td numeric>
+                    {row.planned === null ? "—" : formatMoney(moneyAmount(row.planned))}
+                  </Td>
+                  <Td numeric>
+                    {row.actual === null ? "—" : formatMoney(moneyAmount(row.actual))}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        ) : null}
+        {!readOnly ? (
+          <form className="form-stack asset-form" onSubmit={addPlan}>
+            <div className="editor-grid">
+              <Field htmlFor="plan-cat" label="Категория плана">
+                <Input
+                  id="plan-cat"
+                  onChange={(e) => {
+                    setPlanCategory(e.target.value);
+                    setPlanDraftTouched(true);
+                  }}
+                  required
+                  value={planCategory}
+                />
+              </Field>
+              <Field htmlFor="plan-type" label="Тип плана">
+                <Select
+                  id="plan-type"
+                  onChange={(e) => {
+                    setPlanType(e.target.value);
+                    setPlanDraftTouched(true);
+                  }}
+                  value={planType}
+                >
+                  <option value="mandatory">Обязательный</option>
+                  <option value="comfortable">Комфортный</option>
+                  <option value="other">Прочее</option>
+                </Select>
+              </Field>
+              <Field htmlFor="plan-amt" label="Сумма плана">
+                <Input
+                  className="input--money"
+                  id="plan-amt"
+                  onChange={(e) => {
+                    setPlanAmount(e.target.value);
+                    setPlanDraftTouched(true);
+                  }}
+                  required
+                  value={planAmount}
+                />
+              </Field>
+              <Field htmlFor="plan-notes" label="Комментарий плана">
+                <Input
+                  id="plan-notes"
+                  onChange={(e) => {
+                    setPlanNotes(e.target.value);
+                    setPlanDraftTouched(true);
+                  }}
+                  value={planNotes}
+                />
+              </Field>
+            </div>
+            <Button disabled={busy} type="submit" variant="primary">
+              Добавить в план
+            </Button>
+          </form>
+        ) : null}
+      </Panel>
+
+      <Panel
         action={<Badge>отложено {formatMoney(savingsTotal)}</Badge>}
         label="Бюджет"
         title="Откладывание"
@@ -656,6 +1007,27 @@ export function MonthBudgetSection({ monthId, readOnly, onDirtyChange }: Props) 
         }}
         open={delSaving !== null}
         title="Удалить откладывание?"
+      />
+      <ConfirmDialog
+        busy={busy}
+        cancelLabel="Отмена"
+        confirmLabel="Удалить"
+        danger
+        description={delPlan ? `Удалить план «${delPlan.category}»?` : ""}
+        onCancel={() => setDelPlan(null)}
+        onConfirm={() => {
+          if (!delPlan) return;
+          setBusy(true);
+          void deletePlannedBudget(delPlan.id)
+            .then(() => load())
+            .catch((err) => setActionError(formatApiError(err)))
+            .finally(() => {
+              setBusy(false);
+              setDelPlan(null);
+            });
+        }}
+        open={delPlan !== null}
+        title="Удалить план?"
       />
     </div>
   );

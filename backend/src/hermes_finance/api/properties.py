@@ -7,8 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
-from hermes_finance.domain import RubleAmount
+from hermes_finance.domain import PercentageRate, RubleAmount
 from hermes_finance.services.properties import (
+    _UNSET,
     create_property_snapshot,
     delete_property_snapshot,
     get_property_snapshot,
@@ -27,6 +28,7 @@ class PropertyCreate(BaseModel):
     estimated_value: MoneyValue
     mortgage_balance: MoneyValue
     monthly_payment: MoneyValue
+    mortgage_annual_rate: str | None = Field(default=None, min_length=1)
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -37,6 +39,7 @@ class PropertyUpdate(BaseModel):
     estimated_value: MoneyValue | None = None
     mortgage_balance: MoneyValue | None = None
     monthly_payment: MoneyValue | None = None
+    mortgage_annual_rate: str | None = Field(default=None, min_length=1)
     notes: str | None = Field(default=None, max_length=2000)
 
 
@@ -49,6 +52,7 @@ class PropertyResponse(BaseModel):
     estimated_value: MoneyValue
     mortgage_balance: MoneyValue
     monthly_payment: MoneyValue
+    mortgage_annual_rate: str | None
     notes: str | None
 
 
@@ -60,6 +64,12 @@ def _money(kopecks: int) -> MoneyValue:
     return MoneyValue(amount=RubleAmount(kopecks).to_api(), currency="RUB")
 
 
+def _rate(basis_points: int | None) -> str | None:
+    if basis_points is None:
+        return None
+    return PercentageRate(basis_points).to_api()
+
+
 def _response(snapshot: object) -> PropertyResponse:
     return PropertyResponse(
         id=snapshot.id,
@@ -68,6 +78,7 @@ def _response(snapshot: object) -> PropertyResponse:
         estimated_value=_money(snapshot.estimated_value_kopecks),
         mortgage_balance=_money(snapshot.mortgage_balance_kopecks),
         monthly_payment=_money(snapshot.monthly_payment_kopecks),
+        mortgage_annual_rate=_rate(snapshot.mortgage_annual_rate_basis_points),
         notes=snapshot.notes,
     )
 
@@ -95,6 +106,7 @@ def create_property(
         estimated_value=_amount(payload.estimated_value),
         mortgage_balance=_amount(payload.mortgage_balance),
         monthly_payment=_amount(payload.monthly_payment),
+        mortgage_annual_rate=payload.mortgage_annual_rate,
         notes=payload.notes,
     )
     return _response(snapshot)
@@ -127,6 +139,9 @@ def update_property(
         monthly_payment=_amount(payload.monthly_payment)
         if payload.monthly_payment is not None
         else None,
+        mortgage_annual_rate=payload.mortgage_annual_rate
+        if "mortgage_annual_rate" in payload.model_fields_set
+        else _UNSET,
         notes=payload.notes,
     )
     return _response(snapshot)

@@ -32,10 +32,14 @@ const saving = {
 function setup({
   expenses = [expense],
   savings = [saving],
+  plan = [],
+  comparison = [],
   readOnly = false,
 }: {
   expenses?: unknown[];
   savings?: unknown[];
+  plan?: unknown[];
+  comparison?: unknown[];
   readOnly?: boolean;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -43,6 +47,9 @@ function setup({
     const method = (init?.method ?? "GET").toUpperCase();
     if (method === "GET" && url === "/api/expenses?month_id=7") return jsonResponse(expenses);
     if (method === "GET" && url === "/api/savings?month_id=7") return jsonResponse(savings);
+    if (method === "GET" && url === "/api/planned-budget?month_id=7") return jsonResponse(plan);
+    if (method === "GET" && url === "/api/planned-budget/comparison?month_id=7")
+      return jsonResponse(comparison);
     if (method === "PATCH" && url === "/api/expenses/11") {
       return jsonResponse({ ...expense, amount: { amount: "51000.00", currency: "RUB" } });
     }
@@ -51,6 +58,7 @@ function setup({
     }
     if (method === "POST" && url === "/api/expenses") return jsonResponse({ id: 12 }, 201);
     if (method === "POST" && url === "/api/savings") return jsonResponse({ id: 22 }, 201);
+    if (method === "POST" && url === "/api/planned-budget") return jsonResponse({ id: 32 }, 201);
     return jsonResponse(
       { error: { code: "not_found", message: `no mock for ${method} ${url}`, details: [] } },
       404,
@@ -167,5 +175,96 @@ describe("MonthBudgetSection overflow edit", () => {
     expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Добавить расход" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MonthBudgetSection planned budget", () => {
+  const planLine = {
+    id: 31,
+    reporting_month_id: 7,
+    category: "Аренда",
+    planned_amount: { amount: "48000.00", currency: "RUB" },
+    expense_type: "mandatory",
+    notes: null,
+  };
+
+  it("creates a plan line separately from actual expenses", async () => {
+    const fetchMock = setup({ expenses: [], savings: [], plan: [], comparison: [] });
+    const user = userEvent.setup();
+    await screen.findByText("Плана нет — это нормально, закрытию месяца он не нужен.");
+    await user.type(screen.getByLabelText("Категория плана"), "Аренда");
+    await user.type(screen.getByLabelText("Сумма плана"), "48000");
+    await user.click(screen.getByRole("button", { name: "Добавить в план" }));
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        ([input, init]) => String(input) === "/api/planned-budget" && init?.method === "POST",
+      );
+      expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({
+        reporting_month_id: 7,
+        category: "Аренда",
+        planned_amount: { amount: "48000.00", currency: "RUB" },
+        expense_type: "mandatory",
+      });
+    });
+  });
+
+  it("renders plan vs actual comparison rows", async () => {
+    setup({
+      plan: [planLine],
+      comparison: [
+        {
+          category: "Аренда",
+          expense_type: "mandatory",
+          planned: { amount: "48000.00", currency: "RUB" },
+          actual: { amount: "50000.00", currency: "RUB" },
+        },
+      ],
+    });
+    await screen.findByText("План расходов");
+    expect(screen.getByText("План")).toBeInTheDocument();
+    expect(screen.getByText("Факт")).toBeInTheDocument();
+  });
+
+  it("keeps an absent plan side distinct from an explicit zero plan", async () => {
+    setup({
+      plan: [planLine],
+      comparison: [
+        {
+          category: "Еда",
+          expense_type: "mandatory",
+          planned: null,
+          actual: { amount: "12000.00", currency: "RUB" },
+        },
+        {
+          category: "Подписки",
+          expense_type: "other",
+          planned: { amount: "0.00", currency: "RUB" },
+          actual: null,
+        },
+      ],
+    });
+    await screen.findByText("План расходов");
+
+    const absentPlanRow = screen.getByText("Еда").closest("tr");
+    expect(absentPlanRow).not.toBeNull();
+    const absentCells = within(absentPlanRow as HTMLElement).getAllByRole("cell");
+    // The plan side was never entered: it must not read as a zero plan.
+    expect(absentCells[2].textContent).toBe("—");
+    expect(absentCells[3].textContent).toMatch(/12\s*000\s*₽/);
+
+    const explicitZeroRow = screen.getByText("Подписки").closest("tr");
+    expect(explicitZeroRow).not.toBeNull();
+    const zeroCells = within(explicitZeroRow as HTMLElement).getAllByRole("cell");
+    // An owner-entered zero stays an explicit zero.
+    expect(zeroCells[2].textContent).toMatch(/^0\s*₽$/);
+    expect(zeroCells[3].textContent).toBe("—");
+  });
+
+  it("does not present an empty plan as an entered zero plan", async () => {
+    setup({ plan: [], comparison: [] });
+    await screen.findByText("Плана нет — это нормально, закрытию месяца он не нужен.");
+    expect(screen.getByText("план не введён")).toBeInTheDocument();
+    expect(screen.getByText("План не введён")).toBeInTheDocument();
+    expect(screen.queryByText(/^план 0\s*₽$/)).not.toBeInTheDocument();
   });
 });

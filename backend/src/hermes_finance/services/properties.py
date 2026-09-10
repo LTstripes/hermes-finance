@@ -3,12 +3,14 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import FINANCIAL_ROUNDING, RubleAmount
+from hermes_finance.domain import FINANCIAL_ROUNDING, PercentageRate, RubleAmount
 from hermes_finance.persistence import PropertySnapshot
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
 )
+
+_UNSET: object = object()
 
 
 class PropertySnapshotNotFoundError(LookupError):
@@ -30,6 +32,18 @@ def _normalize_amount(amount: RubleAmount | str, *, field: str) -> int:
     if amount.kopecks < 0:
         raise ValueError(f"{field} must not be negative")
     return amount.kopecks
+
+
+def _normalize_rate(mortgage_annual_rate: PercentageRate | str | None, *, field: str) -> int | None:
+    if mortgage_annual_rate is None:
+        return None
+    if isinstance(mortgage_annual_rate, str):
+        mortgage_annual_rate = PercentageRate.from_api(mortgage_annual_rate)
+    if not isinstance(mortgage_annual_rate, PercentageRate):
+        raise TypeError(f"{field} must be PercentageRate, decimal string or None")
+    if mortgage_annual_rate.basis_points < 0:
+        raise ValueError(f"{field} must not be negative")
+    return mortgage_annual_rate.basis_points
 
 
 def _sum_field(session: Session, month_id: int, field) -> int:
@@ -99,6 +113,7 @@ def create_property_snapshot(
     estimated_value: RubleAmount | str,
     mortgage_balance: RubleAmount | str,
     monthly_payment: RubleAmount | str,
+    mortgage_annual_rate: PercentageRate | str | None = None,
     notes: str | None = None,
 ) -> PropertySnapshot:
     require_editable_reporting_month(session, reporting_month_id)
@@ -108,6 +123,9 @@ def create_property_snapshot(
         estimated_value_kopecks=_normalize_amount(estimated_value, field="estimated_value"),
         mortgage_balance_kopecks=_normalize_amount(mortgage_balance, field="mortgage_balance"),
         monthly_payment_kopecks=_normalize_amount(monthly_payment, field="monthly_payment"),
+        mortgage_annual_rate_basis_points=_normalize_rate(
+            mortgage_annual_rate, field="mortgage_annual_rate"
+        ),
         notes=notes,
     )
     session.add(snapshot)
@@ -124,6 +142,7 @@ def update_property_snapshot(
     estimated_value: RubleAmount | str | None = None,
     mortgage_balance: RubleAmount | str | None = None,
     monthly_payment: RubleAmount | str | None = None,
+    mortgage_annual_rate: PercentageRate | str | None | object = _UNSET,
     notes: str | None = None,
 ) -> PropertySnapshot:
     snapshot = get_property_snapshot(session, snapshot_id)
@@ -141,6 +160,11 @@ def update_property_snapshot(
     if monthly_payment is not None:
         snapshot.monthly_payment_kopecks = _normalize_amount(
             monthly_payment, field="monthly_payment"
+        )
+    if mortgage_annual_rate is not _UNSET:
+        snapshot.mortgage_annual_rate_basis_points = _normalize_rate(
+            mortgage_annual_rate,  # type: ignore[arg-type]
+            field="mortgage_annual_rate",
         )
     if notes is not None:
         snapshot.notes = notes

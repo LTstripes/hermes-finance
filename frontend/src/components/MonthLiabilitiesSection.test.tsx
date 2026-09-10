@@ -30,6 +30,9 @@ const debt = {
   name: "Основная карта",
   current_balance: { amount: "123456.00", currency: "RUB" },
   include_in_liquid_capital: true,
+  annual_rate: "19.90",
+  next_due_date: "2030-06-20",
+  contract_end_date: null,
   notes: null,
 };
 
@@ -40,6 +43,7 @@ const property = {
   estimated_value: { amount: "7000000.00", currency: "RUB" },
   mortgage_balance: { amount: "3000000.00", currency: "RUB" },
   monthly_payment: { amount: "50000.00", currency: "RUB" },
+  mortgage_annual_rate: null,
   notes: null,
 };
 
@@ -147,5 +151,31 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     );
     expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+  });
+
+  it("shows debt terms and distinguishes unknown mortgage rate from zero", async () => {
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable, propertyTable] = await screen.findAllByRole("table");
+    expect(debtTable).toHaveTextContent(/19,90%/);
+    expect(debtTable).toHaveTextContent(/20\.06\.2030/);
+    expect(propertyTable).toHaveTextContent("не указано");
+    expect(propertyTable).not.toHaveTextContent(/0,00%/);
+  });
+
+  it("sends cleared debt rate as explicit null on save", async () => {
+    vi.mocked(updateDebt).mockResolvedValue({ ...debt, annual_rate: null });
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+    await user.click(
+      within(debtTable).getByRole("button", { name: "Действия для долга «Основная карта»" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const rate = screen.getByDisplayValue("19.90");
+    await user.clear(rate);
+    await user.click(screen.getByRole("button", { name: "OK" }));
+    await waitFor(() => {
+      expect(updateDebt).toHaveBeenCalledWith(1, expect.objectContaining({ annual_rate: null }));
+    });
   });
 });

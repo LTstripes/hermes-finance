@@ -140,6 +140,25 @@ export function formatPercent(
   return `${sign}${body}%`;
 }
 
+/**
+ * Percent-rate user input → API decimal string in percentage points.
+ * Empty means unknown (null). Only non-negative decimals are accepted;
+ * the backend rounds to exact basis points and rejects negatives.
+ */
+export function normalizeRateInput(value: string): string | null {
+  const cleaned = value
+    .trim()
+    .replace(/\u00a0/g, "")
+    .replace(/\s/g, "")
+    .replace(",", ".");
+  if (cleaned === "") {
+    return null;
+  }
+  if (!/^\d+(\.\d+)?$/.test(cleaned)) {
+    return null;
+  }
+  return cleaned;
+}
 /** Calendar date → ДД.ММ.ГГГГ */
 export function formatDate(
   input: string | Date | null | undefined,

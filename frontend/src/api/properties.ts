@@ -15,6 +15,7 @@ export function createProperty(
     estimated_value: { amount: string; currency: string };
     mortgage_balance: { amount: string; currency: string };
     monthly_payment: { amount: string; currency: string };
+    mortgage_annual_rate?: string | null;
     notes?: string | null;
   },
   signal?: AbortSignal,

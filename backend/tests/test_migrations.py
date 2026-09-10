@@ -11,6 +11,9 @@ from _migration_helpers import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
+# Immediate parent of REVISION: used to prove the #336 add-on is additive.
+FINANCIAL_CONTEXT_PARENT_REVISION = "0036_broker_baseline_provenance"
+
 
 def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) -> None:
     database_path = tmp_path / "nested" / "migration-smoke.db"
@@ -265,6 +268,16 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "amount_kopecks",
             "notes",
         ]
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(planned_budget_lines)")
+        ] == [
+            "id",
+            "reporting_month_id",
+            "category",
+            "planned_amount_kopecks",
+            "expense_type",
+            "notes",
+        ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(debts)")] == [
             "id",
             "reporting_month_id",
@@ -273,6 +286,9 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "current_balance_kopecks",
             "include_in_liquid_capital",
             "notes",
+            "annual_rate_basis_points",
+            "next_due_date",
+            "contract_end_date",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(property_snapshots)")] == [
             "id",
@@ -282,6 +298,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "mortgage_balance_kopecks",
             "monthly_payment_kopecks",
             "notes",
+            "mortgage_annual_rate_basis_points",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(goals)")] == [
             "id",
@@ -1791,5 +1808,99 @@ def test_broker_baseline_provenance_migration_is_additive_and_empty(tmp_path: Pa
         assert "broker_baseline_applies" not in tables
         assert "broker_baseline_apply_items" not in tables
         assert "broker_identity_mappings" in tables
+    finally:
+        connection.close()
+
+
+def test_financial_context_migration_is_additive_and_leaves_unknown_null(
+    tmp_path: Path,
+) -> None:
+    """#336: new debt terms, mortgage rate and planned budget must not backfill guesses."""
+    database_path = tmp_path / "financial-context.db"
+
+    previous = run_alembic(database_path, "upgrade", FINANCIAL_CONTEXT_PARENT_REVISION)
+    assert previous.returncode == 0, previous.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(id, year, month, period_start, period_end, snapshot_date, status, source, "
+            "created_at, updated_at) VALUES "
+            "(1, 2032, 1, '2032-01-01', '2032-01-31', '2032-01-31', 'draft', 'manual', "
+            "'2032-01-31T00:00:00', '2032-01-31T00:00:00')"
+        )
+        connection.execute(
+            "INSERT INTO debts "
+            "(id, reporting_month_id, debt_type, name, current_balance_kopecks, "
+            "include_in_liquid_capital, notes) VALUES "
+            "(1, 1, 'credit_card', 'Legacy Card', 100000, 1, NULL)"
+        )
+        connection.execute(
+            "INSERT INTO property_snapshots "
+            "(id, reporting_month_id, name, estimated_value_kopecks, "
+            "mortgage_balance_kopecks, monthly_payment_kopecks, notes) VALUES "
+            "(1, 1, 'Legacy Flat', 700000000, 300000000, 5000000, NULL)"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute(
+            "SELECT annual_rate_basis_points, next_due_date, contract_end_date "
+            "FROM debts WHERE id = 1"
+        ).fetchone() == (None, None, None)
+        assert connection.execute(
+            "SELECT mortgage_annual_rate_basis_points FROM property_snapshots WHERE id = 1"
+        ).fetchone() == (None,)
+        assert connection.execute("SELECT COUNT(*) FROM planned_budget_lines").fetchone() == (0,)
+        planned_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'planned_budget_lines'"
+        ).fetchone()[0]
+        assert "REFERENCES reporting_months" in planned_sql
+        # Nothing may be inferred from the persisted mortgage payment or balance.
+        assert "5000000" not in planned_sql
+        for table in ("debts", "property_snapshots"):
+            table_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table,),
+            ).fetchone()[0]
+            assert "CHECK" in table_sql.upper()
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", FINANCIAL_CONTEXT_PARENT_REVISION)
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "planned_budget_lines" not in tables
+        assert [row[1] for row in connection.execute("PRAGMA table_info(debts)")] == [
+            "id",
+            "reporting_month_id",
+            "debt_type",
+            "name",
+            "current_balance_kopecks",
+            "include_in_liquid_capital",
+            "notes",
+        ]
+        assert [row[1] for row in connection.execute("PRAGMA table_info(property_snapshots)")] == [
+            "id",
+            "reporting_month_id",
+            "name",
+            "estimated_value_kopecks",
+            "mortgage_balance_kopecks",
+            "monthly_payment_kopecks",
+            "notes",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM debts").fetchone() == (1,)
     finally:
         connection.close()

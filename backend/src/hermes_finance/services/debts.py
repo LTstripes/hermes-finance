@@ -1,12 +1,16 @@
+from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import DebtType, RubleAmount
+from hermes_finance.domain import DebtType, PercentageRate, RubleAmount
 from hermes_finance.persistence import Debt
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
 )
+
+_UNSET: object = object()
 
 
 class DebtNotFoundError(LookupError):
@@ -28,6 +32,18 @@ def _normalize_balance(balance: RubleAmount | str) -> int:
     if balance.kopecks < 0:
         raise ValueError("current_balance must not be negative")
     return balance.kopecks
+
+
+def _normalize_rate(annual_rate: PercentageRate | str | None, *, field: str) -> int | None:
+    if annual_rate is None:
+        return None
+    if isinstance(annual_rate, str):
+        annual_rate = PercentageRate.from_api(annual_rate)
+    if not isinstance(annual_rate, PercentageRate):
+        raise TypeError(f"{field} must be PercentageRate, decimal string or None")
+    if annual_rate.basis_points < 0:
+        raise ValueError(f"{field} must not be negative")
+    return annual_rate.basis_points
 
 
 def _coerce_debt_type(debt_type: DebtType | str) -> DebtType:
@@ -72,6 +88,9 @@ def create_debt(
     name: str,
     current_balance: RubleAmount | str,
     include_in_liquid_capital: bool = True,
+    annual_rate: PercentageRate | str | None = None,
+    next_due_date: date | None = None,
+    contract_end_date: date | None = None,
     notes: str | None = None,
 ) -> Debt:
     require_editable_reporting_month(session, reporting_month_id)
@@ -81,6 +100,9 @@ def create_debt(
         name=_normalize_text(name, field="name"),
         current_balance_kopecks=_normalize_balance(current_balance),
         include_in_liquid_capital=include_in_liquid_capital,
+        annual_rate_basis_points=_normalize_rate(annual_rate, field="annual_rate"),
+        next_due_date=next_due_date,
+        contract_end_date=contract_end_date,
         notes=notes,
     )
     session.add(debt)
@@ -97,6 +119,9 @@ def update_debt(
     name: str | None = None,
     current_balance: RubleAmount | str | None = None,
     include_in_liquid_capital: bool | None = None,
+    annual_rate: PercentageRate | str | None | object = _UNSET,
+    next_due_date: date | None | object = _UNSET,
+    contract_end_date: date | None | object = _UNSET,
     notes: str | None = None,
 ) -> Debt:
     debt = get_debt(session, debt_id)
@@ -109,6 +134,15 @@ def update_debt(
         debt.current_balance_kopecks = _normalize_balance(current_balance)
     if include_in_liquid_capital is not None:
         debt.include_in_liquid_capital = include_in_liquid_capital
+    if annual_rate is not _UNSET:
+        debt.annual_rate_basis_points = _normalize_rate(
+            annual_rate,  # type: ignore[arg-type]
+            field="annual_rate",
+        )
+    if next_due_date is not _UNSET:
+        debt.next_due_date = next_due_date  # type: ignore[assignment]
+    if contract_end_date is not _UNSET:
+        debt.contract_end_date = contract_end_date  # type: ignore[assignment]
     if notes is not None:
         debt.notes = notes
     session.commit()

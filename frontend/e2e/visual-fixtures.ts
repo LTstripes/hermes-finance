@@ -694,6 +694,8 @@ export function syntheticApiResponse(
     path === "/api/cash-balances" ||
     path === "/api/expenses" ||
     path === "/api/savings" ||
+    path === "/api/planned-budget" ||
+    path === "/api/planned-budget/comparison" ||
     path === "/api/debts" ||
     path === "/api/properties" ||
     path === "/api/comments" ||

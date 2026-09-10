@@ -171,3 +171,45 @@ def test_property_validation_rejects_bad_inputs(tmp_path: Path) -> None:
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_mortgage_rate_zero_is_distinct_from_unknown(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        first_id, _ = build_environment(session)
+        unknown = create_property_snapshot(
+            session,
+            reporting_month_id=first_id,
+            name="Unknown Rate Flat",
+            estimated_value="8000000.00",
+            mortgage_balance="3000000.00",
+            monthly_payment="50000.00",
+        )
+        assert unknown.mortgage_annual_rate_basis_points is None
+        zero = create_property_snapshot(
+            session,
+            reporting_month_id=first_id,
+            name="Zero Rate Flat",
+            estimated_value="8000000.00",
+            mortgage_balance="3000000.00",
+            monthly_payment="50000.00",
+            mortgage_annual_rate="0.00",
+        )
+        assert zero.mortgage_annual_rate_basis_points == 0
+        rated = update_property_snapshot(session, unknown.id, mortgage_annual_rate="11.75")
+        assert rated.mortgage_annual_rate_basis_points == 1175
+        cleared = update_property_snapshot(session, rated.id, mortgage_annual_rate=None)
+        assert cleared.mortgage_annual_rate_basis_points is None
+        with pytest.raises(ValueError, match="must not be negative"):
+            create_property_snapshot(
+                session,
+                reporting_month_id=first_id,
+                name="Synthetic",
+                estimated_value="8000000.00",
+                mortgage_balance="3000000.00",
+                monthly_payment="50000.00",
+                mortgage_annual_rate="-1.00",
+            )
+    finally:
+        session.close()
+        database.engine.dispose()

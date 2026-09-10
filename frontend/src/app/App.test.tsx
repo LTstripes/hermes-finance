@@ -131,6 +131,8 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
       jsonResponse([]),
     [`GET /api/expenses?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/savings?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/planned-budget?month_id=${month.id}`]: () => jsonResponse([]),
+    [`GET /api/planned-budget/comparison?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/debts?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/properties?month_id=${month.id}`]: () => jsonResponse([]),
     [`GET /api/comments?month_id=${month.id}`]: () => jsonResponse([]),
