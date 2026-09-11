@@ -50,6 +50,10 @@ When the active Integrator surface has direct GitHub read/write access and can i
 
 That includes issue/branch/PR/review/merge/history actions the Integrator can safely perform.
 
+When the Owner has granted the Integrator a standing authorization for the standard integration flow, the Integrator may complete routine GitHub mechanics without asking for repeated confirmation: create/update the task PR, inspect the exact diff and CI, make clearly mechanical non-semantic fixes inside the accepted task scope, rerun applicable checks, merge an accepted candidate with an exact-head guard, read back canonical `main`, and verify canonical `push` CI for that exact SHA. A clearly mechanical fix is limited to things such as formatting/lint-only corrections or repository/PR metadata that do not change product behavior or financial meaning.
+
+Standing authorization never covers semantic/product/financial changes, architecture, migrations/data reinterpretation, privacy or runtime/network boundaries, scope expansion, destructive Git operations, release publication, repository settings, or bypassing required independent review. If a supposedly mechanical fix would alter executable meaning or cross one of those boundaries, stop and route it as a normal implementation/review decision. Details are normative in `docs/AGENT_ORCHESTRATION.md`.
+
 This principle does **not** override an explicit Owner choice of implementation surface. If the Owner asks for Grok, Hermes, Codex, a specific model/client, or a Codex `$delivery-loop` queue, prepare that execution route and keep GitHub plumbing with the Integrator where possible.
 
 For a direct GitHub-native repository write explicitly assigned to the Integrator, prefer this guarded route:
