@@ -8,12 +8,19 @@
 
 **Synthetic example:** [`ai_analysis_bundle.synthetic.json`](ai_analysis_bundle.synthetic.json)
 
+**Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](AI_FINANCIAL_REVIEW.md)
+
 **R08 portfolio-review package:** [`PORTFOLIO_REVIEW_PACKAGE.md`](PORTFOLIO_REVIEW_PACKAGE.md)
 
 The R08 package is the profiled owner-review output envelope built from this
 `1.0.0` source contract. It adds explicit scope, section states, allocation and
 freshness coverage without changing the financial meanings or creating a second
 calculation model.
+
+For ordinary monthly AI analysis, #331 defines one higher-level recommended
+report. This bundle remains a compact semantic/source contract and stays
+available as a technical export; it is not silently version-bumped or replaced
+by the #331 report.
 
 ## Purpose and boundary
 
