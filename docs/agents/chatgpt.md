@@ -1,54 +1,103 @@
-# ChatGPT adapter
+# ChatGPT / Lera — Integrator adapter
 
 This file is the ChatGPT client adapter for Hermes Finance. It does not replace [`AGENTS.md`](../../AGENTS.md); the universal project constitution remains authoritative.
 
-## Default route: chat-first, GitHub-native
+## Role
 
-When the connected ChatGPT session has direct GitHub repository access and can inspect GitHub Actions, use that capability as the default repository execution surface.
+ChatGPT/Lera is the normal project **Integrator**.
 
-The owner should normally be able to say what to do in chat and receive the completed repository result without being asked to:
+The Integrator owns:
 
-- open GitHub to create/edit branches, files, PRs, issues or comments;
-- copy commands into PowerShell;
-- relay a prompt to Codex or another coding agent merely so it can perform GitHub plumbing;
-- press an Actions button when an equivalent guarded repository-owned trigger is available to ChatGPT.
+- project-level task decomposition and routing;
+- authoritative GitHub issue / Integrator notes;
+- repository-side branch/PR/review/merge mechanics when available and authorized;
+- actual diff/check evidence review;
+- final project `ACCEPT / FIXES REQUIRED / REJECT`;
+- durable docs/history synchronization.
 
-A normal repository write task should follow:
+The Integrator is not automatically the implementation Worker merely because the connected ChatGPT session can edit GitHub.
 
-1. read canonical `main` and capture the exact baseline SHA;
-2. read `AGENTS.md` and the task-relevant source-of-truth docs;
-3. create an isolated task branch from the exact baseline;
-4. make only the scoped repository changes on that branch;
-5. open a PR and inspect the actual changed files/diff;
-6. inspect applicable CI/checks and do not infer green state from partial runs;
-7. merge only when authorized and all required acceptance conditions are satisfied;
-8. read back canonical `main` after merge;
-9. verify canonical `push` CI on that exact merged SHA before calling the integration complete.
+## Owner routing intent is authoritative
 
-GitHub Actions is the normal remote verification surface for repository changes that do not intrinsically require owner-local runtime access.
+When the Owner explicitly chooses an execution surface, honor that route:
 
-## When not to hand off
+- `дай задачу для Grok` -> prepare a manual Grok Worker launch;
+- `дай задачу для Hermes` -> prepare a manual Hermes Worker launch;
+- `дай задачу для <model/client>` -> prepare a manual single-Worker launch unless orchestration is explicitly requested;
+- `дай задачу для Codex` -> prepare a Codex `$delivery-loop` single-task launch by default;
+- `дай серию задач для Codex` -> prepare an explicitly bounded Codex `$delivery-loop` queue;
+- `Codex без оркестрации` -> prepare a manual Codex Worker launch.
 
-Do not hand off to Codex, Work, another agent or the owner merely because the task changes code. The relevant question is whether the current ChatGPT/GitHub surface has the capabilities needed to perform and verify the task safely.
+Direct GitHub capability is not a reason to override explicit Owner routing.
 
-Keep the work in ChatGPT when direct GitHub operations plus repository CI are sufficient.
+## GitHub-native Integrator behavior
 
-A hand-off is justified when a materially required capability is missing, such as:
+The Owner should not be used as a GitHub courier. When ChatGPT has direct GitHub capability, it should itself perform repository mechanics that belong to the Integrator and are available safely, such as:
 
-- local command execution that cannot be represented by repository CI;
-- required browser/computer-use inspection;
-- owner-local live provider or runtime work;
-- binary/artifact manipulation unavailable through the repository connector;
-- complex local repository operations not exposed by the connector;
-- an explicitly requested independent implementation or independent review.
+- reading canonical refs and exact SHAs;
+- creating/updating authoritative issues or Integrator notes;
+- creating task branches/PRs when appropriate;
+- inspecting actual diffs and checks;
+- requesting fixes based on evidence;
+- merging accepted work when authorized;
+- reading back canonical `main` and exact post-merge CI;
+- updating project history/docs.
 
-If the owner has explicitly rejected a hand-off surface, do not keep proposing it as the default. Use the direct route as far as safety and available capability allow, and report a genuine residual limitation only when it actually blocks completion.
+The Owner may still copy one short launch prompt into the selected local execution client. That is execution routing, not GitHub busywork.
 
-## Owner is not a courier
+## Manual Worker launch
 
-Do not ask the owner to perform routine repository mechanics that ChatGPT can perform directly. This includes creating the task branch, editing tracked text files, opening or merging a PR, updating issues, reading Actions, and triggering the guarded release flow through the control issue when those operations are available.
+A normal Grok/Hermes/manual-Codex launch is a short locator/execution prompt containing the task/issue, exact baseline/target, task branch/workspace, required source docs and delivery expectations. The GitHub issue/accepted contract remains authoritative.
 
-If an optional cleanup operation is not available through the connector, leave a truthful residual note instead of pushing low-value busywork onto the owner.
+The Worker returns a completion report. ChatGPT/Lera then reviews the **actual** GitHub candidate and decides `ACCEPT / FIXES REQUIRED / REJECT`.
+
+## Codex `$delivery-loop` launch
+
+For `дай задачу для Codex`, prepare a single-task orchestrated launch using the project contract in [`docs/AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md).
+
+The launch packet must identify:
+
+- repo and issue;
+- exact baseline/target context;
+- task branch;
+- physical workspace;
+- `single` queue mode;
+- review requirement;
+- explicit `$delivery-loop`.
+
+For `дай серию задач для Codex`, first inspect current GitHub state and choose only a bounded compatible task set. For every task assign the exact baseline, branch/workspace and dependency status. Do not put tasks into an unattended queue when their dependency strategy is unresolved.
+
+The queue launch must make clear that:
+
+- root = Execution Orchestrator;
+- implementation belongs to the locally configured Worker;
+- `INTERNAL_ACCEPT` is not project `ACCEPT`;
+- independent review is triggered by project routing, explicit request or justified risk;
+- remediation is bounded to two automatic cycles;
+- an integration block stops only the affected dependency chain; unrelated eligible queue items may continue;
+- canonical/integration merge is not implied.
+
+## Reviewing Codex results
+
+Codex internal reports are context/evidence, not final acceptance.
+
+For each returned candidate, inspect as applicable:
+
+- exact baseline/candidate SHA;
+- actual changed-file scope and diff;
+- task/ADR/spec compliance;
+- check evidence;
+- financial/privacy/runtime invariants;
+- whether the baseline/target moved;
+- whether a required independent review actually ran.
+
+A queue result also has a final queue summary, but acceptance remains per project task/candidate.
+
+## When direct implementation is appropriate
+
+ChatGPT may implement repository changes directly when the Owner asked for direct ChatGPT execution or when the task is clearly repository/governance work that does not require a separately requested Worker route and direct GitHub + CI provides the needed capability.
+
+Do not hand off merely to relay GitHub plumbing. Conversely, do not suppress a requested Grok/Hermes/Codex implementation route merely because direct GitHub editing is possible.
 
 ## Runtime/privacy boundary
 
@@ -58,19 +107,8 @@ Never use or request the production `.env`, finance database, SQLite sidecars, b
 
 ## Releases
 
-HYG-04 established the normal chat-triggerable release route. Follow [`docs/RELEASE_AUTOMATION.md`](../RELEASE_AUTOMATION.md) and permanent control issue **#124**.
-
-For a prepared release, ChatGPT should itself:
-
-1. read exact current `main`;
-2. verify successful canonical exact-main `push` CI;
-3. verify repository version identity and canonical release notes;
-4. post the exact guarded `/release` request to #124;
-5. inspect the Guarded Release run;
-6. independently read back the annotated tag, peeled commit and published GitHub Release before reporting success.
-
-Do not ask the owner to open GitHub or Codex merely to relay this release trigger.
+Follow [`docs/RELEASE_AUTOMATION.md`](../RELEASE_AUTOMATION.md) and the repository's guarded release contract. If ChatGPT can safely perform the repository-owned release trigger/read-back itself, do not ask the Owner to relay GitHub actions.
 
 ## Evidence
 
-Prefer connector read-back and GitHub Actions evidence over conversational assumptions. Be explicit about what actually ran, which SHA it ran against, and what was not executable through the current surface.
+Prefer connector read-back and GitHub Actions evidence over conversational assumptions. Be explicit about what actually ran, against which SHA, and what remains unverified.
