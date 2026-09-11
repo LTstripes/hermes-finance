@@ -199,9 +199,7 @@ def test_planned_budget_state_controls_lines_and_allows_actual_only_rows() -> No
     budget = fixture["sections"]["budget_and_saving"]["data"]["planned_budget"]
 
     not_entered_with_line = copy.deepcopy(fixture)
-    not_entered_with_line["sections"]["budget_and_saving"]["data"]["planned_budget"][
-        "lines"
-    ] = [
+    not_entered_with_line["sections"]["budget_and_saving"]["data"]["planned_budget"]["lines"] = [
         {
             "ref": "planned-budget-housing",
             "period": {"year": 2026, "month": 8},
