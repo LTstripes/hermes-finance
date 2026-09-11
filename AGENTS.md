@@ -181,7 +181,7 @@ Every task requires:
 - exact checks reported truthfully;
 - a final state read-back of `HEAD`, branch/remote and working tree, or the truthful GitHub-native equivalent when no local checkout exists.
 
-For implementation work, the normal verification sequence is targeted checks during iteration, one full relevant harness before Worker handoff, then package/install smoke as the final gate when packaging or installation is in scope. Canonical PR CI and exact-main push CI remain mandatory when the task is integrated.
+For implementation work, the normal verification sequence is targeted checks during iteration, one full relevant harness before Worker handoff, then package/install smoke as the final gate when packaging or installation is in scope. Canonical PR CI and exact-main push CI remain mandatory when the task is integrated. Do not use the launcher Stable self-update as a proven canonical release path: until the #313 redesign is accepted, prefer small composable Owner operations and the documented recovery path.
 
 Do not claim a full suite passed unless that suite actually ran and passed.
 
