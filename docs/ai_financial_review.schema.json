@@ -35,7 +35,7 @@
       "required": ["amount", "currency"],
       "properties": {
         "amount": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)\\.[0-9]{2}$" },
-        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+        "currency": { "const": "RUB" }
       }
     },
     "money_metric": {
@@ -48,7 +48,22 @@
         "precision": { "enum": ["exact", "approximate", "unknown"] },
         "source": { "type": "string", "minLength": 1 },
         "reason_codes": { "$ref": "#/$defs/reason_codes" }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value": { "$ref": "#/$defs/money" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value": { "type": "null" },
+            "availability": { "const": "unavailable" },
+            "precision": { "const": "unknown" }
+          }
+        }
+      ]
     },
     "ratio_metric": {
       "type": "object",
@@ -65,7 +80,22 @@
         "precision": { "enum": ["exact", "approximate", "unknown"] },
         "source": { "type": "string", "minLength": 1 },
         "reason_codes": { "$ref": "#/$defs/reason_codes" }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value_pct": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,4})?$" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value_pct": { "type": "null" },
+            "availability": { "const": "unavailable" },
+            "precision": { "const": "unknown" }
+          }
+        }
+      ]
     },
     "rate_metric": {
       "type": "object",
@@ -82,7 +112,22 @@
         "precision": { "enum": ["exact", "unknown"] },
         "source": { "type": "string", "minLength": 1 },
         "reason_codes": { "$ref": "#/$defs/reason_codes" }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value_pct": { "type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value_pct": { "type": "null" },
+            "availability": { "const": "unavailable" },
+            "precision": { "const": "unknown" }
+          }
+        }
+      ]
     },
     "date_metric": {
       "type": "object",
@@ -92,7 +137,21 @@
         "value": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
         "availability": { "enum": ["available", "unavailable"] },
         "reason_codes": { "$ref": "#/$defs/reason_codes" }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value": { "type": "string", "format": "date" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value": { "type": "null" },
+            "availability": { "const": "unavailable" }
+          }
+        }
+      ]
     },
     "period": {
       "type": "object",
@@ -241,12 +300,23 @@
     },
     "section_base": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["status", "reason_codes", "data"],
       "properties": {
         "status": { "enum": ["included", "partial", "unavailable"] },
         "reason_codes": { "$ref": "#/$defs/reason_codes" },
         "data": {}
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["included", "partial"] } } },
+          "then": { "properties": { "data": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "unavailable" } } },
+          "then": { "properties": { "data": { "type": "null" } } }
+        }
+      ]
     },
     "capital_data": {
       "type": "object",
@@ -825,7 +895,17 @@
         "reason_codes": { "$ref": "#/$defs/reason_codes" },
         "lines": { "type": "array", "items": { "$ref": "#/$defs/planned_budget_line" } },
         "plan_vs_actual": { "type": "array", "items": { "$ref": "#/$defs/plan_actual_row" } }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "not_entered" } } },
+          "then": { "properties": { "lines": { "maxItems": 0 } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "entered" } } },
+          "then": { "properties": { "lines": { "minItems": 1 } } }
+        }
+      ]
     },
     "budget_data": {
       "type": "object",
@@ -882,18 +962,18 @@
         "message": { "type": "string", "minLength": 1 }
       }
     },
-    "capital_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/capital_data" }, { "type": "null" }] } } },
-    "dynamics_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/dynamics_data" }, { "type": "null" }] } } },
-    "portfolio_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/portfolio_data" }, { "type": "null" }] } } },
-    "allocation_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/allocation_data" }, { "type": "null" }] } } },
-    "passive_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/passive_income_data" }, { "type": "null" }] } } },
-    "future_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/future_cash_flows_data" }, { "type": "null" }] } } },
-    "goals_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/goals_data" }, { "type": "null" }] } } },
-    "debts_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/debts_data" }, { "type": "null" }] } } },
-    "iis_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/iis_data" }, { "type": "null" }] } } },
-    "context_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/user_context_data" }, { "type": "null" }] } } },
-    "budget_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/budget_data" }, { "type": "null" }] } } },
-    "quality_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/data_quality_data" }, { "type": "null" }] } } },
+    "capital_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/capital_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "dynamics_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/dynamics_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "portfolio_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/portfolio_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "allocation_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/allocation_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "passive_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/passive_income_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "future_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/future_cash_flows_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "goals_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/goals_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "debts_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/debts_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "iis_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/iis_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "context_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/user_context_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "budget_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/budget_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "quality_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/data_quality_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
     "sections": {
       "type": "object",
       "additionalProperties": false,

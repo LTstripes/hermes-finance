@@ -18,8 +18,8 @@ frontend behavior, migration, provider call, cloud upload, or LLM call.
 that the owner should choose for a normal monthly review in ChatGPT or another
 AI assistant. It is a deterministic, read-only handoff of Hermes facts and
 owner-entered context. The JSON file is canonical; a future Markdown download
-must be rendered from the same DTO and must not have separate financial
-semantics.
+may be rendered from the same DTO in a later scope and must not have separate
+financial semantics. Markdown is not part of the #331 implementation scope.
 
 The existing contracts remain available during the transition:
 
@@ -182,9 +182,10 @@ by the file. The v1 contract is strict (`additionalProperties=false` in the
 normative schema) so exporter leaks and typos fail early. Existing bundle and
 package versions are not silently mutated by this report.
 
-The canonical JSON and its Markdown companion must be generated from one
-read-only snapshot. Generation must not persist an export, refresh a provider,
-send data to a cloud/LLM service or alter the database.
+The canonical recommended export is one JSON file. A future Markdown export,
+if added, must be generated from the same read-only snapshot and must not have
+separate financial semantics. Generation must not persist an export, refresh a
+provider, send data to a cloud/LLM service or alter the database.
 
 ## 7. Export-page hierarchy contract
 
@@ -206,12 +207,12 @@ Copy:
 
 Primary CTA: **Выгрузить отчёт для AI (JSON)**
 
-Secondary CTA: **Скачать Markdown-компаньон**
-
 The block must state that the file contains financial data, is created locally,
 is not sent automatically, and should be checked before manual upload. A small
 preview may show the selected period, covered history, section states and warning
-count without recomputing any value.
+count without recomputing any value. There is no Markdown companion or
+secondary AI-report CTA in the #331 implementation scope; Markdown remains a
+future/out-of-scope option.
 
 ### 7.2 Additional/technical exports — collapsed and secondary
 
