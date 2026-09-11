@@ -1,0 +1,997 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.0.0/schema.json",
+  "title": "Hermes Finance AI Financial Review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_name",
+    "schema_version",
+    "metadata",
+    "scope",
+    "coverage",
+    "provenance_summary",
+    "sections",
+    "field_states",
+    "warnings"
+  ],
+  "properties": {
+    "$schema": { "type": "string", "format": "uri-reference" },
+    "schema_name": { "const": "hermes.finance.ai_financial_review" },
+    "schema_version": { "const": "1.0.0" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "coverage": { "$ref": "#/$defs/coverage_summary" },
+    "provenance_summary": { "$ref": "#/$defs/provenance_summary" },
+    "sections": { "$ref": "#/$defs/sections" },
+    "field_states": { "type": "array", "items": { "$ref": "#/$defs/field_state" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } }
+  },
+  "$defs": {
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)\\.[0-9]{2}$" },
+        "currency": { "const": "RUB" }
+      }
+    },
+    "money_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "availability", "precision", "source", "reason_codes"],
+      "properties": {
+        "value": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "availability": { "enum": ["available", "unavailable"] },
+        "precision": { "enum": ["exact", "approximate", "unknown"] },
+        "source": { "type": "string", "minLength": 1 },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value": { "$ref": "#/$defs/money" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value": { "type": "null" },
+            "availability": { "const": "unavailable" },
+            "precision": { "const": "unknown" }
+          }
+        }
+      ]
+    },
+    "ratio_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value_pct", "availability", "precision", "source", "reason_codes"],
+      "properties": {
+        "value_pct": {
+          "oneOf": [
+            { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,4})?$" },
+            { "type": "null" }
+          ]
+        },
+        "availability": { "enum": ["available", "unavailable"] },
+        "precision": { "enum": ["exact", "approximate", "unknown"] },
+        "source": { "type": "string", "minLength": 1 },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value_pct": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,4})?$" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value_pct": { "type": "null" },
+            "availability": { "const": "unavailable" },
+            "precision": { "const": "unknown" }
+          }
+        }
+      ]
+    },
+    "rate_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value_pct", "availability", "precision", "source", "reason_codes"],
+      "properties": {
+        "value_pct": {
+          "oneOf": [
+            { "type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$" },
+            { "type": "null" }
+          ]
+        },
+        "availability": { "enum": ["available", "unavailable"] },
+        "precision": { "enum": ["exact", "unknown"] },
+        "source": { "type": "string", "minLength": 1 },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value_pct": { "type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value_pct": { "type": "null" },
+            "availability": { "const": "unavailable" },
+            "precision": { "const": "unknown" }
+          }
+        }
+      ]
+    },
+    "date_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "availability", "reason_codes"],
+      "properties": {
+        "value": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
+        "availability": { "enum": ["available", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value": { "type": "string", "format": "date" },
+            "availability": { "const": "available" }
+          }
+        },
+        {
+          "properties": {
+            "value": { "type": "null" },
+            "availability": { "const": "unavailable" }
+          }
+        }
+      ]
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["year", "month"],
+      "properties": {
+        "year": { "type": "integer", "minimum": 1900 },
+        "month": { "type": "integer", "minimum": 1, "maximum": 12 }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" }
+    },
+    "coverage_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes"],
+      "properties": {
+        "status": { "enum": ["complete", "partial", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_kind", "provider", "observed_at"],
+      "properties": {
+        "source_kind": {
+          "enum": ["manual", "provider", "statement", "migration", "backend_derived", "persisted_user_note", "persisted_configuration"]
+        },
+        "provider": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "observed_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generated_at", "as_of_date", "base_currency", "application", "generation_mode", "source_contracts", "integrated_contracts", "calculation_versions", "ordering_contract"],
+      "properties": {
+        "generated_at": { "type": "string", "format": "date-time" },
+        "as_of_date": { "type": "string", "format": "date" },
+        "base_currency": { "const": "RUB" },
+        "application": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "const": "Hermes Finance" },
+            "version": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+          }
+        },
+        "generation_mode": { "const": "read_only" },
+        "source_contracts": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version", "role"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+              "role": { "enum": ["financial_source", "envelope_source"] }
+            }
+          }
+        },
+        "integrated_contracts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "calculation_versions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["monthly_summary", "passive_income_forecast", "goal_achievement", "freshness_provenance", "risk_allocation", "deterministic_insights"],
+          "properties": {
+            "monthly_summary": { "type": "string", "minLength": 1 },
+            "passive_income_forecast": { "type": "string", "minLength": 1 },
+            "goal_achievement": { "type": "string", "minLength": 1 },
+            "freshness_provenance": { "type": "string", "minLength": 1 },
+            "risk_allocation": { "type": "string", "minLength": 1 },
+            "deterministic_insights": { "type": "string", "minLength": 1 }
+          }
+        },
+        "ordering_contract": { "const": "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "reporting_status", "selection_reason", "history_start_period", "history_end_period", "missing_calendar_periods"],
+      "properties": {
+        "reporting_period": { "$ref": "#/$defs/period" },
+        "reporting_status": { "enum": ["closed", "draft"] },
+        "selection_reason": { "enum": ["latest_closed", "latest_available"] },
+        "history_start_period": { "$ref": "#/$defs/period" },
+        "history_end_period": { "$ref": "#/$defs/period" },
+        "missing_calendar_periods": { "type": "array", "items": { "$ref": "#/$defs/period" } }
+      }
+    },
+    "coverage_domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes"],
+      "properties": {
+        "status": { "enum": ["complete", "partial", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "coverage_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domains"],
+      "properties": {
+        "domains": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capital", "history", "portfolio", "passive_income", "future_cash_flows", "goals", "debts_and_real_estate", "iis_and_tax", "user_context", "budget_and_saving"],
+          "properties": {
+            "capital": { "$ref": "#/$defs/coverage_domain" },
+            "history": { "$ref": "#/$defs/coverage_domain" },
+            "portfolio": { "$ref": "#/$defs/coverage_domain" },
+            "passive_income": { "$ref": "#/$defs/coverage_domain" },
+            "future_cash_flows": { "$ref": "#/$defs/coverage_domain" },
+            "goals": { "$ref": "#/$defs/coverage_domain" },
+            "debts_and_real_estate": { "$ref": "#/$defs/coverage_domain" },
+            "iis_and_tax": { "$ref": "#/$defs/coverage_domain" },
+            "user_context": { "$ref": "#/$defs/coverage_domain" },
+            "budget_and_saving": { "$ref": "#/$defs/coverage_domain" }
+          }
+        }
+      }
+    },
+    "provenance_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["financial_sources", "owner_context_sources", "excluded_sources"],
+      "properties": {
+        "financial_sources": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "owner_context_sources": { "type": "array", "uniqueItems": true, "items": { "const": "persisted_user_note" } },
+        "excluded_sources": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+      }
+    },
+    "section_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes", "data"],
+      "properties": {
+        "status": { "enum": ["included", "partial", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" },
+        "data": {}
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["included", "partial"] } } },
+          "then": { "properties": { "data": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "unavailable" } } },
+          "then": { "properties": { "data": { "type": "null" } } }
+        }
+      ]
+    },
+    "capital_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "snapshot_date", "liquid_assets_total", "included_debts", "liquid_capital_net", "property_equity", "total_net_worth", "cash_flow_after_allocations"],
+      "properties": {
+        "reporting_period": { "$ref": "#/$defs/period" },
+        "snapshot_date": { "type": "string", "format": "date" },
+        "liquid_assets_total": { "$ref": "#/$defs/money_metric" },
+        "included_debts": { "$ref": "#/$defs/money_metric" },
+        "liquid_capital_net": { "$ref": "#/$defs/money_metric" },
+        "property_equity": { "$ref": "#/$defs/money_metric" },
+        "total_net_worth": { "$ref": "#/$defs/money_metric" },
+        "cash_flow_after_allocations": { "$ref": "#/$defs/money_metric" }
+      }
+    },
+    "passive_breakdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deposit_interest", "bond_coupons", "dividends", "other_capital_income"],
+      "properties": {
+        "deposit_interest": { "$ref": "#/$defs/money_metric" },
+        "bond_coupons": { "$ref": "#/$defs/money_metric" },
+        "dividends": { "$ref": "#/$defs/money_metric" },
+        "other_capital_income": { "$ref": "#/$defs/money_metric" }
+      }
+    },
+    "dynamics_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["period", "status", "snapshot_date", "coverage", "liquid_assets_total", "included_debts", "liquid_capital_net", "passive_income_actual", "passive_income_actual_breakdown", "active_income_net", "mandatory_expenses", "saving_allocations", "cash_flow_after_allocations", "property_equity", "market_value_change", "investment_return", "warning_codes"],
+      "properties": {
+        "period": { "$ref": "#/$defs/period" },
+        "status": { "enum": ["closed", "draft"] },
+        "snapshot_date": { "type": "string", "format": "date" },
+        "coverage": { "$ref": "#/$defs/coverage_state" },
+        "liquid_assets_total": { "$ref": "#/$defs/money_metric" },
+        "included_debts": { "$ref": "#/$defs/money_metric" },
+        "liquid_capital_net": { "$ref": "#/$defs/money_metric" },
+        "passive_income_actual": { "$ref": "#/$defs/money_metric" },
+        "passive_income_actual_breakdown": { "$ref": "#/$defs/passive_breakdown" },
+        "active_income_net": { "$ref": "#/$defs/money_metric" },
+        "mandatory_expenses": { "$ref": "#/$defs/money_metric" },
+        "saving_allocations": { "$ref": "#/$defs/money_metric" },
+        "cash_flow_after_allocations": { "$ref": "#/$defs/money_metric" },
+        "property_equity": { "$ref": "#/$defs/money_metric" },
+        "market_value_change": { "$ref": "#/$defs/money_metric" },
+        "investment_return": { "$ref": "#/$defs/ratio_metric" },
+        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "dynamics_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["history", "missing_calendar_periods"],
+      "properties": {
+        "history": { "type": "array", "items": { "$ref": "#/$defs/dynamics_point" } },
+        "missing_calendar_periods": { "type": "array", "items": { "$ref": "#/$defs/period" } }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "account_type", "status", "include_in_capital", "include_in_returns"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "account_type": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "include_in_capital": { "type": "boolean" },
+        "include_in_returns": { "type": "boolean" }
+      }
+    },
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "instrument_type", "isin", "ticker", "currency"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^inst-[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "instrument_type": { "type": "string", "minLength": 1 },
+        "isin": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "ticker": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_ref", "instrument_ref", "quantity", "average_acquisition_cost_per_unit", "market_price_per_unit", "market_value", "cost_basis", "unrealized_result", "accrued_interest", "price_date", "price_source", "valuation_provenance", "notes"],
+      "properties": {
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "instrument_ref": { "type": "string", "pattern": "^inst-[a-z0-9-]+$" },
+        "quantity": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$" },
+        "average_acquisition_cost_per_unit": { "$ref": "#/$defs/money_metric" },
+        "market_price_per_unit": { "$ref": "#/$defs/money_metric" },
+        "market_value": { "$ref": "#/$defs/money_metric" },
+        "cost_basis": { "$ref": "#/$defs/money_metric" },
+        "unrealized_result": { "$ref": "#/$defs/money_metric" },
+        "accrued_interest": { "$ref": "#/$defs/money_metric" },
+        "price_date": { "$ref": "#/$defs/date_metric" },
+        "price_source": { "type": "string", "minLength": 1 },
+        "valuation_provenance": { "$ref": "#/$defs/provenance" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "deposit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_ref", "name", "deposit_type", "balance", "annual_rate_pct", "expected_monthly_interest", "actual_interest_received", "provenance", "notes"],
+      "properties": {
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "deposit_type": { "type": "string", "minLength": 1 },
+        "balance": { "$ref": "#/$defs/money_metric" },
+        "annual_rate_pct": { "type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$" },
+        "expected_monthly_interest": { "$ref": "#/$defs/money_metric" },
+        "actual_interest_received": { "$ref": "#/$defs/money_metric" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "cash_balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_ref", "name", "amount", "include_in_capital", "provenance", "notes"],
+      "properties": {
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "amount": { "$ref": "#/$defs/money_metric" },
+        "include_in_capital": { "type": "boolean" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "freshness_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_count", "current_count", "stale_count", "unavailable_count", "unknown_count", "missing_count", "manual_count", "provider_count"],
+      "properties": {
+        "row_count": { "type": "integer", "minimum": 0 },
+        "current_count": { "type": "integer", "minimum": 0 },
+        "stale_count": { "type": "integer", "minimum": 0 },
+        "unavailable_count": { "type": "integer", "minimum": 0 },
+        "unknown_count": { "type": "integer", "minimum": 0 },
+        "missing_count": { "type": "integer", "minimum": 0 },
+        "manual_count": { "type": "integer", "minimum": 0 },
+        "provider_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "freshness_family": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family_id", "status", "providers", "coverage", "reason_codes"],
+      "properties": {
+        "family_id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["current", "stale", "mixed", "unavailable", "unknown", "not_applicable", "missing"] },
+        "providers": { "type": "array", "items": { "type": "string" } },
+        "coverage": { "$ref": "#/$defs/freshness_coverage" },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "freshness_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluated_on", "quote_valuation_target_date", "families", "oldest_price_date", "latest_price_date", "stale_valuation_count", "position_count", "stale_valuation_share"],
+      "properties": {
+        "evaluated_on": { "type": "string", "format": "date" },
+        "quote_valuation_target_date": { "type": "string", "format": "date" },
+        "families": { "type": "array", "items": { "$ref": "#/$defs/freshness_family" } },
+        "oldest_price_date": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
+        "latest_price_date": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
+        "stale_valuation_count": { "type": "integer", "minimum": 0 },
+        "position_count": { "type": "integer", "minimum": 0 },
+        "stale_valuation_share": { "$ref": "#/$defs/ratio_metric" }
+      }
+    },
+    "portfolio_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "snapshot_date", "accounts", "instruments", "positions", "deposits", "cash_balances", "missing_snapshot_account_refs", "freshness"],
+      "properties": {
+        "reporting_period": { "$ref": "#/$defs/period" },
+        "snapshot_date": { "type": "string", "format": "date" },
+        "accounts": { "type": "array", "items": { "$ref": "#/$defs/account" } },
+        "instruments": { "type": "array", "items": { "$ref": "#/$defs/instrument" } },
+        "positions": { "type": "array", "items": { "$ref": "#/$defs/position" } },
+        "deposits": { "type": "array", "items": { "$ref": "#/$defs/deposit" } },
+        "cash_balances": { "type": "array", "items": { "$ref": "#/$defs/cash_balance" } },
+        "missing_snapshot_account_refs": { "type": "array", "items": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" } },
+        "freshness": { "$ref": "#/$defs/freshness_data" }
+      }
+    },
+    "allocation_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "amount", "share_pct", "account_ref", "instrument_ref", "instrument_type"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "amount": { "$ref": "#/$defs/money" },
+        "share_pct": { "$ref": "#/$defs/ratio_metric" },
+        "account_ref": { "oneOf": [{ "type": "string", "pattern": "^acct-[a-z0-9-]+$" }, { "type": "null" }] },
+        "instrument_ref": { "oneOf": [{ "type": "string", "pattern": "^inst-[a-z0-9-]+$" }, { "type": "null" }] },
+        "instrument_type": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    },
+    "allocation_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["support", "denominator", "covered_amount", "unallocated_amount", "coverage_pct", "items", "excluded_reason_codes"],
+      "properties": {
+        "support": { "$ref": "#/$defs/coverage_state" },
+        "denominator": { "$ref": "#/$defs/money" },
+        "covered_amount": { "$ref": "#/$defs/money" },
+        "unallocated_amount": { "$ref": "#/$defs/money" },
+        "coverage_pct": { "$ref": "#/$defs/ratio_metric" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/allocation_item" } },
+        "excluded_reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "concentration_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "amount", "share_pct", "account_ref", "instrument_ref", "instrument_type", "event_count", "is_approximate"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "amount": { "$ref": "#/$defs/money" },
+        "share_pct": { "$ref": "#/$defs/ratio_metric" },
+        "account_ref": { "oneOf": [{ "type": "string", "pattern": "^acct-[a-z0-9-]+$" }, { "type": "null" }] },
+        "instrument_ref": { "oneOf": [{ "type": "string", "pattern": "^inst-[a-z0-9-]+$" }, { "type": "null" }] },
+        "instrument_type": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "event_count": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "is_approximate": { "type": "boolean" }
+      }
+    },
+    "concentration_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["support", "denominator", "top_n", "top_amount", "top_share_pct", "items", "excluded_reason_codes", "is_approximate"],
+      "properties": {
+        "support": { "$ref": "#/$defs/coverage_state" },
+        "denominator": { "$ref": "#/$defs/money" },
+        "top_n": { "type": "integer", "minimum": 0 },
+        "top_amount": { "$ref": "#/$defs/money" },
+        "top_share_pct": { "$ref": "#/$defs/ratio_metric" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/concentration_item" } },
+        "excluded_reason_codes": { "$ref": "#/$defs/reason_codes" },
+        "is_approximate": { "type": "boolean" }
+      }
+    },
+    "allocation_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "as_of_date", "allocation_by_asset_class", "allocation_by_account", "top_positions", "payout_concentration", "redemption_concentration"],
+      "properties": {
+        "reporting_period": { "$ref": "#/$defs/period" },
+        "as_of_date": { "type": "string", "format": "date" },
+        "allocation_by_asset_class": { "$ref": "#/$defs/allocation_metric" },
+        "allocation_by_account": { "$ref": "#/$defs/allocation_metric" },
+        "top_positions": { "$ref": "#/$defs/concentration_metric" },
+        "payout_concentration": { "$ref": "#/$defs/concentration_metric" },
+        "redemption_concentration": { "$ref": "#/$defs/concentration_metric" }
+      }
+    },
+    "rolling_average": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "eligible_month_count", "target_window_months", "is_complete_window", "history_start_period", "periods_used", "source"],
+      "properties": {
+        "value": { "$ref": "#/$defs/money_metric" },
+        "eligible_month_count": { "type": "integer", "minimum": 0 },
+        "target_window_months": { "const": 12 },
+        "is_complete_window": { "type": "boolean" },
+        "history_start_period": { "oneOf": [{ "$ref": "#/$defs/period" }, { "type": "null" }] },
+        "periods_used": { "type": "array", "items": { "$ref": "#/$defs/period" } },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "passive_forecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forecast_version", "as_of_date", "annual_total", "monthly_total", "breakdown", "dividend_component_source", "deposit_projection_method", "warning_codes"],
+      "properties": {
+        "forecast_version": { "type": "string", "minLength": 1 },
+        "as_of_date": { "type": "string", "format": "date" },
+        "annual_total": { "$ref": "#/$defs/money_metric" },
+        "monthly_total": { "$ref": "#/$defs/money_metric" },
+        "breakdown": { "$ref": "#/$defs/passive_breakdown" },
+        "dividend_component_source": { "type": "string", "minLength": 1 },
+        "deposit_projection_method": { "type": "string", "minLength": 1 },
+        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "passive_income_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actual_history_metric_path", "current_month_breakdown", "rolling_actual_average", "forecast"],
+      "properties": {
+        "actual_history_metric_path": { "const": "sections.historical_dynamics.data.history[].passive_income_actual" },
+        "current_month_breakdown": { "$ref": "#/$defs/passive_breakdown" },
+        "rolling_actual_average": { "$ref": "#/$defs/rolling_average" },
+        "forecast": { "$ref": "#/$defs/passive_forecast" }
+      }
+    },
+    "cash_flow_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_ref", "expected_date", "flow_type", "account_ref", "instrument_ref", "amount", "amount_semantics", "personal_tax_status", "is_approximate", "reason_codes", "provenance", "duplicate_resolution", "included_in_calendar_total", "included_in_passive_income_forecast", "forecast_treatment"],
+      "properties": {
+        "event_ref": { "type": "string", "pattern": "^flow-[a-z0-9-]+$" },
+        "expected_date": { "type": "string", "format": "date" },
+        "flow_type": { "enum": ["interest", "coupon", "dividend", "redemption", "other"] },
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "instrument_ref": { "oneOf": [{ "type": "string", "pattern": "^inst-[a-z0-9-]+$" }, { "type": "null" }] },
+        "amount": { "$ref": "#/$defs/money" },
+        "amount_semantics": { "enum": ["owner_expected_net", "owner_expected_amount_tax_unknown", "provider_announced_amount_tax_unknown", "principal"] },
+        "personal_tax_status": { "enum": ["known", "unknown", "not_applicable"] },
+        "is_approximate": { "type": "boolean" },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "duplicate_resolution": { "type": "string", "minLength": 1 },
+        "included_in_calendar_total": { "type": "boolean" },
+        "included_in_passive_income_forecast": { "type": "boolean" },
+        "forecast_treatment": { "enum": ["included", "represented_by_historical_component", "excluded_principal"] }
+      }
+    },
+    "future_cash_flows_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_start", "window_end_exclusive", "forecast_version", "non_principal_calendar_amount_total", "principal_total", "calendar_total", "items", "warning_codes"],
+      "properties": {
+        "window_start": { "type": "string", "format": "date" },
+        "window_end_exclusive": { "type": "string", "format": "date" },
+        "forecast_version": { "type": "string", "minLength": 1 },
+        "non_principal_calendar_amount_total": { "$ref": "#/$defs/money_metric" },
+        "principal_total": { "$ref": "#/$defs/money_metric" },
+        "calendar_total": { "$ref": "#/$defs/money_metric" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/cash_flow_item" } },
+        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "goal_type", "is_primary", "target", "current_value", "gap", "progress", "deadline", "projection_status", "estimated_achievement_date", "method_version", "source_metric_path", "warning_codes"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^goal-[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "goal_type": { "type": "string", "minLength": 1 },
+        "is_primary": { "type": "boolean" },
+        "target": { "$ref": "#/$defs/money_metric" },
+        "current_value": { "$ref": "#/$defs/money_metric" },
+        "gap": { "$ref": "#/$defs/money_metric" },
+        "progress": { "$ref": "#/$defs/ratio_metric" },
+        "deadline": { "$ref": "#/$defs/date_metric" },
+        "projection_status": { "type": "string", "minLength": 1 },
+        "estimated_achievement_date": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
+        "method_version": { "type": "string", "minLength": 1 },
+        "source_metric_path": { "type": "string", "minLength": 1 },
+        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "goals_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/goal" } } }
+    },
+    "debt_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "debt_type", "name", "current_balance", "include_in_liquid_capital", "annual_rate", "next_due_date", "contract_end_date", "notes"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^debt-[a-z0-9-]+$" },
+        "debt_type": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "current_balance": { "$ref": "#/$defs/money_metric" },
+        "include_in_liquid_capital": { "type": "boolean" },
+        "annual_rate": { "$ref": "#/$defs/rate_metric" },
+        "next_due_date": { "$ref": "#/$defs/date_metric" },
+        "contract_end_date": { "$ref": "#/$defs/date_metric" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "property_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "estimated_value", "mortgage_balance", "monthly_payment", "mortgage_annual_rate", "notes"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^property-[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "estimated_value": { "$ref": "#/$defs/money_metric" },
+        "mortgage_balance": { "$ref": "#/$defs/money_metric" },
+        "monthly_payment": { "$ref": "#/$defs/money_metric" },
+        "mortgage_annual_rate": { "$ref": "#/$defs/rate_metric" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "property_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warning_codes", "structured_snapshot_authoritative"],
+      "properties": {
+        "warning_codes": { "$ref": "#/$defs/reason_codes" },
+        "structured_snapshot_authoritative": { "const": true }
+      }
+    },
+    "debts_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "debts", "real_estate", "property_equity", "mortgage_coverage", "liquidity_rule", "property_data_quality"],
+      "properties": {
+        "reporting_period": { "$ref": "#/$defs/period" },
+        "debts": { "type": "array", "items": { "$ref": "#/$defs/debt_item" } },
+        "real_estate": { "type": "array", "items": { "$ref": "#/$defs/property_item" } },
+        "property_equity": { "$ref": "#/$defs/money_metric" },
+        "mortgage_coverage": { "$ref": "#/$defs/ratio_metric" },
+        "liquidity_rule": { "const": "real_estate_and_mortgage_are_excluded_from_liquid_capital" },
+        "property_data_quality": { "$ref": "#/$defs/property_quality" }
+      }
+    },
+    "iis_contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tax_year", "amount", "is_target_reached"],
+      "properties": {
+        "tax_year": { "type": "integer", "minimum": 1900 },
+        "amount": { "$ref": "#/$defs/money" },
+        "is_target_reached": { "type": "boolean" }
+      }
+    },
+    "tax_benefits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planned", "submitted", "received", "rejected"],
+      "properties": {
+        "planned": { "$ref": "#/$defs/money" },
+        "submitted": { "$ref": "#/$defs/money" },
+        "received": { "$ref": "#/$defs/money" },
+        "rejected": { "$ref": "#/$defs/money" }
+      }
+    },
+    "iis_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_ref", "iis_type", "opened_at", "eligible_close_at", "contributions_by_tax_year", "tax_benefits", "portfolio_result_without_tax_benefit", "portfolio_result_with_received_tax_benefit", "result_rule"],
+      "properties": {
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "iis_type": { "type": "string", "minLength": 1 },
+        "opened_at": { "type": "string", "format": "date" },
+        "eligible_close_at": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
+        "contributions_by_tax_year": { "type": "array", "items": { "$ref": "#/$defs/iis_contribution" } },
+        "tax_benefits": { "$ref": "#/$defs/tax_benefits" },
+        "portfolio_result_without_tax_benefit": { "$ref": "#/$defs/money_metric" },
+        "portfolio_result_with_received_tax_benefit": { "$ref": "#/$defs/money_metric" },
+        "result_rule": { "const": "without_tax_benefit_plus_received_tax_benefits_only" }
+      }
+    },
+    "salary_tax_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tax_year", "history_coverage", "opening_context_available", "taxable_gross_ytd", "current_marginal_rate_pct", "warning_codes"],
+      "properties": {
+        "tax_year": { "type": "integer", "minimum": 1900 },
+        "history_coverage": { "$ref": "#/$defs/coverage_state" },
+        "opening_context_available": { "type": "boolean" },
+        "taxable_gross_ytd": { "$ref": "#/$defs/money_metric" },
+        "current_marginal_rate_pct": { "$ref": "#/$defs/ratio_metric" },
+        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "iis_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iis_coverage", "iis_accounts", "salary_tax_context"],
+      "properties": {
+        "iis_coverage": { "$ref": "#/$defs/coverage_state" },
+        "iis_accounts": { "type": "array", "items": { "$ref": "#/$defs/iis_account" } },
+        "salary_tax_context": { "$ref": "#/$defs/salary_tax_context" }
+      }
+    },
+    "monthly_comment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "period", "position", "text", "source"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^comment-[a-z0-9-]+$" },
+        "period": { "$ref": "#/$defs/period" },
+        "position": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "source": { "const": "persisted_user_note" }
+      }
+    },
+    "entity_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "source_type", "source_ref", "period", "text", "source"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^note-[a-z0-9-]+$" },
+        "source_type": { "enum": ["position", "deposit", "cash_balance", "debt", "property", "expense", "saving_allocation", "planned_budget"] },
+        "source_ref": { "type": "string", "minLength": 1 },
+        "period": { "$ref": "#/$defs/period" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "source": { "const": "persisted_user_note" }
+      }
+    },
+    "user_context_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["monthly_comments", "entity_notes", "text_policy"],
+      "properties": {
+        "monthly_comments": { "type": "array", "items": { "$ref": "#/$defs/monthly_comment" } },
+        "entity_notes": { "type": "array", "items": { "$ref": "#/$defs/entity_note" } },
+        "text_policy": { "const": "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values" }
+      }
+    },
+    "saving_allocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "period", "destination", "amount", "notes"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^allocation-[a-z0-9-]+$" },
+        "period": { "$ref": "#/$defs/period" },
+        "destination": { "type": "string", "minLength": 1 },
+        "amount": { "$ref": "#/$defs/money" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "expense_line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "period", "category", "amount", "expense_type", "is_recurring", "notes"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^expense-[a-z0-9-]+$" },
+        "period": { "$ref": "#/$defs/period" },
+        "category": { "type": "string", "minLength": 1 },
+        "amount": { "$ref": "#/$defs/money" },
+        "expense_type": { "enum": ["mandatory", "comfortable", "other"] },
+        "is_recurring": { "type": "boolean" },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "planned_budget_line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "period", "category", "planned_amount", "expense_type", "notes"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^planned-budget-[a-z0-9-]+$" },
+        "period": { "$ref": "#/$defs/period" },
+        "category": { "type": "string", "minLength": 1 },
+        "planned_amount": { "$ref": "#/$defs/money" },
+        "expense_type": { "enum": ["mandatory", "comfortable", "other"] },
+        "notes": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] }
+      }
+    },
+    "plan_actual_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["period", "category", "expense_type", "planned_amount", "actual_amount"],
+      "properties": {
+        "period": { "$ref": "#/$defs/period" },
+        "category": { "type": "string", "minLength": 1 },
+        "expense_type": { "enum": ["mandatory", "comfortable", "other"] },
+        "planned_amount": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "actual_amount": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] }
+      }
+    },
+    "planned_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason_codes", "lines", "plan_vs_actual"],
+      "properties": {
+        "state": { "enum": ["entered", "not_entered", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/planned_budget_line" } },
+        "plan_vs_actual": { "type": "array", "items": { "$ref": "#/$defs/plan_actual_row" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "not_entered" } } },
+          "then": { "properties": { "lines": { "maxItems": 0 } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "entered" } } },
+          "then": { "properties": { "lines": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "budget_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["saving_allocations", "actual_expenses", "planned_budget"],
+      "properties": {
+        "saving_allocations": { "type": "array", "items": { "$ref": "#/$defs/saving_allocation" } },
+        "actual_expenses": { "type": "array", "items": { "$ref": "#/$defs/expense_line" } },
+        "planned_budget": { "$ref": "#/$defs/planned_budget" }
+      }
+    },
+    "insight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "type", "severity", "message", "source", "as_of", "provenance", "reason"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "as_of": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
+        "provenance": { "type": "array", "items": { "$ref": "#/$defs/provenance" } },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "data_quality_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deterministic_insights"],
+      "properties": {
+        "deterministic_insights": { "type": "array", "items": { "$ref": "#/$defs/insight" } }
+      }
+    },
+    "field_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status", "reason_codes", "message"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["partial", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "scope", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "scope": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capital_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/capital_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "dynamics_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/dynamics_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "portfolio_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/portfolio_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "allocation_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/allocation_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "passive_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/passive_income_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "future_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/future_cash_flows_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "goals_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/goals_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "debts_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/debts_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "iis_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/iis_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "context_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/user_context_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "budget_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/budget_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "quality_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/data_quality_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_capital", "historical_dynamics", "current_portfolio", "allocation_and_concentration", "passive_income", "future_cash_flows", "goals", "debts_and_real_estate", "iis_and_tax", "user_context", "budget_and_saving", "data_quality"],
+      "properties": {
+        "current_capital": { "$ref": "#/$defs/capital_section" },
+        "historical_dynamics": { "$ref": "#/$defs/dynamics_section" },
+        "current_portfolio": { "$ref": "#/$defs/portfolio_section" },
+        "allocation_and_concentration": { "$ref": "#/$defs/allocation_section" },
+        "passive_income": { "$ref": "#/$defs/passive_section" },
+        "future_cash_flows": { "$ref": "#/$defs/future_section" },
+        "goals": { "$ref": "#/$defs/goals_section" },
+        "debts_and_real_estate": { "$ref": "#/$defs/debts_section" },
+        "iis_and_tax": { "$ref": "#/$defs/iis_section" },
+        "user_context": { "$ref": "#/$defs/context_section" },
+        "budget_and_saving": { "$ref": "#/$defs/budget_section" },
+        "data_quality": { "$ref": "#/$defs/quality_section" }
+      }
+    }
+  }
+}

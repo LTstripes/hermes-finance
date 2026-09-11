@@ -8,6 +8,12 @@
 
 **Synthetic fixture:** [`portfolio_review_package.synthetic.json`](portfolio_review_package.synthetic.json)
 
+**Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](AI_FINANCIAL_REVIEW.md)
+
+This package remains the detailed portfolio-review/source envelope. The one
+recommended monthly AI handoff is the #331 report; this package is an additional
+technical/diagnostic export and is not the default choice in Export UI.
+
 ## Scope of this slice
 
 This slice records the gap audit, freezes the transport contract, and provides the
