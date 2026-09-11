@@ -55,6 +55,36 @@ In orchestrated mode:
 
 Canonical/integration merge remains Integrator-controlled unless the launch packet explicitly delegates that operation.
 
+## Integrator-owned repository mechanics
+
+When the active Integrator has direct GitHub read/write access and can inspect Actions, routine integration mechanics belong to the Integrator rather than the Owner acting as a human courier.
+
+A standing Owner authorization for the **standard integration flow** permits the Integrator to perform the following without asking for repeated confirmation on every step:
+
+1. create or update the task PR and its repository metadata;
+2. inspect the exact PR head, diff, scope, privacy boundary and applicable independent-review evidence;
+3. inspect CI and diagnose failures;
+4. apply a clearly mechanical, non-semantic correction on the existing task branch when it stays inside the already accepted scope — for example formatting/lint-only fixes or PR/repository metadata corrections;
+5. rerun applicable failed checks when the failure is mechanical or infrastructure/flaky and no verification gate is being bypassed;
+6. merge only an accepted candidate after required review and PR CI are satisfied, using an exact-head guard when the GitHub surface supports one;
+7. read back canonical `main` after merge;
+8. verify canonical `push` CI/checks for that exact merged SHA before reporting integration complete.
+
+A post-review mechanical commit does not require repeating semantic review **only when** its diff is demonstrably non-semantic and does not change executable/product/financial meaning. The Integrator must inspect that exact diff before relying on the earlier semantic review.
+
+Standing authorization does **not** authorize the Integrator to silently make or merge:
+
+- product or financial-semantic changes;
+- new architecture, invariants or scope expansion;
+- migrations or data reinterpretation;
+- privacy/security or runtime/network-boundary changes;
+- implementation changes that alter executable behavior beyond an already accepted mechanical correction;
+- force-push, destructive reset/rebase, branch/tag deletion or other destructive Git operations;
+- release publication or repository settings changes;
+- a candidate that is missing an independent review required by `MODEL_ROUTING.md` or explicit Owner/Integrator instruction.
+
+If CI or review exposes one of those cases, the standard flow stops and returns to the normal task/review decision path. A green rerun never substitutes for missing semantic evidence.
+
 ## Queue policy
 
 ### Single
