@@ -1,4 +1,4 @@
-"""Read-only whole-portfolio exact TWRR API (R08-03)."""
+"""Read-only exact TWRR API for portfolio and explicit account scopes (R08-03)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.valuation_points import PerformanceScope
 from hermes_finance.services.portfolio_twrr import (
     PortfolioTwrrResult,
-    portfolio_twrr_for_interval,
+    twrr_for_interval,
 )
 
 router = APIRouter(prefix="/api/performance", tags=["performance"])
@@ -31,7 +31,8 @@ class PortfolioTwrrResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metric: Literal["twrr"]
-    scope: Literal["portfolio"]
+    scope: Literal["portfolio", "account"]
+    account_id: int | None
     performance_currency: str
     value: str | None
     value_unit: Literal["percentage_points"]
@@ -54,7 +55,8 @@ def _decimal_api(value: Decimal | None) -> str | None:
 def _response(result: PortfolioTwrrResult) -> PortfolioTwrrResponse:
     return PortfolioTwrrResponse(
         metric="twrr",
-        scope="portfolio",
+        scope=result.scope.value,
+        account_id=result.account_id,
         performance_currency=result.performance_currency,
         value=_decimal_api(result.value),
         value_unit="percentage_points",
@@ -74,11 +76,11 @@ def read_portfolio_twrr(
     account_id: int | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> PortfolioTwrrResponse:
-    if scope is not PerformanceScope.PORTFOLIO or account_id is not None:
-        raise ValueError("R08-03 TWRR supports portfolio scope only")
-    result = portfolio_twrr_for_interval(
+    result = twrr_for_interval(
         session,
         start_date=start_date,
         end_date=end_date,
+        scope=scope,
+        account_id=account_id,
     )
     return _response(result)

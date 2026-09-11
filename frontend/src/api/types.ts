@@ -111,7 +111,8 @@ export type PortfolioXirr = {
 
 export type PortfolioTwrr = {
   metric: "twrr";
-  scope: "portfolio";
+  scope: "portfolio" | "account";
+  account_id: number | null;
   performance_currency: string;
   value: string | null;
   value_unit: "percentage_points";

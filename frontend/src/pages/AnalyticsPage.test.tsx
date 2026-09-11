@@ -41,6 +41,7 @@ beforeEach(() => {
   vi.mocked(getPortfolioTwrr).mockResolvedValue({
     metric: "twrr",
     scope: "portfolio",
+    account_id: null,
     performance_currency: "RUB",
     value: null,
     value_unit: "percentage_points",

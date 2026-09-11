@@ -1,4 +1,4 @@
-"""Whole-portfolio exact TWRR service (R08-03)."""
+"""Exact TWRR service for portfolio and explicit account scopes (R08-03)."""
 
 from __future__ import annotations
 
@@ -26,9 +26,10 @@ from hermes_finance.services.performance_availability import (
 
 @dataclass(frozen=True, slots=True)
 class PortfolioTwrrResult:
-    """Exact whole-portfolio TWRR plus explicit availability metadata."""
+    """Exact TWRR plus explicit scope, identity, and availability metadata."""
 
     scope: PerformanceScope
+    account_id: int | None
     start_date: date
     end_date: date
     performance_currency: str
@@ -52,13 +53,16 @@ class PortfolioTwrrResult:
 
 def _unavailable(
     *,
+    scope: PerformanceScope,
+    account_id: int | None,
     start_date: date,
     end_date: date,
     performance_currency: str,
     reason_codes: Iterable[str],
 ) -> PortfolioTwrrResult:
     return PortfolioTwrrResult(
-        scope=PerformanceScope.PORTFOLIO,
+        scope=scope,
+        account_id=account_id if scope is PerformanceScope.ACCOUNT else None,
         start_date=start_date,
         end_date=end_date,
         performance_currency=performance_currency,
@@ -128,22 +132,27 @@ def _boundaries_from_availability(
     return tuple(boundaries), tuple(sorted(reasons))
 
 
-def portfolio_twrr_for_interval(
+def _twrr_for_scope_interval(
     session: Session,
     *,
     start_date: date,
     end_date: date,
+    scope: PerformanceScope,
+    account_id: int | None,
 ) -> PortfolioTwrrResult:
-    """Calculate exact whole-portfolio TWRR when R08-01C permits it."""
+    """Calculate exact TWRR when R08-01C permits the requested scope."""
 
     availability = performance_availability_for_interval(
         session,
         start_date=start_date,
         end_date=end_date,
-        scope=PerformanceScope.PORTFOLIO,
+        scope=scope,
+        account_id=account_id,
     )
     if not availability.twrr.is_available:
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
@@ -161,6 +170,8 @@ def portfolio_twrr_for_interval(
         or not availability.closing_valuation.is_available
     ):
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
@@ -173,6 +184,8 @@ def portfolio_twrr_for_interval(
     boundaries, boundary_reasons = _boundaries_from_availability(availability)
     if boundary_reasons:
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
@@ -185,13 +198,16 @@ def portfolio_twrr_for_interval(
     )
     if not solver_result.is_available:
         return _unavailable(
+            scope=scope,
+            account_id=account_id,
             start_date=start_date,
             end_date=end_date,
             performance_currency=availability.performance_currency,
             reason_codes=solver_result.reason_codes,
         )
     return PortfolioTwrrResult(
-        scope=PerformanceScope.PORTFOLIO,
+        scope=scope,
+        account_id=account_id if scope is PerformanceScope.ACCOUNT else None,
         start_date=start_date,
         end_date=end_date,
         performance_currency=availability.performance_currency,
@@ -199,6 +215,23 @@ def portfolio_twrr_for_interval(
         quality=solver_result.quality,
         return_rate=solver_result.return_rate,
         reason_codes=solver_result.reason_codes,
+    )
+
+
+def portfolio_twrr_for_interval(
+    session: Session,
+    *,
+    start_date: date,
+    end_date: date,
+) -> PortfolioTwrrResult:
+    """Calculate exact whole-portfolio TWRR through the shared scope path."""
+
+    return _twrr_for_scope_interval(
+        session,
+        start_date=start_date,
+        end_date=end_date,
+        scope=PerformanceScope.PORTFOLIO,
+        account_id=None,
     )
 
 
@@ -210,18 +243,23 @@ def twrr_for_interval(
     scope: PerformanceScope | str = PerformanceScope.PORTFOLIO,
     account_id: int | None = None,
 ) -> PortfolioTwrrResult:
-    """Generic entry point that intentionally supports portfolio scope only."""
+    """Generic entry point for the accepted portfolio and account scopes."""
 
     try:
         normalized_scope = PerformanceScope(scope)
     except ValueError as error:
         raise ValueError(f"unsupported TWRR scope: {scope!r}") from error
-    if normalized_scope is not PerformanceScope.PORTFOLIO or account_id is not None:
-        raise ValueError("R08-03 TWRR supports portfolio scope only")
-    return portfolio_twrr_for_interval(
+    if normalized_scope is PerformanceScope.ACCOUNT:
+        if account_id is None:
+            raise ValueError("account_id is required for account TWRR scope")
+    elif account_id is not None:
+        raise ValueError("account_id must be omitted for portfolio TWRR scope")
+    return _twrr_for_scope_interval(
         session,
         start_date=start_date,
         end_date=end_date,
+        scope=normalized_scope,
+        account_id=account_id,
     )
 
 
