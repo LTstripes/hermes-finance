@@ -103,11 +103,22 @@ Do not hand off merely to relay GitHub plumbing. Conversely, do not suppress a r
 
 Direct GitHub work is not permission to access production runtime data.
 
-Never use or request the production `.env`, finance database, SQLite sidecars, backups, `private/`, owner exports, provider credentials or other private runtime payloads for ordinary repository work. GitHub Actions must use synthetic/test data only unless a separate owner-controlled contract explicitly says otherwise.
+Never use or request the production `.env`, finance database, SQLite sidecars, backups, `private/`, Owner exports, provider credentials or other private runtime payloads for ordinary repository work. GitHub Actions must use synthetic/test data only unless a separate Owner-controlled contract explicitly says otherwise.
 
 ## Releases
 
-Follow [`docs/RELEASE_AUTOMATION.md`](../RELEASE_AUTOMATION.md) and the repository's guarded release contract. If ChatGPT can safely perform the repository-owned release trigger/read-back itself, do not ask the Owner to relay GitHub actions.
+HYG-04 established the normal chat-triggerable release route. Follow [`docs/RELEASE_AUTOMATION.md`](../RELEASE_AUTOMATION.md) and permanent control issue **#124**.
+
+For a prepared release, ChatGPT should itself:
+
+1. read exact current `main`;
+2. verify successful canonical exact-main `push` CI;
+3. verify repository version identity and canonical release notes;
+4. post the exact guarded `/release` request to #124;
+5. inspect the Guarded Release run;
+6. independently read back the annotated tag, peeled commit and published GitHub Release before reporting success.
+
+Do not ask the Owner to open GitHub or Codex merely to relay this release trigger.
 
 ## Evidence
 
