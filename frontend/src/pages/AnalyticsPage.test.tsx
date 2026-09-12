@@ -263,6 +263,8 @@ describe("AnalyticsPage", () => {
     expect(panel).not.toBeNull();
     if (!panel) throw new Error("Value bridge panel was not rendered");
 
+    expect(within(panel).getByText("РЕЗУЛЬТАТ", { exact: true })).toBeInTheDocument();
+    expect(within(panel).queryByText("PERF04A", { exact: true })).toBeNull();
     await waitFor(() => expect(within(panel).getByText(rendered)).toBeInTheDocument());
     expect(
       within(panel).getByText("Это изменение стоимости, а не доходность."),

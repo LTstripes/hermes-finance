@@ -205,6 +205,8 @@ for (const route of routes) {
       await expect(
         page.getByRole("heading", { name: "Изменение стоимости после внешних потоков" }),
       ).toBeVisible();
+      await expect(page.getByText("РЕЗУЛЬТАТ", { exact: true })).toBeVisible();
+      await expect(page.getByText("PERF04A", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Это изменение стоимости, а не доходность.")).toBeVisible();
       await expect(page.getByText(syntheticXirrReasonCode, { exact: true })).toHaveCount(0);
     }

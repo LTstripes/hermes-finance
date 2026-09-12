@@ -25,6 +25,7 @@ import { formatDate, formatMoneyDelta, formatMonth, formatPercent } from "../lib
 
 const VALUE_BRIDGE_LABEL = "Изменение стоимости после внешних потоков";
 const VALUE_BRIDGE_DISCLAIMER = "Это изменение стоимости, а не доходность.";
+const VALUE_BRIDGE_EYEBROW = "РЕЗУЛЬТАТ";
 
 function sortMonths(months: ReportingMonth[]): ReportingMonth[] {
   return [...months].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year));
@@ -477,7 +478,11 @@ export function AnalyticsPage() {
         </Panel>
       </section>
 
-      <Panel className="analytics-v03__bridge-panel" label="PERF04A" title={VALUE_BRIDGE_LABEL}>
+      <Panel
+        className="analytics-v03__bridge-panel"
+        label={VALUE_BRIDGE_EYEBROW}
+        title={VALUE_BRIDGE_LABEL}
+      >
         <p className="analytics-v03__bridge-disclaimer">{VALUE_BRIDGE_DISCLAIMER}</p>
         <p className="analytics-v03__bridge-context">
           Внешние пополнения и выводы исключены из этой денежной величины.
