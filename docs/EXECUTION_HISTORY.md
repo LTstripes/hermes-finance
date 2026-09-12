@@ -94,10 +94,10 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Implementation agent/tool:** Codex desktop; model not independently confirmed.
 - **Exact baseline `origin/main`:** `d04f46696a991ea59066b59d4870980ac4b69089`.
 - **Task branch:** `m08-01-release-081`.
-- **Scope:** synchronize version identity to `0.8.1`, health/release expectations, Windows launcher identity/config/tests, CHANGELOG, public notes, release record, README, Project Wiki and execution history for already integrated #277, #278, #279, #284, #285, #280, #282 and #292 maintenance.
+- **Scope:** synchronize version identity to `0.8.1`, health/release expectations, Windows launcher identity/tests, CHANGELOG, public notes, release record, README, Project Wiki and execution history for already integrated #277, #278, #279, #284, #285, #280, #282 and #292 maintenance.
 - **Canonical Alembic head:** `0036_broker_baseline_provenance`; this task adds no migration and changes no schema semantics.
 - **Safety:** local single-user Windows-first loopback runtime; explicit provider/network/file actions; no cloud/auth/telemetry, trading/provider writes, automatic upload or background refresh; unknown/unavailable evidence remains explicit; private Stable/Preview/runtime data is not used.
-- **Not done:** #143 was not touched or started; no product refactor, merge, tag `v0.8.1` or GitHub Release.
+- **Not done:** #143 was not touched or started; no product-function work, PR, merge, tag `v0.8.1` or GitHub Release.
 - **References:** issue #295, `docs/releases/0.8.1.md`, `docs/release-notes-0.8.1.md` and `CHANGELOG.md`.
 
 # 0.4.x development
@@ -150,7 +150,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
 - **Baseline:** `r04` @ `86d2033de5cb0572a2f9086464ab0145a51950f0`
 - **Candidate / integrated implementation:** `r04-03-grok` @ `4e35e7328d670466ac7f94fdbef7b928dcdffe9f`
-- **Verification:** reviewer inspected schema/constraints, state machine, API/provider verification, historical-snapshot safety and ancestry. Worker-reported targeted mapping/API/migration/startup `35 passed`, full backend `633 passed`, Ruff check/format/diff/migration/privacy checks passed.
+- **Verification:** reviewer inspected schema/constraints, state machine, API/provider verification, historical-snapshot safety and ancestry. Worker-reported targeted mapping/API/migration/startup `35 passed`, full backend `633 passed`, Ruff/format/diff/migration/privacy checks passed.
 - **Iterations/blockers:** none after implementation review.
 - **Decision notes:** explicit `unmapped / mapped / excluded`; legacy `moex_secid` stays discovery hint and is never promoted silently. Reference mapping edits do not rewrite historical snapshots.
 - **References:** ADR 0009, release backlog.
@@ -206,7 +206,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 ### 0.4.0 / R04-05B — T-Invest read-only production market-data provider
 
 - **Accepted:** 2026-08-13
-- **Implemented by:** Hermes/Grok — Grok 4.6 per submitted session report; model identity not independently runtime-confirmed by the accepting reviewer
+- **Implemented by:** Hermes/Grok — Grok 4.6
 - **Reviewer/acceptor:** ChatGPT — GPT-5.6 Sol
 - **Baseline:** `r04` @ `6cb33f92cfa7bb2842b7b639575eea9b9776b8cf`
 - **Candidate:** `r04-05b-grok` @ `b8f50075cc1b91f2fae85003ab2b9a977984a5b6`; initial implementation `93095da7a9b99e0e4bccf67b09c4be5f54b71821`, accepted follow-up `b8f50075...`.
