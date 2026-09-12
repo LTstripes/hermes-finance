@@ -255,6 +255,9 @@ are true:
 7. Every selected external flow is a valid canonical `ExternalFlow` with exact
    date, non-negative boundary amount, explicit direction, authoritative scope
    membership and accepted performance currency.
+   For a flow whose `event_date` equals `start_date` or `end_date`, the
+   endpoint-order gate in section 5.3 also applies; a strictly interior flow
+   does not require TWRR pre/post boundary evidence for this aggregate bridge.
 8. Transfer gates are scope-specific:
    - for `scope=portfolio`, every relevant linked portfolio transfer must
      satisfy the existing R08 inter-leg identity and reconciliation rules,
@@ -295,6 +298,10 @@ projection requires, at the requested scope and interval:
   completeness for the selected leg, without requiring opposite-leg
   reconciliation or transit safety; a one-sided or otherwise unresolved
   transfer identity remains fail closed; and
+- accepted endpoint-order evidence for every selected external flow on
+  `start_date` or `end_date`; an unproven or ambiguous relation is a bridge
+  prerequisite failure with
+  `not_computable_valuation_boundary_order_unknown`; and
 - no other applicable shared R08 coverage reason.
 
 The implementation MUST NOT consume the top-level
@@ -309,7 +316,9 @@ evidence, not a return result.
 
 The projection deliberately excludes:
 
-- TWRR-only observed-boundary and same-day-order reasons; and
+- TWRR-only observed-boundary gaps and same-day-order reasons for strictly
+  interior flows; endpoint-flow order is a PERF04A prerequisite and is not
+  excluded; and
 - XIRR root, convergence or other solver outcomes.
 
 Its exact result state and reason codes are then mapped to the v1 response
@@ -317,15 +326,57 @@ fields in this document. The projection is allowed to be available while
 TWRR is not; it is not required to equal any current top-level R08
 availability field.
 
-### 5.3 TWRR-specific evidence is not a v1 bridge gate
+### 5.3 Endpoint-flow ordering versus interior-flow ordering
+
+The bridge consumes the exact valuation points `V0` and `V1`. It therefore
+distinguishes the date of a selected external flow from the relation of that
+flow to a consumed endpoint valuation:
+
+- If `start_date < event_date < end_date`, the flow is strictly interior.
+  PERF04A does not require observed `pre_external_flow`/`post_external_flow`
+  evidence for that flow. TWRR-only
+  `not_computable_valuation_boundary_missing` and
+  `not_computable_valuation_boundary_order_unknown` remain non-blocking for
+  the aggregate bridge when every dedicated bridge prerequisite passes.
+- If `event_date == start_date` or `event_date == end_date`, accepted evidence
+  must prove the flow's relation/order relative to the exact consumed `V0` or
+  `V1`. The bridge does not infer whether the flow is already included in that
+  valuation from the date alone. A date-only snapshot is neither automatically
+  pre-flow nor automatically post-flow. If the relation is absent, ambiguous
+  or otherwise unproven, PERF04A is `NOT_COMPUTABLE` with
+  `not_computable_valuation_boundary_order_unknown`.
+
+The endpoint rule does not introduce a start-of-day or end-of-day convention,
+and it does not introduce a half-open interval convention. It also does not
+make the complete two-sided TWRR boundary around every flow a PERF04A gate.
+Only the endpoint inclusion/order relation needed for a flow on an interval
+endpoint is required by this bridge.
+
+Under the current persistence model, an R08 `ObservedValuationPoint` is
+explicitly related to an external flow or boundary group, but is not persisted
+as a binding to the exact monthly valuation point consumed as `V0` or `V1`.
+Its date, matching reporting month, or `pre_external_flow`/
+`post_external_flow` label must not be treated as that missing binding.
+Consequently, current v1 remains fail-closed for endpoint flows unless the
+existing evidence actually proves the relation to the consumed endpoint. A
+future accepted evidence model that directly proves that relation may permit
+the unchanged bridge formula to be exact when all other gates pass; this
+addendum creates no schema or new financial convention.
+
+### 5.4 TWRR-specific evidence is not a v1 bridge gate
 
 Observed `pre_external_flow`/`post_external_flow` boundaries are required by
-exact TWRR, not by this additive endpoint-value bridge. Consequently:
+exact TWRR, but the complete pair is not required by this additive
+endpoint-value bridge. Consequently:
 
-- `not_computable_valuation_boundary_missing` and
-  `not_computable_valuation_boundary_order_unknown` may make TWRR unavailable
-  while leaving the v1 bridge available, provided the dedicated
+- for strictly interior flows, `not_computable_valuation_boundary_missing`
+  and `not_computable_valuation_boundary_order_unknown` may make TWRR
+  unavailable while leaving the v1 bridge available, provided the dedicated
   `perf04a_bridge_prerequisites` projection passes;
+- for a flow on `start_date` or `end_date`, an unproven relation to the
+  consumed endpoint is a bridge failure with
+  `not_computable_valuation_boundary_order_unknown`, even though the bridge
+  still does not require the full TWRR boundary pair; and
 - v1 does not call the TWRR solver and does not emit a TWRR value; and
 - a future return-attribution slice must inherit the full exact TWRR boundary
   gate rather than weakening it.
@@ -334,7 +385,7 @@ Likewise, XIRR solver outcomes such as root ambiguity or convergence failure do
 not change the value identity. XIRR remains available or unavailable according
 to its own contract and is not used as a bridge contribution.
 
-### 5.3 Result states and reason codes
+### 5.5 Result states and reason codes
 
 The v1 response uses the existing performance state vocabulary:
 
@@ -364,10 +415,14 @@ not_computable_transfer_in_transit_unvalued
 not_computable_transfer_reconciliation_incomplete
 not_computable_in_kind_boundary_coverage_unknown
 not_computable_in_kind_movement_unvalued
+not_computable_valuation_boundary_order_unknown
 ```
 
 The implementation must not introduce a new reason by reclassifying an
-existing R08 condition. Future component/event decomposition slices may add
+existing R08 condition. For PERF04A, the existing order-unknown reason is
+bridge-blocking only for an external flow on `start_date` or `end_date`; it
+remains TWRR-only for a strictly interior flow. Future component/event
+decomposition slices may add
 PERF-04-specific reason codes for missing component evidence, missing flow
 allocation or failed component reconciliation, but those codes are not a
 license to emit partial exact decomposition in v1.
@@ -491,7 +546,10 @@ The following behavior is normative for the v1 bridge:
 | Redemption principal | A position-to-cash reclassification with unchanged selected total gives bridge `0.00`; redemption is not passive income. |
 | Internal fee/tax cost | A complete opening `1,000.00`, internal cost `13.00`, closing `987.00` gives bridge `-13.00`; it is not an owner withdrawal. |
 | Composition change or rebalance | Aggregate bridge may be exact if all v1 gates pass, but no instrument-level contribution is emitted without component boundary evidence and allocation. |
-| Missing interior valuation around a contribution | If endpoint and external-flow evidence satisfy v1 gates, the bridge is the exact value identity; exact TWRR and any return attribution remain unavailable with `not_computable_valuation_boundary_missing`. V1 must not choose between the multiple compatible TWRR paths. |
+| Interior contribution without a TWRR boundary | For `V0=1,000.00`, an interior `C=+100.00`, and `V1=1,250.00`, endpoint and external-flow evidence satisfy v1 gates while no observed TWRR boundary exists: the bridge is exact `+150.00`; TWRR remains unavailable with `not_computable_valuation_boundary_missing`. The bridge does not choose between the compatible TWRR paths. |
+| Start-date contribution with unknown endpoint ordering | For `V0=1,000.00`, `C=+100.00` on `start_date` and `V1=1,250.00`, a date-only consumed opening valuation with no accepted relation is `NOT_COMPUTABLE`, `value=null`, with `not_computable_valuation_boundary_order_unknown`. The bridge must not assume start-of-day or end-of-day inclusion. |
+| End-date withdrawal or contribution with unknown endpoint ordering | For an endpoint flow on `end_date` (`C=-100.00` withdrawal or `C=+100.00` contribution), a date-only consumed closing valuation with no accepted relation is `NOT_COMPUTABLE`, `value=null`, with `not_computable_valuation_boundary_order_unknown`. The bridge must not assume start-of-day or end-of-day inclusion. |
+| Endpoint flow with an explicit accepted relation | With all other gates passing, an accepted evidence binding that proves the selected endpoint flow's relation to the exact consumed `V0` or `V1` may make the unchanged bridge formula exact. The current persisted `ObservedValuationPoint` binds to a flow/group, not to the consumed monthly endpoint valuation, so this remains future/unavailable in v1 unless current evidence independently proves that binding; this vector does not authorize a schema or a new inclusion convention. |
 
 All vector arithmetic uses the same signed-flow convention as the accepted
 R08 contracts. No vector authorizes a new trade, lot, price, FX or transit
@@ -549,6 +607,8 @@ The following are explicitly outside PERF04A v1:
   its exact signed monetary boundary term before it can participate in a
   bridge;
 - interpolated, start-of-day, end-of-day or synthetic in-transit valuations;
+- a half-open interval convention for endpoint-flow inclusion without a
+  separate authoritative contract;
 - historical asset-class remapping or FX conversion without accepted evidence;
 - client-side grouping, aggregation, allocation, formula calculation or
   reclassification; and
