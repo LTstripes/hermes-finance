@@ -382,7 +382,7 @@ def _value_out(value: object) -> object:
 def _kpis_out(
     session: Session, review: FinalMonthReview, month: object
 ) -> tuple[KpiOut, list[InstrumentClassResultOut]]:
-    if review.dashboard is not None:
+    if review.dashboard is not None and review.summary.salary_tax is not None:
         dashboard_out = dashboard_to_out(review.dashboard)
         return dashboard_out.kpis, dashboard_out.result_by_instrument_class
 
@@ -391,53 +391,65 @@ def _kpis_out(
     coverage_pct, _gap = mortgage_coverage(
         session, month.id, summary.liquid_capital.liquid_capital_net
     )
-    return (
-        KpiOut(
-            liquid_capital_net=MoneyValue(
-                amount=summary.liquid_capital.liquid_capital_net.to_api(), currency="RUB"
-            ),
-            liquid_capital_delta=_money(summary.liquid_capital_delta),
-            passive_income_actual=MoneyValue(
-                amount=summary.passive_income_actual.to_api(), currency="RUB"
-            ),
-            passive_income_delta=_money(summary.passive_income_delta),
-            forecast_monthly_passive_income=MoneyValue(
-                amount=summary.forecast.monthly_total.to_api(), currency="RUB"
-            ),
-            forecast_annual_passive_income=MoneyValue(
-                amount=summary.forecast.annual_total.to_api(), currency="RUB"
-            ),
-            passive_income_average=MoneyValue(
-                amount=summary.passive_income_average.to_api(), currency="RUB"
-            ),
-            passive_income_average_months=summary.passive_income_average_months,
-            passive_income_average_complete=summary.passive_income_average_complete,
-            passive_income_history_start_month=summary.passive_income_history_start_month,
-            passive_income_average_months_used=list(summary.passive_income_average_months_used),
-            goal_progress_pct=(
-                format(summary.coverage.goal_progress_pct, "f")
-                if summary.coverage.goal_progress_pct is not None
-                else None
-            ),
-            goal_target=MoneyValue(amount=summary.coverage.goal_target.to_api(), currency="RUB"),
-            mandatory_expenses=MoneyValue(
-                amount=summary.coverage.mandatory_expenses.to_api(), currency="RUB"
-            ),
-            mandatory_expense_coverage_pct=(
-                format(summary.coverage.coverage_pct, "f")
-                if summary.coverage.coverage_pct is not None
-                else None
-            ),
-            actual_mandatory_expense_coverage_pct=(
-                format(summary.coverage.actual_mandatory_expense_coverage_pct, "f")
-                if summary.coverage.actual_mandatory_expense_coverage_pct is not None
-                else None
-            ),
-            mortgage_balance=MoneyValue(amount=mortgage_balance.to_api(), currency="RUB"),
-            mortgage_coverage_pct=(format(coverage_pct, "f") if coverage_pct is not None else None),
+    kpis = KpiOut(
+        liquid_capital_net=MoneyValue(
+            amount=summary.liquid_capital.liquid_capital_net.to_api(), currency="RUB"
         ),
-        [],
+        liquid_capital_delta=_money(summary.liquid_capital_delta),
+        passive_income_actual=MoneyValue(
+            amount=summary.passive_income_actual.to_api(), currency="RUB"
+        ),
+        passive_income_delta=_money(summary.passive_income_delta),
+        forecast_monthly_passive_income=MoneyValue(
+            amount=summary.forecast.monthly_total.to_api(), currency="RUB"
+        ),
+        forecast_annual_passive_income=MoneyValue(
+            amount=summary.forecast.annual_total.to_api(), currency="RUB"
+        ),
+        passive_income_average=MoneyValue(
+            amount=summary.passive_income_average.to_api(), currency="RUB"
+        ),
+        passive_income_average_months=summary.passive_income_average_months,
+        passive_income_average_complete=summary.passive_income_average_complete,
+        passive_income_history_start_month=summary.passive_income_history_start_month,
+        passive_income_average_months_used=list(summary.passive_income_average_months_used),
+        goal_progress_pct=(
+            format(summary.coverage.goal_progress_pct, "f")
+            if summary.coverage.goal_progress_pct is not None
+            else None
+        ),
+        goal_target=MoneyValue(amount=summary.coverage.goal_target.to_api(), currency="RUB"),
+        mandatory_expenses=MoneyValue(
+            amount=summary.coverage.mandatory_expenses.to_api(), currency="RUB"
+        ),
+        mandatory_expense_coverage_pct=(
+            format(summary.coverage.coverage_pct, "f")
+            if summary.coverage.coverage_pct is not None
+            else None
+        ),
+        actual_mandatory_expense_coverage_pct=(
+            format(summary.coverage.actual_mandatory_expense_coverage_pct, "f")
+            if summary.coverage.actual_mandatory_expense_coverage_pct is not None
+            else None
+        ),
+        mortgage_balance=MoneyValue(amount=mortgage_balance.to_api(), currency="RUB"),
+        mortgage_coverage_pct=(format(coverage_pct, "f") if coverage_pct is not None else None),
     )
+    instrument_classes = (
+        []
+        if review.dashboard is None
+        else [
+            InstrumentClassResultOut(
+                instrument_type=item.instrument_type,
+                market_value=_money(item.market_value),
+                cost_basis=_money(item.cost_basis),
+                unrealized_result=_money(item.unrealized_result),
+                realized_result=_money(item.realized_result),
+            )
+            for item in review.dashboard.result_by_instrument_class
+        ]
+    )
+    return kpis, instrument_classes
 
 
 def _important_future_events_out(ladder: object | None) -> ImportantFutureEventsOut:

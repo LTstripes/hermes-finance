@@ -617,6 +617,42 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
     assert client.get("/api/months/999/close-workflow").status_code == 404
 
 
+def test_workflow_keeps_salary_tax_history_warning_advisory(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2031, month=5, snapshot_date=date(2031, 5, 31))
+    create_income_entry(
+        session,
+        reporting_month_id=month.id,
+        income_type=IncomeType.SALARY,
+        name="Synthetic salary",
+        gross_amount="100000.00",
+        tax_amount="13000.00",
+        net_amount="87000.00",
+    )
+    client = TestClient(create_app(database))
+
+    readiness = client.get(f"/api/months/{month.id}/close-readiness")
+    assert readiness.status_code == 200
+    readiness_body = readiness.json()
+    assert readiness_body["can_close"] is True
+    assert any(
+        item["code"] == "salary_tax_history_incomplete" and item["severity"] == "warning"
+        for item in readiness_body["items"]
+    )
+
+    workflow = client.get(f"/api/months/{month.id}/close-workflow")
+    assert workflow.status_code == 200, workflow.text
+    final_review = workflow.json()["final_review"]
+    assert final_review["available"] is True
+    income_budget = next(
+        card for card in final_review["manual_review_cards"] if card["id"] == "income_budget"
+    )
+    assert income_budget["summary"]["salary_tax"] == {
+        "available": False,
+        "reason_code": "salary_tax_history_incomplete",
+    }
+
+
 def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))

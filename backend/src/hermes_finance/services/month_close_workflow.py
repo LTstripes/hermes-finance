@@ -75,6 +75,7 @@ from hermes_finance.services.monthly_summary import monthly_summary
 from hermes_finance.services.payout_preview import _manual_candidates_for_applied
 from hermes_finance.services.properties import total_mortgage_balance, total_property_value
 from hermes_finance.services.reporting_months import get_reporting_month
+from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
 from hermes_finance.statement_import.dto import ALFA_DEPOSITORY_INCOME_PROVIDER
 
 WORKFLOW_CONTRACT_VERSION = "monthly_close_workflow_v1"
@@ -1058,6 +1059,14 @@ def _manual_review_cards(
                 "cash_balance": summary.cash_balance.total,
                 "passive_income_actual": summary.passive_income_actual,
                 "salary_actual_net": summary.salary_actual_net,
+                "salary_tax": {
+                    "available": summary.salary_tax is not None,
+                    "reason_code": (
+                        None
+                        if summary.salary_tax is not None
+                        else SalaryTaxHistoryIncompleteError.code
+                    ),
+                },
                 "mandatory_expenses": summary.cash_balance.breakdown.mandatory_expenses,
                 "income_row_count": _count_rows(session, IncomeEntry, month_id),
                 "expense_row_count": _count_rows(session, ExpenseEntry, month_id),
@@ -1189,7 +1198,11 @@ def build_final_month_review(
         dashboard = None
         ladder = None
     else:
-        dashboard = build_dashboard(session, month_id)
+        dashboard = build_dashboard(
+            session,
+            month_id,
+            allow_incomplete_salary_tax=True,
+        )
         summary = dashboard.summary
         ladder = dashboard.cash_flow_ladder
     cards = _manual_review_cards(session, month, summary)
