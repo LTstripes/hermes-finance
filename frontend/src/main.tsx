@@ -17,6 +17,7 @@ import "./styles/tax-iis-planner.css";
 import "./styles/scenario-lab.css";
 import "./styles/reconciliation-center.css";
 import "./styles/portfolio-review-package.css";
+import "./styles/export-page.css";
 
 const root = document.getElementById("root");
 

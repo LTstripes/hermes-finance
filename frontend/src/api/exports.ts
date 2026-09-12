@@ -30,3 +30,10 @@ export function downloadAiAnalysisBundleMarkdown(signal?: AbortSignal): Promise<
     signal,
   });
 }
+
+export function downloadAiFinancialReviewJson(signal?: AbortSignal): Promise<ApiDownload> {
+  return apiDownload("/api/export/ai-financial-review/json", {
+    method: "GET",
+    signal,
+  });
+}

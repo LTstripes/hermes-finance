@@ -1,0 +1,20 @@
+.secondary-exports {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 12px 16px 16px;
+}
+
+.secondary-exports > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.secondary-exports > p {
+  max-width: 820px;
+  line-height: 1.55;
+}
+
+.secondary-exports__hint {
+  margin: 16px 0 8px;
+  color: var(--muted);
+}

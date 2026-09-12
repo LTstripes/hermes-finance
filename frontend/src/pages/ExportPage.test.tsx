@@ -301,7 +301,9 @@ describe("ExportPage", () => {
       "/api/export/ai-analysis-bundle/markdown",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(screen.getByRole("note")).toHaveTextContent(/финансовые данные/i);
+    const notes = screen.getAllByRole("note");
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toHaveTextContent(/финансовые данные/i);
   });
 
   it("shows a bundle error without claiming a download", async () => {
@@ -529,6 +531,147 @@ describe("ExportPage", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Проверь введённые данные.");
     expect(alert).not.toHaveTextContent("Backup is corrupt");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("marks exactly one export as recommended and keeps old exports in the secondary area", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(jsonResponse(months)).mockResolvedValueOnce(jsonResponse([])),
+    );
+
+    render(<ExportPage />);
+
+    const recommendedHeading = await screen.findByRole("heading", {
+      name: "Полный финансовый отчёт для AI",
+    });
+    expect(recommendedHeading).toBeInTheDocument();
+    expect(screen.getByText("Рекомендуемый для AI-анализа")).toBeInTheDocument();
+    expect(screen.getByText("Рекомендуется")).toBeInTheDocument();
+
+    const recommendedMentions = screen.getAllByText(/рекомендуе/i);
+    expect(recommendedMentions).toHaveLength(2);
+    const recommendedSection = recommendedHeading.closest("section");
+    expect(recommendedSection).not.toBeNull();
+    for (const node of recommendedMentions) {
+      expect(recommendedSection).toContainElement(node);
+    }
+
+    expect(
+      screen.getByText(
+        "Обычный ежемесячный файл для ChatGPT или другого AI. Включает капитал, портфель, динамику по месяцам, пассивный доход, цели, долги и недвижимость, будущие выплаты, сигналы о качестве данных и ваши комментарии.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Выгрузить отчёт для AI" })).toBeEnabled();
+
+    const secondaryToggle = screen.getByText("Дополнительные / технические выгрузки");
+    expect(secondaryToggle.tagName.toLowerCase()).toBe("summary");
+    const secondaryArea = secondaryToggle.closest("details");
+    expect(secondaryArea).not.toBeNull();
+
+    const bodyText = document.body.textContent ?? "";
+    expect(bodyText.indexOf("Полный финансовый отчёт для AI")).toBeLessThan(
+      bodyText.indexOf("Дополнительные / технические выгрузки"),
+    );
+
+    for (const name of [
+      "Скачать Markdown",
+      "Скачать JSON",
+      "Скачать AI Analysis Bundle (JSON)",
+      "Скачать Markdown-компаньон",
+    ]) {
+      const button = screen.getByRole("button", { name });
+      expect(secondaryArea).toContainElement(button);
+    }
+    expect(screen.getByRole("heading", { name: "Скачать отчёт" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Полный анализ для ассистента" }),
+    ).toBeInTheDocument();
+
+    const redirects = screen.getAllByText(/используй основной отчёт/i);
+    expect(redirects).toHaveLength(4);
+    for (const node of redirects) {
+      expect(secondaryArea).toContainElement(node);
+    }
+  });
+
+  it("downloads the canonical AI financial review JSON without transforming the backend artifact", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:ai-financial-review");
+    const revokeObjectURL = vi.fn();
+    const review = '{"schema_name":"hermes.finance.ai_financial_review"}\n';
+    let resolveReview!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveReview = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+
+    render(<ExportPage />);
+
+    const button = await screen.findByRole("button", { name: "Выгрузить отчёт для AI" });
+    expect(button.className).toMatch(/btn--primary/);
+    await user.click(button);
+
+    expect(await screen.findByRole("button", { name: "Готовим отчёт…" })).toBeDisabled();
+    resolveReview(
+      new Response(review, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition":
+            'attachment; filename="hermes-ai-financial-review-2026-07-31.json"',
+        },
+      }),
+    );
+
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/export/ai-financial-review/json",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(anchorClick.mock.instances[0]).toHaveProperty(
+      "download",
+      "hermes-ai-financial-review-2026-07-31.json",
+    );
+    const [createdBlob] = createObjectURL.mock.calls[0] ?? [];
+    expect(await (createdBlob as Blob).text()).toBe(review);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:ai-financial-review");
+    expect(await screen.findByRole("status")).toHaveTextContent(/скачан/i);
+  });
+
+  it("shows a canonical AI report error without claiming a download", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(months))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            { error: { code: "internal_error", message: "Review failed", details: [] } },
+            500,
+          ),
+        ),
+    );
+
+    render(<ExportPage />);
+    await user.click(await screen.findByRole("button", { name: "Выгрузить отчёт для AI" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Внутренняя ошибка приложения. Попробуй обновить данные.");
+    expect(alert).not.toHaveTextContent("Review failed");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
