@@ -20,11 +20,21 @@ from startup_network_guard import NETWORK_FORBIDDEN, install_network_guard
 
 from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import (
+    Base,
+    CashBalance,
+    Debt,
+    DepositSnapshot,
+    Goal,
+    MonthlyComment,
+    PositionSnapshot,
+    SavingAllocation,
+)
 from hermes_finance.services import ai_analysis_bundle as bundle_service
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.schema.json"
+FINANCIAL_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "ai_financial_review.schema.json"
 FORBIDDEN_KEYS = {
     "api_key",
     "api_token",
@@ -131,6 +141,11 @@ def _walk(value: object):
 
 def _validator() -> Draft202012Validator:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def _financial_review_validator() -> Draft202012Validator:
+    schema = json.loads(FINANCIAL_REVIEW_SCHEMA_PATH.read_text(encoding="utf-8"))
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
@@ -765,4 +780,403 @@ def test_bundle_schema_validation_failure_is_http_500_without_payload_or_mutatio
     assert "attachment" not in disposition.lower()
     assert b"hermes.finance.ai_analysis_bundle" not in response.content
     assert b"hermes-ai-analysis-bundle-" not in response.content
+    assert _table_counts(database) == before
+
+
+def test_ai_financial_review_route_is_schema_valid_and_read_only(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    _seed_history(client)
+    before = _table_counts(database)
+    baseline_bundle = _export(client).content
+    baseline_package = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert baseline_package.status_code == 200, baseline_package.text
+
+    install_network_guard()
+    with pytest.raises(AssertionError, match=NETWORK_FORBIDDEN):
+        socket.create_connection(("example.com", 443), timeout=1)
+    with _forbid_sql_writes(database.engine):
+        response = client.get(
+            "/api/export/ai-financial-review",
+            params={"generated_at": GENERATED_AT},
+        )
+
+    assert response.status_code == 200, response.text
+    payload = json.loads(response.content.decode("utf-8"))
+    _financial_review_validator().validate(payload)
+    assert payload["schema_name"] == "hermes.finance.ai_financial_review"
+    assert payload["schema_version"] == "1.0.0"
+    assert response.headers["content-type"] == "application/json; charset=utf-8"
+    assert payload["metadata"]["generation_mode"] == "read_only"
+    assert payload["metadata"]["source_contracts"] == [
+        {
+            "name": "hermes.finance.ai_analysis_bundle",
+            "version": "1.2.0",
+            "role": "financial_source",
+        },
+        {
+            "name": "hermes.finance.portfolio_review_package",
+            "version": "1.0.0",
+            "role": "envelope_source",
+        },
+    ]
+
+    sections = payload["sections"]
+    history = sections["historical_dynamics"]["data"]["history"]
+    assert [(item["period"]["year"], item["period"]["month"]) for item in history] == sorted(
+        (item["period"]["year"], item["period"]["month"]) for item in history
+    )
+    assert payload["scope"]["missing_calendar_periods"] == [{"year": 2026, "month": 2}]
+    assert sections["current_capital"]["data"]["total_net_worth"]["value"] is None
+    assert sections["current_capital"]["data"]["total_net_worth"]["availability"] == "unavailable"
+
+    portfolio = sections["current_portfolio"]["data"]
+    assert [item["ref"] for item in portfolio["accounts"]] == sorted(
+        item["ref"] for item in portfolio["accounts"]
+    )
+    assert [item["ref"] for item in portfolio["instruments"]] == sorted(
+        item["ref"] for item in portfolio["instruments"]
+    )
+    bond = next(item for item in portfolio["instruments"] if item["name"] == "Synthetic Bond")
+    assert bond["isin"] == "RU000A0JXNU8"
+    assert sections["current_portfolio"]["data"]["freshness"]["stale_valuation_count"] == 0
+
+    passive = sections["passive_income"]["data"]
+    assert set(passive["forecast"]["breakdown"]) == {
+        "deposit_interest",
+        "bond_coupons",
+        "dividends",
+        "other_capital_income",
+    }
+    assert set(passive["current_month_breakdown"]) == set(passive["forecast"]["breakdown"])
+
+    flows = sections["future_cash_flows"]["data"]["items"]
+    assert {item["flow_type"]: item["personal_tax_status"] for item in flows} == {
+        "coupon": "known",
+        "dividend": "known",
+        "redemption": "not_applicable",
+    }
+    redemption = next(item for item in flows if item["flow_type"] == "redemption")
+    assert redemption["amount_semantics"] == "principal"
+    assert redemption["forecast_treatment"] == "excluded_principal"
+
+    goal = sections["goals"]["data"]["items"][0]
+    assert goal["deadline"]["value"] is None
+    assert goal["deadline"]["reason_codes"] == ["no_deadline"]
+    assert sections["iis_and_tax"]["data"]["iis_accounts"][0]["iis_type"] == "iis-a"
+    assert sections["iis_and_tax"]["data"]["iis_accounts"][0]["eligible_close_at"] == ("2027-01-15")
+
+    planned = sections["budget_and_saving"]["data"]["planned_budget"]
+    assert planned["state"] == "not_entered"
+    assert planned["lines"] == []
+    assert planned["plan_vs_actual"]
+    assert planned["plan_vs_actual"][0]["planned_amount"] is None
+    assert sections["data_quality"]["status"] == "partial"
+    assert "reporting_history_gap" in sections["data_quality"]["reason_codes"]
+    assert "planned_budget_not_entered" in sections["data_quality"]["reason_codes"]
+
+    assert [item["path"] for item in payload["field_states"]] == sorted(
+        item["path"] for item in payload["field_states"]
+    )
+    warning_codes = [item["code"] for item in payload["warnings"]]
+    assert len(warning_codes) == len(set(warning_codes))
+    assert _table_counts(database) == before
+
+    again = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert again.status_code == 200, again.text
+    assert again.content == response.content
+    download = client.get(
+        "/api/export/ai-financial-review/json",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert download.status_code == 200, download.text
+    assert download.content == response.content
+    assert download.headers["content-disposition"] == (
+        'attachment; filename="hermes-ai-financial-review-2026-04-30.json"'
+    )
+
+    after_bundle = _export(client).content
+    after_package = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert after_package.status_code == 200, after_package.text
+    assert after_bundle == baseline_bundle
+    assert after_package.content == baseline_package.content
+    assert _table_counts(database) == before
+
+    keys = {key for value in _walk(payload) if isinstance(value, dict) for key in value}
+    assert keys.isdisjoint(FORBIDDEN_KEYS)
+    serialized = json.dumps(payload, ensure_ascii=False).lower()
+    assert "d:\\" not in serialized
+    assert "c:\\" not in serialized
+    assert "file://" not in serialized
+    assert "account:" not in serialized
+    assert "position:" not in serialized
+    assert not any(isinstance(value, float) for value in _walk(payload))
+
+
+def test_ai_financial_review_preserves_authoritative_context_and_zero_unknown_states(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    seed = _seed_history(client)
+    _ok(client.post(f"/api/months/{seed['latest_closed']}/reopen"), status=200)
+    gold = _ok(
+        client.post(
+            "/api/instruments",
+            json={"name": "Synthetic Gold", "instrument_type": "gold"},
+        )
+    )["id"]
+    _ok(
+        client.post(
+            "/api/positions",
+            json={
+                "reporting_month_id": seed["latest_closed"],
+                "account_id": seed["brokerage"],
+                "instrument_id": gold,
+                "quantity": "2",
+                "average_cost_per_unit": _money("70000.00"),
+                "market_price_per_unit": _money("76000.00"),
+                "price_date": "2026-04-30",
+                "price_source": "manual",
+                "notes": "Physical gold position",
+            },
+        )
+    )
+    _close(client, seed["latest_closed"])
+    _ok(
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Passive income goal",
+                "goal_type": "passive_income",
+                "target_value": _money("50000.00"),
+                "target_date": "2031-12-31",
+                "is_main": False,
+                "calculation_mode": "monthly_net_passive_income",
+            },
+        )
+    )
+
+    with database.session_factory() as session:
+        bond_position = session.scalars(
+            select(PositionSnapshot)
+            .where(
+                PositionSnapshot.reporting_month_id == seed["latest_closed"],
+                PositionSnapshot.account_id == seed["brokerage"],
+            )
+            .order_by(PositionSnapshot.id)
+        ).first()
+        debt = session.scalar(
+            select(Debt).where(
+                Debt.reporting_month_id == seed["latest_closed"],
+                Debt.name == "Synthetic card",
+            )
+        )
+        saving = session.scalar(
+            select(SavingAllocation).where(
+                SavingAllocation.reporting_month_id == seed["latest_closed"],
+            )
+        )
+        goal = session.scalars(
+            select(Goal).where(Goal.name == "Passive income goal").order_by(Goal.id)
+        ).first()
+        comment = MonthlyComment(
+            reporting_month_id=seed["latest_closed"],
+            position=1,
+            text="Comment amount 987654.32 is context, not a financial row.",
+        )
+        assert bond_position is not None
+        assert debt is not None
+        assert saving is not None
+        assert goal is not None
+        bond_position.notes = "Bond note is owner context."
+        debt.annual_rate_basis_points = 0
+        debt.notes = "Debt note is owner context."
+        saving.notes = "Reserve destination note."
+        goal.target_date = date(2030, 12, 31)
+        session.add(comment)
+        session.commit()
+
+    before = _table_counts(database)
+    with _forbid_sql_writes(database.engine):
+        response = client.get(
+            "/api/export/ai-financial-review",
+            params={"generated_at": GENERATED_AT},
+        )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    _financial_review_validator().validate(payload)
+
+    portfolio = payload["sections"]["current_portfolio"]["data"]
+    instruments = {item["name"]: item for item in portfolio["instruments"]}
+    assert instruments["Synthetic Bond"]["isin"] == "RU000A0JXNU8"
+    assert instruments["Synthetic Gold"]["instrument_type"] == "gold"
+    assert instruments["Synthetic Gold"]["isin"] is None
+    gold_position = next(
+        item
+        for item in portfolio["positions"]
+        if item["instrument_ref"] == instruments["Synthetic Gold"]["ref"]
+    )
+    assert gold_position["quantity"] == "2"
+    assert gold_position["average_acquisition_cost_per_unit"]["value"]["amount"] == ("70000.00")
+    assert gold_position["market_price_per_unit"]["value"]["amount"] == "76000.00"
+    assert gold_position["cost_basis"]["value"]["amount"] == "140000.00"
+    assert gold_position["market_value"]["value"]["amount"] == "152000.00"
+
+    debt = payload["sections"]["debts_and_real_estate"]["data"]["debts"][0]
+    assert debt["annual_rate"] == {
+        "value_pct": "0",
+        "availability": "available",
+        "precision": "exact",
+        "source": "persisted_snapshot",
+        "reason_codes": [],
+    }
+    property_item = payload["sections"]["debts_and_real_estate"]["data"]["real_estate"][0]
+    assert property_item["mortgage_annual_rate"]["value_pct"] is None
+    assert property_item["mortgage_annual_rate"]["availability"] == "unavailable"
+    assert "mortgage_rate_unknown" in property_item["mortgage_annual_rate"]["reason_codes"]
+
+    goals = payload["sections"]["goals"]["data"]["items"]
+    assert sorted(item["deadline"]["value"] for item in goals) == [
+        "2030-12-31",
+        "2031-12-31",
+    ]
+    comments = payload["sections"]["user_context"]["data"]["monthly_comments"]
+    assert comments[0]["text"] == "Comment amount 987654.32 is context, not a financial row."
+    assert json.dumps(payload, ensure_ascii=False).count("987654.32") == 1
+    assert (
+        payload["sections"]["budget_and_saving"]["data"]["saving_allocations"][0]["notes"]
+        == "Reserve destination note."
+    )
+    assert any(
+        item["text"] == "Bond note is owner context." and item["source_type"] == "position"
+        for item in payload["sections"]["user_context"]["data"]["entity_notes"]
+    )
+    iis = payload["sections"]["iis_and_tax"]["data"]["iis_accounts"][0]
+    assert iis["iis_type"] == "iis-a"
+    assert iis["opened_at"] == "2024-01-15"
+    assert iis["eligible_close_at"] == "2027-01-15"
+    assert iis["tax_benefits"]["received"]["amount"] == "52000.00"
+    assert _table_counts(database) == before
+
+
+def test_ai_financial_review_matches_duplicate_rows_fifo_and_synthetic_cash_ref(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    seed = _seed_history(client)
+    with database.session_factory() as session:
+        deposit = session.scalar(
+            select(DepositSnapshot).where(
+                DepositSnapshot.reporting_month_id == seed["latest_closed"],
+                DepositSnapshot.account_id == seed["deposit"],
+                DepositSnapshot.name == "Fixed deposit",
+            )
+        )
+        cash = session.scalar(
+            select(CashBalance).where(
+                CashBalance.reporting_month_id == seed["latest_closed"],
+                CashBalance.name == "Wallet",
+            )
+        )
+        assert deposit is not None
+        assert cash is not None
+        deposit.notes = "first deposit row"
+        cash.notes = "first cash row"
+        session.commit()
+
+    _ok(client.post(f"/api/months/{seed['latest_closed']}/reopen"), status=200)
+    _ok(
+        client.post(
+            "/api/deposits",
+            json={
+                "reporting_month_id": seed["latest_closed"],
+                "account_id": seed["deposit"],
+                "name": "Fixed deposit",
+                "deposit_type": "deposit",
+                "balance": _money("1000000.00"),
+                "annual_rate": "13.80",
+                "actual_interest_received": _money("7000.00"),
+                "notes": "second deposit row",
+            },
+        )
+    )
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": seed["latest_closed"],
+                "account_id": seed["brokerage"],
+                "name": "Wallet",
+                "amount": _money("400000.00"),
+                "notes": "second cash row",
+            },
+        )
+    )
+    _close(client, seed["latest_closed"])
+
+    before = _table_counts(database)
+    response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    _financial_review_validator().validate(payload)
+    portfolio = payload["sections"]["current_portfolio"]["data"]
+    deposits = [item for item in portfolio["deposits"] if item["name"] == "Fixed deposit"]
+    cash_rows = [item for item in portfolio["cash_balances"] if item["name"] == "Wallet"]
+    assert [item["notes"] for item in deposits] == [
+        "first deposit row",
+        "second deposit row",
+    ]
+    assert [item["notes"] for item in cash_rows] == ["first cash row", "second cash row"]
+    assert len({item["account_ref"] for item in cash_rows}) == 1
+    assert cash_rows[0]["account_ref"].startswith("acct-cash-balances")
+    assert _table_counts(database) == before
+
+
+def test_ai_financial_review_merges_freshness_summary_and_bundle_valuation_fields(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    _seed_issue_285_august_fixture(client)
+    before = _table_counts(database)
+
+    with _forbid_sql_writes(database.engine):
+        response = client.get(
+            "/api/export/ai-financial-review",
+            params={"generated_at": GENERATED_AT},
+        )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    _financial_review_validator().validate(payload)
+
+    section = payload["sections"]["current_portfolio"]
+    freshness = section["data"]["freshness"]
+    assert section["status"] == "partial"
+    assert "stale_valuation" in section["reason_codes"]
+    assert (
+        "active_account_snapshot_missing"
+        in payload["coverage"]["domains"]["portfolio"]["reason_codes"]
+    )
+    assert "stale_valuation" in payload["coverage"]["domains"]["portfolio"]["reason_codes"]
+    assert freshness["stale_valuation_count"] == 1
+    assert freshness["position_count"] == 1
+    assert freshness["oldest_price_date"] == "2026-07-31"
+    assert freshness["latest_price_date"] == "2026-07-31"
+    assert freshness["stale_valuation_share"]["value_pct"] == "100.00"
+    assert freshness["families"]
+    assert any(item["family_id"] == "market_quotes" for item in freshness["families"])
+    assert any(item["code"] == "stale_valuation" for item in payload["warnings"])
+    assert "stale_valuation" in payload["sections"]["data_quality"]["reason_codes"]
     assert _table_counts(database) == before
