@@ -36,10 +36,34 @@ _TWRR_ONLY_REASONS = frozenset(
         AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value,
     }
 )
+_SELECTED_EXTERNAL_FLOW_CLASSIFICATIONS = frozenset(
+    {
+        ExternalFlowClassification.EXTERNAL_CONTRIBUTION,
+        ExternalFlowClassification.EXTERNAL_WITHDRAWAL,
+    }
+)
 
 
 def _without_twrr_only_reasons(reasons: Iterable[str]) -> set[str]:
     return set(reasons) - _TWRR_ONLY_REASONS
+
+
+def _has_endpoint_external_flow(availability: PerformanceAvailability) -> bool:
+    """Return whether a selected external flow is consumed at an endpoint.
+
+    R08's order-unknown reason is TWRR-only for strictly interior flows.  The
+    accepted PERF04A contract makes it bridge-blocking for a canonical
+    selected external flow on either consumed endpoint because the current
+    persistence does not bind an observed flow relation to the monthly V0/V1
+    valuation.
+    """
+
+    endpoint_dates = {availability.start_date, availability.end_date}
+    return any(
+        flow.classification in _SELECTED_EXTERNAL_FLOW_CLASSIFICATIONS
+        and flow.event_date in endpoint_dates
+        for flow in availability.external_flows.flows
+    )
 
 
 def _valuation_evidence(
@@ -99,7 +123,9 @@ def _bridge_reason_codes(availability: PerformanceAvailability) -> tuple[str, ..
     shared valuation/scope/cash/in-kind/flow reasons and the endpoint-only
     transfer safety reasons, but no solver outcome.  Only its reason codes are
     reused here; neither the top-level availability nor ``xirr.availability``
-    is consumed as the PERF04A gate.  TWRR-only boundary reasons are removed.
+    is consumed as the PERF04A gate. TWRR-only boundary reasons are removed
+    for interior flows; endpoint-flow order is reintroduced as the dedicated
+    bridge gate below.
     """
 
     reasons = _without_twrr_only_reasons(availability.xirr.reason_codes)
@@ -112,6 +138,8 @@ def _bridge_reason_codes(availability: PerformanceAvailability) -> tuple[str, ..
         availability.external_flows.reason_codes,
     ):
         reasons.update(_without_twrr_only_reasons(extra_reasons))
+    if _has_endpoint_external_flow(availability):
+        reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value)
     return tuple(sorted(reasons))
 
 

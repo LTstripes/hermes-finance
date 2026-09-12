@@ -549,7 +549,7 @@ def test_known_in_kind_movement_is_not_computable_without_synthetic_value(tmp_pa
         _finish(fixture)
 
 
-def test_twr_boundary_missing_or_order_unknown_does_not_gate_bridge(tmp_path: Path) -> None:
+def test_twr_boundary_missing_does_not_gate_interior_bridge(tmp_path: Path) -> None:
     missing_fixture = _environment(tmp_path / "missing", account_values=(("1000.00", "1300.00"),))
     try:
         _create_flow(
@@ -580,39 +580,88 @@ def test_twr_boundary_missing_or_order_unknown_does_not_gate_bridge(tmp_path: Pa
     finally:
         _finish(missing_fixture)
 
-    order_fixture = _environment(tmp_path / "order")
+
+@pytest.mark.parametrize(
+    ("direction", "event_date", "opening", "closing"),
+    (
+        ("contribution", START, "1000.00", "1100.00"),
+        ("withdrawal", START, "1000.00", "900.00"),
+        ("contribution", END, "1000.00", "1100.00"),
+        ("withdrawal", END, "1000.00", "900.00"),
+    ),
+)
+def test_endpoint_external_flow_is_not_computable_without_order_proof(
+    tmp_path: Path,
+    direction: str,
+    event_date: date,
+    opening: str,
+    closing: str,
+) -> None:
+    fixture = _environment(
+        tmp_path / f"{direction}-{event_date.isoformat()}",
+        account_values=((opening, closing),),
+    )
     try:
         _create_flow(
-            order_fixture,
-            account_id=order_fixture.account_ids[0],
-            event_date=START,
+            fixture,
+            account_id=fixture.account_ids[0],
+            event_date=event_date,
             amount="100.00",
-            direction="contribution",
-            kind="external_contribution",
+            direction=direction,
+            kind=f"external_{direction}",
         )
-        _close(order_fixture)
+        _close(fixture)
         r08 = performance_availability_for_interval(
-            order_fixture.session,
+            fixture.session,
             start_date=START,
             end_date=END,
             scope=PerformanceScope.ACCOUNT,
-            account_id=order_fixture.account_ids[0],
+            account_id=fixture.account_ids[0],
         )
         result = _bridge(
-            order_fixture,
+            fixture,
             scope=PerformanceScope.ACCOUNT,
-            account_id=order_fixture.account_ids[0],
+            account_id=fixture.account_ids[0],
         )
+        assert r08.xirr.is_available
         assert not r08.twrr.is_available
-        assert "not_computable_valuation_boundary_order_unknown" in r08.twrr.reason_codes
-        assert result.is_available
-        assert result.value is not None and result.value.kopecks == -10_000
-        assert "not_computable_valuation_boundary_order_unknown" not in result.reason_codes
-        assert result.evidence.opening_valuation.reason_codes == (
-            "not_computable_valuation_boundary_order_unknown",
-        )
+        assert not result.is_available
+        assert result.quality.value == "unavailable"
+        assert result.value is None
+        assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert result.external_flow_summary.signed_total is not None
+        expected_signed_total = 10_000 if direction == "contribution" else -10_000
+        assert result.external_flow_summary.signed_total.kopecks == expected_signed_total
     finally:
-        _finish(order_fixture)
+        _finish(fixture)
+
+
+def test_endpoint_order_gate_applies_to_selected_account_transfer_legs(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "600.00")),
+    )
+    try:
+        _transfer(fixture, source_date=START, destination_date=END)
+        _close(fixture)
+
+        source = _bridge(
+            fixture,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=fixture.account_ids[0],
+        )
+        destination = _bridge(
+            fixture,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=fixture.account_ids[1],
+        )
+
+        for result in (source, destination):
+            assert not result.is_available
+            assert result.value is None
+            assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+    finally:
+        _finish(fixture)
 
 
 def test_missing_cash_coverage_is_unavailable_and_not_zero(tmp_path: Path) -> None:
