@@ -1846,6 +1846,16 @@ th.num {
   margin: 0;
 }
 
+.monthly-close__step-link {
+  color: var(--accent);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.monthly-close__step-link:hover {
+  text-decoration: underline;
+}
+
 .monthly-close__current {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }

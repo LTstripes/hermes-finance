@@ -327,7 +327,17 @@ export function MonthlyCloseWorkflowPage() {
           <li className="monthly-close__step" id={step.id} key={step.id}>
             <span className="monthly-close__step-order">{step.order}</span>
             <div>
-              <strong>{step.title}</strong>
+              {step.primary_action ? (
+                <Link
+                  aria-current={activeStep?.id === step.id ? "step" : undefined}
+                  className="monthly-close__step-link"
+                  to={`${location.pathname}${location.search}#${step.id}`}
+                >
+                  {step.title}
+                </Link>
+              ) : (
+                <strong>{step.title}</strong>
+              )}
               <p>{step.why}</p>
               <MonthlyCloseStepSummary compact step={step} />
             </div>
