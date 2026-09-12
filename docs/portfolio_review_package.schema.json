@@ -802,13 +802,33 @@
       ],
       "properties": {
         "support": {"$ref": "#/$defs/coverage_state"},
-        "denominator": {"$ref": "#/$defs/money"},
-        "covered_amount": {"$ref": "#/$defs/money"},
-        "unallocated_amount": {"$ref": "#/$defs/money"},
+        "denominator": {"oneOf": [{"$ref": "#/$defs/money"}, {"type": "null"}]},
+        "covered_amount": {"oneOf": [{"$ref": "#/$defs/money"}, {"type": "null"}]},
+        "unallocated_amount": {"oneOf": [{"$ref": "#/$defs/money"}, {"type": "null"}]},
         "coverage_pct": {"$ref": "#/$defs/ratio_metric"},
         "items": {"type": "array", "items": {"$ref": "#/$defs/allocation_slice"}},
         "excluded_reason_codes": {"$ref": "#/$defs/reason_codes"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support": {
+                "properties": {"status": {"const": "unavailable"}},
+                "required": ["status"]
+              }
+            },
+            "required": ["support"]
+          },
+          "else": {
+            "properties": {
+              "denominator": {"$ref": "#/$defs/money"},
+              "covered_amount": {"$ref": "#/$defs/money"},
+              "unallocated_amount": {"$ref": "#/$defs/money"}
+            }
+          }
+        }
+      ]
     },
     "concentration_item": {
       "type": "object",
@@ -857,14 +877,33 @@
       ],
       "properties": {
         "support": {"$ref": "#/$defs/coverage_state"},
-        "denominator": {"$ref": "#/$defs/money"},
+        "denominator": {"oneOf": [{"$ref": "#/$defs/money"}, {"type": "null"}]},
         "top_n": {"type": "integer", "minimum": 1, "maximum": 100},
-        "top_amount": {"$ref": "#/$defs/money"},
+        "top_amount": {"oneOf": [{"$ref": "#/$defs/money"}, {"type": "null"}]},
         "top_share_pct": {"$ref": "#/$defs/ratio_metric"},
         "items": {"type": "array", "items": {"$ref": "#/$defs/concentration_item"}},
         "excluded_reason_codes": {"$ref": "#/$defs/reason_codes"},
         "is_approximate": {"type": "boolean"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support": {
+                "properties": {"status": {"const": "unavailable"}},
+                "required": ["status"]
+              }
+            },
+            "required": ["support"]
+          },
+          "else": {
+            "properties": {
+              "denominator": {"$ref": "#/$defs/money"},
+              "top_amount": {"$ref": "#/$defs/money"}
+            }
+          }
+        }
+      ]
     },
     "allocation_data": {
       "type": "object",
