@@ -8,6 +8,7 @@ from starlette.responses import FileResponse
 from hermes_finance import __version__
 from hermes_finance.api.accounts import router as accounts_router
 from hermes_finance.api.ai_analysis_bundle import router as ai_analysis_bundle_router
+from hermes_finance.api.ai_financial_review import router as ai_financial_review_router
 from hermes_finance.api.analytics import router as analytics_router
 from hermes_finance.api.backups import router as backups_router
 from hermes_finance.api.broker_identity_mappings import (
@@ -141,6 +142,7 @@ def create_app(
     application.include_router(comments_router)
     application.include_router(exports_router)
     application.include_router(ai_analysis_bundle_router)
+    application.include_router(ai_financial_review_router)
     application.include_router(portfolio_review_package_router)
     application.include_router(goals_router)
     application.include_router(scenario_lab_router)
