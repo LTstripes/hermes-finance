@@ -51,6 +51,15 @@ from hermes_finance.domain.month_close_workflow import (
     derive_step_state,
     recommended_step_id,
 )
+from hermes_finance.domain.performance_attribution import (
+    ExternalFlowSummary,
+    Perf04aBridgePrerequisites,
+    Perf04aCoverageEvidence,
+    Perf04aEvidence,
+    Perf04aValuationEvidence,
+    PerformanceAttributionQuality,
+    PerformanceAttributionResult,
+)
 from hermes_finance.domain.performance_availability import (
     AvailabilityReasonCode,
     ExternalFlowCoverage,
@@ -159,6 +168,13 @@ __all__ = [
     "PerformanceMetricPrerequisites",
     "ScopeMembershipCoverage",
     "ValuationBoundaryEvidence",
+    "ExternalFlowSummary",
+    "Perf04aBridgePrerequisites",
+    "Perf04aCoverageEvidence",
+    "Perf04aEvidence",
+    "Perf04aValuationEvidence",
+    "PerformanceAttributionQuality",
+    "PerformanceAttributionResult",
     "ExternalFlowBoundaryEvidence",
     "ObservedValuationEvidence",
     "ObservedValuationPoint",
