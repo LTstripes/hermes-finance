@@ -195,6 +195,176 @@ class AccountPerformanceScopeMembership(Base):
     include_in_returns: Mapped[bool] = mapped_column(nullable=False)
 
 
+class CashBoundaryCoverage(Base):
+    """Affirmative completeness evidence for one account/date interval.
+
+    This is evidence about whether all owner cash crossings are represented;
+    it deliberately stores no amount and is not a cash-flow ledger.
+    """
+
+    __tablename__ = "cash_boundary_coverages"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "covered_from",
+            "covered_to",
+            name="uq_cash_boundary_coverages_account_interval",
+        ),
+        CheckConstraint(
+            "covered_to >= covered_from",
+            name="ck_cash_boundary_coverages_interval",
+        ),
+        CheckConstraint(
+            "coverage_state IN ('complete', 'unknown')",
+            name="ck_cash_boundary_coverages_state",
+        ),
+        CheckConstraint(
+            "length(trim(provenance_kind)) > 0",
+            name="ck_cash_boundary_coverages_provenance_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    covered_from: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_to: Mapped[date] = mapped_column(Date, nullable=False)
+    coverage_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    @property
+    def state(self) -> str:
+        """Compatibility spelling for callers using the domain vocabulary."""
+
+        return self.coverage_state
+
+
+class InKindBoundaryCoverage(Base):
+    """Affirmative completeness evidence for one account/date interval.
+
+    This is boundary evidence only. It stores no amount and is never inferred
+    from position history.
+    """
+
+    __tablename__ = "in_kind_boundary_coverages"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "covered_from",
+            "covered_to",
+            name="uq_in_kind_boundary_coverages_account_interval",
+        ),
+        CheckConstraint(
+            "covered_to >= covered_from",
+            name="ck_in_kind_boundary_coverages_interval",
+        ),
+        CheckConstraint(
+            "coverage_state IN ('complete', 'unknown')",
+            name="ck_in_kind_boundary_coverages_state",
+        ),
+        CheckConstraint(
+            "length(trim(provenance_kind)) > 0",
+            name="ck_in_kind_boundary_coverages_provenance_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    covered_from: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_to: Mapped[date] = mapped_column(Date, nullable=False)
+    coverage_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    @property
+    def state(self) -> str:
+        return self.coverage_state
+
+
+class InKindMovement(Base):
+    """Explicit known non-cash movement marker without a monetary valuation."""
+
+    __tablename__ = "in_kind_movements"
+    __table_args__ = (
+        CheckConstraint(
+            "movement_kind IN ('external_in', 'external_out', 'internal_transfer')",
+            name="ck_in_kind_movements_kind",
+        ),
+        CheckConstraint(
+            "(movement_kind = 'external_in' AND source_account_id IS NULL "
+            "AND destination_account_id IS NOT NULL) OR "
+            "(movement_kind = 'external_out' AND source_account_id IS NOT NULL "
+            "AND destination_account_id IS NULL) OR "
+            "(movement_kind = 'internal_transfer' AND source_account_id IS NOT NULL "
+            "AND destination_account_id IS NOT NULL "
+            "AND source_account_id <> destination_account_id)",
+            name="ck_in_kind_movements_account_directions",
+        ),
+        CheckConstraint(
+            "quantity IS NULL OR quantity > 0",
+            name="ck_in_kind_movements_quantity_positive",
+        ),
+        CheckConstraint(
+            "length(trim(provenance_kind)) > 0",
+            name="ck_in_kind_movements_provenance_kind",
+        ),
+        Index("ix_in_kind_movements_event_date", "event_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
+    destination_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
+    movement_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    instrument_id: Mapped[int | None] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=True
+    )
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class IisProfile(Base):
     __tablename__ = "iis_profiles"
     __table_args__ = (UniqueConstraint("account_id", name="uq_iis_profiles_account_id"),)
@@ -911,6 +1081,63 @@ class ExternalFlow(Base):
         """Compatibility spelling for the durable transfer-link identity."""
 
         return self.transfer_link_id
+
+
+class ExternalTransferReconciliationEvidence(Base):
+    """One canonical, transfer-specific explanation of a leg amount difference."""
+
+    __tablename__ = "external_transfer_reconciliation_evidence"
+    __table_args__ = (
+        Index(
+            "ix_external_transfer_reconciliation_evidence_transfer",
+            "transfer_link_id",
+        ),
+        CheckConstraint(
+            "kind IN ('internal_fee', 'internal_commission', 'internal_tax', "
+            "'fx_conversion_spread')",
+            name="ck_external_transfer_reconciliation_evidence_kind",
+        ),
+        CheckConstraint(
+            "amount_kopecks >= 0",
+            name="ck_external_transfer_reconciliation_evidence_amount_nonnegative",
+        ),
+        CheckConstraint(
+            "length(trim(currency)) = 3",
+            name="ck_external_transfer_reconciliation_evidence_currency_length",
+        ),
+        CheckConstraint(
+            "length(trim(source)) > 0",
+            name="ck_external_transfer_reconciliation_evidence_source_nonempty",
+        ),
+        CheckConstraint(
+            "length(trim(evidence_reference)) > 0",
+            name="ck_external_transfer_reconciliation_evidence_reference_nonempty",
+        ),
+        UniqueConstraint(
+            "evidence_reference",
+            name="uq_external_transfer_reconciliation_evidence_reference",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    transfer_link_id: Mapped[int] = mapped_column(
+        ForeignKey("external_transfer_links.id", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
 
 class ExternalFlowBoundaryGroup(Base):

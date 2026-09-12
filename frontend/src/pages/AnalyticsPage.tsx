@@ -5,10 +5,11 @@ import { formatApiError } from "../api/client";
 import { getCapitalComposition } from "../api/analytics";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
-import { getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
+import { getPerformanceAttribution, getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
 import type {
   CapitalCompositionHistory,
   DashboardSlice,
+  PerformanceAttribution,
   PortfolioXirr,
   PortfolioTwrr,
   ReportingMonth,
@@ -20,7 +21,11 @@ import {
 } from "../components/charts/CapitalCompositionChart";
 import { InvestmentResultChart } from "../components/charts/InvestmentResultChart";
 import { EmptyState, ErrorState, Field, LoadingState, Panel, Select } from "../components/ui";
-import { formatDate, formatMonth, formatPercent } from "../lib/format";
+import { formatDate, formatMoneyDelta, formatMonth, formatPercent } from "../lib/format";
+
+const VALUE_BRIDGE_LABEL = "Изменение стоимости после внешних потоков";
+const VALUE_BRIDGE_DISCLAIMER = "Это изменение стоимости, а не доходность.";
+const VALUE_BRIDGE_EYEBROW = "РЕЗУЛЬТАТ";
 
 function sortMonths(months: ReportingMonth[]): ReportingMonth[] {
   return [...months].sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year));
@@ -62,6 +67,28 @@ function portfolioTwrrUnavailableMessage(reasonCodes: string[]): string {
   return "Расчёт недоступен: не удалось подтвердить достаточность данных для TWRR.";
 }
 
+function performanceAttributionUnavailableMessage(reasonCodes: string[]): string {
+  if (reasonCodes.some((code) => code.includes("valuation"))) {
+    return "Не подтверждены оценки стоимости на границах выбранного периода.";
+  }
+  if (reasonCodes.some((code) => code.includes("flow"))) {
+    return "История внешних пополнений и выводов за период неполна.";
+  }
+  if (reasonCodes.some((code) => code.includes("in_kind"))) {
+    return "Данные по неденежным перемещениям за период неполны.";
+  }
+  if (reasonCodes.some((code) => code.includes("currency"))) {
+    return "Не подтверждена единая валюта изменения стоимости за период.";
+  }
+  if (reasonCodes.some((code) => code.includes("membership") || code.includes("scope"))) {
+    return "Не подтверждён состав портфеля на всём выбранном периоде.";
+  }
+  if (reasonCodes.some((code) => code.includes("transfer"))) {
+    return "Не подтверждено внутреннее перемещение между счетами за период.";
+  }
+  return "Недостаточно подтверждённых данных для точного изменения стоимости.";
+}
+
 function PerformanceDetails({
   kind,
   currency,
@@ -98,6 +125,18 @@ function PerformanceUnavailable({ kind, message }: { kind: "XIRR" | "TWRR"; mess
   );
 }
 
+function ValueBridgeUnavailable({ message }: { message: string }) {
+  return (
+    <div className="analytics-v03__performance-unavailable" role="status">
+      <strong>Значение недоступно</strong>
+      <details className="analytics-v03__performance-details">
+        <summary>Почему недоступно</summary>
+        <p>{message}</p>
+      </details>
+    </div>
+  );
+}
+
 export function AnalyticsPage() {
   const [history, setHistory] = useState<CapitalCompositionHistory | null>(null);
   const [months, setMonths] = useState<ReportingMonth[]>([]);
@@ -109,10 +148,16 @@ export function AnalyticsPage() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [portfolioXirr, setPortfolioXirr] = useState<PortfolioXirr | null>(null);
   const [portfolioTwrr, setPortfolioTwrr] = useState<PortfolioTwrr | null>(null);
+  const [performanceAttribution, setPerformanceAttribution] =
+    useState<PerformanceAttribution | null>(null);
   const [portfolioXirrLoading, setPortfolioXirrLoading] = useState(false);
   const [portfolioTwrrLoading, setPortfolioTwrrLoading] = useState(false);
+  const [performanceAttributionLoading, setPerformanceAttributionLoading] = useState(false);
   const [portfolioXirrError, setPortfolioXirrError] = useState<string | null>(null);
   const [portfolioTwrrError, setPortfolioTwrrError] = useState<string | null>(null);
+  const [performanceAttributionError, setPerformanceAttributionError] = useState<string | null>(
+    null,
+  );
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [monthsError, setMonthsError] = useState<string | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -239,6 +284,35 @@ export function AnalyticsPage() {
       })
       .finally(() => {
         if (!controller.signal.aborted) setPortfolioXirrLoading(false);
+      });
+    return () => controller.abort();
+  }, [xirrEndDate, xirrStartDate]);
+
+  useEffect(() => {
+    if (xirrStartDate == null || xirrEndDate == null) {
+      setPerformanceAttribution(null);
+      setPerformanceAttributionError(null);
+      setPerformanceAttributionLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPerformanceAttributionLoading(true);
+    void getPerformanceAttribution(xirrStartDate, xirrEndDate, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setPerformanceAttribution(data);
+          setPerformanceAttributionError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPerformanceAttribution(null);
+          setPerformanceAttributionError(formatApiError(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPerformanceAttributionLoading(false);
       });
     return () => controller.abort();
   }, [xirrEndDate, xirrStartDate]);
@@ -403,6 +477,51 @@ export function AnalyticsPage() {
           )}
         </Panel>
       </section>
+
+      <Panel
+        className="analytics-v03__bridge-panel"
+        label={VALUE_BRIDGE_EYEBROW}
+        title={VALUE_BRIDGE_LABEL}
+      >
+        <p className="analytics-v03__bridge-disclaimer">{VALUE_BRIDGE_DISCLAIMER}</p>
+        <p className="analytics-v03__bridge-context">
+          Внешние пополнения и выводы исключены из этой денежной величины.
+        </p>
+        {performanceAttributionLoading ? (
+          <LoadingState description="Проверяем подтверждённое значение периода…" inline />
+        ) : performanceAttributionError ? (
+          <ErrorState
+            description={performanceAttributionError}
+            inline
+            title="Не удалось загрузить изменение стоимости"
+          />
+        ) : !xirrPeriod ? (
+          <ValueBridgeUnavailable message="Нужны два закрытых среза с хронологичными датами снимка." />
+        ) : performanceAttribution?.availability === "available" &&
+          performanceAttribution.quality === "exact" &&
+          performanceAttribution.value !== null ? (
+          <div className="analytics-v03__bridge-result">
+            <p className="analytics-v03__bridge-value">
+              {formatMoneyDelta(performanceAttribution.value.amount, {
+                currency: performanceAttribution.value.currency,
+              })}
+            </p>
+            <p className="analytics-v03__bridge-meta">
+              {formatDate(performanceAttribution.period.start_date)} —{" "}
+              {formatDate(performanceAttribution.period.end_date)} · Портфель ·{" "}
+              {performanceAttribution.value.currency}
+            </p>
+          </div>
+        ) : (
+          <ValueBridgeUnavailable
+            message={
+              performanceAttribution
+                ? performanceAttributionUnavailableMessage(performanceAttribution.reason_codes)
+                : "Не удалось получить подтверждённое значение для выбранного периода."
+            }
+          />
+        )}
+      </Panel>
 
       <Panel className="analytics-v03__xirr-panel" label="Доходность" title="XIRR портфеля">
         {portfolioXirrLoading ? (

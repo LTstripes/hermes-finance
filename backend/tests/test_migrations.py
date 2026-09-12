@@ -234,6 +234,23 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "created_at",
             "updated_at",
         ]
+        assert [
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(external_transfer_reconciliation_evidence)"
+            )
+        ] == [
+            "id",
+            "transfer_link_id",
+            "kind",
+            "amount_kopecks",
+            "currency",
+            "source",
+            "evidence_reference",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expected_cash_flows)")] == [
             "id",
             "reporting_month_id",
@@ -1902,5 +1919,129 @@ def test_financial_context_migration_is_additive_and_leaves_unknown_null(
             "notes",
         ]
         assert connection.execute("SELECT COUNT(*) FROM debts").fetchone() == (1,)
+    finally:
+        connection.close()
+
+
+def test_cash_boundary_coverage_is_absent_before_migration(tmp_path: Path) -> None:
+    database_path = tmp_path / "cash-boundary-coverage.db"
+    previous = run_alembic(database_path, "upgrade", "0037_336_financial_context")
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "cash_boundary_coverages" not in tables
+    finally:
+        connection.close()
+
+
+def test_in_kind_boundary_coverage_migration_is_additive_and_amount_free(tmp_path: Path) -> None:
+    database_path = tmp_path / "in-kind-boundary-coverage.db"
+    previous = run_alembic(database_path, "upgrade", "0039_transfer_reconciliation_evidence")
+    assert previous.returncode == 0, previous.stderr
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "in_kind_boundary_coverages" in tables
+        assert "in_kind_movements" in tables
+        assert connection.execute("SELECT COUNT(*) FROM in_kind_boundary_coverages").fetchone() == (
+            0,
+        )
+        assert connection.execute("SELECT COUNT(*) FROM in_kind_movements").fetchone() == (0,)
+        coverage_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'in_kind_boundary_coverages'"
+        ).fetchone()[0]
+        movement_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'in_kind_movements'"
+        ).fetchone()[0]
+        assert "amount" not in coverage_sql.lower()
+        assert "amount" not in movement_sql.lower()
+        assert "valuation" not in movement_sql.lower()
+        assert "coverage_state IN ('complete', 'unknown')" in coverage_sql
+        indexes = list(connection.execute("PRAGMA index_list(in_kind_movements)"))
+        assert any(row[1] == "ix_in_kind_movements_event_date" for row in indexes)
+        foreign_keys = list(connection.execute("PRAGMA foreign_key_list(in_kind_movements)"))
+        assert {row[2] for row in foreign_keys} == {
+            "reporting_months",
+            "accounts",
+            "instruments",
+        }
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0039_transfer_reconciliation_evidence")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "in_kind_boundary_coverages" not in tables
+        assert "in_kind_movements" not in tables
+    finally:
+        connection.close()
+
+
+def test_cash_boundary_coverage_migration_schema_and_downgrade(tmp_path: Path) -> None:
+    database_path = tmp_path / "cash-boundary-coverage-schema.db"
+    previous = run_alembic(database_path, "upgrade", "0037_336_financial_context")
+    assert previous.returncode == 0, previous.stderr
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert [
+            row[1] for row in connection.execute("PRAGMA table_info(cash_boundary_coverages)")
+        ] == [
+            "id",
+            "account_id",
+            "covered_from",
+            "covered_to",
+            "coverage_state",
+            "provenance_kind",
+            "provenance_reference",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM cash_boundary_coverages").fetchone() == (0,)
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'cash_boundary_coverages'"
+        ).fetchone()[0]
+        assert "amount" not in table_sql.lower()
+        assert "coverage_state IN ('complete', 'unknown')" in table_sql
+        assert "uq_cash_boundary_coverages_account_interval" in table_sql
+        indexes = list(connection.execute("PRAGMA index_list(cash_boundary_coverages)"))
+        assert any(row[1] == "ix_cash_boundary_coverages_account_interval" for row in indexes)
+        assert any(row[2] for row in indexes)
+        foreign_keys = list(connection.execute("PRAGMA foreign_key_list(cash_boundary_coverages)"))
+        assert {row[2] for row in foreign_keys} == {"accounts"}
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0037_336_financial_context")
+    assert downgraded.returncode == 0, downgraded.stderr
+    connection = sqlite3.connect(database_path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "cash_boundary_coverages" not in tables
     finally:
         connection.close()

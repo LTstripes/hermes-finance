@@ -18,8 +18,13 @@ from hermes_finance.domain import AccountType, PerformanceAvailabilityStatus
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import create_external_flow
+from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
@@ -91,6 +96,15 @@ def _environment(
         )
     )
     session.commit()
+    create_cash_boundary_coverage(
+        session,
+        account_id=account.id,
+        covered_from=START,
+        covered_to=END,
+    )
+    attest_in_kind_boundary_history(
+        session, account_id=account.id, covered_from=START, covered_to=END
+    )
     return session, database, january.id, february.id, account.id
 
 
@@ -161,6 +175,9 @@ def test_multiple_interior_external_flows_require_a_boundary_for_each(
             kind="external_withdrawal",
             scope_membership="stable_in_scope",
         )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
         result = performance_availability_for_interval(
             session,
@@ -193,6 +210,9 @@ def test_same_day_endpoint_flow_has_unknown_order_without_pre_post_relation(
             direction="contribution",
             kind="external_contribution",
             scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_interval(session, january_id, february_id)
         result = performance_availability_for_interval(
