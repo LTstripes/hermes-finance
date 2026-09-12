@@ -178,6 +178,16 @@ An unresolved, partially linked or unreconciled transfer fails closed under
 the existing R08 transfer reasons. A difference between linked legs is not
 silently treated as performance.
 
+An in-kind movement is not a cash `ExternalFlow` and therefore has no term in
+the v1 formula. The current R08 `InKindMovement` evidence carries no monetary
+boundary value. A known in-kind movement remains `NOT_COMPUTABLE` for PERF04A
+under `not_computable_in_kind_movement_unvalued` at both scopes: at portfolio
+scope it is conceptually internal but valuation continuity is not proven; at
+account scope its movement crosses the account boundary. Unspecified
+“accepted event-date valuation evidence” cannot make v1 computable. A future
+separately accepted contract would have to define an exact signed in-kind
+boundary-value term and explicitly extend the formula; v1 does neither.
+
 ## 4. Income, principal, costs, direct payouts and FX
 
 These rules define what may affect or explain the value bridge. They do not
@@ -220,9 +230,11 @@ are true:
 5. Affirmative cash-boundary coverage is complete for every historically
    included account. A closed month or an empty flow table is not proof of
    complete owner-boundary history.
-6. Required in-kind boundary coverage is complete, and any known in-kind
-   movement has accepted event-date valuation evidence. No cash is synthesized
-   for an unvalued non-cash movement.
+6. Required in-kind boundary coverage is complete and contains no known
+   movement. Any known in-kind movement makes PERF04A `NOT_COMPUTABLE` under
+   `not_computable_in_kind_movement_unvalued`, including an account-scope
+   transfer. The v1 formula has no monetary in-kind term; no unspecified
+   event-date valuation evidence or synthetic cash can repair this gate.
 7. Every selected external flow is a valid canonical `ExternalFlow` with exact
    date, non-negative boundary amount, explicit direction, authoritative scope
    membership and accepted performance currency.
@@ -232,14 +244,48 @@ are true:
 10. The bridge identity is evaluated in one scope and one performance currency;
     no cross-currency aggregation is performed.
 
-### 5.2 TWRR-specific evidence is not a v1 bridge gate
+### 5.2 Dedicated PERF04A bridge prerequisite
+
+The response's v1 `availability` MUST be derived from a dedicated
+`perf04a_bridge_prerequisites` projection over the shared R08 evidence. The
+projection requires, at the requested scope and interval:
+
+- exact available opening and closing valuation points;
+- complete historical scope membership;
+- complete affirmative cash-boundary coverage;
+- complete in-kind boundary coverage with **no known in-kind movement**;
+- complete canonical external-flow evidence, currency and transfer safety; and
+- no other applicable shared R08 coverage reason.
+
+The implementation MUST NOT consume the top-level
+`PerformanceAvailability.availability` as the PERF04A bridge gate, because
+that field unions XIRR and TWRR reasons. It MUST NOT consume
+`PerformanceAvailability.twrr.availability` or a `PortfolioTwrrResult` as the
+bridge gate. It MUST NOT use an XIRR/TWRR calculated-result availability or
+solver outcome as a substitute for this evidence projection. The projection
+may reuse the existing evidence-only R08 prerequisite assessments, but its
+contractual source is the shared endpoint/flow/scope/currency/cash/in-kind
+evidence, not a return result.
+
+The projection deliberately excludes:
+
+- TWRR-only observed-boundary and same-day-order reasons; and
+- XIRR root, convergence or other solver outcomes.
+
+Its exact result state and reason codes are then mapped to the v1 response
+fields in this document. The projection is allowed to be available while
+TWRR is not; it is not required to equal any current top-level R08
+availability field.
+
+### 5.3 TWRR-specific evidence is not a v1 bridge gate
 
 Observed `pre_external_flow`/`post_external_flow` boundaries are required by
 exact TWRR, not by this additive endpoint-value bridge. Consequently:
 
 - `not_computable_valuation_boundary_missing` and
   `not_computable_valuation_boundary_order_unknown` may make TWRR unavailable
-  while leaving the v1 bridge available, provided every v1 gate above passes;
+  while leaving the v1 bridge available, provided the dedicated
+  `perf04a_bridge_prerequisites` projection passes;
 - v1 does not call the TWRR solver and does not emit a TWRR value; and
 - a future return-attribution slice must inherit the full exact TWRR boundary
   gate rather than weakening it.
@@ -459,6 +505,9 @@ The following are explicitly outside PERF04A v1:
 - Shapley/Owen or another counterfactual allocation;
 - inferred trades, fills, orders, acquisition lots, disposal matching or cost
   basis history;
+- any known in-kind movement in the v1 result; a future contract must define
+  its exact signed monetary boundary term before it can participate in a
+  bridge;
 - interpolated, start-of-day, end-of-day or synthetic in-transit valuations;
 - historical asset-class remapping or FX conversion without accepted evidence;
 - client-side grouping, aggregation, allocation, formula calculation or
@@ -476,9 +525,11 @@ task and not a request to create implementation issues.
 
 ### Slice A — aggregate bridge read model
 
-Add one backend-owned, read-only calculation that consumes the accepted R08
-availability/evidence path, applies the v1 formula, returns the strict DTO,
-and preserves existing XIRR/TWRR endpoints unchanged. No new ledger, schema or
+Add one backend-owned, read-only calculation that consumes the dedicated
+`perf04a_bridge_prerequisites` projection over the accepted R08 evidence,
+applies the v1 formula, returns the strict DTO, and preserves existing
+XIRR/TWRR endpoints unchanged. It must not gate the bridge on top-level R08
+availability or on an XIRR/TWRR calculated result. No new ledger, schema or
 migration is needed for the aggregate bridge if the existing evidence is
 reused.
 
@@ -524,15 +575,19 @@ they block any broader decomposition implementation:
    implementation?
 2. What authoritative source will provide component-level pre/post values and
    flow allocation at each external-flow and internal-composition boundary?
-3. Is a trade/order/fill/lot and cost-basis model required for realized versus
+3. What future accepted contract will define an exact signed monetary boundary
+   value for a known in-kind movement at portfolio and account scope? Until
+   then, the existing R08 `not_computable_in_kind_movement_unvalued` gate
+   remains mandatory.
+4. Is a trade/order/fill/lot and cost-basis model required for realized versus
    unrealized attribution, or must that decomposition remain unavailable?
-4. What dated FX source, conversion provenance and historical currency policy
+5. What dated FX source, conversion provenance and historical currency policy
    will be accepted for cross-currency attribution?
-5. What historical classification contract would make `instrument_type` and
+6. What historical classification contract would make `instrument_type` and
    analytics `asset_class` safe, stable attribution dimensions?
-6. For a future exact-return attribution, which linking convention and
+7. For a future exact-return attribution, which linking convention and
    residual policy will be accepted once component evidence exists?
-7. Which actual income and direct-payout sources may be combined without
+8. Which actual income and direct-payout sources may be combined without
    double-counting, and how will completeness be proven over an interval?
 
 Until these are answered by accepted evidence/contracts, unsupported rows stay
