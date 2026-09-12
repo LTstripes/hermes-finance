@@ -1,4 +1,4 @@
-"""Read-only whole-portfolio XIRR API (R08-02)."""
+"""Read-only portfolio and account XIRR API (R08-02)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.valuation_points import PerformanceScope
 from hermes_finance.services.portfolio_xirr import (
     PortfolioXirrResult,
-    portfolio_xirr_for_interval,
+    xirr_for_interval,
 )
 
 router = APIRouter(prefix="/api/performance", tags=["performance"])
@@ -31,7 +31,8 @@ class PortfolioXirrResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metric: Literal["xirr"]
-    scope: Literal["portfolio"]
+    scope: Literal["portfolio", "account"]
+    account_id: int | None
     performance_currency: str
     value: str | None
     value_unit: Literal["percentage_points"]
@@ -54,7 +55,8 @@ def _decimal_api(value: Decimal | None) -> str | None:
 def _response(result: PortfolioXirrResult) -> PortfolioXirrResponse:
     return PortfolioXirrResponse(
         metric="xirr",
-        scope="portfolio",
+        scope=result.scope.value,
+        account_id=result.account_id,
         performance_currency=result.performance_currency,
         value=_decimal_api(result.value),
         value_unit="percentage_points",
@@ -74,11 +76,11 @@ def read_portfolio_xirr(
     account_id: int | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> PortfolioXirrResponse:
-    if scope is not PerformanceScope.PORTFOLIO or account_id is not None:
-        raise ValueError("R08-02 XIRR supports portfolio scope only")
-    result = portfolio_xirr_for_interval(
+    result = xirr_for_interval(
         session,
         start_date=start_date,
         end_date=end_date,
+        scope=scope,
+        account_id=account_id,
     )
     return _response(result)

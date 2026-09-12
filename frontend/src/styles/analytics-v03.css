@@ -33,6 +33,36 @@
   min-width: 0;
 }
 
+.analytics-v03__bridge-panel {
+  min-width: 0;
+}
+
+.analytics-v03__bridge-result {
+  display: grid;
+  gap: 6px;
+}
+
+.analytics-v03__bridge-disclaimer,
+.analytics-v03__bridge-context,
+.analytics-v03__bridge-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.analytics-v03__bridge-disclaimer {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.analytics-v03__bridge-value {
+  margin: 10px 0 0;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
 .analytics-v03__xirr-result,
 .analytics-v03__performance-unavailable {
   display: grid;

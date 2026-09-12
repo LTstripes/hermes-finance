@@ -25,12 +25,22 @@ from hermes_finance.domain import (
     ExternalTransferStatus,
     RubleAmount,
 )
-from hermes_finance.persistence import Account, ExternalFlow, ExternalTransferLink
+from hermes_finance.persistence import (
+    Account,
+    ExternalFlow,
+    ExternalFlowBoundaryGroupMember,
+    ExternalTransferLink,
+    ExternalTransferReconciliationEvidence,
+    ObservedValuationPoint,
+)
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.cash_boundary_coverage import (
+    invalidate_cash_boundary_coverages_for_external_flow,
+)
 
 
 class ExternalFlowNotFoundError(LookupError):
@@ -42,6 +52,40 @@ class ExternalTransferLinkNotFoundError(LookupError):
 
 
 _UNSET = object()
+
+
+def _invalidate_observed_valuation_points_for_flow(
+    session: Session,
+    flow_id: int,
+) -> tuple[int, ...]:
+    """Delete observed TWRR boundary evidence linked to one canonical flow.
+
+    A material flow mutation changes the economic event the persisted
+    pre/post valuations were observed against.  The old points therefore
+    become unsuitable for exact TWRR and are removed, so exact TWRR stays
+    ``NOT_COMPUTABLE`` (``VALUATION_BOUNDARY_MISSING``) until the owner
+    captures fresh explicit pre/post evidence.  Cash re-attestation alone
+    cannot restore the boundary.  Only the existing persisted model is
+    used — no flow revision column is introduced.
+    """
+
+    group_ids = select(ExternalFlowBoundaryGroupMember.boundary_group_id).where(
+        ExternalFlowBoundaryGroupMember.external_flow_id == flow_id,
+    )
+    points = list(
+        session.scalars(
+            select(ObservedValuationPoint).where(
+                (ObservedValuationPoint.external_flow_id == flow_id)
+                | (ObservedValuationPoint.boundary_group_id.in_(group_ids)),
+            )
+        )
+    )
+    invalidated_ids = tuple(point.id for point in points)
+    for point in points:
+        session.delete(point)
+    if points:
+        session.flush()
+    return invalidated_ids
 
 
 def _normalize_text(value: str, *, field: str, max_length: int) -> str:
@@ -157,6 +201,43 @@ def _transfer_legs(session: Session, link_id: int) -> list[ExternalFlow]:
             .order_by(ExternalFlow.id)
         )
     )
+
+
+def _require_no_transfer_reconciliation_evidence(
+    session: Session,
+    link: ExternalTransferLink,
+) -> None:
+    evidence_id = session.scalar(
+        select(ExternalTransferReconciliationEvidence.id)
+        .where(ExternalTransferReconciliationEvidence.transfer_link_id == link.id)
+        .limit(1)
+    )
+    if evidence_id is not None:
+        raise ValueError(
+            "transfer link legs cannot change while reconciliation evidence exists; "
+            "explicitly delete the evidence first"
+        )
+
+
+def require_no_transfer_reconciliation_evidence_for_month_deletion(
+    session: Session,
+    month_id: int,
+) -> None:
+    evidence_id = session.scalar(
+        select(ExternalTransferReconciliationEvidence.id)
+        .join(
+            ExternalFlow,
+            ExternalFlow.transfer_link_id
+            == ExternalTransferReconciliationEvidence.transfer_link_id,
+        )
+        .where(ExternalFlow.reporting_month_id == month_id)
+        .limit(1)
+    )
+    if evidence_id is not None:
+        raise ValueError(
+            "reporting month deletion would remove transfer legs with reconciliation evidence; "
+            "explicitly delete the evidence first"
+        )
 
 
 def _is_complete_transfer(legs: list[ExternalFlow]) -> bool:
@@ -369,6 +450,7 @@ def stage_create_external_flow(
             direction=normalized_direction,
         )
         _require_editable_transfer_legs(session, _transfer_legs(session, link.id))
+        _require_no_transfer_reconciliation_evidence(session, link)
 
     flow = ExternalFlow(
         reporting_month_id=reporting_month_id,
@@ -387,6 +469,9 @@ def stage_create_external_flow(
     session.flush()
     if link is not None:
         _refresh_transfer_status(session, link)
+    invalidate_cash_boundary_coverages_for_external_flow(
+        session, account_id=account_id, event_date=event_date
+    )
     return flow
 
 
@@ -444,6 +529,16 @@ def stage_update_external_flow(
 
     new_account_id = flow.account_id if account_id is None else account_id
     new_account = _require_account(session, new_account_id)
+    old_material_signature = (
+        flow.account_id,
+        flow.event_date,
+        flow.boundary_amount_kopecks,
+        flow.direction,
+        flow.kind,
+        flow.currency,
+        flow.scope_membership,
+        flow.transfer_link_id,
+    )
     current_kind = ExternalFlowKind(flow.kind)
     current_direction = ExternalFlowDirection(flow.direction)
     normalized_scope_membership = (
@@ -471,6 +566,8 @@ def stage_update_external_flow(
     ):
         old_legs = _transfer_legs(session, old_link.id)
         _require_editable_transfer_legs(session, old_legs)
+        if link_changed or account_id is not None or direction is not None:
+            _require_no_transfer_reconciliation_evidence(session, old_link)
         if new_link is old_link:
             _validate_new_link_leg(
                 session,
@@ -487,6 +584,7 @@ def stage_update_external_flow(
             direction=normalized_direction,
         )
         _require_editable_transfer_legs(session, new_legs)
+        _require_no_transfer_reconciliation_evidence(session, new_link)
 
     identity_changed = new_account_id != flow.account_id or (
         event_date is not None and event_date != flow.event_date
@@ -522,6 +620,27 @@ def stage_update_external_flow(
         _refresh_transfer_status(session, old_link)
     if new_link is not None and new_link is not old_link:
         _refresh_transfer_status(session, new_link)
+    new_material_signature = (
+        flow.account_id,
+        flow.event_date,
+        flow.boundary_amount_kopecks,
+        flow.direction,
+        flow.kind,
+        flow.currency,
+        flow.scope_membership,
+        flow.transfer_link_id,
+    )
+    if old_material_signature != new_material_signature:
+        _invalidate_observed_valuation_points_for_flow(session, flow.id)
+        for affected_account_id, affected_event_date in {
+            (old_material_signature[0], old_material_signature[1]),
+            (flow.account_id, flow.event_date),
+        }:
+            invalidate_cash_boundary_coverages_for_external_flow(
+                session,
+                account_id=affected_account_id,
+                event_date=affected_event_date,
+            )
     return flow
 
 
@@ -562,13 +681,22 @@ def update_external_flow(
 def delete_external_flow(session: Session, flow_id: int) -> None:
     flow = _require_external_flow(session, flow_id)
     require_editable_child_month(session, flow)
+    affected_account_id = flow.account_id
+    affected_event_date = flow.event_date
     link = _require_transfer_link(session, flow.transfer_link_id) if flow.transfer_link_id else None
     if link is not None:
         _require_editable_transfer_legs(session, _transfer_legs(session, link.id))
+        _require_no_transfer_reconciliation_evidence(session, link)
+    _invalidate_observed_valuation_points_for_flow(session, flow.id)
     session.delete(flow)
     session.flush()
     if link is not None:
         _refresh_transfer_status(session, link)
+    invalidate_cash_boundary_coverages_for_external_flow(
+        session,
+        account_id=affected_account_id,
+        event_date=affected_event_date,
+    )
     session.commit()
 
 

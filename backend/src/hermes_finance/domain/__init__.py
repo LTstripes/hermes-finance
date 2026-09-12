@@ -1,6 +1,12 @@
 """Framework-independent financial domain primitives."""
 
 from hermes_finance.domain.accounts import AccountStatus, AccountType
+from hermes_finance.domain.cash_boundary_coverage import (
+    CashBoundaryCoverage,
+    CashBoundaryCoverageEvidence,
+    CashBoundaryCoverageState,
+    CashBoundaryCoverageStatus,
+)
 from hermes_finance.domain.cash_flows import ExpectedCashFlowType, InvestmentCashFlowType
 from hermes_finance.domain.debts import DebtType
 from hermes_finance.domain.deposits import DepositType
@@ -13,11 +19,20 @@ from hermes_finance.domain.external_flows import (
     ExternalFlowKind,
     ExternalFlowScope,
     ExternalFlowScopeMembership,
+    ExternalTransferReconciliationKind,
     ExternalTransferStatus,
     TransferLinkStatus,
 )
 from hermes_finance.domain.goals import GoalType
 from hermes_finance.domain.iis import TaxBenefitStatus
+from hermes_finance.domain.in_kind_boundary_coverage import (
+    InKindBoundaryCoverage,
+    InKindBoundaryCoverageEvidence,
+    InKindBoundaryCoverageState,
+    InKindBoundaryCoverageStatus,
+    InKindMovementEvidence,
+    InKindMovementKind,
+)
 from hermes_finance.domain.incomes import IncomeType
 from hermes_finance.domain.instruments import InstrumentType, MarketMappingState
 from hermes_finance.domain.month_close_workflow import (
@@ -35,6 +50,15 @@ from hermes_finance.domain.month_close_workflow import (
     GuidedCloseStepState,
     derive_step_state,
     recommended_step_id,
+)
+from hermes_finance.domain.performance_attribution import (
+    ExternalFlowSummary,
+    Perf04aBridgePrerequisites,
+    Perf04aCoverageEvidence,
+    Perf04aEvidence,
+    Perf04aValuationEvidence,
+    PerformanceAttributionQuality,
+    PerformanceAttributionResult,
 )
 from hermes_finance.domain.performance_availability import (
     AvailabilityReasonCode,
@@ -91,6 +115,10 @@ from hermes_finance.domain.xirr import (
 
 __all__ = [
     "FINANCIAL_ROUNDING",
+    "CashBoundaryCoverage",
+    "CashBoundaryCoverageEvidence",
+    "CashBoundaryCoverageState",
+    "CashBoundaryCoverageStatus",
     "AccountStatus",
     "AccountType",
     "DebtType",
@@ -102,12 +130,19 @@ __all__ = [
     "ExternalFlowKind",
     "ExternalFlowScope",
     "ExternalFlowScopeMembership",
+    "ExternalTransferReconciliationKind",
     "ExternalTransferStatus",
     "DepositType",
     "ExpenseType",
     "GoalType",
     "InvestmentCashFlowType",
     "IncomeType",
+    "InKindBoundaryCoverage",
+    "InKindBoundaryCoverageEvidence",
+    "InKindBoundaryCoverageState",
+    "InKindBoundaryCoverageStatus",
+    "InKindMovementEvidence",
+    "InKindMovementKind",
     "InstrumentType",
     "MarketMappingState",
     "GuidedCloseAction",
@@ -133,6 +168,13 @@ __all__ = [
     "PerformanceMetricPrerequisites",
     "ScopeMembershipCoverage",
     "ValuationBoundaryEvidence",
+    "ExternalFlowSummary",
+    "Perf04aBridgePrerequisites",
+    "Perf04aCoverageEvidence",
+    "Perf04aEvidence",
+    "Perf04aValuationEvidence",
+    "PerformanceAttributionQuality",
+    "PerformanceAttributionResult",
     "ExternalFlowBoundaryEvidence",
     "ObservedValuationEvidence",
     "ObservedValuationPoint",

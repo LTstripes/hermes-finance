@@ -111,7 +111,8 @@ export type PortfolioXirr = {
 
 export type PortfolioTwrr = {
   metric: "twrr";
-  scope: "portfolio";
+  scope: "portfolio" | "account";
+  account_id: number | null;
   performance_currency: string;
   value: string | null;
   value_unit: "percentage_points";
@@ -122,6 +123,59 @@ export type PortfolioTwrr = {
   };
   availability: "available" | "not_computable";
   quality: "exact" | "unavailable";
+  reason_codes: string[];
+};
+
+export type PerformanceAttributionEvidence = {
+  opening_valuation: {
+    availability: "available" | "not_computable";
+    reason_codes: string[];
+  };
+  closing_valuation: {
+    availability: "available" | "not_computable";
+    reason_codes: string[];
+  };
+  scope_membership: {
+    status: "complete" | "unavailable" | "unknown";
+    reason_codes: string[];
+  };
+  cash_boundary_coverage: {
+    status: "complete" | "unavailable" | "unknown";
+    reason_codes: string[];
+  };
+  in_kind_boundary_coverage: {
+    status: "complete" | "unavailable" | "unknown";
+    reason_codes: string[];
+  };
+  external_flows: {
+    status: "complete" | "unavailable" | "unknown";
+    reason_codes: string[];
+  };
+};
+
+export type PerformanceAttribution = {
+  contract: "PERF04A";
+  contract_version: 1;
+  metric: "value_change_after_external_flows";
+  grain: "selected_scope";
+  scope: "portfolio" | "account";
+  account_id: number | null;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  performance_currency: string;
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  opening_value: MoneyValue | null;
+  closing_value: MoneyValue | null;
+  value: MoneyValue | null;
+  external_flow_summary: {
+    contributions: MoneyValue | null;
+    withdrawals: MoneyValue | null;
+    signed_total: MoneyValue | null;
+  };
+  evidence: PerformanceAttributionEvidence;
   reason_codes: string[];
 };
 

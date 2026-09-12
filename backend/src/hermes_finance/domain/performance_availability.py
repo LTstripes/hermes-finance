@@ -11,11 +11,13 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 
+from hermes_finance.domain.cash_boundary_coverage import CashBoundaryCoverage
 from hermes_finance.domain.external_flows import (
     ExternalFlowClassification,
     ExternalFlowScopeMembership,
     ExternalTransferStatus,
 )
+from hermes_finance.domain.in_kind_boundary_coverage import InKindBoundaryCoverage
 from hermes_finance.domain.valuation_boundaries import ExternalFlowBoundaryEvidence
 from hermes_finance.domain.valuation_points import (
     PerformanceScope,
@@ -40,10 +42,15 @@ class PerformanceAvailabilityReasonCode(StrEnum):
     SCOPE_COVERAGE_INCOMPLETE = "not_computable_scope_coverage_incomplete"
     SCOPE_CASH_UNCLASSIFIED = "not_computable_scope_cash_unclassified"
     SCOPE_MEMBERSHIP_HISTORY_MISSING = "not_computable_scope_membership_history_missing"
+    SCOPE_MEMBERSHIP_CHANGED = "not_computable_scope_membership_changed"
     CURRENCY_CONVERSION_INCOMPLETE = "not_computable_currency_conversion_incomplete"
     TRANSFER_IDENTITY_UNRESOLVED = "not_computable_transfer_identity_unresolved"
+    TRANSFER_IN_TRANSIT_UNVALUED = "not_computable_transfer_in_transit_unvalued"
+    TRANSFER_RECONCILIATION_INCOMPLETE = "not_computable_transfer_reconciliation_incomplete"
     VALUATION_BOUNDARY_MISSING = "not_computable_valuation_boundary_missing"
     VALUATION_BOUNDARY_ORDER_UNKNOWN = "not_computable_valuation_boundary_order_unknown"
+    IN_KIND_BOUNDARY_COVERAGE_UNKNOWN = "not_computable_in_kind_boundary_coverage_unknown"
+    IN_KIND_MOVEMENT_UNVALUED = "not_computable_in_kind_movement_unvalued"
 
     # Existing R08-01B point-level reasons remain part of the read contract.
     SNAPSHOT_DATE_MISSING = "not_computable_snapshot_date_missing"
@@ -140,6 +147,8 @@ class PerformanceAvailability:
     opening_valuation: ValuationBoundaryEvidence
     closing_valuation: ValuationBoundaryEvidence
     scope_membership: ScopeMembershipCoverage
+    cash_boundary_coverage: CashBoundaryCoverage
+    in_kind_boundary_coverage: InKindBoundaryCoverage
     external_flows: ExternalFlowCoverage
     external_flow_boundaries: tuple[ExternalFlowBoundaryEvidence, ...]
     xirr: PerformanceMetricPrerequisites

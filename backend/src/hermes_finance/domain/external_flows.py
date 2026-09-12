@@ -48,6 +48,15 @@ class ExternalTransferStatus(StrEnum):
     RESOLVED = "resolved"
 
 
+class ExternalTransferReconciliationKind(StrEnum):
+    """Authoritative explanations allowed for a transfer-leg difference."""
+
+    INTERNAL_FEE = "internal_fee"
+    INTERNAL_COMMISSION = "internal_commission"
+    INTERNAL_TAX = "internal_tax"
+    FX_CONVERSION_SPREAD = "fx_conversion_spread"
+
+
 # Short aliases keep the vocabulary usable at both the boundary-flow and
 # transfer-link level without introducing a second set of enum values.
 BoundaryFlowDirection = ExternalFlowDirection

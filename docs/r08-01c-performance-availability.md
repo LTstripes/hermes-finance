@@ -30,6 +30,8 @@ The response contains:
   provenance;
 - `scope_membership` with effective-dated account evidence for the whole
   interval;
+- `cash_boundary_coverage` with affirmative per-account cash-history evidence,
+  state and provenance;
 - `external_flows` with sanitized exact flow metadata, classification,
   transfer status, legacy unclassified row IDs and coverage reasons;
 - `external_flow_boundaries` with deterministic pre/post observed valuation
@@ -65,6 +67,25 @@ explicit account request, must have gap-free non-overlapping effective-dated
 membership evidence over the requested interval. The present account flag is
 never used to rewrite history.
 
+### Cash-boundary history coverage
+
+Exact performance additionally requires affirmative cash-boundary coverage for
+every account historically included in the selected scope over the interval.
+Coverage is `complete` only when the owner has explicitly attested that all
+owner cash crossings are known, including the valid zero-crossing case. The
+current accepted provenance is `owner_attestation`; the persisted provenance
+fields leave room for a future authoritative source without treating a
+provider/import value as authoritative today.
+
+Missing, partial, overlapping, ambiguous or `unknown` coverage remains
+`unknown` and contributes the existing
+`not_computable_external_flows_incomplete` reason to both XIRR and TWRR. No
+flow rows, closed months, current account state, successful valuation,
+in-kind evidence or heuristics can infer completeness. Complete coverage is
+not a flow ledger and does not replace canonical `ExternalFlow` validation for
+any known contribution, withdrawal or direct payout. Coverage writes affecting
+closed reporting months require the existing explicit reopen lifecycle.
+
 ### External-flow completeness
 
 Explicit R08-01A flows are selected by their exact `event_date` over the
@@ -74,10 +95,32 @@ account scope. A one-sided or otherwise unresolved link blocks the affected
 scope. An unknown persisted flow membership is non-authoritative.
 
 Legacy `investment_cash_flows.deposit` and `withdrawal` rows remain legacy
-evidence. When they affect the selected scope, they block exact external-flow
-completeness; they are never automatically reclassified and no gross/net field
-is guessed as the boundary amount. Forecast cash flows and provider payout
-calendar rows do not become realised performance flows.
+evidence. A legacy withdrawal can stop being an unclassified blocker only when
+one canonical in-scope `ExternalFlow` already proves the same account/date/
+currency boundary and the withdrawal row's own explicit
+gross/tax/commission/net arithmetic deterministically reconciles to that
+boundary. A standalone tax/commission row is never attached to a withdrawal
+by account/date/currency: the current persisted evidence has no
+transaction-specific identity for that association, so the reconciliation
+remains ambiguous and blocks. The legacy row is never reclassified and no
+gross/net field is guessed as the boundary amount. A legacy deposit, an
+ambiguous match, or malformed arithmetic still blocks with
+`not_computable_external_flows_incomplete`.
+
+Internal tax and commission rows are cost evidence only. They do not create an
+`ExternalFlow`. A standalone cost remains internal cost but cannot reconcile a
+withdrawal without transaction-specific identity. Embedded cost fields in one
+withdrawal row may corroborate its canonical boundary; the existing canonical
+boundary remains the only XIRR/TWRR input. A realised coupon/dividend outside
+brokerage cash likewise requires an explicit same-account/date/currency
+external withdrawal whose boundary equals the validated actual receipt. Its
+income row is corroboration and is not injected into return math; missing or
+ambiguous holding provenance remains fail-closed.
+
+Expected cash flows and provider payout calendar rows do not become realised
+performance flows. Without one valid actual income event for the same
+account/holding/kind/settlement date, the affected interval remains
+`not_computable_external_flows_incomplete`.
 
 ### XIRR and TWRR prerequisites
 

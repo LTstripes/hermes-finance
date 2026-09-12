@@ -39,17 +39,36 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в exact released main SHA `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical development `main` — `420e10046a7adbe17078dcd47d8b803927f0a86a` (merge PR #335, Decision Support v1 — Scenario Lab, 2026-09-09); exact-main push CI run `34384056201`: все продуктовые гейты зелёные (backend lanes, frontend, privacy guard, Windows production smoke, release safety, launcher safety), `Synthetic visual audit` упал только по окружению раннера (Chromium apt hash mismatch) и не связан с содержимым merge. Предыдущий pre-integration baseline `96f97b0424370be93e327587633c424ee6c33a8a` (exact-main CI run `34021826830`, `success`) остаётся историческим. Канонический historical record — `docs/releases/0.8.2.md`; consolidation report — `docs/CONSOLIDATION_2026-09-06.md`; Decision Support v1 closeout — `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`.
 
+Абзац выше фиксирует состояние canonical `main` на 2026-09-09. Для
+подготовки #360 подтверждён более новый baseline `main`
+`ea66461cfd4dc704080bcd1859d558d8be367627`; отдельная ветка
+`integration/issue-360-performance-v1` ниже остаётся pre-acceptance
+кандидатом и не подменяет canonical `main`.
+
 0.8.2 — опубликованный maintenance release после Stable 0.8.1: документирует уже интегрированные #299, #302, current-state #142 и #143. Эксперимент Stable self-update (#298, #311, #312) закрыт `not_planned`; он не является доказанным canonical owner flow и вынесен в backlog/redesign #313. Stable/Preview остаются разделёнными, owner actions явными.
 
 Предыдущая опубликованная стабильная линия **0.7.0** сохранена как историческая identity: `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`, опубликована 2026-08-30 с owner Stable promotion `PASS`.
 
-Канонический Alembic head текущего 0.8 tree остаётся `0036_broker_baseline_provenance`; release 0.8.2 не добавляет новую миграцию и не меняет schema semantics.
+Канонический Alembic head опубликованного 0.8.2 tree остаётся
+`0036_broker_baseline_provenance`; release 0.8.2 не добавляет новую миграцию и
+не меняет schema semantics. Pre-acceptance кандидат #360 механически
+продолжает этот baseline до head `0040_in_kind_boundary_coverage`; published
+release identity этим не меняется.
 
 Историческая подготовка публикации в issue #231 подготовила принятый R07 tree; post-release sync issue #234 фиксирует, что его опубликованная identity — `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`. Owner Stable promotion для 0.7.0 подтверждён как `PASS` 2026-08-30. Операционное наблюдение о разовой установке frontend-зависимостей при первом Stable start не меняет release identity или финансовую семантику.
 
 После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
 
 Текущая R07/R08 product surface включает owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner Lite, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher для Start/Stop. Stable release update до принятия #313 выполняется recovery-only owner operation; launcher self-update не объявляется canonical.
+
+### #360 pre-acceptance performance candidate
+
+Кандидат #360 сохраняет эту current-main поверхность и добавляет принятые
+Performance v1 availability/coverage hardening, account-scope XIRR и exact
+TWRR reconciliation, а также PERF04A aggregate value bridge. Это не claim о
+component-level return/profit attribution: instrument/asset-class,
+realised/unrealised, trades/lots/cost-basis и event-explanation/export
+attribution остаются future work до отдельного принятого контракта.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 

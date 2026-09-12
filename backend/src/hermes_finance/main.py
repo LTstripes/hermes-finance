@@ -17,6 +17,7 @@ from hermes_finance.api.broker_identity_mappings import (
 from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
+from hermes_finance.api.cash_boundary_coverage import router as cash_boundary_coverage_router
 from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
 from hermes_finance.api.close_readiness import router as close_readiness_router
 from hermes_finance.api.comments import router as comments_router
@@ -32,6 +33,12 @@ from hermes_finance.api.external_flows import router as external_flows_router
 from hermes_finance.api.freshness_provenance import router as freshness_provenance_router
 from hermes_finance.api.goals import router as goals_router
 from hermes_finance.api.iis import router as iis_router
+from hermes_finance.api.in_kind_boundary_coverage import (
+    coverage_router as in_kind_boundary_coverage_router,
+)
+from hermes_finance.api.in_kind_boundary_coverage import (
+    movement_router as in_kind_movement_router,
+)
 from hermes_finance.api.incomes import router as incomes_router
 from hermes_finance.api.instrument_mappings import router as instrument_mappings_router
 from hermes_finance.api.instruments import router as instruments_router
@@ -39,6 +46,7 @@ from hermes_finance.api.investment_flows import router as investment_flows_route
 from hermes_finance.api.month_close_workflow import router as month_close_workflow_router
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.payouts import router as payouts_router
+from hermes_finance.api.performance_attribution import router as performance_attribution_router
 from hermes_finance.api.performance_availability import router as performance_availability_router
 from hermes_finance.api.planned_budget import router as planned_budget_router
 from hermes_finance.api.portfolio_review_package import router as portfolio_review_package_router
@@ -108,6 +116,7 @@ def create_app(
     application.include_router(quote_apply_router)
     application.include_router(payouts_router)
     application.include_router(performance_availability_router)
+    application.include_router(performance_attribution_router)
     application.include_router(portfolio_xirr_router)
     application.include_router(portfolio_twrr_router)
     application.include_router(broker_snapshot_router)
@@ -124,6 +133,9 @@ def create_app(
     application.include_router(positions_router)
     application.include_router(deposits_router)
     application.include_router(cash_router)
+    application.include_router(cash_boundary_coverage_router)
+    application.include_router(in_kind_boundary_coverage_router)
+    application.include_router(in_kind_movement_router)
     application.include_router(cash_flow_ladder_router)
     application.include_router(incomes_router)
     application.include_router(investment_flows_router)

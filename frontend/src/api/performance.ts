@@ -1,5 +1,21 @@
 import { apiRequest } from "./client";
-import type { PortfolioTwrr, PortfolioXirr } from "./types";
+import type { PerformanceAttribution, PortfolioTwrr, PortfolioXirr } from "./types";
+
+export function getPerformanceAttribution(
+  startDate: string,
+  endDate: string,
+  signal?: AbortSignal,
+): Promise<PerformanceAttribution> {
+  const query = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+    scope: "portfolio",
+  });
+  return apiRequest<PerformanceAttribution>(`/api/performance/attribution?${query.toString()}`, {
+    method: "GET",
+    signal,
+  });
+}
 
 export function getPortfolioXirr(
   startDate: string,

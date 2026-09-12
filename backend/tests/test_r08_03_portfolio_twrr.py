@@ -6,12 +6,14 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import (
     AccountType,
+    PerformanceScope,
     TwrrAvailabilityStatus,
     TwrrBoundary,
     TwrrQuality,
@@ -22,10 +24,22 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import (
+    attest_cash_boundary_history,
+    create_cash_boundary_coverage,
+)
 from hermes_finance.services.deposits import create_deposit_snapshot
-from hermes_finance.services.external_flows import create_external_flow
+from hermes_finance.services.external_flows import (
+    create_external_flow,
+    create_external_transfer_link,
+    update_external_flow,
+)
+from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
-from hermes_finance.services.portfolio_twrr import portfolio_twrr_for_interval
+from hermes_finance.services.portfolio_twrr import (
+    portfolio_twrr_for_interval,
+    twrr_for_interval,
+)
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.valuation_boundaries import (
@@ -90,6 +104,15 @@ def _environment(
         )
     )
     session.commit()
+    create_cash_boundary_coverage(
+        session,
+        account_id=account.id,
+        covered_from=START,
+        covered_to=END,
+    )
+    attest_in_kind_boundary_history(
+        session, account_id=account.id, covered_from=START, covered_to=END
+    )
     return session, database, january.id, february.id, account.id
 
 
@@ -107,6 +130,7 @@ def _flow(
     amount: str,
     direction: str,
     kind: str,
+    transfer_link_id: int | None = None,
 ):
     return create_external_flow(
         session,
@@ -117,6 +141,7 @@ def _flow(
         direction=direction,
         kind=kind,
         scope_membership="stable_in_scope",
+        transfer_link_id=transfer_link_id,
     )
 
 
@@ -179,6 +204,9 @@ def test_portfolio_twrr_chains_explicit_persisted_boundaries(tmp_path: Path) -> 
                 relation="post_external_flow",
                 external_flow_id=flow.id,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
@@ -263,6 +291,9 @@ def test_portfolio_twrr_group_plus_standalone_same_day_fails_closed(tmp_path: Pa
                 relation=relation,
                 **boundary_kwargs,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
 
         result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
@@ -298,6 +329,9 @@ def test_portfolio_twrr_missing_one_boundary_fails_closed(tmp_path: Path) -> Non
             provenance_kind="synthetic_missing_post",
             relation="pre_external_flow",
             external_flow_id=flow.id,
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
         )
         _close_interval(session, january_id, february_id)
         result = portfolio_twrr_for_interval(session, start_date=START, end_date=END)
@@ -345,6 +379,9 @@ def test_portfolio_twrr_api_returns_period_value_without_annualizing(tmp_path: P
                 relation=relation,
                 external_flow_id=flow.id,
             )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
         _close_interval(session, january_id, february_id)
         session.close()
 
@@ -361,5 +398,685 @@ def test_portfolio_twrr_api_returns_period_value_without_annualizing(tmp_path: P
         assert body["annualized"] is False
         assert body["value"] == "22.2375"
         assert body["quality"] == "exact"
+        assert body["scope"] == "portfolio"
+        assert body["account_id"] is None
+    finally:
+        database.engine.dispose()
+
+
+def _account_history(
+    tmp_path: Path,
+    *,
+    opening_values: tuple[str, ...] = ("1000.00",),
+    closing_values: tuple[str, ...] = ("1100.00",),
+    include_opening: bool = True,
+    include_membership: bool = True,
+    attest_coverage: bool = True,
+) -> tuple[Session, object, int, int, tuple[int, ...]]:
+    database = create_database(tmp_path / "r08-03-account-twrr.db")
+    Base.metadata.create_all(database.engine)
+    session = database.session_factory()
+    january = create_reporting_month(session, year=2030, month=1, snapshot_date=START)
+    february = create_reporting_month(session, year=2030, month=2, snapshot_date=END)
+    accounts = tuple(
+        create_account(
+            session,
+            name=f"Synthetic account TWRR {index + 1}",
+            account_type=AccountType.BROKERAGE,
+        )
+        for index in range(len(opening_values))
+    )
+    instrument = create_instrument(
+        session,
+        name="Synthetic account TWRR instrument",
+        instrument_type="bond",
+    )
+
+    if include_opening:
+        for account, value in zip(accounts, opening_values, strict=True):
+            create_position_snapshot(
+                session,
+                reporting_month_id=january.id,
+                account_id=account.id,
+                instrument_id=instrument.id,
+                quantity=1,
+                average_cost_per_unit=value,
+                market_price_per_unit=value,
+                price_date=START,
+            )
+            create_deposit_snapshot(
+                session,
+                reporting_month_id=january.id,
+                account_id=account.id,
+                name=f"Synthetic opening deposit {account.id}",
+                deposit_type="deposit",
+                balance="0.00",
+                annual_rate="0.00",
+            )
+            create_cash_balance(
+                session,
+                reporting_month_id=january.id,
+                account_id=account.id,
+                name=f"Synthetic opening cash {account.id}",
+                amount="0.00",
+            )
+
+    for account, value in zip(accounts, closing_values, strict=True):
+        create_position_snapshot(
+            session,
+            reporting_month_id=february.id,
+            account_id=account.id,
+            instrument_id=instrument.id,
+            quantity=1,
+            average_cost_per_unit=value,
+            market_price_per_unit=value,
+            price_date=END,
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=february.id,
+            account_id=account.id,
+            name=f"Synthetic closing deposit {account.id}",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
+        )
+        create_cash_balance(
+            session,
+            reporting_month_id=february.id,
+            account_id=account.id,
+            name=f"Synthetic closing cash {account.id}",
+            amount="0.00",
+        )
+
+    if include_membership:
+        session.add_all(
+            AccountPerformanceScopeMembership(
+                account_id=account.id,
+                effective_from=date(2029, 1, 1),
+                include_in_returns=True,
+            )
+            for account in accounts
+        )
+    session.commit()
+    if attest_coverage:
+        for account in accounts:
+            create_cash_boundary_coverage(
+                session,
+                account_id=account.id,
+                covered_from=START,
+                covered_to=END,
+            )
+            attest_in_kind_boundary_history(
+                session,
+                account_id=account.id,
+                covered_from=START,
+                covered_to=END,
+            )
+    return (
+        session,
+        database,
+        january.id,
+        february.id,
+        tuple(account.id for account in accounts),
+    )
+
+
+def _account_boundary(
+    session: Session,
+    *,
+    month_id: int,
+    account_id: int,
+    flow_id: int,
+    pre_value: str,
+    post_value: str,
+) -> None:
+    for relation, value in (
+        ("pre_external_flow", pre_value),
+        ("post_external_flow", post_value),
+    ):
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=month_id,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account_id,
+            observed_date=FIRST_FLOW_DATE,
+            total_value=value,
+            performance_currency="RUB",
+            provenance_kind="synthetic_account_twrr",
+            relation=relation,
+            external_flow_id=flow_id,
+        )
+
+
+def _reconfirm_cash(session: Session, account_ids: tuple[int, ...]) -> None:
+    for account_id in account_ids:
+        attest_cash_boundary_history(
+            session,
+            account_id=account_id,
+            covered_from=START,
+            covered_to=END,
+        )
+
+
+def test_account_twrr_without_external_flows_is_exact(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1100.00",),
+    )
+    try:
+        _close_interval(session, january_id, february_id)
+
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account_id,
+        )
+
+        assert result.scope is PerformanceScope.ACCOUNT
+        assert result.account_id == account_id
+        assert result.availability is TwrrAvailabilityStatus.AVAILABLE
+        assert result.quality is TwrrQuality.EXACT
+        assert result.value == Decimal("10")
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_neutralizes_owner_contribution(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1320.00",),
+    )
+    try:
+        flow = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            pre_value="1100.00",
+            post_value="1200.00",
+        )
+        _reconfirm_cash(session, (account_id,))
+        _close_interval(session, january_id, february_id)
+
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        # (1100 / 1000) * (1200 / (1100 + 100)) * (1320 / 1200) - 1 = 21%.
+        assert result.value == Decimal("21")
+        assert result.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_neutralizes_owner_withdrawal(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1100.00",),
+    )
+    try:
+        flow = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            pre_value="1100.00",
+            post_value="1000.00",
+        )
+        _reconfirm_cash(session, (account_id,))
+        _close_interval(session, january_id, february_id)
+
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        # (1100 / 1000) * (1000 / (1100 - 100)) * (1100 / 1000) - 1 = 21%.
+        assert result.value == Decimal("21")
+        assert result.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_linked_transfer_is_external_per_account_but_internal_for_portfolio(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_ids = _account_history(
+        tmp_path,
+        opening_values=("1000.00", "2000.00"),
+        closing_values=("1100.00", "2530.00"),
+    )
+    source_id, destination_id = account_ids
+    try:
+        link = create_external_transfer_link(session, transfer_key="account-twrr-transfer")
+        source = _flow(
+            session,
+            february_id,
+            source_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            transfer_link_id=link.id,
+        )
+        destination = _flow(
+            session,
+            february_id,
+            destination_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+            transfer_link_id=link.id,
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=source_id,
+            flow_id=source.id,
+            pre_value="1100.00",
+            post_value="1000.00",
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=destination_id,
+            flow_id=destination.id,
+            pre_value="2200.00",
+            post_value="2300.00",
+        )
+        _reconfirm_cash(session, account_ids)
+        _close_interval(session, january_id, february_id)
+
+        source_result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=source_id,
+        )
+        destination_result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=destination_id,
+        )
+        portfolio_result = portfolio_twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+        )
+
+        assert source_result.value == Decimal("21")
+        assert destination_result.value == Decimal("21")
+        assert source_result.is_available and destination_result.is_available
+        assert portfolio_result.value == Decimal("21")
+        assert portfolio_result.scope is PerformanceScope.PORTFOLIO
+        assert portfolio_result.account_id is None
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_ignores_flow_belonging_to_another_account(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_ids = _account_history(
+        tmp_path,
+        opening_values=("1000.00", "1000.00"),
+        closing_values=("1100.00", "2000.00"),
+    )
+    selected_id, other_id = account_ids
+    try:
+        _flow(
+            session,
+            february_id,
+            other_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="500.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _reconfirm_cash(session, account_ids)
+        _close_interval(session, january_id, february_id)
+
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=selected_id,
+        )
+
+        assert result.value == Decimal("10")
+        assert result.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_missing_flow_boundary_fails_closed(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1320.00",),
+    )
+    try:
+        flow = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=february_id,
+            scope="account",
+            account_id=account_id,
+            observed_date=FIRST_FLOW_DATE,
+            total_value="1100.00",
+            performance_currency="RUB",
+            provenance_kind="synthetic_missing_account_post",
+            relation="pre_external_flow",
+            external_flow_id=flow.id,
+        )
+        _reconfirm_cash(session, (account_id,))
+        _close_interval(session, january_id, february_id)
+
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert result.availability is TwrrAvailabilityStatus.NOT_COMPUTABLE
+        assert result.value is None
+        assert result.reason_codes == ("not_computable_valuation_boundary_missing",)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_propagates_missing_valuation_and_coverage_evidence(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path / "missing-opening",
+        include_opening=False,
+    )
+    try:
+        _close_interval(session, january_id, february_id)
+        missing_opening = twrr_for_interval(
+            session,
+            start_date=date(2030, 1, 30),
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        assert "not_computable_opening_valuation_missing" in missing_opening.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path / "missing-coverage",
+        attest_coverage=False,
+    )
+    try:
+        _close_interval(session, january_id, february_id)
+        missing_coverage = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        assert "not_computable_external_flows_incomplete" in missing_coverage.reason_codes
+        assert "not_computable_in_kind_boundary_coverage_unknown" in missing_coverage.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_material_flow_mutation_requires_fresh_boundaries(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1375.00",),
+    )
+    try:
+        flow = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            pre_value="1100.00",
+            post_value="1200.00",
+        )
+        update_external_flow(session, flow.id, boundary_amount="150.00")
+        attest_cash_boundary_history(
+            session,
+            account_id=account_id,
+            covered_from=START,
+            covered_to=END,
+        )
+
+        stale = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        assert stale.availability is TwrrAvailabilityStatus.NOT_COMPUTABLE
+        assert "not_computable_valuation_boundary_missing" in stale.reason_codes
+
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            pre_value="1100.00",
+            post_value="1250.00",
+        )
+        _close_interval(session, january_id, february_id)
+        fresh = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        assert fresh.value == Decimal("21")
+        assert fresh.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_metadata_only_flow_edit_preserves_boundaries(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1320.00",),
+    )
+    try:
+        flow = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            pre_value="1100.00",
+            post_value="1200.00",
+        )
+        update_external_flow(session, flow.id, notes="metadata-only edit")
+        _reconfirm_cash(session, (account_id,))
+        _close_interval(session, january_id, february_id)
+
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert result.value == Decimal("21")
+        assert result.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_twrr_scope_argument_validation_is_explicit(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(tmp_path)
+    try:
+        _close_interval(session, january_id, february_id)
+        with pytest.raises(ValueError, match="account_id is required"):
+            twrr_for_interval(
+                session,
+                start_date=START,
+                end_date=END,
+                scope="account",
+            )
+        with pytest.raises(ValueError, match="account_id must be omitted"):
+            twrr_for_interval(
+                session,
+                start_date=START,
+                end_date=END,
+                scope="portfolio",
+                account_id=account_id,
+            )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_twrr_api_exposes_scope_identity_and_value(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(
+        tmp_path,
+        closing_values=("1320.00",),
+    )
+    try:
+        flow = _flow(
+            session,
+            february_id,
+            account_id,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _account_boundary(
+            session,
+            month_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            pre_value="1100.00",
+            post_value="1200.00",
+        )
+        _reconfirm_cash(session, (account_id,))
+        _close_interval(session, january_id, february_id)
+        session.close()
+
+        with TestClient(create_app(database)) as client:
+            response = client.get(
+                "/api/performance/twrr",
+                params={
+                    "start_date": START.isoformat(),
+                    "end_date": END.isoformat(),
+                    "scope": "account",
+                    "account_id": account_id,
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["scope"] == "account"
+        assert body["account_id"] == account_id
+        assert body["value"] == "21"
+        assert body["quality"] == "exact"
+    finally:
+        database.engine.dispose()
+
+
+def test_account_twrr_api_rejects_invalid_scope_identity(tmp_path: Path) -> None:
+    session, database, january_id, february_id, (account_id,) = _account_history(tmp_path)
+    try:
+        _close_interval(session, january_id, february_id)
+        session.close()
+        with TestClient(create_app(database)) as client:
+            missing_account = client.get(
+                "/api/performance/twrr",
+                params={
+                    "start_date": START.isoformat(),
+                    "end_date": END.isoformat(),
+                    "scope": "account",
+                },
+            )
+            unexpected_account = client.get(
+                "/api/performance/twrr",
+                params={
+                    "start_date": START.isoformat(),
+                    "end_date": END.isoformat(),
+                    "scope": "portfolio",
+                    "account_id": account_id,
+                },
+            )
+
+        assert missing_account.status_code == 422
+        assert unexpected_account.status_code == 422
     finally:
         database.engine.dispose()

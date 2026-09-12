@@ -132,3 +132,53 @@ UAT-discovered FX fix #334 with re-UAT `PASS`. Exact-main push CI run
 failed on runner environment only. Future work starts from canonical
 `main`, not from `integration/decision-support-v1`. Full record:
 `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`.
+## Post-audit correction — Investment Performance v1
+
+The performance row above records the state of the #306 audit when it was
+performed. Subsequent PERF-R0 reconciliation (#315) verified against canonical
+baseline `49b290df5d407fafff05a8aac6e3c081fdd8ea45` that the planned
+`PERF-01 -> PERF-02 -> PERF-03` sequence duplicates already accepted R08 work:
+
+- #145/#179/#190/#197/#213/#214 already provide the dated external-flow,
+  valuation, availability and observed-boundary foundation;
+- #146 already provides production whole-portfolio XIRR;
+- #147/#215 already provide production exact whole-portfolio TWRR.
+
+Therefore the original performance first-task wording is superseded for future
+execution. Do not reimplement PERF-01/02/03 as a second performance stack.
+
+Independent hardening reviews then identified six additive false-exact gaps,
+recorded normatively in `docs/PERFORMANCE_V1_RECONCILIATION_2026-09-06.md`:
+
+1. stable whole-portfolio membership over the requested interval;
+2. affirmative completeness of owner cash-boundary history;
+3. asynchronous internal-transfer transit and leg reconciliation;
+4. in-kind boundary-history coverage;
+5. tax/fee boundary semantics;
+6. direct realised payout semantics.
+
+The corrected implementation sequence is:
+
+`membership gate -> cash-boundary coverage -> transfer transit/reconciliation -> in-kind coverage -> tax/direct-payout hardening -> owner UAT -> account XIRR -> account exact TWRR -> attribution`.
+
+This addendum is a reconciliation correction, not a rewrite of the historical
+#306 audit. `main` remains the sole canonical/release source and
+`integration/performance-v1` remains staging only.
+
+## #360 pre-acceptance integration candidate (2026-09-12)
+
+Issue #360 reconciles the pinned canonical `main` baseline
+`ea66461cfd4dc704080bcd1859d558d8be367627` with the accepted
+`integration/performance-v1` tip `83cca45da5dcc307623a7b79056fea65bc46c48f`
+from common split `49b290df5d407fafff05a8aac6e3c081fdd8ea45`. The dedicated
+branch `integration/issue-360-performance-v1` is a pre-acceptance candidate;
+it is not canonical `main` and does not change the published release.
+
+The candidate preserves the current-main AI/export and governance work and
+the accepted performance contracts. Its mechanically reconciled Alembic
+coverage chain is `0037_336_financial_context -> 0038_cash_boundary_coverage
+-> 0039_transfer_reconciliation_evidence -> 0040_in_kind_boundary_coverage`.
+PERF04A remains the aggregate value bridge after external flows, not
+component-level return/profit attribution. Instrument/asset-class,
+realised/unrealised, trades/lots/cost-basis and event-explanation/export
+attribution remain future work and are not claimed as complete here.
