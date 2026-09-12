@@ -636,6 +636,39 @@ def test_endpoint_external_flow_is_not_computable_without_order_proof(
         _finish(fixture)
 
 
+@pytest.mark.parametrize(
+    "endpoint_date",
+    (START, END),
+    ids=("start_date", "end_date"),
+)
+def test_same_day_internal_portfolio_transfer_at_endpoint_is_not_computable(
+    tmp_path: Path,
+    endpoint_date: date,
+) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "500.00")),
+    )
+    try:
+        _transfer(fixture, source_date=endpoint_date, destination_date=endpoint_date)
+        _close(fixture)
+        r08 = performance_availability_for_interval(
+            fixture.session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.PORTFOLIO,
+        )
+        result = _bridge(fixture)
+
+        assert "not_computable_valuation_boundary_order_unknown" in r08.xirr.reason_codes
+        assert not result.is_available
+        assert result.quality.value == "unavailable"
+        assert result.value is None
+        assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+    finally:
+        _finish(fixture)
+
+
 def test_endpoint_order_gate_applies_to_selected_account_transfer_legs(tmp_path: Path) -> None:
     fixture = _environment(
         tmp_path,
@@ -660,6 +693,42 @@ def test_endpoint_order_gate_applies_to_selected_account_transfer_legs(tmp_path:
             assert not result.is_available
             assert result.value is None
             assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+    finally:
+        _finish(fixture)
+
+
+def test_same_day_internal_portfolio_transfer_at_interior_twrr_boundary_does_not_gate_bridge(
+    tmp_path: Path,
+) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "1010.00"), ("500.00", "500.00")),
+    )
+    try:
+        _transfer(fixture, source_date=MID, destination_date=MID)
+        _create_flow(
+            fixture,
+            account_id=fixture.account_ids[0],
+            event_date=MID,
+            amount="10.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _close(fixture)
+        r08 = performance_availability_for_interval(
+            fixture.session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.PORTFOLIO,
+        )
+        result = _bridge(fixture)
+
+        assert r08.xirr.is_available
+        assert not r08.twrr.is_available
+        assert "not_computable_valuation_boundary_order_unknown" in r08.twrr.reason_codes
+        assert result.is_available
+        assert result.value is not None and result.value.kopecks == 0
+        assert result.reason_codes == ()
     finally:
         _finish(fixture)
 

@@ -66,6 +66,25 @@ def _has_endpoint_external_flow(availability: PerformanceAvailability) -> bool:
     )
 
 
+def _has_portfolio_endpoint_transfer_order_unknown(
+    availability: PerformanceAvailability,
+) -> bool:
+    """Reuse R08 transfer-safety order evidence for consumed portfolio endpoints.
+
+    ``performance_availability_for_interval`` adds this reason to the XIRR
+    prerequisite only when a linked internal portfolio transfer has same-day
+    legs at one of the consumed endpoint dates.  Intermediate TWRR-only
+    same-day gaps are reported only by TWRR and therefore must not reach this
+    bridge gate.
+    """
+
+    return (
+        availability.scope is PerformanceScope.PORTFOLIO
+        and AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value
+        in availability.xirr.reason_codes
+    )
+
+
 def _valuation_evidence(
     availability: PerformanceAvailability,
     *,
@@ -138,7 +157,9 @@ def _bridge_reason_codes(availability: PerformanceAvailability) -> tuple[str, ..
         availability.external_flows.reason_codes,
     ):
         reasons.update(_without_twrr_only_reasons(extra_reasons))
-    if _has_endpoint_external_flow(availability):
+    if _has_endpoint_external_flow(availability) or _has_portfolio_endpoint_transfer_order_unknown(
+        availability
+    ):
         reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value)
     return tuple(sorted(reasons))
 
