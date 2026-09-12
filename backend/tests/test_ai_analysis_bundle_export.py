@@ -1152,6 +1152,60 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert not any(isinstance(value, float) for value in _walk(payload))
 
 
+def test_ai_financial_review_routes_disable_caching(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_history(client)
+
+    for path in ("/api/export/ai-financial-review", "/api/export/ai-financial-review/json"):
+        response = client.get(path, params={"generated_at": GENERATED_AT})
+
+        assert response.status_code == 200, response.text
+        assert response.headers["cache-control"] == "no-store"
+
+
+def test_allocation_money_null_is_limited_to_unavailable_support(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_history(client)
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    allocation = package["sections"]["allocation"]["data"]["allocation_by_asset_class"]
+    assert allocation["support"]["status"] == "complete"
+    allocation["denominator"] = None
+    assert not _portfolio_review_validator().is_valid(package)
+    package = package_response.json()
+    top_positions = package["sections"]["allocation"]["data"]["top_positions"]
+    assert top_positions["support"]["status"] == "complete"
+    top_positions["top_amount"] = None
+    assert not _portfolio_review_validator().is_valid(package)
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    allocation = review["sections"]["allocation_and_concentration"]["data"][
+        "allocation_by_asset_class"
+    ]
+    assert allocation["support"]["status"] == "complete"
+    allocation["denominator"] = None
+    assert not _financial_review_validator().is_valid(review)
+    review = review_response.json()
+    top_positions = review["sections"]["allocation_and_concentration"]["data"]["top_positions"]
+    assert top_positions["support"]["status"] == "complete"
+    top_positions["top_amount"] = None
+    assert not _financial_review_validator().is_valid(review)
+
+
 def test_ai_financial_review_preserves_authoritative_context_and_zero_unknown_states(
     app_context: tuple[TestClient, Database],
 ) -> None:

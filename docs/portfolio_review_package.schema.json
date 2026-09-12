@@ -808,7 +808,27 @@
         "coverage_pct": {"$ref": "#/$defs/ratio_metric"},
         "items": {"type": "array", "items": {"$ref": "#/$defs/allocation_slice"}},
         "excluded_reason_codes": {"$ref": "#/$defs/reason_codes"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support": {
+                "properties": {"status": {"const": "unavailable"}},
+                "required": ["status"]
+              }
+            },
+            "required": ["support"]
+          },
+          "else": {
+            "properties": {
+              "denominator": {"$ref": "#/$defs/money"},
+              "covered_amount": {"$ref": "#/$defs/money"},
+              "unallocated_amount": {"$ref": "#/$defs/money"}
+            }
+          }
+        }
+      ]
     },
     "concentration_item": {
       "type": "object",
@@ -864,7 +884,26 @@
         "items": {"type": "array", "items": {"$ref": "#/$defs/concentration_item"}},
         "excluded_reason_codes": {"$ref": "#/$defs/reason_codes"},
         "is_approximate": {"type": "boolean"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support": {
+                "properties": {"status": {"const": "unavailable"}},
+                "required": ["status"]
+              }
+            },
+            "required": ["support"]
+          },
+          "else": {
+            "properties": {
+              "denominator": {"$ref": "#/$defs/money"},
+              "top_amount": {"$ref": "#/$defs/money"}
+            }
+          }
+        }
+      ]
     },
     "allocation_data": {
       "type": "object",
