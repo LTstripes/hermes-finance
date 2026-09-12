@@ -166,8 +166,9 @@ At portfolio scope:
 
 - a fully linked transfer between historically in-scope accounts is internal;
 - its two legs do not enter `C` as an owner contribution or withdrawal; and
-- inter-leg transfer identity and reconciliation follow the existing R08
-  rules; and
+- for every relevant linked portfolio transfer, inter-leg transfer identity and
+  reconciliation are mandatory under the existing R08 rules, regardless of
+  whether its transit interval intersects `start_date` or `end_date`; and
 - asynchronous transit safety is required only for valuation dates actually
   consumed by the PERF04A bridge: `start_date` and `end_date`. No
   cash-in-transit value is synthesized for asynchronous settlement, and an
@@ -255,11 +256,13 @@ are true:
    date, non-negative boundary amount, explicit direction, authoritative scope
    membership and accepted performance currency.
 8. Transfer gates are scope-specific:
-   - for `scope=portfolio`, inter-leg transfer identity and reconciliation
-     satisfy the existing R08 rules, and asynchronous transit safety is
-     evaluated only against the bridge-consumed valuation dates
-     `start_date` and `end_date`; intermediate TWRR flow-boundary dates are
-     excluded from the PERF04A transit gate;
+   - for `scope=portfolio`, every relevant linked portfolio transfer must
+     satisfy the existing R08 inter-leg identity and reconciliation rules,
+     regardless of whether its transit interval intersects `start_date` or
+     `end_date`;
+     asynchronous transit safety is evaluated only against those
+     bridge-consumed valuation dates, and intermediate TWRR flow-boundary dates
+     are excluded from the PERF04A transit gate;
    - for `scope=account`, the selected leg has canonical identity/
      classification, exact amount and date, accepted currency, effective
      membership and ordinary external-flow completeness. Cross-leg
@@ -281,10 +284,12 @@ projection requires, at the requested scope and interval:
 - complete affirmative cash-boundary coverage;
 - complete in-kind boundary coverage with **no known in-kind movement**;
 - complete canonical external-flow evidence and accepted performance currency;
-- for `scope=portfolio`, inter-leg transfer reconciliation and asynchronous
-  transit safety evaluated only against the bridge-consumed `start_date` and
-  `end_date`; intermediate TWRR flow-boundary dates are not part of this
-  PERF04A gate;
+- for `scope=portfolio`, inter-leg transfer identity and reconciliation are
+  mandatory for every relevant linked portfolio transfer, regardless of
+  whether its transit interval intersects `start_date` or `end_date`;
+- for `scope=portfolio`, asynchronous transit safety evaluated only against
+  the bridge-consumed `start_date` and `end_date`; intermediate TWRR
+  flow-boundary dates are not part of this PERF04A transit gate;
 - for `scope=account`, canonical identity/classification, exact amount and
   date, accepted currency, effective membership and ordinary external-flow
   completeness for the selected leg, without requiring opposite-leg
@@ -481,7 +486,7 @@ The following behavior is normative for the v1 bridge:
 | --- | --- |
 | No-flow split: `1,000.00 -> 1,160.00` | Selected-scope bridge is `+160.00`. The two account/instrument rows remain discovery-only; v1 does not emit them. |
 | Contribution and withdrawal: `V0=1,000.00`, `C=+100.00-50.00`, `V1=1,333.50` | Bridge is `+283.50`. The reference TWRR `27.05%` is a separate parent return and is not emitted by v1. |
-| Linked transfer `A → B` | In a synthetic same-currency `100.00` vector, portfolio scope treats the resolved linked legs as internal: `V0=1,500.00`, `C=0`, `V1=1,500.00`, bridge `0.00`. An account A query uses only A's source leg as the canonical withdrawal (`C=-100.00`): `1,000.00 -> 900.00` gives bridge `0.00`. An account B query uses only B's destination leg as the canonical contribution (`C=+100.00`): `500.00 -> 600.00` gives bridge `0.00`. Each account result still requires the selected leg's identity/classification, amount, currency, membership and ordinary external-flow coverage; unresolved or one-sided transfer identity fails closed. Absence of cross-leg reconciliation evidence, an unexplained difference or an unreconciled opposite leg alone does not block an otherwise exact account bridge. Portfolio inter-leg reconciliation and transit safety remain required only at `start_date`/`end_date`, not at intermediate TWRR flow-boundary dates. |
+| Linked transfer `A → B` | In a synthetic same-currency `100.00` vector, portfolio scope treats the resolved linked legs as internal: `V0=1,500.00`, `C=0`, `V1=1,500.00`, bridge `0.00`. An account A query uses only A's source leg as the canonical withdrawal (`C=-100.00`): `1,000.00 -> 900.00` gives bridge `0.00`. An account B query uses only B's destination leg as the canonical contribution (`C=+100.00`): `500.00 -> 600.00` gives bridge `0.00`. Each account result still requires the selected leg's identity/classification, amount, currency, membership and ordinary external-flow coverage; unresolved or one-sided transfer identity fails closed. Absence of cross-leg reconciliation evidence, an unexplained difference or an unreconciled opposite leg alone does not block an otherwise exact account bridge. Portfolio inter-leg reconciliation remains required for every relevant linked portfolio transfer; only async transit safety is evaluated at `start_date`/`end_date`, not at intermediate TWRR flow-boundary dates. |
 | Retained coupon | The `+20.00` retained in-scope value is reflected once in the bridge; it is not an additional external flow or second income injection. |
 | Redemption principal | A position-to-cash reclassification with unchanged selected total gives bridge `0.00`; redemption is not passive income. |
 | Internal fee/tax cost | A complete opening `1,000.00`, internal cost `13.00`, closing `987.00` gives bridge `-13.00`; it is not an owner withdrawal. |
