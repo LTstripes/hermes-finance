@@ -10,6 +10,7 @@ import {
 } from "../api/exports";
 import { listMonths } from "../api/months";
 import type { BackupMetadata, ReportingMonth } from "../api/types";
+import { AiFinancialReviewPanel } from "../components/AiFinancialReviewPanel";
 import { PortfolioReviewPackagePanel } from "../components/PortfolioReviewPackagePanel";
 import {
   Button,
@@ -212,122 +213,149 @@ export function ExportPage() {
         </p>
       </header>
 
-      <Panel label="Markdown и JSON" title="Скачать отчёт">
-        {loading ? (
-          <LoadingState description="Загружаем месяцы…" inline />
-        ) : loadingError ? (
-          <ErrorState description={loadingError} inline title="Не удалось загрузить месяцы" />
-        ) : months.length === 0 ? (
-          <EmptyState
-            description="Сначала создай хотя бы один отчётный месяц."
-            inline
-            title="Нет месяцев"
-          />
-        ) : (
-          <div className="form-stack">
-            <Field htmlFor="export-month" label="Месяц отчёта">
-              <Select
-                id="export-month"
-                onChange={(event) => {
-                  setSelectedMonthId(Number(event.target.value));
-                  setDownloadError(null);
-                  setSuccess(null);
-                }}
-                value={selectedMonthId ?? ""}
-              >
-                {months.map((month) => (
-                  <option key={month.id} value={month.id}>
-                    {formatMonth(month.year, month.month)} ·{" "}
-                    {labelOf(MONTH_STATUS_LABELS, month.status)}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            {downloadError ? (
+      <AiFinancialReviewPanel />
+
+      <details className="secondary-exports">
+        <summary>Дополнительные / технические выгрузки</summary>
+        <p className="muted">
+          Технические варианты для отдельных задач: проверка одного месяца, диагностика AI-контракта
+          или разбор портфеля. Для обычного ежемесячного анализа используй основной отчёт выше.
+        </p>
+
+        <p className="secondary-exports__hint">
+          <strong>Отчёт по одному месяцу.</strong> Краткая сводка и данные именно выбранного месяца
+          — подходит, чтобы проверить отдельный месяц. Для ежемесячного анализа в ChatGPT или другом
+          AI используй основной отчёт выше.
+        </p>
+        <Panel label="Markdown и JSON" title="Скачать отчёт">
+          {loading ? (
+            <LoadingState description="Загружаем месяцы…" inline />
+          ) : loadingError ? (
+            <ErrorState description={loadingError} inline title="Не удалось загрузить месяцы" />
+          ) : months.length === 0 ? (
+            <EmptyState
+              description="Сначала создай хотя бы один отчётный месяц."
+              inline
+              title="Нет месяцев"
+            />
+          ) : (
+            <div className="form-stack">
+              <Field htmlFor="export-month" label="Месяц отчёта">
+                <Select
+                  id="export-month"
+                  onChange={(event) => {
+                    setSelectedMonthId(Number(event.target.value));
+                    setDownloadError(null);
+                    setSuccess(null);
+                  }}
+                  value={selectedMonthId ?? ""}
+                >
+                  {months.map((month) => (
+                    <option key={month.id} value={month.id}>
+                      {formatMonth(month.year, month.month)} ·{" "}
+                      {labelOf(MONTH_STATUS_LABELS, month.status)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {downloadError ? (
+                <div className="inline-alert inline-alert--error" role="alert">
+                  {downloadError}
+                </div>
+              ) : null}
+              {success ? (
+                <div className="inline-alert inline-alert--ok" role="status">
+                  {success}
+                </div>
+              ) : null}
+              <div className="stack-12">
+                <Button
+                  disabled={
+                    downloading !== null || bundleDownloading !== null || selectedMonth === null
+                  }
+                  onClick={() => void handleDownload("markdown")}
+                  type="button"
+                  variant="primary"
+                >
+                  {downloading === "markdown" ? "Готовим файл…" : "Скачать Markdown"}
+                </Button>
+                <Button
+                  disabled={
+                    downloading !== null || bundleDownloading !== null || selectedMonth === null
+                  }
+                  onClick={() => void handleDownload("json")}
+                  type="button"
+                >
+                  {downloading === "json" ? "Готовим JSON…" : "Скачать JSON"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Panel>
+
+        <p className="secondary-exports__hint">
+          <strong>AI Analysis Bundle.</strong> Компактный технический файл с показателями и кодами
+          причин — нужен для проверки AI-контракта. Для обычного ежемесячного анализа используй
+          основной отчёт выше.
+        </p>
+        <Panel label="AI Analysis Bundle" title="Полный анализ для ассистента">
+          <div className="stack-12">
+            <p>
+              Файл собирает всю доступную историю Hermes Finance, а не только выбранный отчётный
+              месяц.
+            </p>
+            <p className="muted">
+              Дата среза фиксируется приложением при создании и указана внутри скачанного файла.
+            </p>
+            <div className="inline-alert inline-alert--warn" role="note">
+              <strong>Внимание:</strong> файл содержит финансовые данные. Проверь его перед ручной
+              загрузкой в ассистент.
+            </div>
+            <p className="muted">
+              Hermes только создаёт локальный файл и ничего не отправляет в облачные сервисы.
+              Загрузить его можно вручную и спросить ассистента о трендах, рисках или решениях.
+            </p>
+            {bundleDownloadError ? (
               <div className="inline-alert inline-alert--error" role="alert">
-                {downloadError}
+                {bundleDownloadError}
               </div>
             ) : null}
-            {success ? (
+            {bundleSuccess ? (
               <div className="inline-alert inline-alert--ok" role="status">
-                {success}
+                {bundleSuccess}
               </div>
             ) : null}
             <div className="stack-12">
               <Button
-                disabled={
-                  downloading !== null || bundleDownloading !== null || selectedMonth === null
-                }
-                onClick={() => void handleDownload("markdown")}
+                disabled={downloading !== null || bundleDownloading !== null}
+                onClick={() => void handleBundleDownload("json")}
                 type="button"
                 variant="primary"
               >
-                {downloading === "markdown" ? "Готовим файл…" : "Скачать Markdown"}
+                {bundleDownloading === "json"
+                  ? "Готовим файл…"
+                  : "Скачать AI Analysis Bundle (JSON)"}
               </Button>
               <Button
-                disabled={
-                  downloading !== null || bundleDownloading !== null || selectedMonth === null
-                }
-                onClick={() => void handleDownload("json")}
+                disabled={downloading !== null || bundleDownloading !== null}
+                onClick={() => void handleBundleDownload("markdown")}
                 type="button"
               >
-                {downloading === "json" ? "Готовим JSON…" : "Скачать JSON"}
+                {bundleDownloading === "markdown"
+                  ? "Готовим Markdown…"
+                  : "Скачать Markdown-компаньон"}
               </Button>
             </div>
           </div>
-        )}
-      </Panel>
+        </Panel>
 
-      <Panel label="AI Analysis Bundle" title="Полный анализ для ассистента">
-        <div className="stack-12">
-          <p>
-            Файл собирает всю доступную историю Hermes Finance, а не только выбранный отчётный
-            месяц.
-          </p>
-          <p className="muted">
-            Дата среза фиксируется приложением при создании и указана внутри скачанного файла.
-          </p>
-          <div className="inline-alert inline-alert--warn" role="note">
-            <strong>Внимание:</strong> файл содержит финансовые данные. Проверь его перед ручной
-            загрузкой в ассистент.
-          </div>
-          <p className="muted">
-            Hermes только создаёт локальный файл и ничего не отправляет в облачные сервисы.
-            Загрузить его можно вручную и спросить ассистента о трендах, рисках или решениях.
-          </p>
-          {bundleDownloadError ? (
-            <div className="inline-alert inline-alert--error" role="alert">
-              {bundleDownloadError}
-            </div>
-          ) : null}
-          {bundleSuccess ? (
-            <div className="inline-alert inline-alert--ok" role="status">
-              {bundleSuccess}
-            </div>
-          ) : null}
-          <div className="stack-12">
-            <Button
-              disabled={downloading !== null || bundleDownloading !== null}
-              onClick={() => void handleBundleDownload("json")}
-              type="button"
-              variant="primary"
-            >
-              {bundleDownloading === "json" ? "Готовим файл…" : "Скачать AI Analysis Bundle (JSON)"}
-            </Button>
-            <Button
-              disabled={downloading !== null || bundleDownloading !== null}
-              onClick={() => void handleBundleDownload("markdown")}
-              type="button"
-            >
-              {bundleDownloading === "markdown"
-                ? "Готовим Markdown…"
-                : "Скачать Markdown-компаньон"}
-            </Button>
-          </div>
-        </div>
-      </Panel>
-
-      <PortfolioReviewPackagePanel />
+        <p className="secondary-exports__hint">
+          <strong>Пакет для анализа портфеля.</strong> Подробная инвестиционная выгрузка: позиции,
+          распределение, концентрация и свежесть цен — нужна для разбора именно портфеля. Для
+          обычного ежемесячного анализа используй основной отчёт выше.
+        </p>
+        <PortfolioReviewPackagePanel />
+      </details>
 
       <Panel
         action={
