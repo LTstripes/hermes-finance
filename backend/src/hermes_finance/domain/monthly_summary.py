@@ -62,7 +62,7 @@ class MonthlySummaryResult:
     forecast: ForecastPassiveIncomeResult
     coverage: CoverageGoalsResult
     cash_balance: CashBalanceResult
-    salary_tax: SalaryTaxResult
+    salary_tax: SalaryTaxResult | None
     salary_actual_net: RubleAmount
     normalized_bonus: NormalizedBonusResult
     iis: tuple[IisResult, ...]

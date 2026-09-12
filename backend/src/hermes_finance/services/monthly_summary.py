@@ -46,6 +46,7 @@ from hermes_finance.services.salary import (
     actual_net_for_month,
     calculate_salary_tax,
 )
+from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
 
 DEFAULT_FORECAST_VERSION = "v1"
 
@@ -71,11 +72,14 @@ def monthly_summary(
     reporting_month_id: int,
     *,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
+    allow_incomplete_salary_tax: bool = False,
 ) -> MonthlySummaryResult:
     """Assemble the unified monthly summary for a reporting month.
 
     Calls every existing Phase-C calculator, derives deltas against the
-    previous reporting month, and returns the pure domain DTO.
+    previous reporting month, and returns the pure domain DTO. The strict
+    default preserves the public summary contract; the close workflow may
+    explicitly allow only salary-tax history to remain unavailable.
     """
     reporting_month = get_reporting_month(session, reporting_month_id)
     year = reporting_month.year
@@ -109,7 +113,12 @@ def monthly_summary(
     forecast = forecast_passive_income(session, reporting_month_id, forecast_version)
     coverage = coverage_and_goals(session, reporting_month_id, forecast_version)
     cash_bal = cash_balance_for_month(session, reporting_month_id)
-    salary_tax = calculate_salary_tax(session, reporting_month_id)
+    try:
+        salary_tax = calculate_salary_tax(session, reporting_month_id)
+    except SalaryTaxHistoryIncompleteError:
+        if not allow_incomplete_salary_tax:
+            raise
+        salary_tax = None
     salary_actual_net = actual_net_for_month(session, reporting_month_id)
     norm_bonus = normalized_bonus(session)
 
@@ -136,6 +145,8 @@ def monthly_summary(
         iis_warnings=(),  # IisResult carries no warnings
         liquid_capital_delta=liquid_capital_delta,
     )
+    if salary_tax is None:
+        warnings += (SalaryTaxHistoryIncompleteError.code,)
 
     return MonthlySummaryResult(
         year=year,
