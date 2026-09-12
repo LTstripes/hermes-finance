@@ -1858,6 +1858,9 @@ th.num {
 
 .monthly-close__current {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  /* Keeps the panel heading and its CTA clear of the sticky topbar when a
+     workflow step anchors on this panel. */
+  scroll-margin-top: 88px;
 }
 
 .monthly-close__provider-summary {
