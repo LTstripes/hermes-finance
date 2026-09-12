@@ -1,7 +1,7 @@
 """Persist affirmative cash-boundary history coverage.
 
 Revision ID: 0038_cash_boundary_coverage
-Revises: 0036_broker_baseline_provenance
+Revises: 0037_336_financial_context
 
 The table stores interval completeness evidence only.  It has no amount
 columns and the migration deliberately does not backfill existing history.
