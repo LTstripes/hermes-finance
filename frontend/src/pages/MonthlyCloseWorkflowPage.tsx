@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
@@ -35,6 +35,13 @@ const STATE_LABELS = {
   blocked: "Требуется исправить",
 } as const;
 
+/**
+ * Stable anchor for the actionable "Сейчас" panel. An `#<step.id>` hash keeps its
+ * deterministic deep-link meaning, but activation must land on the panel that
+ * carries the primary CTA instead of the checklist row below it.
+ */
+const CURRENT_STEP_ANCHOR_ID = "monthly_close_current_step";
+
 function stateTone(state: keyof typeof STATE_LABELS) {
   if (state === "completed") return "ok" as const;
   if (state === "skipped") return "info" as const;
@@ -60,6 +67,7 @@ export function MonthlyCloseWorkflowPage() {
       (location.state as { alfaStatementOutcome?: unknown } | null)?.alfaStatementOutcome,
     ),
   );
+  const handledHashRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!statementOutcome) return;
@@ -85,11 +93,18 @@ export function MonthlyCloseWorkflowPage() {
     : null;
 
   useEffect(() => {
-    if (!location.hash || !activeStep) return;
+    if (!location.hash || !activeStep || handledHashRef.current === location.hash) return;
+    const actionable = activeStep.primary_action !== null;
+    const targetId = actionable ? CURRENT_STEP_ANCHOR_ID : activeStep.id;
     const frame = window.requestAnimationFrame(() => {
-      const element = document.getElementById(activeStep.id);
-      if (element && typeof element.scrollIntoView === "function") {
+      const element = document.getElementById(targetId);
+      if (!element) return;
+      handledHashRef.current = location.hash;
+      if (typeof element.scrollIntoView === "function") {
         element.scrollIntoView({ block: "start" });
+      }
+      if (actionable && typeof element.focus === "function") {
+        element.focus({ preventScroll: true });
       }
     });
     return () => window.cancelAnimationFrame(frame);
@@ -257,7 +272,13 @@ export function MonthlyCloseWorkflowPage() {
       ) : null}
 
       {activeStep ? (
-        <Panel className="monthly-close__current" label="Сейчас" title={activeStep.title}>
+        <Panel
+          className="monthly-close__current"
+          id={CURRENT_STEP_ANCHOR_ID}
+          label="Сейчас"
+          tabIndex={-1}
+          title={activeStep.title}
+        >
           <p>{activeStep.why}</p>
           <MonthlyCloseStepSummary step={activeStep} />
           <div className="monthly-close__primary-row">

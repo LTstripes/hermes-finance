@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 
@@ -186,6 +186,34 @@ function nonBlockingWarningBeforeReadyWorkflow(): MonthCloseWorkflow {
   };
 }
 
+function stepWithoutActionableCtaWorkflow(monthId: number): MonthCloseWorkflow {
+  const base = workflow(monthId);
+  return {
+    ...base,
+    recommended_step_id: "market_quotes",
+    steps: [
+      {
+        ...base.steps[0],
+        id: "market_quotes",
+        order: 3,
+        title: "Обновить рыночные цены",
+        primary_action: {
+          id: "open_quote_preview",
+          label: "Получить котировки",
+          target: "open_panel",
+        },
+      },
+      {
+        ...base.steps[0],
+        id: "actual_payouts",
+        order: 4,
+        title: "Проверить фактические выплаты",
+        primary_action: null,
+      },
+    ],
+  };
+}
+
 function readyForCloseWorkflow(monthId: number): MonthCloseWorkflow {
   const base = workflow(monthId);
   return {
@@ -248,7 +276,22 @@ function renderRoute(entry: string) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+});
+
+function stubScrollIntoView() {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+    writable: true,
+  });
+  return scrollIntoView;
+}
+
+const CURRENT_STEP_ANCHOR_ID = "monthly_close_current_step";
 
 describe("MonthlyCloseWorkflowPage", () => {
   it("keeps an old requested month and exposes exactly one primary CTA", async () => {
@@ -313,6 +356,59 @@ describe("MonthlyCloseWorkflowPage", () => {
       "/payouts?from=monthly-close&step=actual_payouts&monthId=17",
     );
     expect(screen.getByText("Нужно внимание")).toBeInTheDocument();
+  });
+
+  it("lands on the actionable panel when a non-recommended actionable step is activated", async () => {
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify(nonBlockingWarningBeforeReadyWorkflow()))),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const scrollIntoView = stubScrollIntoView();
+    renderRoute("/months/17/close");
+
+    const stepLink = await screen.findByRole("link", {
+      name: "Проверить фактические выплаты",
+    });
+    expect(stepLink).toHaveAttribute("href", "/months/17/close#actual_payouts");
+    fireEvent.click(stepLink);
+
+    expect(
+      await screen.findByRole("heading", { name: "Проверить фактические выплаты" }),
+    ).toBeInTheDocument();
+
+    const panel = document.querySelector(".monthly-close__current");
+    expect(panel).not.toBeNull();
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(panel);
+    expect(scrollIntoView.mock.contexts).not.toContain(document.getElementById("actual_payouts"));
+    expect(panel).toHaveAttribute("id", CURRENT_STEP_ANCHOR_ID);
+    expect(panel).toHaveFocus();
+
+    expect(stepLink).toHaveAttribute("aria-current", "step");
+    expect(
+      within(panel as HTMLElement).getByRole("link", { name: "Выбрать PDF Alfa" }),
+    ).toHaveAttribute("href", "/payouts?from=monthly-close&step=actual_payouts&monthId=17");
+    expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
+  });
+
+  it("keeps the checklist row as the deep-link anchor for a step without an actionable CTA", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify(stepWithoutActionableCtaWorkflow(17)))),
+      ),
+    );
+    const scrollIntoView = stubScrollIntoView();
+    renderRoute("/months/17/close#actual_payouts");
+
+    expect(
+      await screen.findByRole("heading", { name: "Проверить фактические выплаты" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(document.getElementById("actual_payouts"));
+    expect(document.querySelector(".monthly-close__current")).not.toHaveFocus();
   });
 
   it("honours the final-review hash and exposes the close CTA", async () => {
