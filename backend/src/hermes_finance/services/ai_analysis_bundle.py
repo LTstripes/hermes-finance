@@ -462,6 +462,7 @@ def assemble_ai_analysis_bundle(
     account_rows = sorted(
         list_accounts(session), key=lambda item: (item.name, item.account_type, item.id)
     )
+    capital_included_account_ids = {row.id for row in account_rows if row.include_in_capital}
     instrument_rows = sorted(
         list_instruments(session), key=lambda item: (item.name, item.instrument_type, item.id)
     )
@@ -503,6 +504,10 @@ def assemble_ai_analysis_bundle(
             if row.price_date > month.snapshot_date
         ]
         for month in ordered_months
+    }
+    future_included_valuations_by_month = {
+        month_id: [row for row in rows if row.account_id in capital_included_account_ids]
+        for month_id, rows in future_valuations_by_month.items()
     }
 
     start_tuple = parse_passive_income_history_start_month(
@@ -547,7 +552,7 @@ def assemble_ai_analysis_bundle(
         coverage_reasons: list[str] = []
         draft_codes: list[str] = []
         month_positions = positions_by_month.get(month.id, [])
-        future_dated_positions = future_valuations_by_month.get(month.id, [])
+        future_dated_positions = future_included_valuations_by_month.get(month.id, [])
         month_deposits = deposits_by_month.get(month.id, [])
         month_cash = cash_by_month.get(month.id, [])
         month_debts = debts_by_month.get(month.id, [])
@@ -878,6 +883,9 @@ def assemble_ai_analysis_bundle(
     future_dated_selected_positions = {
         row.id for row in future_valuations_by_month.get(current.id, [])
     }
+    future_dated_selected_included_positions = {
+        row.id for row in future_included_valuations_by_month.get(current.id, [])
+    }
     future_dated_iis_account_ids = {
         row.account_id
         for row in future_valuations_by_month.get(current.id, [])
@@ -1124,7 +1132,7 @@ def assemble_ai_analysis_bundle(
         if average.count_months < 12 and item.goal.goal_type == "passive_income":
             codes.append("incomplete_12_month_window")
         valuation_ineligible = item.goal.goal_type == "capital" and bool(
-            future_dated_selected_positions
+            future_dated_selected_included_positions
         )
         if valuation_ineligible:
             codes.append(FUTURE_DATED_VALUATION)
@@ -1197,7 +1205,9 @@ def assemble_ai_analysis_bundle(
     mortgage = total_mortgage_balance(session, current.id)
     property_value = total_property_value(session, current.id)
     equity = property_equity(session, current.id)
-    mortgage_valuation_ineligible = bool(future_dated_selected_positions and mortgage.kopecks)
+    mortgage_valuation_ineligible = bool(
+        future_dated_selected_included_positions and mortgage.kopecks
+    )
     if mortgage_valuation_ineligible:
         coverage_pct = None
     else:
@@ -1552,7 +1562,7 @@ def assemble_ai_analysis_bundle(
             current.id,
             evaluated_on=generated.date(),
             forecast_version=forecast_version,
-            valuation_eligible=not bool(future_dated_selected_positions),
+            valuation_eligible=not bool(future_dated_selected_included_positions),
         )
     except LookupError:
         insights_result = None

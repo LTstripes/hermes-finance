@@ -530,9 +530,9 @@
       "required": ["support", "denominator", "covered_amount", "unallocated_amount", "coverage_pct", "items", "excluded_reason_codes"],
       "properties": {
         "support": { "$ref": "#/$defs/coverage_state" },
-        "denominator": { "$ref": "#/$defs/money" },
-        "covered_amount": { "$ref": "#/$defs/money" },
-        "unallocated_amount": { "$ref": "#/$defs/money" },
+        "denominator": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "covered_amount": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "unallocated_amount": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
         "coverage_pct": { "$ref": "#/$defs/ratio_metric" },
         "items": { "type": "array", "items": { "$ref": "#/$defs/allocation_item" } },
         "excluded_reason_codes": { "$ref": "#/$defs/reason_codes" }
@@ -560,9 +560,9 @@
       "required": ["support", "denominator", "top_n", "top_amount", "top_share_pct", "items", "excluded_reason_codes", "is_approximate"],
       "properties": {
         "support": { "$ref": "#/$defs/coverage_state" },
-        "denominator": { "$ref": "#/$defs/money" },
+        "denominator": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
         "top_n": { "type": "integer", "minimum": 0 },
-        "top_amount": { "$ref": "#/$defs/money" },
+        "top_amount": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
         "top_share_pct": { "$ref": "#/$defs/ratio_metric" },
         "items": { "type": "array", "items": { "$ref": "#/$defs/concentration_item" } },
         "excluded_reason_codes": { "$ref": "#/$defs/reason_codes" },

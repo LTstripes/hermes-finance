@@ -21,6 +21,7 @@ from startup_network_guard import NETWORK_FORBIDDEN, install_network_guard
 from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
+    Account,
     Base,
     CashBalance,
     Debt,
@@ -597,7 +598,7 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     app_context: tuple[TestClient, Database],
 ) -> None:
     client, _database = app_context
-    seed = _seed_history(client)
+    _seed_history(client)
 
     before = _export(client).json()
     assert before["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 4}
@@ -608,8 +609,10 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     assert review_before.status_code == 200, review_before.text
     assert review_before.json()["scope"]["reporting_period"] == {"year": 2026, "month": 4}
 
-    next_month = _create_month(client, 2026, 6)
-    _close(client, next_month)
+    june = _create_month(client, 2026, 6)
+    _close(client, june)
+    july = _create_month(client, 2026, 7)
+    august = _create_month(client, 2026, 8)
 
     after = _export(client).json()
     assert after["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 6}
@@ -620,7 +623,34 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     )
     assert review_after.status_code == 200, review_after.text
     assert review_after.json()["scope"]["reporting_period"] == {"year": 2026, "month": 6}
-    assert seed["latest_closed"] != next_month
+    assert (
+        next(
+            item
+            for item in after["reporting_history"]
+            if item["period"] == {"year": 2026, "month": 7}
+        )["status"]
+        == "draft"
+    )
+    assert (
+        next(
+            item
+            for item in after["reporting_history"]
+            if item["period"] == {"year": 2026, "month": 8}
+        )["status"]
+        == "draft"
+    )
+
+    _close(client, august)
+
+    final = _export(client).json()
+    assert final["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 8}
+    assert final["current_portfolio"]["selection_reason"] == "latest_closed"
+    review_final = client.get(
+        "/api/export/ai-financial-review", params={"generated_at": GENERATED_AT}
+    )
+    assert review_final.status_code == 200, review_final.text
+    assert review_final.json()["scope"]["reporting_period"] == {"year": 2026, "month": 8}
+    assert july != august
 
 
 def test_future_dated_valuation_is_unavailable_in_period_aggregates(
@@ -703,6 +733,11 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert package["sections"]["allocation"]["reason_codes"] == ["future_dated_valuation"]
     package_allocation = package["sections"]["allocation"]["data"]
     assert package_allocation["top_positions"]["support"]["status"] == "unavailable"
+    assert package_allocation["top_positions"]["denominator"] is None
+    assert package_allocation["top_positions"]["top_amount"] is None
+    assert package_allocation["allocation_by_asset_class"]["denominator"] is None
+    assert package_allocation["allocation_by_asset_class"]["covered_amount"] is None
+    assert package_allocation["allocation_by_asset_class"]["unallocated_amount"] is None
     assert package_allocation["payout_concentration"]["excluded_reason_codes"] == []
     assert package["sections"]["deterministic_insights"]["status"] == "partial"
 
@@ -725,6 +760,8 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert allocation_data["allocation_by_asset_class"]["support"]["status"] == "unavailable"
     assert allocation_data["allocation_by_account"]["support"]["status"] == "unavailable"
     assert allocation_data["top_positions"]["support"]["status"] == "unavailable"
+    assert allocation_data["top_positions"]["denominator"] is None
+    assert allocation_data["top_positions"]["top_amount"] is None
     assert allocation_data["payout_concentration"]["support"]["status"] != "unavailable"
     assert review["sections"]["goals"]["status"] == "partial"
     assert "future_dated_valuation" in review["sections"]["goals"]["reason_codes"]
@@ -732,6 +769,51 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert "future_dated_valuation" in review["sections"]["debts_and_real_estate"]["reason_codes"]
     assert review["sections"]["iis_and_tax"]["status"] == "partial"
     assert "future_dated_valuation" in review["sections"]["iis_and_tax"]["reason_codes"]
+
+
+def test_future_dated_valuation_on_excluded_account_does_not_degrade_capital_or_risk(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    seed = _seed_history(client)
+    with database.session_factory() as session:
+        account = session.get(Account, seed["brokerage"])
+        position = session.scalar(
+            select(PositionSnapshot).where(
+                PositionSnapshot.reporting_month_id == seed["draft"],
+            )
+        )
+        assert account is not None
+        assert position is not None
+        account.include_in_capital = False
+        position.price_date = date(2026, 6, 1)
+        session.commit()
+    _close(client, seed["draft"])
+
+    bundle = _export(client).json()
+    _validator().validate(bundle)
+    position_data = bundle["current_portfolio"]["positions"][0]
+    assert position_data["market_value"]["availability"] == "unavailable"
+    assert position_data["market_value"]["reason_codes"] == ["future_dated_valuation"]
+    current_history = bundle["reporting_history"][-1]
+    assert current_history["kpis"]["liquid_assets_total"]["availability"] == "available"
+    assert (
+        "future_dated_valuation"
+        not in current_history["kpis"]["liquid_assets_total"]["reason_codes"]
+    )
+    assert "future_dated_valuation" not in bundle["coverage"]["domains"]["capital"]["reason_codes"]
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    allocation = package["sections"]["allocation"]
+    assert allocation["status"] == "included"
+    assert "future_dated_valuation" not in allocation["reason_codes"]
+    assert allocation["data"]["allocation_by_asset_class"]["denominator"] is not None
 
 
 def test_issue_285_august_fixture_preserves_data_quality_semantics(

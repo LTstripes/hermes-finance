@@ -1175,7 +1175,7 @@ def _risk_allocation_data(
             "status": "unavailable",
             "reason_codes": [FUTURE_DATED_VALUATION],
         }
-        unavailable_money = {"amount": "0.00", "currency": "RUB"}
+        unavailable_money = None
         unavailable_ratio = {
             "value_pct": None,
             "availability": "unavailable",
@@ -1598,10 +1598,12 @@ def assemble_portfolio_review_package(
             "selected current period is absent from history"
         )
 
-    future_dated_valuation = FUTURE_DATED_VALUATION in _reason_codes(
-        current_portfolio.get("coverage", {}).get("reason_codes")
-        if isinstance(current_portfolio.get("coverage"), Mapping)
-        else []
+    future_dated_valuation = any(
+        FUTURE_DATED_VALUATION
+        in _reason_codes(
+            _mapping(current_point.get(metric_name), label=metric_name).get("reason_codes")
+        )
+        for metric_name in ("liquid_assets_total", "liquid_capital_net")
     )
 
     generated_raw = base_metadata.get("generated_at")
