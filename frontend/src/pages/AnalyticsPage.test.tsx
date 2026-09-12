@@ -6,14 +6,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCapitalComposition } from "../api/analytics";
 import { getDashboard } from "../api/dashboard";
 import { listMonths } from "../api/months";
-import { getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
+import { getPerformanceAttribution, getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
+import type { PerformanceAttribution } from "../api/types";
 import { rub } from "../lib/money";
 import { AnalyticsPage } from "./AnalyticsPage";
 
 vi.mock("../api/analytics", () => ({ getCapitalComposition: vi.fn() }));
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
 vi.mock("../api/months", () => ({ listMonths: vi.fn() }));
-vi.mock("../api/performance", () => ({ getPortfolioTwrr: vi.fn(), getPortfolioXirr: vi.fn() }));
+vi.mock("../api/performance", () => ({
+  getPerformanceAttribution: vi.fn(),
+  getPortfolioTwrr: vi.fn(),
+  getPortfolioXirr: vi.fn(),
+}));
 
 const capitalHistory = {
   asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
@@ -37,7 +42,67 @@ const capitalHistory = {
   ],
 };
 
+const closedMonths = [
+  {
+    id: 2,
+    year: 2031,
+    month: 2,
+    status: "closed" as const,
+    snapshot_date: "2031-02-28",
+    source: "manual",
+  },
+  {
+    id: 1,
+    year: 2031,
+    month: 1,
+    status: "closed" as const,
+    snapshot_date: "2031-01-31",
+    source: "manual",
+  },
+];
+
+function attribution(overrides: Partial<PerformanceAttribution> = {}): PerformanceAttribution {
+  return {
+    contract: "PERF04A",
+    contract_version: 1,
+    metric: "value_change_after_external_flows",
+    grain: "selected_scope",
+    scope: "portfolio",
+    account_id: null,
+    period: { start_date: "2031-01-31", end_date: "2031-02-28" },
+    performance_currency: "RUB",
+    availability: "not_computable",
+    quality: "unavailable",
+    opening_value: null,
+    closing_value: null,
+    value: null,
+    external_flow_summary: { contributions: null, withdrawals: null, signed_total: null },
+    evidence: {
+      opening_valuation: { availability: "not_computable", reason_codes: [] },
+      closing_valuation: { availability: "not_computable", reason_codes: [] },
+      scope_membership: { status: "unknown", reason_codes: [] },
+      cash_boundary_coverage: { status: "unknown", reason_codes: [] },
+      in_kind_boundary_coverage: { status: "unknown", reason_codes: [] },
+      external_flows: { status: "unknown", reason_codes: [] },
+    },
+    reason_codes: ["not_computable_valuation_boundary_missing"],
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
+  vi.mocked(getPortfolioXirr).mockResolvedValue({
+    metric: "xirr",
+    scope: "portfolio",
+    performance_currency: "RUB",
+    value: null,
+    value_unit: "percentage_points",
+    annualized: true,
+    period: { start_date: "2031-01-31", end_date: "2031-02-28" },
+    availability: "not_computable",
+    quality: "unavailable",
+    reason_codes: ["not_computable_valuation_boundary_missing"],
+  });
   vi.mocked(getPortfolioTwrr).mockResolvedValue({
     metric: "twrr",
     scope: "portfolio",
@@ -51,6 +116,7 @@ beforeEach(() => {
     quality: "unavailable",
     reason_codes: ["not_computable_valuation_boundary_missing"],
   });
+  vi.mocked(getPerformanceAttribution).mockResolvedValue(attribution());
   vi.mocked(getCapitalComposition).mockResolvedValue(capitalHistory);
   vi.mocked(listMonths).mockResolvedValue([
     {
@@ -160,5 +226,87 @@ describe("AnalyticsPage", () => {
     await waitFor(() =>
       expect(getPortfolioTwrr).toHaveBeenCalledWith("2031-01-31", "2031-02-28", expect.anything()),
     );
+  });
+
+  it.each([
+    { label: "positive", amount: "283.50", rendered: /\+283,50/ },
+    { label: "negative", amount: "-42.75", rendered: /−42,75/ },
+    { label: "zero", amount: "0.00", rendered: /0\s*RUB/ },
+  ])("renders the backend's exact $label bridge value", async ({ amount, rendered }) => {
+    vi.mocked(listMonths).mockResolvedValue(closedMonths);
+    vi.mocked(getPerformanceAttribution).mockResolvedValue(
+      attribution({
+        availability: "available",
+        quality: "exact",
+        opening_value: { amount: "1000.00", currency: "RUB" },
+        closing_value: { amount: "9999.00", currency: "RUB" },
+        value: { amount, currency: "RUB" },
+        external_flow_summary: {
+          contributions: { amount: "100.00", currency: "RUB" },
+          withdrawals: { amount: "50.00", currency: "RUB" },
+          signed_total: { amount: "50.00", currency: "RUB" },
+        },
+        reason_codes: [],
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <AnalyticsPage />
+      </MemoryRouter>,
+    );
+
+    const heading = await screen.findByRole("heading", {
+      name: "Изменение стоимости после внешних потоков",
+    });
+    const panel = heading.closest("section");
+    expect(panel).not.toBeNull();
+    if (!panel) throw new Error("Value bridge panel was not rendered");
+
+    await waitFor(() => expect(within(panel).getByText(rendered)).toBeInTheDocument());
+    expect(
+      within(panel).getByText("Это изменение стоимости, а не доходность."),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText("XIRR портфеля")).toBeNull();
+    expect(within(panel).queryByText("TWRR портфеля")).toBeNull();
+    expect(within(panel).queryByText("Прибыль")).toBeNull();
+    expect(within(panel).queryByText(/8.?949/)).toBeNull();
+    await waitFor(() =>
+      expect(getPerformanceAttribution).toHaveBeenCalledWith(
+        "2031-01-31",
+        "2031-02-28",
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("shows unavailable attribution as unavailable and never as zero", async () => {
+    vi.mocked(listMonths).mockResolvedValue(closedMonths);
+    vi.mocked(getPerformanceAttribution).mockResolvedValue(
+      attribution({
+        reason_codes: ["not_computable_external_flows_incomplete"],
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <AnalyticsPage />
+      </MemoryRouter>,
+    );
+
+    const heading = await screen.findByRole("heading", {
+      name: "Изменение стоимости после внешних потоков",
+    });
+    const panel = heading.closest("section");
+    expect(panel).not.toBeNull();
+    if (!panel) throw new Error("Value bridge panel was not rendered");
+
+    await waitFor(() => expect(within(panel).getByText("Значение недоступно")).toBeInTheDocument());
+    await userEvent.setup().click(within(panel).getByText("Почему недоступно"));
+    expect(
+      await within(panel).findByText("История внешних пополнений и выводов за период неполна."),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText(/0,00/)).toBeNull();
+    expect(within(panel).queryByText("not_computable_external_flows_incomplete")).toBeNull();
   });
 });

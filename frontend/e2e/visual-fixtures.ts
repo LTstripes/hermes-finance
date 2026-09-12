@@ -174,6 +174,32 @@ const portfolioTwrr = {
   reason_codes: ["not_computable_valuation_boundary_missing"],
 };
 
+const performanceAttribution = {
+  contract: "PERF04A",
+  contract_version: 1,
+  metric: "value_change_after_external_flows",
+  grain: "selected_scope",
+  scope: "portfolio",
+  account_id: null,
+  period: { start_date: "2031-10-28", end_date: "2031-11-28" },
+  performance_currency: "RUB",
+  availability: "not_computable",
+  quality: "unavailable",
+  opening_value: null,
+  closing_value: null,
+  value: null,
+  external_flow_summary: { contributions: null, withdrawals: null, signed_total: null },
+  evidence: {
+    opening_valuation: { availability: "not_computable", reason_codes: [] },
+    closing_valuation: { availability: "not_computable", reason_codes: [] },
+    scope_membership: { status: "unknown", reason_codes: [] },
+    cash_boundary_coverage: { status: "unknown", reason_codes: [] },
+    in_kind_boundary_coverage: { status: "unknown", reason_codes: [] },
+    external_flows: { status: "unknown", reason_codes: [] },
+  },
+  reason_codes: ["not_computable_valuation_boundary_missing"],
+};
+
 const support = (status = "supported", reasonCodes: string[] = []) => ({
   status,
   reason_codes: reasonCodes,
@@ -616,6 +642,9 @@ export function syntheticApiResponse(
   if (path === "/api/analytics/risk-allocation") return { json: riskAllocation };
   if (path === "/api/performance/xirr" && method === "GET") return { json: portfolioXirr };
   if (path === "/api/performance/twrr" && method === "GET") return { json: portfolioTwrr };
+  if (path === "/api/performance/attribution" && method === "GET") {
+    return { json: performanceAttribution };
+  }
   if (path === "/api/accounts" && method === "GET") {
     return { json: state === "empty" ? [] : syntheticAccounts };
   }

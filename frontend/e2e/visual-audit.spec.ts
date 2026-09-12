@@ -202,6 +202,10 @@ for (const route of routes) {
     await page.waitForTimeout(150);
     if (route.slug === "analytics") {
       await expect(page.getByText("XIRR недоступен")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Изменение стоимости после внешних потоков" }),
+      ).toBeVisible();
+      await expect(page.getByText("Это изменение стоимости, а не доходность.")).toBeVisible();
       await expect(page.getByText(syntheticXirrReasonCode, { exact: true })).toHaveCount(0);
     }
     await assertAuditState(page, unhandled, pageErrors);
