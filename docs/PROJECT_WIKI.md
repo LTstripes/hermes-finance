@@ -37,38 +37,23 @@ Private seed, SQLite DB, exports, backups и реальные финансовы
 
 ## 3. Текущее стабильное состояние
 
-Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в exact released main SHA `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical development `main` — `420e10046a7adbe17078dcd47d8b803927f0a86a` (merge PR #335, Decision Support v1 — Scenario Lab, 2026-09-09); exact-main push CI run `34384056201`: все продуктовые гейты зелёные (backend lanes, frontend, privacy guard, Windows production smoke, release safety, launcher safety), `Synthetic visual audit` упал только по окружению раннера (Chromium apt hash mismatch) и не связан с содержимым merge. Предыдущий pre-integration baseline `96f97b0424370be93e327587633c424ee6c33a8a` (exact-main CI run `34021826830`, `success`) остаётся историческим. Канонический historical record — `docs/releases/0.8.2.md`; consolidation report — `docs/CONSOLIDATION_2026-09-06.md`; Decision Support v1 closeout — `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`.
-
-Абзац выше фиксирует состояние canonical `main` на 2026-09-09. Для
-подготовки #360 подтверждён более новый baseline `main`
-`ea66461cfd4dc704080bcd1859d558d8be367627`; отдельная ветка
-`integration/issue-360-performance-v1` ниже остаётся pre-acceptance
-кандидатом и не подменяет canonical `main`.
+Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в exact released main SHA `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical development `main` — `8b7ecfa9df1283799046d3deccecf272f614796d` (merge PR #361, Performance v1 canonical integration, 2026-09-12); exact-main push CI run `34692212060` завершён `success`. Предыдущий canonical development baseline перед Performance integration — `ea66461cfd4dc704080bcd1859d558d8be367627`. Канонический historical record опубликованной версии — `docs/releases/0.8.2.md`; consolidation report — `docs/CONSOLIDATION_2026-09-06.md`; Decision Support v1 closeout — `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`; Performance v1 closeout — `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`.
 
 0.8.2 — опубликованный maintenance release после Stable 0.8.1: документирует уже интегрированные #299, #302, current-state #142 и #143. Эксперимент Stable self-update (#298, #311, #312) закрыт `not_planned`; он не является доказанным canonical owner flow и вынесен в backlog/redesign #313. Stable/Preview остаются разделёнными, owner actions явными.
 
 Предыдущая опубликованная стабильная линия **0.7.0** сохранена как историческая identity: `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`, опубликована 2026-08-30 с owner Stable promotion `PASS`.
 
-Канонический Alembic head опубликованного 0.8.2 tree остаётся
-`0036_broker_baseline_provenance`; release 0.8.2 не добавляет новую миграцию и
-не меняет schema semantics. Pre-acceptance кандидат #360 механически
-продолжает этот baseline до head `0040_in_kind_boundary_coverage`; published
-release identity этим не меняется.
+Канонический Alembic head опубликованного 0.8.2 tree остаётся `0036_broker_baseline_provenance`; release 0.8.2 не добавляет новую миграцию и не меняет schema semantics. Текущий development `main` после #360 имеет один линейный Alembic head `0040_in_kind_boundary_coverage` через `0037_336_financial_context` → `0038_cash_boundary_coverage` → `0039_transfer_reconciliation_evidence` → `0040_in_kind_boundary_coverage`. Это не меняет published release identity 0.8.2.
 
 Историческая подготовка публикации в issue #231 подготовила принятый R07 tree; post-release sync issue #234 фиксирует, что его опубликованная identity — `v0.7.0` @ `06dc3ba3f4a8a8d150eca1879949a6984e1ac6b7`. Owner Stable promotion для 0.7.0 подтверждён как `PASS` 2026-08-30. Операционное наблюдение о разовой установке frontend-зависимостей при первом Stable start не меняет release identity или финансовую семантику.
 
-После публикации development `main` ушёл вперёд инфраструктурной работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics, provider/trading behavior или migration head.
+После публикации development `main` ушёл вперёд инфраструктурной и продуктовой работой. HYG-04 (issue #123 / PR #125) интегрирован merge SHA `cc3be7270624ebf93ac1a09ece17295b42bd691d`; exact-main push CI #336 завершился `success`. HYG-04 добавляет guarded GitHub-native release automation и не меняет product/version identity, financial semantics или provider/trading behavior.
 
-Текущая R07/R08 product surface включает owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner Lite, deterministic Insights backend v1, XIRR/exact TWRR и guarded Windows Stable/Preview launcher для Start/Stop. Stable release update до принятия #313 выполняется recovery-only owner operation; launcher self-update не объявляется canonical.
+Текущая R07/R08 product surface включает owner-controlled AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance Center, Reconciliation Center, current-state Tax/IIS Planner Lite, deterministic Insights backend v1, portfolio/account XIRR и exact TWRR, PERF04A aggregate value bridge после внешних потоков и guarded Windows Stable/Preview launcher для Start/Stop. Stable release update до принятия #313 выполняется recovery-only owner operation; launcher self-update не объявляется canonical.
 
-### #360 pre-acceptance performance candidate
+### Performance v1 integrated
 
-Кандидат #360 сохраняет эту current-main поверхность и добавляет принятые
-Performance v1 availability/coverage hardening, account-scope XIRR и exact
-TWRR reconciliation, а также PERF04A aggregate value bridge. Это не claim о
-component-level return/profit attribution: instrument/asset-class,
-realised/unrealised, trades/lots/cost-basis и event-explanation/export
-attribution остаются future work до отдельного принятого контракта.
+Performance v1 принят owner UAT #358 и интегрирован в canonical `main` через #360 / PR #361. Он добавляет availability/coverage hardening, portfolio/account XIRR и exact TWRR reconciliation, а также PERF04A aggregate value bridge. Это не component-level return/profit attribution: instrument/asset-class, realised/unrealised, trades/lots/cost-basis и event-explanation/export attribution остаются future work до отдельного принятого контракта.
 
 Историческая линия **0.6.0** / R06 остаётся в разделе 15: Gate A принят; Gate B — `UAT_PASS` / `GATE_B_PASS`; Gate C accepted and integrated.
 
@@ -110,7 +95,8 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - Reconciliation Center с normalized row states и compatibility diagnostics; Price/UchPrice/NKD/P&L — comparison-only;
 - current-state Tax/IIS Planner v1;
 - deterministic Insights backend v1 на persisted evidence с AI Analysis Bundle integration в schema `1.2.0`; dedicated Insights UI остаётся deferred;
-- XIRR и exact TWRR с persisted observed valuation boundaries и fail-closed gaps/order/root states;
+- portfolio/account XIRR и exact TWRR с persisted observed valuation boundaries, scope/boundary evidence и fail-closed gaps/order/root states;
+- PERF04A aggregate selected-scope monetary value bridge после внешних потоков; это изменение стоимости, а не доходность или realised/unrealised P&L decomposition;
 - Scenario Lab v1 (development `main`, ещё не в опубликованном Stable): детерминированный read-only owner what-if инструмент — ровно один шок за запуск (equity drawdown, deposit absolute-rate assumption, inflation real-value / purchasing-power view, conservative FX translation candidate-scope baseline); owner-facing API + deterministic JSON export + UI в Планирование → Сценарии; без записей, без market forecasts/probabilities, без background/provider refresh; unsupported/missing metadata остаётся `unknown` / `unavailable` и никогда не угадывается;
 - guarded Windows Stable/Preview launcher с owner Start/Stop controls, без Git branch/state mutation;
 - row-scoped selective apply: unrelated unresolved/conflicting rows не блокируют safe selected subset, selected unsafe/stale rows fail closed;
@@ -137,7 +123,8 @@ Runtime по-прежнему local-only: loopback `127.0.0.1:8000`, прова�
 - issuer impairment — ждёт authoritative issuer identity;
 - exact FX translation — ждёт authoritative native-value/base-FX semantics;
 - multi-shock composition;
-- Monte Carlo / VaR / probabilities / correlations.
+- Monte Carlo / VaR / probabilities / correlations;
+- component-level performance attribution по инструментам/asset classes, realised/unrealised P&L, trades/lots/cost basis и event explanations/exports.
 
 ## 5. Технический контур
 
@@ -468,13 +455,7 @@ Windows Stable/Preview launcher имеет guarded runtime profiles и owner Sta
 
 ## 23. Post-v0.8.2 consolidation / #306
 
-The mandatory transition gate after the release is recorded in
-[`docs/CONSOLIDATION_2026-09-06.md`](CONSOLIDATION_2026-09-06.md). `main` remains
-the only canonical/release source. The three staging lines were
-`integration/monthly-close-uat`, `integration/performance-v1` and
-`integration/decision-support-v1`; each task still starts from its own child
-branch and isolated workspace. The Decision Support staging line has since
-completed and merged via PR #335 — see section 24.
+The mandatory transition gate after the release is recorded in [`docs/CONSOLIDATION_2026-09-06.md`](CONSOLIDATION_2026-09-06.md). `main` remains the only canonical/release source. The three staging lines were `integration/monthly-close-uat`, `integration/performance-v1` and `integration/decision-support-v1`; each task still starts from its own child branch and isolated workspace. Decision Support completed and merged via PR #335 (section 24). Performance v1 completed owner UAT and merged via PR #361 (section 25). `integration/monthly-close-uat` remains a staging/UAT line until separately reconciled; it is not an alternate canonical main.
 
 ## 24. Decision Support v1 closeout (2026-09-09)
 
@@ -487,3 +468,21 @@ Staging workstream `integration/decision-support-v1` завершён первы
 - Полная запись: [`docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`](DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md); execution journal — `docs/EXECUTION_HISTORY.md`.
 
 Future work стартует от canonical `main`, а не от старой integration-ветки. Опубликованный Stable `0.8.2` этим merge не меняется: Scenario Lab находится на development `main` до будущей публикации.
+
+## 25. Performance v1 closeout (2026-09-12)
+
+Staging workstream `integration/performance-v1` завершён и интегрирован в canonical `main` через PR #361; owner UAT #358 — `PASS`.
+
+- Accepted staging source: `83cca45da5dcc307623a7b79056fea65bc46c48f`.
+- Canonical integration baseline перед merge: `ea66461cfd4dc704080bcd1859d558d8be367627`.
+- Integration merge candidate: `8285fb6bfc0fa16c07a6bb587d45b8c5325eb2ce`; comment-only migration-header follow-up / exact PR head: `81c623039aef4202811f42134bdda0e51f81494e`.
+- Canonical merge PR #361: `8b7ecfa9df1283799046d3deccecf272f614796d`.
+- Exact PR-head CI run `34691683103` — `success`; exact-main push CI run `34692212060` — `success`.
+- Independent high-risk integration review — `ACCEPT`; GitHub owner-self-approval limitation was recorded without representing it as a formal self-approval.
+- Delivered: stable scope/boundary evidence gates, cash-boundary coverage, transfer reconciliation/transit safety, in-kind fail-closed handling, portfolio/account XIRR and exact TWRR, PERF04A aggregate value bridge and thin Analytics presentation.
+- UAT behavior: where the owner's scratch history lacked prerequisite evidence, metrics stayed `not_computable`/unavailable/null rather than fabricating exact values or zero. Production data remained untouched and was not exposed to development agents.
+- Development migration chain is linear through `0040_in_kind_boundary_coverage`.
+- Explicitly deferred: instrument/asset-class attribution, realised/unrealised P&L decomposition, trades/lots/cost basis, event explanations and component-attribution exports.
+- Full closeout record: [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](PERFORMANCE_V1_CLOSEOUT_2026-09-12.md); execution journal — `docs/EXECUTION_HISTORY.md`.
+
+Future Performance work стартует от canonical `main`, а не от `integration/performance-v1`. Published Stable `0.8.2` не изменён этим development merge.

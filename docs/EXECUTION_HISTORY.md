@@ -610,3 +610,23 @@ Do not invent missing executor/model attribution during backfill. A later docume
 - **References:** #141, #329, #332, #333, #334, PR #335, #127,
   `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`,
   `docs/r07-09-scenario-lab-contract.md`, `docs/PROJECT_WIKI.md` §24.
+
+# Performance v1 closeout
+
+### PERF-V1-CLOSEOUT — accepted Performance v1 integrated to canonical main (2026-09-12)
+
+- **Status:** owner UAT #358 `PASS`; accepted and integrated into canonical `main` through #360 / PR #361.
+- **Accepted staging source:** `integration/performance-v1` @ `83cca45da5dcc307623a7b79056fea65bc46c48f`.
+- **Canonical integration baseline:** `ea66461cfd4dc704080bcd1859d558d8be367627`.
+- **Integration candidate:** `integration/issue-360-performance-v1` merge commit `8285fb6bfc0fa16c07a6bb587d45b8c5325eb2ce`, parents `ea66461…` + `83cca45…`.
+- **Final PR head:** `81c623039aef4202811f42134bdda0e51f81494e`; the follow-up changed only the 0038 migration header so its `Revises:` text matches executable `down_revision=0037_336_financial_context`.
+- **Canonical merged main:** `8b7ecfa9df1283799046d3deccecf272f614796d`.
+- **Review:** independent high-risk Astra reviewer returned `ACCEPT`; ChatGPT/Lera performed final Integrator remote review. GitHub prevented formal owner self-approval of the PR, so the independent verdict was recorded in PR discussion rather than misrepresented as a self-approval.
+- **Verification:** worker reported migration/startup `24 passed`, full backend `1800 passed`, frontend `405 passed / 61 files`, Ruff check/format, frontend lint/typecheck/build, privacy and `git diff --check` green. Whole-checkout local Biome format-check remained noisy from baseline-wide CRLF normalization without writes; GitHub frontend formatting was green. Exact-head PR CI run `34691683103` succeeded; exact-main push CI run `34692212060` succeeded.
+- **Migration reconciliation:** one linear development chain `0036_broker_baseline_provenance → 0037_336_financial_context → 0038_cash_boundary_coverage → 0039_transfer_reconciliation_evidence → 0040_in_kind_boundary_coverage`; current-main #336 schema and Performance migrations were both preserved.
+- **Delivered:** stable membership and boundary-evidence hardening; cash-boundary coverage; transfer reconciliation and portfolio async-transit safety; account transfer-leg semantics; in-kind fail-closed handling; portfolio/account XIRR; portfolio/account exact TWRR; endpoint ordering fail-closed semantics; PERF04A aggregate selected-scope monetary value bridge; exact zero vs unavailable/null; thin Analytics UI with owner-facing `РЕЗУЛЬТАТ` label and explicit non-return disclaimer.
+- **Owner UAT:** executed on an isolated scratch copy of real owner data; production remained untouched. Representative portfolio/account results with incomplete historical evidence stayed `not_computable`/unavailable/null rather than becoming false exact values or zero. Synthetic tests cover edge conditions not naturally present in the scratch history.
+- **Privacy:** no production/private DB, `.env`, credentials, owner exports or raw private payloads entered development workspaces or tracked history.
+- **Explicitly deferred:** instrument/asset-class attribution, realised/unrealised P&L decomposition, trades/lots/cost basis, event-explanation attribution and component-attribution exports.
+- **Follow-up:** future Performance work starts from canonical `main`, not from `integration/performance-v1`; published Stable `0.8.2` remains unchanged until a separately guarded release.
+- **References:** #358, #360, PR #361, #127, `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`, `docs/PROJECT_WIKI.md` §25.
