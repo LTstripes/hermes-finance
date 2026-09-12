@@ -80,6 +80,7 @@ PASSIVE_HISTORY_BEFORE_START = "passive_income_history_before_configured_start"
 PORTFOLIO_SNAPSHOT_MISSING = "portfolio_snapshot_missing"
 ACTIVE_ACCOUNT_SNAPSHOT_MISSING = "active_account_snapshot_missing"
 STALE_VALUATION = "stale_valuation"
+FUTURE_DATED_VALUATION = "future_dated_valuation"
 SALARY_NET_MISMATCH = "salary_net_mismatch"
 IIS_ACCOUNT_ABSENT = "iis_account_absent"
 IIS_TAX_DATA_UNCONFIGURED = "iis_tax_data_unconfigured"
@@ -443,6 +444,9 @@ def assemble_ai_analysis_bundle(
     generated_at: datetime | None = None,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
 ) -> dict[str, object]:
+    # Export reads must reflect committed lifecycle changes even when a caller
+    # reuses a Session whose identity map contains an earlier month state.
+    session.expire_all()
     months = list_reporting_months(session)
     if not months:
         raise NoReportingHistoryError("no reporting months available")
@@ -492,6 +496,15 @@ def assemble_ai_analysis_bundle(
     for row in all_property_rows:
         properties_by_month.setdefault(row.reporting_month_id, []).append(row)
 
+    future_valuations_by_month = {
+        month.id: [
+            row
+            for row in positions_by_month.get(month.id, [])
+            if row.price_date > month.snapshot_date
+        ]
+        for month in ordered_months
+    }
+
     start_tuple = parse_passive_income_history_start_month(
         settings.passive_income_history_start_month if settings is not None else None
     )
@@ -534,6 +547,7 @@ def assemble_ai_analysis_bundle(
         coverage_reasons: list[str] = []
         draft_codes: list[str] = []
         month_positions = positions_by_month.get(month.id, [])
+        future_dated_positions = future_valuations_by_month.get(month.id, [])
         month_deposits = deposits_by_month.get(month.id, [])
         month_cash = cash_by_month.get(month.id, [])
         month_debts = debts_by_month.get(month.id, [])
@@ -547,6 +561,16 @@ def assemble_ai_analysis_bundle(
                 "warning",
                 "reporting_history",
                 "No persisted portfolio/debt snapshot exists for this reporting month; capital is unavailable, not zero.",
+            )
+        if future_dated_positions:
+            coverage_reasons.append(FUTURE_DATED_VALUATION)
+            point_warnings.append(FUTURE_DATED_VALUATION)
+            capital_quality_codes.add(FUTURE_DATED_VALUATION)
+            add_warning(
+                FUTURE_DATED_VALUATION,
+                "warning",
+                "reporting_history",
+                "A position valuation is dated after the reporting snapshot; affected capital values are unavailable for this period.",
             )
 
         salary_snapshot = salary_tax_snapshot_for_month(session, month.id)
@@ -608,6 +632,8 @@ def assemble_ai_analysis_bundle(
         capital_codes = draft_codes.copy()
         if not has_capital_evidence:
             capital_codes.append(PORTFOLIO_SNAPSHOT_MISSING)
+        if future_dated_positions:
+            capital_codes.append(FUTURE_DATED_VALUATION)
         passive_codes = draft_codes.copy()
         if passive_history_before_start:
             passive_codes.append(PASSIVE_HISTORY_BEFORE_START)
@@ -642,7 +668,9 @@ def assemble_ai_analysis_bundle(
                 "provenance_sources": sorted(provenance_sources),
                 "kpis": {
                     "liquid_assets_total": _metric(
-                        capital.total_assets.kopecks if has_capital_evidence else None,
+                        capital.total_assets.kopecks
+                        if has_capital_evidence and not future_dated_positions
+                        else None,
                         source="backend_derived",
                         reason_codes=capital_codes,
                     ),
@@ -652,7 +680,9 @@ def assemble_ai_analysis_bundle(
                         reason_codes=capital_codes,
                     ),
                     "liquid_capital_net": _metric(
-                        capital.liquid_capital_net.kopecks if has_capital_evidence else None,
+                        capital.liquid_capital_net.kopecks
+                        if has_capital_evidence and not future_dated_positions
+                        else None,
                         source="backend_derived",
                         reason_codes=capital_codes,
                     ),
@@ -845,6 +875,9 @@ def assemble_ai_analysis_bundle(
     selected_positions = [
         row for row in list_position_snapshots(session) if row.reporting_month_id == current.id
     ]
+    future_dated_selected_positions = {
+        row.id for row in future_valuations_by_month.get(current.id, [])
+    }
     selected_deposits = [
         row for row in list_deposit_snapshots(session) if row.reporting_month_id == current.id
     ]
@@ -902,6 +935,13 @@ def assemble_ai_analysis_bundle(
             "current_portfolio",
             "At least one position uses a price dated before the selected reporting snapshot; persisted valuation remains authoritative.",
         )
+    if future_dated_selected_positions:
+        add_warning(
+            FUTURE_DATED_VALUATION,
+            "warning",
+            "current_portfolio",
+            "At least one position uses a price dated after the selected reporting snapshot; affected valuation is unavailable for this period.",
+        )
 
     accounts_out = [
         {
@@ -956,21 +996,34 @@ def assemble_ai_analysis_bundle(
         quantity = format(row.quantity, "f").rstrip("0").rstrip(".")
         if quantity in {"", "-"}:
             quantity = "0"
+        valuation_reason_codes = (
+            [FUTURE_DATED_VALUATION] if row.id in future_dated_selected_positions else []
+        )
         positions_out.append(
             {
                 "account_ref": account_refs[row.account_id],
                 "instrument_ref": instrument_refs[row.instrument_id],
                 "quantity": quantity,
                 "market_price_per_unit": _metric(
-                    row.market_price_per_unit_kopecks, source="persisted_snapshot"
+                    None if valuation_reason_codes else row.market_price_per_unit_kopecks,
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
                 ),
-                "market_value": _metric(row.market_value_kopecks, source="persisted_snapshot"),
+                "market_value": _metric(
+                    None if valuation_reason_codes else row.market_value_kopecks,
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
+                ),
                 "cost_basis": _metric(row.cost_basis_kopecks, source="persisted_snapshot"),
                 "unrealized_result": _metric(
-                    row.unrealized_result_kopecks, source="persisted_snapshot"
+                    None if valuation_reason_codes else row.unrealized_result_kopecks,
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
                 ),
                 "accrued_interest": _metric(
-                    int(row.accrued_interest_kopecks or 0), source="persisted_snapshot"
+                    None if valuation_reason_codes else int(row.accrued_interest_kopecks or 0),
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
                 ),
                 "price_date": row.price_date.isoformat(),
                 "valuation_provenance": valuation,
@@ -1019,6 +1072,8 @@ def assemble_ai_analysis_bundle(
     cash_out.sort(key=lambda item: (item["account_ref"], item["name"]))
 
     portfolio_coverage_reasons = [ACTIVE_ACCOUNT_SNAPSHOT_MISSING] if missing_snapshot_refs else []
+    if future_dated_selected_positions:
+        portfolio_coverage_reasons.append(FUTURE_DATED_VALUATION)
     if selection_reason == "latest_available" and current.status == "draft":
         portfolio_coverage_reasons.append("draft_value")
     portfolio_coverage = _coverage(
@@ -1042,7 +1097,12 @@ def assemble_ai_analysis_bundle(
                 reason_codes=[STALE_VALUATION] if stale_valuation_count else (),
                 available=stale_share is not None,
             ),
-            "reason_codes": [STALE_VALUATION] if stale_valuation_count else [],
+            "reason_codes": sorted(
+                {
+                    *([STALE_VALUATION] if stale_valuation_count else []),
+                    *([FUTURE_DATED_VALUATION] if future_dated_selected_positions else []),
+                }
+            ),
         },
         "accounts": accounts_out,
         "instruments": instruments_out,

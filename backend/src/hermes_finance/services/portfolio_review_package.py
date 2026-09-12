@@ -23,8 +23,13 @@ from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSI
 from hermes_finance.domain.risk_allocation import RiskSupportStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.accounts import list_accounts
-from hermes_finance.services.ai_analysis_bundle import _slug as _bundle_slug
-from hermes_finance.services.ai_analysis_bundle import assemble_ai_analysis_bundle
+from hermes_finance.services.ai_analysis_bundle import (
+    FUTURE_DATED_VALUATION,
+    assemble_ai_analysis_bundle,
+)
+from hermes_finance.services.ai_analysis_bundle import (
+    _slug as _bundle_slug,
+)
 from hermes_finance.services.deterministic_insights import (
     DETERMINISTIC_INSIGHTS_CONTRACT_VERSION,
     DETERMINISTIC_INSIGHTS_RULESET_VERSION,
@@ -110,6 +115,9 @@ _WARNING_MESSAGES = {
     "quote_stale": (
         "At least one persisted valuation is outside the accepted quote freshness window."
     ),
+    FUTURE_DATED_VALUATION: (
+        "At least one valuation is dated after the selected reporting snapshot and is unavailable for this period."
+    ),
     "alfa_pro_observation_not_persisted": (
         "Alfa PRO observation time is not persisted, so freshness cannot be classified."
     ),
@@ -192,6 +200,7 @@ _MARKDOWN_REASON_LABELS = {
     "reporting_history_gap": "в истории есть пропущенные календарные месяцы",
     "personal_tax_unknown": "налоговый статус части ожидаемых доходов неизвестен",
     "quote_stale": "часть оценок старше принятого окна свежести",
+    FUTURE_DATED_VALUATION: "оценка датирована позже снимка отчётного периода",
 }
 
 
@@ -647,19 +656,6 @@ def _coverage(value: object) -> dict[str, object]:
     if status not in {"complete", "partial", "unavailable"}:
         status = "unavailable"
     return {"status": status, "reason_codes": _reason_codes(source.get("reason_codes"))}
-
-
-def _selected_month(months: list[object]) -> tuple[object, str]:
-    if not months:
-        raise LookupError("no reporting months available")
-    ordered = sorted(
-        months,
-        key=lambda item: (getattr(item, "year"), getattr(item, "month"), getattr(item, "id")),
-    )
-    closed = [item for item in ordered if getattr(item, "status") == "closed"]
-    if closed:
-        return max(closed, key=lambda item: (item.year, item.month, item.id)), "latest_closed"
-    return max(ordered, key=lambda item: (item.year, item.month, item.id)), "latest_available"
 
 
 def _export_ref_maps(session: Session) -> tuple[dict[int, str], dict[int, str]]:
@@ -1521,12 +1517,27 @@ def assemble_portfolio_review_package(
     base_scope = _mapping(base.get("coverage"), label="AI bundle coverage")
     current_portfolio = _mapping(base.get("current_portfolio"), label="AI bundle current portfolio")
     months = list_reporting_months(session)
-    current_month, selection_reason = _selected_month(months)
     history = [
         _dynamics_point(item)
         for item in _list(base.get("reporting_history"), label="AI bundle reporting history")
     ]
     current_period = _period(current_portfolio.get("reporting_period"))
+    selection_reason = current_portfolio.get("selection_reason")
+    if selection_reason not in {"latest_closed", "latest_available"}:
+        raise PortfolioReviewPackageValidationError("bundle selection reason is invalid")
+    current_month = next(
+        (
+            month
+            for month in months
+            if (int(month.year), int(month.month))
+            == (int(current_period["year"]), int(current_period["month"]))
+        ),
+        None,
+    )
+    if current_month is None:
+        raise PortfolioReviewPackageValidationError(
+            "selected current period has no reporting month"
+        )
     current_point = next(
         (item for item in history if item["period"] == current_period),
         None,
@@ -1555,6 +1566,13 @@ def assemble_portfolio_review_package(
     sections: dict[str, dict[str, object]] = {}
     section_reasons: dict[str, list[str]] = {}
     capital_reasons = ["total_net_worth_unavailable"]
+    current_capital_reasons = set()
+    for metric_name in ("liquid_assets_total", "liquid_capital_net"):
+        metric = current_point.get(metric_name)
+        if isinstance(metric, Mapping):
+            current_capital_reasons.update(_reason_codes(metric.get("reason_codes")))
+    if FUTURE_DATED_VALUATION in current_capital_reasons:
+        capital_reasons.append(FUTURE_DATED_VALUATION)
     sections["capital"] = _section(
         status="partial",
         reasons=capital_reasons,
@@ -1652,16 +1670,37 @@ def assemble_portfolio_review_package(
     ]
 
     if profile == "full":
-        try:
-            risk_result = risk_allocation_for_month(
-                session,
-                current_month.id,
-                top_n=top_n,
-                forecast_version=version,
-            )
-        except LookupError:
+        future_dated_valuation = FUTURE_DATED_VALUATION in _reason_codes(
+            current_portfolio.get("coverage", {}).get("reason_codes")
+            if isinstance(current_portfolio.get("coverage"), Mapping)
+            else []
+        )
+        if future_dated_valuation:
             risk_result = None
-        if risk_result is None:
+            allocation_reasons = [FUTURE_DATED_VALUATION]
+            sections["allocation"] = _section(
+                status="unavailable", reasons=allocation_reasons, data=None
+            )
+            field_states.append(
+                _field_state(
+                    "sections.allocation",
+                    "unavailable",
+                    allocation_reasons,
+                    "The selected period has future-dated position valuations; allocation is unavailable for this snapshot.",
+                )
+            )
+            section_reasons["allocation"] = allocation_reasons
+        else:
+            try:
+                risk_result = risk_allocation_for_month(
+                    session,
+                    current_month.id,
+                    top_n=top_n,
+                    forecast_version=version,
+                )
+            except LookupError:
+                risk_result = None
+        if not future_dated_valuation and risk_result is None:
             allocation_reasons = ["risk_allocation_unavailable"]
             sections["allocation"] = _section(
                 status="unavailable", reasons=allocation_reasons, data=None
@@ -1675,7 +1714,7 @@ def assemble_portfolio_review_package(
                 )
             )
             section_reasons["allocation"] = allocation_reasons
-        else:
+        elif not future_dated_valuation:
             sections["allocation"] = _section(
                 status="included",
                 reasons=[],

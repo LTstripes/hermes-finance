@@ -587,6 +587,81 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     ] == ("latest_closed")
 
 
+def test_latest_closed_selection_refreshes_after_close_in_same_process(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    seed = _seed_history(client)
+
+    before = _export(client).json()
+    assert before["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 4}
+    assert before["current_portfolio"]["selection_reason"] == "latest_closed"
+
+    next_month = _create_month(client, 2026, 6)
+    _close(client, next_month)
+
+    after = _export(client).json()
+    assert after["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 6}
+    assert after["current_portfolio"]["selection_reason"] == "latest_closed"
+    assert after["current_portfolio"]["reporting_status"] == "closed"
+    assert seed["latest_closed"] != next_month
+
+
+def test_future_dated_valuation_is_unavailable_in_period_aggregates(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    seed = _seed_history(client)
+    with database.session_factory() as session:
+        position = session.scalar(
+            select(PositionSnapshot).where(
+                PositionSnapshot.reporting_month_id == seed["draft"],
+            )
+        )
+        assert position is not None
+        position.price_date = date(2026, 6, 1)
+        session.commit()
+    _close(client, seed["draft"])
+
+    bundle_response = _export(client)
+    assert bundle_response.status_code == 200, bundle_response.text
+    bundle = bundle_response.json()
+    _validator().validate(bundle)
+
+    current = bundle["current_portfolio"]
+    assert current["reporting_period"] == {"year": 2026, "month": 5}
+    assert current["coverage"]["status"] == "partial"
+    assert "future_dated_valuation" in current["coverage"]["reason_codes"]
+    assert "future_dated_valuation" in current["valuation_freshness"]["reason_codes"]
+    position_data = current["positions"][0]
+    assert position_data["market_price_per_unit"]["value"] is None
+    assert position_data["market_value"]["value"] is None
+    assert position_data["unrealized_result"]["value"] is None
+    assert position_data["accrued_interest"]["value"] is None
+    assert position_data["cost_basis"]["value"]["amount"] == "900.00"
+    assert position_data["price_date"] == "2026-06-01"
+    assert bundle["reporting_history"][-1]["kpis"]["liquid_assets_total"]["value"] is None
+    assert bundle["reporting_history"][-1]["kpis"]["liquid_capital_net"]["value"] is None
+    assert bundle["coverage"]["domains"]["capital"]["status"] == "partial"
+    assert any(item["code"] == "future_dated_valuation" for item in bundle["warnings"])
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    _financial_review_validator().validate(review)
+    assert review["scope"]["selection_reason"] == "latest_closed"
+    assert "future_dated_valuation" in review["sections"]["current_capital"]["reason_codes"]
+    assert review["sections"]["current_portfolio"]["status"] == "partial"
+    assert "future_dated_valuation" in review["sections"]["current_portfolio"]["reason_codes"]
+    assert review["sections"]["allocation_and_concentration"]["status"] == "unavailable"
+    assert review["sections"]["allocation_and_concentration"]["reason_codes"] == [
+        "future_dated_valuation"
+    ]
+
+
 def test_issue_285_august_fixture_preserves_data_quality_semantics(
     app_context: tuple[TestClient, Database],
 ) -> None:
