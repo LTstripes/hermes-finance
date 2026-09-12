@@ -35,6 +35,7 @@ from hermes_finance.services import ai_analysis_bundle as bundle_service
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.schema.json"
 FINANCIAL_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "ai_financial_review.schema.json"
+PORTFOLIO_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "portfolio_review_package.schema.json"
 FORBIDDEN_KEYS = {
     "api_key",
     "api_token",
@@ -146,6 +147,11 @@ def _validator() -> Draft202012Validator:
 
 def _financial_review_validator() -> Draft202012Validator:
     schema = json.loads(FINANCIAL_REVIEW_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def _portfolio_review_validator() -> Draft202012Validator:
+    schema = json.loads(PORTFOLIO_REVIEW_SCHEMA_PATH.read_text(encoding="utf-8"))
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
@@ -596,6 +602,11 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     before = _export(client).json()
     assert before["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 4}
     assert before["current_portfolio"]["selection_reason"] == "latest_closed"
+    review_before = client.get(
+        "/api/export/ai-financial-review", params={"generated_at": GENERATED_AT}
+    )
+    assert review_before.status_code == 200, review_before.text
+    assert review_before.json()["scope"]["reporting_period"] == {"year": 2026, "month": 4}
 
     next_month = _create_month(client, 2026, 6)
     _close(client, next_month)
@@ -604,6 +615,11 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     assert after["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 6}
     assert after["current_portfolio"]["selection_reason"] == "latest_closed"
     assert after["current_portfolio"]["reporting_status"] == "closed"
+    review_after = client.get(
+        "/api/export/ai-financial-review", params={"generated_at": GENERATED_AT}
+    )
+    assert review_after.status_code == 200, review_after.text
+    assert review_after.json()["scope"]["reporting_period"] == {"year": 2026, "month": 6}
     assert seed["latest_closed"] != next_month
 
 
@@ -612,6 +628,17 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
 ) -> None:
     client, database = app_context
     seed = _seed_history(client)
+    _ok(
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Capital goal",
+                "goal_type": "capital",
+                "target_value": _money("2000000.00"),
+                "calculation_mode": "liquid_capital_net",
+            },
+        )
+    )
     with database.session_factory() as session:
         position = session.scalar(
             select(PositionSnapshot).where(
@@ -619,6 +646,7 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
             )
         )
         assert position is not None
+        position.account_id = seed["iis"]
         position.price_date = date(2026, 6, 1)
         session.commit()
     _close(client, seed["draft"])
@@ -644,6 +672,39 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert bundle["reporting_history"][-1]["kpis"]["liquid_capital_net"]["value"] is None
     assert bundle["coverage"]["domains"]["capital"]["status"] == "partial"
     assert any(item["code"] == "future_dated_valuation" for item in bundle["warnings"])
+    capital_goal = next(item for item in bundle["goals"] if item["name"] == "Capital goal")
+    assert capital_goal["target"]["value"]["amount"] == "2000000.00"
+    assert capital_goal["current_value"]["availability"] == "unavailable"
+    assert capital_goal["gap"]["availability"] == "unavailable"
+    assert capital_goal["progress"]["availability"] == "unavailable"
+    assert capital_goal["warning_codes"] == ["future_dated_valuation"]
+    insights = bundle["deterministic_insights"]["items"]
+    assert "portfolio_concentration" not in {item["code"] for item in insights}
+    assert "partial_asset_class_coverage" not in {item["code"] for item in insights}
+    mortgage_coverage = bundle["debts_and_real_estate"]["mortgage_coverage"]
+    assert mortgage_coverage["availability"] == "unavailable"
+    assert mortgage_coverage["reason_codes"] == ["future_dated_valuation"]
+    iis_account = bundle["iis_and_tax"]["iis_accounts"][0]
+    assert iis_account["portfolio_result_without_tax_benefit"]["availability"] == "unavailable"
+    assert (
+        iis_account["portfolio_result_with_received_tax_benefit"]["availability"] == "unavailable"
+    )
+    assert iis_account["tax_benefits"]["received"]["amount"] == "52000.00"
+    assert "future_dated_valuation" in bundle["iis_and_tax"]["iis_coverage"]["reason_codes"]
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    assert package["sections"]["allocation"]["status"] == "partial"
+    assert package["sections"]["allocation"]["reason_codes"] == ["future_dated_valuation"]
+    package_allocation = package["sections"]["allocation"]["data"]
+    assert package_allocation["top_positions"]["support"]["status"] == "unavailable"
+    assert package_allocation["payout_concentration"]["excluded_reason_codes"] == []
+    assert package["sections"]["deterministic_insights"]["status"] == "partial"
 
     review_response = client.get(
         "/api/export/ai-financial-review",
@@ -656,10 +717,21 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert "future_dated_valuation" in review["sections"]["current_capital"]["reason_codes"]
     assert review["sections"]["current_portfolio"]["status"] == "partial"
     assert "future_dated_valuation" in review["sections"]["current_portfolio"]["reason_codes"]
-    assert review["sections"]["allocation_and_concentration"]["status"] == "unavailable"
+    assert review["sections"]["allocation_and_concentration"]["status"] == "partial"
     assert review["sections"]["allocation_and_concentration"]["reason_codes"] == [
         "future_dated_valuation"
     ]
+    allocation_data = review["sections"]["allocation_and_concentration"]["data"]
+    assert allocation_data["allocation_by_asset_class"]["support"]["status"] == "unavailable"
+    assert allocation_data["allocation_by_account"]["support"]["status"] == "unavailable"
+    assert allocation_data["top_positions"]["support"]["status"] == "unavailable"
+    assert allocation_data["payout_concentration"]["support"]["status"] != "unavailable"
+    assert review["sections"]["goals"]["status"] == "partial"
+    assert "future_dated_valuation" in review["sections"]["goals"]["reason_codes"]
+    assert review["sections"]["debts_and_real_estate"]["status"] == "partial"
+    assert "future_dated_valuation" in review["sections"]["debts_and_real_estate"]["reason_codes"]
+    assert review["sections"]["iis_and_tax"]["status"] == "partial"
+    assert "future_dated_valuation" in review["sections"]["iis_and_tax"]["reason_codes"]
 
 
 def test_issue_285_august_fixture_preserves_data_quality_semantics(

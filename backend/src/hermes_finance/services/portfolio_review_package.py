@@ -1022,6 +1022,7 @@ def _risk_allocation_data(
     account_ref_by_id: Mapping[int, str],
     instrument_ref_by_id: Mapping[int, str],
     reporting_period: Mapping[str, int],
+    valuation_eligible: bool = True,
 ) -> dict[str, object]:
     # The source DTO carries numeric IDs while the package carries only the
     # export-local refs.  Name-based maps are used only as a display fallback;
@@ -1169,12 +1170,57 @@ def _risk_allocation_data(
             "is_approximate": metric.is_approximate,
         }
 
+    if not valuation_eligible:
+        unavailable_support = {
+            "status": "unavailable",
+            "reason_codes": [FUTURE_DATED_VALUATION],
+        }
+        unavailable_money = {"amount": "0.00", "currency": "RUB"}
+        unavailable_ratio = {
+            "value_pct": None,
+            "availability": "unavailable",
+            "precision": "unknown",
+            "source": "backend_derived",
+            "reason_codes": [FUTURE_DATED_VALUATION],
+        }
+
+        def unavailable_allocation_metric() -> dict[str, object]:
+            return {
+                "support": unavailable_support,
+                "denominator": unavailable_money,
+                "covered_amount": unavailable_money,
+                "unallocated_amount": unavailable_money,
+                "coverage_pct": unavailable_ratio,
+                "items": [],
+                "excluded_reason_codes": [FUTURE_DATED_VALUATION],
+            }
+
+        def unavailable_concentration_metric() -> dict[str, object]:
+            return {
+                "support": unavailable_support,
+                "denominator": unavailable_money,
+                "top_n": result.top_positions.top_n,
+                "top_amount": unavailable_money,
+                "top_share_pct": unavailable_ratio,
+                "items": [],
+                "excluded_reason_codes": [FUTURE_DATED_VALUATION],
+                "is_approximate": False,
+            }
+
+        allocation_by_asset_class = unavailable_allocation_metric()
+        allocation_by_account = unavailable_allocation_metric()
+        top_positions = unavailable_concentration_metric()
+    else:
+        allocation_by_asset_class = allocation_metric(result.allocation_by_asset_class)
+        allocation_by_account = allocation_metric(result.allocation_by_account)
+        top_positions = concentration_metric(result.top_positions)
+
     return {
         "reporting_period": dict(reporting_period),
         "as_of_date": result.as_of_date.isoformat(),
-        "allocation_by_asset_class": allocation_metric(result.allocation_by_asset_class),
-        "allocation_by_account": allocation_metric(result.allocation_by_account),
-        "top_positions": concentration_metric(result.top_positions),
+        "allocation_by_asset_class": allocation_by_asset_class,
+        "allocation_by_account": allocation_by_account,
+        "top_positions": top_positions,
         "payout_concentration": concentration_metric(result.payout_concentration),
         "redemption_concentration": concentration_metric(result.redemption_concentration),
     }
@@ -1500,6 +1546,7 @@ def assemble_portfolio_review_package(
     evaluated_on: date | None = None,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
     top_n: int = DEFAULT_TOP_N,
+    _source_bundle: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Compose the v1 package from existing backend-authoritative read models."""
     if profile not in {"concise", "full"}:
@@ -1508,10 +1555,14 @@ def assemble_portfolio_review_package(
     if not version:
         raise ValueError("forecast_version must not be empty")
 
-    base = assemble_ai_analysis_bundle(
-        session,
-        generated_at=generated_at,
-        forecast_version=version,
+    base = (
+        _source_bundle
+        if _source_bundle is not None
+        else assemble_ai_analysis_bundle(
+            session,
+            generated_at=generated_at,
+            forecast_version=version,
+        )
     )
     base_metadata = _mapping(base.get("metadata"), label="AI bundle metadata")
     base_scope = _mapping(base.get("coverage"), label="AI bundle coverage")
@@ -1546,6 +1597,12 @@ def assemble_portfolio_review_package(
         raise PortfolioReviewPackageValidationError(
             "selected current period is absent from history"
         )
+
+    future_dated_valuation = FUTURE_DATED_VALUATION in _reason_codes(
+        current_portfolio.get("coverage", {}).get("reason_codes")
+        if isinstance(current_portfolio.get("coverage"), Mapping)
+        else []
+    )
 
     generated_raw = base_metadata.get("generated_at")
     if not isinstance(generated_raw, str):
@@ -1670,38 +1727,20 @@ def assemble_portfolio_review_package(
     ]
 
     if profile == "full":
-        future_dated_valuation = FUTURE_DATED_VALUATION in _reason_codes(
-            current_portfolio.get("coverage", {}).get("reason_codes")
-            if isinstance(current_portfolio.get("coverage"), Mapping)
-            else []
-        )
-        if future_dated_valuation:
+        try:
+            risk_result = risk_allocation_for_month(
+                session,
+                current_month.id,
+                top_n=top_n,
+                forecast_version=version,
+                valuation_eligible=not future_dated_valuation,
+            )
+        except LookupError:
             risk_result = None
-            allocation_reasons = [FUTURE_DATED_VALUATION]
-            sections["allocation"] = _section(
-                status="unavailable", reasons=allocation_reasons, data=None
-            )
-            field_states.append(
-                _field_state(
-                    "sections.allocation",
-                    "unavailable",
-                    allocation_reasons,
-                    "The selected period has future-dated position valuations; allocation is unavailable for this snapshot.",
-                )
-            )
-            section_reasons["allocation"] = allocation_reasons
-        else:
-            try:
-                risk_result = risk_allocation_for_month(
-                    session,
-                    current_month.id,
-                    top_n=top_n,
-                    forecast_version=version,
-                )
-            except LookupError:
-                risk_result = None
-        if not future_dated_valuation and risk_result is None:
+        if risk_result is None:
             allocation_reasons = ["risk_allocation_unavailable"]
+            if future_dated_valuation:
+                allocation_reasons.insert(0, FUTURE_DATED_VALUATION)
             sections["allocation"] = _section(
                 status="unavailable", reasons=allocation_reasons, data=None
             )
@@ -1714,19 +1753,21 @@ def assemble_portfolio_review_package(
                 )
             )
             section_reasons["allocation"] = allocation_reasons
-        elif not future_dated_valuation:
+        else:
+            allocation_reasons = [FUTURE_DATED_VALUATION] if future_dated_valuation else []
             sections["allocation"] = _section(
-                status="included",
-                reasons=[],
+                status="partial" if allocation_reasons else "included",
+                reasons=allocation_reasons,
                 data=_risk_allocation_data(
                     risk_result,
                     position_data,
                     account_ref_by_id=account_ref_by_id,
                     instrument_ref_by_id=instrument_ref_by_id,
                     reporting_period=current_period,
+                    valuation_eligible=not future_dated_valuation,
                 ),
             )
-            section_reasons["allocation"] = []
+            section_reasons["allocation"] = allocation_reasons
 
         context_source = _mapping(base, label="AI bundle")
         context_data, context_reasons = _context_data(context_source)
@@ -1743,6 +1784,7 @@ def assemble_portfolio_review_package(
                 current_month.id,
                 evaluated_on=evaluation_day,
                 forecast_version=version,
+                valuation_eligible=not future_dated_valuation,
             )
         except LookupError:
             insights_result = None
@@ -1762,11 +1804,13 @@ def assemble_portfolio_review_package(
             section_reasons["deterministic_insights"] = insight_reasons
         else:
             sections["deterministic_insights"] = _section(
-                status="included",
-                reasons=[],
+                status="partial" if future_dated_valuation else "included",
+                reasons=[FUTURE_DATED_VALUATION] if future_dated_valuation else [],
                 data=_deterministic_data(insights_result),
             )
-            section_reasons["deterministic_insights"] = []
+            section_reasons["deterministic_insights"] = (
+                [FUTURE_DATED_VALUATION] if future_dated_valuation else []
+            )
     else:
         for name in FULL_ONLY_SECTIONS:
             sections[name] = _section(
