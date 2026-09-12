@@ -821,6 +821,62 @@ def test_workflow_keeps_quote_current_on_quantity_change_and_detects_remap(
     assert after_remap["evidence_summary"]["mapping_mismatch_count"] == 1
 
 
+def test_nonblocking_quote_warning_keeps_payout_action_and_close_available(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    target_date = date(2031, 5, 31)
+    month = create_reporting_month(session, year=2031, month=5, snapshot_date=target_date)
+    account = create_account(session, name="Synthetic broker", account_type=AccountType.BROKERAGE)
+    instrument = create_instrument(
+        session, name="Synthetic mapped share", instrument_type=InstrumentType.STOCK
+    )
+    snapshot = _t_invest_snapshot(
+        session,
+        month_id=month.id,
+        account_id=account.id,
+        instrument_id=instrument.id,
+        price_date=target_date,
+    )
+    session.add(
+        InstrumentMarketMapping(
+            instrument_id=instrument.id,
+            provider=T_INVEST_PROVIDER,
+            provider_instrument_id=STOCK_UID,
+            provider_venue_id=None,
+            excluded=False,
+        )
+    )
+    session.commit()
+    _seed_baseline_evidence(session, month, snapshot)
+    application = create_app(
+        database,
+        market_data_provider=_FailIfCalledProvider(),
+        payout_provider=_FailIfCalledProvider(),
+        broker_snapshot_provider=_FailIfCalledProvider(),
+    )
+    application.state.quote_preview_clock = lambda: target_date
+    application.state.freshness_generated_at = lambda: datetime(
+        2031, 5, 31, 12, 0, tzinfo=timezone.utc
+    )
+    client = TestClient(application)
+
+    body = client.get(f"/api/months/{month.id}/close-workflow").json()
+    quote_step = next(step for step in body["steps"] if step["id"] == "market_quotes")
+    payout_step = next(step for step in body["steps"] if step["id"] == "actual_payouts")
+
+    assert quote_step["state"] == "warning"
+    assert quote_step["affects_close"] is False
+    assert quote_step["completion_basis"] is None
+    assert "mapped_quote_not_applied" in quote_step["reason_codes"]
+    assert quote_step["primary_action"]["id"] == "open_quote_preview"
+    assert payout_step["state"] == "ready"
+    assert payout_step["primary_action"]["id"] == "choose_statement_file"
+    assert body["readiness"]["can_close"] is True
+    assert body["readiness"]["hard_blocker_count"] == 0
+    assert body["recommended_step_id"] == "market_quotes"
+
+
 def _seed_statement_evidence(session, month, account_id: int, instrument_id: int):
     flow = create_investment_cash_flow(
         session,

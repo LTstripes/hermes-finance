@@ -141,6 +141,51 @@ function providerWorkflow(): MonthCloseWorkflow {
   };
 }
 
+function nonBlockingWarningBeforeReadyWorkflow(): MonthCloseWorkflow {
+  const base = workflow(17);
+  const marketQuotesStep = {
+    ...base.steps[0],
+    id: "market_quotes" as const,
+    order: 3,
+    title: "Обновить рыночные цены",
+    state: "warning" as const,
+    gate: "owner_decision" as const,
+    affects_close: false,
+    why: "Проверка котировок доступна явным действием владельца.",
+    reason_codes: ["mapped_quote_not_applied"],
+    primary_action: {
+      id: "open_quote_preview" as const,
+      label: "Получить котировки",
+      target: "open_panel" as const,
+    },
+    evidence_summary: { available: true, reason_code: "mapped_quote_not_applied" },
+    stale: { is_stale: true, reason_codes: ["mapped_quote_not_applied"] },
+  };
+  const actualPayoutsStep = {
+    ...base.steps[0],
+    id: "actual_payouts" as const,
+    order: 4,
+    title: "Проверить фактические выплаты",
+    state: "ready" as const,
+    gate: "owner_decision" as const,
+    affects_close: false,
+    why: "Сохранённых активных выплат Alfa за выбранный месяц нет.",
+    reason_codes: ["statement_not_imported"],
+    primary_action: {
+      id: "choose_statement_file" as const,
+      label: "Выбрать PDF Alfa",
+      target: "open_panel" as const,
+    },
+    evidence_summary: { available: false, reason_code: "statement_not_imported" },
+  };
+  return {
+    ...base,
+    recommended_step_id: "market_quotes",
+    steps: [marketQuotesStep, actualPayoutsStep],
+    readiness: { can_close: true, hard_blocker_count: 0, warning_count: 0, reason_codes: [] },
+  };
+}
+
 function readyForCloseWorkflow(monthId: number): MonthCloseWorkflow {
   const base = workflow(monthId);
   return {
@@ -238,6 +283,36 @@ describe("MonthlyCloseWorkflowPage", () => {
     expect(screen.getAllByText("Только по запросу").length).toBeGreaterThan(0);
     expect(screen.getByText(/После перезапуска.*нужно запросить снова/)).toBeInTheDocument();
     expect(screen.getAllByText("Состояние рассчитано системой.").length).toBeGreaterThan(0);
+  });
+
+  it("lets the owner open a later ready action while retaining an earlier warning", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify(nonBlockingWarningBeforeReadyWorkflow()))),
+      ),
+    );
+    renderRoute("/months/17/close");
+
+    expect(
+      await screen.findByRole("heading", { name: "Обновить рыночные цены" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Нужно внимание")).toBeInTheDocument();
+
+    const actualPayoutsStep = screen.getByRole("link", {
+      name: "Проверить фактические выплаты",
+    });
+    expect(actualPayoutsStep).toHaveAttribute("href", "/months/17/close#actual_payouts");
+    fireEvent.click(actualPayoutsStep);
+
+    expect(
+      await screen.findByRole("heading", { name: "Проверить фактические выплаты" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Выбрать PDF Alfa" })).toHaveAttribute(
+      "href",
+      "/payouts?from=monthly-close&step=actual_payouts&monthId=17",
+    );
+    expect(screen.getByText("Нужно внимание")).toBeInTheDocument();
   });
 
   it("honours the final-review hash and exposes the close CTA", async () => {
