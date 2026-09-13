@@ -259,7 +259,7 @@ def test_g08_mvp_control_scenario(client: TestClient) -> None:
     assert exported_json.status_code == 200, exported_json.text
     assert exported_json.headers["content-type"] == "application/json; charset=utf-8"
     json_body = exported_json.json()
-    assert json_body["schema_version"] == "1.0"
+    assert json_body["schema_version"] == "1.1"
     assert json_body["raw"]["reporting_month"]["id"] == target_id
 
     backup = client.post("/api/backups")

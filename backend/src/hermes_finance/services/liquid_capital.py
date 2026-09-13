@@ -15,6 +15,7 @@ Reads are allowed on closed months (B19-R2 guard is for writes only).
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -29,6 +30,7 @@ from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import Account, CashBalance, Debt, DepositSnapshot, PositionSnapshot
 from hermes_finance.services.cash import total_cash
 from hermes_finance.services.debts import total_included_debts
+from hermes_finance.services.linked_pairs import linked_pairs_for_month, linked_pairs_for_months
 
 
 def liquid_capital_for_month(session: Session, reporting_month_id: int) -> LiquidCapitalResult:
@@ -81,7 +83,7 @@ def liquid_capital_for_month(session: Session, reporting_month_id: int) -> Liqui
         for account_id, total in securities_by_account
     )
 
-    return calculate_liquid_capital(
+    result = calculate_liquid_capital(
         LiquidCapitalInput(
             cash=cash,
             deposits=deposits,
@@ -92,6 +94,7 @@ def liquid_capital_for_month(session: Session, reporting_month_id: int) -> Liqui
             securities_accounts=securities_accounts,
         )
     )
+    return replace(result, linked_pairs=linked_pairs_for_month(session, reporting_month_id))
 
 
 def liquid_capital_for_months(
@@ -155,11 +158,12 @@ def liquid_capital_for_months(
             AccountAmount(account_id=account_id, amount=RubleAmount(int(total or 0)))
         )
 
+    linked_pairs_by_month = linked_pairs_for_months(session, month_ids)
     results: dict[int, LiquidCapitalResult] = {}
     for month_id in month_ids:
         deposits = deposits_by_month[month_id]
         securities = securities_by_month[month_id]
-        results[month_id] = calculate_liquid_capital(
+        result = calculate_liquid_capital(
             LiquidCapitalInput(
                 cash=RubleAmount(cash_by_month.get(month_id, 0)),
                 deposits=RubleAmount(sum(item.amount.kopecks for item in deposits)),
@@ -170,4 +174,5 @@ def liquid_capital_for_months(
                 securities_accounts=tuple(securities),
             )
         )
+        results[month_id] = replace(result, linked_pairs=linked_pairs_by_month.get(month_id, ()))
     return results

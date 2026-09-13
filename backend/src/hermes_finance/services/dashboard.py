@@ -56,6 +56,9 @@ class HistoricalPoint:
     reporting_month_id: int
     liquid_capital_net: RubleAmount
     passive_income_actual: RubleAmount
+    linked_pair_assets: RubleAmount
+    linked_pair_debts: RubleAmount
+    linked_pair_net_contribution: RubleAmount
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +148,9 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
                 reporting_month_id=month.id,
                 liquid_capital_net=liquid.liquid_capital_net,
                 passive_income_actual=passive.total_net_passive_income,
+                linked_pair_assets=liquid.linked_pair_assets,
+                linked_pair_debts=liquid.linked_pair_debts,
+                linked_pair_net_contribution=liquid.linked_pair_net_contribution,
             )
         )
     return tuple(points)

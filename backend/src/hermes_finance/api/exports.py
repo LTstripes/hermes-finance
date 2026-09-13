@@ -146,6 +146,7 @@ def _report_for_month(
             debt_type=item.debt_type,
             balance=RubleAmount(item.current_balance_kopecks),
             included_in_liquid_capital=item.include_in_liquid_capital,
+            linked_account_id=item.linked_account_id,
         )
         for item in list_debts(session)
         if item.reporting_month_id == month_id

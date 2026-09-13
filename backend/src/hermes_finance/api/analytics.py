@@ -33,6 +33,9 @@ class CapitalCompositionPointOut(BaseModel):
     liquid_assets_total: MoneyValue
     included_debts: MoneyValue
     liquid_capital_net: MoneyValue
+    linked_pair_assets: MoneyValue
+    linked_pair_debts: MoneyValue
+    linked_pair_net_contribution: MoneyValue
 
 
 class CapitalCompositionHistoryOut(BaseModel):
@@ -69,6 +72,9 @@ def get_capital_composition(
                 liquid_assets_total=_money(point.liquid_assets_total),
                 included_debts=_money(point.included_debts),
                 liquid_capital_net=_money(point.liquid_capital_net),
+                linked_pair_assets=_money(point.linked_pair_assets),
+                linked_pair_debts=_money(point.linked_pair_debts),
+                linked_pair_net_contribution=_money(point.linked_pair_net_contribution),
             )
             for point in history.points
         ],

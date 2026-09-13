@@ -34,6 +34,9 @@ class CapitalCompositionPoint:
     liquid_assets_total: RubleAmount
     included_debts: RubleAmount
     liquid_capital_net: RubleAmount
+    linked_pair_assets: RubleAmount
+    linked_pair_debts: RubleAmount
+    linked_pair_net_contribution: RubleAmount
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,9 @@ def capital_composition_history(session: Session) -> CapitalCompositionHistory:
                 liquid_assets_total=liquid.total_assets,
                 included_debts=liquid.total_debts_included,
                 liquid_capital_net=liquid.liquid_capital_net,
+                linked_pair_assets=liquid.linked_pair_assets,
+                linked_pair_debts=liquid.linked_pair_debts,
+                linked_pair_net_contribution=liquid.linked_pair_net_contribution,
             )
         )
 
