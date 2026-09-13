@@ -58,7 +58,10 @@ def get_ai_financial_review(
         return Response(
             content=canonical_json(report),
             media_type="application/json; charset=utf-8",
-            headers={"X-Content-Type-Options": "nosniff"},
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
     finally:
         session.rollback()
@@ -83,6 +86,7 @@ def download_ai_financial_review_json(
             content=canonical_json(report),
             media_type="application/json; charset=utf-8",
             headers={
+                "Cache-Control": "no-store",
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "X-Content-Type-Options": "nosniff",
             },

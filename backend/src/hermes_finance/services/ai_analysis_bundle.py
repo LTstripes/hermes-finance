@@ -68,6 +68,7 @@ from hermes_finance.services.properties import (
     total_property_value,
 )
 from hermes_finance.services.reporting_months import list_reporting_months
+from hermes_finance.services.risk_allocation import FUTURE_DATED_VALUATION
 from hermes_finance.services.salary import salary_tax_snapshot_for_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
@@ -443,6 +444,9 @@ def assemble_ai_analysis_bundle(
     generated_at: datetime | None = None,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
 ) -> dict[str, object]:
+    # Export reads must reflect committed lifecycle changes even when a caller
+    # reuses a Session whose identity map contains an earlier month state.
+    session.expire_all()
     months = list_reporting_months(session)
     if not months:
         raise NoReportingHistoryError("no reporting months available")
@@ -458,6 +462,7 @@ def assemble_ai_analysis_bundle(
     account_rows = sorted(
         list_accounts(session), key=lambda item: (item.name, item.account_type, item.id)
     )
+    capital_included_account_ids = {row.id for row in account_rows if row.include_in_capital}
     instrument_rows = sorted(
         list_instruments(session), key=lambda item: (item.name, item.instrument_type, item.id)
     )
@@ -491,6 +496,19 @@ def assemble_ai_analysis_bundle(
         debts_by_month.setdefault(row.reporting_month_id, []).append(row)
     for row in all_property_rows:
         properties_by_month.setdefault(row.reporting_month_id, []).append(row)
+
+    future_valuations_by_month = {
+        month.id: [
+            row
+            for row in positions_by_month.get(month.id, [])
+            if row.price_date > month.snapshot_date
+        ]
+        for month in ordered_months
+    }
+    future_included_valuations_by_month = {
+        month_id: [row for row in rows if row.account_id in capital_included_account_ids]
+        for month_id, rows in future_valuations_by_month.items()
+    }
 
     start_tuple = parse_passive_income_history_start_month(
         settings.passive_income_history_start_month if settings is not None else None
@@ -534,6 +552,7 @@ def assemble_ai_analysis_bundle(
         coverage_reasons: list[str] = []
         draft_codes: list[str] = []
         month_positions = positions_by_month.get(month.id, [])
+        future_dated_positions = future_included_valuations_by_month.get(month.id, [])
         month_deposits = deposits_by_month.get(month.id, [])
         month_cash = cash_by_month.get(month.id, [])
         month_debts = debts_by_month.get(month.id, [])
@@ -547,6 +566,16 @@ def assemble_ai_analysis_bundle(
                 "warning",
                 "reporting_history",
                 "No persisted portfolio/debt snapshot exists for this reporting month; capital is unavailable, not zero.",
+            )
+        if future_dated_positions:
+            coverage_reasons.append(FUTURE_DATED_VALUATION)
+            point_warnings.append(FUTURE_DATED_VALUATION)
+            capital_quality_codes.add(FUTURE_DATED_VALUATION)
+            add_warning(
+                FUTURE_DATED_VALUATION,
+                "warning",
+                "reporting_history",
+                "A position valuation is dated after the reporting snapshot; affected capital values are unavailable for this period.",
             )
 
         salary_snapshot = salary_tax_snapshot_for_month(session, month.id)
@@ -608,6 +637,8 @@ def assemble_ai_analysis_bundle(
         capital_codes = draft_codes.copy()
         if not has_capital_evidence:
             capital_codes.append(PORTFOLIO_SNAPSHOT_MISSING)
+        if future_dated_positions:
+            capital_codes.append(FUTURE_DATED_VALUATION)
         passive_codes = draft_codes.copy()
         if passive_history_before_start:
             passive_codes.append(PASSIVE_HISTORY_BEFORE_START)
@@ -642,7 +673,9 @@ def assemble_ai_analysis_bundle(
                 "provenance_sources": sorted(provenance_sources),
                 "kpis": {
                     "liquid_assets_total": _metric(
-                        capital.total_assets.kopecks if has_capital_evidence else None,
+                        capital.total_assets.kopecks
+                        if has_capital_evidence and not future_dated_positions
+                        else None,
                         source="backend_derived",
                         reason_codes=capital_codes,
                     ),
@@ -652,7 +685,9 @@ def assemble_ai_analysis_bundle(
                         reason_codes=capital_codes,
                     ),
                     "liquid_capital_net": _metric(
-                        capital.liquid_capital_net.kopecks if has_capital_evidence else None,
+                        capital.liquid_capital_net.kopecks
+                        if has_capital_evidence and not future_dated_positions
+                        else None,
                         source="backend_derived",
                         reason_codes=capital_codes,
                     ),
@@ -845,6 +880,17 @@ def assemble_ai_analysis_bundle(
     selected_positions = [
         row for row in list_position_snapshots(session) if row.reporting_month_id == current.id
     ]
+    future_dated_selected_positions = {
+        row.id for row in future_valuations_by_month.get(current.id, [])
+    }
+    future_dated_selected_included_positions = {
+        row.id for row in future_included_valuations_by_month.get(current.id, [])
+    }
+    future_dated_iis_account_ids = {
+        row.account_id
+        for row in future_valuations_by_month.get(current.id, [])
+        if row.account_id is not None
+    }
     selected_deposits = [
         row for row in list_deposit_snapshots(session) if row.reporting_month_id == current.id
     ]
@@ -902,6 +948,13 @@ def assemble_ai_analysis_bundle(
             "current_portfolio",
             "At least one position uses a price dated before the selected reporting snapshot; persisted valuation remains authoritative.",
         )
+    if future_dated_selected_positions:
+        add_warning(
+            FUTURE_DATED_VALUATION,
+            "warning",
+            "current_portfolio",
+            "At least one position uses a price dated after the selected reporting snapshot; affected valuation is unavailable for this period.",
+        )
 
     accounts_out = [
         {
@@ -956,21 +1009,34 @@ def assemble_ai_analysis_bundle(
         quantity = format(row.quantity, "f").rstrip("0").rstrip(".")
         if quantity in {"", "-"}:
             quantity = "0"
+        valuation_reason_codes = (
+            [FUTURE_DATED_VALUATION] if row.id in future_dated_selected_positions else []
+        )
         positions_out.append(
             {
                 "account_ref": account_refs[row.account_id],
                 "instrument_ref": instrument_refs[row.instrument_id],
                 "quantity": quantity,
                 "market_price_per_unit": _metric(
-                    row.market_price_per_unit_kopecks, source="persisted_snapshot"
+                    None if valuation_reason_codes else row.market_price_per_unit_kopecks,
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
                 ),
-                "market_value": _metric(row.market_value_kopecks, source="persisted_snapshot"),
+                "market_value": _metric(
+                    None if valuation_reason_codes else row.market_value_kopecks,
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
+                ),
                 "cost_basis": _metric(row.cost_basis_kopecks, source="persisted_snapshot"),
                 "unrealized_result": _metric(
-                    row.unrealized_result_kopecks, source="persisted_snapshot"
+                    None if valuation_reason_codes else row.unrealized_result_kopecks,
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
                 ),
                 "accrued_interest": _metric(
-                    int(row.accrued_interest_kopecks or 0), source="persisted_snapshot"
+                    None if valuation_reason_codes else int(row.accrued_interest_kopecks or 0),
+                    source="persisted_snapshot",
+                    reason_codes=valuation_reason_codes,
                 ),
                 "price_date": row.price_date.isoformat(),
                 "valuation_provenance": valuation,
@@ -1019,6 +1085,8 @@ def assemble_ai_analysis_bundle(
     cash_out.sort(key=lambda item: (item["account_ref"], item["name"]))
 
     portfolio_coverage_reasons = [ACTIVE_ACCOUNT_SNAPSHOT_MISSING] if missing_snapshot_refs else []
+    if future_dated_selected_positions:
+        portfolio_coverage_reasons.append(FUTURE_DATED_VALUATION)
     if selection_reason == "latest_available" and current.status == "draft":
         portfolio_coverage_reasons.append("draft_value")
     portfolio_coverage = _coverage(
@@ -1042,7 +1110,12 @@ def assemble_ai_analysis_bundle(
                 reason_codes=[STALE_VALUATION] if stale_valuation_count else (),
                 available=stale_share is not None,
             ),
-            "reason_codes": [STALE_VALUATION] if stale_valuation_count else [],
+            "reason_codes": sorted(
+                {
+                    *([STALE_VALUATION] if stale_valuation_count else []),
+                    *([FUTURE_DATED_VALUATION] if future_dated_selected_positions else []),
+                }
+            ),
         },
         "accounts": accounts_out,
         "instruments": instruments_out,
@@ -1058,7 +1131,12 @@ def assemble_ai_analysis_bundle(
         codes = []
         if average.count_months < 12 and item.goal.goal_type == "passive_income":
             codes.append("incomplete_12_month_window")
-        if forecast_item.status == "not_projectable":
+        valuation_ineligible = item.goal.goal_type == "capital" and bool(
+            future_dated_selected_included_positions
+        )
+        if valuation_ineligible:
+            codes.append(FUTURE_DATED_VALUATION)
+        if forecast_item.status == "not_projectable" and not valuation_ineligible:
             codes.append("no_trajectory_model")
         source_path = (
             "passive_income.rolling_actual_average.value"
@@ -1079,27 +1157,40 @@ def assemble_ai_analysis_bundle(
                 "is_primary": item.goal.is_main,
                 "target": _metric(item.goal.target_value_kopecks, source="persisted_configuration"),
                 "current_value": _metric(
-                    forecast_item.current_value.kopecks if forecast_item.current_value else None,
+                    forecast_item.current_value.kopecks
+                    if forecast_item.current_value and not valuation_ineligible
+                    else None,
                     source="backend_derived",
                     reason_codes=codes,
-                    available=forecast_item.current_value is not None,
+                    available=forecast_item.current_value is not None and not valuation_ineligible,
                 ),
                 "gap": _metric(
                     forecast_item.remaining_amount.kopecks
-                    if forecast_item.remaining_amount is not None
+                    if forecast_item.remaining_amount is not None and not valuation_ineligible
                     else None,
                     source="backend_derived",
-                    available=forecast_item.remaining_amount is not None,
+                    reason_codes=[FUTURE_DATED_VALUATION] if valuation_ineligible else (),
+                    available=forecast_item.remaining_amount is not None
+                    and not valuation_ineligible,
                 ),
                 "progress": _ratio(
-                    forecast_item.progress_pct,
-                    reason_codes=codes if forecast_item.progress_pct is None else (),
-                    available=forecast_item.progress_pct is not None,
+                    None if valuation_ineligible else forecast_item.progress_pct,
+                    reason_codes=(
+                        [FUTURE_DATED_VALUATION]
+                        if valuation_ineligible
+                        else (codes if forecast_item.progress_pct is None else ())
+                    ),
+                    available=forecast_item.progress_pct is not None and not valuation_ineligible,
                 ),
-                "projection_status": status_map.get(forecast_item.status, "not_projectable"),
+                "projection_status": (
+                    "not_projectable"
+                    if valuation_ineligible
+                    else status_map.get(forecast_item.status, "not_projectable")
+                ),
                 "estimated_achievement_date": (
                     forecast_item.estimated_achievement_date.isoformat()
                     if forecast_item.estimated_achievement_date is not None
+                    and not valuation_ineligible
                     else None
                 ),
                 "method_version": forecast_item.method_version or GOAL_ACHIEVEMENT_METHOD_VERSION,
@@ -1114,11 +1205,17 @@ def assemble_ai_analysis_bundle(
     mortgage = total_mortgage_balance(session, current.id)
     property_value = total_property_value(session, current.id)
     equity = property_equity(session, current.id)
-    coverage_pct, _gap = mortgage_coverage(
-        session,
-        current.id,
-        capital_for := liquid_capital_for_month(session, current.id).liquid_capital_net,
+    mortgage_valuation_ineligible = bool(
+        future_dated_selected_included_positions and mortgage.kopecks
     )
+    if mortgage_valuation_ineligible:
+        coverage_pct = None
+    else:
+        coverage_pct, _gap = mortgage_coverage(
+            session,
+            current.id,
+            capital_for := liquid_capital_for_month(session, current.id).liquid_capital_net,
+        )
     payment_total = int(
         session.scalar(
             select(func.coalesce(func.sum(PropertySnapshot.monthly_payment_kopecks), 0)).where(
@@ -1175,7 +1272,11 @@ def assemble_ai_analysis_bundle(
         "mortgage_coverage": _ratio(
             coverage_pct,
             available=coverage_pct is not None,
-            reason_codes=[] if coverage_pct is not None else ["no_mortgage"],
+            reason_codes=(
+                [FUTURE_DATED_VALUATION]
+                if mortgage_valuation_ineligible
+                else ([] if coverage_pct is not None else ["no_mortgage"])
+            ),
         ),
         "liquidity_rule": LIQUIDITY_RULE,
         "property_data_quality": {
@@ -1227,11 +1328,24 @@ def assemble_ai_analysis_bundle(
                 "iis_and_tax",
                 "An IIS profile exists but has no contribution or tax-benefit records; coverage is partial.",
             )
+        if any(
+            profile.account_id in future_dated_iis_account_ids
+            for profile in profiles
+            if profile.account_id in {row.id for row in active_iis_accounts}
+        ):
+            iis_coverage_reasons.append(FUTURE_DATED_VALUATION)
+            add_warning(
+                FUTURE_DATED_VALUATION,
+                "warning",
+                "iis_and_tax",
+                "IIS portfolio results are unavailable because a valuation is dated after the reporting period.",
+            )
         iis_coverage = _coverage(
             "partial" if iis_coverage_reasons else "complete", *iis_coverage_reasons
         )
     for profile in profiles:
         result = iis_result(session, account_id=profile.account_id, reporting_month_id=current.id)
+        iis_result_ineligible = profile.account_id in future_dated_iis_account_ids
         contributions = session.scalars(
             select(IisContribution)
             .where(IisContribution.account_id == profile.account_id)
@@ -1260,10 +1374,20 @@ def assemble_ai_analysis_bundle(
                 ],
                 "tax_benefits": {key: _money(value) for key, value in benefits.items()},
                 "portfolio_result_without_tax_benefit": _metric(
-                    result.portfolio_result_without_tax_benefit.kopecks, source="backend_derived"
+                    None
+                    if iis_result_ineligible
+                    else result.portfolio_result_without_tax_benefit.kopecks,
+                    source="backend_derived",
+                    reason_codes=[FUTURE_DATED_VALUATION] if iis_result_ineligible else (),
+                    available=not iis_result_ineligible,
                 ),
                 "portfolio_result_with_received_tax_benefit": _metric(
-                    result.portfolio_result_with_tax_benefit.kopecks, source="backend_derived"
+                    None
+                    if iis_result_ineligible
+                    else result.portfolio_result_with_tax_benefit.kopecks,
+                    source="backend_derived",
+                    reason_codes=[FUTURE_DATED_VALUATION] if iis_result_ineligible else (),
+                    available=not iis_result_ineligible,
                 ),
                 "result_rule": IIS_RESULT_RULE,
             }
@@ -1438,6 +1562,7 @@ def assemble_ai_analysis_bundle(
             current.id,
             evaluated_on=generated.date(),
             forecast_version=forecast_version,
+            valuation_eligible=not bool(future_dated_selected_included_positions),
         )
     except LookupError:
         insights_result = None

@@ -350,29 +350,51 @@ def _concentration_insight(
     )
 
 
-def _risk_insights(risk_result) -> list[DeterministicInsight]:
+def _risk_insights(
+    risk_result,
+    *,
+    valuation_eligible: bool = True,
+) -> list[DeterministicInsight]:
     as_of = risk_result.as_of_date
     insights: list[DeterministicInsight] = []
-    for metric, code, scope, message_template in (
+    concentration_metrics = (
         (
-            risk_result.payout_concentration,
-            "upcoming_payout_concentration",
-            "payout_concentration",
-            "Более половины ожидаемых выплат приходится на {label} ({share}%). Это описательный сигнал концентрации{qualifier}, не рекомендация.",
-        ),
-        (
-            risk_result.redemption_concentration,
-            "redemption_concentration",
-            "redemption_concentration",
-            "Более половины ожидаемого погашения приходится на {label} ({share}%). Это описательный сигнал концентрации{qualifier}, не рекомендация.",
-        ),
-        (
-            risk_result.top_positions,
-            "portfolio_concentration",
-            "top_positions",
-            "Одна позиция составляет {share}% сохранённой ликвидной стоимости портфеля: {label}. Это описательный сигнал концентрации{qualifier}, не рекомендация.",
-        ),
-    ):
+            (
+                risk_result.payout_concentration,
+                "upcoming_payout_concentration",
+                "payout_concentration",
+                "Более половины ожидаемых выплат приходится на {label} ({share}%). Это описательный сигнал концентрации{qualifier}, не рекомендация.",
+            ),
+            (
+                risk_result.redemption_concentration,
+                "redemption_concentration",
+                "redemption_concentration",
+                "Более половины ожидаемого погашения приходится на {label} ({share}%). Это описательный сигнал концентрации{qualifier}, не рекомендация.",
+            ),
+            (
+                risk_result.top_positions,
+                "portfolio_concentration",
+                "top_positions",
+                "Одна позиция составляет {share}% сохранённой ликвидной стоимости портфеля: {label}. Это описательный сигнал концентрации{qualifier}, не рекомендация.",
+            ),
+        )
+        if valuation_eligible
+        else (
+            (
+                risk_result.payout_concentration,
+                "upcoming_payout_concentration",
+                "payout_concentration",
+                "Более половины ожидаемых выплат приходится на {label} ({share}%). Это описательный сигнал концентрации{qualifier}, не рекомендация.",
+            ),
+            (
+                risk_result.redemption_concentration,
+                "redemption_concentration",
+                "redemption_concentration",
+                "Более половины ожидаемого погашения приходится на {label} ({share}%). Это описательный сигнал концентрации{qualifier}, не рекомендация.",
+            ),
+        )
+    )
+    for metric, code, scope, message_template in concentration_metrics:
         insight = _concentration_insight(
             metric,
             code=code,
@@ -384,7 +406,11 @@ def _risk_insights(risk_result) -> list[DeterministicInsight]:
             insights.append(insight)
 
     allocation = risk_result.allocation_by_asset_class
-    if allocation.denominator.kopecks > 0 and allocation.unallocated_amount.kopecks > 0:
+    if (
+        valuation_eligible
+        and allocation.denominator.kopecks > 0
+        and allocation.unallocated_amount.kopecks > 0
+    ):
         degraded = allocation.support.status is not RiskSupportStatus.SUPPORTED
         qualifier = " по доступным данным" if degraded else ""
         insights.append(
@@ -466,6 +492,7 @@ def build_deterministic_insights(
     *,
     evaluated_on: date,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
+    valuation_eligible: bool = True,
 ) -> DeterministicInsightsResult:
     """Build the v1 insight list for one reporting month without writing state."""
     version = forecast_version.strip()
@@ -504,6 +531,7 @@ def build_deterministic_insights(
         month.id,
         top_n=1,
         forecast_version=version,
+        valuation_eligible=valuation_eligible,
     )
 
     insights: list[DeterministicInsight] = []
@@ -511,7 +539,7 @@ def build_deterministic_insights(
     insights.extend(_important_coverage_insights(month=month, readiness=readiness))
     insights.extend(_freshness_insights(freshness))
     insights.extend(_payout_reconciliation_insights(month=month, readiness=readiness))
-    insights.extend(_risk_insights(risk))
+    insights.extend(_risk_insights(risk, valuation_eligible=valuation_eligible))
     insights.extend(_tax_insights(session, month=month))
     return DeterministicInsightsResult(
         contract_version=DETERMINISTIC_INSIGHTS_CONTRACT_VERSION,

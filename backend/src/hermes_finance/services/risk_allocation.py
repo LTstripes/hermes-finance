@@ -48,6 +48,8 @@ from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
+FUTURE_DATED_VALUATION = "future_dated_valuation"
+
 BASE_CURRENCY = "RUB"
 DEFAULT_TOP_N = 5
 MAX_TOP_N = 100
@@ -281,6 +283,7 @@ def risk_allocation_for_month(
     *,
     top_n: int = DEFAULT_TOP_N,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
+    valuation_eligible: bool = True,
 ) -> RiskAllocationResult:
     """Return deterministic allocation/concentration metrics for one month."""
     top_n = _validate_top_n(top_n)
@@ -404,6 +407,16 @@ def risk_allocation_for_month(
                     snapshot.id,
                     RiskSupportStatus.UNAVAILABLE,
                     "unsupported_position_valuation",
+                )
+            )
+            continue
+        if not valuation_eligible and snapshot.price_date > month.snapshot_date:
+            valuation_issues.append(
+                _issue(
+                    "position_snapshot",
+                    snapshot.id,
+                    RiskSupportStatus.UNAVAILABLE,
+                    FUTURE_DATED_VALUATION,
                 )
             )
             continue

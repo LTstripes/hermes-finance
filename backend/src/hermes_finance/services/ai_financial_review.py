@@ -778,6 +778,10 @@ def _debts_data(
         reasons.append("annual_rate_unknown")
     if mortgage_unknown_rate:
         reasons.append("mortgage_rate_unknown")
+    mortgage_coverage = context_debts.get("mortgage_coverage")
+    if isinstance(mortgage_coverage, Mapping):
+        if mortgage_coverage.get("availability") != "available":
+            reasons.extend(_reason_codes(mortgage_coverage.get("reason_codes")))
     reasons = sorted(reasons)
 
     bundle_property_quality = bundle_debts.get("property_data_quality")
@@ -1162,6 +1166,11 @@ def assemble_ai_financial_review(
     if not version:
         raise ValueError("forecast_version must not be empty")
 
+    bundle = assemble_ai_analysis_bundle(
+        session,
+        generated_at=generated_at,
+        forecast_version=version,
+    )
     package = assemble_portfolio_review_package(
         session,
         profile="full",
@@ -1169,11 +1178,7 @@ def assemble_ai_financial_review(
         evaluated_on=evaluated_on,
         forecast_version=version,
         top_n=top_n,
-    )
-    bundle = assemble_ai_analysis_bundle(
-        session,
-        generated_at=generated_at,
-        forecast_version=version,
+        _source_bundle=bundle,
     )
 
     package_metadata = _mapping(package.get("metadata"), label="package metadata")
@@ -1255,6 +1260,22 @@ def assemble_ai_financial_review(
     passive_data = _passive_data(package_passive, bundle_points, reporting_period)
     future_data = _future_cash_flows_data(package_future)
     goals_data = _goals_data(package_context, goal_deadlines_by_ref)
+    goals_reasons = {
+        code
+        for item in goals_data["items"]
+        if isinstance(item, Mapping)
+        for field in ("current_value", "gap", "progress")
+        for code in _reason_codes(
+            _mapping(item.get(field), label=f"goal {field}").get("reason_codes")
+        )
+    }
+    goals_reasons.update(
+        code
+        for item in goals_data["items"]
+        if isinstance(item, Mapping)
+        for code in _reason_codes(item.get("warning_codes"))
+    )
+    goals_reasons = sorted(goals_reasons)
 
     allocation_data = package_allocation.get("data")
     if package_allocation.get("status") == "unavailable":
@@ -1341,7 +1362,11 @@ def assemble_ai_financial_review(
             reasons=package_future.get("reason_codes"),
             data=future_data,
         ),
-        "goals": _section(status="included", reasons=[], data=goals_data),
+        "goals": _section(
+            status="partial" if goals_reasons else "included",
+            reasons=goals_reasons,
+            data=goals_data,
+        ),
         "debts_and_real_estate": _section(
             status="partial" if debts_reasons else "included",
             reasons=debts_reasons,
