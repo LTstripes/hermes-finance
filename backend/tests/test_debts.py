@@ -236,6 +236,45 @@ def test_debt_rate_rejects_negative(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_failed_multi_field_debt_update_does_not_mutate_reused_session(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        debt = create_debt(
+            session,
+            reporting_month_id=build_environment(session)[0],
+            debt_type=DebtType.OTHER,
+            name="Synthetic Original Debt",
+            current_balance="1000.00",
+            annual_rate="12.50",
+        )
+
+        with pytest.raises(ValueError, match="API percentage rate"):
+            update_debt(
+                session,
+                debt.id,
+                name="Should Not Persist",
+                annual_rate="not-a-rate",
+            )
+
+        assert debt.name == "Synthetic Original Debt"
+        assert debt.annual_rate_basis_points == 1250
+        assert not session.is_modified(debt, include_collections=False)
+        assert debt not in session.dirty
+
+        # A reused session must not flush any partial update from the rejected call.
+        assert next(row for row in list_debts(session) if row.id == debt.id).name == (
+            "Synthetic Original Debt"
+        )
+        session.commit()
+        session.expire(debt)
+        persisted = get_debt(session, debt.id)
+        assert persisted.name == "Synthetic Original Debt"
+        assert persisted.annual_rate_basis_points == 1250
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_link_change_unlink_is_month_local_and_account_side_is_derived(
     tmp_path: Path,
 ) -> None:
@@ -246,6 +285,11 @@ def test_link_change_unlink_is_month_local_and_account_side_is_derived(
         deposit = create_account(
             session,
             name="Synthetic Deposit",
+            account_type=AccountType.DEPOSIT,
+        )
+        excluded_deposit = create_account(
+            session,
+            name="Synthetic Excluded Deposit",
             account_type=AccountType.DEPOSIT,
             include_in_capital=False,
         )
@@ -260,9 +304,13 @@ def test_link_change_unlink_is_month_local_and_account_side_is_derived(
         linked = link_debt_to_account(session, debt.id, cash.id)
         assert linked.linked_account_id == cash.id
         assert cash.include_in_capital is True
-        assert deposit.include_in_capital is False
+        assert deposit.include_in_capital is True
         assert [row.id for row in list_linked_debts(session, cash.id)] == [debt.id]
         assert list_linked_debts(session, cash.id, reporting_month_id=second_id) == []
+
+        with pytest.raises(ValueError, match="included in capital"):
+            link_debt_to_account(session, debt.id, excluded_deposit.id)
+        assert get_debt(session, debt.id).linked_account_id == cash.id
 
         changed = link_debt_to_account(session, debt.id, deposit.id)
         assert changed.linked_account_id == deposit.id

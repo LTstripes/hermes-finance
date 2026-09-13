@@ -150,27 +150,34 @@ def update_debt(
 ) -> Debt:
     debt = get_debt(session, debt_id)
     require_editable_child_month(session, debt)
-    normalized_debt_type = None
-    if debt_type is not None:
-        normalized_debt_type = _coerce_debt_type(debt_type)
-        if debt.linked_account_id is not None and normalized_debt_type is not DebtType.CREDIT_CARD:
+    normalized_debt_type = _coerce_debt_type(debt_type) if debt_type is not None else None
+    normalized_name = _normalize_text(name, field="name") if name is not None else None
+    normalized_balance = (
+        _normalize_balance(current_balance) if current_balance is not None else None
+    )
+    normalized_annual_rate = None
+    if annual_rate is not _UNSET:
+        normalized_annual_rate = _normalize_rate(
+            annual_rate,  # type: ignore[arg-type]
+            field="annual_rate",
+        )
+
+    if debt.linked_account_id is not None and normalized_debt_type is not None:
+        if normalized_debt_type is not DebtType.CREDIT_CARD:
             raise ValueError("linked debt must remain a credit_card debt")
     if debt.linked_account_id is not None and include_in_liquid_capital is False:
         raise ValueError("linked debt must remain included in liquid capital")
 
     if normalized_debt_type is not None:
         debt.debt_type = normalized_debt_type.value
-    if name is not None:
-        debt.name = _normalize_text(name, field="name")
-    if current_balance is not None:
-        debt.current_balance_kopecks = _normalize_balance(current_balance)
+    if normalized_name is not None:
+        debt.name = normalized_name
+    if normalized_balance is not None:
+        debt.current_balance_kopecks = normalized_balance
     if include_in_liquid_capital is not None:
         debt.include_in_liquid_capital = include_in_liquid_capital
     if annual_rate is not _UNSET:
-        debt.annual_rate_basis_points = _normalize_rate(
-            annual_rate,  # type: ignore[arg-type]
-            field="annual_rate",
-        )
+        debt.annual_rate_basis_points = normalized_annual_rate
     if next_due_date is not _UNSET:
         debt.next_due_date = next_due_date  # type: ignore[assignment]
     if contract_end_date is not _UNSET:
@@ -201,6 +208,8 @@ def link_debt_to_account(session: Session, debt_id: int, account_id: int) -> Deb
         raise ValueError("linked debt must already be included in liquid capital")
     if account.account_type not in LINKED_DEBT_ACCOUNT_TYPES:
         raise ValueError("linked account must be cash, deposit, or savings")
+    if not account.include_in_capital:
+        raise ValueError("linked account must already be included in capital")
 
     existing = session.scalar(
         select(Debt).where(
