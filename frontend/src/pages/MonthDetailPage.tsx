@@ -130,6 +130,7 @@ export function MonthDetailPage() {
     () => new Set(["general"]),
   );
   const [childDirty, setChildDirty] = useState<Partial<Record<ChildDirtySection, boolean>>>({});
+  const [linkedPairRefreshKey, setLinkedPairRefreshKey] = useState(0);
 
   const dirty = useMemo(() => !sameForm(form, baseline), [form, baseline]);
   const workspaceDirty = dirty || Object.values(childDirty).some(Boolean);
@@ -169,6 +170,9 @@ export function MonthDetailPage() {
       return { ...previous, [section]: value };
     });
   }
+  const handleLinkedPairChange = useCallback(() => {
+    setLinkedPairRefreshKey((value) => value + 1);
+  }, []);
   const visitedSectionsForMonth =
     visitedMonthIdRef.current === monthId
       ? visitedSections
@@ -599,8 +603,10 @@ export function MonthDetailPage() {
       {visitedSectionsForMonth.has("assets") ? (
         <section hidden={activeSection !== "assets"}>
           <MonthAssetsSection
+            linkedPairRefreshKey={linkedPairRefreshKey}
             monthId={month.id}
             onDirtyChange={(value) => handleChildDirtyChange("assets", value)}
+            onLinkedPairChange={handleLinkedPairChange}
             readOnly={readOnly}
           />
         </section>
@@ -641,8 +647,10 @@ export function MonthDetailPage() {
       {visitedSectionsForMonth.has("liabilities") ? (
         <section hidden={activeSection !== "liabilities"}>
           <MonthLiabilitiesSection
+            linkedPairRefreshKey={linkedPairRefreshKey}
             monthId={month.id}
             onDirtyChange={(value) => handleChildDirtyChange("liabilities", value)}
+            onLinkedPairChange={handleLinkedPairChange}
             readOnly={readOnly}
           />
         </section>

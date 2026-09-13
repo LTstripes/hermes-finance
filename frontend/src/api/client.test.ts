@@ -229,4 +229,52 @@ describe("formatApiError", () => {
     expect(formatApiError(err)).not.toContain("fingerprint");
     expect(formatApiError(err)).not.toContain("quote changed since preview");
   });
+
+  it("localizes linked-pair eligibility, conflict, closed-month, and unavailable states", () => {
+    expect(
+      formatApiError(
+        new ApiClientError(409, {
+          code: "conflict",
+          message: "closed reporting month must be reopened before editing",
+          details: [],
+        }),
+      ),
+    ).toBe("Закрытый месяц нельзя менять. Сначала открой его.");
+    expect(
+      formatApiError(
+        new ApiClientError(422, {
+          code: "unprocessable",
+          message: "only credit_card debts can be linked",
+          details: [],
+        }),
+      ),
+    ).toBe("Связать можно только долг типа «Кредитная карта».");
+    expect(
+      formatApiError(
+        new ApiClientError(409, {
+          code: "conflict",
+          message: "account is already linked to another debt in this reporting month",
+          details: [],
+        }),
+      ),
+    ).toContain("Этот счёт уже связан с другим долгом");
+    expect(
+      formatApiError(
+        new ApiClientError(422, {
+          code: "unprocessable",
+          message: "linked account must be cash, deposit, or savings",
+          details: [],
+        }),
+      ),
+    ).toContain("Выбери счёт типа");
+    expect(
+      formatApiError(
+        new ApiClientError(422, {
+          code: "unprocessable",
+          message: "linked account has no included cash or deposit fact for reporting month",
+          details: [],
+        }),
+      ),
+    ).toContain("не хватает факта счёта");
+  });
 });

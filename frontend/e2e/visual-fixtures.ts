@@ -14,16 +14,36 @@ export const syntheticMonths = Array.from({ length: 12 }, (_, index) => ({
   source: "manual",
 }));
 
-export const syntheticAccounts = Array.from({ length: 10 }, (_, index) => ({
+export const syntheticAccounts = Array.from({ length: 11 }, (_, index) => ({
   id: index + 1,
-  name: index === 0 ? longAccountName : `Синтетический счёт ${String(index + 1).padStart(2, "0")}`,
-  account_type: index === 1 ? "iis" : "brokerage",
+  name:
+    index === 0
+      ? longAccountName
+      : index === 10
+        ? "Синтетический депозит для связанной пары"
+        : `Синтетический счёт ${String(index + 1).padStart(2, "0")}`,
+  account_type:
+    index === 1 ? "iis" : index === 9 ? "savings" : index === 10 ? "deposit" : "brokerage",
   status: "active",
   external_code: index === 0 ? "SYNTHETIC-ACCOUNT-WITH-A-LONG-SOURCE-IDENTIFIER-0001" : null,
-  include_in_capital: true,
+  include_in_capital: index !== 9,
   include_in_returns: true,
   notes: index === 0 ? "Только синтетические данные для визуального аудита." : null,
 }));
+
+const syntheticLinkedDebt = {
+  id: 901,
+  reporting_month_id: 12,
+  debt_type: "credit_card",
+  name: "Синтетическая кредитная карта",
+  current_balance: rub("300000.00"),
+  include_in_liquid_capital: true,
+  linked_account_id: 11,
+  annual_rate: "19.90",
+  next_due_date: "2032-01-20",
+  contract_end_date: null,
+  notes: "Synthetic visual fixture.",
+};
 
 export const syntheticInstruments = Array.from({ length: 12 }, (_, index) => ({
   id: 101 + index,
@@ -77,6 +97,21 @@ const dashboard = {
       is_approximate: true,
       warnings: [
         "Синтетическое предупреждение с длинной русской формулировкой проверяет перенос текста внутри карточки и не содержит персональных значений.",
+      ],
+    },
+    liquid_capital: {
+      linked_pairs: [
+        {
+          debt_id: syntheticLinkedDebt.id,
+          debt_name: syntheticLinkedDebt.name,
+          debt_type: syntheticLinkedDebt.debt_type,
+          debt_balance: syntheticLinkedDebt.current_balance,
+          account_id: 11,
+          account_name: syntheticAccounts[10].name,
+          account_type: syntheticAccounts[10].account_type,
+          account_balance: rub("1000000.00"),
+          net_contribution: rub("700000.00"),
+        },
       ],
     },
   },
@@ -648,6 +683,9 @@ export function syntheticApiResponse(
   if (path === "/api/accounts" && method === "GET") {
     return { json: state === "empty" ? [] : syntheticAccounts };
   }
+  if (path === "/api/debts" && method === "GET") {
+    return { json: state === "empty" ? [] : [syntheticLinkedDebt] };
+  }
   if (path === "/api/instruments" && method === "GET") {
     return { json: state === "empty" ? [] : syntheticInstruments };
   }
@@ -718,6 +756,14 @@ export function syntheticApiResponse(
   if (/^\/api\/months\/\d+\/payout-refresh-status$/.test(path)) {
     return { json: { reporting_month_id: syntheticMonths[0].id, positions_changed: 0, items: [] } };
   }
+  if (path === "/api/cash-balances/total") {
+    return {
+      json: {
+        total: rub("0.00"),
+        total_in_capital: rub("0.00"),
+      },
+    };
+  }
   if (
     path === "/api/deposits" ||
     path === "/api/cash-balances" ||
@@ -725,7 +771,6 @@ export function syntheticApiResponse(
     path === "/api/savings" ||
     path === "/api/planned-budget" ||
     path === "/api/planned-budget/comparison" ||
-    path === "/api/debts" ||
     path === "/api/properties" ||
     path === "/api/comments" ||
     path === "/api/investment-flows" ||

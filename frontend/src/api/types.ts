@@ -287,6 +287,23 @@ export type DashboardForecast = {
   warnings: string[];
 };
 
+/** Backend-owned presentation facts for one linked liquid account and debt. */
+export type DashboardLinkedPair = {
+  debt_id: number;
+  debt_name: string;
+  debt_type: string;
+  debt_balance: MoneyValue;
+  account_id: number;
+  account_name: string;
+  account_type: string;
+  account_balance: MoneyValue;
+  net_contribution: MoneyValue;
+};
+
+export type DashboardLiquidCapital = {
+  linked_pairs: DashboardLinkedPair[];
+};
+
 export type CashFlowLadderEvent = {
   source_kind: "manual" | "provider" | "deposit_forecast" | string;
   source_id: number;
@@ -413,6 +430,7 @@ export type DashboardSlice = {
   kpis?: DashboardKpis;
   summary?: {
     forecast: DashboardForecast;
+    liquid_capital?: DashboardLiquidCapital;
   };
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];
@@ -874,6 +892,7 @@ export type DebtEntry = {
   name: string;
   current_balance: MoneyValue;
   include_in_liquid_capital: boolean;
+  linked_account_id: number | null;
   annual_rate: string | null;
   next_due_date: string | null;
   contract_end_date: string | null;

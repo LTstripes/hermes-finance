@@ -36,6 +36,20 @@ const deposit = {
   updated_at: "2031-01-31T00:00:00",
 };
 
+const linkedDebt = {
+  id: 31,
+  reporting_month_id: 7,
+  debt_type: "credit_card",
+  name: "Карта для вклада",
+  current_balance: { amount: "30000.00", currency: "RUB" },
+  include_in_liquid_capital: true,
+  linked_account_id: 11,
+  annual_rate: null,
+  next_due_date: null,
+  contract_end_date: null,
+  notes: null,
+};
+
 function setup({
   deposits = [deposit],
   readOnly = false,
@@ -47,6 +61,29 @@ function setup({
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
     if (method === "GET" && url === "/api/accounts") return jsonResponse([account]);
+    if (method === "GET" && url === "/api/debts?month_id=7") return jsonResponse([linkedDebt]);
+    if (method === "GET" && url === "/api/months/7/dashboard") {
+      return jsonResponse({
+        mortgage: null,
+        summary: {
+          liquid_capital: {
+            linked_pairs: [
+              {
+                debt_id: 31,
+                debt_name: "Карта для вклада",
+                debt_type: "credit_card",
+                debt_balance: { amount: "30000.00", currency: "RUB" },
+                account_id: 11,
+                account_name: "Депозиты",
+                account_type: "deposit",
+                account_balance: { amount: "100000.00", currency: "RUB" },
+                net_contribution: { amount: "70000.00", currency: "RUB" },
+              },
+            ],
+          },
+        },
+      });
+    }
     if (method === "GET" && url === "/api/deposits?month_id=7") return jsonResponse(deposits);
     if (method === "GET" && url === "/api/cash-balances?month_id=7") return jsonResponse([]);
     if (method === "GET" && url === "/api/cash-balances/total?month_id=7") {
@@ -141,5 +178,19 @@ describe("MonthAssetsSection deposit actions", () => {
     expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Добавить вклад" })).not.toBeInTheDocument();
+  });
+
+  it("shows the account-side context for the same linked pair", async () => {
+    setup();
+
+    const context = await screen.findByTestId("linked-pair-31");
+    expect(context).toHaveTextContent("Депозиты");
+    expect(context).toHaveTextContent("Карта для вклада");
+    expect(context).toHaveTextContent("Актив A · брутто");
+    expect(context).toHaveTextContent("Связанный долг D");
+    expect(context).toHaveTextContent("Чистый вклад A − D");
+    expect(context).toHaveTextContent(/100\s*000\s*₽/);
+    expect(context).toHaveTextContent(/30\s*000\s*₽/);
+    expect(context).toHaveTextContent(/70\s*000\s*₽/);
   });
 });

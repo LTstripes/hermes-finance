@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { createAccount, listAccounts } from "../api/accounts";
+import { getDashboard } from "../api/dashboard";
 import {
   createCashBalance,
   deleteCashBalance,
@@ -10,7 +11,15 @@ import {
 } from "../api/cash";
 import { formatApiError } from "../api/client";
 import { createDeposit, deleteDeposit, listDeposits, updateDeposit } from "../api/deposits";
-import type { Account, CashBalance, CashTotal, DepositSnapshot } from "../api/types";
+import { listDebts } from "../api/debts";
+import type {
+  Account,
+  CashBalance,
+  CashTotal,
+  DashboardLinkedPair,
+  DebtEntry,
+  DepositSnapshot,
+} from "../api/types";
 import {
   Badge,
   Button,
@@ -28,6 +37,7 @@ import {
   Td,
   Th,
 } from "./ui";
+import { LinkedPairContext } from "./LinkedPairContext";
 import { formatMoney } from "../lib/format";
 import { ACCOUNT_TYPE_LABELS, DEPOSIT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
@@ -36,6 +46,8 @@ type MonthAssetsSectionProps = {
   monthId: number;
   readOnly: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onLinkedPairChange?: () => void;
+  linkedPairRefreshKey?: number;
 };
 
 type DepositDraft = {
@@ -68,8 +80,17 @@ const emptyCash = (): CashDraft => ({
   include_in_capital: true,
 });
 
-export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAssetsSectionProps) {
+export function MonthAssetsSection({
+  monthId,
+  readOnly,
+  onDirtyChange,
+  onLinkedPairChange,
+  linkedPairRefreshKey,
+}: MonthAssetsSectionProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [debts, setDebts] = useState<DebtEntry[]>([]);
+  const [linkedPairs, setLinkedPairs] = useState<DashboardLinkedPair[] | null>(null);
+  const [linkedPairError, setLinkedPairError] = useState<string | null>(null);
   const [deposits, setDeposits] = useState<DepositSnapshot[]>([]);
   const [cashRows, setCashRows] = useState<CashBalance[]>([]);
   const [cashTotal, setCashTotal] = useState<CashTotal | null>(null);
@@ -98,16 +119,29 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
       setLoading(true);
       setError(null);
       try {
-        const [accs, deps, cash, total] = await Promise.all([
+        let debtError: string | null = null;
+        let dashboardError: string | null = null;
+        const [accs, deps, cash, total, debtRows, dashboard] = await Promise.all([
           listAccounts(signal),
           listDeposits(monthId, signal),
           listCashBalances(monthId, signal),
           getCashTotal(monthId, signal),
+          listDebts(monthId, signal).catch((err) => {
+            debtError = formatApiError(err);
+            return null;
+          }),
+          getDashboard(monthId, signal).catch((err) => {
+            dashboardError = formatApiError(err);
+            return null;
+          }),
         ]);
         if (signal?.aborted) {
           return;
         }
         setAccounts(accs);
+        setDebts(debtRows ?? []);
+        setLinkedPairs(dashboard?.summary?.liquid_capital?.linked_pairs ?? (dashboard ? [] : null));
+        setLinkedPairError(debtError ?? dashboardError);
         setDeposits(deps);
         setCashRows(cash);
         setCashTotal(total);
@@ -134,9 +168,10 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
 
   useEffect(() => {
     const controller = new AbortController();
+    void linkedPairRefreshKey;
     void load(controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, linkedPairRefreshKey]);
 
   const depositAccounts = useMemo(
     () =>
@@ -206,6 +241,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
       setDepositDraft(() => ({ ...emptyDeposit(), account_id: String(accountId) }));
       setDepositDraftTouched(false);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -240,6 +276,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
       setEditingDepositId(null);
       setEditDeposit(null);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -257,6 +294,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
       await deleteDeposit(pendingDeleteDeposit.id);
       setPendingDeleteDeposit(null);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
       setPendingDeleteDeposit(null);
@@ -285,6 +323,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
       setCashDraft(emptyCash());
       setCashDraftTouched(false);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -302,6 +341,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
       await deleteCashBalance(pendingDeleteCash.id);
       setPendingDeleteCash(null);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
       setPendingDeleteCash(null);
@@ -319,6 +359,7 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
     try {
       await updateCashBalance(row.id, { include_in_capital: !row.include_in_capital });
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -727,6 +768,15 @@ export function MonthAssetsSection({ monthId, readOnly, onDirtyChange }: MonthAs
           </form>
         ) : null}
       </Panel>
+
+      <LinkedPairContext
+        accounts={accounts}
+        debts={debts}
+        error={linkedPairError}
+        label="Актив"
+        pairs={linkedPairs}
+        title="Связанные долги"
+      />
 
       <ConfirmDialog
         busy={busy}

@@ -30,6 +30,25 @@ export function updateDebt(
   return apiRequest<DebtEntry>(`/api/debts/${id}`, { method: "PATCH", body: payload, signal });
 }
 
+export function linkDebtToAccount(
+  debtId: number,
+  accountId: number,
+  signal?: AbortSignal,
+): Promise<DebtEntry> {
+  return apiRequest<DebtEntry>(`/api/debts/${debtId}/linked-account`, {
+    method: "PUT",
+    body: { account_id: accountId },
+    signal,
+  });
+}
+
+export function unlinkDebtFromAccount(debtId: number, signal?: AbortSignal): Promise<void> {
+  return apiRequest<void>(`/api/debts/${debtId}/linked-account`, {
+    method: "DELETE",
+    signal,
+  });
+}
+
 export function deleteDebt(id: number, signal?: AbortSignal): Promise<void> {
   return apiRequest<void>(`/api/debts/${id}`, { method: "DELETE", signal });
 }
