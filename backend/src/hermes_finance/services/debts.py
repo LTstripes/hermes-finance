@@ -153,10 +153,7 @@ def update_debt(
     normalized_debt_type = None
     if debt_type is not None:
         normalized_debt_type = _coerce_debt_type(debt_type)
-        if (
-            debt.linked_account_id is not None
-            and normalized_debt_type is not DebtType.CREDIT_CARD
-        ):
+        if debt.linked_account_id is not None and normalized_debt_type is not DebtType.CREDIT_CARD:
             raise ValueError("linked debt must remain a credit_card debt")
     if debt.linked_account_id is not None and include_in_liquid_capital is False:
         raise ValueError("linked debt must remain included in liquid capital")

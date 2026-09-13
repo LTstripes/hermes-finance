@@ -45,7 +45,9 @@ def downgrade() -> None:
         sa.text("SELECT COUNT(*) FROM debts WHERE linked_account_id IS NOT NULL")
     ).scalar_one()
     if linked_count:
-        raise RuntimeError("cannot downgrade 0041_debt_linked_account while debt-account links exist")
+        raise RuntimeError(
+            "cannot downgrade 0041_debt_linked_account while debt-account links exist"
+        )
 
     with op.batch_alter_table("debts") as batch_op:
         batch_op.drop_constraint("uq_debts_reporting_month_linked_account", type_="unique")

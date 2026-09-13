@@ -427,9 +427,10 @@ def test_debt_account_link_api_is_explicit_and_month_local(client: TestClient) -
             "include_in_liquid_capital": True,
         }
     ]
-    assert client.get(
-        f"/api/accounts/{deposit_id}/linked-debts?month_id={other_month_id}"
-    ).json() == []
+    assert (
+        client.get(f"/api/accounts/{deposit_id}/linked-debts?month_id={other_month_id}").json()
+        == []
+    )
 
     patch_attempt = client.patch(
         f"/api/debts/{debt_id}",

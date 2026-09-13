@@ -106,13 +106,10 @@ def update_account(
     normalized_account_type = None
     if account_type is not None:
         normalized_account_type = _coerce_account_type(account_type)
-        if (
-            normalized_account_type.value not in LINKED_DEBT_ACCOUNT_TYPES
-            and _has_linked_debt(session, account.id)
+        if normalized_account_type.value not in LINKED_DEBT_ACCOUNT_TYPES and _has_linked_debt(
+            session, account.id
         ):
-            raise ValueError(
-                "account type cannot change while the account is linked to a debt"
-            )
+            raise ValueError("account type cannot change while the account is linked to a debt")
 
     if name is not None:
         account.name = _normalize_name(name)
