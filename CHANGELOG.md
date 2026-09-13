@@ -22,13 +22,6 @@ Development `main` после `0.8.2` (интегрировано через PR 
 - `null` означает «неизвестно», `0` — реальный ноль; миграция `0037_336_financial_context` только добавляет nullable-поля и не досчитывает прошлые данные;
 - клонирование месяца переносит ставки, окончание договора и план, а `next_due_date` подтверждается в новом месяце заново.
 
-### AI financial review hardening — IIS + salary/tax context (#366, sections 3–4)
-
-- `iis_and_tax.iis_accounts` now lists every known active IIS account, including accounts with no tax profile: `iis_type` / `opened_at` / `eligible_close_at` are `null`, persisted contributions and benefit states are still exported, and both portfolio-result metrics are `unavailable` with the stable `iis_tax_data_unconfigured` reason instead of the account being omitted or its result guessed;
-- `iis_and_tax.salary_tax_context.selected_month` exposes the selected reporting month's salary/tax reconciliation directly (`gross`, `calculated_tax`, `calculated_net`, `actual_net`, `consistency`, `reason_codes`) for AI analysis; it reuses the existing read-only salary-tax snapshot builder, so no tax formula is duplicated in export code;
-- unknown calculated salary/tax values stay `unavailable` with `salary_tax_history_incomplete` (never zero-filled); persisted `gross`/`actual_net` and the `consistent`/`mismatch`/`unavailable` comparison keep `missing != 0`;
-- additive contract changes: AI Analysis Bundle schema `1.2.0` → `1.3.0`, Portfolio Review Package `1.0.0` → `1.1.0`, AI Financial Review `1.0.0` → `1.1.0`, each with a matching synthetic fixture update.
-
 ### Not changed
 
 - canonical Alembic head is now `0037_336_financial_context`; the migration is additive owner-entered capture only — no new formulas, provider, runtime or DB semantics changed;
