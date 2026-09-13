@@ -1,18 +1,23 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listAccounts } from "../api/accounts";
+import { ApiClientError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
-import { listDebts, updateDebt } from "../api/debts";
+import { linkDebtToAccount, listDebts, unlinkDebtFromAccount, updateDebt } from "../api/debts";
 import { listProperties, updateProperty } from "../api/properties";
 import { getMonthSummary } from "../api/summary";
 import { MonthLiabilitiesSection } from "./MonthLiabilitiesSection";
 
+vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
 vi.mock("../api/debts", () => ({
   createDebt: vi.fn(),
   deleteDebt: vi.fn(),
+  linkDebtToAccount: vi.fn(),
   listDebts: vi.fn(),
+  unlinkDebtFromAccount: vi.fn(),
   updateDebt: vi.fn(),
 }));
 vi.mock("../api/properties", () => ({
@@ -30,10 +35,29 @@ const debt = {
   name: "Основная карта",
   current_balance: { amount: "123456.00", currency: "RUB" },
   include_in_liquid_capital: true,
+  linked_account_id: null,
   annual_rate: "19.90",
   next_due_date: "2030-06-20",
   contract_end_date: null,
   notes: null,
+};
+
+const account = {
+  id: 11,
+  name: "Синтетический депозит",
+  account_type: "deposit",
+  status: "active",
+  external_code: null,
+  include_in_capital: true,
+  include_in_returns: true,
+  notes: null,
+};
+
+const alternateAccount = {
+  ...account,
+  id: 12,
+  name: "Синтетические наличные",
+  account_type: "cash",
 };
 
 const property = {
@@ -50,10 +74,13 @@ const property = {
 describe("MonthLiabilitiesSection R03-14 presentation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(listAccounts).mockResolvedValue([account, alternateAccount]);
     vi.mocked(listDebts).mockResolvedValue([debt]);
     vi.mocked(listProperties).mockResolvedValue([property]);
     vi.mocked(getDashboard).mockResolvedValue({ mortgage: null } as never);
     vi.mocked(getMonthSummary).mockResolvedValue({ coverage: { coverage_pct: null } } as never);
+    vi.mocked(linkDebtToAccount).mockResolvedValue({ ...debt } as never);
+    vi.mocked(unlinkDebtFromAccount).mockResolvedValue(undefined);
   });
 
   it("uses grouped amounts, compact inclusion state, and overflow delete actions", async () => {
@@ -177,5 +204,108 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     await waitFor(() => {
       expect(updateDebt).toHaveBeenCalledWith(1, expect.objectContaining({ annual_rate: null }));
     });
+  });
+
+  it("links and changes a debt relation through the dedicated endpoint", async () => {
+    vi.mocked(listDebts)
+      .mockResolvedValueOnce([debt])
+      .mockResolvedValue([{ ...debt, linked_account_id: 11 }]);
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+
+    await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
+      "11",
+    );
+    await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
+    await waitFor(() => expect(linkDebtToAccount).toHaveBeenCalledWith(1, 11));
+
+    await waitFor(() =>
+      expect(within(debtTable).getByRole("button", { name: "Изменить связь" })).toBeInTheDocument(),
+    );
+    await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
+      "12",
+    );
+    await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
+    await waitFor(() => expect(linkDebtToAccount).toHaveBeenLastCalledWith(1, 12));
+  });
+
+  it("confirms unlink and keeps the relation visible until the API succeeds", async () => {
+    vi.mocked(listDebts).mockResolvedValue([{ ...debt, linked_account_id: 11 }]);
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+
+    expect(within(debtTable).getByText("Синтетический депозит")).toBeInTheDocument();
+    await user.click(within(debtTable).getByRole("button", { name: "Отвязать" }));
+    expect(screen.getByRole("alertdialog", { name: "Отвязать счёт?" })).toHaveTextContent(
+      "Синтетический депозит",
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog", { name: "Отвязать счёт?" })).getByRole("button", {
+        name: "Отвязать",
+      }),
+    );
+    await waitFor(() => expect(unlinkDebtFromAccount).toHaveBeenCalledWith(1));
+  });
+
+  it("shows authoritative conflict and unavailable read-model states", async () => {
+    vi.mocked(linkDebtToAccount).mockRejectedValue(
+      new ApiClientError(409, {
+        code: "conflict",
+        message: "account is already linked to another debt in this reporting month",
+        details: [],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+    await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
+      "11",
+    );
+    await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Этот счёт уже связан с другим долгом",
+    );
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(within(debtTable).getByText("Не связано")).toBeInTheDocument();
+
+    cleanup();
+    vi.mocked(getDashboard).mockRejectedValue(
+      new ApiClientError(422, {
+        code: "unprocessable",
+        message: "linked account has no included cash or deposit fact for reporting month",
+        details: [],
+      }),
+    );
+    vi.mocked(listDebts).mockResolvedValue([{ ...debt, linked_account_id: 11 }]);
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const pair = await screen.findByTestId("linked-pair-1");
+    expect(pair).toHaveTextContent("Контекст неполный");
+    expect(pair).toHaveTextContent("—");
+    expect(pair).not.toHaveTextContent("0,00 ₽");
+  });
+
+  it("keeps linked controls read-only in a closed month and explains ineligible debt", async () => {
+    vi.mocked(listDebts).mockResolvedValue([{ ...debt, linked_account_id: 11 }]);
+    render(<MonthLiabilitiesSection monthId={7} readOnly />);
+    const [debtTable] = await screen.findAllByRole("table");
+    expect(within(debtTable).getByRole("button", { name: "Изменить связь" })).toBeDisabled();
+    expect(within(debtTable).getByRole("button", { name: "Отвязать" })).toBeDisabled();
+
+    cleanup();
+    vi.mocked(listDebts).mockResolvedValue([{ ...debt, debt_type: "other" }]);
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [ineligibleTable] = await screen.findAllByRole("table");
+    expect(
+      within(ineligibleTable).getByText("Связь доступна для кредитки", { exact: false }),
+    ).toBeInTheDocument();
+    expect(within(ineligibleTable).queryByRole("button", { name: "Связать счёт" })).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { updateDebt } from "./debts";
+import { linkDebtToAccount, unlinkDebtFromAccount, updateDebt } from "./debts";
 import { updateExpense } from "./expenses";
 import { updateInvestmentFlow } from "./investmentFlows";
 import { updateProperty } from "./properties";
@@ -50,5 +50,19 @@ describe("month editor PATCH wrappers", () => {
       ["/api/debts/31", "PATCH"],
       ["/api/properties/41", "PATCH"],
     ]);
+  });
+
+  it("uses the dedicated debt-account link endpoints", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ id: 31, linked_account_id: 11 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await linkDebtToAccount(31, 11);
+    await unlinkDebtFromAccount(31);
+
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, (init as RequestInit).method])).toEqual([
+      ["/api/debts/31/linked-account", "PUT"],
+      ["/api/debts/31/linked-account", "DELETE"],
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ account_id: 11 });
   });
 });

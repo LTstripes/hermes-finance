@@ -258,7 +258,55 @@ function localizeValidationMessage(message: string): string {
   return message;
 }
 
+function localizeLinkedPairMessage(error: ApiClientError): string | null {
+  const message = error.message.toLowerCase();
+
+  if (message.includes("closed reporting month")) {
+    return "Закрытый месяц нельзя менять. Сначала открой его.";
+  }
+  if (message.includes("already linked to another debt")) {
+    return "Этот счёт уже связан с другим долгом в выбранном месяце. Сначала измени существующую связь.";
+  }
+  if (message.includes("only credit_card debts")) {
+    return "Связать можно только долг типа «Кредитная карта».";
+  }
+  if (message.includes("linked debt must already be included")) {
+    return "Связь доступна, только если долг уже включён в ликвидный капитал.";
+  }
+  if (message.includes("linked debt must remain a credit_card")) {
+    return "Связанный долг должен оставаться долгом типа «Кредитная карта».";
+  }
+  if (message.includes("linked debt must remain included")) {
+    return "Связанный долг должен оставаться включённым в ликвидный капитал.";
+  }
+  if (message.includes("linked account must be cash, deposit, or savings")) {
+    return "Выбери счёт типа «Наличные», «Депозит» или «Накопительный счёт».";
+  }
+  if (message.includes("linked account must already be included in capital")) {
+    return "Связь доступна, только если счёт уже включён в капитал.";
+  }
+  if (message.includes("stored linked debt must be a credit_card")) {
+    return "Сохранённая связь больше не соответствует типу «Кредитная карта». Проверь данные долга.";
+  }
+  if (message.includes("stored linked debt must be included")) {
+    return "Связь недоступна: связанный долг исключён из ликвидного капитала. Измени это вручную или отвяжи связь.";
+  }
+  if (message.includes("stored linked account type is not eligible")) {
+    return "Сохранённая связь использует неподходящий тип счёта. Доступны наличные, депозит или накопительный счёт.";
+  }
+  if (message.includes("stored linked account must be included")) {
+    return "Связь недоступна: связанный счёт исключён из капитала. Измени это вручную или отвяжи связь.";
+  }
+  if (message.includes("linked account has no included cash or deposit fact")) {
+    return "Контекст связанной пары пока недоступен: не хватает факта счёта за выбранный месяц. Данные не заменены нулём.";
+  }
+  return null;
+}
+
 function localizeApiMessage(error: ApiClientError): string {
+  const linkedPairMessage = localizeLinkedPairMessage(error);
+  if (linkedPairMessage) return linkedPairMessage;
+
   switch (error.code) {
     case "salary_tax_history_incomplete":
       return salaryTaxHistoryMessage(error.message);

@@ -29,6 +29,8 @@ const routes: AuditRoute[] = [
   },
   { slug: "monthly-close", path: "/months/12/close" },
   { slug: "months", path: "/months" },
+  { slug: "month-assets", path: "/months/12?section=assets" },
+  { slug: "month-liabilities", path: "/months/12?section=liabilities" },
   { slug: "month-positions", path: "/months/12?section=positions" },
   { slug: "payouts", path: "/payouts" },
   {
@@ -209,6 +211,13 @@ for (const route of routes) {
       await expect(page.getByText("PERF04A", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Это изменение стоимости, а не доходность.")).toBeVisible();
       await expect(page.getByText(syntheticXirrReasonCode, { exact: true })).toHaveCount(0);
+    }
+    if (route.slug === "month-assets" || route.slug === "month-liabilities") {
+      const pair = page.getByTestId("linked-pair-901");
+      await expect(pair).toBeVisible();
+      await expect(pair).toContainText("Актив A · брутто");
+      await expect(pair).toContainText("Связанный долг D");
+      await expect(pair).toContainText("Чистый вклад A − D");
     }
     await assertAuditState(page, unhandled, pageErrors);
 

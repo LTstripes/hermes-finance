@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { getDashboard } from "../api/dashboard";
-import { createDebt, deleteDebt, listDebts, updateDebt } from "../api/debts";
+import {
+  createDebt,
+  deleteDebt,
+  linkDebtToAccount,
+  listDebts,
+  unlinkDebtFromAccount,
+  updateDebt,
+} from "../api/debts";
 import { createProperty, deleteProperty, listProperties, updateProperty } from "../api/properties";
 import { getMonthSummary } from "../api/summary";
-import type { DashboardMortgage, DebtEntry, PropertySnapshot } from "../api/types";
+import type {
+  Account,
+  DashboardLinkedPair,
+  DashboardMortgage,
+  DebtEntry,
+  PropertySnapshot,
+} from "../api/types";
 import {
   Badge,
   Button,
@@ -23,11 +37,18 @@ import {
   OverflowMenu,
   OverflowMenuItem,
 } from "./ui";
+import { LinkedPairContext } from "./LinkedPairContext";
 import { formatDate, formatMoney, formatPercent, normalizeRateInput } from "../lib/format";
-import { DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
+import { ACCOUNT_TYPE_LABELS, DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
-type Props = { monthId: number; readOnly: boolean; onDirtyChange?: (dirty: boolean) => void };
+type Props = {
+  monthId: number;
+  readOnly: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  onLinkedPairChange?: () => void;
+  linkedPairRefreshKey?: number;
+};
 
 type DebtDraft = {
   name: string;
@@ -47,8 +68,17 @@ type PropertyDraft = {
   mortgage_annual_rate: string;
 };
 
-export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Props) {
+export function MonthLiabilitiesSection({
+  monthId,
+  readOnly,
+  onDirtyChange,
+  onLinkedPairChange,
+  linkedPairRefreshKey,
+}: Props) {
   const [debts, setDebts] = useState<DebtEntry[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [linkedPairs, setLinkedPairs] = useState<DashboardLinkedPair[] | null>(null);
+  const [linkedPairError, setLinkedPairError] = useState<string | null>(null);
   const [properties, setProperties] = useState<PropertySnapshot[]>([]);
   const [mortgage, setMortgage] = useState<DashboardMortgage | null>(null);
   const [coveragePct, setCoveragePct] = useState<string | null>(null);
@@ -71,6 +101,9 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
   const [debtDraftTouched, setDebtDraftTouched] = useState(false);
   const [propertyDraftTouched, setPropertyDraftTouched] = useState(false);
   const [delDebt, setDelDebt] = useState<DebtEntry | null>(null);
+  const [pendingUnlinkDebt, setPendingUnlinkDebt] = useState<DebtEntry | null>(null);
+  const [linkingDebtId, setLinkingDebtId] = useState<number | null>(null);
+  const [linkAccountId, setLinkAccountId] = useState("");
   const [delProp, setDelProp] = useState<PropertySnapshot | null>(null);
   const [editingDebtId, setEditingDebtId] = useState<number | null>(null);
   const [editDebt, setEditDebt] = useState<DebtDraft | null>(null);
@@ -89,14 +122,26 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       setLoading(true);
       setError(null);
       try {
-        const [d, p, dash, summary] = await Promise.all([
+        let dashboardError: string | null = null;
+        let accountsError: string | null = null;
+        const [d, p, dash, summary, accs] = await Promise.all([
           listDebts(monthId, signal),
           listProperties(monthId, signal),
-          getDashboard(monthId, signal).catch(() => null),
+          getDashboard(monthId, signal).catch((err) => {
+            dashboardError = formatApiError(err);
+            return null;
+          }),
           getMonthSummary(monthId, signal).catch(() => null),
+          listAccounts(signal).catch((err) => {
+            accountsError = formatApiError(err);
+            return [];
+          }),
         ]);
         if (signal?.aborted) return;
         setDebts(d);
+        setAccounts(accs);
+        setLinkedPairs(dash?.summary?.liquid_capital?.linked_pairs ?? (dash ? [] : null));
+        setLinkedPairError(dashboardError ?? accountsError);
         setProperties(p);
         setMortgage(dash?.mortgage ?? null);
         setCoveragePct(summary?.coverage?.coverage_pct ?? null);
@@ -111,9 +156,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
 
   useEffect(() => {
     const c = new AbortController();
+    void linkedPairRefreshKey;
     void load(c.signal);
     return () => c.abort();
-  }, [load]);
+  }, [load, linkedPairRefreshKey]);
 
   const cardDebtTotal = useMemo(
     () =>
@@ -136,6 +182,63 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
     () => sumMoneyAmounts(properties.map((x) => moneyAmount(x.monthly_payment))),
     [properties],
   );
+
+  function accountNameFor(accountId: number | null): string {
+    if (accountId == null) return "Не связан";
+    return accounts.find((account) => account.id === accountId)?.name ?? "Счёт не найден";
+  }
+
+  function accountOptionLabel(account: Account): string {
+    return `${account.name} · ${labelOf(ACCOUNT_TYPE_LABELS, account.account_type)}`;
+  }
+
+  function startLinkingDebt(row: DebtEntry) {
+    setActionError(null);
+    setLinkingDebtId(row.id);
+    setLinkAccountId(row.linked_account_id == null ? "" : String(row.linked_account_id));
+  }
+
+  function cancelLinkingDebt() {
+    setLinkingDebtId(null);
+    setLinkAccountId("");
+  }
+
+  async function saveDebtLink(row: DebtEntry) {
+    const accountId = Number(linkAccountId);
+    if (!Number.isInteger(accountId) || accountId < 1) {
+      setActionError("Выбери счёт для связи.");
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      await linkDebtToAccount(row.id, accountId);
+      cancelLinkingDebt();
+      await load();
+      onLinkedPairChange?.();
+    } catch (err) {
+      setActionError(formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDebtUnlink() {
+    if (!pendingUnlinkDebt) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await unlinkDebtFromAccount(pendingUnlinkDebt.id);
+      setPendingUnlinkDebt(null);
+      await load();
+      onLinkedPairChange?.();
+    } catch (err) {
+      setActionError(formatApiError(err));
+      setPendingUnlinkDebt(null);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function addDebt(event: FormEvent) {
     event.preventDefault();
@@ -164,6 +267,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       setDebtEnd("");
       setDebtDraftTouched(false);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -196,6 +300,7 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       setEditingDebtId(null);
       setEditDebt(null);
       await load();
+      onLinkedPairChange?.();
     } catch (err) {
       setActionError(formatApiError(err));
     } finally {
@@ -309,12 +414,14 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                 <Th>Ближайший платёж</Th>
                 <Th>Окончание</Th>
                 <Th className="month-debts-table__inclusion">Учёт</Th>
+                <Th className="month-debts-table__linked">Связанный счёт</Th>
                 <Th className="month-debts-table__actions">Действия</Th>
               </tr>
             </thead>
             <tbody>
               {debts.map((row) => {
                 const editing = editingDebtId === row.id && editDebt;
+                const linking = linkingDebtId === row.id;
                 return (
                   <tr key={row.id}>
                     <Td>
@@ -419,6 +526,107 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
                         <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
                           {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
                         </Badge>
+                      )}
+                    </Td>
+                    <Td className="month-debts-table__linked">
+                      {linking ? (
+                        <div className="linked-debt-control">
+                          <div className="linked-debt-control__account">
+                            <Badge tone={row.linked_account_id == null ? "neutral" : "ok"}>
+                              {row.linked_account_id == null ? "Не связано" : "Связано"}
+                            </Badge>
+                            {row.linked_account_id != null ? (
+                              <strong>{accountNameFor(row.linked_account_id)}</strong>
+                            ) : null}
+                          </div>
+                          <Select
+                            aria-label={`Счёт для связи с долгом «${row.name}»`}
+                            disabled={busy || readOnly || accounts.length === 0}
+                            onChange={(event) => setLinkAccountId(event.target.value)}
+                            value={linkAccountId}
+                          >
+                            <option value="">Выбери счёт</option>
+                            {accounts.map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {accountOptionLabel(account)}
+                              </option>
+                            ))}
+                          </Select>
+                          {accounts.length === 0 ? (
+                            <span className="linked-debt-control__hint">
+                              Список счетов недоступен.
+                            </span>
+                          ) : null}
+                          <div className="linked-debt-control__actions">
+                            <Button
+                              disabled={busy || readOnly || accounts.length === 0}
+                              onClick={() => void saveDebtLink(row)}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              Сохранить связь
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={cancelLinkingDebt}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </div>
+                        </div>
+                      ) : row.linked_account_id != null ? (
+                        <div className="linked-debt-control">
+                          <div className="linked-debt-control__account">
+                            <Badge tone="ok">Связано</Badge>
+                            <strong>{accountNameFor(row.linked_account_id)}</strong>
+                          </div>
+                          <div className="linked-debt-control__actions">
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => startLinkingDebt(row)}
+                              size="sm"
+                              type="button"
+                            >
+                              Изменить связь
+                            </Button>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => setPendingUnlinkDebt(row)}
+                              size="sm"
+                              type="button"
+                            >
+                              Отвязать
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="linked-debt-control">
+                          <Badge tone="neutral">Не связано</Badge>
+                          {row.debt_type === "credit_card" && row.include_in_liquid_capital ? (
+                            <>
+                              <Button
+                                disabled={busy || readOnly || accounts.length === 0}
+                                onClick={() => startLinkingDebt(row)}
+                                size="sm"
+                                type="button"
+                              >
+                                Связать счёт
+                              </Button>
+                              {accounts.length === 0 ? (
+                                <span className="linked-debt-control__hint">
+                                  Список счетов недоступен.
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="linked-debt-control__hint">
+                              Связь доступна для кредитки, включённой в ликвидный капитал.
+                            </span>
+                          )}
+                        </div>
                       )}
                     </Td>
                     <Td className="month-debts-table__actions">
@@ -566,6 +774,15 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
           </form>
         ) : null}
       </Panel>
+
+      <LinkedPairContext
+        accounts={accounts}
+        debts={debts}
+        error={linkedPairError}
+        label="Связи"
+        pairs={linkedPairs}
+        title="Контекст связанных пар"
+      />
 
       <Panel
         action={<Badge>RE {formatMoney(propertyValueTotal)}</Badge>}
@@ -826,6 +1043,20 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
       <ConfirmDialog
         busy={busy}
         cancelLabel="Отмена"
+        confirmLabel="Отвязать"
+        description={
+          pendingUnlinkDebt
+            ? `Отвязать долг «${pendingUnlinkDebt.name}» от счёта «${accountNameFor(pendingUnlinkDebt.linked_account_id)}»?`
+            : ""
+        }
+        onCancel={() => setPendingUnlinkDebt(null)}
+        onConfirm={() => void confirmDebtUnlink()}
+        open={pendingUnlinkDebt !== null}
+        title="Отвязать счёт?"
+      />
+      <ConfirmDialog
+        busy={busy}
+        cancelLabel="Отмена"
         confirmLabel="Удалить"
         danger
         description={delDebt ? `Удалить долг «${delDebt.name}»?` : ""}
@@ -834,7 +1065,10 @@ export function MonthLiabilitiesSection({ monthId, readOnly, onDirtyChange }: Pr
           if (!delDebt) return;
           setBusy(true);
           void deleteDebt(delDebt.id)
-            .then(() => load())
+            .then(async () => {
+              await load();
+              onLinkedPairChange?.();
+            })
             .catch((err) => setActionError(formatApiError(err)))
             .finally(() => {
               setBusy(false);
