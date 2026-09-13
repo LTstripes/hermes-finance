@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.1.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.2.0/schema.json",
   "title": "Hermes Finance AI Financial Review",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "$schema": { "type": "string", "format": "uri-reference" },
     "schema_name": { "const": "hermes.finance.ai_financial_review" },
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "metadata": { "$ref": "#/$defs/metadata" },
     "scope": { "$ref": "#/$defs/scope" },
     "coverage": { "$ref": "#/$defs/coverage_summary" },
@@ -272,7 +272,7 @@
         "domains": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["capital", "history", "portfolio", "passive_income", "future_cash_flows", "goals", "debts_and_real_estate", "iis_and_tax", "user_context", "budget_and_saving"],
+          "required": ["capital", "history", "portfolio", "passive_income", "future_cash_flows", "goals", "debts_and_real_estate", "iis_and_tax", "user_context", "budget_and_saving", "performance"],
           "properties": {
             "capital": { "$ref": "#/$defs/coverage_domain" },
             "history": { "$ref": "#/$defs/coverage_domain" },
@@ -283,7 +283,8 @@
             "debts_and_real_estate": { "$ref": "#/$defs/coverage_domain" },
             "iis_and_tax": { "$ref": "#/$defs/coverage_domain" },
             "user_context": { "$ref": "#/$defs/coverage_domain" },
-            "budget_and_saving": { "$ref": "#/$defs/coverage_domain" }
+            "budget_and_saving": { "$ref": "#/$defs/coverage_domain" },
+            "performance": { "$ref": "#/$defs/coverage_domain" }
           }
         }
       }
@@ -1016,6 +1017,182 @@
         "message": { "type": "string", "minLength": 1 }
       }
     },
+    "performance_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes"],
+      "properties": {
+        "status": { "enum": ["complete", "partial", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "performance_rate_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "method", "method_version", "contract", "contract_version", "performance_currency", "value", "value_unit", "annualized", "availability", "quality", "precision", "source", "coverage", "reason_codes"],
+      "properties": {
+        "metric": { "enum": ["xirr", "twrr"] },
+        "method": { "enum": ["xirr", "twrr"] },
+        "method_version": { "type": "string", "minLength": 1 },
+        "contract": { "enum": ["R08-02", "R08-03"] },
+        "contract_version": { "type": "integer", "minimum": 1 },
+        "performance_currency": { "const": "RUB" },
+        "value": { "oneOf": [{ "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$" }, { "type": "null" }] },
+        "value_unit": { "const": "percentage_points" },
+        "annualized": { "type": "boolean" },
+        "availability": { "enum": ["available", "not_computable"] },
+        "quality": { "enum": ["exact", "unavailable"] },
+        "precision": { "enum": ["exact", "unknown"] },
+        "source": { "type": "string", "minLength": 1 },
+        "coverage": { "$ref": "#/$defs/performance_coverage" },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "availability": { "const": "available" } }, "required": ["availability"] },
+          "then": {
+            "properties": { "value": { "type": "string" }, "quality": { "const": "exact" }, "precision": { "const": "exact" } }
+          },
+          "else": {
+            "properties": { "value": { "type": "null" }, "quality": { "const": "unavailable" }, "precision": { "const": "unknown" } }
+          }
+        }
+      ]
+    },
+    "performance_valuation_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "reason_codes"],
+      "properties": {
+        "availability": { "enum": ["available", "not_computable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "performance_coverage_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_codes"],
+      "properties": {
+        "status": { "enum": ["complete", "unavailable", "unknown"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
+      }
+    },
+    "performance_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opening_valuation", "closing_valuation", "scope_membership", "cash_boundary_coverage", "in_kind_boundary_coverage", "external_flows"],
+      "properties": {
+        "opening_valuation": { "$ref": "#/$defs/performance_valuation_evidence" },
+        "closing_valuation": { "$ref": "#/$defs/performance_valuation_evidence" },
+        "scope_membership": { "$ref": "#/$defs/performance_coverage_evidence" },
+        "cash_boundary_coverage": { "$ref": "#/$defs/performance_coverage_evidence" },
+        "in_kind_boundary_coverage": { "$ref": "#/$defs/performance_coverage_evidence" },
+        "external_flows": { "$ref": "#/$defs/performance_coverage_evidence" }
+      }
+    },
+    "performance_flow_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contributions", "withdrawals", "signed_total"],
+      "properties": {
+        "contributions": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "withdrawals": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "signed_total": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] }
+      }
+    },
+    "performance_bridge_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "method", "method_version", "contract", "contract_version", "performance_currency", "value", "value_unit", "availability", "quality", "precision", "source", "coverage", "reason_codes", "opening_value", "closing_value", "external_flow_summary", "evidence"],
+      "properties": {
+        "metric": { "const": "value_change_after_external_flows" },
+        "method": { "const": "value_change_after_external_flows" },
+        "method_version": { "type": "string", "minLength": 1 },
+        "contract": { "const": "PERF04A" },
+        "contract_version": { "const": 1 },
+        "performance_currency": { "const": "RUB" },
+        "value": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "value_unit": { "const": "RUB" },
+        "availability": { "enum": ["available", "not_computable"] },
+        "quality": { "enum": ["exact", "unavailable"] },
+        "precision": { "enum": ["exact", "unknown"] },
+        "source": { "type": "string", "minLength": 1 },
+        "coverage": { "$ref": "#/$defs/performance_coverage" },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" },
+        "opening_value": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "closing_value": { "oneOf": [{ "$ref": "#/$defs/money" }, { "type": "null" }] },
+        "external_flow_summary": { "$ref": "#/$defs/performance_flow_summary" },
+        "evidence": { "$ref": "#/$defs/performance_evidence" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "availability": { "const": "available" } }, "required": ["availability"] },
+          "then": {
+            "properties": { "value": { "$ref": "#/$defs/money" }, "quality": { "const": "exact" }, "precision": { "const": "exact" } }
+          },
+          "else": {
+            "properties": { "value": { "type": "null" }, "quality": { "const": "unavailable" }, "precision": { "const": "unknown" } }
+          }
+        }
+      ]
+    },
+    "performance_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selection", "start_period", "end_period", "start_date", "end_date"],
+      "properties": {
+        "selection": { "const": "adjacent_closed_reporting_months" },
+        "start_period": { "$ref": "#/$defs/period" },
+        "end_period": { "$ref": "#/$defs/period" },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": "string", "format": "date" }
+      }
+    },
+    "performance_scope_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["xirr", "twrr", "monetary_bridge"],
+      "properties": {
+        "xirr": { "$ref": "#/$defs/performance_rate_metric" },
+        "twrr": { "$ref": "#/$defs/performance_rate_metric" },
+        "monetary_bridge": { "$ref": "#/$defs/performance_bridge_metric" }
+      }
+    },
+    "performance_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_ref", "xirr", "twrr", "monetary_bridge"],
+      "properties": {
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "xirr": { "$ref": "#/$defs/performance_rate_metric" },
+        "twrr": { "$ref": "#/$defs/performance_rate_metric" },
+        "monetary_bridge": { "$ref": "#/$defs/performance_bridge_metric" }
+      }
+    },
+    "performance_separation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["external_contributions", "external_withdrawals", "investment_performance", "value_change_after_external_flows", "note"],
+      "properties": {
+        "external_contributions": { "const": "portfolio.monetary_bridge.external_flow_summary.contributions" },
+        "external_withdrawals": { "const": "portfolio.monetary_bridge.external_flow_summary.withdrawals" },
+        "investment_performance": { "const": ["portfolio.xirr", "portfolio.twrr"] },
+        "value_change_after_external_flows": { "const": "portfolio.monetary_bridge.value" },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "performance_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calculation_window", "coverage", "portfolio", "accounts", "separation"],
+      "properties": {
+        "calculation_window": { "$ref": "#/$defs/performance_window" },
+        "coverage": { "$ref": "#/$defs/performance_coverage" },
+        "portfolio": { "$ref": "#/$defs/performance_scope_data" },
+        "accounts": { "type": "array", "items": { "$ref": "#/$defs/performance_account" } },
+        "separation": { "$ref": "#/$defs/performance_separation" }
+      }
+    },
     "capital_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/capital_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
     "dynamics_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/dynamics_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
     "portfolio_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/portfolio_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
@@ -1028,10 +1205,11 @@
     "context_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/user_context_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
     "budget_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/budget_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
     "quality_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/data_quality_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
+    "performance_section": { "type": "object", "additionalProperties": false, "required": ["status", "reason_codes", "data"], "properties": { "status": { "enum": ["included", "partial", "unavailable"] }, "reason_codes": { "$ref": "#/$defs/reason_codes" }, "data": { "oneOf": [{ "$ref": "#/$defs/performance_data" }, { "type": "null" }] } }, "allOf": [{ "$ref": "#/$defs/section_base" }] },
     "sections": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["current_capital", "historical_dynamics", "current_portfolio", "allocation_and_concentration", "passive_income", "future_cash_flows", "goals", "debts_and_real_estate", "iis_and_tax", "user_context", "budget_and_saving", "data_quality"],
+      "required": ["current_capital", "historical_dynamics", "current_portfolio", "allocation_and_concentration", "passive_income", "future_cash_flows", "goals", "debts_and_real_estate", "iis_and_tax", "user_context", "budget_and_saving", "data_quality", "performance"],
       "properties": {
         "current_capital": { "$ref": "#/$defs/capital_section" },
         "historical_dynamics": { "$ref": "#/$defs/dynamics_section" },
@@ -1044,7 +1222,8 @@
         "iis_and_tax": { "$ref": "#/$defs/iis_section" },
         "user_context": { "$ref": "#/$defs/context_section" },
         "budget_and_saving": { "$ref": "#/$defs/budget_section" },
-        "data_quality": { "$ref": "#/$defs/quality_section" }
+        "data_quality": { "$ref": "#/$defs/quality_section" },
+        "performance": { "$ref": "#/$defs/performance_section" }
       }
     }
   }

@@ -1,7 +1,7 @@
 {
-  "$schema": "https://hermes-finance.local/schema/ai-financial-review/1.0.0/schema.json",
+  "$schema": "https://hermes-finance.local/schema/ai-financial-review/1.2.0/schema.json",
   "schema_name": "hermes.finance.ai_financial_review",
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "metadata": {
     "generated_at": "2026-09-01T10:00:00Z",
     "as_of_date": "2026-08-31",
@@ -42,7 +42,8 @@
       "debts_and_real_estate": { "status": "partial", "reason_codes": ["mortgage_rate_unknown"] },
       "iis_and_tax": { "status": "partial", "reason_codes": ["salary_tax_history_incomplete"] },
       "user_context": { "status": "complete", "reason_codes": [] },
-      "budget_and_saving": { "status": "partial", "reason_codes": ["planned_budget_not_entered"] }
+      "budget_and_saving": { "status": "partial", "reason_codes": ["planned_budget_not_entered"] },
+      "performance": { "status": "complete", "reason_codes": [] }
     }
   },
   "provenance_summary": {
@@ -296,6 +297,40 @@
         "saving_allocations": [{ "ref": "allocation-reserve", "period": { "year": 2026, "month": 8 }, "destination": "Emergency reserve", "amount": { "amount": "40000.00", "currency": "RUB" }, "notes": "Keep liquid until the card is paid." }],
         "actual_expenses": [{ "ref": "expense-housing", "period": { "year": 2026, "month": 8 }, "category": "Housing", "amount": { "amount": "130000.00", "currency": "RUB" }, "expense_type": "mandatory", "is_recurring": true, "notes": "Includes mortgage payment." }],
         "planned_budget": { "state": "not_entered", "reason_codes": ["planned_budget_not_entered"], "lines": [], "plan_vs_actual": [] }
+      }
+    },
+    "performance": {
+      "status": "included",
+      "reason_codes": [],
+      "data": {
+        "calculation_window": {
+          "selection": "adjacent_closed_reporting_months",
+          "start_period": { "year": 2026, "month": 6 },
+          "end_period": { "year": 2026, "month": 8 },
+          "start_date": "2026-06-30",
+          "end_date": "2026-08-31"
+        },
+        "coverage": { "status": "complete", "reason_codes": [] },
+        "portfolio": {
+          "xirr": { "metric": "xirr", "method": "xirr", "method_version": "R08-02", "contract": "R08-02", "contract_version": 1, "performance_currency": "RUB", "value": "12.345678", "value_unit": "percentage_points", "annualized": true, "availability": "available", "quality": "exact", "precision": "exact", "source": "backend_derived", "coverage": { "status": "complete", "reason_codes": [] }, "reason_codes": [] },
+          "twrr": { "metric": "twrr", "method": "twrr", "method_version": "R08-03", "contract": "R08-03", "contract_version": 1, "performance_currency": "RUB", "value": "10.00", "value_unit": "percentage_points", "annualized": false, "availability": "available", "quality": "exact", "precision": "exact", "source": "backend_derived", "coverage": { "status": "complete", "reason_codes": [] }, "reason_codes": [] },
+          "monetary_bridge": { "metric": "value_change_after_external_flows", "method": "value_change_after_external_flows", "method_version": "PERF04A/1", "contract": "PERF04A", "contract_version": 1, "performance_currency": "RUB", "value": { "amount": "10000.00", "currency": "RUB" }, "value_unit": "RUB", "availability": "available", "quality": "exact", "precision": "exact", "source": "backend_derived", "coverage": { "status": "complete", "reason_codes": [] }, "reason_codes": [], "opening_value": { "amount": "100000.00", "currency": "RUB" }, "closing_value": { "amount": "110000.00", "currency": "RUB" }, "external_flow_summary": { "contributions": { "amount": "0.00", "currency": "RUB" }, "withdrawals": { "amount": "0.00", "currency": "RUB" }, "signed_total": { "amount": "0.00", "currency": "RUB" } }, "evidence": { "opening_valuation": { "availability": "available", "reason_codes": [] }, "closing_valuation": { "availability": "available", "reason_codes": [] }, "scope_membership": { "status": "complete", "reason_codes": [] }, "cash_boundary_coverage": { "status": "complete", "reason_codes": [] }, "in_kind_boundary_coverage": { "status": "complete", "reason_codes": [] }, "external_flows": { "status": "complete", "reason_codes": [] } } }
+        },
+        "accounts": [
+          {
+            "account_ref": "acct-broker",
+            "xirr": { "metric": "xirr", "method": "xirr", "method_version": "R08-02", "contract": "R08-02", "contract_version": 1, "performance_currency": "RUB", "value": "12.345678", "value_unit": "percentage_points", "annualized": true, "availability": "available", "quality": "exact", "precision": "exact", "source": "backend_derived", "coverage": { "status": "complete", "reason_codes": [] }, "reason_codes": [] },
+            "twrr": { "metric": "twrr", "method": "twrr", "method_version": "R08-03", "contract": "R08-03", "contract_version": 1, "performance_currency": "RUB", "value": "10.00", "value_unit": "percentage_points", "annualized": false, "availability": "available", "quality": "exact", "precision": "exact", "source": "backend_derived", "coverage": { "status": "complete", "reason_codes": [] }, "reason_codes": [] },
+            "monetary_bridge": { "metric": "value_change_after_external_flows", "method": "value_change_after_external_flows", "method_version": "PERF04A/1", "contract": "PERF04A", "contract_version": 1, "performance_currency": "RUB", "value": { "amount": "10000.00", "currency": "RUB" }, "value_unit": "RUB", "availability": "available", "quality": "exact", "precision": "exact", "source": "backend_derived", "coverage": { "status": "complete", "reason_codes": [] }, "reason_codes": [], "opening_value": { "amount": "100000.00", "currency": "RUB" }, "closing_value": { "amount": "110000.00", "currency": "RUB" }, "external_flow_summary": { "contributions": { "amount": "0.00", "currency": "RUB" }, "withdrawals": { "amount": "0.00", "currency": "RUB" }, "signed_total": { "amount": "0.00", "currency": "RUB" } }, "evidence": { "opening_valuation": { "availability": "available", "reason_codes": [] }, "closing_valuation": { "availability": "available", "reason_codes": [] }, "scope_membership": { "status": "complete", "reason_codes": [] }, "cash_boundary_coverage": { "status": "complete", "reason_codes": [] }, "in_kind_boundary_coverage": { "status": "complete", "reason_codes": [] }, "external_flows": { "status": "complete", "reason_codes": [] } } }
+          }
+        ],
+        "separation": {
+          "external_contributions": "portfolio.monetary_bridge.external_flow_summary.contributions",
+          "external_withdrawals": "portfolio.monetary_bridge.external_flow_summary.withdrawals",
+          "investment_performance": ["portfolio.xirr", "portfolio.twrr"],
+          "value_change_after_external_flows": "portfolio.monetary_bridge.value",
+          "note": "XIRR and TWRR are return metrics; the PERF04A value is a monetary value-change identity, not component profit attribution."
+        }
       }
     },
     "data_quality": {

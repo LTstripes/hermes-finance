@@ -20,13 +20,16 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
+from hermes_finance.domain import PerformanceScope
 from hermes_finance.domain.values import PercentageRate, RubleAmount
+from hermes_finance.persistence import ReportingMonth
 from hermes_finance.services.accounts import list_accounts
 from hermes_finance.services.ai_analysis_bundle import (
     SCHEMA_VERSION as BUNDLE_SCHEMA_VERSION,
@@ -45,6 +48,12 @@ from hermes_finance.services.expenses import list_expense_entries, list_saving_a
 from hermes_finance.services.goals import list_goals
 from hermes_finance.services.instruments import list_instruments
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
+from hermes_finance.services.performance_attribution import (
+    PERF04A_CONTRACT,
+    PERF04A_CONTRACT_VERSION,
+    PERF04A_METRIC,
+    performance_attribution_for_interval,
+)
 from hermes_finance.services.planned_budget import (
     list_planned_budget_lines,
     plan_vs_actual,
@@ -55,19 +64,31 @@ from hermes_finance.services.portfolio_review_package import (
 from hermes_finance.services.portfolio_review_package import (
     assemble_portfolio_review_package,
 )
+from hermes_finance.services.portfolio_twrr import PortfolioTwrrResult, twrr_for_interval
+from hermes_finance.services.portfolio_xirr import PortfolioXirrResult, xirr_for_interval
 from hermes_finance.services.positions import list_position_snapshots
 from hermes_finance.services.properties import list_property_snapshots
 from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.1.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.1.0/schema.json"
+SCHEMA_VERSION = "1.2.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.2.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
 INTEGRATED_CONTRACTS = ("#336 financial context contract",)
 ACTUAL_HISTORY_METRIC_PATH = "sections.historical_dynamics.data.history[].passive_income_actual"
+
+PERFORMANCE_WINDOW_SELECTION = "adjacent_closed_reporting_months"
+PERFORMANCE_WINDOW_MISSING = "performance_window_missing_adjacent_closed_snapshot"
+PERFORMANCE_WINDOW_NOT_CLOSED = "performance_window_reporting_month_not_closed"
+PERFORMANCE_WINDOW_ORDER_INVALID = "performance_window_snapshot_order_invalid"
+PERFORMANCE_XIRR_CONTRACT = "R08-02"
+PERFORMANCE_TWRR_CONTRACT = "R08-03"
+PERFORMANCE_XIRR_METHOD_VERSION = "R08-02"
+PERFORMANCE_TWRR_METHOD_VERSION = "R08-03"
+PERFORMANCE_BRIDGE_METHOD_VERSION = f"{PERF04A_CONTRACT}/{PERF04A_CONTRACT_VERSION}"
 
 _CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]*$")
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -275,6 +296,273 @@ def _coverage_from_section(section: Mapping[str, object]) -> dict[str, object]:
     status = section.get("status")
     mapped = {"included": "complete", "partial": "partial"}.get(str(status), "unavailable")
     return {"status": mapped, "reason_codes": _reason_codes(section.get("reason_codes"))}
+
+
+def _decimal_api(value: Decimal | None) -> str | None:
+    """Render an accepted performance percentage without floating-point conversion."""
+
+    if value is None:
+        return None
+    rendered = format(value, "f")
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return rendered or "0"
+
+
+def _performance_metric_coverage(result: object) -> dict[str, object]:
+    available = bool(getattr(result, "is_available", False))
+    return {
+        "status": "complete" if available else "unavailable",
+        "reason_codes": _reason_codes(getattr(result, "reason_codes", ())),
+    }
+
+
+def _performance_rate_metric(
+    result: PortfolioXirrResult | PortfolioTwrrResult,
+    *,
+    metric: str,
+    method_version: str,
+    contract: str,
+    annualized: bool,
+) -> dict[str, object]:
+    reasons = _reason_codes(result.reason_codes)
+    return {
+        "metric": metric,
+        "method": metric,
+        "method_version": method_version,
+        "contract": contract,
+        "contract_version": 1,
+        "performance_currency": result.performance_currency,
+        "value": _decimal_api(result.value) if result.is_available else None,
+        "value_unit": "percentage_points",
+        "annualized": annualized,
+        "availability": result.availability.value,
+        "quality": result.quality.value,
+        "precision": "exact" if result.is_available else "unknown",
+        "source": "backend_derived",
+        "coverage": _performance_metric_coverage(result),
+        "reason_codes": reasons,
+    }
+
+
+def _optional_performance_money(value: RubleAmount | None) -> dict[str, str] | None:
+    return _money(value.kopecks) if value is not None else None
+
+
+def _performance_bridge_evidence(result: object) -> dict[str, object]:
+    evidence = result.evidence
+    return {
+        "opening_valuation": {
+            "availability": evidence.opening_valuation.availability.value,
+            "reason_codes": _reason_codes(evidence.opening_valuation.reason_codes),
+        },
+        "closing_valuation": {
+            "availability": evidence.closing_valuation.availability.value,
+            "reason_codes": _reason_codes(evidence.closing_valuation.reason_codes),
+        },
+        "scope_membership": {
+            "status": evidence.scope_membership.status,
+            "reason_codes": _reason_codes(evidence.scope_membership.reason_codes),
+        },
+        "cash_boundary_coverage": {
+            "status": evidence.cash_boundary_coverage.status,
+            "reason_codes": _reason_codes(evidence.cash_boundary_coverage.reason_codes),
+        },
+        "in_kind_boundary_coverage": {
+            "status": evidence.in_kind_boundary_coverage.status,
+            "reason_codes": _reason_codes(evidence.in_kind_boundary_coverage.reason_codes),
+        },
+        "external_flows": {
+            "status": evidence.external_flows.status,
+            "reason_codes": _reason_codes(evidence.external_flows.reason_codes),
+        },
+    }
+
+
+def _performance_bridge_metric(result: object) -> dict[str, object]:
+    reasons = _reason_codes(result.reason_codes)
+    summary = result.external_flow_summary
+    return {
+        "metric": PERF04A_METRIC,
+        "method": "value_change_after_external_flows",
+        "method_version": PERFORMANCE_BRIDGE_METHOD_VERSION,
+        "contract": PERF04A_CONTRACT,
+        "contract_version": PERF04A_CONTRACT_VERSION,
+        "performance_currency": result.performance_currency,
+        "value": _optional_performance_money(result.value) if result.is_available else None,
+        "value_unit": result.performance_currency,
+        "availability": result.availability.value,
+        "quality": result.quality.value,
+        "precision": "exact" if result.is_available else "unknown",
+        "source": "backend_derived",
+        "coverage": _performance_metric_coverage(result),
+        "reason_codes": reasons,
+        "opening_value": _optional_performance_money(result.opening_value),
+        "closing_value": _optional_performance_money(result.closing_value),
+        "external_flow_summary": {
+            "contributions": _optional_performance_money(summary.contributions),
+            "withdrawals": _optional_performance_money(summary.withdrawals),
+            "signed_total": _optional_performance_money(summary.signed_total),
+        },
+        "evidence": _performance_bridge_evidence(result),
+    }
+
+
+def _performance_coverage(
+    results: list[object], *, extra_reasons: object = ()
+) -> dict[str, object]:
+    reasons = set(_reason_codes(extra_reasons))
+    reasons.update(
+        code for result in results for code in _reason_codes(getattr(result, "reason_codes", ()))
+    )
+    available_count = sum(bool(getattr(result, "is_available", False)) for result in results)
+    if not results or available_count == 0:
+        status = "unavailable"
+    elif available_count == len(results) and not reasons:
+        status = "complete"
+    else:
+        status = "partial"
+    return {"status": status, "reason_codes": sorted(reasons)}
+
+
+def _performance_window(
+    months: list[ReportingMonth], current_month: ReportingMonth
+) -> tuple[ReportingMonth, list[str]] | tuple[None, list[str]]:
+    if current_month.status != "closed":
+        return None, [PERFORMANCE_WINDOW_NOT_CLOSED]
+    previous_closed = [
+        month
+        for month in months
+        if month.status == "closed"
+        and (month.year, month.month) < (current_month.year, current_month.month)
+    ]
+    if not previous_closed:
+        return None, [PERFORMANCE_WINDOW_MISSING]
+    previous = previous_closed[-1]
+    if previous.snapshot_date >= current_month.snapshot_date:
+        return None, [PERFORMANCE_WINDOW_ORDER_INVALID]
+    return previous, []
+
+
+def _performance_data(
+    session: Session,
+    *,
+    months: list[ReportingMonth],
+    current_month: ReportingMonth,
+    account_rows: list[object],
+    account_ref_by_id: Mapping[int, str],
+) -> tuple[dict[str, object] | None, list[str]]:
+    previous_month, window_reasons = _performance_window(months, current_month)
+    if previous_month is None:
+        return None, window_reasons
+
+    start_date = previous_month.snapshot_date
+    end_date = current_month.snapshot_date
+    portfolio_xirr = xirr_for_interval(
+        session,
+        start_date=start_date,
+        end_date=end_date,
+        scope=PerformanceScope.PORTFOLIO,
+    )
+    portfolio_twrr = twrr_for_interval(
+        session,
+        start_date=start_date,
+        end_date=end_date,
+        scope=PerformanceScope.PORTFOLIO,
+    )
+    portfolio_bridge = performance_attribution_for_interval(
+        session,
+        start_date=start_date,
+        end_date=end_date,
+        scope=PerformanceScope.PORTFOLIO,
+    )
+    results: list[object] = [portfolio_xirr, portfolio_twrr, portfolio_bridge]
+    account_data: list[dict[str, object]] = []
+    for account in sorted(
+        (row for row in account_rows if getattr(row, "status", None) == "active"),
+        key=lambda row: str(account_ref_by_id[row.id]),
+    ):
+        account_xirr = xirr_for_interval(
+            session,
+            start_date=start_date,
+            end_date=end_date,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account.id,
+        )
+        account_twrr = twrr_for_interval(
+            session,
+            start_date=start_date,
+            end_date=end_date,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account.id,
+        )
+        account_bridge = performance_attribution_for_interval(
+            session,
+            start_date=start_date,
+            end_date=end_date,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account.id,
+        )
+        results.extend((account_xirr, account_twrr, account_bridge))
+        account_data.append(
+            {
+                "account_ref": account_ref_by_id[account.id],
+                "xirr": _performance_rate_metric(
+                    account_xirr,
+                    metric="xirr",
+                    method_version=PERFORMANCE_XIRR_METHOD_VERSION,
+                    contract=PERFORMANCE_XIRR_CONTRACT,
+                    annualized=True,
+                ),
+                "twrr": _performance_rate_metric(
+                    account_twrr,
+                    metric="twrr",
+                    method_version=PERFORMANCE_TWRR_METHOD_VERSION,
+                    contract=PERFORMANCE_TWRR_CONTRACT,
+                    annualized=False,
+                ),
+                "monetary_bridge": _performance_bridge_metric(account_bridge),
+            }
+        )
+
+    coverage = _performance_coverage(results)
+    reasons = list(coverage["reason_codes"])
+    data = {
+        "calculation_window": {
+            "selection": PERFORMANCE_WINDOW_SELECTION,
+            "start_period": {"year": previous_month.year, "month": previous_month.month},
+            "end_period": {"year": current_month.year, "month": current_month.month},
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        "coverage": coverage,
+        "portfolio": {
+            "xirr": _performance_rate_metric(
+                portfolio_xirr,
+                metric="xirr",
+                method_version=PERFORMANCE_XIRR_METHOD_VERSION,
+                contract=PERFORMANCE_XIRR_CONTRACT,
+                annualized=True,
+            ),
+            "twrr": _performance_rate_metric(
+                portfolio_twrr,
+                metric="twrr",
+                method_version=PERFORMANCE_TWRR_METHOD_VERSION,
+                contract=PERFORMANCE_TWRR_CONTRACT,
+                annualized=False,
+            ),
+            "monetary_bridge": _performance_bridge_metric(portfolio_bridge),
+        },
+        "accounts": account_data,
+        "separation": {
+            "external_contributions": "portfolio.monetary_bridge.external_flow_summary.contributions",
+            "external_withdrawals": "portfolio.monetary_bridge.external_flow_summary.withdrawals",
+            "investment_performance": ["portfolio.xirr", "portfolio.twrr"],
+            "value_change_after_external_flows": "portfolio.monetary_bridge.value",
+            "note": "XIRR and TWRR are return metrics; the PERF04A value is a monetary value-change identity, not component profit attribution.",
+        },
+    }
+    return data, reasons
 
 
 def _capital_data(
@@ -792,6 +1080,8 @@ def _debts_data(
             "warning_codes": [],
             "structured_snapshot_authoritative": True,
         }
+    reasons.extend(_reason_codes(property_quality.get("warning_codes")))
+    reasons = sorted(set(reasons))
     data = {
         "reporting_period": {"year": reporting_period[0], "month": reporting_period[1]},
         "debts": debts,
@@ -1213,9 +1503,8 @@ def assemble_ai_financial_review(
 
     used_refs: set[str] = set()
     account_ref_by_id: dict[int, str] = {}
-    for row in sorted(
-        list_accounts(session), key=lambda item: (item.name, item.account_type, item.id)
-    ):
+    account_rows = list_accounts(session)
+    for row in sorted(account_rows, key=lambda item: (item.name, item.account_type, item.id)):
         account_ref_by_id[row.id] = _bundle_slug("acct", row.name, used_refs)
     instrument_ref_by_id: dict[int, str] = {}
     for row in sorted(
@@ -1300,6 +1589,13 @@ def assemble_ai_financial_review(
     quality_data, quality_reasons, quality_status = _quality_data(
         package_insights, planned_budget_entered=plan_entered
     )
+    performance_data, performance_reasons = _performance_data(
+        session,
+        months=months,
+        current_month=current_month,
+        account_rows=account_rows,
+        account_ref_by_id=account_ref_by_id,
+    )
 
     portfolio_reasons = set(_reason_codes(package_positions.get("reason_codes")))
     portfolio_reasons.update(_canonical_reason_codes(package_freshness.get("reason_codes")))
@@ -1317,6 +1613,7 @@ def assemble_ai_financial_review(
     quality_reasons = sorted(set(quality_reasons) | set(portfolio_reasons))
     if package_scope.get("missing_calendar_periods"):
         quality_reasons = sorted(set(quality_reasons) | {"reporting_history_gap"})
+    quality_reasons = sorted(set(quality_reasons) | set(performance_reasons))
     if quality_status == "included" and quality_reasons:
         quality_status = "partial"
 
@@ -1388,6 +1685,15 @@ def assemble_ai_financial_review(
             reasons=quality_reasons,
             data=quality_data,
         ),
+        "performance": _section(
+            status=(
+                "unavailable"
+                if performance_data is None
+                else ("partial" if performance_reasons else "included")
+            ),
+            reasons=performance_reasons,
+            data=performance_data,
+        ),
     }
 
     coverage = {
@@ -1402,6 +1708,7 @@ def assemble_ai_financial_review(
             "iis_and_tax": _coverage_from_section(sections["iis_and_tax"]),
             "user_context": _coverage_from_section(sections["user_context"]),
             "budget_and_saving": _coverage_from_section(sections["budget_and_saving"]),
+            "performance": _coverage_from_section(sections["performance"]),
         }
     }
 
@@ -1415,9 +1722,27 @@ def assemble_ai_financial_review(
                 "message": _PLANNED_BUDGET_MESSAGE,
             }
         )
+    for code in performance_reasons:
+        extra_warnings.append(
+            {
+                "code": code,
+                "severity": "info",
+                "scope": "sections.performance",
+                "message": "Accepted Performance v1 evidence is incomplete; affected metrics remain unavailable rather than being inferred.",
+            }
+        )
     warnings = _remap_warnings(package.get("warnings"), extra=extra_warnings)
 
     field_states = _remap_field_states(package.get("field_states"))
+    if performance_reasons:
+        field_states.append(
+            {
+                "path": "sections.performance",
+                "status": "unavailable" if performance_data is None else "partial",
+                "reason_codes": performance_reasons,
+                "message": "Accepted Performance v1 metrics are limited by the selected interval evidence.",
+            }
+        )
     missing_periods = _list(
         package_scope.get("missing_calendar_periods"),
         label="scope missing periods",

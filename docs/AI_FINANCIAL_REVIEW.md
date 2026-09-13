@@ -6,7 +6,7 @@ frontend behavior, migration, provider call, cloud upload, or LLM call.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Schema version:** `1.1.0`
+**Schema version:** `1.2.0`
 
 **Normative schema:** [`ai_financial_review.schema.json`](ai_financial_review.schema.json)
 
@@ -48,6 +48,7 @@ The intended source map is:
 | `debts_and_real_estate` | Existing package context plus direct allowlisted debt/property read models for persisted rows and the #336 fields (`annual_rate`, due/end dates, mortgage rate). The report may expose facts that the old package did not project, but must not derive new debt or property semantics. |
 | `user_context` | Persisted `monthly_comments` and explicitly owner-entered notes. Text is carried with provenance and is never parsed as a number or used in a calculation. |
 | `budget_and_saving` | Persisted `saving_allocations`, actual `expense_entries`, and #336 `planned_budget_lines`. Plan-vs-actual rows use the exact `(period, category, expense_type)` key and are a side-by-side presentation only. |
+| `performance` | Existing R08-02 XIRR, R08-03 exact TWRR and PERF04A value-bridge builders over the adjacent closed reporting-month window. The report preserves their availability, quality, coverage, reason codes, exact units, method identity and version metadata; it does not calculate a second return or attribution model. |
 | `data_quality`, `warnings`, `field_states` | Existing deterministic insights, coverage states and stable warning codes. Open evidence maps, raw diagnostics and provider payloads stay out of the export. |
 
 The adapter uses an allowlist. It must not serialize ORM objects, API request
@@ -122,6 +123,10 @@ The required sections are:
 12. `data_quality` — deterministic insights and the report-level quality
     summary; warnings and unavailable/partial paths are also repeated in the
     canonical top-level `warnings`/`field_states` lists.
+13. `performance` — the exact selected-scope Performance v1 window, portfolio
+    and supported-account XIRR/TWRR, PERF04A monetary bridge evidence, and an
+    explicit separation between external contributions/withdrawals, return
+    metrics and value change after external flows.
 
 ## 4. Financial and availability invariants
 
@@ -146,6 +151,10 @@ The required sections are:
 - `market_value_change` and cash-flow-adjusted `investment_return` are
   unavailable unless an accepted authoritative aggregate exists. Liquid-capital
   movement is not relabelled as return.
+- Performance v1 is exposed in its own section. XIRR/TWRR remain percentage
+  return metrics; PERF04A remains the monetary `value_change_after_external_flows`
+  identity with its contribution/withdrawal summary and evidence. It is not
+  component profit attribution, and no export-layer formula is introduced.
 - The report includes an exact stored ISIN when present and universal position
   fields for gold and other instruments. Gold does not get a parallel formula.
 - Free text is context, not a structured financial fact. Numbers in comments or
@@ -163,6 +172,11 @@ The required sections are:
 
 - `hermes.finance.ai_analysis_bundle` `1.3.0`;
 - `hermes.finance.portfolio_review_package` `1.1.0`.
+
+The performance section records the accepted builder identities as method
+metadata: `R08-02` for XIRR, `R08-03` for exact TWRR and `PERF04A/1` for the
+monetary bridge. These identifiers describe the source contracts; they do not
+create a second calculation implementation.
 
 The metadata also records the integrated `#336` financial-context contract by
 name, without pretending that it is a separate calculation schema.
@@ -182,6 +196,9 @@ documents, stack traces, SQL and open-ended diagnostic evidence.
 - minor: additive optional fields/sections or backward-compatible enum values;
 - major: removal/rename, changed requiredness/units, changed source meaning or
   changed financial counting semantics.
+
+Version `1.2.0` adds the required `performance` section; the generated
+canonical v1.2 instance includes it and validates it strictly.
 
 Consumers dispatch on the major version and validate the exact schema declared
 by the file. The v1 contract is strict (`additionalProperties=false` in the
