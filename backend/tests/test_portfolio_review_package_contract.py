@@ -107,8 +107,8 @@ def test_schema_and_full_synthetic_fixture_validate() -> None:
     _validator().validate(fixture)
 
     assert fixture["schema_name"] == "hermes.finance.portfolio_review_package"
-    assert fixture["schema_version"] == "1.0.0"
-    assert fixture["metadata"]["source_contract_version"] == "1.0.0"
+    assert fixture["schema_version"] == "1.1.0"
+    assert fixture["metadata"]["source_contract_version"] == "1.3.0"
     assert fixture["profile"] == "full"
     sections = fixture["sections"]
     assert isinstance(sections, dict)

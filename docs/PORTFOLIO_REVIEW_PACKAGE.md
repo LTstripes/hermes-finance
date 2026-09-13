@@ -2,7 +2,7 @@
 
 **Status:** first bounded slice for [issue #237](https://github.com/LTstripes/hermes-finance/issues/237).
 
-**Contract:** `hermes.finance.portfolio_review_package` version `1.0.0`.
+**Contract:** `hermes.finance.portfolio_review_package` version `1.1.0`.
 
 **Normative schema:** [`portfolio_review_package.schema.json`](portfolio_review_package.schema.json)
 
@@ -22,10 +22,11 @@ endpoint, a human-readable companion report, and a preview/download UI. It does
 not upload data, call a cloud service or LLM, persist an export, or refresh a
 provider.
 
-The current `hermes.finance.ai_analysis_bundle` `1.1.0` contract remains the source
-implementation for the first adapter. The frozen review package `1.0.0` intentionally
-retains its declared `source_contract_version` of `1.0.0`; a future package minor
-version can advance that metadata without mutating this contract. The review package
+The current `hermes.finance.ai_analysis_bundle` contract is the source
+implementation for the first adapter. The review package `1.1.0` reports the bundle
+schema version it was projected from in `metadata.source_contract_version`, so that
+metadata advances with the bundle instead of being frozen at the initial value. The
+review package
 is one new output contract, not a second financial model: its sections deliberately reuse
 the existing bundle's money, availability, provenance, payout-counting, and
 closed-month semantics. A later assembler maps existing DTOs/read models into this
@@ -112,7 +113,7 @@ empty array or zero.
 | `future_cash_flows` | `merged_payout_calendar` | Calendar total, non-principal total, and principal total remain separate |
 | `freshness` | `build_freshness_provenance_summary` | Family statuses and reason codes are carried over; no provider call |
 | `allocation` | `risk_allocation` / dashboard allocation DTOs | DB/provider IDs are replaced by export-local refs or omitted |
-| `context` | existing goals, debt/property, IIS/tax read models | Received benefits only affect actual IIS result; incomplete salary history stays unavailable |
+| `context` | existing goals, debt/property, IIS/tax read models | Received benefits only affect actual IIS result; incomplete salary history stays unavailable. Every known active IIS account is listed even with an unconfigured lifecycle/tax profile (`null` lifecycle fields, `iis_tax_data_unconfigured` result metrics), and the selected month's salary/tax reconciliation is projected under `salary_tax_context.selected_month` |
 | `deterministic_insights` | `build_deterministic_insights` | Only the closed typed projection is safe for this contract; open evidence maps are not copied |
 
 ## Versioning and follow-ups

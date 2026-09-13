@@ -6,7 +6,7 @@ frontend behavior, migration, provider call, cloud upload, or LLM call.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Schema version:** `1.0.0`
+**Schema version:** `1.1.0`
 
 **Normative schema:** [`ai_financial_review.schema.json`](ai_financial_review.schema.json)
 
@@ -108,7 +108,13 @@ The required sections are:
    mortgage rate/payment/balance, property equity, coverage and data-quality
    warnings.
 9. `iis_and_tax` — IIS type/opening/eligible-close dates, contributions,
-   benefits, result semantics and salary-tax coverage.
+   benefits, result semantics and salary-tax coverage. Every known active IIS
+   account is listed even when its lifecycle/tax profile is unconfigured: those
+   fields are `null`, the persisted contributions/benefits still appear, and the
+   portfolio-result metrics stay `unavailable` with
+   `iis_tax_data_unconfigured` rather than being guessed. The selected reporting
+   month's salary/tax reconciliation is available directly under
+   `salary_tax_context.selected_month`.
 10. `user_context` — monthly comments plus owner-entered entity notes with
     `source=persisted_user_note`.
 11. `budget_and_saving` — saving destinations/amounts/notes, actual expense
@@ -155,8 +161,8 @@ The required sections are:
 
 `metadata.source_contracts` pins the source schemas used by the adapter:
 
-- `hermes.finance.ai_analysis_bundle` `1.2.0`;
-- `hermes.finance.portfolio_review_package` `1.0.0`.
+- `hermes.finance.ai_analysis_bundle` `1.3.0`;
+- `hermes.finance.portfolio_review_package` `1.1.0`.
 
 The metadata also records the integrated `#336` financial-context contract by
 name, without pretending that it is a separate calculation schema.

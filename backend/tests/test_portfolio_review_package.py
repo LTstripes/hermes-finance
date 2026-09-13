@@ -117,8 +117,8 @@ def test_full_package_is_schema_valid_read_only_and_privacy_safe(
     _validator().validate(package)
     assert response.headers["x-content-type-options"] == "nosniff"
     assert package["schema_name"] == "hermes.finance.portfolio_review_package"
-    assert package["schema_version"] == "1.0.0"
-    assert package["metadata"]["source_contract_version"] == "1.0.0"
+    assert package["schema_version"] == "1.1.0"
+    assert package["metadata"]["source_contract_version"] == "1.3.0"
     assert package["profile"] == "full"
     assert package["scope"]["selection_reason"] == "latest_closed"
     assert package["scope"]["requested_sections"] == [

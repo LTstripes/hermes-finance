@@ -61,8 +61,8 @@ from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.0.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.0.0/schema.json"
+SCHEMA_VERSION = "1.1.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.1.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"

@@ -69,12 +69,12 @@ from hermes_finance.services.properties import (
 )
 from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import FUTURE_DATED_VALUATION
-from hermes_finance.services.salary import salary_tax_snapshot_for_month
+from hermes_finance.services.salary import SalaryTaxSnapshot, salary_tax_snapshot_for_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
-SCHEMA_VERSION = "1.2.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.2.0/schema.json"
+SCHEMA_VERSION = "1.3.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.3.0/schema.json"
 ORDERING_CONTRACT = "arrays_are_stably_sorted_as_defined_by_contract"
 ACTUAL_HISTORY_METRIC_PATH = "reporting_history[].kpis.passive_income_actual"
 PASSIVE_HISTORY_BEFORE_START = "passive_income_history_before_configured_start"
@@ -256,6 +256,82 @@ def _provenance(source: str | None, observed_at: datetime | date | None) -> dict
 
 def _coverage(status: str, *reasons: str) -> dict[str, object]:
     return {"status": status, "reason_codes": sorted(set(reasons))}
+
+
+def _salary_reconciliation(snapshot: SalaryTaxSnapshot) -> tuple[str, list[str]]:
+    """Map a salary-tax snapshot to ``(consistency, reason_codes)``.
+
+    Pure presentation mapping shared by the reporting-history KPI block
+    and the ``salary_tax_context.selected_month`` reconciliation.  Emits
+    no warnings; callers decide the warning scope.  Unknown calculated
+    values stay unavailable (never zero-filled); actual paid values are
+    persisted facts.
+    """
+    codes = list(snapshot.warning_codes)
+    if snapshot.calculated_tax_kopecks is None or snapshot.calculated_net_kopecks is None:
+        return "unavailable", codes
+    if snapshot.gross_kopecks - snapshot.calculated_tax_kopecks != snapshot.actual_net_kopecks:
+        return "mismatch", [*codes, SALARY_NET_MISMATCH]
+    return "consistent", codes
+
+
+def _iis_contributions(session, account_id: int) -> list:
+    """Return IIS contribution rows for an account ordered by tax year."""
+    return session.scalars(
+        select(IisContribution)
+        .where(IisContribution.account_id == account_id)
+        .order_by(IisContribution.tax_year)
+    ).all()
+
+
+def _iis_benefit_sums(session, account_id: int) -> dict[str, int]:
+    """Return factual per-status tax-benefit sums for an account.
+
+    The tables are the authoritative source: statuses without rows sum
+    to zero recorded benefits.  No values are inferred.
+    """
+    benefits = {status: 0 for status in ("planned", "submitted", "received", "rejected")}
+    for benefit in session.scalars(
+        select(TaxBenefit).where(TaxBenefit.account_id == account_id)
+    ).all():
+        benefits[benefit.status] = benefits.get(benefit.status, 0) + benefit.amount_kopecks
+    return benefits
+
+
+def _selected_month_salary_tax(
+    snapshot: SalaryTaxSnapshot, *, year: int, month: int
+) -> dict[str, object]:
+    """Build the authoritative selected-month salary/tax reconciliation.
+
+    Reuses the read-only snapshot builder output; unknown calculated
+    values stay unavailable with stable reason codes, never zero-filled.
+    """
+    consistency, codes = _salary_reconciliation(snapshot)
+    return {
+        "reporting_period": _period(year, month),
+        "gross": _metric(
+            snapshot.gross_kopecks,
+            source="persisted_actual",
+            reason_codes=codes,
+        ),
+        "calculated_tax": _metric(
+            snapshot.calculated_tax_kopecks,
+            source="backend_derived",
+            reason_codes=codes,
+        ),
+        "calculated_net": _metric(
+            snapshot.calculated_net_kopecks,
+            source="backend_derived",
+            reason_codes=codes,
+        ),
+        "actual_net": _metric(
+            snapshot.actual_net_kopecks,
+            source="persisted_actual",
+            reason_codes=codes,
+        ),
+        "consistency": consistency,
+        "reason_codes": sorted(set(codes)),
+    }
 
 
 def _one_year_after(day: date) -> date:
@@ -579,27 +655,16 @@ def assemble_ai_analysis_bundle(
             )
 
         salary_snapshot = salary_tax_snapshot_for_month(session, month.id)
-        salary_codes = list(salary_snapshot.warning_codes)
-        salary_consistency = "unavailable"
-        if (
-            salary_snapshot.calculated_tax_kopecks is not None
-            and salary_snapshot.calculated_net_kopecks is not None
-        ):
-            salary_consistency = "consistent"
-            if (
-                salary_snapshot.gross_kopecks - salary_snapshot.calculated_tax_kopecks
-                != salary_snapshot.actual_net_kopecks
-            ):
-                salary_consistency = "mismatch"
-                salary_codes.append(SALARY_NET_MISMATCH)
-                salary_quality_codes.add(SALARY_NET_MISMATCH)
-                point_warnings.append(SALARY_NET_MISMATCH)
-                add_warning(
-                    SALARY_NET_MISMATCH,
-                    "warning",
-                    "reporting_history",
-                    "Actual salary net differs from gross minus calculated tax; the two values remain separate persisted and derived facts.",
-                )
+        salary_consistency, salary_codes = _salary_reconciliation(salary_snapshot)
+        if salary_consistency == "mismatch":
+            salary_quality_codes.add(SALARY_NET_MISMATCH)
+            point_warnings.append(SALARY_NET_MISMATCH)
+            add_warning(
+                SALARY_NET_MISMATCH,
+                "warning",
+                "reporting_history",
+                "Actual salary net differs from gross minus calculated tax; the two values remain separate persisted and derived facts.",
+            )
         salary_block = {
             "gross": _metric(
                 salary_snapshot.gross_kopecks,
@@ -1346,16 +1411,8 @@ def assemble_ai_analysis_bundle(
     for profile in profiles:
         result = iis_result(session, account_id=profile.account_id, reporting_month_id=current.id)
         iis_result_ineligible = profile.account_id in future_dated_iis_account_ids
-        contributions = session.scalars(
-            select(IisContribution)
-            .where(IisContribution.account_id == profile.account_id)
-            .order_by(IisContribution.tax_year)
-        ).all()
-        benefits = {status: 0 for status in ("planned", "submitted", "received", "rejected")}
-        for benefit in session.scalars(
-            select(TaxBenefit).where(TaxBenefit.account_id == profile.account_id)
-        ).all():
-            benefits[benefit.status] = benefits.get(benefit.status, 0) + benefit.amount_kopecks
+        contributions = _iis_contributions(session, profile.account_id)
+        benefits = _iis_benefit_sums(session, profile.account_id)
         iis_accounts.append(
             {
                 "account_ref": account_refs[profile.account_id],
@@ -1392,6 +1449,49 @@ def assemble_ai_analysis_bundle(
                 "result_rule": IIS_RESULT_RULE,
             }
         )
+    profiled_account_ids = {profile.account_id for profile in profiles}
+    for row in active_iis_accounts:
+        # Every known IIS account is represented even when lifecycle/tax
+        # metadata is partial: `iis_result` requires a profile, so result
+        # metrics stay unavailable with the unconfigured reason instead of
+        # being guessed, while recorded contributions/benefits are factual.
+        if row.id in profiled_account_ids:
+            continue
+        contributions = _iis_contributions(session, row.id)
+        benefits = _iis_benefit_sums(session, row.id)
+        unconfigured_reasons = [IIS_TAX_DATA_UNCONFIGURED]
+        if row.id in future_dated_iis_account_ids:
+            unconfigured_reasons.append(FUTURE_DATED_VALUATION)
+        iis_accounts.append(
+            {
+                "account_ref": account_refs[row.id],
+                "iis_type": None,
+                "opened_at": None,
+                "eligible_close_at": None,
+                "contributions_by_tax_year": [
+                    {
+                        "tax_year": item.tax_year,
+                        "amount": _money(item.amount_kopecks),
+                        "is_target_reached": item.is_target_reached,
+                    }
+                    for item in contributions
+                ],
+                "tax_benefits": {key: _money(value) for key, value in benefits.items()},
+                "portfolio_result_without_tax_benefit": _metric(
+                    None,
+                    source="backend_derived",
+                    reason_codes=unconfigured_reasons,
+                    available=False,
+                ),
+                "portfolio_result_with_received_tax_benefit": _metric(
+                    None,
+                    source="backend_derived",
+                    reason_codes=unconfigured_reasons,
+                    available=False,
+                ),
+                "result_rule": IIS_RESULT_RULE,
+            }
+        )
     iis_accounts.sort(key=lambda item: item["account_ref"])
 
     snapshot = salary_tax_snapshot_for_month(session, current.id)
@@ -1414,6 +1514,9 @@ def assemble_ai_analysis_bundle(
                 None, reason_codes=["salary_tax_history_incomplete"], available=False
             ),
             "warning_codes": salary_warning_codes,
+            "selected_month": _selected_month_salary_tax(
+                snapshot, year=current.year, month=current.month
+            ),
         }
     else:
         marginal = None
@@ -1428,6 +1531,9 @@ def assemble_ai_analysis_bundle(
             ),
             "current_marginal_rate_pct": _ratio(marginal, available=marginal is not None),
             "warning_codes": salary_warning_codes,
+            "selected_month": _selected_month_salary_tax(
+                snapshot, year=current.year, month=current.month
+            ),
         }
 
     calendar = merged_payout_calendar(

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/portfolio-review-package/1.0.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/portfolio-review-package/1.1.0/schema.json",
   "title": "Hermes Finance portfolio review package",
   "description": "Versioned read-only portfolio-review package. Financial values and classifications are supplied by existing Hermes read models; this schema defines the safe transport contract.",
   "type": "object",
@@ -18,7 +18,7 @@
   "properties": {
     "$schema": {"type": "string"},
     "schema_name": {"const": "hermes.finance.portfolio_review_package"},
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "1.1.0"},
     "metadata": {"$ref": "#/$defs/metadata"},
     "profile": {"enum": ["concise", "full"]},
     "scope": {"$ref": "#/$defs/scope"},
@@ -254,7 +254,7 @@
         },
         "generation_mode": {"const": "read_only"},
         "source_contract_name": {"const": "hermes.finance.ai_analysis_bundle"},
-        "source_contract_version": {"const": "1.0.0"},
+        "source_contract_version": {"const": "1.3.0"},
         "calculation_versions": {
           "type": "object",
           "additionalProperties": false,
@@ -1024,8 +1024,8 @@
       ],
       "properties": {
         "account_ref": {"type": "string", "pattern": "^acct-[a-z0-9-]+$"},
-        "iis_type": {"type": "string", "minLength": 1, "maxLength": 64},
-        "opened_at": {"type": "string", "format": "date"},
+        "iis_type": {"type": ["string", "null"], "minLength": 1, "maxLength": 64},
+        "opened_at": {"type": ["string", "null"], "format": "date"},
         "eligible_close_at": {
           "type": ["string", "null"],
           "format": "date"
@@ -1049,7 +1049,8 @@
         "opening_context_available",
         "taxable_gross_ytd",
         "current_marginal_rate_pct",
-        "warning_codes"
+        "warning_codes",
+        "selected_month"
       ],
       "properties": {
         "tax_year": {"type": "integer", "minimum": 1900, "maximum": 9999},
@@ -1057,7 +1058,30 @@
         "opening_context_available": {"type": "boolean"},
         "taxable_gross_ytd": {"$ref": "#/$defs/money_metric"},
         "current_marginal_rate_pct": {"$ref": "#/$defs/ratio_metric"},
-        "warning_codes": {"$ref": "#/$defs/reason_codes"}
+        "warning_codes": {"$ref": "#/$defs/reason_codes"},
+        "selected_month": {"$ref": "#/$defs/salary_selected_month"}
+      }
+    },
+    "salary_selected_month": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reporting_period",
+        "gross",
+        "calculated_tax",
+        "calculated_net",
+        "actual_net",
+        "consistency",
+        "reason_codes"
+      ],
+      "properties": {
+        "reporting_period": {"$ref": "#/$defs/period"},
+        "gross": {"$ref": "#/$defs/money_metric"},
+        "calculated_tax": {"$ref": "#/$defs/money_metric"},
+        "calculated_net": {"$ref": "#/$defs/money_metric"},
+        "actual_net": {"$ref": "#/$defs/money_metric"},
+        "consistency": {"enum": ["consistent", "mismatch", "unavailable"]},
+        "reason_codes": {"$ref": "#/$defs/reason_codes"}
       }
     },
     "context_data": {
