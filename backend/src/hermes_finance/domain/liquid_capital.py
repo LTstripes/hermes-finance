@@ -31,6 +31,30 @@ class AccountAmount:
 
 
 @dataclass(frozen=True, slots=True)
+class LinkedPairReadModel:
+    """Presentation facts for one linked liquid account and credit-card debt.
+
+    The account and debt amounts are already part of the canonical liquid
+    capital totals.  ``net_contribution`` is therefore an attribution value
+    for this pair, not an additional liquid-capital adjustment.
+    """
+
+    debt_id: int
+    debt_name: str
+    debt_type: str
+    debt_balance: RubleAmount
+    account_id: int
+    account_name: str
+    account_type: str
+    account_balance: RubleAmount
+
+    @property
+    def net_contribution(self) -> RubleAmount:
+        """Return the pair's economic contribution ``A - D`` exactly."""
+        return RubleAmount(self.account_balance.kopecks - self.debt_balance.kopecks)
+
+
+@dataclass(frozen=True, slots=True)
 class LiquidCapitalClassBreakdown:
     """Breakdown of liquid assets by asset class."""
 
@@ -68,6 +92,22 @@ class LiquidCapitalResult:
     liquid_capital_net: RubleAmount
     breakdown: LiquidCapitalClassBreakdown
     accounts: tuple[AccountAmount, ...] = ()
+    linked_pairs: tuple[LinkedPairReadModel, ...] = ()
+
+    @property
+    def linked_pair_assets(self) -> RubleAmount:
+        """Return gross account-side amounts for linked pairs."""
+        return RubleAmount(sum(item.account_balance.kopecks for item in self.linked_pairs))
+
+    @property
+    def linked_pair_debts(self) -> RubleAmount:
+        """Return debt-side amounts for linked pairs without re-subtracting them."""
+        return RubleAmount(sum(item.debt_balance.kopecks for item in self.linked_pairs))
+
+    @property
+    def linked_pair_net_contribution(self) -> RubleAmount:
+        """Return the presentation-only sum of pair contributions ``A - D``."""
+        return RubleAmount(sum(item.net_contribution.kopecks for item in self.linked_pairs))
 
 
 def calculate_liquid_capital(input_data: LiquidCapitalInput) -> LiquidCapitalResult:

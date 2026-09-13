@@ -50,6 +50,7 @@ class DebtReportRow:
     debt_type: str
     balance: RubleAmount
     included_in_liquid_capital: bool
+    linked_account_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +119,9 @@ _NUMERIC_HEADERS = frozenset(
         "Прогресс",
         "Денежный доход",
         "Нереализованный результат",
+        "Актив",
+        "Долг",
+        "Экономический вклад",
     }
 )
 
@@ -455,6 +459,44 @@ def _render_debts(lines: list[str], report: MarkdownReport) -> None:
             ),
         ),
     )
+    pairs = _ordered(
+        summary.liquid_capital.linked_pairs,
+        key=lambda item: (item.account_name, item.account_id, item.debt_name, item.debt_id),
+    )
+    if pairs:
+        lines.extend(("", "### Связанные пары (актив — кредитная карта)"))
+        _append_table(
+            lines,
+            ("Счёт", "Актив", "Долг", "Экономический вклад"),
+            (
+                (
+                    f"{item.account_name} ({item.account_id})",
+                    _format_money(item.account_balance),
+                    _format_money(item.debt_balance),
+                    _format_money(item.net_contribution),
+                )
+                for item in pairs
+            ),
+        )
+        lines.append("")
+        _append_table(
+            lines,
+            ("Показатель", "Значение"),
+            (
+                (
+                    "Связанные активы (gross)",
+                    _format_money(summary.liquid_capital.linked_pair_assets),
+                ),
+                (
+                    "Связанные долги (included)",
+                    _format_money(summary.liquid_capital.linked_pair_debts),
+                ),
+                (
+                    "Экономический net вклад связанных пар",
+                    _format_money(summary.liquid_capital.linked_pair_net_contribution),
+                ),
+            ),
+        )
     lines.append("")
 
 

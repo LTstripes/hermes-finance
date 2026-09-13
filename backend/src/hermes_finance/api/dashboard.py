@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.cash_flow_ladder import CashFlowLadderOut, cash_flow_ladder_to_out
 from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.dashboard import DashboardResult, build_dashboard
@@ -59,6 +60,20 @@ class AccountAmountOut(BaseModel):
     amount: MoneyValue
 
 
+class LinkedPairOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    debt_id: int
+    debt_name: str
+    debt_type: str
+    debt_balance: MoneyValue
+    account_id: int
+    account_name: str
+    account_type: str
+    account_balance: MoneyValue
+    net_contribution: MoneyValue
+
+
 class LiquidCapitalOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,6 +82,10 @@ class LiquidCapitalOut(BaseModel):
     liquid_capital_net: MoneyValue
     breakdown: LiquidCapitalBreakdownOut
     accounts: list[AccountAmountOut]
+    linked_pairs: list[LinkedPairOut]
+    linked_pair_assets: MoneyValue
+    linked_pair_debts: MoneyValue
+    linked_pair_net_contribution: MoneyValue
 
 
 class ForecastBreakdownOut(BaseModel):
@@ -218,6 +237,9 @@ class HistoricalPointOut(BaseModel):
     reporting_month_id: int
     liquid_capital_net: MoneyValue
     passive_income_actual: MoneyValue
+    linked_pair_assets: MoneyValue
+    linked_pair_debts: MoneyValue
+    linked_pair_net_contribution: MoneyValue
 
 
 class AssetClassSliceOut(BaseModel):
@@ -337,6 +359,24 @@ def _liquid_out(result: object) -> LiquidCapitalOut:
             AccountAmountOut(account_id=item.account_id, amount=_money(item.amount))
             for item in result.accounts
         ],
+        linked_pairs=[_linked_pair_out(item) for item in result.linked_pairs],
+        linked_pair_assets=_money(result.linked_pair_assets),
+        linked_pair_debts=_money(result.linked_pair_debts),
+        linked_pair_net_contribution=_money(result.linked_pair_net_contribution),
+    )
+
+
+def _linked_pair_out(pair: LinkedPairReadModel) -> LinkedPairOut:
+    return LinkedPairOut(
+        debt_id=pair.debt_id,
+        debt_name=pair.debt_name,
+        debt_type=pair.debt_type,
+        debt_balance=_money(pair.debt_balance),
+        account_id=pair.account_id,
+        account_name=pair.account_name,
+        account_type=pair.account_type,
+        account_balance=_money(pair.account_balance),
+        net_contribution=_money(pair.net_contribution),
     )
 
 
@@ -503,6 +543,9 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
                 reporting_month_id=point.reporting_month_id,
                 liquid_capital_net=_money(point.liquid_capital_net),
                 passive_income_actual=_money(point.passive_income_actual),
+                linked_pair_assets=_money(point.linked_pair_assets),
+                linked_pair_debts=_money(point.linked_pair_debts),
+                linked_pair_net_contribution=_money(point.linked_pair_net_contribution),
             )
             for point in dashboard.historical_series
         ],

@@ -157,6 +157,7 @@ class RawDepositSnapshot(ExportModel):
 class RawCashBalance(ExportModel):
     id: int
     reporting_month_id: int
+    account_id: int | None
     name: str
     amount: MoneyValue
     include_in_capital: bool
@@ -238,6 +239,7 @@ class RawDebt(ExportModel):
     name: str
     current_balance: MoneyValue
     include_in_liquid_capital: bool
+    linked_account_id: int | None
     notes: str | None
 
 
@@ -329,6 +331,7 @@ class ReportDebtRow(ExportModel):
     debt_type: str
     balance: MoneyValue
     included_in_liquid_capital: bool
+    linked_account_id: int | None = None
 
 
 class ReportGoalRow(ExportModel):
@@ -495,6 +498,7 @@ def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceD
             RawCashBalance(
                 id=item.id,
                 reporting_month_id=item.reporting_month_id,
+                account_id=item.account_id,
                 name=item.name,
                 amount=_required_money(item.amount_kopecks, item.currency),
                 include_in_capital=item.include_in_capital,
@@ -590,6 +594,7 @@ def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceD
                 name=item.name,
                 current_balance=_required_money(item.current_balance_kopecks),
                 include_in_liquid_capital=item.include_in_liquid_capital,
+                linked_account_id=item.linked_account_id,
                 notes=item.notes,
             )
             for item in _month_rows(session, Debt, month.id)
@@ -678,6 +683,7 @@ def build_report_data(report: MarkdownReport) -> ReportData:
                 debt_type=item.debt_type,
                 balance=_required_money(item.balance.kopecks),
                 included_in_liquid_capital=item.included_in_liquid_capital,
+                linked_account_id=item.linked_account_id,
             )
             for item in report.debt_rows
         ],
