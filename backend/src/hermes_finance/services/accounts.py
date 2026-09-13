@@ -103,22 +103,42 @@ def update_account(
     notes: str | None = None,
 ) -> Account:
     account = get_account(session, account_id)
-    normalized_account_type = None
-    if account_type is not None:
-        normalized_account_type = _coerce_account_type(account_type)
-        if normalized_account_type.value not in LINKED_DEBT_ACCOUNT_TYPES and _has_linked_debt(
-            session, account.id
-        ):
-            raise ValueError("account type cannot change while the account is linked to a debt")
+    normalized_name = _normalize_name(name) if name is not None else None
+    normalized_account_type = (
+        _coerce_account_type(account_type) if account_type is not None else None
+    )
+    normalized_external_code = (
+        _normalize_external_code(external_code) if external_code is not None else None
+    )
+    normalized_status = _coerce_account_status(status) if status is not None else None
+    has_linked_debt = _has_linked_debt(session, account.id)
 
-    if name is not None:
-        account.name = _normalize_name(name)
+    if (
+        has_linked_debt
+        and normalized_account_type is not None
+        and normalized_account_type.value not in LINKED_DEBT_ACCOUNT_TYPES
+    ):
+        raise ValueError("account type cannot change while the account is linked to a debt")
+    if has_linked_debt and include_in_capital is False:
+        raise ValueError("linked account must remain included in capital")
+    if normalized_external_code is not None:
+        duplicate = session.scalar(
+            select(Account.id).where(
+                Account.external_code == normalized_external_code,
+                Account.id != account.id,
+            )
+        )
+        if duplicate is not None:
+            raise ValueError("external_code must be unique when provided")
+
+    if normalized_name is not None:
+        account.name = normalized_name
     if normalized_account_type is not None:
         account.account_type = normalized_account_type.value
     if external_code is not None:
-        account.external_code = _normalize_external_code(external_code)
-    if status is not None:
-        account.status = _coerce_account_status(status).value
+        account.external_code = normalized_external_code
+    if normalized_status is not None:
+        account.status = normalized_status.value
     if include_in_capital is not None:
         account.include_in_capital = include_in_capital
     if include_in_returns is not None:

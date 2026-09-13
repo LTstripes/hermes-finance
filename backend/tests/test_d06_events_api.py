@@ -427,6 +427,14 @@ def test_debt_account_link_api_is_explicit_and_month_local(client: TestClient) -
             "include_in_liquid_capital": True,
         }
     ]
+    excluded = client.patch(
+        f"/api/accounts/{deposit_id}",
+        json={"include_in_capital": False},
+    )
+    assert excluded.status_code == 422, excluded.text
+    _assert_error(excluded.json(), "unprocessable")
+    assert client.get(f"/api/accounts/{deposit_id}").json()["include_in_capital"] is True
+    assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] == deposit_id
     assert (
         client.get(f"/api/accounts/{deposit_id}/linked-debts?month_id={other_month_id}").json()
         == []

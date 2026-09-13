@@ -137,3 +137,51 @@ def test_account_validation_rejects_invalid_type_and_empty_name(tmp_path: Path) 
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_failed_multi_field_update_does_not_mutate_account_or_session(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        account = create_account(
+            session,
+            name="Synthetic Original",
+            account_type=AccountType.BROKERAGE,
+            external_code="original-code",
+            include_in_capital=True,
+            include_in_returns=False,
+            notes="original notes",
+        )
+
+        with pytest.raises(ValueError, match="unsupported account status"):
+            update_account(
+                session,
+                account.id,
+                name="Should Not Persist",
+                account_type=AccountType.CASH,
+                external_code="changed-code",
+                status="not-a-status",
+                include_in_capital=False,
+                include_in_returns=True,
+                notes="changed notes",
+            )
+
+        assert account.name == "Synthetic Original"
+        assert account.account_type == AccountType.BROKERAGE.value
+        assert account.external_code == "original-code"
+        assert account.status == AccountStatus.ACTIVE.value
+        assert account.include_in_capital is True
+        assert account.include_in_returns is False
+        assert account.notes == "original notes"
+        assert not session.is_modified(account, include_collections=False)
+
+        follow_up = update_account(session, account.id, name="Follow-up Update")
+        assert follow_up.name == "Follow-up Update"
+        assert follow_up.account_type == AccountType.BROKERAGE.value
+        assert follow_up.external_code == "original-code"
+        assert follow_up.status == AccountStatus.ACTIVE.value
+        assert follow_up.include_in_capital is True
+        assert follow_up.include_in_returns is False
+        assert follow_up.notes == "original notes"
+    finally:
+        session.close()
+        database.engine.dispose()

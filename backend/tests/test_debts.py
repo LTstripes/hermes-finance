@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, DebtType, RubleAmount
 from hermes_finance.persistence import Base
-from hermes_finance.services.accounts import create_account, delete_account, update_account
+from hermes_finance.services.accounts import (
+    create_account,
+    delete_account,
+    get_account,
+    update_account,
+)
 from hermes_finance.services.debts import (
     DebtAccountLinkConflictError,
     DebtNotFoundError,
@@ -22,6 +27,8 @@ from hermes_finance.services.debts import (
     unlink_debt_from_account,
     update_debt,
 )
+from hermes_finance.services.deposits import create_deposit_snapshot
+from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
@@ -365,6 +372,48 @@ def test_link_rejects_duplicate_and_prevents_orphaning_account(tmp_path: Path) -
         assert get_debt(session, first.id).linked_account_id == cash.id
         assert get_debt(session, first.id).current_balance_kopecks == 100_000
         assert get_debt(session, second.id).linked_account_id is None
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_linked_account_cannot_be_excluded_from_capital(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, _ = build_environment(session)
+        deposit = create_account(
+            session,
+            name="Synthetic Linked Deposit",
+            account_type=AccountType.DEPOSIT,
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=deposit.id,
+            name="Synthetic Deposit Snapshot",
+            deposit_type="deposit",
+            balance="10000.00",
+            annual_rate="0",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic Linked Card",
+            current_balance="3000.00",
+        )
+        link_debt_to_account(session, debt.id, deposit.id)
+        before = liquid_capital_for_month(session, month_id)
+
+        with pytest.raises(ValueError, match="remain included in capital"):
+            update_account(session, deposit.id, include_in_capital=False)
+
+        assert get_account(session, deposit.id).include_in_capital is True
+        assert get_debt(session, debt.id).linked_account_id == deposit.id
+        after = liquid_capital_for_month(session, month_id)
+        assert after.total_assets == before.total_assets
+        assert after.total_debts_included == before.total_debts_included
+        assert after.liquid_capital_net == before.liquid_capital_net
     finally:
         session.close()
         database.engine.dispose()
