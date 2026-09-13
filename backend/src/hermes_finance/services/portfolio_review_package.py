@@ -28,6 +28,9 @@ from hermes_finance.services.ai_analysis_bundle import (
     assemble_ai_analysis_bundle,
 )
 from hermes_finance.services.ai_analysis_bundle import (
+    SCHEMA_VERSION as BUNDLE_SCHEMA_VERSION,
+)
+from hermes_finance.services.ai_analysis_bundle import (
     _slug as _bundle_slug,
 )
 from hermes_finance.services.deterministic_insights import (
@@ -49,8 +52,8 @@ from hermes_finance.services.risk_allocation import (
 )
 
 SCHEMA_NAME = "hermes.finance.portfolio_review_package"
-SCHEMA_VERSION = "1.0.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/portfolio-review-package/1.0.0/schema.json"
+SCHEMA_VERSION = "1.1.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/portfolio-review-package/1.1.0/schema.json"
 ORDERING_CONTRACT = "sections_and_arrays_are_sorted_as_defined_by_contract"
 FRESHNESS_PROVENANCE_VERSION = "r07-07-v1"
 RISK_ALLOCATION_VERSION = "r07-06a-v1"
@@ -589,6 +592,24 @@ def _ratio(
         "precision": precision if precision in {"exact", "approximate"} else "exact",
         "source": "backend_derived",
         "reason_codes": _reason_codes(reason_codes),
+    }
+
+
+def _salary_selected_month(value: object) -> dict[str, object]:
+    source = _mapping(value, label="salary selected month")
+    consistency = source.get("consistency")
+    if consistency not in {"consistent", "mismatch", "unavailable"}:
+        raise PortfolioReviewPackageValidationError(
+            "authoritative salary consistency is not a known state"
+        )
+    return {
+        "reporting_period": _period(source.get("reporting_period")),
+        "gross": _money_metric(source.get("gross")),
+        "calculated_tax": _money_metric(source.get("calculated_tax")),
+        "calculated_net": _money_metric(source.get("calculated_net")),
+        "actual_net": _money_metric(source.get("actual_net")),
+        "consistency": consistency,
+        "reason_codes": _reason_codes(source.get("reason_codes")),
     }
 
 
@@ -1320,6 +1341,7 @@ def _context_data(source: Mapping[str, object]) -> tuple[dict[str, object], list
         "taxable_gross_ytd": _money_metric(salary.get("taxable_gross_ytd")),
         "current_marginal_rate_pct": _ratio_metric(salary.get("current_marginal_rate_pct")),
         "warning_codes": _reason_codes(salary.get("warning_codes")),
+        "selected_month": _salary_selected_month(salary.get("selected_month")),
     }
     reasons = set(salary_data["warning_codes"])
     if salary_data["history_coverage"]["status"] != "complete":
@@ -1846,7 +1868,7 @@ def assemble_portfolio_review_package(
         },
         "generation_mode": "read_only",
         "source_contract_name": "hermes.finance.ai_analysis_bundle",
-        "source_contract_version": "1.0.0",
+        "source_contract_version": BUNDLE_SCHEMA_VERSION,
         "calculation_versions": {
             "monthly_summary": str(calculation_versions.get("monthly_summary", "v2")),
             "passive_income_forecast": str(

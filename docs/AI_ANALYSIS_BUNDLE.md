@@ -2,7 +2,7 @@
 
 **Schema name:** `hermes.finance.ai_analysis_bundle`
 
-**Current schema version:** `1.2.0`
+**Current schema version:** `1.3.0`
 
 **Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
 
@@ -13,9 +13,11 @@
 **R08 portfolio-review package:** [`PORTFOLIO_REVIEW_PACKAGE.md`](PORTFOLIO_REVIEW_PACKAGE.md)
 
 The R08 package is the profiled owner-review output envelope built from this
-`1.0.0` source contract. It adds explicit scope, section states, allocation and
+bundle contract. It adds explicit scope, section states, allocation and
 freshness coverage without changing the financial meanings or creating a second
-calculation model.
+calculation model. Its package version and its declared
+`metadata.source_contract_version` each advance with the schema revision they
+project, so the two never silently disagree.
 
 For ordinary monthly AI analysis, #331 defines one higher-level recommended
 report. This bundle remains a compact semantic/source contract and stays
@@ -77,9 +79,9 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
 | Market value change / return | no accepted aggregate service currently exists | Both fields stay unavailable in v1. A consumer may inspect point-in-time valuations, but must not relabel liquid-capital delta as market value change or market value change as investment return. |
 | Current portfolio | the selected reporting month's persisted accounts, instruments, position/deposit snapshots, and cash balances | Portfolio completeness and `valuation_freshness` are independent. `oldest_price_date`, `latest_price_date`, stale count/share, and `stale_valuation` expose old prices without dropping the persisted position. Active capital-included accounts without a snapshot use `active_account_snapshot_missing`. |
 | Debt and property | debt, property, liquid-capital, and mortgage services | Included short-term debt affects liquid capital; mortgage/property remain reference context. Property equity is separate. |
-| IIS | `iis_result` plus persisted IIS profile, contributions, and benefit states | `iis_coverage` distinguishes no active IIS (`iis_account_absent`) from an active IIS with unconfigured (`iis_tax_data_unconfigured`) or partial (`iis_tax_data_partial`) tax data. Only received tax benefits increase the result with benefit. |
-| Salary tax | `calculate_salary_tax` and salary-tax opening context | YTD/bracket values appear only if backend calculation succeeds with complete known history. `salary_tax_history_incomplete` is an unavailable state, never an assumed zero. |
-| Salary consistency | persisted salary gross/net plus the read-only salary-tax calculation | `reporting_history[].kpis.salary` retains `gross`, `calculated_tax`, `calculated_net`, and `actual_net` as separate facts. `salary_net_mismatch` is a warning when `gross - calculated_tax != actual_net`. |
+| IIS | `iis_result` plus persisted IIS profile, contributions, and benefit states | `iis_coverage` distinguishes no active IIS (`iis_account_absent`) from an active IIS with unconfigured (`iis_tax_data_unconfigured`) or partial (`iis_tax_data_partial`) tax data. Only received tax benefits increase the result with benefit. Every known active IIS account appears in `iis_accounts`: when the account has no profile, `iis_type`/`opened_at`/`eligible_close_at` are `null`, persisted contributions/benefits are still exported, and both portfolio-result metrics are `unavailable` with `iis_tax_data_unconfigured` instead of being omitted or guessed. |
+| Salary tax | `calculate_salary_tax` and salary-tax opening context | YTD/bracket values appear only if backend calculation succeeds with complete known history. `salary_tax_history_incomplete` is an unavailable state, never an assumed zero. `salary_tax_context.selected_month` always carries the selected reporting month's reconciliation (see the salary-consistency row). |
+| Salary consistency | persisted salary gross/net plus the read-only salary-tax calculation | `reporting_history[].kpis.salary` retains `gross`, `calculated_tax`, `calculated_net`, and `actual_net` as separate facts. `salary_net_mismatch` is a warning when `gross - calculated_tax != actual_net`. The same mapping is exposed for the selected month as `salary_tax_context.selected_month`: authoritative persisted `gross`/`actual_net`, derived `calculated_tax`/`calculated_net` that become `unavailable` when the tax history is incomplete, and `consistency` of `consistent`/`mismatch`/`unavailable`. It is read from the same builder as the KPI block; export code computes no tax itself. |
 | Property quality | structured `PropertySnapshot` rows | Structured value/mortgage fields are authoritative. Notes are excluded and never parsed as a competing balance. `property_equity_suspicious_jump` and `duplicate_property_snapshot` are warnings only; persisted values are not silently rewritten. |
 | Upcoming cash flows | `merged_payout_calendar` / ADR 0011 | Manual/provider reconciliation decides which row counts. Provider totals with unknown personal tax remain provider-announced approximate amounts, never labelled net. An unresolved duplicate uses the existing safe manual-only behavior. Calendar total, non-principal calendar amount total, and principal total are separate. |
 | Provenance | persisted manual/provider/statement provenance already accepted by Hermes | `manual`, `t_invest`, `alfa_pro`, and `alfa_statement` are reported only where meaningful. Raw protocol payloads and provider correlation IDs are excluded. |
@@ -166,7 +168,10 @@ No later price, quantity, or balance may be backfilled into an earlier reporting
 - major: removal/rename, changed requiredness, changed units, changed counting/source semantics,
   or another change that can alter an existing consumer's interpretation.
 
-`1.2.0` adds the optional `deterministic_insights` section (sanitized engine insights without the open `evidence` map) while retaining all v1.1 financial fields.
+`1.3.0` adds the IIS-account presence semantics for partially configured
+profiles and the directly analyzable `salary_tax_context.selected_month`
+reconciliation while retaining all v1.2 fields. `1.2.0` adds the optional
+`deterministic_insights` section (sanitized engine insights without the open `evidence` map) while retaining all v1.1 financial fields.
 `1.1.0` adds data-quality fields while retaining all v1.0 financial fields, including the
 deprecated `monthly_cash_balance` alias. New consumers should use `cash_flow_after_allocations`.
 Consumers must dispatch on the major version. A consumer supporting major `1` must ignore unknown

@@ -1,7 +1,7 @@
 {
   "$schema": "./ai_analysis_bundle.schema.json",
   "schema_name": "hermes.finance.ai_analysis_bundle",
-  "schema_version": "1.2.0",
+  "schema_version": "1.3.0",
   "metadata": {
     "generated_at": "2026-05-15T12:00:00+03:00",
     "as_of_date": "2026-05-15",
@@ -394,7 +394,16 @@
       "opening_context_available": false,
       "taxable_gross_ytd": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["salary_tax_history_incomplete"]},
       "current_marginal_rate_pct": {"value_pct": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["salary_tax_history_incomplete"]},
-      "warning_codes": ["salary_tax_history_incomplete"]
+      "warning_codes": ["salary_tax_history_incomplete"],
+      "selected_month": {
+        "reporting_period": {"year": 2026, "month": 1},
+        "gross": {"value": {"amount": "300000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_actual", "reason_codes": ["salary_tax_history_incomplete"]},
+        "calculated_tax": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["salary_tax_history_incomplete"]},
+        "calculated_net": {"value": null, "availability": "unavailable", "precision": "unknown", "source": "backend_derived", "reason_codes": ["salary_tax_history_incomplete"]},
+        "actual_net": {"value": {"amount": "261000.00", "currency": "RUB"}, "availability": "available", "precision": "exact", "source": "persisted_actual", "reason_codes": ["salary_tax_history_incomplete"]},
+        "consistency": "unavailable",
+        "reason_codes": ["salary_tax_history_incomplete"]
+      }
     }
   },
   "upcoming_cash_flows": {

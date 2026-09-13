@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.0.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.1.0/schema.json",
   "title": "Hermes Finance AI Financial Review",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "$schema": { "type": "string", "format": "uri-reference" },
     "schema_name": { "const": "hermes.finance.ai_financial_review" },
-    "schema_version": { "const": "1.0.0" },
+    "schema_version": { "const": "1.1.0" },
     "metadata": { "$ref": "#/$defs/metadata" },
     "scope": { "$ref": "#/$defs/scope" },
     "coverage": { "$ref": "#/$defs/coverage_summary" },
@@ -806,8 +806,8 @@
       "required": ["account_ref", "iis_type", "opened_at", "eligible_close_at", "contributions_by_tax_year", "tax_benefits", "portfolio_result_without_tax_benefit", "portfolio_result_with_received_tax_benefit", "result_rule"],
       "properties": {
         "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
-        "iis_type": { "type": "string", "minLength": 1 },
-        "opened_at": { "type": "string", "format": "date" },
+        "iis_type": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "opened_at": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
         "eligible_close_at": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] },
         "contributions_by_tax_year": { "type": "array", "items": { "$ref": "#/$defs/iis_contribution" } },
         "tax_benefits": { "$ref": "#/$defs/tax_benefits" },
@@ -819,14 +819,29 @@
     "salary_tax_context": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tax_year", "history_coverage", "opening_context_available", "taxable_gross_ytd", "current_marginal_rate_pct", "warning_codes"],
+      "required": ["tax_year", "history_coverage", "opening_context_available", "taxable_gross_ytd", "current_marginal_rate_pct", "warning_codes", "selected_month"],
       "properties": {
         "tax_year": { "type": "integer", "minimum": 1900 },
         "history_coverage": { "$ref": "#/$defs/coverage_state" },
         "opening_context_available": { "type": "boolean" },
         "taxable_gross_ytd": { "$ref": "#/$defs/money_metric" },
         "current_marginal_rate_pct": { "$ref": "#/$defs/ratio_metric" },
-        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+        "warning_codes": { "$ref": "#/$defs/reason_codes" },
+        "selected_month": { "$ref": "#/$defs/salary_selected_month" }
+      }
+    },
+    "salary_selected_month": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reporting_period", "gross", "calculated_tax", "calculated_net", "actual_net", "consistency", "reason_codes"],
+      "properties": {
+        "reporting_period": { "$ref": "#/$defs/period" },
+        "gross": { "$ref": "#/$defs/money_metric" },
+        "calculated_tax": { "$ref": "#/$defs/money_metric" },
+        "calculated_net": { "$ref": "#/$defs/money_metric" },
+        "actual_net": { "$ref": "#/$defs/money_metric" },
+        "consistency": { "enum": ["consistent", "mismatch", "unavailable"] },
+        "reason_codes": { "$ref": "#/$defs/reason_codes" }
       }
     },
     "iis_data": {

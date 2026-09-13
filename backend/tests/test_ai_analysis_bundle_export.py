@@ -519,7 +519,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
         response = _export(client)
     assert response.status_code == 200, response.text
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.2.0.json"
+        "hermes-ai-analysis-bundle-2026-04-30-v1.3.0.json"
         in response.headers["content-disposition"]
     )
     payload = json.loads(response.content.decode("utf-8"))
@@ -539,7 +539,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["current_portfolio"]["reporting_status"] == "closed"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["schema_name"] == "hermes.finance.ai_analysis_bundle"
-    assert payload["schema_version"] == "1.2.0"
+    assert payload["schema_version"] == "1.3.0"
 
     mixed_sources = {
         source for point in payload["reporting_history"] for source in point["provenance_sources"]
@@ -861,10 +861,33 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
     assert "stale_valuation" in freshness["reason_codes"]
 
     iis = payload["iis_and_tax"]
-    assert iis["iis_accounts"] == []
+    assert len(iis["iis_accounts"]) == 1
+    unconfigured = iis["iis_accounts"][0]
+    assert unconfigured["account_ref"] in iis["active_account_refs"]
+    assert unconfigured["iis_type"] is None
+    assert unconfigured["opened_at"] is None
+    assert unconfigured["eligible_close_at"] is None
+    assert unconfigured["contributions_by_tax_year"] == []
+    assert unconfigured["portfolio_result_without_tax_benefit"]["availability"] == "unavailable"
+    assert (
+        unconfigured["portfolio_result_with_received_tax_benefit"]["availability"] == "unavailable"
+    )
+    assert (
+        "iis_tax_data_unconfigured"
+        in unconfigured["portfolio_result_without_tax_benefit"]["reason_codes"]
+    )
     assert iis["iis_coverage"]["status"] == "partial"
     assert iis["iis_coverage"]["reason_codes"] == ["iis_tax_data_unconfigured"]
     assert iis["active_account_refs"]
+
+    selected = iis["salary_tax_context"]["selected_month"]
+    assert selected["reporting_period"] == {"year": 2026, "month": 8}
+    assert selected["gross"]["value"]["amount"] == "450000.00"
+    assert selected["calculated_tax"]["value"]["amount"] == "58500.00"
+    assert selected["calculated_net"]["value"]["amount"] == "391500.00"
+    assert selected["actual_net"]["value"]["amount"] == "382000.00"
+    assert selected["consistency"] == "mismatch"
+    assert "salary_net_mismatch" in selected["reason_codes"]
 
     property_quality = payload["debts_and_real_estate"]["property_data_quality"]
     assert property_quality["structured_snapshot_authoritative"] is True
@@ -940,15 +963,15 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.2.0.md" in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.3.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.2.0")
+    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.3.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     alias = _export(client, path="/api/export/ai-analysis-bundle/markdown")
     assert alias.status_code == 200, alias.text
-    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.2.0")
+    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.3.0")
     assert _table_counts(database) == before
 
 
@@ -1038,18 +1061,18 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     payload = json.loads(response.content.decode("utf-8"))
     _financial_review_validator().validate(payload)
     assert payload["schema_name"] == "hermes.finance.ai_financial_review"
-    assert payload["schema_version"] == "1.0.0"
+    assert payload["schema_version"] == "1.1.0"
     assert response.headers["content-type"] == "application/json; charset=utf-8"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["metadata"]["source_contracts"] == [
         {
             "name": "hermes.finance.ai_analysis_bundle",
-            "version": "1.2.0",
+            "version": "1.3.0",
             "role": "financial_source",
         },
         {
             "name": "hermes.finance.portfolio_review_package",
-            "version": "1.0.0",
+            "version": "1.1.0",
             "role": "envelope_source",
         },
     ]
@@ -1098,6 +1121,30 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert goal["deadline"]["reason_codes"] == ["no_deadline"]
     assert sections["iis_and_tax"]["data"]["iis_accounts"][0]["iis_type"] == "iis-a"
     assert sections["iis_and_tax"]["data"]["iis_accounts"][0]["eligible_close_at"] == ("2027-01-15")
+    review_salary = sections["iis_and_tax"]["data"]["salary_tax_context"]
+    review_selected = review_salary["selected_month"]
+    assert review_salary["history_coverage"]["status"] in {"complete", "unavailable"}
+    assert review_selected["reporting_period"] == {"year": 2026, "month": 4}
+    assert review_selected["gross"]["value"] == _money("100000.00")
+    assert review_selected["actual_net"]["value"] == _money("87000.00")
+    if review_salary["history_coverage"]["status"] == "complete":
+        assert review_selected["consistency"] in {"consistent", "mismatch"}
+    else:
+        assert review_selected["consistency"] == "unavailable"
+        assert review_selected["calculated_net"]["availability"] == "unavailable"
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    package_selected = package["sections"]["context"]["data"]["iis_and_tax"]["salary_tax_context"][
+        "selected_month"
+    ]
+    assert package_selected["reporting_period"] == {"year": 2026, "month": 4}
+    assert package_selected["consistency"] == review_selected["consistency"]
 
     planned = sections["budget_and_saving"]["data"]["planned_budget"]
     assert planned["state"] == "not_entered"
@@ -1463,3 +1510,200 @@ def test_ai_financial_review_merges_freshness_summary_and_bundle_valuation_field
     assert any(item["code"] == "stale_valuation" for item in payload["warnings"])
     assert "stale_valuation" in payload["sections"]["data_quality"]["reason_codes"]
     assert _table_counts(database) == before
+
+
+def _seed_iis_complete_and_partial(client: TestClient) -> int:
+    configured = _ok(
+        client.post(
+            "/api/accounts", json={"name": "Synthetic Configured IIS", "account_type": "iis"}
+        )
+    )["id"]
+    _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Partial IIS", "account_type": "iis"},
+        )
+    )
+    _ok(
+        client.put(
+            f"/api/iis/{configured}/profile",
+            json={
+                "iis_type": "iis-a",
+                "opened_at": "2024-01-15",
+                "eligible_close_at": "2027-01-15",
+            },
+        ),
+        status=200,
+    )
+    _ok(
+        client.post(
+            f"/api/iis/{configured}/contributions",
+            json={"tax_year": 2026, "amount": _money("400000.00"), "is_target_reached": True},
+        )
+    )
+    _ok(
+        client.post(
+            f"/api/iis/{configured}/benefits",
+            json={
+                "tax_year": 2026,
+                "benefit_type": "deduction",
+                "status": "received",
+                "amount": _money("52000.00"),
+                "received_at": "2026-04-10",
+            },
+        )
+    )
+    month_id = _create_month(client, 2026, 2)
+    _close(client, month_id)
+    return month_id
+
+
+def test_iis_complete_and_partial_metadata_are_both_present(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_iis_complete_and_partial(client)
+
+    response = _export(client)
+    assert response.status_code == 200, response.text
+    payload = json.loads(response.content.decode("utf-8"))
+    _validator().validate(payload)
+
+    iis = payload["iis_and_tax"]
+    assert len(iis["iis_accounts"]) == 2
+    refs = [item["account_ref"] for item in iis["iis_accounts"]]
+    assert refs == sorted(refs)
+    assert set(refs) == set(iis["active_account_refs"])
+
+    complete = next(item for item in iis["iis_accounts"] if item["iis_type"] == "iis-a")
+    assert complete["opened_at"] == "2024-01-15"
+    assert complete["eligible_close_at"] == "2027-01-15"
+    assert complete["contributions_by_tax_year"][0]["amount"] == _money("400000.00")
+    assert complete["tax_benefits"]["received"] == _money("52000.00")
+
+    partial = next(item for item in iis["iis_accounts"] if item["iis_type"] is None)
+    assert partial["opened_at"] is None
+    assert partial["eligible_close_at"] is None
+    assert partial["contributions_by_tax_year"] == []
+    assert partial["tax_benefits"]["received"] == _money("0.00")
+    for key in (
+        "portfolio_result_without_tax_benefit",
+        "portfolio_result_with_received_tax_benefit",
+    ):
+        assert partial[key]["value"] is None
+        assert partial[key]["availability"] == "unavailable"
+        assert "iis_tax_data_unconfigured" in partial[key]["reason_codes"]
+
+    assert iis["iis_coverage"]["status"] == "partial"
+    assert iis["iis_coverage"]["reason_codes"] == ["iis_tax_data_unconfigured"]
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    package_accounts = package["sections"]["context"]["data"]["iis_and_tax"]["iis_accounts"]
+    assert len(package_accounts) == 2
+    assert next(item for item in package_accounts if item["iis_type"] is None)["opened_at"] is None
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    _financial_review_validator().validate(review)
+    review_accounts = review["sections"]["iis_and_tax"]["data"]["iis_accounts"]
+    assert len(review_accounts) == 2
+    assert (
+        next(item for item in review_accounts if item["iis_type"] is None)["eligible_close_at"]
+        is None
+    )
+
+
+def _seed_salary_month(client: TestClient, *, close_january: bool, net: str) -> None:
+    january = _create_month(client, 2026, 1)
+    february = _create_month(client, 2026, 2)
+    _ok(
+        client.post(
+            "/api/incomes",
+            json={
+                "reporting_month_id": february,
+                "income_type": "salary",
+                "name": "Synthetic February salary",
+                "gross_amount": _money("100000.00"),
+                "tax_amount": _money("13000.00"),
+                "net_amount": _money(net),
+            },
+        )
+    )
+    if close_january:
+        _close(client, january)
+    _close(client, february)
+
+
+def test_selected_month_salary_tax_is_consistent_when_nets_match(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_salary_month(client, close_january=True, net="87000.00")
+
+    response = _export(client)
+    assert response.status_code == 200, response.text
+    payload = json.loads(response.content.decode("utf-8"))
+    _validator().validate(payload)
+
+    context = payload["iis_and_tax"]["salary_tax_context"]
+    assert context["history_coverage"]["status"] == "complete"
+    assert context["taxable_gross_ytd"]["value"] == _money("100000.00")
+    selected = context["selected_month"]
+    assert selected["reporting_period"] == {"year": 2026, "month": 2}
+    assert selected["gross"]["value"] == _money("100000.00")
+    assert selected["calculated_tax"]["value"] == _money("13000.00")
+    assert selected["calculated_net"]["value"] == _money("87000.00")
+    assert selected["actual_net"]["value"] == _money("87000.00")
+    assert selected["consistency"] == "consistent"
+    assert "salary_net_mismatch" not in selected["reason_codes"]
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    _financial_review_validator().validate(review)
+    review_selected = review["sections"]["iis_and_tax"]["data"]["salary_tax_context"][
+        "selected_month"
+    ]
+    assert review_selected["consistency"] == "consistent"
+    assert review_selected["calculated_net"]["value"] == _money("87000.00")
+
+
+def test_selected_month_salary_tax_is_unavailable_when_history_incomplete(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_salary_month(client, close_january=False, net="86000.00")
+
+    response = _export(client)
+    assert response.status_code == 200, response.text
+    payload = json.loads(response.content.decode("utf-8"))
+    _validator().validate(payload)
+
+    context = payload["iis_and_tax"]["salary_tax_context"]
+    assert context["history_coverage"]["status"] == "unavailable"
+    assert context["taxable_gross_ytd"]["value"] is None
+    assert context["taxable_gross_ytd"]["availability"] == "unavailable"
+    selected = context["selected_month"]
+    assert selected["reporting_period"] == {"year": 2026, "month": 2}
+    assert selected["gross"]["value"] == _money("100000.00")
+    assert selected["calculated_tax"]["value"] is None
+    assert selected["calculated_tax"]["availability"] == "unavailable"
+    assert "salary_tax_history_incomplete" in selected["calculated_tax"]["reason_codes"]
+    assert selected["calculated_net"]["value"] is None
+    assert selected["actual_net"]["value"] == _money("86000.00")
+    assert selected["consistency"] == "unavailable"
+    assert "salary_tax_history_incomplete" in selected["reason_codes"]
+    assert "salary_net_mismatch" not in selected["reason_codes"]
