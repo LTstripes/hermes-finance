@@ -9,12 +9,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import Database, create_database
 from hermes_finance.domain import AccountType, DebtType, DepositType, RubleAmount
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Account, Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.debts import (
@@ -23,6 +24,7 @@ from hermes_finance.services.debts import (
     unlink_debt_from_account,
 )
 from hermes_finance.services.deposits import create_deposit_snapshot
+from hermes_finance.services.linked_pairs import LinkedPairReadModelError
 from hermes_finance.services.liquid_capital import (
     liquid_capital_for_month,
     liquid_capital_for_months,
@@ -117,6 +119,130 @@ def test_linked_and_unlinked_pair_are_attribution_only(tmp_path: Path) -> None:
         assert unlinked_again.total_assets == unlinked.total_assets
         assert unlinked_again.total_debts_included == unlinked.total_debts_included
         assert unlinked_again.liquid_capital_net == unlinked.liquid_capital_net
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_linked_account_without_attributed_balance_fact_fails_closed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        account = create_account(session, name="Synthetic missing-fact cash", account_type="cash")
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic missing-fact card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, account.id)
+
+        with pytest.raises(
+            LinkedPairReadModelError,
+            match="no included cash or deposit fact",
+        ):
+            liquid_capital_for_month(session, month_id)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_included_unattributed_cash_cannot_become_linked_pair_asset(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        account = create_account(session, name="Synthetic unattributed cash", account_type="cash")
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=None,
+            name="Synthetic unassigned cash",
+            amount="1000.00",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic unattributed card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, account.id)
+
+        with pytest.raises(
+            LinkedPairReadModelError,
+            match="no included cash or deposit fact",
+        ):
+            liquid_capital_for_month(session, month_id)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_explicit_zero_balance_fact_is_valid_linked_pair_asset(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        account = create_account(session, name="Synthetic zero-balance cash", account_type="cash")
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.id,
+            name="Synthetic explicit zero cash",
+            amount="0.00",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic zero-balance card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, account.id)
+
+        result = liquid_capital_for_month(session, month_id)
+
+        assert len(result.linked_pairs) == 1
+        assert result.linked_pairs[0].account_balance == RubleAmount(0)
+        assert result.linked_pair_assets == RubleAmount(0)
+        assert result.linked_pair_net_contribution == RubleAmount(-30_000)
+        assert result.liquid_capital_net == RubleAmount(-30_000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_corrupted_persisted_link_coverage_fails_closed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session)
+        account = create_account(session, name="Synthetic corrupted cash", account_type="cash")
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.id,
+            name="Synthetic corrupted cash balance",
+            amount="1000.00",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic corrupted card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, account.id)
+
+        session.execute(
+            update(Account).where(Account.id == account.id).values(include_in_capital=False)
+        )
+        session.commit()
+
+        with pytest.raises(
+            LinkedPairReadModelError,
+            match="stored linked account must be included in capital",
+        ):
+            liquid_capital_for_month(session, month_id)
     finally:
         session.close()
         database.engine.dispose()

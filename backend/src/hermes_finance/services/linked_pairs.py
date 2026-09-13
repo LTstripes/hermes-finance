@@ -101,10 +101,12 @@ def linked_pairs_for_months(
     ).all()
 
     account_amounts: dict[tuple[int, int], int] = {}
+    account_fact_keys: set[tuple[int, int]] = set()
     for month_id, account_id, amount in (*cash_rows, *deposit_rows):
         if account_id is None:
             continue
         key = (month_id, account_id)
+        account_fact_keys.add(key)
         account_amounts[key] = account_amounts.get(key, 0) + int(amount or 0)
 
     pairs_by_month: dict[int, list[LinkedPairReadModel]] = {month_id: [] for month_id in month_ids}
@@ -126,6 +128,11 @@ def linked_pairs_for_months(
             account_type=account_type,
             account_include_in_capital=account_included,
         )
+        account_key = (month_id, account_id)
+        if account_key not in account_fact_keys:
+            raise LinkedPairReadModelError(
+                "linked account has no included cash or deposit fact for reporting month"
+            )
         pairs_by_month[month_id].append(
             LinkedPairReadModel(
                 debt_id=debt_id,
@@ -135,7 +142,7 @@ def linked_pairs_for_months(
                 account_id=account_id,
                 account_name=account_name,
                 account_type=account_type,
-                account_balance=RubleAmount(account_amounts.get((month_id, account_id), 0)),
+                account_balance=RubleAmount(account_amounts[account_key]),
             )
         )
 
