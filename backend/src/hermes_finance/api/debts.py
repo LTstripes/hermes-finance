@@ -15,7 +15,9 @@ from hermes_finance.services.debts import (
     create_debt,
     delete_debt,
     get_debt,
+    link_debt_to_account,
     list_debts,
+    unlink_debt_from_account,
     update_debt,
 )
 
@@ -49,6 +51,12 @@ class DebtUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class DebtLinkedAccountRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int = Field(gt=0)
+
+
 class DebtResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,6 +66,7 @@ class DebtResponse(BaseModel):
     name: str
     current_balance: MoneyValue
     include_in_liquid_capital: bool
+    linked_account_id: int | None
     annual_rate: str | None
     next_due_date: date | None
     contract_end_date: date | None
@@ -94,6 +103,7 @@ def _response(debt: object) -> DebtResponse:
         name=debt.name,
         current_balance=_money(debt.current_balance_kopecks),
         include_in_liquid_capital=debt.include_in_liquid_capital,
+        linked_account_id=debt.linked_account_id,
         annual_rate=_rate(debt.annual_rate_basis_points),
         next_due_date=debt.next_due_date,
         contract_end_date=debt.contract_end_date,
@@ -108,6 +118,23 @@ def list_debts_endpoint(
 ) -> list[DebtResponse]:
     debts = [debt for debt in list_debts(session) if debt.reporting_month_id == month_id]
     return [_response(debt) for debt in debts]
+
+
+@router.put("/{debt_id}/linked-account", response_model=DebtResponse)
+def link_debt_account_endpoint(
+    debt_id: int,
+    payload: DebtLinkedAccountRequest,
+    session: Session = Depends(session_for_request),
+) -> DebtResponse:
+    return _response(link_debt_to_account(session, debt_id, payload.account_id))
+
+
+@router.delete("/{debt_id}/linked-account", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_debt_account_endpoint(
+    debt_id: int,
+    session: Session = Depends(session_for_request),
+) -> None:
+    unlink_debt_from_account(session, debt_id)
 
 
 @router.post("", response_model=DebtResponse, status_code=status.HTTP_201_CREATED)

@@ -306,6 +306,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "annual_rate_basis_points",
             "next_due_date",
             "contract_end_date",
+            "linked_account_id",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(property_snapshots)")] == [
             "id",
@@ -2043,5 +2044,85 @@ def test_cash_boundary_coverage_migration_schema_and_downgrade(tmp_path: Path) -
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         assert "cash_boundary_coverages" not in tables
+    finally:
+        connection.close()
+
+
+def test_debt_link_migration_is_additive_and_downgrade_is_fail_closed(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "debt-linked-account.db"
+    previous = run_alembic(database_path, "upgrade", "0040_in_kind_boundary_coverage")
+    assert previous.returncode == 0, previous.stderr
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO reporting_months "
+            "(id, year, month, period_start, period_end, snapshot_date, status, source, "
+            "created_at, updated_at) VALUES "
+            "(1, 2032, 2, '2032-02-01', '2032-02-29', '2032-02-29', 'draft', 'manual', "
+            "'2032-02-29T00:00:00', '2032-02-29T00:00:00')"
+        )
+        connection.execute(
+            "INSERT INTO accounts "
+            "(id, name, account_type, status, include_in_capital, include_in_returns) "
+            "VALUES (1, 'Synthetic Linked Cash', 'cash', 'active', 1, 1)"
+        )
+        connection.execute(
+            "INSERT INTO debts "
+            "(id, reporting_month_id, debt_type, name, current_balance_kopecks, "
+            "include_in_liquid_capital, notes) VALUES "
+            "(1, 1, 'credit_card', 'Synthetic Legacy Card', 100000, 1, NULL)"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    upgraded = run_alembic(database_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute(
+            "SELECT linked_account_id FROM debts WHERE id = 1"
+        ).fetchone() == (None,)
+        assert [row[1] for row in connection.execute("PRAGMA table_info(debts)")][-1] == (
+            "linked_account_id"
+        )
+        foreign_keys = list(connection.execute("PRAGMA foreign_key_list(debts)"))
+        assert any(row[2] == "accounts" and row[3] == "linked_account_id" for row in foreign_keys)
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'debts'"
+        ).fetchone()[0]
+        assert "ck_debts_linked_account_eligibility" in table_sql
+        assert "uq_debts_reporting_month_linked_account" in table_sql
+
+        connection.execute("UPDATE debts SET linked_account_id = 1 WHERE id = 1")
+        connection.commit()
+    finally:
+        connection.close()
+
+    blocked = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
+    assert blocked.returncode != 0
+    assert "while debt-account links exist" in blocked.stderr
+    assert revision_rows(database_path) == [REVISION]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute("UPDATE debts SET linked_account_id = NULL WHERE id = 1")
+        connection.commit()
+    finally:
+        connection.close()
+
+    downgraded = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert revision_rows(database_path) == ["0040_in_kind_boundary_coverage"]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert "linked_account_id" not in {
+            row[1] for row in connection.execute("PRAGMA table_info(debts)")
+        }
     finally:
         connection.close()

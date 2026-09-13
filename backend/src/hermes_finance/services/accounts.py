@@ -2,8 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import AccountStatus, AccountType
-from hermes_finance.persistence import Account
+from hermes_finance.domain import LINKED_DEBT_ACCOUNT_TYPES, AccountStatus, AccountType
+from hermes_finance.persistence import Account, Debt
 
 
 class AccountNotFoundError(LookupError):
@@ -36,6 +36,13 @@ def _normalize_external_code(external_code: str | None) -> str | None:
         return None
     normalized = external_code.strip()
     return normalized or None
+
+
+def _has_linked_debt(session: Session, account_id: int) -> bool:
+    return (
+        session.scalar(select(Debt.id).where(Debt.linked_account_id == account_id).limit(1))
+        is not None
+    )
 
 
 def list_accounts(session: Session) -> list[Account]:
@@ -96,14 +103,42 @@ def update_account(
     notes: str | None = None,
 ) -> Account:
     account = get_account(session, account_id)
-    if name is not None:
-        account.name = _normalize_name(name)
-    if account_type is not None:
-        account.account_type = _coerce_account_type(account_type).value
+    normalized_name = _normalize_name(name) if name is not None else None
+    normalized_account_type = (
+        _coerce_account_type(account_type) if account_type is not None else None
+    )
+    normalized_external_code = (
+        _normalize_external_code(external_code) if external_code is not None else None
+    )
+    normalized_status = _coerce_account_status(status) if status is not None else None
+    has_linked_debt = _has_linked_debt(session, account.id)
+
+    if (
+        has_linked_debt
+        and normalized_account_type is not None
+        and normalized_account_type.value not in LINKED_DEBT_ACCOUNT_TYPES
+    ):
+        raise ValueError("account type cannot change while the account is linked to a debt")
+    if has_linked_debt and include_in_capital is False:
+        raise ValueError("linked account must remain included in capital")
+    if normalized_external_code is not None:
+        duplicate = session.scalar(
+            select(Account.id).where(
+                Account.external_code == normalized_external_code,
+                Account.id != account.id,
+            )
+        )
+        if duplicate is not None:
+            raise ValueError("external_code must be unique when provided")
+
+    if normalized_name is not None:
+        account.name = normalized_name
+    if normalized_account_type is not None:
+        account.account_type = normalized_account_type.value
     if external_code is not None:
-        account.external_code = _normalize_external_code(external_code)
-    if status is not None:
-        account.status = _coerce_account_status(status).value
+        account.external_code = normalized_external_code
+    if normalized_status is not None:
+        account.status = normalized_status.value
     if include_in_capital is not None:
         account.include_in_capital = include_in_capital
     if include_in_returns is not None:
@@ -122,5 +157,7 @@ def update_account(
 
 def delete_account(session: Session, account_id: int) -> None:
     account = get_account(session, account_id)
+    if _has_linked_debt(session, account.id):
+        raise ValueError("account cannot be deleted while it is linked to a debt")
     session.delete(account)
     session.commit()
