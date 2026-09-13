@@ -615,6 +615,46 @@ def assemble_ai_analysis_bundle(
         "Cash-flow-adjusted investment return is unavailable; market value change must not be interpreted as investment return.",
     )
 
+    # PropertySnapshot has no persisted identity beyond its display name.  A
+    # repeated normalized name therefore cannot be deterministically deduped
+    # by the export layer.  Keep the rows available to the canonical report,
+    # but gate every affected aggregate rather than presenting a sum as exact.
+    property_quality_by_month: dict[int, set[str]] = {}
+    for month_id, rows in properties_by_month.items():
+        names = [row.name.strip().casefold() for row in rows]
+        if len(names) != len(set(names)):
+            property_quality_by_month.setdefault(month_id, set()).add(DUPLICATE_PROPERTY_SNAPSHOT)
+
+    property_quality_codes: set[str] = set()
+    previous_property_equity: int | None = None
+    for month in ordered_months:
+        rows = properties_by_month.get(month.id, [])
+        if not rows:
+            continue
+        month_equity = property_equity(session, month.id).kopecks
+        if previous_property_equity and month_equity == previous_property_equity * 2:
+            property_quality_by_month.setdefault(month.id, set()).add(
+                PROPERTY_EQUITY_SUSPICIOUS_JUMP
+            )
+        previous_property_equity = month_equity
+
+    for month_reasons in property_quality_by_month.values():
+        property_quality_codes.update(month_reasons)
+    if DUPLICATE_PROPERTY_SNAPSHOT in property_quality_codes:
+        add_warning(
+            DUPLICATE_PROPERTY_SNAPSHOT,
+            "warning",
+            "debts_and_real_estate",
+            "A reporting month contains duplicate structured property snapshots; affected aggregates are unavailable until authoritative identity is established, while raw rows remain available for review.",
+        )
+    if PROPERTY_EQUITY_SUSPICIOUS_JUMP in property_quality_codes:
+        add_warning(
+            PROPERTY_EQUITY_SUSPICIOUS_JUMP,
+            "warning",
+            "debts_and_real_estate",
+            "Property equity exactly doubled between adjacent persisted snapshots; the affected aggregate is unavailable until the evidence is reviewed.",
+        )
+
     history: list[dict[str, object]] = []
     previous_month: ReportingMonth | None = None
     capital_quality_codes: set[str] = set()
@@ -627,6 +667,11 @@ def assemble_ai_analysis_bundle(
         point_warnings: list[str] = []
         coverage_reasons: list[str] = []
         draft_codes: list[str] = []
+        property_rows = properties_by_month.get(month.id, [])
+        property_reasons = sorted(property_quality_by_month.get(month.id, set()))
+        if property_reasons:
+            coverage_reasons.extend(property_reasons)
+            point_warnings.extend(property_reasons)
         month_positions = positions_by_month.get(month.id, [])
         future_dated_positions = future_included_valuations_by_month.get(month.id, [])
         month_deposits = deposits_by_month.get(month.id, [])
@@ -827,11 +872,11 @@ def assemble_ai_analysis_bundle(
                         reason_codes=passive_codes,
                     ),
                     "property_equity": _metric(
-                        equity.kopecks if properties_by_month.get(month.id) else None,
+                        equity.kopecks if property_rows and not property_reasons else None,
                         source="backend_derived",
                         reason_codes=(
-                            draft_codes
-                            if properties_by_month.get(month.id)
+                            [*draft_codes, *property_reasons]
+                            if property_rows
                             else [*draft_codes, "property_snapshot_missing"]
                         ),
                     ),
@@ -1270,6 +1315,8 @@ def assemble_ai_analysis_bundle(
     mortgage = total_mortgage_balance(session, current.id)
     property_value = total_property_value(session, current.id)
     equity = property_equity(session, current.id)
+    current_property_reasons = sorted(property_quality_by_month.get(current.id, set()))
+    property_aggregate_available = not current_property_reasons
     mortgage_valuation_ineligible = bool(
         future_dated_selected_included_positions and mortgage.kopecks
     )
@@ -1289,34 +1336,6 @@ def assemble_ai_analysis_bundle(
         )
         or 0
     )
-    property_quality_codes: set[str] = set()
-    for rows in properties_by_month.values():
-        names = [row.name.strip().casefold() for row in rows]
-        if len(names) != len(set(names)):
-            property_quality_codes.add(DUPLICATE_PROPERTY_SNAPSHOT)
-            add_warning(
-                DUPLICATE_PROPERTY_SNAPSHOT,
-                "warning",
-                "debts_and_real_estate",
-                "A reporting month contains duplicate structured property snapshots; totals are preserved and require owner review.",
-            )
-    previous_property_equity: int | None = None
-    for month in ordered_months:
-        rows = properties_by_month.get(month.id, [])
-        if not rows:
-            continue
-        month_equity = sum(
-            row.estimated_value_kopecks - row.mortgage_balance_kopecks for row in rows
-        )
-        if previous_property_equity and month_equity == previous_property_equity * 2:
-            property_quality_codes.add(PROPERTY_EQUITY_SUSPICIOUS_JUMP)
-            add_warning(
-                PROPERTY_EQUITY_SUSPICIOUS_JUMP,
-                "warning",
-                "debts_and_real_estate",
-                "Property equity exactly doubled between adjacent persisted snapshots; structured values are preserved and require owner review.",
-            )
-        previous_property_equity = month_equity
     excluded = RubleAmount(all_debts.kopecks - included.kopecks)
     debts_and_real_estate = {
         "reporting_period": _period(current.year, current.month),
@@ -1329,18 +1348,38 @@ def assemble_ai_analysis_bundle(
             ),
         },
         "real_estate": {
-            "estimated_value": _metric(property_value.kopecks, source="persisted_snapshot"),
-            "mortgage_balance": _metric(mortgage.kopecks, source="persisted_snapshot"),
-            "property_equity": _metric(equity.kopecks, source="backend_derived"),
-            "monthly_payment": _metric(payment_total, source="persisted_snapshot"),
+            "estimated_value": _metric(
+                property_value.kopecks if property_aggregate_available else None,
+                source="persisted_snapshot",
+                reason_codes=current_property_reasons,
+            ),
+            "mortgage_balance": _metric(
+                mortgage.kopecks if property_aggregate_available else None,
+                source="persisted_snapshot",
+                reason_codes=current_property_reasons,
+            ),
+            "property_equity": _metric(
+                equity.kopecks if property_aggregate_available else None,
+                source="backend_derived",
+                reason_codes=current_property_reasons,
+            ),
+            "monthly_payment": _metric(
+                payment_total if property_aggregate_available else None,
+                source="persisted_snapshot",
+                reason_codes=current_property_reasons,
+            ),
         },
         "mortgage_coverage": _ratio(
             coverage_pct,
-            available=coverage_pct is not None,
+            available=coverage_pct is not None and property_aggregate_available,
             reason_codes=(
-                [FUTURE_DATED_VALUATION]
+                [*current_property_reasons, FUTURE_DATED_VALUATION]
                 if mortgage_valuation_ineligible
-                else ([] if coverage_pct is not None else ["no_mortgage"])
+                else (
+                    current_property_reasons
+                    if current_property_reasons
+                    else ([] if coverage_pct is not None else ["no_mortgage"])
+                )
             ),
         ),
         "liquidity_rule": LIQUIDITY_RULE,

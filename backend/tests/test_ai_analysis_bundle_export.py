@@ -22,6 +22,7 @@ from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     Account,
+    AccountPerformanceScopeMembership,
     Base,
     CashBalance,
     Debt,
@@ -32,6 +33,14 @@ from hermes_finance.persistence import (
     SavingAllocation,
 )
 from hermes_finance.services import ai_analysis_bundle as bundle_service
+from hermes_finance.services.accounts import create_account
+from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+from hermes_finance.services.deposits import create_deposit_snapshot
+from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
+from hermes_finance.services.instruments import create_instrument
+from hermes_finance.services.positions import create_position_snapshot
+from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.schema.json"
@@ -895,6 +904,20 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
         "duplicate_property_snapshot",
         "property_equity_suspicious_jump",
     }
+    property_aggregate = payload["debts_and_real_estate"]["real_estate"]
+    for metric in property_aggregate.values():
+        assert metric["value"] is None
+        assert metric["availability"] == "unavailable"
+        assert set(metric["reason_codes"]) == {
+            "duplicate_property_snapshot",
+            "property_equity_suspicious_jump",
+        }
+    assert payload["debts_and_real_estate"]["mortgage_coverage"]["value_pct"] is None
+    assert august["kpis"]["property_equity"]["value"] is None
+    assert set(august["kpis"]["property_equity"]["reason_codes"]) == {
+        "duplicate_property_snapshot",
+        "property_equity_suspicious_jump",
+    }
     assert "notes" not in json.dumps(payload, ensure_ascii=False)
 
     kpis = august["kpis"]
@@ -1061,7 +1084,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     payload = json.loads(response.content.decode("utf-8"))
     _financial_review_validator().validate(payload)
     assert payload["schema_name"] == "hermes.finance.ai_financial_review"
-    assert payload["schema_version"] == "1.1.0"
+    assert payload["schema_version"] == "1.2.0"
     assert response.headers["content-type"] == "application/json; charset=utf-8"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["metadata"]["source_contracts"] == [
@@ -1085,6 +1108,21 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert payload["scope"]["missing_calendar_periods"] == [{"year": 2026, "month": 2}]
     assert sections["current_capital"]["data"]["total_net_worth"]["value"] is None
     assert sections["current_capital"]["data"]["total_net_worth"]["availability"] == "unavailable"
+    performance = sections["performance"]
+    assert performance["status"] == "partial"
+    assert performance["data"]["calculation_window"] == {
+        "selection": "adjacent_closed_reporting_months",
+        "start_period": {"year": 2026, "month": 3},
+        "end_period": {"year": 2026, "month": 4},
+        "start_date": "2026-03-31",
+        "end_date": "2026-04-30",
+    }
+    assert performance["data"]["portfolio"]["xirr"]["availability"] == "not_computable"
+    assert performance["data"]["portfolio"]["twrr"]["availability"] == "not_computable"
+    assert performance["data"]["portfolio"]["monetary_bridge"]["availability"] == "not_computable"
+    assert performance["data"]["portfolio"]["xirr"]["method_version"] == "R08-02"
+    assert performance["data"]["portfolio"]["twrr"]["method_version"] == "R08-03"
+    assert performance["data"]["portfolio"]["monetary_bridge"]["method_version"] == "PERF04A/1"
 
     portfolio = sections["current_portfolio"]["data"]
     assert [item["ref"] for item in portfolio["accounts"]] == sorted(
@@ -1507,6 +1545,13 @@ def test_ai_financial_review_merges_freshness_summary_and_bundle_valuation_field
     assert freshness["stale_valuation_share"]["value_pct"] == "100.00"
     assert freshness["families"]
     assert any(item["family_id"] == "market_quotes" for item in freshness["families"])
+    debts = payload["sections"]["debts_and_real_estate"]
+    assert debts["status"] == "partial"
+    assert "duplicate_property_snapshot" in debts["reason_codes"]
+    assert "property_equity_suspicious_jump" in debts["reason_codes"]
+    assert debts["data"]["property_equity"]["value"] is None
+    assert debts["data"]["property_equity"]["availability"] == "unavailable"
+    assert len(debts["data"]["real_estate"]) == 2
     assert any(item["code"] == "stale_valuation" for item in payload["warnings"])
     assert "stale_valuation" in payload["sections"]["data_quality"]["reason_codes"]
     assert _table_counts(database) == before
@@ -1707,3 +1752,111 @@ def test_selected_month_salary_tax_is_unavailable_when_history_incomplete(
     assert selected["consistency"] == "unavailable"
     assert "salary_tax_history_incomplete" in selected["reason_codes"]
     assert "salary_net_mismatch" not in selected["reason_codes"]
+
+
+def test_ai_financial_review_exports_authoritative_performance_v1_metrics(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    start = date(2030, 1, 31)
+    end = date(2030, 2, 28)
+    with database.session_factory() as session:
+        january = create_reporting_month(session, year=2030, month=1, snapshot_date=start)
+        february = create_reporting_month(session, year=2030, month=2, snapshot_date=end)
+        account = create_account(
+            session,
+            name="Synthetic Performance Account",
+            account_type="brokerage",
+        )
+        instrument = create_instrument(
+            session,
+            name="Synthetic Performance Instrument",
+            instrument_type="bond",
+        )
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=account.id,
+                effective_from=date(2029, 1, 1),
+                include_in_returns=True,
+            )
+        )
+        session.commit()
+        for month, value in ((january, "1000.00"), (february, "1160.00")):
+            create_position_snapshot(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                instrument_id=instrument.id,
+                quantity=1,
+                average_cost_per_unit=value,
+                market_price_per_unit=value,
+                price_date=month.snapshot_date,
+            )
+            create_deposit_snapshot(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                name=f"{month.month} deposit",
+                deposit_type="deposit",
+                balance="0.00",
+                annual_rate="0.00",
+            )
+            create_cash_balance(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                name=f"{month.month} cash",
+                amount="0.00",
+            )
+        create_cash_boundary_coverage(
+            session,
+            account_id=account.id,
+            covered_from=start,
+            covered_to=end,
+        )
+        attest_in_kind_boundary_history(
+            session,
+            account_id=account.id,
+            covered_from=start,
+            covered_to=end,
+        )
+        close_reporting_month(session, january.id)
+        close_reporting_month(session, february.id)
+
+    response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    _financial_review_validator().validate(report)
+
+    performance = report["sections"]["performance"]
+    assert performance["status"] == "included"
+    assert performance["reason_codes"] == []
+    data = performance["data"]
+    assert data["coverage"] == {"status": "complete", "reason_codes": []}
+    assert data["calculation_window"] == {
+        "selection": "adjacent_closed_reporting_months",
+        "start_period": {"year": 2030, "month": 1},
+        "end_period": {"year": 2030, "month": 2},
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+    }
+    assert data["portfolio"]["xirr"]["availability"] == "available"
+    assert data["portfolio"]["xirr"]["value_unit"] == "percentage_points"
+    assert data["portfolio"]["xirr"]["annualized"] is True
+    assert data["portfolio"]["twrr"]["value"] == "16"
+    bridge = data["portfolio"]["monetary_bridge"]
+    assert bridge["value"] == _money("160.00")
+    assert bridge["external_flow_summary"] == {
+        "contributions": _money("0.00"),
+        "withdrawals": _money("0.00"),
+        "signed_total": _money("0.00"),
+    }
+    assert bridge["contract"] == "PERF04A"
+    assert bridge["contract_version"] == 1
+    assert len(data["accounts"]) == 1
+    assert data["accounts"][0]["account_ref"].startswith("acct-")
+    assert data["accounts"][0]["monetary_bridge"]["value"] == _money("160.00")
+    assert data["separation"]["investment_performance"] == ["portfolio.xirr", "portfolio.twrr"]
