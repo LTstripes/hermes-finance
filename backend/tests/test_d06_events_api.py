@@ -380,6 +380,86 @@ def test_debt_and_property_crud(client: TestClient) -> None:
     assert client.get(f"/api/debts/{debt_id}").status_code == 404
 
 
+def test_debt_account_link_api_is_explicit_and_month_local(client: TestClient) -> None:
+    month_id = _month(client)
+    other_month_id = _month(client, year=2031, month=2)
+    cash_id = _account(client, "Временный cash", account_type="cash")
+    deposit_id = _account(client, "Временный deposit", account_type="deposit")
+    brokerage_id = _account(client, "Brokerage", account_type="brokerage")
+
+    debt = client.post(
+        "/api/debts",
+        json={
+            "reporting_month_id": month_id,
+            "debt_type": "credit_card",
+            "name": "Synthetic Card",
+            "current_balance": _rub("45000.00"),
+            "include_in_liquid_capital": True,
+        },
+    )
+    assert debt.status_code == 201, debt.text
+    debt_id = debt.json()["id"]
+    assert debt.json()["linked_account_id"] is None
+
+    linked = client.put(
+        f"/api/debts/{debt_id}/linked-account",
+        json={"account_id": cash_id},
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["linked_account_id"] == cash_id
+
+    changed = client.put(
+        f"/api/debts/{debt_id}/linked-account",
+        json={"account_id": deposit_id},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["linked_account_id"] == deposit_id
+
+    account_links = client.get(f"/api/accounts/{deposit_id}/linked-debts")
+    assert account_links.status_code == 200, account_links.text
+    assert account_links.json() == [
+        {
+            "id": debt_id,
+            "reporting_month_id": month_id,
+            "debt_type": "credit_card",
+            "name": "Synthetic Card",
+            "current_balance": _rub("45000.00"),
+            "include_in_liquid_capital": True,
+        }
+    ]
+    assert client.get(
+        f"/api/accounts/{deposit_id}/linked-debts?month_id={other_month_id}"
+    ).json() == []
+
+    patch_attempt = client.patch(
+        f"/api/debts/{debt_id}",
+        json={"linked_account_id": cash_id},
+    )
+    assert patch_attempt.status_code == 422
+    _assert_error(patch_attempt.json(), "unprocessable")
+
+    invalid_account = client.put(
+        f"/api/debts/{debt_id}/linked-account",
+        json={"account_id": brokerage_id},
+    )
+    assert invalid_account.status_code == 422
+    _assert_error(invalid_account.json(), "unprocessable")
+    assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] == deposit_id
+
+    client.post(f"/api/months/{month_id}/close")
+    blocked = client.delete(f"/api/debts/{debt_id}/linked-account")
+    assert blocked.status_code == 409
+    _assert_error(blocked.json(), "conflict")
+    assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] == deposit_id
+
+    reopened = client.post(f"/api/months/{month_id}/reopen")
+    assert reopened.status_code == 200
+    unlinked = client.delete(f"/api/debts/{debt_id}/linked-account")
+    assert unlinked.status_code == 204
+    assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] is None
+    assert client.get(f"/api/accounts/{deposit_id}/linked-debts").json() == []
+
+
 # --- comments ---
 
 

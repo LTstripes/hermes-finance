@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.settings import session_for_request
-from hermes_finance.domain import AccountStatus, AccountType
+from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.domain import AccountStatus, AccountType, RubleAmount
 from hermes_finance.services.accounts import (
     create_account,
     delete_account,
@@ -21,6 +21,7 @@ from hermes_finance.services.accounts import (
     list_accounts,
     update_account,
 )
+from hermes_finance.services.debts import list_linked_debts
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -62,6 +63,17 @@ class AccountResponse(BaseModel):
     notes: str | None
 
 
+class AccountLinkedDebtResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    reporting_month_id: int
+    debt_type: str
+    name: str
+    current_balance: MoneyValue
+    include_in_liquid_capital: bool
+
+
 def _validate_account_type(value: str) -> str:
     try:
         AccountType(value)
@@ -78,6 +90,20 @@ def _validate_account_status(value: str) -> str:
     return value
 
 
+def _linked_debt_response(debt: object) -> AccountLinkedDebtResponse:
+    return AccountLinkedDebtResponse(
+        id=debt.id,
+        reporting_month_id=debt.reporting_month_id,
+        debt_type=debt.debt_type,
+        name=debt.name,
+        current_balance=MoneyValue(
+            amount=RubleAmount(debt.current_balance_kopecks).to_api(),
+            currency="RUB",
+        ),
+        include_in_liquid_capital=debt.include_in_liquid_capital,
+    )
+
+
 @router.get("", response_model=list[AccountResponse])
 def list_accounts_endpoint(
     status_filter: str | None = Query(default=None, alias="status"),
@@ -88,6 +114,19 @@ def list_accounts_endpoint(
         _validate_account_status(status_filter)
         accounts = [a for a in accounts if a.status == status_filter]
     return [AccountResponse.model_validate(a) for a in accounts]
+
+
+@router.get(
+    "/{account_id}/linked-debts",
+    response_model=list[AccountLinkedDebtResponse],
+)
+def list_account_linked_debts_endpoint(
+    account_id: int,
+    month_id: int | None = Query(default=None, gt=0),
+    session: Session = Depends(session_for_request),
+) -> list[AccountLinkedDebtResponse]:
+    debts = list_linked_debts(session, account_id, reporting_month_id=month_id)
+    return [_linked_debt_response(debt) for debt in debts]
 
 
 @router.post(

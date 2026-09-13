@@ -1770,6 +1770,16 @@ class Debt(Base):
             "annual_rate_basis_points IS NULL OR annual_rate_basis_points >= 0",
             name="ck_debts_annual_rate_nonnegative",
         ),
+        CheckConstraint(
+            "linked_account_id IS NULL OR "
+            "(debt_type = 'credit_card' AND include_in_liquid_capital)",
+            name="ck_debts_linked_account_eligibility",
+        ),
+        UniqueConstraint(
+            "reporting_month_id",
+            "linked_account_id",
+            name="uq_debts_reporting_month_linked_account",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1786,6 +1796,9 @@ class Debt(Base):
     next_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     contract_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    linked_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
 
 
 class PlannedBudgetLine(Base):

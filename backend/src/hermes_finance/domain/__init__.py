@@ -1,6 +1,6 @@
 """Framework-independent financial domain primitives."""
 
-from hermes_finance.domain.accounts import AccountStatus, AccountType
+from hermes_finance.domain.accounts import LINKED_DEBT_ACCOUNT_TYPES, AccountStatus, AccountType
 from hermes_finance.domain.cash_boundary_coverage import (
     CashBoundaryCoverage,
     CashBoundaryCoverageEvidence,
@@ -121,6 +121,7 @@ __all__ = [
     "CashBoundaryCoverageStatus",
     "AccountStatus",
     "AccountType",
+    "LINKED_DEBT_ACCOUNT_TYPES",
     "DebtType",
     "BoundaryFlowDirection",
     "BoundaryFlowKind",

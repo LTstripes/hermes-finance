@@ -188,6 +188,7 @@ def _copy_debts(session: Session, *, source_id: int, target_id: int) -> None:
                 next_due_date=None,
                 contract_end_date=row.contract_end_date,
                 notes=row.notes,
+                linked_account_id=row.linked_account_id,
             )
         )
 

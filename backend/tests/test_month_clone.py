@@ -38,7 +38,7 @@ from hermes_finance.persistence import (
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.comments import create_monthly_comment
-from hermes_finance.services.debts import create_debt
+from hermes_finance.services.debts import create_debt, link_debt_to_account
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.expenses import create_expense_entry, create_saving_allocation
 from hermes_finance.services.incomes import create_income_entry
@@ -516,7 +516,7 @@ def test_clone_copies_debt_terms_plan_and_clears_due_date(tmp_path: Path) -> Non
     session, database = _session(tmp_path)
     try:
         month = create_reporting_month(session, year=2031, month=3, snapshot_date=date(2031, 3, 31))
-        create_debt(
+        debt = create_debt(
             session,
             reporting_month_id=month.id,
             debt_type="credit_card",
@@ -526,6 +526,8 @@ def test_clone_copies_debt_terms_plan_and_clears_due_date(tmp_path: Path) -> Non
             next_due_date=date(2031, 4, 20),
             contract_end_date=date(2033, 4, 20),
         )
+        account = create_account(session, name="Связанный cash", account_type="cash")
+        link_debt_to_account(session, debt.id, account.id)
         create_property_snapshot(
             session,
             reporting_month_id=month.id,
@@ -556,6 +558,7 @@ def test_clone_copies_debt_terms_plan_and_clears_due_date(tmp_path: Path) -> Non
         assert debt.annual_rate_basis_points == 1990
         assert debt.contract_end_date == date(2033, 4, 20)
         assert debt.next_due_date is None
+        assert debt.linked_account_id == account.id
 
         snapshot = session.scalar(
             select(PropertySnapshot).where(PropertySnapshot.reporting_month_id == target.id)

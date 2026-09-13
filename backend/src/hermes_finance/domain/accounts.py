@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Final
 
 
 class AccountType(StrEnum):
@@ -15,3 +16,12 @@ class AccountStatus(StrEnum):
     FROZEN = "frozen"
     CLOSED = "closed"
     HIDDEN = "hidden"
+
+
+LINKED_DEBT_ACCOUNT_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        AccountType.CASH.value,
+        AccountType.DEPOSIT.value,
+        AccountType.SAVINGS.value,
+    }
+)

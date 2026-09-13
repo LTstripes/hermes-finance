@@ -3,17 +3,23 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.domain import DebtType, PercentageRate, RubleAmount
+from hermes_finance.domain import LINKED_DEBT_ACCOUNT_TYPES, DebtType, PercentageRate, RubleAmount
 from hermes_finance.persistence import Debt
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
 )
+from hermes_finance.services.accounts import get_account
+from hermes_finance.services.reporting_months import get_reporting_month
 
 _UNSET: object = object()
 
 
 class DebtNotFoundError(LookupError):
+    pass
+
+
+class DebtAccountLinkConflictError(ValueError):
     pass
 
 
@@ -55,6 +61,24 @@ def _coerce_debt_type(debt_type: DebtType | str) -> DebtType:
 
 def list_debts(session: Session) -> list[Debt]:
     return list(session.scalars(select(Debt).order_by(Debt.reporting_month_id, Debt.id)))
+
+
+def list_linked_debts(
+    session: Session,
+    account_id: int,
+    *,
+    reporting_month_id: int | None = None,
+) -> list[Debt]:
+    """Read the account-side relation derived from authoritative debt rows."""
+    get_account(session, account_id)
+    if reporting_month_id is not None:
+        get_reporting_month(session, reporting_month_id)
+
+    statement = select(Debt).where(Debt.linked_account_id == account_id)
+    if reporting_month_id is not None:
+        statement = statement.where(Debt.reporting_month_id == reporting_month_id)
+    statement = statement.order_by(Debt.reporting_month_id, Debt.id)
+    return list(session.scalars(statement))
 
 
 def get_debt(session: Session, debt_id: int) -> Debt:
@@ -126,8 +150,19 @@ def update_debt(
 ) -> Debt:
     debt = get_debt(session, debt_id)
     require_editable_child_month(session, debt)
+    normalized_debt_type = None
     if debt_type is not None:
-        debt.debt_type = _coerce_debt_type(debt_type).value
+        normalized_debt_type = _coerce_debt_type(debt_type)
+        if (
+            debt.linked_account_id is not None
+            and normalized_debt_type is not DebtType.CREDIT_CARD
+        ):
+            raise ValueError("linked debt must remain a credit_card debt")
+    if debt.linked_account_id is not None and include_in_liquid_capital is False:
+        raise ValueError("linked debt must remain included in liquid capital")
+
+    if normalized_debt_type is not None:
+        debt.debt_type = normalized_debt_type.value
     if name is not None:
         debt.name = _normalize_text(name, field="name")
     if current_balance is not None:
@@ -155,3 +190,44 @@ def delete_debt(session: Session, debt_id: int) -> None:
     require_editable_child_month(session, debt)
     session.delete(debt)
     session.commit()
+
+
+def link_debt_to_account(session: Session, debt_id: int, account_id: int) -> Debt:
+    """Explicitly link one eligible month-local debt to one stable account."""
+    debt = get_debt(session, debt_id)
+    require_editable_child_month(session, debt)
+    account = get_account(session, account_id)
+
+    if debt.debt_type != DebtType.CREDIT_CARD.value:
+        raise ValueError("only credit_card debts can be linked to an account")
+    if not debt.include_in_liquid_capital:
+        raise ValueError("linked debt must already be included in liquid capital")
+    if account.account_type not in LINKED_DEBT_ACCOUNT_TYPES:
+        raise ValueError("linked account must be cash, deposit, or savings")
+
+    existing = session.scalar(
+        select(Debt).where(
+            Debt.reporting_month_id == debt.reporting_month_id,
+            Debt.linked_account_id == account.id,
+            Debt.id != debt.id,
+        )
+    )
+    if existing is not None:
+        raise DebtAccountLinkConflictError(
+            "account is already linked to another debt in this reporting month"
+        )
+
+    debt.linked_account_id = account.id
+    session.commit()
+    session.refresh(debt)
+    return debt
+
+
+def unlink_debt_from_account(session: Session, debt_id: int) -> Debt:
+    """Explicitly clear the authoritative debt-side account link."""
+    debt = get_debt(session, debt_id)
+    require_editable_child_month(session, debt)
+    debt.linked_account_id = None
+    session.commit()
+    session.refresh(debt)
+    return debt

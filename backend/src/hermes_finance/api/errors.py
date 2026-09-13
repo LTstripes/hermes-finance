@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.debts import DebtAccountLinkConflictError
 from hermes_finance.services.instruments import InstrumentDeletionBlockedError
 from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
@@ -163,6 +164,17 @@ def register_error_handlers(application: FastAPI) -> None:
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
+
+    @application.exception_handler(DebtAccountLinkConflictError)
+    async def _debt_account_link_conflict_handler(
+        request: Request, exc: DebtAccountLinkConflictError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=conflict",
+            exc.__class__.__name__,
+            request.url.path,
+        )
+        return _error_response(409, "conflict", str(exc))
 
     @application.exception_handler(TaxBracketYearLockedError)
     async def _tax_bracket_year_locked_handler(
