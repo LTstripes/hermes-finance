@@ -22,10 +22,11 @@ export const syntheticAccounts = Array.from({ length: 11 }, (_, index) => ({
       : index === 10
         ? "Синтетический депозит для связанной пары"
         : `Синтетический счёт ${String(index + 1).padStart(2, "0")}`,
-  account_type: index === 1 ? "iis" : index === 10 ? "deposit" : "brokerage",
+  account_type:
+    index === 1 ? "iis" : index === 9 ? "savings" : index === 10 ? "deposit" : "brokerage",
   status: "active",
   external_code: index === 0 ? "SYNTHETIC-ACCOUNT-WITH-A-LONG-SOURCE-IDENTIFIER-0001" : null,
-  include_in_capital: true,
+  include_in_capital: index !== 9,
   include_in_returns: true,
   notes: index === 0 ? "Только синтетические данные для визуального аудита." : null,
 }));

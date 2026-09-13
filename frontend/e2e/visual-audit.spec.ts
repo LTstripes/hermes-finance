@@ -30,7 +30,26 @@ const routes: AuditRoute[] = [
   { slug: "monthly-close", path: "/months/12/close" },
   { slug: "months", path: "/months" },
   { slug: "month-assets", path: "/months/12?section=assets" },
-  { slug: "month-liabilities", path: "/months/12?section=liabilities" },
+  {
+    slug: "month-liabilities",
+    path: "/months/12?section=liabilities",
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Изменить связь" }).click();
+      const picker = page.getByRole("combobox", {
+        name: "Счёт для связи с долгом «Синтетическая кредитная карта»",
+      });
+      await expect(picker).toBeVisible();
+      await expect(picker.locator("option")).toHaveCount(2);
+      await expect(
+        picker.locator("option", { hasText: "Синтетический депозит для связанной пары" }),
+      ).toBeEnabled();
+      await expect(
+        picker.locator("option", { hasText: "Синтетический брокерский счёт" }),
+      ).toHaveCount(0);
+      await expect(picker.locator("option", { hasText: "Синтетический счёт 02" })).toHaveCount(0);
+      await expect(picker.locator("option", { hasText: "Синтетический счёт 10" })).toHaveCount(0);
+    },
+  },
   { slug: "month-positions", path: "/months/12?section=positions" },
   { slug: "payouts", path: "/payouts" },
   {

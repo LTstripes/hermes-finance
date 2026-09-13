@@ -68,6 +68,20 @@ type PropertyDraft = {
   mortgage_annual_rate: string;
 };
 
+const LINK_ACCOUNT_EMPTY_HINT =
+  "Нет доступных счетов для связи: нужны наличные, депозит или накопительный счёт, включённые в капитал.";
+const LINK_ACCOUNT_STALE_HINT =
+  "Текущая связь сохранена, но этот счёт нельзя выбрать заново. Выбери другой доступный счёт.";
+
+function isLinkableAccount(account: Account): boolean {
+  return (
+    (account.account_type === "cash" ||
+      account.account_type === "deposit" ||
+      account.account_type === "savings") &&
+    account.include_in_capital
+  );
+}
+
 export function MonthLiabilitiesSection({
   monthId,
   readOnly,
@@ -170,6 +184,7 @@ export function MonthLiabilitiesSection({
       ),
     [debts],
   );
+  const eligibleAccounts = useMemo(() => accounts.filter(isLinkableAccount), [accounts]);
   const propertyValueTotal = useMemo(
     () => sumMoneyAmounts(properties.map((x) => moneyAmount(x.estimated_value))),
     [properties],
@@ -422,6 +437,16 @@ export function MonthLiabilitiesSection({
               {debts.map((row) => {
                 const editing = editingDebtId === row.id && editDebt;
                 const linking = linkingDebtId === row.id;
+                const currentLinkedAccount =
+                  row.linked_account_id == null
+                    ? null
+                    : accounts.find((account) => account.id === row.linked_account_id);
+                const currentLinkedAccountIsEligible =
+                  currentLinkedAccount != null && isLinkableAccount(currentLinkedAccount);
+                const selectedAccountIsEligible = eligibleAccounts.some(
+                  (account) => account.id === Number(linkAccountId),
+                );
+                const canSaveLink = eligibleAccounts.length > 0 && selectedAccountIsEligible;
                 return (
                   <tr key={row.id}>
                     <Td>
@@ -541,25 +566,37 @@ export function MonthLiabilitiesSection({
                           </div>
                           <Select
                             aria-label={`Счёт для связи с долгом «${row.name}»`}
-                            disabled={busy || readOnly || accounts.length === 0}
+                            disabled={busy || readOnly || eligibleAccounts.length === 0}
                             onChange={(event) => setLinkAccountId(event.target.value)}
                             value={linkAccountId}
                           >
                             <option value="">Выбери счёт</option>
-                            {accounts.map((account) => (
+                            {row.linked_account_id != null && !currentLinkedAccountIsEligible ? (
+                              <option disabled value={row.linked_account_id}>
+                                {currentLinkedAccount
+                                  ? `${accountOptionLabel(currentLinkedAccount)} · текущая связь недоступна для новой связи`
+                                  : "Текущий связанный счёт · недоступен для новой связи"}
+                              </option>
+                            ) : null}
+                            {eligibleAccounts.map((account) => (
                               <option key={account.id} value={account.id}>
                                 {accountOptionLabel(account)}
                               </option>
                             ))}
                           </Select>
-                          {accounts.length === 0 ? (
+                          {eligibleAccounts.length === 0 ? (
                             <span className="linked-debt-control__hint">
-                              Список счетов недоступен.
+                              {LINK_ACCOUNT_EMPTY_HINT}
+                            </span>
+                          ) : null}
+                          {row.linked_account_id != null && !currentLinkedAccountIsEligible ? (
+                            <span className="linked-debt-control__hint">
+                              {LINK_ACCOUNT_STALE_HINT}
                             </span>
                           ) : null}
                           <div className="linked-debt-control__actions">
                             <Button
-                              disabled={busy || readOnly || accounts.length === 0}
+                              disabled={busy || readOnly || !canSaveLink}
                               onClick={() => void saveDebtLink(row)}
                               size="sm"
                               type="button"
@@ -608,16 +645,16 @@ export function MonthLiabilitiesSection({
                           {row.debt_type === "credit_card" && row.include_in_liquid_capital ? (
                             <>
                               <Button
-                                disabled={busy || readOnly || accounts.length === 0}
+                                disabled={busy || readOnly || eligibleAccounts.length === 0}
                                 onClick={() => startLinkingDebt(row)}
                                 size="sm"
                                 type="button"
                               >
                                 Связать счёт
                               </Button>
-                              {accounts.length === 0 ? (
+                              {eligibleAccounts.length === 0 ? (
                                 <span className="linked-debt-control__hint">
-                                  Список счетов недоступен.
+                                  {LINK_ACCOUNT_EMPTY_HINT}
                                 </span>
                               ) : null}
                             </>

@@ -60,6 +60,34 @@ const alternateAccount = {
   account_type: "cash",
 };
 
+const savingsAccount = {
+  ...account,
+  id: 13,
+  name: "Синтетический накопительный счёт",
+  account_type: "savings",
+};
+
+const brokerageAccount = {
+  ...account,
+  id: 14,
+  name: "Синтетический брокерский счёт",
+  account_type: "brokerage",
+};
+
+const iisAccount = {
+  ...account,
+  id: 15,
+  name: "Синтетический ИИС",
+  account_type: "iis",
+};
+
+const excludedSavingsAccount = {
+  ...savingsAccount,
+  id: 16,
+  name: "Синтетический исключённый счёт",
+  include_in_capital: false,
+};
+
 const property = {
   id: 2,
   reporting_month_id: 7,
@@ -74,7 +102,14 @@ const property = {
 describe("MonthLiabilitiesSection R03-14 presentation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(listAccounts).mockResolvedValue([account, alternateAccount]);
+    vi.mocked(listAccounts).mockResolvedValue([
+      account,
+      alternateAccount,
+      savingsAccount,
+      brokerageAccount,
+      iisAccount,
+      excludedSavingsAccount,
+    ]);
     vi.mocked(listDebts).mockResolvedValue([debt]);
     vi.mocked(listProperties).mockResolvedValue([property]);
     vi.mocked(getDashboard).mockResolvedValue({ mortgage: null } as never);
@@ -232,6 +267,86 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     );
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
     await waitFor(() => expect(linkDebtToAccount).toHaveBeenLastCalledWith(1, 12));
+  });
+
+  it("offers only included cash, deposit, and savings accounts in the picker", async () => {
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+
+    await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
+    const picker = screen.getByRole("combobox", {
+      name: "Счёт для связи с долгом «Основная карта»",
+    });
+    expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
+    expect(within(picker).getByRole("option", { name: /Синтетические наличные/ })).toBeEnabled();
+    expect(
+      within(picker).getByRole("option", { name: /Синтетический накопительный счёт/ }),
+    ).toBeEnabled();
+    expect(within(picker).queryByRole("option", { name: /брокерский/i })).toBeNull();
+    expect(within(picker).queryByRole("option", { name: /ИИС/i })).toBeNull();
+    expect(within(picker).queryByRole("option", { name: /исключённый/i })).toBeNull();
+  });
+
+  it("disables linking and explains why when no eligible accounts exist", async () => {
+    vi.mocked(listAccounts).mockResolvedValue([
+      brokerageAccount,
+      iisAccount,
+      excludedSavingsAccount,
+    ]);
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+
+    expect(within(debtTable).getByRole("button", { name: "Связать счёт" })).toBeDisabled();
+    expect(
+      within(debtTable).getByText("Нет доступных счетов для связи", { exact: false }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps an ineligible current relation visible but unavailable as a new choice", async () => {
+    vi.mocked(listDebts).mockResolvedValue([{ ...debt, linked_account_id: brokerageAccount.id }]);
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+
+    expect(within(debtTable).getByText(brokerageAccount.name)).toBeInTheDocument();
+    await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
+    const picker = screen.getByRole("combobox", {
+      name: "Счёт для связи с долгом «Основная карта»",
+    });
+    expect(within(picker).getByRole("option", { name: /брокерский/i })).toBeDisabled();
+    expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Сохранить связь" })).toBeDisabled();
+  });
+
+  it("preserves the existing relation after a rejected change", async () => {
+    vi.mocked(listDebts).mockResolvedValue([{ ...debt, linked_account_id: account.id }]);
+    vi.mocked(linkDebtToAccount).mockRejectedValue(
+      new ApiClientError(409, {
+        code: "conflict",
+        message: "account is already linked to another debt in this reporting month",
+        details: [],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
+    const [debtTable] = await screen.findAllByRole("table");
+
+    await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
+    const picker = screen.getByRole("combobox", {
+      name: "Счёт для связи с долгом «Основная карта»",
+    });
+    await user.selectOptions(picker, String(alternateAccount.id));
+    await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Этот счёт уже связан с другим долгом",
+    );
+    expect(within(debtTable).getByText(account.name)).toBeInTheDocument();
+    expect(within(debtTable).getByText("Связано")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(within(debtTable).getByRole("button", { name: "Изменить связь" })).toBeInTheDocument();
+    expect(within(debtTable).getByText(account.name)).toBeInTheDocument();
   });
 
   it("confirms unlink and keeps the relation visible until the API succeeds", async () => {
