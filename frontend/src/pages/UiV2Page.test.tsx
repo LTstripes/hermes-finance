@@ -243,9 +243,9 @@ it("hides cached results while offline revalidation is paused", async () => {
 
   await waitFor(() => expect(screen.queryByTestId("v2-capital")).toBeNull());
   expect(document.getElementById("v2-main")).toHaveAttribute("aria-busy", "true");
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Ждём подключения, чтобы подтвердить состояние выбранного месяца",
-  );
+  expect(
+    screen.getByText("Ждём подключения, чтобы подтвердить состояние выбранного месяца…"),
+  ).toBeVisible();
   expect(reads).toHaveLength(readCount);
 
   await act(async () => {
