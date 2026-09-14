@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7.0.0
@@ -40,7 +41,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Capture synthetic comparison and v2 behavior
-        run: npm run audit:visual -- --project=1440x900 --grep "^(dashboard:|monthly-close:|ui-v2)"
+        run: npm run audit:visual -- --project=1440x900 --grep "(dashboard:|monthly-close:|ui-v2)"
 
       - name: Collect allowlisted public evidence
         if: success()
