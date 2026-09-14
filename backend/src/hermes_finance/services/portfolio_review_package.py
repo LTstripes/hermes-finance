@@ -1251,7 +1251,7 @@ def _goal_source_path(value: object) -> str:
     if isinstance(value, str) and value == "passive_income.rolling_actual_average.value":
         return "sections.passive_income.data.rolling_actual_average.value"
     if isinstance(value, str) and value.startswith("reporting_history"):
-        return "sections.dynamics.data.history[].liquid_capital_net"
+        return "sections.historical_dynamics.data.history[].liquid_capital_net"
     return "backend_authoritative_read_model"
 
 

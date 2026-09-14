@@ -1863,3 +1863,50 @@ def test_ai_financial_review_exports_authoritative_performance_v1_metrics(
     assert data["accounts"][0]["account_ref"].startswith("acct-")
     assert data["accounts"][0]["monetary_bridge"]["value"] == _money("160.00")
     assert data["separation"]["investment_performance"] == ["portfolio.xirr", "portfolio.twrr"]
+
+
+def test_capital_goal_source_metric_path_translates_to_historical_dynamics(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    _seed_history(client)
+    goal_response = client.post(
+        "/api/goals",
+        json={
+            "name": "Capital goal",
+            "goal_type": "capital",
+            "target_value": _money("2000000.00"),
+            "calculation_mode": "liquid_capital_net",
+        },
+    )
+    assert goal_response.status_code == 201, goal_response.text
+
+    bundle = _export(client).json()
+    bundle_goal = next(item for item in bundle["goals"] if item["goal_type"] == "capital")
+    assert bundle_goal["source_metric_path"] == "reporting_history[].kpis.liquid_capital_net"
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    package_goal = next(
+        item
+        for item in package["sections"]["context"]["data"]["goals"]
+        if item["goal_type"] == "capital"
+    )
+    expected_path = "sections.historical_dynamics.data.history[].liquid_capital_net"
+    assert package_goal["source_metric_path"] == expected_path
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review_goal = next(
+        item
+        for item in review_response.json()["sections"]["goals"]["data"]["items"]
+        if item["goal_type"] == "capital"
+    )
+    assert review_goal["source_metric_path"] == expected_path
