@@ -216,9 +216,10 @@ documents, stack traces, SQL and open-ended diagnostic evidence.
   changed financial counting semantics.
 
 Version `1.2.0` adds the required `performance` section. Version `1.3.0`
-adds required month-local linked-pair rows to `current_capital` and
-`historical_dynamics`; it changes no capital formula or counting semantics.
-The generated canonical v1.3 instance validates strictly.
+adds optional month-local linked-pair fields to `current_capital` and
+`historical_dynamics`; the canonical exporter emits them on every generated
+report, including empty arrays. It changes no capital formula or counting
+semantics. The generated canonical v1.3 instance validates strictly.
 
 Consumers dispatch on the major version and validate the exact schema declared
 by the file. The v1 contract is strict (`additionalProperties=false` in the

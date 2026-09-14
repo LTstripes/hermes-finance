@@ -1102,6 +1102,9 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
 
     sections = payload["sections"]
     history = sections["historical_dynamics"]["data"]["history"]
+    assert "linked_pairs" in sections["current_capital"]["data"]
+    assert history
+    assert all("linked_pairs" in item for item in history)
     assert [(item["period"]["year"], item["period"]["month"]) for item in history] == sorted(
         (item["period"]["year"], item["period"]["month"]) for item in history
     )

@@ -60,6 +60,23 @@ def test_synthetic_fixture_validates_and_explicit_zero_is_available() -> None:
     )
 
 
+def test_v1_3_linked_pairs_are_optional_but_canonical_fixture_emits_them() -> None:
+    fixture = _load(FIXTURE_PATH)
+    current_capital = fixture["sections"]["current_capital"]["data"]
+    history = fixture["sections"]["historical_dynamics"]["data"]["history"]
+
+    assert "linked_pairs" in current_capital
+    assert history
+    assert all("linked_pairs" in point for point in history)
+
+    without_linked_pairs = copy.deepcopy(fixture)
+    without_linked_pairs["sections"]["current_capital"]["data"].pop("linked_pairs")
+    for point in without_linked_pairs["sections"]["historical_dynamics"]["data"]["history"]:
+        point.pop("linked_pairs")
+
+    _validate(without_linked_pairs)
+
+
 @pytest.mark.parametrize(
     ("path", "updates"),
     [

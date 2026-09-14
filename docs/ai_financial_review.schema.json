@@ -322,7 +322,7 @@
     "capital_data": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reporting_period", "snapshot_date", "liquid_assets_total", "included_debts", "liquid_capital_net", "property_equity", "total_net_worth", "cash_flow_after_allocations", "linked_pairs"],
+      "required": ["reporting_period", "snapshot_date", "liquid_assets_total", "included_debts", "liquid_capital_net", "property_equity", "total_net_worth", "cash_flow_after_allocations"],
       "properties": {
         "reporting_period": { "$ref": "#/$defs/period" },
         "snapshot_date": { "type": "string", "format": "date" },
@@ -380,7 +380,7 @@
     "dynamics_point": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["period", "status", "snapshot_date", "coverage", "liquid_assets_total", "included_debts", "liquid_capital_net", "passive_income_actual", "passive_income_actual_breakdown", "active_income_net", "mandatory_expenses", "saving_allocations", "cash_flow_after_allocations", "property_equity", "market_value_change", "investment_return", "warning_codes", "linked_pairs"],
+      "required": ["period", "status", "snapshot_date", "coverage", "liquid_assets_total", "included_debts", "liquid_capital_net", "passive_income_actual", "passive_income_actual_breakdown", "active_income_net", "mandatory_expenses", "saving_allocations", "cash_flow_after_allocations", "property_equity", "market_value_change", "investment_return", "warning_codes"],
       "properties": {
         "period": { "$ref": "#/$defs/period" },
         "status": { "enum": ["closed", "draft"] },
