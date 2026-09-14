@@ -34,6 +34,24 @@ jobs:
       - name: Install locked frontend dependencies
         run: npm ci
 
+      # Temporary S01 environment bootstrap; removed from the final candidate.
+      # Only tracked public source and locked package code, never Git credentials or runtime data.
+      - name: Package isolated development dependencies
+        working-directory: .
+        run: |
+          git archive --format=tar HEAD > "$RUNNER_TEMP/ui-v2-dev.tar"
+          tar -rf "$RUNNER_TEMP/ui-v2-dev.tar" frontend/node_modules
+          gzip "$RUNNER_TEMP/ui-v2-dev.tar"
+
+      - name: Transfer isolated development bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ui-v2-development-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/ui-v2-dev.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
       - name: Build production frontend
         run: npm run build
 
