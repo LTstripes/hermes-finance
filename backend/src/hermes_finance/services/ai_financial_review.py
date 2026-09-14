@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
 from hermes_finance.domain import PerformanceScope
+from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.values import PercentageRate, RubleAmount
 from hermes_finance.persistence import ReportingMonth
 from hermes_finance.services.accounts import list_accounts
@@ -47,6 +48,10 @@ from hermes_finance.services.deposits import list_deposit_snapshots
 from hermes_finance.services.expenses import list_expense_entries, list_saving_allocations
 from hermes_finance.services.goals import list_goals
 from hermes_finance.services.instruments import list_instruments
+from hermes_finance.services.linked_pairs import (
+    LinkedPairReadModelError,
+    linked_pairs_for_months,
+)
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
 from hermes_finance.services.performance_attribution import (
     PERF04A_CONTRACT,
@@ -72,8 +77,8 @@ from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.2.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.2.0/schema.json"
+SCHEMA_VERSION = "1.3.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.3.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
@@ -203,6 +208,16 @@ def _money(kopecks: int) -> dict[str, str]:
     return {"amount": RubleAmount(kopecks).to_api(), "currency": "RUB"}
 
 
+_LINKED_PAIR_SOURCE = "linked_pair_read_model"
+_LINKED_PAIR_CURRENT_DEBT_REF_SCOPE = "current_snapshot"
+_LINKED_PAIR_HISTORICAL_DEBT_REF_SCOPE = "historical_period"
+_LINKED_PAIR_REASON_CODES = (
+    "linked_pair_gross_facts_in_canonical_totals",
+    "linked_pair_net_contribution_explanatory_only",
+    "linked_pair_no_additional_capital_adjustment",
+)
+
+
 def _available_money_metric(kopecks: int, *, source: str) -> dict[str, object]:
     return {
         "value": _money(kopecks),
@@ -221,6 +236,79 @@ def _unavailable_money_metric(*, source: str, reason_codes: object) -> dict[str,
         "source": source,
         "reason_codes": _reason_codes(reason_codes),
     }
+
+
+def _linked_pairs_data(
+    pairs: tuple[LinkedPairReadModel, ...],
+    *,
+    account_ref_by_id: Mapping[int, str],
+    debt_ref_by_id: Mapping[int, str],
+    debt_ref_scope: str,
+    used_pair_refs: set[str],
+    pair_ref_by_key: dict[tuple[int, int], str],
+) -> list[dict[str, object]]:
+    """Map canonical linked-pair facts to export-local, privacy-safe rows.
+
+    ``LinkedPairReadModel`` owns the persisted link validation and the exact
+    pair arithmetic.  This adapter only joins those facts to deterministic
+    local refs and labels; it never derives a balance or applies a capital
+    adjustment.  ``debt_ref_scope`` distinguishes current-catalog join refs
+    from period-scoped historical identities that must not join current debts.
+    """
+
+    def _sort_key(pair: LinkedPairReadModel) -> tuple[str, str, str, str]:
+        account_ref = account_ref_by_id.get(pair.account_id, "")
+        debt_ref = debt_ref_by_id.get(pair.debt_id, "")
+        return account_ref, debt_ref, pair.account_name, pair.debt_name
+
+    result: list[dict[str, object]] = []
+    for pair in sorted(pairs, key=_sort_key):
+        account_ref = account_ref_by_id.get(pair.account_id)
+        debt_ref = debt_ref_by_id.get(pair.debt_id)
+        if account_ref is None or debt_ref is None:
+            raise LinkedPairReadModelError("linked pair export reference mapping is unavailable")
+        pair_key = (pair.account_id, pair.debt_id)
+        pair_ref = pair_ref_by_key.get(pair_key)
+        if pair_ref is None:
+            pair_ref = _bundle_slug(
+                "linked-pair",
+                f"{account_ref}-{debt_ref}",
+                used_pair_refs,
+            )
+            pair_ref_by_key[pair_key] = pair_ref
+        result.append(
+            {
+                "ref": pair_ref,
+                "account_ref": account_ref,
+                "account_name": pair.account_name,
+                "account_type": pair.account_type,
+                "debt_ref": debt_ref,
+                "debt_ref_scope": debt_ref_scope,
+                "debt_name": pair.debt_name,
+                "debt_type": pair.debt_type,
+                "gross_asset_balance": _available_money_metric(
+                    pair.account_balance.kopecks,
+                    source=_LINKED_PAIR_SOURCE,
+                ),
+                "gross_linked_debt_balance": _available_money_metric(
+                    pair.debt_balance.kopecks,
+                    source=_LINKED_PAIR_SOURCE,
+                ),
+                "net_economic_contribution": _available_money_metric(
+                    pair.net_contribution.kopecks,
+                    source=_LINKED_PAIR_SOURCE,
+                ),
+                "double_count_prevention": {
+                    "status": "canonical_totals_include_gross_pair_facts",
+                    "gross_asset_treatment": "included_in_liquid_assets_total",
+                    "gross_debt_treatment": "included_in_included_debts",
+                    "net_contribution_treatment": "explanatory_only",
+                    "additional_capital_adjustment": "none",
+                    "reason_codes": list(_LINKED_PAIR_REASON_CODES),
+                },
+            }
+        )
+    return result
 
 
 def _rate_metric(basis_points: int | None, *, unknown_code: str) -> dict[str, object]:
@@ -568,6 +656,12 @@ def _performance_data(
 def _capital_data(
     package_capital: Mapping[str, object],
     bundle_points: Mapping[tuple[int, int], Mapping[str, object]],
+    linked_pairs: tuple[LinkedPairReadModel, ...],
+    *,
+    account_ref_by_id: Mapping[int, str],
+    debt_ref_by_id: Mapping[int, str],
+    used_pair_refs: set[str],
+    pair_ref_by_key: dict[tuple[int, int], str],
 ) -> dict[str, object]:
     data = _mapping(package_capital.get("data"), label="package capital data")
     period = _mapping(data.get("reporting_period"), label="capital period")
@@ -590,12 +684,26 @@ def _capital_data(
         "property_equity": data.get("property_equity"),
         "total_net_worth": data.get("total_net_worth"),
         "cash_flow_after_allocations": cash_flow,
+        "linked_pairs": _linked_pairs_data(
+            linked_pairs,
+            account_ref_by_id=account_ref_by_id,
+            debt_ref_by_id=debt_ref_by_id,
+            debt_ref_scope=_LINKED_PAIR_CURRENT_DEBT_REF_SCOPE,
+            used_pair_refs=used_pair_refs,
+            pair_ref_by_key=pair_ref_by_key,
+        ),
     }
 
 
 def _dynamics_data(
     package_dynamics: Mapping[str, object],
     bundle_points: Mapping[tuple[int, int], Mapping[str, object]],
+    linked_pairs_by_period: Mapping[tuple[int, int], tuple[LinkedPairReadModel, ...]],
+    *,
+    account_ref_by_id: Mapping[int, str],
+    debt_ref_by_period: Mapping[tuple[int, int], Mapping[int, str]],
+    used_pair_refs: set[str],
+    pair_ref_by_key: dict[tuple[int, int], str],
 ) -> dict[str, object]:
     data = _mapping(package_dynamics.get("data"), label="package dynamics data")
     history = []
@@ -638,6 +746,14 @@ def _dynamics_data(
                 "market_value_change": point.get("market_value_change"),
                 "investment_return": point.get("investment_return"),
                 "warning_codes": point.get("warning_codes"),
+                "linked_pairs": _linked_pairs_data(
+                    linked_pairs_by_period.get(key, ()),
+                    account_ref_by_id=account_ref_by_id,
+                    debt_ref_by_id=debt_ref_by_period.get(key, {}),
+                    debt_ref_scope=_LINKED_PAIR_HISTORICAL_DEBT_REF_SCOPE,
+                    used_pair_refs=used_pair_refs,
+                    pair_ref_by_key=pair_ref_by_key,
+                ),
             }
         )
     history.sort(key=lambda item: (item["period"]["year"], item["period"]["month"]))
@@ -978,6 +1094,7 @@ def _debts_data(
     *,
     reporting_period: tuple[int, int],
     current_month_id: int,
+    debt_ref_by_id: Mapping[int, str],
 ) -> tuple[dict[str, object], list[str], list[tuple[str, str, str]]]:
     """Build per-row debt/property facts with #336 terms and owner notes.
 
@@ -990,9 +1107,9 @@ def _debts_data(
     )
     property_context = _mapping(context_debts.get("property"), label="package property context")
 
-    used: set[str] = set()
     debts = []
     note_triples: list[tuple[str, str, str]] = []
+    used: set[str] = set()
     debt_unknown_rate = False
     for row in sorted(
         (item for item in list_debts(session) if item.reporting_month_id == current_month_id),
@@ -1001,7 +1118,7 @@ def _debts_data(
         rate = _rate_metric(row.annual_rate_basis_points, unknown_code="annual_rate_unknown")
         if rate["availability"] != "available":
             debt_unknown_rate = True
-        ref = _bundle_slug("debt", row.name, used)
+        ref = debt_ref_by_id[row.id]
         notes = _text(row.notes)
         if notes is not None:
             note_triples.append(("debt", ref, notes))
@@ -1500,6 +1617,39 @@ def assemble_ai_financial_review(
         for month in months
         if (int(month.year), int(month.month)) in bundle_points
     }
+    debt_rows = list_debts(session)
+    current_debt_ref_by_id: dict[int, str] = {}
+    current_debt_used_refs: set[str] = set()
+    for row in sorted(
+        (item for item in debt_rows if item.reporting_month_id == current_month_id),
+        key=lambda item: (item.name, item.debt_type, item.id),
+    ):
+        current_debt_ref_by_id[row.id] = _bundle_slug(
+            "debt",
+            row.name,
+            current_debt_used_refs,
+        )
+
+    historical_debt_ref_by_period: dict[tuple[int, int], dict[int, str]] = {}
+    for period, month_id in sorted(history_month_ids.items()):
+        period_refs: dict[int, str] = {}
+        period_used_refs: set[str] = set()
+        for row in sorted(
+            (item for item in debt_rows if item.reporting_month_id == month_id),
+            key=lambda item: (item.name, item.debt_type, item.id),
+        ):
+            period_refs[row.id] = _bundle_slug(
+                f"debt-history-{period[0]:04d}-{period[1]:02d}",
+                row.name,
+                period_used_refs,
+            )
+        historical_debt_ref_by_period[period] = period_refs
+
+    linked_pairs_by_month_id = linked_pairs_for_months(session, history_month_ids.values())
+    linked_pairs_by_period = {
+        period: linked_pairs_by_month_id.get(month_id, ())
+        for period, month_id in history_month_ids.items()
+    }
 
     used_refs: set[str] = set()
     account_ref_by_id: dict[int, str] = {}
@@ -1534,8 +1684,26 @@ def assemble_ai_financial_review(
     )
     package_freshness = _mapping(package_sections.get("freshness"), label="freshness section")
 
-    capital_data = _capital_data(package_capital, bundle_points)
-    dynamics_data = _dynamics_data(package_dynamics, bundle_points)
+    used_pair_refs: set[str] = set()
+    pair_ref_by_key: dict[tuple[int, int], str] = {}
+    capital_data = _capital_data(
+        package_capital,
+        bundle_points,
+        linked_pairs_by_month_id.get(current_month_id, ()),
+        account_ref_by_id=account_ref_by_id,
+        debt_ref_by_id=current_debt_ref_by_id,
+        used_pair_refs=used_pair_refs,
+        pair_ref_by_key=pair_ref_by_key,
+    )
+    dynamics_data = _dynamics_data(
+        package_dynamics,
+        bundle_points,
+        linked_pairs_by_period,
+        account_ref_by_id=account_ref_by_id,
+        debt_ref_by_period=historical_debt_ref_by_period,
+        used_pair_refs=used_pair_refs,
+        pair_ref_by_key=pair_ref_by_key,
+    )
     freshness_section_data = _mapping(package_freshness.get("data"), label="package freshness data")
     portfolio_data, position_notes = _portfolio_data(
         session,
@@ -1579,6 +1747,7 @@ def assemble_ai_financial_review(
         bundle_debts,
         reporting_period=reporting_period,
         current_month_id=current_month_id,
+        debt_ref_by_id=current_debt_ref_by_id,
     )
     iis_data, iis_reasons = _iis_data(package_context, bundle_iis)
     budget_data, budget_reasons, plan_entered, budget_note_pairs = _budget_data(
@@ -1764,6 +1933,7 @@ def assemble_ai_financial_review(
     for source in (
         "backend_derived",
         "persisted_snapshot",
+        "linked_pair_read_model",
         "persisted_actual",
         "persisted_expected",
         "merged_payout_calendar",

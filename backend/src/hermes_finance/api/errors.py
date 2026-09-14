@@ -26,6 +26,7 @@ from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.debts import DebtAccountLinkConflictError
 from hermes_finance.services.instruments import InstrumentDeletionBlockedError
+from hermes_finance.services.linked_pairs import LinkedPairReadModelError
 from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.reporting_months import (
@@ -131,6 +132,18 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(404, "not_found", str(exc))
+
+    @application.exception_handler(LinkedPairReadModelError)
+    async def _linked_pair_read_model_handler(
+        request: Request, exc: LinkedPairReadModelError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=422 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(422, exc.code, str(exc))
 
     @application.exception_handler(PreviewChangedError)
     async def _preview_changed_handler(request: Request, exc: PreviewChangedError) -> JSONResponse:

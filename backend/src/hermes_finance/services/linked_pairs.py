@@ -23,6 +23,8 @@ from hermes_finance.persistence import Account, CashBalance, Debt, DepositSnapsh
 class LinkedPairReadModelError(ValueError):
     """Raised when persisted link facts cannot be represented safely."""
 
+    code = "linked_pair_read_model_unavailable"
+
 
 def _validate_linked_facts(
     *,
