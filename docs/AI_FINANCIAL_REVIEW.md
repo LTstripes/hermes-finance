@@ -49,16 +49,21 @@ The intended source map is:
 | `user_context` | Persisted `monthly_comments` and explicitly owner-entered notes. Text is carried with provenance and is never parsed as a number or used in a calculation. |
 | `budget_and_saving` | Persisted `saving_allocations`, actual `expense_entries`, and #336 `planned_budget_lines`. Plan-vs-actual rows use the exact `(period, category, expense_type)` key and are a side-by-side presentation only. |
 | `performance` | Existing R08-02 XIRR, R08-03 exact TWRR and PERF04A value-bridge builders over the adjacent closed reporting-month window. The report preserves their availability, quality, coverage, reason codes, exact units, method identity and version metadata; it does not calculate a second return or attribution model. |
-| `current_capital.linked_pairs`, `historical_dynamics[].linked_pairs` | Canonical #365 `LinkedPairReadModel` facts for the selected month and each represented month. The adapter exposes gross asset/debt balances and the explanatory net contribution without recalculating them or changing capital totals. |
+| `current_capital.linked_pairs`, `historical_dynamics[].linked_pairs` | Canonical #365 `LinkedPairReadModel` facts for the selected month and each represented month. Current rows use current debt-catalog refs; historical rows use explicitly period-scoped debt identities and do not join the current debt catalog. The adapter exposes gross asset/debt balances and the explanatory net contribution without recalculating them or changing capital totals. |
 | `data_quality`, `warnings`, `field_states` | Existing deterministic insights, coverage states and stable warning codes. Open evidence maps, raw diagnostics and provider payloads stay out of the export. |
 
 The adapter uses an allowlist. It must not serialize ORM objects, API request
 objects, provider DTOs or debug structures wholesale. Export-local refs such as
 `acct-*`, `inst-*`, `debt-*`, `linked-pair-*`, `comment-*` and `expense-*` are
-deterministic join keys inside one file; they are not database IDs, account
-numbers or provider identifiers. Linked-pair refs join the export-local
-account and debt refs and remain stable wherever the same persisted pair is
-represented in the report.
+deterministic identifiers inside one file; they are not database IDs, account
+numbers or provider identifiers. Account refs remain stable wherever the same
+account is represented. In `current_capital.linked_pairs`, `debt_ref` uses the
+current-month debt-catalog ref and joins `debts_and_real_estate.data.debts[]`.
+In `historical_dynamics[].linked_pairs`, `debt_ref_scope` is
+`historical_period` and `debt_ref` is a period-scoped
+`debt-history-YYYY-MM-*` identity; it is not a join key to current `debts[]`,
+and no old debt snapshot is aliased to the current one. Pair `ref` values remain
+stable wherever the same persisted pair is represented in the report.
 
 ## 3. Top-level contract
 
@@ -91,10 +96,11 @@ no persisted rows. It is not a synonym for an unavailable section.
 The required sections are:
 
 1. `current_capital` — selected-period liquid assets, included debt, liquid
-   capital net, month-local linked asset/debt pairs, property equity, a separate `cash_flow_after_allocations` KPI,
+   capital net, month-local linked asset/debt pairs with current-snapshot debt
+   refs, property equity, a separate `cash_flow_after_allocations` KPI,
    and `total_net_worth` only when an authoritative aggregate exists.
 2. `historical_dynamics` — ordered month points with capital, month-local
-   linked asset/debt pairs, actual passive income and breakdown, active income,
+   linked asset/debt pairs using period-scoped historical debt refs, actual passive income and breakdown, active income,
    mandatory expenses, saving allocations, cash flow after allocations,
    property equity and only authoritative return fields. A pair appears only
    when the canonical relation and balance facts exist for that month; history
@@ -169,6 +175,10 @@ The required sections are:
 - Linked-pair history is month-local. The exporter does not backfill, infer or
   guess a relation or balance from another month. Explicit zero balances remain
   exact zero money objects.
+- Current debt refs are allocated only from the current-month debt catalog, so a
+  unique current debt name keeps the unsuffixed ref behavior of the prior
+  contract. Historical pair rows use `debt_ref_scope=historical_period` and
+  `debt-history-YYYY-MM-*` refs; they cannot join or alias current `debts[]`.
 - The report includes an exact stored ISIN when present and universal position
   fields for gold and other instruments. Gold does not get a parallel formula.
 - Free text is context, not a structured financial fact. Numbers in comments or

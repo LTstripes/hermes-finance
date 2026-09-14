@@ -351,13 +351,14 @@
     "linked_pair": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "account_ref", "account_name", "account_type", "debt_ref", "debt_name", "debt_type", "gross_asset_balance", "gross_linked_debt_balance", "net_economic_contribution", "double_count_prevention"],
+      "required": ["ref", "account_ref", "account_name", "account_type", "debt_ref", "debt_ref_scope", "debt_name", "debt_type", "gross_asset_balance", "gross_linked_debt_balance", "net_economic_contribution", "double_count_prevention"],
       "properties": {
         "ref": { "type": "string", "pattern": "^linked-pair-[a-z0-9-]+$" },
         "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
         "account_name": { "type": "string", "minLength": 1 },
         "account_type": { "type": "string", "minLength": 1 },
         "debt_ref": { "type": "string", "pattern": "^debt-[a-z0-9-]+$" },
+        "debt_ref_scope": { "enum": ["current_snapshot", "historical_period"] },
         "debt_name": { "type": "string", "minLength": 1 },
         "debt_type": { "type": "string", "minLength": 1 },
         "gross_asset_balance": { "$ref": "#/$defs/money_metric" },

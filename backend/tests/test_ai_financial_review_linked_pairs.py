@@ -224,7 +224,11 @@ def test_linked_pairs_surface_canonical_balances_and_counting_semantics(
     ) == Decimal("0.00")
 
     history = payload["sections"]["historical_dynamics"]["data"]["history"]
-    assert history[-1]["linked_pairs"] == linked_pairs
+    assert [item["ref"] for item in history[-1]["linked_pairs"]] == [
+        item["ref"] for item in linked_pairs
+    ]
+    assert {item["debt_ref_scope"] for item in linked_pairs} == {"current_snapshot"}
+    assert {item["debt_ref_scope"] for item in history[-1]["linked_pairs"]} == {"historical_period"}
     _assert_report_privacy(payload)
 
 
@@ -258,6 +262,7 @@ def test_duplicate_names_keep_export_local_pair_refs_integrity(
     assert len({row["account_ref"] for row in pairs}) == 2
     assert len({row["debt_ref"] for row in pairs}) == 2
     assert len({row["ref"] for row in pairs}) == 2
+    assert {row["debt_ref_scope"] for row in pairs} == {"current_snapshot"}
 
     accounts = {
         row["ref"]: row for row in payload["sections"]["current_portfolio"]["data"]["accounts"]
@@ -321,6 +326,7 @@ def test_history_is_month_local_and_does_not_backfill_changed_links(
             close_reporting_month(session, month.id)
 
     payload = _report(client)
+    current = payload["sections"]["current_capital"]["data"]["linked_pairs"]
     history = payload["sections"]["historical_dynamics"]["data"]["history"]
     assert [(point["period"]["year"], point["period"]["month"]) for point in history] == [
         (2038, 1),
@@ -330,10 +336,73 @@ def test_history_is_month_local_and_does_not_backfill_changed_links(
     assert [row["debt_name"] for row in history[0]["linked_pairs"]] == [debt_names[0]]
     assert history[1]["linked_pairs"] == []
     assert [row["debt_name"] for row in history[2]["linked_pairs"]] == [debt_names[2]]
-    assert (
-        payload["sections"]["current_capital"]["data"]["linked_pairs"] == history[2]["linked_pairs"]
-    )
+    assert [row["ref"] for row in current] == [row["ref"] for row in history[2]["linked_pairs"]]
+    assert current[0]["debt_ref_scope"] == "current_snapshot"
+    assert history[2]["linked_pairs"][0]["debt_ref_scope"] == "historical_period"
+    assert current[0]["debt_ref"] != history[2]["linked_pairs"][0]["debt_ref"]
     assert debt_names[0] not in {row["debt_name"] for row in history[2]["linked_pairs"]}
+    _assert_report_privacy(payload)
+
+
+def test_cloned_same_name_debt_refs_are_period_scoped_in_history(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    with database.session_factory() as session:
+        account = create_account(
+            session,
+            name="Synthetic cloned debt account",
+            account_type=AccountType.CASH,
+        )
+        for month_number, debt_balance in (
+            (1, "100.00"),
+            (2, "200.00"),
+            (3, "300.00"),
+        ):
+            month = _month(session, year=2038, month=month_number)
+            create_cash_balance(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                name=f"Synthetic cloned debt cash {month_number}",
+                amount="1000.00",
+            )
+            debt = create_debt(
+                session,
+                reporting_month_id=month.id,
+                debt_type=DebtType.CREDIT_CARD,
+                name="Synthetic cloned credit card",
+                current_balance=debt_balance,
+            )
+            link_debt_to_account(session, debt.id, account.id)
+            close_reporting_month(session, month.id)
+
+    payload = _report(client)
+    current = payload["sections"]["current_capital"]["data"]
+    current_pair = current["linked_pairs"][0]
+    current_debts = payload["sections"]["debts_and_real_estate"]["data"]["debts"]
+    current_debt_refs = {row["ref"] for row in current_debts}
+
+    assert len(current["linked_pairs"]) == 1
+    assert current_pair["debt_ref_scope"] == "current_snapshot"
+    assert current_pair["debt_ref"] == "debt-synthetic-cloned-credit-card"
+    assert current_pair["debt_ref"] in current_debt_refs
+    current_debt = next(row for row in current_debts if row["name"] == current_pair["debt_name"])
+    assert current_pair["debt_ref"] == current_debt["ref"]
+    assert current_pair["debt_type"] == current_debt["debt_type"]
+
+    history = payload["sections"]["historical_dynamics"]["data"]["history"]
+    historical_pairs = [point["linked_pairs"][0] for point in history]
+    assert [point["period"] for point in history] == [
+        {"year": 2038, "month": 1},
+        {"year": 2038, "month": 2},
+        {"year": 2038, "month": 3},
+    ]
+    assert {row["debt_ref_scope"] for row in historical_pairs} == {"historical_period"}
+    assert len({row["debt_ref"] for row in historical_pairs}) == 3
+    assert all(row["debt_ref"].startswith("debt-history-2038-") for row in historical_pairs)
+    assert all(row["debt_ref"] not in current_debt_refs for row in historical_pairs)
+    assert all(row["debt_ref"] != current_pair["debt_ref"] for row in historical_pairs)
     _assert_report_privacy(payload)
 
 
