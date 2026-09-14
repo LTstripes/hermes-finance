@@ -1,15 +1,16 @@
 # Hermes Finance UI v2 — месячное рабочее пространство
 
-**Статус:** предложение архитектуры и локально проверенный кандидат S01, не принятый релиз.
-Финальная запись кода в GitHub заблокирована инструментом; PR содержит раннюю версию.
-Локальный UI v2 browser QA не выполнен из-за политики среды; новый remote browser QA
-остаётся незавершённым. Подробности и точные границы доказательств — в DELIVERY.md пакета.
+**Статус:** draft-кандидат S01 в PR #378; это не принятый релиз и не переключение default UI.
+Pre-review candidate `e6d82c4100a49562c4ccb61568c607bc8c1babbd` был полностью опубликован в GitHub,
+прошёл exact-head CI и synthetic browser QA, после чего независимое ревью вернуло
+`FIXES REQUIRED`. Текущая task branch содержит remediation этого review; её точный head,
+CI и повторный независимый verdict фиксируются в PR перед owner UAT.
 Задача: [#377](https://github.com/LTstripes/hermes-finance/issues/377).
 Кандидат: [draft PR #378](https://github.com/LTstripes/hermes-finance/pull/378),
 `feat/377-ui-v2-month-workspace`.
 Исследовательский baseline: `a06e1fb58cc77b6bd2c4db8ca7cfd3e870df9c18`, 14 сентября 2026.
-Независимое архитектурное ревью и owner UAT обязательны перед принятием/переключением.
-Самопроверки автора не являются независимым ревью.
+Owner UAT #236 подтверждает существующий v1 guided close; он не является UAT новой оболочки v2.
+Owner UAT v2 и явное решение о default switch по-прежнему обязательны.
 
 ## 1. Продукт, который мы сохраняем
 
@@ -42,7 +43,8 @@ UI v2 меняет способ доступа к этим возможност�
   со связанными активами/долгами в AI review. #376 — отдельный дефект source path,
   не включённый в S01.
 - [Owner UAT #236 от 12 сентября — PASS](https://github.com/LTstripes/hermes-finance/issues/236#issuecomment-5647152539).
-  Старый guided flow уже проверен владельцем. Его нельзя объявлять неработающим.
+  Старый guided flow уже проверен владельцем. Его нельзя объявлять неработающим или
+  автоматически считать проверкой UI v2.
 - [Owner clarification от 30 августа](https://github.com/LTstripes/hermes-finance/issues/236#issuecomment-5470794274):
   ручные значения желательно подтверждать в компактном финальном обзоре после
   провайдерских этапов; в начале спрашивать только настоящие prerequisites.
@@ -50,6 +52,9 @@ UI v2 меняет способ доступа к этим возможност�
   `d8ebc47a7471c88cb1d1dd80b6f100fe227827ad`. UI source тот же, что в baseline;
   различается только новый evidence workflow. Dashboard и monthly-close снимки
   получены работающим Chromium на синтетических API, не из личного runtime.
+- Pre-review UI v2 candidate `e6d82c4...`: exact-head CI run `34890457562` — SUCCESS;
+  UI comparison evidence run `34890457567` — SUCCESS. Эти runs подтверждают именно
+  pre-review SHA и не заменяют fresh CI для remediation head.
 
 Наблюдения ниже — анализ кода и визуального представления, а не измеренная скорость
 работы владельца. Большие суммы старого visual fixture — стресс-тест, не реальные
@@ -136,15 +141,18 @@ S01 читает только GET `/api/health`, `/api/months`, `/api/months/{id
 выбор шага и периода не вызывают provider requests или mutations. Нет localStorage
 с прогрессом, второго финансового расчёта или телеметрии. Идентичность верхнего месяца,
 вложенного final review и версия контракта проверяются перед отображением результатов.
+При active revalidation cached results скрываются не только во время `isFetching`, но и
+при `fetchStatus="paused"`, чтобы offline/paused состояние не выглядело подтверждённым.
 
 Изменения затрагивают только frontend, дизайн-документ и синтетический PR evidence job.
 Backend, DTO, persistence, migrations, зависимости/lockfile, launcher и release identity
 не меняются. Существующий SPA fallback обслуживает `/v2`; новый endpoint не нужен.
 
-Переход в v1 идёт на существующий month-specific route с hash нужного шага. Это
-**явный handoff, не завершённый native wizard**. Browser Back возвращает URL v2;
-повторный mount перечитывает сохранённый результат. Вспомогательные ссылки в v1
-сохраняют его правила выбора месяца, о чём сказано в оболочке. S01 не меняет их молча.
+Переход в v1 идёт на существующий month-specific route с hash явно выбранного шага;
+если шаг не выбирался, основной escape сохраняет выбранный месяц. Это **явный handoff,
+не завершённый native wizard**. Browser Back возвращает URL v2; повторный mount
+перечитывает сохранённый результат. Вспомогательные ссылки в v1 сохраняют его правила
+выбора месяца, о чём сказано в оболочке. S01 не меняет их молча.
 
 ### Rollback
 
@@ -218,20 +226,24 @@ npm run audit:visual -- --grep ui-v2
 Новый `.github/workflows/ui-v2-evidence.yml` сохраняет только синтетические PNG,
 публичный frontend build и provenance exact source SHA, retention 7 дней.
 Он не получает личную БД/токены провайдеров и не меняет основной CI workflow.
-Временный bootstrap передачи публичного source/dependencies использовался при
-разработке в ограниченной среде; в локальном completion patch он удалён.
-В раннем remote candidate 34d75a5 он пока остаётся: PR нельзя принимать в таком состоянии.
+Временный bootstrap передачи публичного source/dependencies использовался только при
+разработке в ограниченной среде и удалён из опубликованного S01 candidate до review.
 
-В среде автора системный Chromium блокирует loopback navigation
-(`ERR_BLOCKED_BY_ADMINISTRATOR`); этот локальный browser run не является PASS.
-Для завершения нужен browser evidence в изолированном GitHub Actions,
-затем скачивание screenshots и визуальная проверка. Для финального UI v2 этот этап
-не завершён: code-write был отклонён safety-проверкой инструмента. Локальные component/lint/build
-проверки и remote Chromium evidence указываются раздельно. Private/Windows live UAT
-не выполняется автором вместо владельца.
+Для pre-review SHA `e6d82c4100a49562c4ccb61568c607bc8c1babbd` remote evidence завершён:
+- CI run `34890457562` — SUCCESS, включая frontend 451 tests, lint/format/build,
+  privacy, Windows smoke/safety и synthetic visual audit;
+- UI comparison evidence run `34890457567` — SUCCESS, с synthetic desktop/narrow PNG
+  и browser-проверками без production runtime, owner data или provider credentials.
 
-Перед принятием: независимое ревью target IA/контрактов/реального diff; затем owner
-оценка стартового экрана на безопасном Preview. Решения владельца — соответствует ли
-ежемесячный главный экран его способу работы, какие ответы ещё нужны на первом плане,
-и когда переключать default/выводить v1. CSS framework, путь `/v2` и детали обратимой
-компоновки не требуют отдельного owner выбора.
+Независимое read-only ревью этого SHA вернуло `FIXES REQUIRED`: cached financial data
+оставались видимы при `fetchStatus="paused"`, верхний escape в v1 терял month/step context,
+а этот design doc содержал устаревший execution status. Remediation добавляет fail-closed
+paused handling с регрессией, контекстный v1 escape и актуализирует evidence здесь.
+Эти изменения требуют fresh exact-head CI и повторного независимого review; прежний зелёный
+run не считается доказательством нового head. Private/Windows live UAT не выполняется
+автором вместо владельца.
+
+После повторного `ACCEPT`: owner оценивает стартовый экран на безопасном Preview.
+Решения владельца — соответствует ли ежемесячный главный экран его способу работы,
+какие ответы ещё нужны на первом плане и когда переключать default/выводить v1.
+CSS framework, путь `/v2` и детали обратимой компоновки не требуют отдельного owner выбора.
