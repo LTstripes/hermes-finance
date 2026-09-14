@@ -8,7 +8,13 @@ import { listMonths } from "../api/months";
 import type { MoneyValue } from "../api/types";
 import { monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { RuntimeStatusBanner } from "../components/RuntimeStatus";
-import { formatDate, formatDateTime, formatMoney, formatMoneyDelta, formatMonth } from "../lib/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  formatMoneyDelta,
+  formatMonth,
+} from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { monthWorkspacePath, resolveMonthSelection, sortReportingMonths } from "./monthSelection";
 import styles from "./UiV2Page.module.css";
@@ -65,7 +71,7 @@ function Results({ workflow }: { workflow: MonthCloseWorkflow }) {
   return (
     <section aria-label="Результат месяца" className={styles.metrics}>
       <article className={`${styles.metric} ${styles.capital}`}>
-        <p className={styles.eyebrow}>Ликвидный капитал · после долгов</p>
+        <p className={styles.eyebrow}>Ликвидный капитал · нетто</p>
         <p className={styles.metricValue} data-testid="v2-capital">
           {money(kpis.liquid_capital_net)}
         </p>
@@ -74,7 +80,10 @@ function Results({ workflow }: { workflow: MonthCloseWorkflow }) {
             <>
               <strong>
                 {formatMoneyDelta(kpis.liquid_capital_delta.amount, {
-                  currency: kpis.liquid_capital_delta.currency === "RUB" ? "₽" : kpis.liquid_capital_delta.currency,
+                  currency:
+                    kpis.liquid_capital_delta.currency === "RUB"
+                      ? "₽"
+                      : kpis.liquid_capital_delta.currency,
                 })}
               </strong>{" "}
               к предыдущему месяцу
@@ -83,7 +92,9 @@ function Results({ workflow }: { workflow: MonthCloseWorkflow }) {
             "Нет предыдущего месяца для сравнения"
           )}
         </p>
-        <p className={styles.caption}>Изменение капитала — не инвестиционная доходность.</p>
+        <p className={styles.caption}>
+          Без недвижимости и ипотеки. Изменение капитала — не доходность.
+        </p>
       </article>
       <article className={styles.metric}>
         <p className={styles.eyebrow}>Пассивный доход · факт</p>
@@ -139,8 +150,8 @@ function Readiness({ workflow }: { workflow: MonthCloseWorkflow }) {
         <details className={styles.details}>
           <summary>Что требует внимания</summary>
           <ul className={styles.attentionList}>
-            {items.map((item, index) => (
-              <li key={`${item.code}-${index}`}>
+            {items.map((item) => (
+              <li key={`${item.code}-${item.message}-${JSON.stringify(item.context)}`}>
                 <strong>{item.severity === "hard_blocker" ? "Исправить: " : "Проверить: "}</strong>
                 {item.message}
               </li>
@@ -162,7 +173,10 @@ export default function UiV2Page() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const monthsQuery = useQuery({ queryKey: queryKeys.months, queryFn: ({ signal }) => listMonths(signal) });
+  const monthsQuery = useQuery({
+    queryKey: queryKeys.months,
+    queryFn: ({ signal }) => listMonths(signal),
+  });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const selection = resolveMonthSelection(params.getAll("month"), months);
   const selectedMonth = selection.kind === "selected" ? selection.month : null;
@@ -177,17 +191,19 @@ export default function UiV2Page() {
   }, [months, monthsQuery.isSuccess, navigate, params]);
 
   // Do not relabel another period's data, or expose stale cached results during revalidation.
-  const loading = monthsQuery.isPending || workflowQuery.isFetching;
+  const loading = monthsQuery.isPending || monthsQuery.isFetching || workflowQuery.isFetching;
   const response = workflowQuery.data;
-  const mismatch = response != null && (
-    response.contract_version !== "monthly_close_workflow_v1" || response.month.id !== selectedId
-  );
-  const workflow = !loading && !monthsQuery.isError && !workflowQuery.isError && !mismatch
-    ? response
-    : undefined;
+  const mismatch =
+    response != null &&
+    (response.contract_version !== "monthly_close_workflow_v1" ||
+      response.month.id !== selectedId ||
+      (response.final_review.available && response.final_review.month_header.id !== selectedId));
+  const workflow =
+    !loading && !monthsQuery.isError && !workflowQuery.isError && !mismatch ? response : undefined;
   const requestedStep = params.get("step");
   const explicitStep = workflow?.steps.find((step) => step.id === requestedStep);
-  const activeStep = explicitStep ?? workflow?.steps.find((step) => step.id === workflow.recommended_step_id);
+  const activeStep =
+    explicitStep ?? workflow?.steps.find((step) => step.id === workflow.recommended_step_id);
   const actionRef = useRef<HTMLElement>(null);
   const focusedLocation = useRef<string | null>(null);
   const explicitStepId = explicitStep?.id;
@@ -209,7 +225,11 @@ export default function UiV2Page() {
       </Notice>
     );
   } else if (monthsQuery.isPending) {
-    content = <p className={styles.loading} role="status">Загружаем отчётные месяцы…</p>;
+    content = (
+      <p className={styles.loading} role="status">
+        Загружаем отчётные месяцы…
+      </p>
+    );
   } else if (selection.kind === "invalid" || selection.kind === "missing") {
     content = (
       <Notice title="Месяц по ссылке не найден">
@@ -225,13 +245,20 @@ export default function UiV2Page() {
     );
   } else if (workflowQuery.isError || mismatch) {
     content = (
-      <Notice title="Не удалось получить состояние месяца" retry={() => void workflowQuery.refetch()}>
+      <Notice
+        title="Не удалось получить состояние месяца"
+        retry={() => void workflowQuery.refetch()}
+      >
         Показатели и действия скрыты, чтобы не выдать устаревшие или чужие этому периоду данные за
         актуальные. Повтори загрузку.
       </Notice>
     );
   } else if (!workflow || loading) {
-    content = <p className={styles.loading} role="status">Обновляем состояние выбранного месяца…</p>;
+    content = (
+      <p className={styles.loading} role="status">
+        Обновляем состояние выбранного месяца…
+      </p>
+    );
   } else {
     content = (
       <>
@@ -239,7 +266,10 @@ export default function UiV2Page() {
           <span className={styles.status} data-closed={workflow.month.status === "closed"}>
             {workflow.month.status === "closed" ? "Закрыт" : "Черновик"}
           </span>
-          <span>Дата снимка: <strong>{formatDate(workflow.month.snapshot_date, { empty: "не задана" })}</strong></span>
+          <span>
+            Дата снимка:{" "}
+            <strong>{formatDate(workflow.month.snapshot_date, { empty: "не задана" })}</strong>
+          </span>
           <Link className={styles.textLink} to={`/months/${workflow.month.id}`}>
             Открыть этот месяц в текущем интерфейсе →
           </Link>
@@ -247,16 +277,23 @@ export default function UiV2Page() {
         <Results workflow={workflow} />
         <div className={styles.actionGrid}>
           <section className={styles.action} id="v2-action" ref={actionRef} tabIndex={-1}>
-            <p className={styles.eyebrow}>{explicitStep ? "Выбранный шаг" : "Следующее действие"}</p>
+            <p className={styles.eyebrow}>
+              {explicitStep ? "Выбранный шаг" : "Следующее действие"}
+            </p>
             {requestedStep && !explicitStep ? (
-              <p className={styles.caption}>Шаг по ссылке не найден. Ниже — рекомендация для этого месяца.</p>
+              <p className={styles.caption}>
+                Шаг по ссылке не найден. Ниже — рекомендация для этого месяца.
+              </p>
             ) : null}
             <h2>{activeStep?.title ?? "Открой итоговую проверку"}</h2>
             <p className={styles.actionWhy}>
-              {activeStep?.why ?? "Автоматической рекомендации нет. Посмотри сохранённые итоги месяца."}
+              {activeStep?.why ??
+                "Автоматической рекомендации нет. Посмотри сохранённые итоги месяца."}
             </p>
             {activeStep?.stale.is_stale ? (
-              <p className={styles.stale}>Подтверждение этого шага устарело. Оно требует повторной проверки.</p>
+              <p className={styles.stale}>
+                Подтверждение этого шага устарело. Оно требует повторной проверки.
+              </p>
             ) : null}
             <div className={styles.actionFooter}>
               <Link
@@ -274,7 +311,9 @@ export default function UiV2Page() {
               </span>
             </div>
             {activeStep?.primary_action ? (
-              <p className={styles.caption}>На следующем экране: {activeStep.primary_action.label}.</p>
+              <p className={styles.caption}>
+                На следующем экране: {activeStep.primary_action.label}.
+              </p>
             ) : null}
           </section>
           <Readiness workflow={workflow} />
@@ -286,7 +325,9 @@ export default function UiV2Page() {
               <h2 id="v2-workflow-title">От данных к закрытому месяцу</h2>
             </div>
             <p className={styles.progress} data-testid="v2-progress">
-              <strong>{workflow.progress.completed_or_skipped} из {workflow.progress.total_applicable}</strong>
+              <strong>
+                {workflow.progress.completed_or_skipped} из {workflow.progress.total_applicable}
+              </strong>
               <span>применимых шагов подтверждено или пропущено</span>
             </p>
           </div>
@@ -302,10 +343,14 @@ export default function UiV2Page() {
                   onClick={() => navigate(monthWorkspacePath(workflow.month.id, step.id))}
                   type="button"
                 >
-                  <span className={styles.stepNumber} aria-hidden="true">{step.order}</span>
+                  <span className={styles.stepNumber} aria-hidden="true">
+                    {step.order}
+                  </span>
                   <span className={styles.stepTitle}>{step.title}</span>
                   <span className={styles.stepState}>
-                    {step.applicability === "not_applicable" ? "Не применяется" : STEP_LABELS[step.state] ?? "Проверить"}
+                    {step.applicability === "not_applicable"
+                      ? "Не применяется"
+                      : (STEP_LABELS[step.state] ?? "Проверить")}
                   </span>
                   <span aria-hidden="true">↗</span>
                 </button>
@@ -319,11 +364,15 @@ export default function UiV2Page() {
         </section>
         <details className={`${styles.details} ${styles.provenance}`}>
           <summary>О данных и границах этой версии</summary>
-          <p>Сводка рассчитана: {formatDateTime(workflow.generated_at)}. Это время расчёта, не обновления котировок.</p>
           <p>
-            UI v2 читает сохранённые локальные данные. Импорт, редактирование, подтверждение закрытия и
-            повторное открытие пока выполняются в текущем интерфейсе. Дата снимка и отчётный месяц
-            имеют разный смысл. Прогноз и изменение капитала не заменяют XIRR или TWRR.
+            Сводка рассчитана: {formatDateTime(workflow.generated_at)}. Это время расчёта, не
+            обновления котировок.
+          </p>
+          <p>
+            UI v2 читает сохранённые локальные данные. Импорт, редактирование, подтверждение
+            закрытия и повторное открытие пока выполняются в текущем интерфейсе. Дата снимка и
+            отчётный месяц имеют разный смысл. Прогноз и изменение капитала не заменяют XIRR или
+            TWRR.
           </p>
         </details>
       </>
@@ -332,11 +381,17 @@ export default function UiV2Page() {
 
   return (
     <div className={styles.shell}>
-      <a className={styles.skipLink} href="#v2-main">К содержанию</a>
+      <a className={styles.skipLink} href="#v2-main">
+        К содержанию
+      </a>
       <aside className={styles.sidebar}>
         <Link className={styles.brand} to="/v2">
-          <span className={styles.brandMark} aria-hidden="true">H</span>
-          <span>Hermes Finance<small>Личные финансы</small></span>
+          <span className={styles.brandMark} aria-hidden="true">
+            H
+          </span>
+          <span>
+            Hermes Finance<small>Личные финансы</small>
+          </span>
         </Link>
         <nav aria-label="Навигация UI v2" className={styles.navigation}>
           <Link aria-current="page" to={selectedId ? monthWorkspacePath(selectedId) : "/v2"}>
@@ -345,22 +400,42 @@ export default function UiV2Page() {
         </nav>
         <div className={styles.sidebarNote}>
           <span className={styles.eyebrow}>Твой месячный ритм</span>
-          <p>Обновить данные.<br />Понять результат.<br />Зафиксировать месяц.</p>
+          <p>
+            Обновить данные.
+            <br />
+            Понять результат.
+            <br />
+            Зафиксировать месяц.
+          </p>
         </div>
         <div className={styles.legacyLinks}>
           <p className={styles.eyebrow}>В текущем интерфейсе</p>
-          <Link to="/months">Все месяцы <span aria-hidden="true">↗</span></Link>
-          <Link to="/accounts">Счета и инструменты <span aria-hidden="true">↗</span></Link>
-          <Link to="/analytics">История и доходность <span aria-hidden="true">↗</span></Link>
-          <Link to="/goals">Цели <span aria-hidden="true">↗</span></Link>
-          <Link to="/export">Экспорт и копии <span aria-hidden="true">↗</span></Link>
-          <p className={styles.caption}>В этих разделах месяц выбирается по правилам текущего интерфейса.</p>
+          <Link to="/months">
+            Все месяцы <span aria-hidden="true">↗</span>
+          </Link>
+          <Link to="/accounts">
+            Счета и инструменты <span aria-hidden="true">↗</span>
+          </Link>
+          <Link to="/analytics">
+            История и доходность <span aria-hidden="true">↗</span>
+          </Link>
+          <Link to="/goals">
+            Цели <span aria-hidden="true">↗</span>
+          </Link>
+          <Link to="/export">
+            Экспорт и копии <span aria-hidden="true">↗</span>
+          </Link>
+          <p className={styles.caption}>
+            В этих разделах месяц выбирается по правилам текущего интерфейса.
+          </p>
         </div>
         <p className={styles.localOnly}>Только на этом компьютере</p>
       </aside>
       <div className={styles.workspace}>
         <div className={styles.topbar}>
-          <span>UI v2 <span className={styles.previewBadge}>Предварительная версия</span></span>
+          <span>
+            UI v2 <span className={styles.previewBadge}>Предварительная версия</span>
+          </span>
           <Link to="/">Вернуться к текущему интерфейсу →</Link>
         </div>
         <RuntimeStatusBanner />
@@ -379,7 +454,9 @@ export default function UiV2Page() {
                 onChange={(event) => navigate(monthWorkspacePath(Number(event.target.value)))}
                 value={selectedId ?? ""}
               >
-                <option disabled value="">Выбери месяц</option>
+                <option disabled value="">
+                  Выбери месяц
+                </option>
                 {months.map((month) => (
                   <option key={month.id} value={month.id}>
                     {formatMonth(month.year, month.month)}

@@ -1,12 +1,12 @@
 .shell {
-  --v2-ink: #172d28;
-  --v2-muted: #536861;
-  --v2-line: #dce6df;
-  --v2-green: #155b46;
+  --v2-ink: #1d2e43;
+  --v2-muted: #526477;
+  --v2-line: #dde3e9;
+  --v2-accent: #244f83;
   min-height: 100vh;
   display: grid;
   grid-template-columns: 226px minmax(0, 1fr);
-  background: #f5f7f3;
+  background: #f5f6f8;
   color: var(--v2-ink);
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 15px;
@@ -34,7 +34,7 @@
 }
 
 .shell a {
-  color: var(--v2-green);
+  color: var(--v2-accent);
 }
 
 .shell :where(button, select, summary, a):focus-visible {
@@ -49,7 +49,7 @@
   z-index: 100;
   padding: 12px 18px;
   background: white;
-  border: 2px solid var(--v2-green);
+  border: 2px solid var(--v2-accent);
 }
 
 .skipLink:focus {
@@ -59,7 +59,7 @@
 .sidebar {
   padding: 30px 20px 24px;
   border-right: 1px solid var(--v2-line);
-  background: #fcfdfb;
+  background: #fcfdfe;
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -80,7 +80,7 @@
   place-items: center;
   width: 38px;
   height: 42px;
-  background: var(--v2-green);
+  background: var(--v2-accent);
   color: white;
   border-radius: 11px 11px 4px 11px;
   font-size: 24px;
@@ -101,7 +101,7 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: 9px;
-  background: #e9f1e9;
+  background: #e9eff8;
   text-decoration: none;
   font-weight: 700;
 }
@@ -149,8 +149,15 @@
 }
 
 .legacyLinks a:hover {
-  background: #edf2ed;
-  color: var(--v2-green);
+  background: #edf1f7;
+  color: var(--v2-accent);
+}
+
+.caption {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--v2-muted);
+  margin-top: 8px;
 }
 
 .legacyLinks .caption {
@@ -179,7 +186,7 @@
   gap: 12px;
   border-bottom: 1px solid var(--v2-line);
   font-size: 12px;
-  background: #fcfdfb;
+  background: #fcfdfe;
 }
 
 .topbar a {
@@ -191,7 +198,7 @@
   padding: 3px 9px;
   margin-left: 8px;
   border-radius: 5px;
-  background: #eaf0e9;
+  background: #eaf0f8;
   color: var(--v2-muted);
   font-size: 11px;
 }
@@ -232,7 +239,7 @@
 .monthPicker select {
   width: 100%;
   min-height: 44px;
-  border: 1px solid #bbcec0;
+  border: 1px solid #bccadc;
   background: white;
   color: var(--v2-ink);
   border-radius: 8px;
@@ -252,6 +259,12 @@
   margin-bottom: 18px;
 }
 
+.textLink {
+  display: inline-block;
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+
 .contextLine .textLink {
   margin-left: auto;
 }
@@ -265,8 +278,8 @@
 }
 
 .status[data-closed="true"] {
-  color: var(--v2-green);
-  background: #e5f0e7;
+  color: var(--v2-accent);
+  background: #e6eef9;
 }
 
 .metrics {
@@ -285,8 +298,8 @@
 }
 
 .capital {
-  background: #eaf1e8;
-  border-color: #d3dfd0;
+  background: #eaf0f8;
+  border-color: #d4deeb;
 }
 
 .forecast {
@@ -310,13 +323,6 @@
   color: var(--v2-muted);
 }
 
-.caption {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--v2-muted);
-  margin-top: 8px;
-}
-
 .actionGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
@@ -326,8 +332,8 @@
 
 .action {
   padding: 25px;
-  background: #173f32;
-  color: #f7fcf6;
+  background: #203c60;
+  color: #f7faff;
   border-radius: 12px;
   scroll-margin-top: 20px;
 }
@@ -339,7 +345,7 @@
 
 .action .eyebrow,
 .action .caption {
-  color: #d0e2d5;
+  color: #d1def0;
 }
 
 .action h2,
@@ -352,7 +358,7 @@
 }
 
 .actionWhy {
-  color: #e2eee2;
+  color: #e2eaf6;
   margin-top: 12px;
   font-size: 14px;
   line-height: 1.65;
@@ -373,19 +379,19 @@
   padding: 11px 17px;
   min-height: 44px;
   border-radius: 7px;
-  background: #e5f1cf;
-  color: #173f32;
+  background: #e2edff;
+  color: #203c60;
   font-weight: 700;
   text-decoration: none;
   font-size: 14px;
 }
 
 .shell .primaryButton:hover {
-  background: #f2f9e5;
+  background: #f3f7ff;
 }
 
 .handoff {
-  color: #d0e2d5;
+  color: #d1def0;
   font-size: 11px;
   max-width: 230px;
 }
@@ -423,12 +429,6 @@
   font-weight: 700;
 }
 
-.textLink {
-  display: inline-block;
-  font-size: 12px;
-  text-underline-offset: 3px;
-}
-
 .readiness > .textLink {
   margin-top: 16px;
 }
@@ -442,7 +442,7 @@
 
 .details summary {
   cursor: pointer;
-  color: var(--v2-green);
+  color: var(--v2-accent);
   font-weight: 600;
   padding: 5px 0;
 }
@@ -498,7 +498,7 @@
 }
 
 .steps li + li {
-  border-top: 1px solid #edf1ec;
+  border-top: 1px solid #edf1f6;
 }
 
 .step {
@@ -521,8 +521,8 @@
 
 .step:hover,
 .step[aria-pressed="true"] {
-  background: #eef4ec;
-  border-color: #d5e2d2;
+  background: #edf3fb;
+  border-color: #d4e1f3;
 }
 
 .stepNumber {
@@ -531,14 +531,14 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #edf1ec;
+  background: #edf1f6;
   color: var(--v2-muted);
   font-size: 11px;
 }
 
 .step[data-state="completed"] .stepNumber {
-  background: #d9eada;
-  color: var(--v2-green);
+  background: #dbe8fa;
+  color: var(--v2-accent);
 }
 
 .stepTitle {
@@ -586,10 +586,10 @@
 .secondaryButton {
   margin-top: 18px;
   padding: 10px 16px;
-  border: 1px solid #adc5b5;
+  border: 1px solid #adbfda;
   border-radius: 7px;
-  background: #f3f7f0;
-  color: var(--v2-green);
+  background: #f1f5fc;
+  color: var(--v2-accent);
   font: inherit;
   font-size: 14px;
   min-height: 44px;
