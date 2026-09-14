@@ -428,8 +428,11 @@ def _seed_invalid_link(session, *, missing_balance: bool) -> None:
         name="Synthetic invalid linked debt",
         current_balance="20.00",
     )
-    link_debt_to_account(session, debt.id, account.id)
-    if not missing_balance:
+    if missing_balance:
+        session.execute(update(Debt).where(Debt.id == debt.id).values(linked_account_id=account.id))
+        session.commit()
+    else:
+        link_debt_to_account(session, debt.id, account.id)
         session.execute(
             update(Account).where(Account.id == account.id).values(include_in_capital=False)
         )

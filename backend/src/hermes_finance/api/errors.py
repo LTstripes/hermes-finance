@@ -26,7 +26,10 @@ from hermes_finance.database import DatabaseMaintenanceError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.debts import DebtAccountLinkConflictError
 from hermes_finance.services.instruments import InstrumentDeletionBlockedError
-from hermes_finance.services.linked_pairs import LinkedPairReadModelError
+from hermes_finance.services.linked_pairs import (
+    LinkedPairBalanceEvidenceConflictError,
+    LinkedPairReadModelError,
+)
 from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.reporting_months import (
@@ -188,6 +191,18 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(409, "conflict", str(exc))
+
+    @application.exception_handler(LinkedPairBalanceEvidenceConflictError)
+    async def _linked_pair_balance_evidence_conflict_handler(
+        request: Request, exc: LinkedPairBalanceEvidenceConflictError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=409 code=%s",
+            exc.__class__.__name__,
+            request.url.path,
+            exc.code,
+        )
+        return _error_response(409, exc.code, str(exc))
 
     @application.exception_handler(TaxBracketYearLockedError)
     async def _tax_bracket_year_locked_handler(

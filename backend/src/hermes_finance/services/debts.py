@@ -10,6 +10,7 @@ from hermes_finance.services._guard import (
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import get_account
+from hermes_finance.services.linked_pairs import require_linked_pair_balance_evidence
 from hermes_finance.services.reporting_months import get_reporting_month
 
 _UNSET: object = object()
@@ -210,6 +211,7 @@ def link_debt_to_account(session: Session, debt_id: int, account_id: int) -> Deb
         raise ValueError("linked account must be cash, deposit, or savings")
     if not account.include_in_capital:
         raise ValueError("linked account must already be included in capital")
+    require_linked_pair_balance_evidence(session, debt.reporting_month_id, account.id)
 
     existing = session.scalar(
         select(Debt).where(

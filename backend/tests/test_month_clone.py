@@ -527,6 +527,13 @@ def test_clone_copies_debt_terms_plan_and_clears_due_date(tmp_path: Path) -> Non
             contract_end_date=date(2033, 4, 20),
         )
         account = create_account(session, name="Связанный cash", account_type="cash")
+        create_cash_balance(
+            session,
+            reporting_month_id=month.id,
+            account_id=account.id,
+            name="Связанный cash balance",
+            amount="0.00",
+        )
         link_debt_to_account(session, debt.id, account.id)
         create_property_snapshot(
             session,

@@ -13,6 +13,13 @@ from hermes_finance.services.accounts import (
     get_account,
     update_account,
 )
+from hermes_finance.services.cash import (
+    CashBalanceNotFoundError,
+    create_cash_balance,
+    delete_cash_balance,
+    get_cash_balance,
+    update_cash_balance,
+)
 from hermes_finance.services.debts import (
     DebtAccountLinkConflictError,
     DebtNotFoundError,
@@ -27,7 +34,13 @@ from hermes_finance.services.debts import (
     unlink_debt_from_account,
     update_debt,
 )
-from hermes_finance.services.deposits import create_deposit_snapshot
+from hermes_finance.services.deposits import (
+    DepositSnapshotNotFoundError,
+    create_deposit_snapshot,
+    delete_deposit_snapshot,
+    get_deposit_snapshot,
+)
+from hermes_finance.services.linked_pairs import LinkedPairBalanceEvidenceConflictError
 from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
@@ -293,6 +306,22 @@ def test_link_change_unlink_is_month_local_and_account_side_is_derived(
             account_type=AccountType.DEPOSIT,
             include_in_capital=False,
         )
+        create_cash_balance(
+            session,
+            reporting_month_id=first_id,
+            account_id=cash.id,
+            name="Synthetic Cash Balance",
+            amount="0.00",
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=first_id,
+            account_id=deposit.id,
+            name="Synthetic Deposit Snapshot",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
+        )
         debt = create_debt(
             session,
             reporting_month_id=first_id,
@@ -320,6 +349,222 @@ def test_link_change_unlink_is_month_local_and_account_side_is_derived(
         unlinked = unlink_debt_from_account(session, debt.id)
         assert unlinked.linked_account_id is None
         assert list_linked_debts(session, deposit.id) == []
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_link_requires_month_local_balance_evidence_and_accepts_explicit_zero(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, _ = build_environment(session)
+        cash = create_account(session, name="Synthetic Empty Cash", account_type=AccountType.CASH)
+        cash_debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic Cash Card",
+            current_balance="100.00",
+        )
+
+        with pytest.raises(
+            LinkedPairBalanceEvidenceConflictError,
+            match="must have an included cash or deposit fact",
+        ):
+            link_debt_to_account(session, cash_debt.id, cash.id)
+        assert get_debt(session, cash_debt.id).linked_account_id is None
+
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Explicit Zero Cash",
+            amount="0.00",
+        )
+        assert link_debt_to_account(session, cash_debt.id, cash.id).linked_account_id == cash.id
+
+        deposit = create_account(
+            session,
+            name="Synthetic Zero Deposit",
+            account_type=AccountType.DEPOSIT,
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=deposit.id,
+            name="Synthetic Explicit Zero Deposit",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
+        )
+        deposit_debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic Deposit Card",
+            current_balance="200.00",
+        )
+        assert (
+            link_debt_to_account(session, deposit_debt.id, deposit.id).linked_account_id
+            == deposit.id
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_linked_pair_rejects_removing_last_cash_fact_for_each_transition(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, _ = build_environment(session)
+        cash = create_account(session, name="Synthetic Linked Cash", account_type=AccountType.CASH)
+        other_cash = create_account(
+            session,
+            name="Synthetic Other Cash",
+            account_type=AccountType.CASH,
+        )
+        balance = create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Last Cash Fact",
+            amount="0.00",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic Linked Card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, cash.id)
+
+        expected = pytest.raises(
+            LinkedPairBalanceEvidenceConflictError,
+            match="must retain an included cash or deposit fact",
+        )
+        with expected:
+            delete_cash_balance(session, balance.id)
+        assert get_cash_balance(session, balance.id).account_id == cash.id
+
+        with pytest.raises(
+            LinkedPairBalanceEvidenceConflictError,
+            match="must retain an included cash or deposit fact",
+        ):
+            update_cash_balance(session, balance.id, account_id=other_cash.id)
+        assert get_cash_balance(session, balance.id).account_id == cash.id
+
+        with pytest.raises(
+            LinkedPairBalanceEvidenceConflictError,
+            match="must retain an included cash or deposit fact",
+        ):
+            update_cash_balance(session, balance.id, account_id=None)
+        assert get_cash_balance(session, balance.id).account_id == cash.id
+
+        with pytest.raises(
+            LinkedPairBalanceEvidenceConflictError,
+            match="must retain an included cash or deposit fact",
+        ):
+            update_cash_balance(session, balance.id, include_in_capital=False)
+        persisted = get_cash_balance(session, balance.id)
+        assert persisted.account_id == cash.id
+        assert persisted.include_in_capital is True
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_removing_one_of_several_qualifying_cash_facts_remains_allowed(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, _ = build_environment(session)
+        cash = create_account(
+            session, name="Synthetic Multi-Fact Cash", account_type=AccountType.CASH
+        )
+        first = create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Cash Fact A",
+            amount="0.00",
+        )
+        second = create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Cash Fact B",
+            amount="0.00",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic Multi-Fact Card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, cash.id)
+
+        delete_cash_balance(session, first.id)
+
+        with pytest.raises(CashBalanceNotFoundError):
+            get_cash_balance(session, first.id)
+        assert get_cash_balance(session, second.id).account_id == cash.id
+        assert get_debt(session, debt.id).linked_account_id == cash.id
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_linked_pair_rejects_deleting_last_deposit_fact(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, _ = build_environment(session)
+        deposit = create_account(
+            session,
+            name="Synthetic Linked Deposit",
+            account_type=AccountType.DEPOSIT,
+        )
+        first = create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=deposit.id,
+            name="Synthetic Deposit Fact A",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
+        )
+        second = create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=deposit.id,
+            name="Synthetic Deposit Fact B",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
+        )
+        debt = create_debt(
+            session,
+            reporting_month_id=month_id,
+            debt_type=DebtType.CREDIT_CARD,
+            name="Synthetic Deposit Card",
+            current_balance="300.00",
+        )
+        link_debt_to_account(session, debt.id, deposit.id)
+
+        delete_deposit_snapshot(session, first.id)
+        with pytest.raises(DepositSnapshotNotFoundError):
+            get_deposit_snapshot(session, first.id)
+
+        with pytest.raises(
+            LinkedPairBalanceEvidenceConflictError,
+            match="must retain an included cash or deposit fact",
+        ):
+            delete_deposit_snapshot(session, second.id)
+        assert get_deposit_snapshot(session, second.id).account_id == deposit.id
     finally:
         session.close()
         database.engine.dispose()
@@ -357,6 +602,13 @@ def test_link_rejects_ineligible_debt_account_and_excluded_debt(tmp_path: Path) 
             name="Synthetic Card",
             current_balance="1000.00",
         )
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Cash Balance",
+            amount="0.00",
+        )
 
         with pytest.raises(ValueError, match="only credit_card"):
             link_debt_to_account(session, other.id, cash.id)
@@ -391,6 +643,13 @@ def test_link_rejects_duplicate_and_prevents_orphaning_account(tmp_path: Path) -
             debt_type=DebtType.CREDIT_CARD,
             name="Synthetic Second Card",
             current_balance="2000.00",
+        )
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Cash Balance",
+            amount="0.00",
         )
         link_debt_to_account(session, first.id, cash.id)
 
@@ -476,6 +735,22 @@ def test_link_and_unlink_obey_closed_month_and_reopen(tmp_path: Path) -> None:
             session,
             name="Synthetic Deposit",
             account_type=AccountType.DEPOSIT,
+        )
+        create_cash_balance(
+            session,
+            reporting_month_id=month_id,
+            account_id=cash.id,
+            name="Synthetic Cash Balance",
+            amount="0.00",
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=deposit.id,
+            name="Synthetic Deposit Snapshot",
+            deposit_type="deposit",
+            balance="0.00",
+            annual_rate="0.00",
         )
         debt = create_debt(
             session,

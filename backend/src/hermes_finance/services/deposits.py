@@ -11,6 +11,7 @@ from hermes_finance.services._guard import (
 )
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.linked_pairs import ensure_linked_pair_balance_evidence_survives
 
 
 class DepositSnapshotNotFoundError(LookupError):
@@ -156,5 +157,13 @@ def update_deposit_snapshot(
 def delete_deposit_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_deposit_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)
+    account = session.get(Account, snapshot.account_id)
+    if account is not None and account.include_in_capital:
+        ensure_linked_pair_balance_evidence_survives(
+            session,
+            snapshot.reporting_month_id,
+            snapshot.account_id,
+            exclude_deposit_snapshot_id=snapshot.id,
+        )
     session.delete(snapshot)
     session.commit()

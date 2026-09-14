@@ -7,6 +7,7 @@ from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
 )
+from hermes_finance.services.linked_pairs import ensure_linked_pair_balance_evidence_survives
 
 
 class CashBalanceNotFoundError(LookupError):
@@ -38,6 +39,21 @@ def _normalize_currency(currency: str) -> str:
     if not normalized:
         raise ValueError("currency must not be empty")
     return normalized
+
+
+def _guard_linked_cash_balance_removal(session: Session, balance: CashBalance) -> None:
+    """Preserve the last qualifying cash fact for an existing linked pair."""
+    if balance.account_id is None or not balance.include_in_capital:
+        return
+    account = session.get(Account, balance.account_id)
+    if account is None or not account.include_in_capital:
+        return
+    ensure_linked_pair_balance_evidence_survives(
+        session,
+        balance.reporting_month_id,
+        balance.account_id,
+        exclude_cash_balance_id=balance.id,
+    )
 
 
 def list_cash_balances(session: Session) -> list[CashBalance]:
@@ -116,6 +132,17 @@ def update_cash_balance(
     if account_id is not _UNSET:
         if account_id is not None and session.get(Account, account_id) is None:
             raise ValueError(f"account {account_id} was not found")
+    next_account_id = balance.account_id if account_id is _UNSET else account_id
+    next_include_in_capital = (
+        balance.include_in_capital if include_in_capital is None else include_in_capital
+    )
+    if (
+        balance.account_id is not None
+        and balance.include_in_capital
+        and (next_account_id != balance.account_id or next_include_in_capital is False)
+    ):
+        _guard_linked_cash_balance_removal(session, balance)
+    if account_id is not _UNSET:
         balance.account_id = account_id  # type: ignore[assignment]
     if name is not None:
         balance.name = _normalize_name(name)
@@ -135,5 +162,6 @@ def update_cash_balance(
 def delete_cash_balance(session: Session, balance_id: int) -> None:
     balance = get_cash_balance(session, balance_id)
     require_editable_child_month(session, balance)
+    _guard_linked_cash_balance_removal(session, balance)
     session.delete(balance)
     session.commit()
