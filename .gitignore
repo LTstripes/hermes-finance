@@ -58,6 +58,9 @@ Desktop.ini
 *.tmp
 *.temp
 
+# Owner runtime preparation proof (generated in a runtime checkout)
+.hermes-runtime-prepared.json*
+
 # Windows launcher package output
 launcher/windows/artifacts/
 launcher/windows/.dotnet/

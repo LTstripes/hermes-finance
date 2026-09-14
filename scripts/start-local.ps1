@@ -59,24 +59,39 @@ function Assert-ProcessRunning {
     }
 }
 
-function Invoke-FrontendBuild {
+function Invoke-PreparedRuntimeValidation {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Npm,
+        [string]$PowerShell,
         [Parameter(Mandatory = $true)]
-        [string]$WorkingDirectory
+        [string]$Checkout
     )
 
-    Write-Host "Building frontend production bundle..." -ForegroundColor Cyan
-    Push-Location $WorkingDirectory
+    $preparedStateScript = Join-Path $Checkout "scripts\prepare-runtime.ps1"
+    if (-not (Test-Path -LiteralPath $preparedStateScript -PathType Leaf)) {
+        throw "Prepared runtime validation is unavailable. Run the explicit Prepare command from a complete Hermes Finance checkout."
+    }
+
+    $savedErrorActionPreference = $ErrorActionPreference
     try {
-        & $Npm run build
-        if ($LASTEXITCODE -ne 0) {
-            throw "Frontend production build failed with exit code $LASTEXITCODE."
-        }
+        $ErrorActionPreference = "Continue"
+        $output = & $PowerShell `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File $preparedStateScript `
+            -Checkout $Checkout `
+            -Validate 2>&1 | Out-String
+        $validationExitCode = $LASTEXITCODE
     }
     finally {
-        Pop-Location
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($validationExitCode -ne 0) {
+        $detail = $output.Trim()
+        if ([string]::IsNullOrWhiteSpace($detail)) {
+            $detail = "Prepared runtime validation failed without a diagnostic."
+        }
+        throw $detail
     }
 }
 
@@ -152,7 +167,7 @@ function Stop-ProcessTree {
 
 try {
     $uv = Get-RequiredCommand -Name "uv" -InstallHint "Install uv from https://docs.astral.sh/uv/."
-    $npm = Get-RequiredCommand -Name "npm.cmd" -InstallHint "Install Node.js 22.22 or newer from https://nodejs.org/."
+    $powershell = Get-RequiredCommand -Name "powershell.exe" -InstallHint "Windows PowerShell is required to validate the prepared runtime."
 
     if (-not (Test-Path (Join-Path $backendDir "pyproject.toml") -PathType Leaf)) {
         throw "Backend project not found at '$backendDir'. Run this script from the Hermes Finance repository."
@@ -160,14 +175,8 @@ try {
     if (-not (Test-Path (Join-Path $frontendDir "package.json") -PathType Leaf)) {
         throw "Frontend project not found at '$frontendDir'. Run this script from the Hermes Finance repository."
     }
-    if (-not (Test-Path (Join-Path $frontendDir "node_modules") -PathType Container)) {
-        throw "Frontend dependencies are missing. Run 'cd frontend' and then 'npm ci'."
-    }
 
-    Invoke-FrontendBuild -Npm $npm -WorkingDirectory $frontendDir
-    if (-not (Test-Path (Join-Path $frontendDist "index.html") -PathType Leaf)) {
-        throw "Frontend build completed without '$frontendDist\index.html'."
-    }
+    Invoke-PreparedRuntimeValidation -PowerShell $powershell -Checkout $repoRoot
 
     Assert-PortAvailable -Port 8000
 
@@ -177,6 +186,7 @@ try {
         "HERMES_FINANCE_PORT",
         "HERMES_FINANCE_RELOAD",
         "HERMES_FINANCE_FRONTEND_DIST",
+        "UV_OFFLINE",
         "PYTHONPATH"
     )) {
         $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
@@ -187,12 +197,13 @@ try {
         $env:HERMES_FINANCE_PORT = "8000"
         $env:HERMES_FINANCE_RELOAD = "false"
         $env:HERMES_FINANCE_FRONTEND_DIST = $frontendDist
+        $env:UV_OFFLINE = "1"
         $env:PYTHONPATH = ""
 
         Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
         $backendProcess = Start-Process `
             -FilePath $uv `
-            -ArgumentList @("run", "hermes-finance-api") `
+            -ArgumentList @("run", "--locked", "--offline", "--no-sync", "hermes-finance-api") `
             -WorkingDirectory $backendDir `
             -NoNewWindow `
             -PassThru
