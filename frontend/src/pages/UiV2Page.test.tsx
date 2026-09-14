@@ -1,4 +1,4 @@
-import { QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,6 +85,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  onlineManager.setOnline(true);
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -97,6 +98,10 @@ it("pins the newest calendar month in the URL and renders distinct exact financi
   expect(screen.getByTestId("v2-passive-actual").textContent).toBe(formatMoney("17500.00"));
   expect(screen.getByTestId("v2-passive-forecast").textContent).toBe(formatMoney("21000.00"));
   expect(screen.getByTestId("test-location")).toHaveTextContent("/v2?month=12");
+  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+    "href",
+    "/months/12",
+  );
   expect(screen.getByText(/Не обещание выплаты/)).toBeVisible();
   expect(screen.getByText(/Без недвижимости и ипотеки/)).toBeVisible();
   expect(
@@ -127,6 +132,10 @@ it("selecting a step focuses its actionable panel and preserves the month in the
   await waitFor(() => expect(document.getElementById("v2-action")).toHaveFocus());
   expect(reads).toHaveLength(count);
   expect(screen.getByTestId("v2-primary-action")).toHaveAttribute(
+    "href",
+    "/months/12/close#actual_payouts",
+  );
+  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
     "href",
     "/months/12/close#actual_payouts",
   );
@@ -218,6 +227,30 @@ it("hides cached results when revalidation fails and recovers with explicit retr
   expect(screen.queryByTestId("v2-primary-action")).toBeNull();
   state.workflowError = false;
   fireEvent.click(screen.getByRole("button", { name: "Повторить загрузку" }));
+  expect(await screen.findByTestId("v2-capital")).toBeVisible();
+});
+
+it("hides cached results while offline revalidation is paused", async () => {
+  const { mount, client, reads } = setup("/v2?month=12");
+  mount();
+  await screen.findByTestId("v2-capital");
+  const readCount = reads.length;
+
+  act(() => {
+    onlineManager.setOnline(false);
+    void client.invalidateQueries({ queryKey: queryKeys.monthCloseWorkflow(12) });
+  });
+
+  await waitFor(() => expect(screen.queryByTestId("v2-capital")).toBeNull());
+  expect(document.getElementById("v2-main")).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Ждём подключения, чтобы подтвердить состояние выбранного месяца",
+  );
+  expect(reads).toHaveLength(readCount);
+
+  await act(async () => {
+    onlineManager.setOnline(true);
+  });
   expect(await screen.findByTestId("v2-capital")).toBeVisible();
 });
 
