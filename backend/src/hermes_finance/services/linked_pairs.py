@@ -26,6 +26,100 @@ class LinkedPairReadModelError(ValueError):
     code = "linked_pair_read_model_unavailable"
 
 
+class LinkedPairBalanceEvidenceConflictError(ValueError):
+    """Raised when a write would leave a linked pair without balance evidence."""
+
+    code = "linked_pair_balance_evidence_conflict"
+
+
+def has_qualifying_balance_fact(
+    session: Session,
+    reporting_month_id: int,
+    account_id: int,
+    *,
+    exclude_cash_balance_id: int | None = None,
+    exclude_deposit_snapshot_id: int | None = None,
+) -> bool:
+    """Return whether a linked account has an included month-local balance fact.
+
+    This uses row existence rather than the stored amount, so an explicit zero
+    remains valid evidence.  The predicates intentionally mirror the linked
+    pair read model: included cash rows and deposit rows for accounts that are
+    included in capital.
+    """
+    cash_statement = (
+        select(CashBalance.id)
+        .join(Account, CashBalance.account_id == Account.id)
+        .where(
+            CashBalance.reporting_month_id == reporting_month_id,
+            CashBalance.account_id == account_id,
+            CashBalance.include_in_capital.is_(True),
+            Account.include_in_capital.is_(True),
+        )
+    )
+    if exclude_cash_balance_id is not None:
+        cash_statement = cash_statement.where(CashBalance.id != exclude_cash_balance_id)
+    if session.scalar(cash_statement.limit(1)) is not None:
+        return True
+
+    deposit_statement = (
+        select(DepositSnapshot.id)
+        .join(Account, DepositSnapshot.account_id == Account.id)
+        .where(
+            DepositSnapshot.reporting_month_id == reporting_month_id,
+            DepositSnapshot.account_id == account_id,
+            Account.include_in_capital.is_(True),
+        )
+    )
+    if exclude_deposit_snapshot_id is not None:
+        deposit_statement = deposit_statement.where(
+            DepositSnapshot.id != exclude_deposit_snapshot_id
+        )
+    return session.scalar(deposit_statement.limit(1)) is not None
+
+
+def require_linked_pair_balance_evidence(
+    session: Session, reporting_month_id: int, account_id: int
+) -> None:
+    """Require balance evidence before persisting a new linked pair."""
+    if not has_qualifying_balance_fact(session, reporting_month_id, account_id):
+        raise LinkedPairBalanceEvidenceConflictError(
+            "linked account must have an included cash or deposit fact for reporting month"
+        )
+
+
+def ensure_linked_pair_balance_evidence_survives(
+    session: Session,
+    reporting_month_id: int,
+    account_id: int,
+    *,
+    exclude_cash_balance_id: int | None = None,
+    exclude_deposit_snapshot_id: int | None = None,
+) -> None:
+    """Reject removal of the last qualifying fact for an existing linked pair."""
+    linked_debt_exists = (
+        session.scalar(
+            select(Debt.id)
+            .where(
+                Debt.reporting_month_id == reporting_month_id,
+                Debt.linked_account_id == account_id,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+    if linked_debt_exists and not has_qualifying_balance_fact(
+        session,
+        reporting_month_id,
+        account_id,
+        exclude_cash_balance_id=exclude_cash_balance_id,
+        exclude_deposit_snapshot_id=exclude_deposit_snapshot_id,
+    ):
+        raise LinkedPairBalanceEvidenceConflictError(
+            "linked account must retain an included cash or deposit fact for reporting month"
+        )
+
+
 def _validate_linked_facts(
     *,
     debt_type: str,

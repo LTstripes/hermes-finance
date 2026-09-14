@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import Database, create_database
 from hermes_finance.domain import AccountType, DebtType, DepositType, RubleAmount
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Account, Base
+from hermes_finance.persistence import Account, Base, Debt
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.debts import (
@@ -136,7 +136,8 @@ def test_linked_account_without_attributed_balance_fact_fails_closed(tmp_path: P
             name="Synthetic missing-fact card",
             current_balance="300.00",
         )
-        link_debt_to_account(session, debt.id, account.id)
+        session.execute(update(Debt).where(Debt.id == debt.id).values(linked_account_id=account.id))
+        session.commit()
 
         with pytest.raises(
             LinkedPairReadModelError,
@@ -167,7 +168,8 @@ def test_included_unattributed_cash_cannot_become_linked_pair_asset(tmp_path: Pa
             name="Synthetic unattributed card",
             current_balance="300.00",
         )
-        link_debt_to_account(session, debt.id, account.id)
+        session.execute(update(Debt).where(Debt.id == debt.id).values(linked_account_id=account.id))
+        session.commit()
 
         with pytest.raises(
             LinkedPairReadModelError,

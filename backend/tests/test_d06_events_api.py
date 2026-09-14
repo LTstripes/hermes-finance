@@ -387,6 +387,29 @@ def test_debt_account_link_api_is_explicit_and_month_local(client: TestClient) -
     deposit_id = _account(client, "Временный deposit", account_type="deposit")
     brokerage_id = _account(client, "Brokerage", account_type="brokerage")
 
+    cash_balance = client.post(
+        "/api/cash-balances",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": cash_id,
+            "name": "Synthetic cash fact",
+            "amount": _rub("0.00"),
+        },
+    )
+    assert cash_balance.status_code == 201, cash_balance.text
+    deposit_snapshot = client.post(
+        "/api/deposits",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": deposit_id,
+            "name": "Synthetic deposit fact",
+            "deposit_type": "deposit",
+            "balance": _rub("0.00"),
+            "annual_rate": "0.00",
+        },
+    )
+    assert deposit_snapshot.status_code == 201, deposit_snapshot.text
+
     debt = client.post(
         "/api/debts",
         json={
@@ -467,6 +490,50 @@ def test_debt_account_link_api_is_explicit_and_month_local(client: TestClient) -
     assert unlinked.status_code == 204
     assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] is None
     assert client.get(f"/api/accounts/{deposit_id}/linked-debts").json() == []
+
+
+def test_linked_pair_balance_evidence_conflict_is_http_409(client: TestClient) -> None:
+    month_id = _month(client)
+    account_id = _account(client, "Synthetic linked cash", account_type="cash")
+    debt = client.post(
+        "/api/debts",
+        json={
+            "reporting_month_id": month_id,
+            "debt_type": "credit_card",
+            "name": "Synthetic linked card",
+            "current_balance": _rub("100.00"),
+        },
+    )
+    assert debt.status_code == 201, debt.text
+    debt_id = debt.json()["id"]
+
+    missing_fact = client.put(
+        f"/api/debts/{debt_id}/linked-account",
+        json={"account_id": account_id},
+    )
+    assert missing_fact.status_code == 409, missing_fact.text
+    _assert_error(missing_fact.json(), "linked_pair_balance_evidence_conflict")
+    assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] is None
+
+    balance = client.post(
+        "/api/cash-balances",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account_id,
+            "name": "Synthetic linked cash fact",
+            "amount": _rub("0.00"),
+        },
+    )
+    assert balance.status_code == 201, balance.text
+    linked = client.put(
+        f"/api/debts/{debt_id}/linked-account",
+        json={"account_id": account_id},
+    )
+    assert linked.status_code == 200, linked.text
+
+    deleting_last_fact = client.delete(f"/api/cash-balances/{balance.json()['id']}")
+    assert deleting_last_fact.status_code == 409, deleting_last_fact.text
+    _assert_error(deleting_last_fact.json(), "linked_pair_balance_evidence_conflict")
 
 
 # --- comments ---
