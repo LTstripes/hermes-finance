@@ -66,6 +66,7 @@ _CI_LANE_OVERRIDES = {
     "test_r08_h2d_in_kind_coverage.py": "ci_core",
     "test_r08_h3_tax_direct_payout.py": "ci_core",
     "test_linked_pair_read_model.py": "ci_integrations",
+    "test_ai_financial_review_linked_pairs.py": "ci_integrations",
     "test_perf04a_attribution.py": "ci_core",
     "test_salary_cardinality.py": "ci_core",
     "test_salary_tax_opening.py": "ci_core",

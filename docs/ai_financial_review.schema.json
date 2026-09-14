@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.2.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.3.0/schema.json",
   "title": "Hermes Finance AI Financial Review",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "$schema": { "type": "string", "format": "uri-reference" },
     "schema_name": { "const": "hermes.finance.ai_financial_review" },
-    "schema_version": { "const": "1.2.0" },
+    "schema_version": { "const": "1.3.0" },
     "metadata": { "$ref": "#/$defs/metadata" },
     "scope": { "$ref": "#/$defs/scope" },
     "coverage": { "$ref": "#/$defs/coverage_summary" },
@@ -322,7 +322,7 @@
     "capital_data": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reporting_period", "snapshot_date", "liquid_assets_total", "included_debts", "liquid_capital_net", "property_equity", "total_net_worth", "cash_flow_after_allocations"],
+      "required": ["reporting_period", "snapshot_date", "liquid_assets_total", "included_debts", "liquid_capital_net", "property_equity", "total_net_worth", "cash_flow_after_allocations", "linked_pairs"],
       "properties": {
         "reporting_period": { "$ref": "#/$defs/period" },
         "snapshot_date": { "type": "string", "format": "date" },
@@ -331,7 +331,39 @@
         "liquid_capital_net": { "$ref": "#/$defs/money_metric" },
         "property_equity": { "$ref": "#/$defs/money_metric" },
         "total_net_worth": { "$ref": "#/$defs/money_metric" },
-        "cash_flow_after_allocations": { "$ref": "#/$defs/money_metric" }
+        "cash_flow_after_allocations": { "$ref": "#/$defs/money_metric" },
+        "linked_pairs": { "type": "array", "items": { "$ref": "#/$defs/linked_pair" } }
+      }
+    },
+    "linked_pair_double_count_prevention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "gross_asset_treatment", "gross_debt_treatment", "net_contribution_treatment", "additional_capital_adjustment", "reason_codes"],
+      "properties": {
+        "status": { "const": "canonical_totals_include_gross_pair_facts" },
+        "gross_asset_treatment": { "const": "included_in_liquid_assets_total" },
+        "gross_debt_treatment": { "const": "included_in_included_debts" },
+        "net_contribution_treatment": { "const": "explanatory_only" },
+        "additional_capital_adjustment": { "const": "none" },
+        "reason_codes": { "const": ["linked_pair_gross_facts_in_canonical_totals", "linked_pair_net_contribution_explanatory_only", "linked_pair_no_additional_capital_adjustment"] }
+      }
+    },
+    "linked_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "account_ref", "account_name", "account_type", "debt_ref", "debt_name", "debt_type", "gross_asset_balance", "gross_linked_debt_balance", "net_economic_contribution", "double_count_prevention"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^linked-pair-[a-z0-9-]+$" },
+        "account_ref": { "type": "string", "pattern": "^acct-[a-z0-9-]+$" },
+        "account_name": { "type": "string", "minLength": 1 },
+        "account_type": { "type": "string", "minLength": 1 },
+        "debt_ref": { "type": "string", "pattern": "^debt-[a-z0-9-]+$" },
+        "debt_name": { "type": "string", "minLength": 1 },
+        "debt_type": { "type": "string", "minLength": 1 },
+        "gross_asset_balance": { "$ref": "#/$defs/money_metric" },
+        "gross_linked_debt_balance": { "$ref": "#/$defs/money_metric" },
+        "net_economic_contribution": { "$ref": "#/$defs/money_metric" },
+        "double_count_prevention": { "$ref": "#/$defs/linked_pair_double_count_prevention" }
       }
     },
     "passive_breakdown": {
@@ -348,7 +380,7 @@
     "dynamics_point": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["period", "status", "snapshot_date", "coverage", "liquid_assets_total", "included_debts", "liquid_capital_net", "passive_income_actual", "passive_income_actual_breakdown", "active_income_net", "mandatory_expenses", "saving_allocations", "cash_flow_after_allocations", "property_equity", "market_value_change", "investment_return", "warning_codes"],
+      "required": ["period", "status", "snapshot_date", "coverage", "liquid_assets_total", "included_debts", "liquid_capital_net", "passive_income_actual", "passive_income_actual_breakdown", "active_income_net", "mandatory_expenses", "saving_allocations", "cash_flow_after_allocations", "property_equity", "market_value_change", "investment_return", "warning_codes", "linked_pairs"],
       "properties": {
         "period": { "$ref": "#/$defs/period" },
         "status": { "enum": ["closed", "draft"] },
@@ -366,7 +398,8 @@
         "property_equity": { "$ref": "#/$defs/money_metric" },
         "market_value_change": { "$ref": "#/$defs/money_metric" },
         "investment_return": { "$ref": "#/$defs/ratio_metric" },
-        "warning_codes": { "$ref": "#/$defs/reason_codes" }
+        "warning_codes": { "$ref": "#/$defs/reason_codes" },
+        "linked_pairs": { "type": "array", "items": { "$ref": "#/$defs/linked_pair" } }
       }
     },
     "dynamics_data": {

@@ -6,7 +6,7 @@ frontend behavior, migration, provider call, cloud upload, or LLM call.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Schema version:** `1.2.0`
+**Schema version:** `1.3.0`
 
 **Normative schema:** [`ai_financial_review.schema.json`](ai_financial_review.schema.json)
 
@@ -49,13 +49,16 @@ The intended source map is:
 | `user_context` | Persisted `monthly_comments` and explicitly owner-entered notes. Text is carried with provenance and is never parsed as a number or used in a calculation. |
 | `budget_and_saving` | Persisted `saving_allocations`, actual `expense_entries`, and #336 `planned_budget_lines`. Plan-vs-actual rows use the exact `(period, category, expense_type)` key and are a side-by-side presentation only. |
 | `performance` | Existing R08-02 XIRR, R08-03 exact TWRR and PERF04A value-bridge builders over the adjacent closed reporting-month window. The report preserves their availability, quality, coverage, reason codes, exact units, method identity and version metadata; it does not calculate a second return or attribution model. |
+| `current_capital.linked_pairs`, `historical_dynamics[].linked_pairs` | Canonical #365 `LinkedPairReadModel` facts for the selected month and each represented month. The adapter exposes gross asset/debt balances and the explanatory net contribution without recalculating them or changing capital totals. |
 | `data_quality`, `warnings`, `field_states` | Existing deterministic insights, coverage states and stable warning codes. Open evidence maps, raw diagnostics and provider payloads stay out of the export. |
 
 The adapter uses an allowlist. It must not serialize ORM objects, API request
 objects, provider DTOs or debug structures wholesale. Export-local refs such as
-`acct-*`, `inst-*`, `debt-*`, `comment-*` and `expense-*` are deterministic
-join keys inside one file; they are not database IDs, account numbers or
-provider identifiers.
+`acct-*`, `inst-*`, `debt-*`, `linked-pair-*`, `comment-*` and `expense-*` are
+deterministic join keys inside one file; they are not database IDs, account
+numbers or provider identifiers. Linked-pair refs join the export-local
+account and debt refs and remain stable wherever the same persisted pair is
+represented in the report.
 
 ## 3. Top-level contract
 
@@ -88,12 +91,14 @@ no persisted rows. It is not a synonym for an unavailable section.
 The required sections are:
 
 1. `current_capital` — selected-period liquid assets, included debt, liquid
-   capital net, property equity, a separate `cash_flow_after_allocations` KPI,
+   capital net, month-local linked asset/debt pairs, property equity, a separate `cash_flow_after_allocations` KPI,
    and `total_net_worth` only when an authoritative aggregate exists.
-2. `historical_dynamics` — ordered month points with capital, actual passive
-   income and breakdown, active income, mandatory expenses, saving allocations,
-   cash flow after allocations, property equity and only authoritative return
-   fields.
+2. `historical_dynamics` — ordered month points with capital, month-local
+   linked asset/debt pairs, actual passive income and breakdown, active income,
+   mandatory expenses, saving allocations, cash flow after allocations,
+   property equity and only authoritative return fields. A pair appears only
+   when the canonical relation and balance facts exist for that month; history
+   is not backfilled or guessed.
 3. `current_portfolio` — accounts, instruments, positions, deposits, cash,
    exact ISIN/ticker where stored, acquisition cost/cost basis, selected price,
    price date/source and freshness/provenance.
@@ -155,6 +160,15 @@ The required sections are:
   return metrics; PERF04A remains the monetary `value_change_after_external_flows`
   identity with its contribution/withdrawal summary and evidence. It is not
   component profit attribution, and no export-layer formula is introduced.
+- Linked-pair rows are attribution-only facts from the canonical #365 read
+  model. Gross asset and linked-debt balances already participate in the
+  canonical liquid-capital totals; `net_economic_contribution` is explanatory
+  only and no additional capital adjustment is applied. Invalid or missing
+  canonical linked-pair facts fail the whole report closed with
+  `linked_pair_read_model_unavailable`.
+- Linked-pair history is month-local. The exporter does not backfill, infer or
+  guess a relation or balance from another month. Explicit zero balances remain
+  exact zero money objects.
 - The report includes an exact stored ISIN when present and universal position
   fields for gold and other instruments. Gold does not get a parallel formula.
 - Free text is context, not a structured financial fact. Numbers in comments or
@@ -178,6 +192,10 @@ metadata: `R08-02` for XIRR, `R08-03` for exact TWRR and `PERF04A/1` for the
 monetary bridge. These identifiers describe the source contracts; they do not
 create a second calculation implementation.
 
+Linked-pair metrics use `source=linked_pair_read_model`; this identifies the
+canonical #365 read model rather than a provider payload or an exporter-side
+calculation.
+
 The metadata also records the integrated `#336` financial-context contract by
 name, without pretending that it is a separate calculation schema.
 
@@ -197,8 +215,10 @@ documents, stack traces, SQL and open-ended diagnostic evidence.
 - major: removal/rename, changed requiredness/units, changed source meaning or
   changed financial counting semantics.
 
-Version `1.2.0` adds the required `performance` section; the generated
-canonical v1.2 instance includes it and validates it strictly.
+Version `1.2.0` adds the required `performance` section. Version `1.3.0`
+adds required month-local linked-pair rows to `current_capital` and
+`historical_dynamics`; it changes no capital formula or counting semantics.
+The generated canonical v1.3 instance validates strictly.
 
 Consumers dispatch on the major version and validate the exact schema declared
 by the file. The v1 contract is strict (`additionalProperties=false` in the
