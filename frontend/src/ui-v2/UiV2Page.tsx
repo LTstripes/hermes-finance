@@ -190,8 +190,12 @@ export default function UiV2Page() {
     }
   }, [months, monthsQuery.isSuccess, navigate, params]);
 
-  // Do not relabel another period's data, or expose stale cached results during revalidation.
-  const loading = monthsQuery.isPending || monthsQuery.isFetching || workflowQuery.isFetching;
+  // Cached financial results are hidden until active revalidation is confirmed. React Query uses
+  // fetchStatus="paused" when an online-mode read cannot run (for example, after going offline),
+  // and isFetching is false in that state.
+  const paused = monthsQuery.fetchStatus === "paused" || workflowQuery.fetchStatus === "paused";
+  const loading =
+    monthsQuery.isPending || monthsQuery.isFetching || workflowQuery.isFetching || paused;
   const response = workflowQuery.data;
   const mismatch =
     response != null &&
@@ -204,6 +208,12 @@ export default function UiV2Page() {
   const explicitStep = workflow?.steps.find((step) => step.id === requestedStep);
   const activeStep =
     explicitStep ?? workflow?.steps.find((step) => step.id === workflow.recommended_step_id);
+  const v1ReturnPath =
+    selectedId == null
+      ? "/"
+      : explicitStep
+        ? monthlyCloseReturnPath({ monthId: selectedId, step: explicitStep.id })
+        : `/months/${selectedId}`;
   const actionRef = useRef<HTMLElement>(null);
   const focusedLocation = useRef<string | null>(null);
   const explicitStepId = explicitStep?.id;
@@ -256,7 +266,9 @@ export default function UiV2Page() {
   } else if (!workflow || loading) {
     content = (
       <p className={styles.loading} role="status">
-        Обновляем состояние выбранного месяца…
+        {paused
+          ? "Ждём подключения, чтобы подтвердить состояние выбранного месяца…"
+          : "Обновляем состояние выбранного месяца…"}
       </p>
     );
   } else {
@@ -436,7 +448,7 @@ export default function UiV2Page() {
           <span>
             UI v2 <span className={styles.previewBadge}>Предварительная версия</span>
           </span>
-          <Link to="/">Вернуться к текущему интерфейсу →</Link>
+          <Link to={v1ReturnPath}>Вернуться к текущему интерфейсу →</Link>
         </div>
         <RuntimeStatusBanner />
         <main aria-busy={loading} className={styles.main} id="v2-main" tabIndex={-1}>
