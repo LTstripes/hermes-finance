@@ -6,10 +6,7 @@ import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { GuidedCloseStep, MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { listMonths } from "../api/months";
 import type { MoneyValue } from "../api/types";
-import {
-  isGuidedCloseStepId,
-  monthlyCloseReturnPath,
-} from "../components/month-close/navigation";
+import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { RuntimeStatusBanner } from "../components/RuntimeStatus";
 import {
   formatDate,
