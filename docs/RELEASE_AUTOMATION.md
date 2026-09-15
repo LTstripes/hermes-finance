@@ -133,6 +133,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-rel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-request.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-workflow.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-visual-audit-workflow.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-stable-update.ps1
 ```
 
 `test-release.ps1` exercises the publication contract through an injected fake command runner, including successful publication semantics and fail-closed cases such as missing/failed/wrong-kind CI and conflicting tags/releases. It does not create a real tag or GitHub Release.
@@ -140,6 +141,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-vis
 `test-release-request.ps1` exercises the owner-control request grammar, provenance checks, version identity and release-note requirements using temporary synthetic files only.
 
 `test-release-workflow.ps1` parses the real automation entrypoint with the Windows PowerShell parser and verifies the tracked workflow contract: narrow trigger, control issue binding, owner gates, built-in token use and minimal permissions. It performs no network or publication calls.
+
+`test-stable-update.ps1` exercises the explicit Stable-update operation with
+temporary synthetic paths, a fake remote/GitHub layer, the accepted SQLite
+backup helper and a synthetic target Prepare/Validate script. It proves the
+backup-before-mutation order and records the target-pinned-but-unprepared
+partial state when Prepare or Validate fails. It does not touch a real Stable
+or Preview checkout, owner database, backup, environment file, tag or release.
 
 No HYG-04 acceptance test publishes a throwaway real Hermes Finance tag or release.
 
