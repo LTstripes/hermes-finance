@@ -234,7 +234,7 @@ try {
 
     Invoke-Git -Root $checkout -Arguments @("init", "--quiet") | Out-Null
     Invoke-Git -Root $checkout -Arguments @("config", "user.name", "Hermes OPS01 Test") | Out-Null
-    Invoke-Git -Root $checkout -Arguments @("config", "user.email", "hermes-ops01-test@example.invalid") | Out-Null
+    Invoke-Git -Root $checkout -Arguments @("config", "user.email", "hermes-ops01-test-identity") | Out-Null
     Invoke-Git -Root $checkout -Arguments @("add", ".") | Out-Null
     Invoke-Git -Root $checkout -Arguments @("commit", "--quiet", "-m", "initial synthetic runtime") | Out-Null
 
