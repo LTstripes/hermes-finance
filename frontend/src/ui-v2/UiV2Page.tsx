@@ -6,7 +6,10 @@ import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { GuidedCloseStep, MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { listMonths } from "../api/months";
 import type { MoneyValue } from "../api/types";
-import { monthlyCloseReturnPath } from "../components/month-close/navigation";
+import {
+  isGuidedCloseStepId,
+  monthlyCloseReturnPath,
+} from "../components/month-close/navigation";
 import { RuntimeStatusBanner } from "../components/RuntimeStatus";
 import {
   formatDate,
@@ -205,14 +208,15 @@ export default function UiV2Page() {
   const workflow =
     !loading && !monthsQuery.isError && !workflowQuery.isError && !mismatch ? response : undefined;
   const requestedStep = params.get("step");
-  const explicitStep = workflow?.steps.find((step) => step.id === requestedStep);
+  const requestedStepId = isGuidedCloseStepId(requestedStep) ? requestedStep : null;
+  const explicitStep = workflow?.steps.find((step) => step.id === requestedStepId);
   const activeStep =
     explicitStep ?? workflow?.steps.find((step) => step.id === workflow.recommended_step_id);
   const v1ReturnPath =
     selectedId == null
       ? "/"
-      : explicitStep
-        ? monthlyCloseReturnPath({ monthId: selectedId, step: explicitStep.id })
+      : requestedStepId
+        ? monthlyCloseReturnPath({ monthId: selectedId, step: requestedStepId })
         : `/months/${selectedId}`;
   const actionRef = useRef<HTMLElement>(null);
   const focusedLocation = useRef<string | null>(null);
