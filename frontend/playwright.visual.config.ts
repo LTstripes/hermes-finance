@@ -8,7 +8,7 @@ const baseURL = process.env.HERMES_VISUAL_AUDIT_BASE_URL ?? "http://127.0.0.1:41
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "visual-audit.spec.ts",
+  testMatch: ["visual-audit.spec.ts", "ui-v2.visual.spec.ts"],
   outputDir: path.join(configDir, ".visual-audit", "playwright-results"),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

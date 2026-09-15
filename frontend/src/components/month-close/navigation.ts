@@ -14,6 +14,10 @@ const STEP_IDS = new Set<GuidedCloseStepId>([
 
 export type MonthlyCloseReturnContext = { monthId: number; step: GuidedCloseStepId };
 
+export function isGuidedCloseStepId(value: string | null): value is GuidedCloseStepId {
+  return value !== null && STEP_IDS.has(value as GuidedCloseStepId);
+}
+
 export function monthlyCloseReturnPath(context: MonthlyCloseReturnContext): string {
   return `/months/${context.monthId}/close#${context.step}`;
 }
@@ -22,13 +26,12 @@ export function parseMonthlyCloseReturnContext(
   params: URLSearchParams,
 ): MonthlyCloseReturnContext | null {
   const monthId = Number(params.get("monthId"));
-  const step = params.get("step") as GuidedCloseStepId | null;
+  const step = params.get("step");
   if (
     params.get("from") !== "monthly-close" ||
     !Number.isInteger(monthId) ||
     monthId < 1 ||
-    !step ||
-    !STEP_IDS.has(step)
+    !isGuidedCloseStepId(step)
   ) {
     return null;
   }
