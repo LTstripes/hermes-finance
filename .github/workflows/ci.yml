@@ -285,6 +285,23 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Run prepared runtime regression
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-prepared-runtime.ps1
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Explicitly prepare checked-out runtime
+        shell: pwsh
+        run: |
+          $checkout = (Get-Location).Path
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 -Checkout $checkout -Prepare
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
       - name: Run canonical production smoke
         shell: pwsh
         run: |

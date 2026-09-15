@@ -76,6 +76,28 @@ Raw-диагностика — вторичный слой: кнопка `Диа
 http://127.0.0.1:8000
 ```
 
+### Explicit Prepare + fast deterministic Start
+
+Для текущего чистого runtime-checkout сначала явно подготовьте выбранную версию:
+
+```powershell
+$checkout = (Get-Location).Path
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 -Checkout $checkout -Prepare
+```
+
+Prepare устанавливает только недостающие locked-зависимости, собирает production
+frontend и записывает ignored proof текущего commit/build state. Приложение не
+запускается, Git refs не меняются. После этого обычный Start проверяет proof и
+запускает уже подготовленный runtime:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+```
+
+Если checkout, lock/build inputs или `frontend/dist` изменились, Start завершится
+с инструкцией повторить явный Prepare. Сам Start не выполняет build, install,
+dependency sync или Git update.
+
 ### Recovery-only (не для обычного запуска)
 
 > PowerShell/Git/ручное JSON — только для восстановления, когда launcher сообщил о блокере и показал корректное действие.
@@ -92,7 +114,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
- - собирает production frontend;
+ - проверяет ignored prepared-runtime proof;
  - применяет `alembic upgrade head` к **той же** validated DB (`HERMES_FINANCE_DATABASE_PATH`);
  - запускает backend на `127.0.0.1:8000`;
  - проверяет `/api/health`, `/api/months` и HTML;
