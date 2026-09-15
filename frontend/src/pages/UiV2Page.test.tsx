@@ -230,6 +230,21 @@ it("hides cached results when revalidation fails and recovers with explicit retr
   expect(await screen.findByTestId("v2-capital")).toBeVisible();
 });
 
+it("preserves a valid URL step in the v1 escape when workflow loading fails", async () => {
+  const { mount, state } = setup("/v2?month=12&step=actual_payouts");
+  state.workflowError = true;
+  mount();
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Не удалось получить состояние месяца",
+  );
+  expect(screen.queryByTestId("v2-capital")).toBeNull();
+  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+    "href",
+    "/months/12/close#actual_payouts",
+  );
+});
+
 it("hides cached results while offline revalidation is paused", async () => {
   const { mount, client, reads } = setup("/v2?month=12");
   mount();
@@ -274,6 +289,10 @@ it("explains unknown step links without inventing a new recommendation", async (
   expect(screen.getByTestId("v2-primary-action")).toHaveAttribute(
     "href",
     "/months/12/close#final_review_close",
+  );
+  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+    "href",
+    "/months/12",
   );
 });
 
