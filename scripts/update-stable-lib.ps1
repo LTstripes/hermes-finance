@@ -579,7 +579,7 @@ function Test-HermesStablePrivateOrRuntimePath {
         $Path.StartsWith("frontend/node_modules/", [StringComparison]::Ordinal) -or
         $Path -eq "frontend/dist" -or
         $Path.StartsWith("frontend/dist/", [StringComparison]::Ordinal) -or
-        $Path -match "^\.hermes-runtime-prepared\.json(?:/|\.|$)"
+        $Path.StartsWith(".hermes-runtime-prepared.json", [StringComparison]::Ordinal)
     )
 }
 
