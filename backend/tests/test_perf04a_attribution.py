@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -17,6 +17,7 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     AccountPerformanceScopeMembership,
     Base,
+    PositionSnapshot,
 )
 from hermes_finance.persistence import (
     CashBoundaryCoverage as CashBoundaryCoverageRecord,
@@ -40,8 +41,14 @@ from hermes_finance.services.performance_attribution import (
     performance_attribution_for_interval,
 )
 from hermes_finance.services.performance_availability import performance_availability_for_interval
+from hermes_finance.services.performance_decomposition import (
+    performance_decomposition_for_interval,
+)
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
+from hermes_finance.services.transfer_reconciliation import (
+    create_transfer_reconciliation_evidence,
+)
 
 START = date(2030, 1, 31)
 END = date(2030, 2, 28)
@@ -163,6 +170,7 @@ def _create_flow(
     kind: str,
     transfer_link_id: int | None = None,
     currency: str = "RUB",
+    scope_membership: str = "stable_in_scope",
 ) -> object:
     flow = create_external_flow(
         fixture.session,
@@ -172,7 +180,7 @@ def _create_flow(
         boundary_amount=amount,
         direction=direction,
         kind=kind,
-        scope_membership="stable_in_scope",
+        scope_membership=scope_membership,
         transfer_link_id=transfer_link_id,
         currency=currency,
     )
@@ -233,6 +241,33 @@ def _bridge(
         end_date=end_date,
         scope=scope,
         account_id=account_id,
+    )
+
+
+def _decomposition(fixture: _Fixture):
+    return performance_decomposition_for_interval(
+        fixture.session,
+        start_date=START,
+        end_date=END,
+    )
+
+
+def _reconcile(
+    fixture: _Fixture,
+    link_id: int,
+    *,
+    amount: str,
+    kind: str = "internal_fee",
+    currency: str = "RUB",
+) -> object:
+    return create_transfer_reconciliation_evidence(
+        fixture.session,
+        transfer_link_id=link_id,
+        kind=kind,
+        amount=amount,
+        currency=currency,
+        source="synthetic-perf04c",
+        evidence_reference=f"synthetic-perf04c-{link_id}-{kind}",
     )
 
 
@@ -819,5 +854,552 @@ def test_bridge_prerequisites_are_dedicated_and_do_not_use_top_level_union(
         assert not r08.twrr.is_available
         assert prerequisites.is_available
         assert prerequisites.reason_codes == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_equal_internal_transfer_emits_exact_zero_once(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "600.00")),
+    )
+    try:
+        link, source, destination = _transfer(fixture)
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert result.is_available
+        assert result.quality.value == "exact"
+        assert result.value is not None and result.value.kopecks == 0
+        assert result.parent_value is not None and result.parent_value.kopecks == 0
+        assert [row.account_id for row in result.account_components] == list(fixture.account_ids)
+        assert [row.value.kopecks for row in result.account_components] == [0, 0]
+        assert len(result.internal_transfer_effects) == 1
+        effect = result.internal_transfer_effects[0]
+        assert effect.transfer_link_id == link.id
+        assert effect.source_flow_id == source.id
+        assert effect.destination_flow_id == destination.id
+        assert effect.effect.kopecks == 0
+        assert effect.amount_kopecks == 0
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_unequal_transfer_requires_exact_fee_reconciliation(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "599.00")),
+    )
+    try:
+        link, _source, _destination = _transfer(
+            fixture,
+            destination_amount="99.00",
+        )
+        evidence = _reconcile(fixture, link.id, amount="1.00")
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert result.is_available
+        assert result.value is not None and result.value.kopecks == -100
+        assert [row.value.kopecks for row in result.account_components] == [0, 0]
+        assert len(result.internal_transfer_effects) == 1
+        effect = result.internal_transfer_effects[0]
+        assert effect.effect.kopecks == -100
+        assert [item.id for item in effect.reconciliation_evidence] == [evidence.id]
+        assert effect.reconciliation_evidence[0].amount_kopecks == 100
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_unequal_unreconciled_transfer_is_null_not_negative_residual(
+    tmp_path: Path,
+) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "599.00")),
+    )
+    try:
+        _transfer(fixture, destination_amount="99.00")
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_transfer_reconciliation_incomplete" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_destination_gain_is_null_and_emits_no_positive_effect(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "901.00"), ("500.00", "600.00")),
+    )
+    try:
+        _transfer(
+            fixture,
+            source_amount="99.00",
+            destination_amount="100.00",
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_transfer_reconciliation_incomplete" in result.reason_codes
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_cross_scope_transfer_stays_external_without_out_of_scope_row(
+    tmp_path: Path,
+) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "500.00")),
+    )
+    try:
+        destination_account_id = fixture.account_ids[1]
+        membership = fixture.session.scalars(
+            select(AccountPerformanceScopeMembership).where(
+                AccountPerformanceScopeMembership.account_id == destination_account_id
+            )
+        ).one()
+        membership.include_in_returns = False
+        fixture.session.commit()
+
+        link = create_external_transfer_link(
+            fixture.session,
+            transfer_key="synthetic-perf04c-cross-scope",
+        )
+        _create_flow(
+            fixture,
+            account_id=fixture.account_ids[0],
+            event_date=MID,
+            amount="100.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            transfer_link_id=link.id,
+        )
+        _create_flow(
+            fixture,
+            account_id=destination_account_id,
+            event_date=MID,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+            transfer_link_id=link.id,
+            scope_membership="stable_out_of_scope",
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert result.is_available
+        assert result.value is not None and result.value.kopecks == 0
+        assert [row.account_id for row in result.account_components] == [fixture.account_ids[0]]
+        assert result.internal_transfer_effects == ()
+        assert result.parent_external_flow_summary.signed_total is not None
+        assert result.parent_external_flow_summary.signed_total.kopecks == -10_000
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_one_sided_transfer_identity_is_unavailable(tmp_path: Path) -> None:
+    fixture = _environment(tmp_path)
+    try:
+        link = create_external_transfer_link(
+            fixture.session,
+            transfer_key="synthetic-perf04c-one-sided",
+        )
+        _create_flow(
+            fixture,
+            account_id=fixture.account_ids[0],
+            event_date=MID,
+            amount="100.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            transfer_link_id=link.id,
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_transfer_identity_unresolved" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_endpoint_transit_fails_closed_without_synthetic_term(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "1000.00"), ("500.00", "500.00")),
+    )
+    try:
+        _transfer(fixture, source_date=START, destination_date=MID)
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_transfer_in_transit_unvalued" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_endpoint_same_day_order_fails_closed(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "600.00")),
+    )
+    try:
+        _transfer(fixture, source_date=START, destination_date=START)
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_valuation_boundary_order_unknown" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_interior_equal_transfer_survives_twrr_only_gap(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "1010.00"), ("500.00", "500.00")),
+    )
+    try:
+        _transfer(fixture)
+        _create_flow(
+            fixture,
+            account_id=fixture.account_ids[0],
+            event_date=MID,
+            amount="10.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        _close(fixture)
+        r08 = performance_availability_for_interval(
+            fixture.session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.PORTFOLIO,
+        )
+
+        result = _decomposition(fixture)
+
+        assert r08.xirr.is_available
+        assert not r08.twrr.is_available
+        assert "not_computable_valuation_boundary_missing" in r08.twrr.reason_codes
+        assert result.is_available
+        assert result.value is not None and result.value.kopecks == 0
+        assert [row.value.kopecks for row in result.account_components] == [10_000, -10_000]
+        assert [effect.effect.kopecks for effect in result.internal_transfer_effects] == [0]
+        assert result.reason_codes == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_in_kind_movement_is_null_without_monetary_valuation(tmp_path: Path) -> None:
+    fixture = _environment(tmp_path)
+    try:
+        create_in_kind_movement(
+            fixture.session,
+            reporting_month_id=fixture.february_id,
+            event_date=MID,
+            movement_kind="external_out",
+            source_account_id=fixture.account_ids[0],
+            instrument_id=fixture.instrument_id,
+            quantity="1",
+            provenance_kind="owner_attestation",
+            provenance_reference="synthetic-perf04c-inkind",
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_in_kind_movement_unvalued" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_membership_change_does_not_publish_partial_split(tmp_path: Path) -> None:
+    fixture = _environment(tmp_path, account_values=(("1000.00", "1100.00"),))
+    try:
+        membership = fixture.session.scalars(
+            select(AccountPerformanceScopeMembership).where(
+                AccountPerformanceScopeMembership.account_id == fixture.account_ids[0]
+            )
+        ).one()
+        membership.effective_to = MID - timedelta(days=1)
+        fixture.session.add(
+            AccountPerformanceScopeMembership(
+                account_id=fixture.account_ids[0],
+                effective_from=MID,
+                include_in_returns=False,
+            )
+        )
+        fixture.session.commit()
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_scope_membership_changed" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_unclassified_cash_is_not_assigned_to_an_account(tmp_path: Path) -> None:
+    fixture = _environment(tmp_path)
+    try:
+        create_cash_balance(
+            fixture.session,
+            reporting_month_id=fixture.january_id,
+            account_id=None,
+            name="Synthetic PERF04C unclassified January cash",
+            amount="50.00",
+        )
+        create_cash_balance(
+            fixture.session,
+            reporting_month_id=fixture.february_id,
+            account_id=None,
+            name="Synthetic PERF04C unclassified February cash",
+            amount="50.00",
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_scope_cash_unclassified" in result.reason_codes
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_cross_currency_fx_metadata_never_becomes_ruble_effect(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "599.00")),
+    )
+    try:
+        link = create_external_transfer_link(
+            fixture.session,
+            transfer_key="synthetic-perf04c-cross-currency",
+        )
+        _create_flow(
+            fixture,
+            account_id=fixture.account_ids[0],
+            event_date=MID,
+            amount="100.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            transfer_link_id=link.id,
+            currency="EUR",
+        )
+        _create_flow(
+            fixture,
+            account_id=fixture.account_ids[1],
+            event_date=MID,
+            amount="99.00",
+            direction="contribution",
+            kind="external_contribution",
+            transfer_link_id=link.id,
+            currency="USD",
+        )
+        _reconcile(fixture, link.id, amount="1.00", currency="EUR", kind="fx_conversion_spread")
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_currency_conversion_incomplete" in result.reason_codes
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_same_currency_fx_spread_alone_is_not_reconciliation(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "900.00"), ("500.00", "599.00")),
+    )
+    try:
+        link, _source, _destination = _transfer(
+            fixture,
+            destination_amount="99.00",
+        )
+        _reconcile(
+            fixture,
+            link.id,
+            amount="1.00",
+            kind="fx_conversion_spread",
+        )
+        _close(fixture)
+
+        parent = _bridge(fixture)
+        result = _decomposition(fixture)
+
+        assert parent.is_available
+        assert parent.value is not None and parent.value.kopecks == -100
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_transfer_reconciliation_incomplete" in result.reason_codes
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_coupon_and_transfer_effect_are_each_counted_once(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "920.00"), ("500.00", "599.00")),
+    )
+    try:
+        link, _source, _destination = _transfer(
+            fixture,
+            destination_amount="99.00",
+        )
+        _reconcile(fixture, link.id, amount="1.00")
+        create_investment_cash_flow(
+            fixture.session,
+            reporting_month_id=fixture.february_id,
+            account_id=fixture.account_ids[0],
+            instrument_id=fixture.instrument_id,
+            flow_type="coupon",
+            event_date=date(2030, 2, 10),
+            gross_amount="20.00",
+            net_amount="20.00",
+            source="synthetic-perf04c",
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert result.is_available
+        assert result.value is not None and result.value.kopecks == 1_900
+        assert [row.value.kopecks for row in result.account_components] == [2_000, 0]
+        assert [effect.effect.kopecks for effect in result.internal_transfer_effects] == [-100]
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_reconciliation_evidence_is_not_reused_between_transfers(
+    tmp_path: Path,
+) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "800.00"), ("500.00", "698.00")),
+    )
+    try:
+        first_link, _source, _destination = _transfer(
+            fixture,
+            destination_amount="99.00",
+        )
+        _reconcile(fixture, first_link.id, amount="1.00")
+        _transfer(
+            fixture,
+            source_date=date(2030, 2, 13),
+            destination_date=date(2030, 2, 13),
+            destination_amount="99.00",
+        )
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert not result.is_available
+        assert result.value is None
+        assert "not_computable_transfer_reconciliation_incomplete" in result.reason_codes
+        assert result.internal_transfer_effects == ()
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_parent_unavailable_does_not_publish_exact_account_subset(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "1100.00"), ("500.00", "500.00")),
+    )
+    try:
+        fixture.session.execute(
+            delete(PositionSnapshot).where(
+                PositionSnapshot.reporting_month_id == fixture.february_id,
+                PositionSnapshot.account_id == fixture.account_ids[1],
+            )
+        )
+        fixture.session.commit()
+        _close(fixture)
+
+        account = _bridge(
+            fixture,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=fixture.account_ids[0],
+        )
+        result = _decomposition(fixture)
+
+        assert account.is_available
+        assert account.value is not None and account.value.kopecks == 10_000
+        assert not result.is_available
+        assert result.value is None
+        assert result.account_components == ()
+        assert result.internal_transfer_effects == ()
+        assert "not_computable_scope_coverage_incomplete" in result.reason_codes
+    finally:
+        _finish(fixture)
+
+
+def test_perf04c_minor_unit_transfer_reconciliation_is_exact(tmp_path: Path) -> None:
+    fixture = _environment(
+        tmp_path,
+        account_values=(("1000.00", "899.99"), ("500.00", "599.98")),
+    )
+    try:
+        link, _source, _destination = _transfer(
+            fixture,
+            source_amount="100.01",
+            destination_amount="99.98",
+        )
+        _reconcile(fixture, link.id, amount="0.03")
+        _close(fixture)
+
+        result = _decomposition(fixture)
+
+        assert result.is_available
+        assert result.value is not None and result.value.kopecks == -3
+        assert [row.value.kopecks for row in result.account_components] == [0, 0]
+        assert len(result.internal_transfer_effects) == 1
+        effect = result.internal_transfer_effects[0]
+        assert effect.source_amount.kopecks == 10_001
+        assert effect.destination_amount.kopecks == 9_998
+        assert effect.effect.kopecks == -3
     finally:
         _finish(fixture)
