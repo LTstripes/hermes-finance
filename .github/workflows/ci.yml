@@ -266,6 +266,11 @@ jobs:
               exit $LASTEXITCODE
           }
 
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-stable-update-real-git.ps1
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
   windows-production-smoke:
     name: Windows production smoke
     runs-on: windows-latest
