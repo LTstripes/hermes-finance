@@ -273,7 +273,7 @@ try {
 
     Invoke-TestGit -WorkingDirectory $testRoot -Arguments @("init", "--bare", $remotePath) | Out-Null
     Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("init", "--initial-branch", "main") | Out-Null
-    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("config", "user.email", "preview-uat@example.invalid") | Out-Null
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("config", "user.email", "preview-uat@example.com") | Out-Null
     Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("config", "user.name", "Preview UAT Synthetic") | Out-Null
     Write-TestText -Path (Join-Path $seedPath ".gitignore") -Content @'
 .env
@@ -326,7 +326,7 @@ if ($Validate) {
     $candidateOne = Get-TestGitText -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
 
     Invoke-TestGit -WorkingDirectory $testRoot -Arguments @("clone", $remotePath, $controlPath) | Out-Null
-    Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("config", "user.email", "preview-uat@example.invalid") | Out-Null
+    Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("config", "user.email", "preview-uat@example.com") | Out-Null
     Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("config", "user.name", "Preview UAT Synthetic") | Out-Null
     Invoke-TestGit -WorkingDirectory $testRoot -Arguments @("clone", $remotePath, $stablePath) | Out-Null
     Write-TestText -Path $stableDatabasePath -Content "stable synthetic database"
