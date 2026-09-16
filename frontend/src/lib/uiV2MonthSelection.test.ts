@@ -9,8 +9,8 @@ import {
 
 describe("UI v2 reporting-period URL", () => {
   it("sorts calendar periods, not insertion IDs, without mutating shared cache", () => {
-    expect(sortReportingMonths(uiV2Months).map((month) => month.id)).toEqual([12, 91]);
-    expect(uiV2Months.map((month) => month.id)).toEqual([91, 12]);
+    expect(sortReportingMonths(uiV2Months).map((month) => month.id)).toEqual([12, 91, 90, 89, 88]);
+    expect(uiV2Months.map((month) => month.id)).toEqual([91, 12, 90, 89, 88]);
   });
   it("leaves automatic entry distinct from an explicit selected period", () => {
     expect(resolveMonthSelection([], uiV2Months)).toEqual({ kind: "automatic" });

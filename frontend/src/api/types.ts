@@ -407,6 +407,71 @@ export type CapitalCompositionHistory = {
   points: CapitalCompositionPoint[];
 };
 
+export type ClosedReportSnapshot = CapitalCompositionPoint & {
+  status: "closed";
+  linked_pair_assets: MoneyValue;
+  linked_pair_debts: MoneyValue;
+  linked_pair_net_contribution: MoneyValue;
+};
+
+export type ClosedReportComparison = {
+  comparison_basis: "latest_closed_to_previous_closed";
+  availability: "available" | "previous_closed_report_unavailable" | "no_closed_report";
+  asset_classes: string[];
+  current: ClosedReportSnapshot | null;
+  previous: ClosedReportSnapshot | null;
+  asset_class_deltas: AssetAllocationPoint[] | null;
+  liquid_assets_total_delta: MoneyValue | null;
+  included_debts_delta: MoneyValue | null;
+  liquid_capital_net_delta: MoneyValue | null;
+  linked_pair_assets_delta: MoneyValue | null;
+  linked_pair_debts_delta: MoneyValue | null;
+  linked_pair_net_contribution_delta: MoneyValue | null;
+  net_liquid_capital_reconciles: boolean | null;
+};
+
+export type PassiveIncomeHistoryPoint = {
+  reporting_month_id: number;
+  year: number;
+  month: number;
+  snapshot_date: string;
+  passive_income_actual: MoneyValue;
+  included_in_average_window: boolean;
+};
+
+export type PassiveIncomeAverage = {
+  average: MoneyValue;
+  count_months: number;
+  target_window_months: number;
+  is_complete_12m: boolean;
+  configured_start_month: string | null;
+  months_used: string[];
+};
+
+export type PassiveIncomeBreakdown = {
+  deposit_interest: MoneyValue;
+  bond_coupons: MoneyValue;
+  dividends: MoneyValue;
+  other_capital_income: MoneyValue;
+  total_net_passive_income: MoneyValue;
+};
+
+export type PassiveIncomeSelectedReport = {
+  reporting_month_id: number;
+  year: number;
+  month: number;
+  snapshot_date: string;
+  passive_income_actual: MoneyValue;
+  breakdown: PassiveIncomeBreakdown;
+};
+
+export type PassiveIncomeHistory = {
+  points: PassiveIncomeHistoryPoint[];
+  average: PassiveIncomeAverage;
+  latest_closed_report_id: number | null;
+  selected_report: PassiveIncomeSelectedReport | null;
+};
+
 /** Monetary result per account (E15): realized cash income + unrealized result. */
 export type AccountResultPoint = {
   account_id: number;

@@ -6,6 +6,10 @@ export const queryKeys = {
   instruments: ["instruments"] as const,
   dashboard: (monthId: number | null) => ["dashboard", monthId] as const,
   monthCloseWorkflow: (monthId: number | null) => ["month-close-workflow", monthId] as const,
+  closedReportComparison: ["closed-report-comparison"] as const,
+  capitalComposition: ["capital-composition"] as const,
+  passiveIncomeHistory: (monthId: number | null) => ["passive-income-history", monthId] as const,
+  goalSummary: (monthId: number | null) => ["goal-summary", monthId] as const,
   riskAllocation: (monthId: number | null, topN = 5, forecastVersion = "v1") =>
     ["risk-allocation", monthId, topN, forecastVersion] as const,
 };
