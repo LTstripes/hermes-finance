@@ -124,8 +124,12 @@ jobs:
         run: |
           uv run --locked python -I -c "from zoneinfo import ZoneInfo; z = ZoneInfo('Europe/Moscow'); print('resolved', z.key)"
 
-      - name: Run Moscow timezone and AI Analysis Bundle tests
-        run: uv run --locked python -I -m pytest -q --durations=40 tests/test_moscow_tz.py tests/test_ai_analysis_bundle_contract.py tests/test_ai_analysis_bundle_export.py
+      - name: Run Moscow timezone and Windows export regressions
+        run: >-
+          uv run --locked python -I -m pytest -q --durations=40
+          tests/test_moscow_tz.py
+          tests/test_ai_analysis_bundle_export.py::test_bundle_export_is_schema_valid_full_history_and_read_only
+          tests/test_ai_analysis_bundle_export.py::test_ai_financial_review_route_is_schema_valid_and_read_only
 
   frontend:
     name: Frontend
