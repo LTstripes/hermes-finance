@@ -1,26 +1,110 @@
 # Hermes Finance
 
-Hermes Finance — локальное однопользовательское приложение для ежемесячного учёта личных финансов. Оно показывает ликвидный капитал, фактический и прогнозный пассивный доход, расходы, долги, инвестиционный результат, цели и историю закрытых месяцев.
+Hermes Finance — локальное однопользовательское Windows-first приложение для ежемесячного учёта и анализа личных финансов.
 
-Текущая опубликованная версия — **0.8.2**: annotated tag object `bfa1194d4151bb72882f4230f144b039d240eda9` peel'ится в released main `a22542d7b20ebdf34e38384004162d409f163ab3`; GitHub Release опубликован 2026-09-05. Текущий canonical `main` после merge PR #335 (Decision Support v1 — Scenario Lab, 2026-09-09) — `420e10046a7adbe17078dcd47d8b803927f0a86a`; exact-main push CI для него — run `34384056201` (все продуктовые гейты зелёные; `Synthetic visual audit` упал только по окружению раннера). Launcher Stable self-update не считается доказанным canonical flow: #298 закрыт `not_planned`, postmortem/redesign — #313.
+Оно помогает закрывать месяц, видеть ликвидный капитал и долги, анализировать инвестиционный результат и пассивный доход, работать с целями/Tax/IIS/Scenario Lab, проверять reconciliation/freshness и экспортировать read-only AI Analysis Bundle.
 
-Приложение рассчитано на Windows 10/11, хранит данные в локальной SQLite-базе и по умолчанию слушает только `127.0.0.1:8000`. Облачный аккаунт, авторизация, телеметрия и публичный/VPS-режим сознательно не используются.
+## Current status
 
-Продакшен запускается из **runtime-checkout**: в нём лежат локальные ignored-данные (`.env`, SQLite, backup, private files). Разработка и работа агентов идут в **отдельном чистом clone**. Не копируйте и не пробрасывайте runtime-данные в dev-clone через copy, symlink, junction, hardlink или любой другой filesystem indirection.
+Published Stable: **v0.8.2** (2026-09-05).
 
-## Требования
+- annotated tag object: `bfa1194d4151bb72882f4230f144b039d240eda9`;
+- released peeled commit: `a22542d7b20ebdf34e38384004162d409f163ab3`.
+
+Canonical development `main` at the 2026-09-16 checkpoint:
+
+`e5c09d55a21d4d4a25a9505a819977ed9a162f8c`
+
+Exact-main CI: **#688 / run `35137779786` — SUCCESS**.
+
+Merged development work does **not** become Stable automatically. Release publication remains a separate guarded owner action.
+
+Current detailed checkpoint: [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
+
+## Product/runtime invariants
+
+- Windows 10/11, single user, local-only.
+- Production binds only to `127.0.0.1:8000`.
+- Local SQLite database.
+- No cloud account, auth, telemetry, trading or background provider refresh.
+- Provider/network reads happen only after explicit owner actions.
+- Production Stable data, Preview/UAT data, `.env`, backups, credentials and private exports never enter agent/development workspaces.
+- Closed months remain immutable until explicit Reopen.
+- Backend/domain financial semantics are authoritative; frontend does not invent formulas.
+- Exact money uses Decimal / integer minor units; unknown/unavailable is never silently converted to zero.
+
+## Major completed lines
+
+### Monthly Close / owner workflow
+
+Guided Monthly Close is implemented and has passed owner UAT. The canonical workflow remains server-owned and fail-closed where evidence is incomplete.
+
+### Decision Support v1
+
+Completed and integrated:
+
+- AI Analysis Bundle;
+- Monthly Close Cockpit;
+- Cash-flow Ladder / upcoming treasury events;
+- Risk & Allocation;
+- Freshness & Provenance;
+- Reconciliation Center;
+- current-state Tax/IIS Planner Lite;
+- deterministic Insights backend;
+- Scenario Lab v1.
+
+Closeout: [`docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`](docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md).
+
+### Performance v1
+
+Completed and integrated:
+
+- portfolio/account XIRR;
+- portfolio/account exact TWRR;
+- flow/valuation/membership/transfer/in-kind fail-closed hardening;
+- PERF04A `value_change_after_external_flows` monetary bridge;
+- exact-zero versus unavailable/null semantics.
+
+Closeout: [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
+
+### PERF04B / PERF04C decomposition
+
+#396 accepted **PARTIAL GO** for the exact backend decomposition:
+
+```text
+B_portfolio = Σ B_account + Σ T_internal_transfer
+```
+
+`B` is the existing PERF04A `value_change_after_external_flows`, not investment return/profit/P&L attribution.
+
+#400 / PR #402 implemented the bounded backend read model and is canonical on current `main`.
+
+Important safety boundaries:
+
+- `100 → 99` without accepted reconciliation evidence is unavailable/null, not exact `-1`;
+- `S>D` requires fee/commission/tax evidence explaining the full difference;
+- `D>S` is unavailable;
+- `fx_conversion_spread` alone does not authorize an exact PERF04C transfer effect;
+- no partial split or residual bucket;
+- instrument/asset-class, price-vs-FX, realised/unrealised and lot/cost-basis attribution remain unsupported.
+
+Contract: [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
+
+This slice is currently backend-only; API/UI exposure is a separate future decision.
+
+## Requirements
 
 - Windows 10/11;
 - Python 3.13;
 - [uv](https://docs.astral.sh/uv/);
-- Node.js 22.22+ и npm;
-- современный браузер.
+- Node.js 22.22+ and npm;
+- modern browser.
 
-Docker, PostgreSQL и отдельный веб-сервер для локального использования не требуются.
+Docker/PostgreSQL/public web hosting are not required for the local product.
 
-## Установка
+## Development installation
 
-Из корня репозитория:
+From a clean development checkout:
 
 ```powershell
 Set-Location backend
@@ -30,401 +114,178 @@ npm ci
 Set-Location ..
 ```
 
-Backend-зависимости фиксируются `backend/uv.lock`, frontend-зависимости — `frontend/package-lock.json`.
+Backend dependencies are locked by `backend/uv.lock`; frontend dependencies by `frontend/package-lock.json`.
 
-## Запуск — launcher-first (Windows)
+Do not use a production runtime checkout as an agent/development workspace.
 
-**Каноническая owner-точка входа для Start/Stop — Windows launcher.** Stable
-self-update не является доказанным canonical flow; release change выполняется
-явной recovery-операцией по точному опубликованному tag до запуска.
+## Windows launcher — current role
 
-1. Установите launcher один раз из подготовленного checkout (pinned Stable
-release `v0.8.2`):
+The launcher is **not retired**.
+
+It remains useful as the owner-facing shell for the currently configured Stable/Preview runtime profiles:
+
+- profile/status presentation;
+- ordinary Start/Stop;
+- open Hermes after health is ready;
+- diagnostics;
+- installed Desktop/Start-menu shortcuts.
+
+The historical launcher-owned Stable self-update experiment (#298/#311/#312) is **not** the canonical update path and must not be revived as another large state machine.
+
+If the current `v0.8.2` launcher is already installed, open **Hermes Finance** from the existing Desktop/Start-menu shortcut and use the current pinned profile normally.
+
+To install/reinstall the launcher from the published Stable checkout:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-Скрипт собирает `HermesFinance.Launcher.exe`, кладёт его в `%LOCALAPPDATA%\HermesFinance\launcher` (branded cat icon), создаёт ярлыки на Desktop и Start menu. Ярлыки не зависят от ephemeral checkout.
+Detailed owner operations: [`docs/OWNER_RUNTIME_OPERATIONS.md`](docs/OWNER_RUNTIME_OPERATIONS.md).
 
-2. Откройте **Hermes Finance** (Desktop/Start menu) — выберите карту:
+## Explicit Prepare + deterministic Start
 
- - **Stable** — pinned production runtime: показывает `Release v0.8.2` + короткий SHA + `Canonical production data` (зелёный акцент). Это единственная карточка, которая может открыть production DB.
- - **Preview** — `main / UNRELEASED` + `Isolated UAT / synthetic data` (фиолетовый), показывает `main <cur> → <target> · UNRELEASED`. Никогда не смешивает данные с Stable.
+The accepted runtime redesign (#313) separates operations instead of putting them all inside the launcher.
 
-3. Нажмите **одну очевидную primary кнопку** по состоянию (ровно одна подсвечена):
-
- - `Обновить Preview` / `Обновить и запустить` — только для Preview, явный owner action, `fetch origin/main` + `ff-only` только для настроенного Preview checkout;
- - `Подготовить` — явная установка только missing/stale locked зависимостей (`uv sync --locked`, `npm ci`);
- - `Исправить` — принудительное восстановление обеих locked-сред;
- - `Запустить` — обычный старт без download/install;
- - `Открыть Hermes` — только после health probes, `http://127.0.0.1:8000`;
- - `Остановить` — останавливает запущенный guarded startup.
-
-Проверка перед стартом (человеческим языком, кратко):
-
- - **Code identity** — совпадает ли checkout с ожидаемым `expected_ref` (Stable: `refs/tags/v0.8.2`, Preview: `refs/remotes/origin/main`);
- - **Data boundary** — защита от alias production (path + file-id + sidecar `.hermes-data-identity.json`);
- - **Locked dependencies** — `backend pyproject/uv.lock` + `frontend package-lock/node_modules` (offline `uv --offline --dry-run`, `npm ls --json`);
- - **Loopback service** — `127.0.0.1:8000` свободен + `alembic`/схема совместима (offline, миграция — только в guarded startup).
-
-Raw-диагностика — вторичный слой: кнопка `Диагностика и логи` (скрыта по умолчанию, не меняет поведение). Конфиг `%LOCALAPPDATA%\HermesFinance\launcher\config.json` создаётся/мигрируется launcher’ом автоматически где безопасно и однозначно; обычный workflow не требует ручного редактирования JSON.
-
-После готовности откройте:
-
-```text
-http://127.0.0.1:8000
-```
-
-### Explicit Prepare + fast deterministic Start
-
-Для текущего чистого runtime-checkout сначала явно подготовьте выбранную версию:
+For a checkout containing OPS01:
 
 ```powershell
 $checkout = (Get-Location).Path
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 -Checkout $checkout -Prepare
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 `
+  -Checkout $checkout `
+  -Prepare
 ```
 
-Prepare устанавливает только недостающие locked-зависимости, собирает production
-frontend и записывает ignored proof текущего commit/build state. Приложение не
-запускается, Git refs не меняются. После этого обычный Start проверяет proof и
-запускает уже подготовленный runtime:
+Validate existing preparation:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 `
+  -Checkout $checkout `
+  -Validate
+```
+
+Start an already prepared runtime:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-Если checkout, lock/build inputs или `frontend/dist` изменились, Start завершится
-с инструкцией повторить явный Prepare. Сам Start не выполняет build, install,
-dependency sync или Git update.
-
-### Recovery-only (не для обычного запуска)
-
-> PowerShell/Git/ручное JSON — только для восстановления, когда launcher сообщил о блокере и показал корректное действие.
-
-Короткий production smoke с автоматической остановкой (без launcher):
+Short smoke with automatic exit:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
 ```
 
-Ручной guarded startup (что делает launcher под капотом):
+Prepare installs only required locked dependencies, builds the production frontend and records ignored exact-build proof. Ordinary Start validates that proof and does not silently build, install dependencies or move Git refs.
+
+## Explicit Stable release update
+
+OPS02 (#386 / PR #393) implements a separate owner operation for one explicit immutable published release.
+
+Run it from a trusted **control checkout outside the mutable Stable checkout**:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
+  -StableCheckout <stable-checkout-path> `
+  -TargetVersion X.Y.Z
 ```
 
- - проверяет ignored prepared-runtime proof;
- - применяет `alembic upgrade head` к **той же** validated DB (`HERMES_FINANCE_DATABASE_PATH`);
- - запускает backend на `127.0.0.1:8000`;
- - проверяет `/api/health`, `/api/months` и HTML;
- - освобождает порт после остановки.
+The operation proves the published annotated target, performs a verified SQLite backup before Git mutation, fetches only the selected tag, pins Stable to the exact target commit, runs target Prepare + Validate, and stops.
 
-Dev-режим с Vite (только для разработки):
+It never chooses `latest`, follows `main`, starts Hermes, runs DB migration, updates Preview, publishes a release/tag or performs automatic rollback.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
-```
+### Acceptance boundary
 
-Frontend будет на `127.0.0.1:5173`, `/api` проксируется в локальный backend.
+The implementation/CI/review are complete, but the **first real owner Stable release-to-release UAT is still pending** because no newer real Stable release has been published after OPS02 landed.
 
-Для котировок 0.4 и выплат 0.5 нужен локальный **read-only** токен T-Invest в **корневом** `.env` репозитория (`HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN=`), рядом с `.env.example`. Не кладите его в `backend/` и не коммитьте. Не выпускайте Full Access / Transfer. Запрос к T-Invest уходит только после явной кнопки владельца. Подробности: `docs/t-invest-market-data.md`.
+Do not publish a throwaway release just to exercise the updater.
 
-### Health
+The first real proof should be:
+
+`v0.8.2 → next genuine published immutable Stable release`.
+
+Issue #313 therefore stays open.
+
+## Release publication
+
+Release publication is separate from updating the local Stable runtime.
+
+Permanent guarded owner-control endpoint: issue #124.
+
+The chat-first guarded release flow is documented in [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md).
+
+A release publishes an immutable tag/GitHub Release from exact canonical `main`; it does not automatically mutate production Stable.
+
+## Current product surfaces
+
+The current development product includes the published 0.8.2 capabilities plus post-release integrated work such as:
+
+- Scenario Lab v1;
+- financial-context completeness / plan-vs-fact data;
+- Performance v1 (XIRR/TWRR/PERF04A);
+- linked asset/card financing integrity and AI-review hardening;
+- prepared runtime + deterministic Start;
+- explicit immutable Stable update operation;
+- PERF04C exact account + internal-transfer decomposition backend read model;
+- ongoing reversible UI v2 work under a separate roadmap while v1 remains available.
+
+For the authoritative current snapshot use `docs/CURRENT_STATUS.md` rather than inferring release state from old milestone docs.
+
+## What comes next
+
+UI v2 is tracked independently through #387 and its children.
+
+For the non-UI runtime stream, the next bounded direction under #313 is **exact Preview/UAT preparation pinned to one explicit candidate SHA** so owner UAT cannot silently move when `main` advances.
+
+For Performance, exact account decomposition is implemented; instrument/asset-class attribution still requires a separately accepted data/evidence foundation before implementation.
+
+The next real Stable release will also be the first opportunity for mandatory OPS02 owner transition UAT.
+
+## Health
+
+After a successful local start:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Для 0.8.2 ожидается:
-
-```json
-{
-  "status": "ok",
-  "version": "0.8.2"
-}
-```
-
-## Что доступно в 0.8.2
-
-Published `0.8.2` фиксирует уже интегрированное состояние после предыдущей линии `0.8.1`: launcher ownership и owner-facing polish (#299, #302), current-state Tax/IIS Planner Lite (#142) и deterministic Financial Insights Engine v1 с AI Analysis Bundle schema `1.2.0` (#143). Эксперимент Stable self-update (#298, follow-ups #311/#312) закрыт `not_planned` и вынесен в #313; product surface остаётся backend-authoritative, все provider- и owner-triggered действия явны. Доступны:
-
-- **Дашборд** — KPI, графики капитала/пассивного дохода, распределение активов, инвестиционный результат и основная цель;
-- **Месяцы** — draft/closed lifecycle, клонирование, ввод данных, reopen/close и безопасное удаление draft вместе с его месячными данными;
-- **Счета и инструменты** — справочники счетов и инструментов;
-- **Цели** — CRUD целей, выбор основной цели и backend-derived progress/forecast status;
-- **Экспорт и бэкапы** — Markdown/JSON export, SQLite online backup и защищённый restore;
-- **Настройки** — базовые настройки и управление годовой шкалой НДФЛ с защитой истории закрытых месяцев;
-- **Рыночные котировки** — явная привязка инструмента к T-Invest, preview по кнопке владельца и выборочный apply с неизменяемой историей provenance;
-- **Автоматические выплаты** — явная загрузка купонов/дивидендов/погашений из T-Invest, preview, выборочный apply и объединённый календарь с ручными ожидаемыми выплатами;
-- **Снимок Alfa PRO** — явная кнопка владельца, только локальный loopback терминала, persistent owner-confirmed registry счетов/инструментов и owner-approved baseline quantity apply с provenance; Price/UchPrice/NKD/P&L остаются сравнением, а выборочный apply безопасного поднабора не блокируется unrelated unresolved/conflicting rows;
-- **PDF выплат Alfa** — только принятый депозитарный отчёт `Отчет о произведенных выплатах доходов по ценным бумагам`: Inspect → mapping → Prepare → явный selected Apply, без OCR и без generic import; ошибочно применённую строку можно auditable-отменить (`Отменить импорт` / `Отвязать выписку`) без молчаливого уничтожения provenance.
-- **AI Analysis Bundle** — schema-valid read-only JSON для явного owner download; он не вызывает LLM/cloud, не пишет в базу и не заменяет финансовые формулы.
-- **Monthly Close Cockpit** — серверный checklist из blockers, warnings и context; `can_close` следует hard guards закрытия, а advisory warnings не превращаются в блокировки.
-- **Cash-flow Ladder / upcoming treasury events** — читаемая лестница ближайших датированных выплат и других treasury events; redemption principal остаётся капиталом, а не passive income.
-- **Risk & Allocation** — allocation выбранного месяца по persisted RUB valuation и явным asset-class/account/top-position с концентрацией payout/redemption; отсутствие metadata остаётся unavailable state, а не risk score или рекомендацией.
-- **Freshness & Provenance Center** — persisted source/freshness clocks и reason codes без universal score и без background refresh.
-- **Reconciliation Center** — explicit read-only snapshot preview с normalized row states и compatibility diagnostics; provider Price/UchPrice/NKD/P&L — comparison-only и не перезаписывают Hermes.
-- **Tax/IIS Planner** — current-state v1 для фактических и текущих налоговых данных; расширение projection scope отложено.
-- **Deterministic Insights backend v1** — read-only persisted-evidence rules без LLM и future prediction; AI Analysis Bundle integration уже присутствует в schema `1.2.0`, а dedicated Insights UI остаётся deferred.
-- **XIRR и exact TWRR** — XIRR доступен для whole portfolio при однозначном валидном корне; TWRR использует persisted observed valuation boundaries и pre/post observations для потоков. Missing/gapped evidence, неизвестный порядок событий и неоднозначный XIRR root fail closed.
-- **Windows Stable/Preview launcher** — guarded runtime profiles, owner Prepare/Repair/Start/Stop controls, explicit Preview update, package/install verification и shortcut/start-stop smoke; Stable остаётся на pinned release identity, Preview — на отдельном unreleased checkout. Stable release update — recovery-only owner operation до решения #313.
-- **UI и verification** — #284 сохраняет visual/layout polish; #282 добавляет canonical backend CI lanes и slow-test telemetry как verification infrastructure; #292 закрепляет deterministic quote-freshness regression test. Эти изменения не являются новыми финансовыми функциями.
-
-В редакторе месяца доступны зарплата и прочие доходы, депозиты/cash, позиции, фактические и ожидаемые investment flows, расходы/savings, долги/недвижимость, ИИС и комментарии.
-
-## Ежемесячный workflow
-
-1. Создайте новый draft в **Месяцы** или клонируйте предыдущий месяц.
-2. Заполните зарплату, доходы и фактический employer net. Расчётный НДФЛ/net и текущая применённая ставка приходят из backend; frontend не рассчитывает налог самостоятельно.
-3. Обновите депозиты, cash и позиции. Для акций количество должно быть положительным целым; для типов, где дробное количество допустимо, сохраняется точная decimal-семантика.
-4. Добавьте фактические инвестиционные выплаты. Купон, дивиденд и процент нужно выбирать по фактическому типу события; погашение номинала не считается доходом.
-5. При необходимости внесите ожидаемые выплаты вручную или откройте **Автоматические выплаты**, сделайте preview по выбранной позиции и явно примените нужные события. Ручные записи не перезаписываются.
-6. Проверьте Dashboard/closeout warnings.
-7. Закройте месяц. Закрытый месяц read-only; для исправления сначала явно выполните reopen.
-8. Создайте следующий месяц.
-
-### История НДФЛ и backfill
-
-Прогрессивный НДФЛ использует YTD-историю текущего календарного года. Известным считается только `closed` reporting month; draft не трактуется как известный ноль. Если детальная история приложения начинается позже января, используйте annual opening tax context по принятому ADR. Неполная налоговая история не должна блокировать редактирование старого draft: недоступной остаётся только расчётная налоговая часть.
-
-Шкала НДФЛ администрируется целиком на календарный год. После появления закрытого месяца этого года шкала защищена от молчаливого ретроактивного изменения; для сознательного изменения исторического года сначала требуется явный reopen соответствующих закрытых месяцев.
-
-## Пассивный доход и прогноз
-
-Фактические выплаты не размазываются по истории: дивиденд остаётся целиком в месяце фактического получения. Для прогнозного dividend component используется среднее фактических net-дивидендов по доступным закрытым месяцам, максимум за последние 12 месяцев.
-
-Основная passive-income цель использует rolling average фактического net passive income по закрытым месяцам (до последних 12). Это же фактическое среднее является `Текущим значением` и источником прогресса цели. C04 forecast остаётся отдельной прогнозной метрикой и не подменяет фактический прогресс; при истории короче 12 месяцев UI явно показывает, сколько закрытых месяцев учтено.
-
-Автоматический deposit component прогноза строится из `DepositSnapshot.expected_monthly_interest_kopecks` выбранного месяца и annualises monthly estimate × 12. Это приблизительная оценка: maturity и изменения ставки не моделируются. Ручной expected `interest` остаётся additive.
-
-### Календарь ожидаемых выплат
-
-В **0.8.2** календарь объединяет ручные ожидаемые выплаты и уже применённые события T-Invest; раскрытие месяца очевидно, а expanded rows показывают instrument/company первично, account вторично, source/provenance, amount и redemption-as-capital context. `Ручные ожидаемые выплаты` остаются manual-only/additive и стоят после merged calendar в DOM. Alfa statement import — отдельный явный путь фактических выплат, не автозаполнение календаря.
-
-- количество для провайдерской выплаты берётся из локального `PositionSnapshot`, не из брокерского портфеля;
-- apply не редактирует и не удаляет ручные `expected_cash_flows`;
-- неразрешённый дубль считается только вручную, пока владелец явно не выберет `keep_both`, `count_manual` или `count_provider`;
-- применённые купоны провайдера входят в прогноз C04; объявленные дивиденды видны в календаре, но не заменяют исторический dividend component; погашение — денежный поток, не пассивный доход;
-- наступление даты события не создаёт фактическую инвестиционную выплату.
-
-### Cash-flow Ladder
-
-Cash-flow Ladder показывает ближайшие датированные upcoming treasury events поверх локальных данных и различает income events и возврат капитала. Отсутствующие дата, scope или provenance не заполняются догадкой; reconciliation и provider comparison остаются отдельными явными путями.
-
-## Приватный seed
-
-Реальные стартовые счета и настройки можно загрузить только локально. Скопируйте синтетический пример:
-
-```powershell
-Copy-Item .\docs\private_seed.example.json .\data\private_seed.json
-```
-
-Отредактируйте `data/private_seed.json` локально. Файл, база и реальные значения не должны попадать в Git.
-
-Загрузка:
-
-```powershell
-Set-Location backend
-$env:PYTHONPATH = ""
-uv run hermes-finance-seed --database ..\data\finance.db --seed ..\data\private_seed.json
-Set-Location ..
-```
-
-## Backup и восстановление
-
-Перед обновлением приложения, массовым backfill или потенциально рискованной операцией создайте backup в **Экспорт и бэкапы**. Backup создаётся через SQLite online backup API.
-
-Restore:
-
-- выполняется только после явного подтверждения;
-- перед восстановлением создаёт pre-restore backup;
-- проверяет целостность SQLite и совместимость схемы;
-- сериализован с другими DB-maintenance операциями.
-
-Не заменяйте `data/finance.db` вручную во время работы приложения.
-
-## Export
-
-В **Экспорт и бэкапы** доступны:
+Open Hermes:
 
 ```text
-finance_report_YYYY-MM.md
-finance_data_YYYY-MM.json
+http://127.0.0.1:8000
 ```
 
-Export read-only и не изменяет месяц. Файлы могут содержать личные финансовые данные — проверяйте их перед передачей третьим лицам.
+## Development checks
 
-## Обновление приложения — recovery-only owner operation (Stable pinned)
+Use the repository verification policy rather than inventing ad-hoc acceptance gates:
 
-1. Создайте backup в **Экспорт и бэкапы**.
-2. Остановите Hermes в launcher (`Остановить`) или закройте окно — `127.0.0.1:8000` должен освободиться.
-3. Подготовьте **отдельный Stable checkout** на неизменяемом опубликованном release tag (например, `git fetch origin --tags && git switch --detach refs/tags/v0.8.2`). Launcher сам Git не меняет; это явная recovery-операция, а не launcher self-update.
-4. Для обновления packaged launcher и ярлыков выполните **из этого подготовленного checkout**:
+- `AGENTS.md`;
+- [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md);
+- task-specific accepted issue/contract.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
-```
+Canonical PR CI and exact-main push CI are mandatory for integrated changes.
 
-5. Откройте **Hermes Finance — Stable** в launcher. Launcher проверит pinned identity, границу данных и зависимости; если всё готово, `Запустить` вызовет guarded startup на той же validated DB и `127.0.0.1:8000`. При identity mismatch остаётся recovery-only guidance; launcher не должен притворяться, что выполнил обновление.
+## Documentation map
 
-## Известные ограничения
+- [`AGENTS.md`](AGENTS.md) — project constitution and execution rules;
+- [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) — business rules / core product semantics;
+- [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md) — current canonical checkpoint;
+- [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — durable current project context;
+- [`docs/OWNER_RUNTIME_OPERATIONS.md`](docs/OWNER_RUNTIME_OPERATIONS.md) — launcher/runtime owner operations;
+- [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — durable execution journal;
+- [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
+- [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — current component-decomposition contract;
+- [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md) — guarded release publication;
+- [`CHANGELOG.md`](CHANGELOG.md) — release/development change log.
 
-- только один локальный пользователь, без auth/cloud/VPS/HTTPS;
-- котировки и выплаты T-Invest только после явного preview/apply владельца; изменение количества позиции не запускает background refresh, polling или startup-сеть; MOEX не является production fallback;
-- снимок Alfa PRO только после явной кнопки и только к локальному терминалу; нет background refresh, browser → Alfa WebSocket и trading/order/signing API;
-- PDF-импорт Alfa — только принятое семейство депозитарного отчёта о выплатах доходов, text layer, без OCR; это не generic import брокерского портфеля, сделок или банковских транзакций;
-- Alfa account/instrument mapping хранится только после owner confirmation; account/instrument/month из провайдера или PDF автоматически не создаются, а baseline quantity apply требует отдельного owner approval и сохраняет provenance;
-- суммы провайдера могут оставаться приблизительными, если нет личной налоговой/net-уверенности;
-- XIRR/TWRR не вычисляются при неполной persisted evidence, пропущенной valuation boundary, неизвестном same-day order или неоднозначном XIRR root; первая TWRR API-поверхность ограничена whole portfolio;
-- приложение не является бухгалтерской, налоговой или торговой системой.
+## Privacy
 
-### Явно отложено за пределы 0.7.0
+Never commit or expose:
 
-- #141 Scenario Lab — completed на development `main` через PR #335 (merge `420e10046a7adbe17078dcd47d8b803927f0a86a`, 2026-09-09); в опубликованном Stable `0.8.2` его нет до будущего релиза;
-- #142 projection expansion за пределы current-state Tax/IIS v1;
-- #143 dedicated Insights UI; AI Analysis Bundle integration уже присутствует в schema `1.2.0`;
-- #203 Phase 2B test rehome/dedupe;
-- #202 residual workspace/ACL cleanup;
-- #229 owner workflow/Alfa UX consolidation.
+- real `.env`;
+- production or Preview/UAT databases;
+- SQLite sidecars/backups;
+- provider tokens/credentials;
+- private owner exports/PDF payloads;
+- reconstructive personal financial datasets.
 
-## Типовые проблемы
-
-### Порт 8000 занят
-
-```powershell
-Get-NetTCPConnection -LocalPort 8000 -State Listen
-```
-
-Остановите только старый экземпляр Hermes Finance и повторите запуск. Не запускайте несколько процессов на одной локальной базе.
-
-### `uv`/`npm` не найдены
-
-Установите uv и Node.js 22.22+, затем перезапустите PowerShell.
-
-### `pydantic_core` или чужой `PYTHONPATH`
-
-Используйте штатный launcher. Для ручного backend-запуска:
-
-```powershell
-Set-Location backend
-$env:PYTHONPATH = ""
-uv run python -I -m pytest -q
-uv run hermes-finance-api
-Set-Location ..
-```
-
-### Месяцев нет
-
-Это нормальное состояние чистой базы. Создайте первый draft в **Месяцы**.
-
-## Для разработчика
-
-### Безопасная очистка Windows workspaces
-
-Сначала выполните явный remote refresh и dry-run:
-
-`./scripts/cleanup-finance-workspaces.ps1 -RefreshRemote`
-
-Для удаления Git worktrees нужны оба явных флага:
-
-`./scripts/cleanup-finance-workspaces.ps1 -RefreshRemote -Apply`
-
-`-Apply` без `-RefreshRemote` отклоняется, если Git worktrees не отключены.
-Artifact-only режим `-Apply -SkipGitWorktrees` не требует remote refresh.
-Dirty/unmerged/unknown paths, launcher profiles, `.env`, SQLite, недоступные
-деревья и reparse points скрипт сохраняет fail-closed.
-
-Перед новой задачей в чистом development clone синхронизируйтесь с каноническим `main` так, как описано в [`AGENTS.md`](AGENTS.md). Не делайте `switch`/`reset`/`pull` поверх незаконченной task-работы.
-
-Карта semantic test lanes, ownership и правило добавления новых регрессий описаны в [`docs/TEST_SUITE_GUIDE.md`](docs/TEST_SUITE_GUIDE.md).
-
-Backend:
-
-```powershell
-Set-Location backend
-uv run python -I -m pytest -q
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-Set-Location ..
-```
-
-Frontend:
-
-```powershell
-Set-Location frontend
-npm test -- --run
-npm run lint
-npm run format-check
-npm run build
-Set-Location ..
-```
-
-Общие проверки:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\lint.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\format-check.ps1
-python .\scripts\privacy_check.py
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
-```
-
-Публикация `0.8.0` и `0.8.2` выполнена через guarded release process; immutable identity и exact-main CI зафиксированы выше. Для будущей публикации применяется тот же процесс с exact `origin/main` SHA:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
-  -Version 0.8.2 `
-  -ExpectedMainSha <полный-40-символьный-sha-принятого-origin/main> `
-  -ReleaseNotes .\docs\release-notes-0.8.2.md
-```
-
-Хелпер не двигает ветки, не делает force-update тега, не создаёт коммиты и не читает `.env`.
-
-В release line 0.7.0 backend CI job имеет timeout 15 минут. Это не меняет локальный loopback/no-cloud/no-auth safety boundary.
-
-Verification policy: [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md).
-
-## Документы проекта
-
-Active:
-
-- [`AGENTS.md`](AGENTS.md) — конституция репозитория для агентов;
-- [`docs/agents/`](docs/agents/) — адаптеры клиентов (Codex, Hermes, Grok, Gemini);
-- [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) — бизнес-инварианты и границы продукта;
-- [`docs/MODEL_ROUTING.md`](docs/MODEL_ROUTING.md) — роли, класс риска и эскалация;
-- [`docs/VERIFICATION_POLICY.md`](docs/VERIFICATION_POLICY.md) — стратегия проверок;
-- [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — долгоживущий контекст;
-- [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — журнал исполнения;
-- [`CHANGELOG.md`](CHANGELOG.md) — релизные изменения;
-- [`docs/releases/0.8.2.md`](docs/releases/0.8.2.md) — опубликованный release record 0.8.2;
-- [`docs/release-notes-0.8.2.md`](docs/release-notes-0.8.2.md) — public notes 0.8.2;
-- [`docs/releases/0.8.1.md`](docs/releases/0.8.1.md) — исторический release-prep record предыдущей линии;
-- [`docs/release-notes-0.8.1.md`](docs/release-notes-0.8.1.md) — исторические public notes предыдущей линии;
-- [`docs/releases/0.8.0.md`](docs/releases/0.8.0.md) — исторический record опубликованного 0.8.0.
-
-Исторические release records 0.8.1, 0.8.0, 0.7.0, 0.6.3 и старше остаются без переписывания.
-
-Historical:
-
-- [`docs/history/`](docs/history/) — архив старых Hermes process/backlog документов;
-- [`docs/releases/`](docs/releases/) — исторические release records, включая [`0.6.2`](docs/releases/0.6.2.md), [`0.6.1`](docs/releases/0.6.1.md), [`0.6.0`](docs/releases/0.6.0.md), [`0.5.0`](docs/releases/0.5.0.md) и [`0.4.0`](docs/releases/0.4.0.md);
-- [`docs/reviews/`](docs/reviews/) — исторические review notes;
-- [`sketches/`](sketches/) — исторические UI-эскизы, не source of truth.
-
-## Приватность
-
-Никогда не коммитьте `data/`, SQLite-базы, private seed, реальные account identifiers/позиции/суммы, PDF/XLS/XLSX, exports, backups, `.env` или credentials.
-
-Перед публикацией:
-
-```powershell
-git status --short
-python .\scripts\privacy_check.py
-```
-
-Все tracked-примеры должны оставаться синтетическими.
-
-## Лицензия
-
-Лицензия пока не выбрана; `LICENSE` намеренно отсутствует до отдельного решения владельца.
+Use synthetic fixtures for development and CI.
