@@ -24,9 +24,12 @@ Key invariants (wiki §7):
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.domain.passive_income import PassiveIncomeResult
 from hermes_finance.domain.passive_income_average import (
     MonthlyPassiveIncome,
     PassiveIncomeAverageInput,
@@ -37,6 +40,40 @@ from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.persistence import APP_SETTINGS_ID, AppSettings, ReportingMonth
 from hermes_finance.services.passive_income import passive_income_for_months
 from hermes_finance.services.settings import parse_passive_income_history_start_month
+
+
+def passive_income_average_from_results(
+    session: Session,
+    month_rows: Sequence[tuple[int, int, int]],
+    result_by_month: Mapping[int, PassiveIncomeResult],
+) -> PassiveIncomeAverageResult:
+    """Calculate the canonical average from one already-batched history read.
+
+    ``month_rows`` contains ``(reporting_month_id, year, month)`` for CLOSED
+    reports in calendar order.  Keeping this small adapter beside the public
+    average service lets read models reuse the same eligibility setting and
+    pure rolling-window calculator without issuing a second batch query.
+    """
+    month_items = [
+        MonthlyPassiveIncome(
+            year=year,
+            month=month,
+            amount=result_by_month[month_id].total_net_passive_income,
+        )
+        for month_id, year, month in month_rows
+    ]
+
+    # This is a read-model service. Missing optional settings use the same
+    # default as the seeded row without creating or committing that row.
+    settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
+    return calculate_passive_income_average(
+        PassiveIncomeAverageInput(
+            months=tuple(month_items),
+            history_start_month=parse_passive_income_history_start_month(
+                settings.passive_income_history_start_month if settings is not None else None
+            ),
+        )
+    )
 
 
 def passive_income_average(session: Session) -> PassiveIncomeAverageResult:
@@ -53,25 +90,8 @@ def passive_income_average(session: Session) -> PassiveIncomeAverageResult:
     ).all()
 
     result_by_month = passive_income_for_months(session, [month_id for month_id, _, _ in rows])
-    month_items: list[MonthlyPassiveIncome] = []
-    for month_id, year, month in rows:
-        result = result_by_month[month_id]
-        month_items.append(
-            MonthlyPassiveIncome(
-                year=year,
-                month=month,
-                amount=result.total_net_passive_income,
-            )
-        )
-
-    # This is a read-model service. Missing optional settings use the same
-    # default as the seeded row without creating or committing that row.
-    settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
-    return calculate_passive_income_average(
-        PassiveIncomeAverageInput(
-            months=tuple(month_items),
-            history_start_month=parse_passive_income_history_start_month(
-                settings.passive_income_history_start_month if settings is not None else None
-            ),
-        )
+    return passive_income_average_from_results(
+        session,
+        rows,
+        result_by_month,
     )
