@@ -255,7 +255,7 @@ function Assert-HermesStableNoReparsePath {
             continue
         }
 
-        $item = Get-Item -LiteralPath $current
+        $item = Get-Item -LiteralPath $current -Force
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw "$Label uses a reparse point; update is blocked."
         }

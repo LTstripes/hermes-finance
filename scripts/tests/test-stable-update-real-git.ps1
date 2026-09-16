@@ -194,7 +194,7 @@ function New-RealGitFixture {
     Invoke-SyntheticGit -Arguments @("init", "--bare", $bare) | Out-Null
     Invoke-SyntheticGit -Arguments @("init", $seed) | Out-Null
     Invoke-SyntheticGit -Arguments @("-C", $seed, "config", "user.name", "Hermes Synthetic") | Out-Null
-    Invoke-SyntheticGit -Arguments @("-C", $seed, "config", "user.email", "synthetic@example.invalid") | Out-Null
+    Invoke-SyntheticGit -Arguments @("-C", $seed, "config", "user.email", "synthetic-git-identity") | Out-Null
 
     New-Item -ItemType Directory -Force -Path @(
         (Join-Path $seed "backend/src/hermes_finance"),
@@ -495,6 +495,25 @@ function Invoke-RealGitCase {
         $script:Failed++
         Write-Host "FAIL $Name" -ForegroundColor Red
         Write-Host "     $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+Invoke-RealGitCase "reparse guard inspects a hidden synthetic ancestor" {
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("hermes hidden ancestor " + [guid]::NewGuid().ToString("N"))
+    [void]$script:TempRoots.Add($root)
+    $hiddenAncestor = Join-Path $root "hidden ancestor"
+    $missingLeaf = Join-Path $hiddenAncestor "missing leaf"
+    New-Item -ItemType Directory -Force -Path $hiddenAncestor | Out-Null
+    $hiddenItem = Get-Item -LiteralPath $hiddenAncestor -Force
+    $hiddenItem.Attributes = $hiddenItem.Attributes -bor [IO.FileAttributes]::Hidden
+    try {
+        Assert-HermesStableNoReparsePath `
+            -Path $missingLeaf `
+            -Label "synthetic hidden ancestor" `
+            -AllowMissingLeaf
+    }
+    finally {
+        $hiddenItem.Attributes = $hiddenItem.Attributes -band (-bnot [IO.FileAttributes]::Hidden)
     }
 }
 
