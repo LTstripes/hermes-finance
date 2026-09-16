@@ -332,14 +332,37 @@ Stable остаётся `v0.8.2` до следующего реального gu
 
 Следующий реальный release даст первую возможность провести обязательный OPS02 owner transition UAT.
 
-## 12. Open control/umbrella issues
+## 12. CI/test execution optimization — closeout 2026-09-16
+
+Отдельный bounded pass по CI завершён. Целью было убрать лишнюю работу, не сокращая regression coverage.
+
+Принятые изменения:
+
+- PR #397 — full Windows launcher safety harness больше не запускается дважды; 88 сценариев выполняются один раз через canonical package/install chain;
+- PR #399 — Windows timezone lane сокращён с 35 до 7 Windows-specific nodes; исключённые 28 nodes продолжают обязательное выполнение в Linux lanes;
+- PR #401 — Synthetic visual audit сохраняет те же 84 nodes, но безопасно выполняется двумя Playwright workers при `fullyParallel: false`.
+
+Итог относительно прежней конфигурации:
+
+- примерно **116 redundant test/scenario executions** убраны из каждого полного CI;
+- удалённых regression tests: **0**;
+- visual coverage и screenshot inventory сохранены;
+- наблюдаемый whole-CI wall time перешёл от прежних примерно 7–9 минут к примерно 3.5 минутам на closeout checkpoint, с обычной оговоркой о GitHub-runner variance.
+
+После отдельного read-only launcher audit сознательно принят STOP: следующий найденный безопасный резерв оценивался лишь примерно в 5–20 секунд и требовал бы дополнительной сложности внутри safety fixtures. Текущий launcher cost принимается как цена реального Git/filesystem/update safety coverage; не оптимизировать дальше ради нескольких секунд.
+
+Project-specific evidence: `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`.
+
+Reusable process для Health-Check и других репозиториев: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
+
+## 13. Open control/umbrella issues
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
 - #313 — runtime/launcher redesign parent;
 - #387 and children — UI v2 separate stream.
 
-## 13. Canonical reference documents
+## 14. Canonical reference documents
 
 - `AGENTS.md`
 - `docs/MASTER_SPEC.md`
@@ -349,6 +372,8 @@ Stable остаётся `v0.8.2` до следующего реального gu
 - `docs/CURRENT_STATUS.md`
 - `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`
 - `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`
+- `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`
+- `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/EXECUTION_HISTORY.md`
