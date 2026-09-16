@@ -71,6 +71,16 @@ from hermes_finance.domain.performance_availability import (
     ScopeMembershipCoverage,
     ValuationBoundaryEvidence,
 )
+from hermes_finance.domain.performance_decomposition import (
+    AccountDecompositionComponent,
+    AccountPerformanceComponent,
+    InternalTransferComponent,
+    InternalTransferEffect,
+    Perf04cDecompositionResult,
+    PerformanceComponentDecompositionResult,
+    PerformanceDecompositionResult,
+    TransferReconciliationEvidence,
+)
 from hermes_finance.domain.positions import PriceSource
 from hermes_finance.domain.reporting import ReportingMonthSource, ReportingMonthStatus
 from hermes_finance.domain.twrr import (
@@ -176,6 +186,14 @@ __all__ = [
     "Perf04aValuationEvidence",
     "PerformanceAttributionQuality",
     "PerformanceAttributionResult",
+    "AccountDecompositionComponent",
+    "AccountPerformanceComponent",
+    "InternalTransferComponent",
+    "InternalTransferEffect",
+    "Perf04cDecompositionResult",
+    "PerformanceComponentDecompositionResult",
+    "PerformanceDecompositionResult",
+    "TransferReconciliationEvidence",
     "ExternalFlowBoundaryEvidence",
     "ObservedValuationEvidence",
     "ObservedValuationPoint",
