@@ -62,11 +62,18 @@ def _create_position(
     assert response.status_code == 201, response.text
 
 
-def _create_cash(client: TestClient, month_id: int, amount: str) -> None:
+def _create_cash(
+    client: TestClient,
+    month_id: int,
+    amount: str,
+    *,
+    account_id: int | None = None,
+) -> None:
     response = client.post(
         "/api/cash-balances",
         json={
             "reporting_month_id": month_id,
+            "account_id": account_id,
             "name": f"Cash {month_id}",
             "amount": _rub(amount),
         },
@@ -102,6 +109,12 @@ def _create_debt(client: TestClient, month_id: int, amount: str) -> None:
         },
     )
     assert response.status_code == 201, response.text
+
+
+def _comparison(client: TestClient) -> dict[str, object]:
+    response = client.get("/api/analytics/closed-report-comparison")
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 def test_capital_composition_closed_history_gap_and_known_zero(client: TestClient) -> None:
@@ -248,3 +261,199 @@ def test_reopened_month_disappears_from_capital_composition_history(client: Test
         "bonds",
         "gold_other",
     ]
+
+
+def test_closed_report_comparison_uses_closed_pair_and_reconciles_deltas(
+    client: TestClient,
+) -> None:
+    account = client.post(
+        "/api/accounts",
+        json={"name": "Synthetic comparison brokerage", "account_type": "brokerage"},
+    ).json()
+    bond = client.post(
+        "/api/instruments",
+        json={"name": "Synthetic comparison bond", "instrument_type": "bond"},
+    ).json()
+    stock = client.post(
+        "/api/instruments",
+        json={"name": "Synthetic comparison stock", "instrument_type": "stock"},
+    ).json()
+    gold = client.post(
+        "/api/instruments",
+        json={"name": "Synthetic comparison gold", "instrument_type": "gold"},
+    ).json()
+
+    previous_id = _create_month(client, year=2033, month=1, snapshot_date="2033-01-31")
+    _create_cash(client, previous_id, "100000.00")
+    _create_deposit(client, previous_id, account["id"], "400000.00")
+    _create_position(
+        client,
+        month_id=previous_id,
+        account_id=account["id"],
+        instrument_id=stock["id"],
+        amount="300000.00",
+        price_date="2033-01-31",
+    )
+    _create_position(
+        client,
+        month_id=previous_id,
+        account_id=account["id"],
+        instrument_id=bond["id"],
+        amount="700000.00",
+        price_date="2033-01-31",
+    )
+    _create_position(
+        client,
+        month_id=previous_id,
+        account_id=account["id"],
+        instrument_id=gold["id"],
+        amount="200000.00",
+        price_date="2033-01-31",
+    )
+    _create_debt(client, previous_id, "100000.00")
+    assert client.post(f"/api/months/{previous_id}/close").status_code == 200
+
+    draft_id = _create_month(client, year=2033, month=2, snapshot_date="2033-02-28")
+    _create_cash(client, draft_id, "9999999.00")
+
+    current_id = _create_month(client, year=2033, month=3, snapshot_date="2033-03-31")
+    _create_cash(client, current_id, "120000.00")
+    _create_deposit(client, current_id, account["id"], "450000.00")
+    _create_position(
+        client,
+        month_id=current_id,
+        account_id=account["id"],
+        instrument_id=bond["id"],
+        amount="800000.00",
+        price_date="2033-03-31",
+    )
+    _create_position(
+        client,
+        month_id=current_id,
+        account_id=account["id"],
+        instrument_id=gold["id"],
+        amount="230000.00",
+        price_date="2033-03-31",
+    )
+    _create_debt(client, current_id, "50000.00")
+    assert client.post(f"/api/months/{current_id}/close").status_code == 200
+
+    body = _comparison(client)
+    assert body["comparison_basis"] == "latest_closed_to_previous_closed"
+    assert body["availability"] == "available"
+    assert body["asset_classes"] == ["cash", "deposits", "stocks", "bonds", "gold_other"]
+    assert body["current"]["reporting_month_id"] == current_id
+    assert body["current"]["status"] == "closed"
+    assert body["previous"]["reporting_month_id"] == previous_id
+    assert body["previous"]["status"] == "closed"
+    assert draft_id not in {
+        body["current"]["reporting_month_id"],
+        body["previous"]["reporting_month_id"],
+    }
+
+    deltas = {item["asset_class"]: item["amount"] for item in body["asset_class_deltas"]}
+    assert deltas == {
+        "cash": _rub("20000.00"),
+        "deposits": _rub("50000.00"),
+        "stocks": _rub("-300000.00"),
+        "bonds": _rub("100000.00"),
+        "gold_other": _rub("30000.00"),
+    }
+    assert body["current"]["liquid_assets_total"] == _rub("1600000.00")
+    assert body["current"]["included_debts"] == _rub("50000.00")
+    assert body["current"]["liquid_capital_net"] == _rub("1550000.00")
+    assert body["liquid_assets_total_delta"] == _rub("-100000.00")
+    assert body["included_debts_delta"] == _rub("-50000.00")
+    assert body["liquid_capital_net_delta"] == _rub("-50000.00")
+    assert body["net_liquid_capital_reconciles"] is True
+
+
+def test_closed_report_comparison_exposes_first_closed_report_without_zero_baseline(
+    client: TestClient,
+) -> None:
+    month_id = _create_month(client, year=2034, month=1, snapshot_date="2034-01-31")
+    _create_cash(client, month_id, "1000.00")
+    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+
+    body = _comparison(client)
+    assert body["availability"] == "previous_closed_report_unavailable"
+    assert body["current"]["reporting_month_id"] == month_id
+    assert body["current"]["status"] == "closed"
+    assert body["previous"] is None
+    assert body["asset_class_deltas"] is None
+    assert body["liquid_capital_net_delta"] is None
+    assert body["net_liquid_capital_reconciles"] is None
+
+
+def test_closed_report_comparison_is_explicitly_unavailable_without_closed_reports(
+    client: TestClient,
+) -> None:
+    body = _comparison(client)
+
+    assert body["availability"] == "no_closed_report"
+    assert body["current"] is None
+    assert body["previous"] is None
+    assert body["asset_class_deltas"] is None
+    assert body["liquid_capital_net_delta"] is None
+    assert body["net_liquid_capital_reconciles"] is None
+
+
+def test_closed_report_comparison_does_not_double_count_linked_debt(
+    client: TestClient,
+) -> None:
+    account = client.post(
+        "/api/accounts",
+        json={"name": "Synthetic linked cash", "account_type": "cash"},
+    ).json()
+
+    previous_id = _create_month(client, year=2035, month=1, snapshot_date="2035-01-31")
+    _create_cash(client, previous_id, "100.00", account_id=account["id"])
+    previous_debt = client.post(
+        "/api/debts",
+        json={
+            "reporting_month_id": previous_id,
+            "debt_type": "credit_card",
+            "name": "Synthetic linked debt previous",
+            "current_balance": _rub("40.00"),
+            "include_in_liquid_capital": True,
+        },
+    ).json()
+    assert (
+        client.put(
+            f"/api/debts/{previous_debt['id']}/linked-account",
+            json={"account_id": account["id"]},
+        ).status_code
+        == 200
+    )
+    assert client.post(f"/api/months/{previous_id}/close").status_code == 200
+
+    current_id = _create_month(client, year=2035, month=2, snapshot_date="2035-02-28")
+    _create_cash(client, current_id, "150.00", account_id=account["id"])
+    current_debt = client.post(
+        "/api/debts",
+        json={
+            "reporting_month_id": current_id,
+            "debt_type": "credit_card",
+            "name": "Synthetic linked debt current",
+            "current_balance": _rub("60.00"),
+            "include_in_liquid_capital": True,
+        },
+    ).json()
+    assert (
+        client.put(
+            f"/api/debts/{current_debt['id']}/linked-account",
+            json={"account_id": account["id"]},
+        ).status_code
+        == 200
+    )
+    assert client.post(f"/api/months/{current_id}/close").status_code == 200
+
+    body = _comparison(client)
+    assert body["current"]["liquid_assets_total"] == _rub("150.00")
+    assert body["current"]["included_debts"] == _rub("60.00")
+    assert body["current"]["liquid_capital_net"] == _rub("90.00")
+    assert body["current"]["linked_pair_assets"] == _rub("150.00")
+    assert body["current"]["linked_pair_debts"] == _rub("60.00")
+    assert body["liquid_capital_net_delta"] == _rub("30.00")
+    assert body["linked_pair_debts_delta"] == _rub("20.00")
+    assert body["net_liquid_capital_reconciles"] is True
