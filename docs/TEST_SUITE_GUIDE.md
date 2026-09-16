@@ -72,9 +72,35 @@ test file. A new flat test module therefore requires an explicit owner before
 any lane can pass; benchmark tests cannot silently join a correctness lane.
 
 CI runs the five lanes as independent matrix jobs with `--durations=40` and a
-10-minute job timeout. The existing Windows timezone job remains a dedicated
-Windows check; its selected subset is intentionally preserved in addition to
-the normal Linux correctness lanes.
+10-minute job timeout.
+
+The dedicated Windows timezone job protects runtime `tzdata` availability,
+`Europe/Moscow` calendar behavior, and real Windows runtime exports. A Linux
+system IANA timezone database can mask a missing runtime dependency, as in
+issue #164. The Windows job installs locked backend dependencies, including
+`tzdata`, and retains a separate `ZoneInfo("Europe/Moscow")` probe. Dependency,
+probe, or test failure blocks the job; its timeout remains 10 minutes.
+
+Its pytest selection is:
+
+- all of `tests/test_moscow_tz.py`;
+- `tests/test_ai_analysis_bundle_export.py::test_bundle_export_is_schema_valid_full_history_and_read_only`;
+- `tests/test_ai_analysis_bundle_export.py::test_ai_financial_review_route_is_schema_valid_and_read_only`.
+
+This currently selects seven nodes: five timezone tests and two real export
+integration tests. The export tests exercise production assembly, SQLite and
+schema-file paths, UTF-8 responses, date-based filenames, deterministic output,
+and read-only/network guards on Windows.
+
+The complete `test_ai_analysis_bundle_contract.py` and
+`test_ai_analysis_bundle_export.py` suites remain mandatory in the Linux
+`ci_integrations` lane, including all 28 nodes outside this Windows selection.
+The Moscow tests also remain in Linux `ci_runtime_release`. No test assertions
+or Linux lane ownership are removed by this Windows selection.
+
+Reassess the Windows subset whenever a new platform-specific export regression
+appears. Add the relevant regression to the Windows selection and update this
+coverage map when the existing selected tests do not protect its guarantee.
 
 The shared support modules have these owners:
 
