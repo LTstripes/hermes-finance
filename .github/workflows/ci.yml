@@ -353,19 +353,10 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Build and run launcher safety harness
+      - name: Run launcher safety harness and package/install smoke
         shell: pwsh
         run: |
-          dotnet build .\launcher\windows\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release
-          if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-          }
-
-          dotnet run --project .\launcher\windows\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release --no-build
-          if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-          }
-
+          # package.ps1 runs the full safety harness before publishing the launcher.
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-windows-launcher-package.ps1
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
