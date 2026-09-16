@@ -535,7 +535,11 @@ function Test-HermesPreviewForbiddenTrackedPath {
         [string]$Path
     )
 
-    $normalized = $Path.Trim().Replace("\", "/").TrimStart("./").ToLowerInvariant()
+    $normalized = $Path.Trim().Replace("\", "/")
+    while ($normalized.StartsWith("./", [StringComparison]::Ordinal)) {
+        $normalized = $normalized.Substring(2)
+    }
+    $normalized = $normalized.ToLowerInvariant()
     if ($normalized -eq ".env" -or
         ($normalized.StartsWith(".env.", [StringComparison]::Ordinal) -and $normalized -ne ".env.example") -or
         $normalized -eq "private" -or $normalized.StartsWith("private/", [StringComparison]::Ordinal) -or

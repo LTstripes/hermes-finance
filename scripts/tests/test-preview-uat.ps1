@@ -379,6 +379,25 @@ if ($Validate) {
     Assert-Test -Condition ($entrypointResult.Output.Contains("candidate_sha=$candidateOne")) -Message "public owner entrypoint reports the exact candidate"
     Assert-TestEqual -Expected $candidateOne -Actual (Get-TestGitText -WorkingDirectory $entrypointPaths.Checkout -Arguments @("rev-parse", "HEAD")) -Message "public owner entrypoint pins exact SHA"
 
+    # Tracked dot-prefixed private/runtime paths must remain visible to the candidate-tree guard.
+    Write-TestText -Path (Join-Path $seedPath ".env") -Content "synthetic-private-fixture"
+    Write-TestText -Path (Join-Path $seedPath ".hermes-runtime-prepared.json") -Content '{"synthetic":true}'
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("add", "-f", ".env", ".hermes-runtime-prepared.json") | Out-Null
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("commit", "-m", "synthetic tracked private runtime candidate") | Out-Null
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:main") | Out-Null
+    $trackedPrivateSha = Get-TestGitText -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
+    Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("fetch", "--no-tags", "origin", "main") | Out-Null
+    $failure = {
+        Invoke-PreviewPreparation -CandidateSha $trackedPrivateSha -PreviewName "preview tracked private runtime" | Out-Null
+    }.GetNewClosure()
+    Assert-TestFailure -Label "tracked dot-prefixed private/runtime paths" -ExpectedText "tracked private or runtime path" -Operation $failure | Out-Null
+    Remove-Item -LiteralPath (Join-Path $seedPath ".env") -Force
+    Remove-Item -LiteralPath (Join-Path $seedPath ".hermes-runtime-prepared.json") -Force
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("add", "-A") | Out-Null
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("commit", "-m", "synthetic clean candidate after private path guard") | Out-Null
+    Invoke-TestGit -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:main") | Out-Null
+    Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("fetch", "--no-tags", "origin", "main") | Out-Null
+
     $candidateTwo = New-TestCandidateCommit -MarkerName "clean"
     Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("fetch", "--no-tags", "origin", "main") | Out-Null
     Assert-Test -Condition ($candidateTwo -ne $candidateOne) -Message "synthetic main advance creates a different full SHA"
