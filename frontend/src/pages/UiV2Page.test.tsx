@@ -174,8 +174,9 @@ it("uses last 3/12/all CLOSED report records without manufacturing calendar mont
   mount();
   expect(await screen.findByTestId("v2-capital-history")).toHaveAttribute("data-gap-count", "2");
   expect(screen.getByText(/последние 4 закрытых отчёта/i)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "3 закрытых отчёта" }));
-  expect(screen.getByRole("button", { name: "12 закрытых отчётов" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "3 месяца" }));
+  expect(screen.getByRole("button", { name: "12 месяцев" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Всё время" })).toBeInTheDocument();
   expect(screen.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
   expect(screen.getByTestId("v2-capital-history")).toHaveAttribute("data-gap-count", "1");
   expect(

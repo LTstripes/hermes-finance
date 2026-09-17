@@ -189,7 +189,7 @@ test("ui-v2 Home interactions: history windows and v1 escape preserve semantics"
   const evidence = await installApi(page);
   await page.goto("/v2?month=12&step=actual_payouts");
   await expect(page.getByTestId("v2-capital")).toBeVisible();
-  await page.getByRole("button", { name: "3 закрытых отчёта" }).click();
+  await page.getByRole("button", { name: "3 месяца" }).click();
   await expect(page.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Вернуться к текущему интерфейсу →" }),

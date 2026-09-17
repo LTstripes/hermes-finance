@@ -375,11 +375,7 @@ function CapitalHistoryBlock({
               onClick={() => setWindow(value)}
               type="button"
             >
-              {value === 3
-                ? "3 закрытых отчёта"
-                : value === 12
-                  ? "12 закрытых отчётов"
-                  : "Всё время"}
+              {value === 3 ? "3 месяца" : value === 12 ? "12 месяцев" : "Всё время"}
             </button>
           ))}
         </fieldset>
