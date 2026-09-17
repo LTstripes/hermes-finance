@@ -11,7 +11,9 @@ Published Stable: **v0.9.0** (2026-09-17).
 - released/UAT code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
 - annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
 - guarded Release #253 / run `35235369797`: SUCCESS;
-- exact-main release-gate CI #700 / run `35207551120`: SUCCESS.
+- exact-main release-gate CI #700 / run `35207551120`: SUCCESS;
+- current development `main`: `814650806be5cb64aefffee15fccf7d5e1d364ec`;
+- exact-main CI #702 / run `35238258485`: SUCCESS.
 
 Owner release acceptance is complete:
 
@@ -24,7 +26,7 @@ Owner release acceptance is complete:
 Detailed checkpoint: [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 Runtime/release closeout: [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
 
-Known non-blocking metadata follow-up: #410 corrects stale candidate wording in the GitHub Release description; published tag/code identity is unaffected.
+Known non-blocking metadata follow-up: #410 corrects stale candidate wording in the GitHub Release description plus remaining changelog/history lifecycle metadata; published tag/code identity is unaffected.
 
 ## Product/runtime invariants
 
@@ -246,13 +248,24 @@ Published `v0.9.0` includes:
 
 UI v2 remains a separate workstream and is **not** part of `v0.9.0`.
 
+Current UI v2 checkpoint:
+
+- `Мои финансы` Home (#392 / PR #406) is implemented and has **owner visual/product UAT PASS** on exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9`;
+- it is not yet canonical on `main` because integration intentionally waited for the v0.9.0 release window;
+- that release-window freeze is now lifted;
+- `/v2` remains opt-in and v1 remains the default/rollback path.
+
 ## What comes next
 
-UI v2 is tracked independently through #387 and its children. The temporary `v0.9.0` release freeze can be lifted after the successful publication + Stable UAT.
+The immediate product step is to refresh PR #406 onto current canonical `main`, rerun exact-head CI/UI evidence, merge only if still clean, verify exact-main CI and close #392. After Home becomes canonical, the next bounded UI slice is the **Capital drill-down** under #387.
 
-The runtime redesign parent #313 is complete after the first real OPS02 owner transition. Further diagnosis/recovery or launcher wrappers should be separate bounded tasks, not extensions of the old update state machine.
+The later UI v2 sequence remains: Capital → Income & Plans → history/archive polish → new Monthly Close shell → Data & App consolidation → final comparative owner UAT → controlled default switch. v1 retirement remains a separate later decision.
+
+The runtime redesign parent #313 is closed completed after the first real OPS03 + OPS02 owner lifecycle. Further diagnosis/recovery or launcher wrappers should be separate bounded tasks, not extensions of the old update state machine.
 
 For Performance, instrument/asset-class exact attribution still requires a separately accepted data/evidence foundation.
+
+#410 remains a non-blocking metadata/history cleanup for the published `v0.9.0` Release body plus remaining changelog/execution-history lifecycle sync.
 
 `1.0.0` remains a reasonable future milestone only after a cohesive UI v2 owner experience and the production lifecycle are both accepted.
 
