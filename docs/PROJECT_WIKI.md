@@ -43,33 +43,32 @@ Hermes Finance не является торговой, банковской, б�
 
 ### Published Stable
 
-Текущая опубликованная Stable-версия — **v0.8.2**.
+Текущая опубликованная Stable-версия — **v0.9.0**.
 
-- release date: 2026-09-05;
-- annotated tag object: `bfa1194d4151bb72882f4230f144b039d240eda9`;
-- peeled released commit: `a22542d7b20ebdf34e38384004162d409f163ab3`.
+- published: 2026-09-17;
+- release/source code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
+- annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
+- tag peels exactly to the release/source SHA above;
+- Guarded Release #253 / run `35235369797`: SUCCESS;
+- exact-main release-gate CI #700 / run `35207551120`: SUCCESS.
 
-Published Stable не меняется просто потому, что development `main` ушёл вперёд.
+Owner acceptance for this exact code identity is complete:
 
-### Prepared release candidate
+- OPS03 exact-SHA Preview/UAT: **PASS**;
+- real OPS02 Stable transition `v0.8.2 -> v0.9.0`: **PASS**;
+- production readiness smoke: **PASS**;
+- `/api/health`: `0.9.0`;
+- owner data continuity: **PASS**.
 
-Issue #408 prepares **v0.9.0** for the first real owner OPS03 Preview/UAT
-gate. The candidate is UAT-PENDING: no `v0.9.0` tag or GitHub Release exists,
-and published Stable remains `v0.8.2` until owner PASS.
+Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
+
+Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording. Tag/code/release identity is correct.
 
 ### Canonical development main
 
-Current canonical `main`:
+The immutable released code remains `c90a842...`; post-release `main` may advance through docs-only closeout commits without changing the published tag.
 
-`41de2827df8437ebbcb420f2583e86772e85f1a3`
-
-Последний canonical merge на этом checkpoint — PR #407 / issue #404 (`OPS03 — exact-SHA isolated Preview/UAT preparation`).
-
-Exact-main push CI:
-
-- run number: **#697**;
-- run id: `35185238283`;
-- conclusion: **SUCCESS**.
+Product/runtime changes after `v0.9.0` require normal task/review/CI gates and do not retroactively alter the release.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -154,7 +153,7 @@ Canonical identity:
 
 Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 
-#400 реализовал этот bounded backend read model. PR #402 merged в canonical `main`; exact-head CI #687 и exact-main CI #688 — SUCCESS; independent financial-semantics review — ACCEPT.
+#400 / PR #402 реализовал bounded backend read model и прошёл independent financial-semantics review.
 
 Важно: PERF04C пока **backend-only**. API/UI exposure отдельно не разблокирован автоматически.
 
@@ -172,17 +171,30 @@ Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 
 Для этого нужен отдельный accepted data/evidence foundation. Approximation не должна маскироваться как exact.
 
-## 7. Runtime и launcher — актуальная архитектура
+## 7. Runtime и launcher — proven architecture
 
 ### Исторический вывод
 
 Launcher-owned Stable self-update из #298/#311/#312 — failed experiment. Его не продолжаем латать.
 
-Причина — не безопасность как цель, а чрезмерная сложность единой launcher state machine, которая одновременно пыталась отвечать за Git/release proof, backup, filesystem identity, update, dependency preparation, profile migration и process lifecycle.
+Проблемой была не сама безопасность, а попытка собрать слишком много ответственности в одной launcher state machine: release proof, Git mutation, backup, filesystem identity, dependency preparation, profile migration и process lifecycle.
 
 Parent redesign: #313.
 
-### OPS01 — canonical
+### Что вместо этого
+
+R09 разделил lifecycle на независимые операции:
+
+- launcher — owner-facing profile/status/Start/Stop shell;
+- OPS01 Prepare/Validate — `scripts/prepare-runtime.ps1`;
+- deterministic Start — `scripts/start-local.ps1`;
+- OPS02 Stable transition — `scripts/update-stable.ps1`;
+- OPS03 exact candidate Preview/UAT — `scripts/prepare-preview.ps1`;
+- release publication — permanent guarded Release Control #124.
+
+Главная ценность — меньший blast radius и более понятная диагностика: update failure не означает автоматический Start/migration, Preview mutation или release publication.
+
+### OPS01 — canonical + production-proven
 
 #380 / PR #385 реализовали explicit Prepare + deterministic Start.
 
@@ -208,15 +220,13 @@ Start:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-Prepare installs missing locked dependencies, builds production frontend and writes ignored `.hermes-runtime-prepared.json` tied to the exact code/build inputs. Start validates that proof and does not silently install/build/update Git.
+Prepare installs/synchronizes locked dependencies, builds production frontend and writes ignored exact prepared-state proof. Start validates that proof and does not silently install/build/update Git.
 
-OPS01 canonical merge: `cc85ad80c58fabb74de36f8bc67b04ccff14b6a4`; exact-main CI #665 SUCCESS.
+The production `v0.9.0` readiness smoke and normal Start passed after the real Stable transition.
 
-### OPS02 — canonical implementation, real owner transition UAT pending
+### OPS02 — canonical + first real owner transition PASS
 
 #386 / PR #393 реализовали explicit Stable update to one published immutable release.
-
-Owner operation:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
@@ -224,122 +234,155 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.
   -TargetVersion X.Y.Z
 ```
 
-Updater работает из trusted control checkout, а не из mutable Stable checkout, и делает только:
+Updater работает из trusted control checkout и:
 
-- prove requested published annotated release;
-- prove current Stable safety prerequisites;
-- verified SQLite backup **before** Git mutation;
-- exact tag-only fetch;
-- detach Stable at the exact proven release commit;
-- run target release Prepare + Validate;
-- stop.
+- proves requested published annotated release;
+- proves current Stable safety prerequisites;
+- creates verified SQLite backup **before** Git mutation;
+- fetches only the selected tag;
+- detaches Stable at the exact proven release commit;
+- runs target Prepare + Validate;
+- stops.
 
-Он не:
+Он не выбирает `latest`, не следует `main`, не запускает Hermes, не делает DB migration, не обновляет Preview, не публикует release/tag и не делает automatic rollback.
 
-- выбирает `latest`;
-- следует `main`;
-- запускает Hermes;
-- выполняет DB migration;
-- обновляет Preview;
-- публикует release/tag;
-- делает automatic rollback.
+Первый настоящий owner UAT completed:
 
-OPS02 canonical merge: `c2eab48ef4e20fb14f64c527f543422a6d46f76a`; exact-main CI #673 SUCCESS; independent runtime/safety review ACCEPT.
+`v0.8.2 -> v0.9.0`
 
-### Реальный acceptance boundary
+Evidence:
 
-OPS02 пока не прошёл real owner Stable release-to-release transition, потому что после его реализации не было нового реального Stable release.
+- before HEAD `a22542d7b20ebdf34e38384004162d409f163ab3` / `v0.8.2`;
+- verified backup `finance_backup_20260917T144656192481Z`;
+- after HEAD `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
+- `v0.9.0^{}` peeled to that exact SHA;
+- production DB hash unchanged by OPS02 before explicit Start;
+- Prepare + Validate passed;
+- no auto-start/migration during update.
 
-Первый настоящий UAT должен выполняться на следующем реальном релизе:
+Verdict: **PASS**.
 
-`v0.8.2 → v0.9.0` after owner Preview/UAT PASS and guarded publication.
+### OPS03 — canonical + first real owner release UAT PASS
 
-До этого #313 остаётся open.
+#404 / PR #407 реализовали independent exact-SHA Preview/UAT preparation.
 
-Не публиковать throwaway release только ради теста updater.
+Properties:
 
-## 8. Что осталось от Windows launcher
+- explicit full 40-character candidate SHA;
+- independent Preview Git clone;
+- separate Preview data identity;
+- no production DB alias;
+- candidate Prepare + Validate;
+- no follow-main;
+- no Start/direct migration.
 
-Launcher не retired.
+First real release UAT pinned Preview exactly to `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36` and passed against isolated owner-controlled data.
 
-Его полезная роль сейчас:
+Verdict: **PASS**.
+
+### #313 conclusion
+
+The redesign acceptance boundary is now fulfilled on a real owner release transition:
+
+- exact immutable release identity proved;
+- backup-before-mutation proved;
+- production data preserved;
+- Preview isolated;
+- no accidental task candidate promoted to Stable;
+- no auto-start after update;
+- runtime version proved after explicit Start;
+- real release-to-release owner UAT passed;
+- architecture stayed composable rather than rebuilding the old state machine.
+
+#313 can close as **completed**. Any later diagnosis/recovery or launcher-wrapper work becomes a separate bounded follow-up.
+
+Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
+
+## 8. Windows launcher — what changed and what did not
+
+Launcher не retired, и внешне он специально не обязан выглядеть новым.
+
+Его полезная роль:
 
 - owner-facing Stable/Preview profile/status UI;
-- ordinary Start/Stop текущего настроенного/pinned runtime;
+- ordinary Start/Stop;
 - shortcut/install shell;
 - diagnostics/status presentation.
 
 Но launcher **не является canonical Stable updater**.
 
-Архитектурно роли разделены:
+Поэтому главный результат R09 — не новая кнопка, а качественно другая система под ней:
 
-- launcher — profile/status/start/stop shell;
-- Prepare/Validate — `scripts/prepare-runtime.ps1`;
-- deterministic Start — `scripts/start-local.ps1`;
-- Stable version switch — `scripts/update-stable.ps1`;
-- release publication — guarded Release Control #124.
+- exact code tested = exact code published = exact code installed;
+- backup exists before mutation;
+- publication, update, Preview and Start are separate actions;
+- failures локализованы по операции;
+- future UI can wrap proven primitives instead of duplicating their safety semantics.
 
-Если позже launcher останется, он должен стать thin wrapper над accepted owner operations, а не держать вторую независимую update/state machine.
+Если позже launcher получает новые кнопки, они должны быть thin wrappers над accepted operations, а не вторая state machine.
 
-### Что owner может проверить прямо сейчас
-
-Current published Stable `v0.8.2` можно продолжать запускать/останавливать установленным launcher в его текущем pinned profile.
-
-Можно также отдельно проверять Prepare/Validate/Start на non-production checkout с synthetic/isolated data.
-
-Нельзя полноценно доказать новый Stable updater реальным production transition до появления следующего реального опубликованного релиза.
-
-## 9. Release flow
-
-Release publication остаётся отдельным guarded repository-owned действием.
+## 9. Release flow — теперь доказанный
 
 Permanent control endpoint: #124.
 
-Нормальный chat-first release flow описан в `docs/RELEASE_AUTOMATION.md`.
+Нормальный release flow:
 
-Publication не равна Stable installation/update: release создаёт immutable published tag/release; Stable owner update выполняется отдельным OPS02 operation.
+1. prepare one exact candidate on canonical `main`;
+2. OPS03 exact-SHA owner Preview/UAT;
+3. owner PASS;
+4. guarded immutable publication through #124;
+5. independent tag/release read-back;
+6. OPS02 explicit Stable update;
+7. explicit Start;
+8. health/version + owner data continuity proof.
+
+`v0.9.0` — первый релиз, который прошёл эту цепочку полностью.
+
+Publication не равна Stable installation/update: release создаёт immutable published tag/release; local Stable меняется только отдельным OPS02 owner action.
 
 ## 10. UI v2 — отдельный поток
 
-UI v2 tracked отдельно через #387 и children. Этот wiki фиксирует coexistence, но не смешивает UI v2 delivery с non-UI/runtime/performance интеграцией.
+UI v2 tracked отдельно через #387 и children.
 
-Текущее направление UI v2:
+Текущее направление:
 
 - Home = `Мои финансы`;
 - latest closed report as normal financial view;
 - Monthly Close как contextual work mode;
 - v1 сохраняется до отдельного controlled cutover.
 
-Конкретные UI задачи и owner visual UAT смотреть в #387 и его child issues.
+Временный release-window freeze, который запрещал UI v2 merge в `main` во время `0.9.0` UAT/publication, после successful Stable UAT можно снять.
+
+UI v2 не входил в `v0.9.0`.
 
 ## 11. Что идёт дальше
 
-### Non-UI/runtime
+### UI / product
 
-Issue #408 prepares the first real release candidate for **exact Preview/UAT
-preparation pinned to one explicit candidate SHA**:
+Главный активный product stream — UI v2 (#387 и children).
 
-- explicit exact SHA;
-- separate Preview/UAT checkout + isolated UAT DB;
-- no automatic following of newer `main` while UAT is running;
-- no production DB alias/mutation;
-- same accepted Prepare/Validate/Start primitives where applicable.
+`1.0.0` разумно рассматривать как будущую большую отсечку только когда новый primary owner UX станет цельным и production lifecycle останется доказанным, а не просто потому что поменялась визуальная тема.
 
-После owner PASS и guarded publication OPS02 впервые проверит переход
-`v0.8.2 -> v0.9.0`; затем остаются только bounded diagnosis/recovery
-operations и решение, нужен ли thin launcher wrapper.
+### Runtime
+
+#313 завершён.
+
+Следующие runtime-задачи открывать только по реальной owner pain/value:
+
+- bounded diagnosis/recovery operations;
+- optional thin launcher wrappers over accepted primitives.
+
+Не возрождать monolithic launcher updater.
 
 ### Performance
 
 Account + internal-transfer decomposition backend завершён.
 
-Следующая exact instrument/asset-class attribution работа возможна только после отдельного data/evidence foundation contract. Пока это не готовая implementation task.
+Следующая exact instrument/asset-class attribution работа возможна только после отдельного data/evidence foundation contract.
 
-### Stable
+### Release metadata
 
-Stable остаётся `v0.8.2` до следующего реального guarded release.
-
-Следующий реальный release даст первую возможность провести обязательный OPS02 owner transition UAT.
+#410 — non-blocking metadata/docs follow-up: исправить stale `UAT-PENDING` wording в опубликованном GitHub Release description и hardened future release-note lifecycle.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -351,25 +394,27 @@ Stable остаётся `v0.8.2` до следующего реального gu
 - PR #399 — Windows timezone lane сокращён с 35 до 7 Windows-specific nodes; исключённые 28 nodes продолжают обязательное выполнение в Linux lanes;
 - PR #401 — Synthetic visual audit сохраняет те же 84 nodes, но безопасно выполняется двумя Playwright workers при `fullyParallel: false`.
 
-Итог относительно прежней конфигурации:
+Итог:
 
-- примерно **116 redundant test/scenario executions** убраны из каждого полного CI;
-- удалённых regression tests: **0**;
+- примерно 116 redundant test/scenario executions убраны из каждого полного CI;
+- удалённых regression tests: 0;
 - visual coverage и screenshot inventory сохранены;
-- наблюдаемый whole-CI wall time перешёл от прежних примерно 7–9 минут к примерно 3.5 минутам на closeout checkpoint, с обычной оговоркой о GitHub-runner variance.
+- whole-CI wall time на closeout checkpoint сократился примерно до 3.5 минут, с обычной оговоркой о GitHub-runner variance.
 
-После отдельного read-only launcher audit сознательно принят STOP: следующий найденный безопасный резерв оценивался лишь примерно в 5–20 секунд и требовал бы дополнительной сложности внутри safety fixtures. Текущий launcher cost принимается как цена реального Git/filesystem/update safety coverage; не оптимизировать дальше ради нескольких секунд.
+После отдельного read-only launcher audit принят STOP: оставшийся безопасный резерв в несколько секунд не оправдывает дополнительную сложность safety fixtures.
 
 Project-specific evidence: `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`.
 
-Reusable process для Health-Check и других репозиториев: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
+Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 ## 13. Open control/umbrella issues
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #313 — runtime/launcher redesign parent;
-- #387 and children — UI v2 separate stream.
+- #387 and children — UI v2 separate stream;
+- #410 — non-blocking v0.9.0 Release-description cleanup.
+
+#313 is completed after real owner OPS03 + OPS02 + production Start acceptance.
 
 ## 14. Canonical reference documents
 
@@ -379,12 +424,15 @@ Reusable process для Health-Check и других репозиториев: `
 - `docs/MODEL_ROUTING.md`
 - `docs/AGENT_ORCHESTRATION.md`
 - `docs/CURRENT_STATUS.md`
+- `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
 - `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`
 - `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`
 - `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
 - `docs/RELEASE_AUTOMATION.md`
+- `docs/releases/0.9.0.md`
+- `docs/release-notes-0.9.0.md`
 - `docs/EXECUTION_HISTORY.md`
 
-Historical detail remains recoverable from Git history, release docs and the execution journal; this wiki intentionally prioritizes current truth over repeating every old release-era paragraph.
+Historical detail remains recoverable from Git history, release docs and execution journal; this wiki intentionally prioritizes current truth over repeating every old release-era paragraph.
