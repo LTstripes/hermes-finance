@@ -284,6 +284,43 @@ function Resolve-HermesReleaseNotesPath {
     return $fullPath
 }
 
+function Assert-HermesReleaseNotesPublicationReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $content = [IO.File]::ReadAllText($Path)
+    $candidateOnlyPatterns = @(
+        [pscustomobject]@{
+            Label   = "UAT-PENDING marker"
+            Pattern = '(?i)\bUAT[\s-]*PENDING\b'
+        },
+        [pscustomobject]@{
+            Label   = "candidate status"
+            Pattern = '(?im)^\s*>\s*\*\*Status:\*\*\s*[^\r\n]*(?:PREPARED|PENDING|CANDIDATE)\b'
+        },
+        [pscustomobject]@{
+            Label   = "release-candidate title"
+            Pattern = '(?im)^\s*#{1,6}\s+[^\r\n]*\brelease candidate\b'
+        },
+        [pscustomobject]@{
+            Label   = "release-candidate declaration"
+            Pattern = '(?im)^\s*>\s*(?:This|It)\s+is\s+(?:an?\s+)?release candidate\b'
+        },
+        [pscustomobject]@{
+            Label   = "not-published declaration"
+            Pattern = '(?i)\bnot\s+(?:yet\s+)?a\s+published\s+tag\s+or\s+GitHub Release\b'
+        }
+    )
+
+    foreach ($candidateOnlyPattern in $candidateOnlyPatterns) {
+        if ($content -match [string]$candidateOnlyPattern.Pattern) {
+            throw "Release notes are not publication-ready: found $($candidateOnlyPattern.Label). Record owner PASS and replace candidate-only lifecycle wording before guarded publication."
+        }
+    }
+}
+
 function Resolve-HermesToolPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -731,6 +768,7 @@ function Invoke-HermesRelease {
     $tag = Get-HermesCanonicalTagName -Version $Version
     $expected = Get-HermesNormalizedCommitSha -Sha $ExpectedMainSha -Label "ExpectedMainSha"
     $notesPath = Resolve-HermesReleaseNotesPath -ReleaseNotes $ReleaseNotes
+    Assert-HermesReleaseNotesPublicationReady -Path $notesPath
     $versionBare = $tag.Substring(1)
     if ([string]::IsNullOrWhiteSpace($Title)) {
         $Title = "Hermes Finance $versionBare"

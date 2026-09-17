@@ -88,6 +88,19 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Candidate identity:** exact SHA is recorded only after implementation and integration; the candidate remains `UAT-PENDING` until owner acceptance.
 - **References:** issue #408, `docs/releases/0.9.0.md`, `docs/release-notes-0.9.0.md`, `CHANGELOG.md` and permanent Release Control #124.
 
+### R09-REL01-POST — publish v0.9.0 and complete owner runtime/UAT closeout
+
+- **Published:** 2026-09-17 as GitHub Release `Hermes Finance 0.9.0`, `draft=false`, `prerelease=false`.
+- **Released identity:** annotated tag `v0.9.0`, tag object `07c06d44f8b780e721be346a21909ca02585d57d`, peeled commit `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
+- **Publication evidence:** exact-main CI #700 / run `35207551120` SUCCESS; Guarded Release #253 / run `35235369797` SUCCESS.
+- **Owner OPS03 Preview/UAT:** PASS on the exact released code in an isolated Preview using a verified owner-data copy; production data remained isolated.
+- **Owner OPS02 Stable transition:** PASS for the first real `v0.8.2 -> v0.9.0` transition, including verified pre-mutation backup, exact target pin, target Prepare + Validate, no auto-start and no migration during the update operation.
+- **Production acceptance:** explicit Stable `v0.9.0` Start, readiness smoke, `/api/health` version/status and owner data continuity all passed.
+- **History boundary:** the R09-REL01 preparation record above remains unchanged as historical pre-publication context; this separate entry records the final publication and owner-acceptance state.
+- **Closeout sync:** PR #411 merged the final current-truth documentation at canonical `main` `814650806be5cb64aefffee15fccf7d5e1d364ec`; exact-main CI #702 / run `35238258485` succeeded on attempt 2 without a code change after attempt 1 hit a hosted-runner `setup-uv` network timeout.
+- **Boundaries:** no product/runtime/financial/schema behavior, tag identity or released commit changed during closeout.
+- **References:** issues #408, #313, #124 and #410; `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`, `docs/releases/0.9.0.md` and `docs/release-notes-0.9.0.md`.
+
 # Post-v0.8.2 consolidation
 
 ### #306 — repository/process review and three-workstream split

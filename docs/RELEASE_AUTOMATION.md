@@ -55,6 +55,9 @@ The combined path requires all of the following before publication:
 - `backend/pyproject.toml` `[project].version` equals the requested version;
 - `backend/src/hermes_finance/__init__.py` `__version__` equals the requested version;
 - canonical `docs/release-notes-X.Y.Z.md` exists and is non-empty;
+- release notes contain no candidate-only lifecycle wording such as
+  `UAT-PENDING`, a candidate status/title, or a declaration that the release is
+  not published;
 - fetched `origin/main` still equals the expected SHA;
 - canonical `ci.yml` has a completed successful exact-main `push` run for that SHA;
 - that exact-main `ci.yml` run includes the required synthetic visual-audit job;
@@ -62,6 +65,21 @@ The combined path requires all of the following before publication:
 - existing GitHub Release state is compatible with a published stable release.
 
 Unexpected tag/release state fails closed. The helper never force-updates or deletes a release tag to make a request succeed.
+
+## Release-note lifecycle
+
+`docs/release-notes-X.Y.Z.md` is the publication payload, not the durable place
+for a pending candidate gate. Before the release-control request is created,
+owner UAT must be complete and candidate-only status wording must be replaced
+with publication-ready facts. Candidate preparation state remains in the
+release record and execution history until that gate passes.
+
+The shared publication helper checks the notes before resolving tools, fetching
+refs, creating a tag or calling GitHub. Both the guarded workflow and the manual
+fallback therefore fail closed on stale `UAT-PENDING` or equivalent explicit
+candidate-status wording. After publication, the normal documentation closeout
+records the published identity without rewriting the historical preparation
+record.
 
 ## Publication boundary
 

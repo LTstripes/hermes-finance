@@ -735,6 +735,20 @@ Invoke-HermesCase "empty release notes perform zero commands" {
     Assert-Equal -Expected 0 -Actual @($world.State.Calls).Count -Label "command count"
 }
 
+Invoke-HermesCase "candidate-only release notes perform zero commands" {
+    $workspace = New-HermesTestWorkspace
+    [IO.File]::WriteAllText(
+        $workspace.NotesPath,
+        "# Hermes Finance v0.9.0 - release candidate`n`n> **Status:** PREPARED / UAT-PENDING`n>`n> This is a release candidate. It is not a published tag or GitHub Release.`n",
+        (New-Object System.Text.UTF8Encoding $false)
+    )
+    $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot
+    Invoke-ExpectFailure -Pattern "not publication-ready|candidate-only" -Script {
+        Invoke-GuardedRelease -Workspace $workspace -World $world -ReleaseNotes $workspace.NotesPath
+    } | Out-Null
+    Assert-Equal -Expected 0 -Actual @($world.State.Calls).Count -Label "command count"
+}
+
 Invoke-HermesCase "missing gh fails closed with no fallback and no mutation" {
     $workspace = New-HermesTestWorkspace
     $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot

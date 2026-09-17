@@ -2,12 +2,13 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
-## [0.9.0] — PREPARED / UAT-PENDING
+## [0.9.0] — 2026-09-17
 
-Release candidate preparation on top of the published Stable `v0.8.2`.
-This entry records already integrated product work and synchronizes the
-candidate identity; it does not publish a tag or GitHub Release. Published
-Stable remains `v0.8.2` until owner OPS03 Preview/UAT passes.
+Published owner-accepted release after Stable `v0.8.2`. The annotated `v0.9.0`
+tag peels to exact released and owner-UAT code
+`c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`. Owner OPS03 Preview/UAT, the first
+real OPS02 Stable transition `v0.8.2 -> v0.9.0`, and production Start/health/data
+continuity all passed.
 
 ### Included since v0.8.2
 
@@ -20,39 +21,17 @@ Stable remains `v0.8.2` until owner OPS03 Preview/UAT passes.
 
 ### Not changed
 
-- UI v2 remains a separate workstream and is not part of this candidate;
-- canonical Alembic head remains `0041_debt_linked_account`; this release-prep task adds no migration or schema semantics;
+- UI v2 remains a separate workstream and is not part of this release;
+- canonical Alembic head is `0041_debt_linked_account`; release preparation added no migration or schema semantics;
 - local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
 - no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
 - closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero;
-- private Stable/Preview/runtime data, `.env`, databases, backups, exports/PDFs and credentials remain outside release preparation.
+- private Stable/Preview/runtime data, `.env`, databases, backups, exports/PDFs and credentials remained outside release publication artifacts.
 
 ## [Unreleased]
 
-Development `main` после `0.8.2` (интегрировано через PR #335, merge `420e10046a7adbe17078dcd47d8b803927f0a86a`). Это не новая опубликованная версия: Stable остаётся `0.8.2`, пока будущий релиз её не сменит.
-
-### Scenario Lab v1 (parent #141, closed completed)
-
-- детерминированный read-only Scenario Lab: equity drawdown, deposit absolute-rate assumption, inflation real-value / purchasing-power view, conservative FX translation candidate-scope baseline;
-- owner-facing API (`POST /api/months/{id}/scenario-lab`), deterministic JSON export (`.../scenario-lab/export`) и UI в Планирование → Сценарии;
-- exact/frozen calculation hardening: `FrozenScenarioBase` (capture-once → pure projection), exact `Decimal` domain math, machine-readable validation codes, защита от stale async result;
-- FX empty-scope кейс из owner Preview UAT (#333 `PASS`): пустой затронутый скоуп — supported с точным нулевым эффектом, `unknown`/`unavailable` никогда не выдаются за ноль (#334, re-UAT `PASS`);
-- owner Preview UAT выполнен на isolated copy DB; production данные не использовались.
-
-### Financial context completeness (#336)
-
-- долги получили owner-entered ставку (APR, basis points) и раздельные `next_due_date` / `contract_end_date`; недвижимость — годовую ставку ипотеки;
-- новый month-local плановый бюджет (`planned_budget_lines`) хранится отдельно от фактических расходов; сверка план/факт идёт по точной паре `(category, expense_type)`;
-- в сопоставлении план/факт отсутствие стороны остаётся `null` (в UI — `—`), а явный ноль владельца — `0 ₽`; пустой план не показывается как «план 0 ₽»;
-- `null` означает «неизвестно», `0` — реальный ноль; миграция `0037_336_financial_context` только добавляет nullable-поля и не досчитывает прошлые данные;
-- клонирование месяца переносит ставки, окончание договора и план, а `next_due_date` подтверждается в новом месяце заново.
-
-### Not changed
-
-- canonical Alembic head is now `0037_336_financial_context`; the migration is additive owner-entered capture only — no new formulas, provider, runtime or DB semantics changed;
-- local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
-- no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
-- issuer impairment, exact FX translation, multi-shock composition и Monte Carlo / VaR / probabilities / correlations остаются deferred.
+Development `main` after the published Stable `v0.9.0`. No post-`v0.9.0`
+release-note entries have been recorded yet.
 
 ## [0.8.2] — 2026-09-05
 
