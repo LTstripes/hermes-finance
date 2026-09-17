@@ -72,6 +72,4 @@ After explicit Start on Stable `v0.9.0`:
 - Tag peels exactly to `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
 - GitHub Release: published, draft=false, prerelease=false.
 
-Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording. The published code/tag identity is unaffected.
-
 Detailed runtime/release closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.

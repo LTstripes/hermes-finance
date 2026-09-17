@@ -20,7 +20,8 @@
     Full 40-character SHA. origin/main must match this after fetch.
 
 .PARAMETER ReleaseNotes
-    Path to Markdown release notes. The file is passed to GitHub as-is.
+    Path to publication-ready Markdown release notes. The helper rejects
+    candidate-only lifecycle wording, then passes the file to GitHub as-is.
 
 .PARAMETER Title
     Optional GitHub Release / annotated-tag title. Defaults to
