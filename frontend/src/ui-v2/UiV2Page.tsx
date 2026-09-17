@@ -1,38 +1,118 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useRef } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-
-import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
-import type { GuidedCloseStep, MonthCloseWorkflow } from "../api/monthCloseWorkflow";
-import { listMonths } from "../api/months";
-import type { MoneyValue } from "../api/types";
-import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
-import { RuntimeStatusBanner } from "../components/RuntimeStatus";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import {
-  formatDate,
-  formatDateTime,
-  formatMoney,
-  formatMoneyDelta,
-  formatMonth,
-} from "../lib/format";
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { Link, useSearchParams } from "react-router";
+
+import {
+  getCapitalComposition,
+  getClosedReportComparison,
+  getPassiveIncomeHistory,
+} from "../api/analytics";
+import { listGoalSummary, type GoalSummary } from "../api/goals";
+import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import { listMonths } from "../api/months";
+import type {
+  CapitalCompositionPoint,
+  ClosedReportComparison,
+  MoneyValue,
+  PassiveIncomeAverage,
+  PassiveIncomeHistory,
+  ReportingMonth,
+} from "../api/types";
+import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
+import { formatDate, formatMoney, formatMoneyDelta, formatMonth } from "../lib/format";
+import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
-import { monthWorkspacePath, resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
 import styles from "./UiV2Page.module.css";
 
-const STEP_LABELS: Record<GuidedCloseStep["state"], string> = {
-  not_started: "Не начат",
-  ready: "Можно выполнить",
-  completed: "Подтверждён",
-  skipped: "Пропущен",
-  warning: "Нужно внимание",
-  blocked: "Есть препятствие",
+type HistoryWindow = 3 | 12 | "all";
+
+const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
+  cash: { label: "Деньги", color: "#5f7e9e" },
+  deposits: { label: "Депозиты", color: "#8e73a6" },
+  stocks: { label: "Акции", color: "#c68b51" },
+  bonds: { label: "Облигации", color: "#5f9b82" },
+  gold_other: { label: "Золото и прочее", color: "#a4a8ad" },
 };
 
-function money(value: MoneyValue | null | undefined): string {
+const PASSIVE_SOURCE_META = [
+  ["deposit_interest", "Проценты по депозитам"],
+  ["bond_coupons", "Купоны"],
+  ["dividends", "Дивиденды"],
+  ["other_capital_income", "Прочий доход от капитала"],
+] as const;
+
+function queryReady(query: {
+  isPending: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  fetchStatus: string;
+}): boolean {
+  return !query.isPending && !query.isFetching && !query.isError && query.fetchStatus !== "paused";
+}
+
+function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
+  return month.year * 12 + month.month;
+}
+
+function money(value: MoneyValue | null | undefined, empty = "Недоступно"): string {
   return formatMoney(value?.amount, {
     currency: value?.currency === "RUB" ? "₽" : value?.currency,
-    empty: "Нет данных",
+    empty,
   });
+}
+
+function moneyDelta(value: MoneyValue | null | undefined, empty = "Недоступно"): string {
+  return formatMoneyDelta(value?.amount, {
+    currency: value?.currency === "RUB" ? "₽" : value?.currency,
+    empty,
+  });
+}
+
+function tone(value: MoneyValue | null | undefined): "positive" | "negative" | "neutral" {
+  const amount = value?.amount.trim() ?? "";
+  if (/^-/.test(amount) && !/^-0(?:\.0+)?$/.test(amount)) return "negative";
+  if (/^\+?[0-9]/.test(amount) && !/^\+?0(?:\.0+)?$/.test(amount)) return "positive";
+  return "neutral";
+}
+
+function liabilityTone(value: MoneyValue | null | undefined): "positive" | "negative" | "neutral" {
+  const ordinary = tone(value);
+  if (ordinary === "positive") return "negative";
+  if (ordinary === "negative") return "positive";
+  return "neutral";
+}
+
+function configuredBoundary(value: string | null): string | null {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12 ? formatMonth(year, month) : value;
+}
+
+function passiveAverageDetail(average: PassiveIncomeAverage): string {
+  const boundary = configuredBoundary(average.configured_start_month);
+  const suffix = boundary ? ` · учёт с ${boundary}` : "";
+  if (average.count_months === 0) {
+    return `Среднее пока недоступно · 0 из ${average.target_window_months} закрытых отчётов${suffix}`;
+  }
+  return `Среднее ${money(average.average)} · ${average.count_months} из ${average.target_window_months} закрытых отчётов${suffix}`;
 }
 
 function Notice({
@@ -50,344 +130,711 @@ function Notice({
       <p>{children}</p>
       {retry ? (
         <button className={styles.secondaryButton} onClick={retry} type="button">
-          Повторить загрузку
+          Повторить
         </button>
       ) : null}
     </section>
   );
 }
 
-function Results({ workflow }: { workflow: MonthCloseWorkflow }) {
-  const review = workflow.final_review;
-  if (!review.available) {
+function WidgetState({
+  title = "Данные временно недоступны",
+  retry,
+}: {
+  title?: string;
+  retry?: () => void;
+}) {
+  return (
+    <div className={styles.widgetState} role={retry ? "alert" : "status"}>
+      <p>{title}</p>
+      {retry ? (
+        <button onClick={retry} type="button">
+          Повторить
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ReportContext({ month }: { month: ReportingMonth }) {
+  return (
+    <div className={styles.reportContext}>
+      <span className={styles.closedBadge}>Закрытый отчёт</span>
+      <span>{formatMonth(month.year, month.month)}</span>
+      <span className={styles.contextDivider} aria-hidden="true">
+        ·
+      </span>
+      <span>Снимок {formatDate(month.snapshot_date)}</span>
+      <Link to="/months">История отчётов →</Link>
+    </div>
+  );
+}
+
+function DraftAction({ draft }: { draft: ReportingMonth }) {
+  const workflowQuery = useMonthCloseWorkflow(draft.id);
+  const ready = queryReady(workflowQuery);
+  const workflow = ready ? workflowQuery.data : undefined;
+  const valid =
+    workflow?.contract_version === "monthly_close_workflow_v1" &&
+    workflow.month.id === draft.id &&
+    workflow.month.status === "draft";
+  const recommended =
+    valid && isGuidedCloseStepId(workflow.recommended_step_id)
+      ? workflow.recommended_step_id
+      : null;
+
+  if (workflowQuery.isError) {
     return (
-      <Notice title="Итоги пока недоступны">
-        Нет данных для сводки. Это не нулевой капитал или доход. Порядок действий ниже остаётся
-        доступным.
-      </Notice>
+      <div className={styles.draftAction} data-state="unavailable">
+        <span>{formatMonth(draft.year, draft.month)} ещё не закрыт</span>
+        <button onClick={() => void workflowQuery.refetch()} type="button">
+          Проверить снова
+        </button>
+      </div>
     );
   }
-  const kpis = review.kpis;
+  if (!ready) {
+    return (
+      <div className={styles.draftAction} data-state="loading" role="status">
+        Проверяем незакрытый {formatMonth(draft.year, draft.month).toLocaleLowerCase("ru-RU")}…
+      </div>
+    );
+  }
+  if (!recommended) return null;
+
   return (
-    <section aria-label="Результат месяца" className={styles.metrics}>
-      <article className={`${styles.metric} ${styles.capital}`}>
-        <p className={styles.eyebrow}>Ликвидный капитал · нетто</p>
-        <p className={styles.metricValue} data-testid="v2-capital">
-          {money(kpis.liquid_capital_net)}
-        </p>
-        <p className={styles.metricDetail}>
-          {kpis.liquid_capital_delta ? (
-            <>
-              <strong>
-                {formatMoneyDelta(kpis.liquid_capital_delta.amount, {
-                  currency:
-                    kpis.liquid_capital_delta.currency === "RUB"
-                      ? "₽"
-                      : kpis.liquid_capital_delta.currency,
-                })}
-              </strong>{" "}
-              к предыдущему месяцу
-            </>
-          ) : (
-            "Нет предыдущего месяца для сравнения"
-          )}
-        </p>
-        <p className={styles.caption}>
-          Без недвижимости и ипотеки. Изменение капитала — не доходность.
-        </p>
+    <Link
+      className={styles.draftAction}
+      data-testid="v2-draft-action"
+      to={monthlyCloseReturnPath({ monthId: draft.id, step: recommended })}
+    >
+      <span>{formatMonth(draft.year, draft.month)} ещё не закрыт</span>
+      <strong>Продолжить →</strong>
+    </Link>
+  );
+}
+
+function KpiGrid({
+  comparison,
+  comparisonReady,
+  passive,
+  passiveReady,
+  retryComparison,
+  retryPassive,
+}: {
+  comparison: ClosedReportComparison | undefined;
+  comparisonReady: boolean;
+  passive: PassiveIncomeHistory | undefined;
+  passiveReady: boolean;
+  retryComparison: () => void;
+  retryPassive: () => void;
+}) {
+  const comparisonAvailable = comparison?.availability === "available";
+  return (
+    <section aria-label="Главные показатели" className={styles.metrics}>
+      <article className={`${styles.metric} ${styles.metricPrimary}`}>
+        <p className={styles.eyebrow}>Ликвидный капитал</p>
+        {comparisonReady && comparison?.current ? (
+          <>
+            <p className={styles.metricValue} data-testid="v2-capital">
+              {money(comparison.current.liquid_capital_net)}
+            </p>
+            <p className={styles.metricDetail}>Активы за вычетом включённых обязательств</p>
+          </>
+        ) : (
+          <WidgetState retry={comparisonReady ? undefined : retryComparison} />
+        )}
       </article>
+
       <article className={styles.metric}>
-        <p className={styles.eyebrow}>Пассивный доход · факт</p>
-        <p className={styles.metricValue} data-testid="v2-passive-actual">
-          {money(kpis.passive_income_actual)}
-        </p>
-        <p className={styles.metricDetail}>Получено за отчётный месяц.</p>
-        <p className={styles.caption}>Без пополнений, зарплаты и возврата номинала.</p>
+        <p className={styles.eyebrow}>Изменение</p>
+        {comparisonReady && comparisonAvailable ? (
+          <>
+            <p
+              aria-describedby="v2-change-definition"
+              className={styles.metricValue}
+              data-testid="v2-capital-change"
+              data-tone={tone(comparison?.liquid_capital_net_delta)}
+            >
+              {moneyDelta(comparison?.liquid_capital_net_delta)}
+            </p>
+            <p className={styles.metricDetail} id="v2-change-definition">
+              к {formatMonth(comparison?.previous?.year ?? 0, comparison?.previous?.month ?? 0)} ·
+              изменение состояния, не инвестиционная доходность
+            </p>
+          </>
+        ) : comparisonReady && comparison?.availability === "previous_closed_report_unavailable" ? (
+          <>
+            <p className={styles.metricEmpty}>Пока нет базы сравнения</p>
+            <p className={styles.metricDetail}>Появится после следующего закрытого отчёта</p>
+          </>
+        ) : (
+          <WidgetState retry={comparisonReady ? undefined : retryComparison} />
+        )}
       </article>
-      <article className={`${styles.metric} ${styles.forecast}`}>
-        <p className={styles.eyebrow}>Пассивный доход · прогноз</p>
-        <p className={styles.metricValue} data-testid="v2-passive-forecast">
-          {money(kpis.forecast_monthly_passive_income)}
-        </p>
-        <p className={styles.metricDetail}>Среднемесячная оценка на 12 месяцев.</p>
-        <p className={styles.caption}>Не обещание выплаты в следующем месяце.</p>
+
+      <article className={styles.metric}>
+        <p className={styles.eyebrow}>Пассивный доход</p>
+        {passiveReady && passive?.selected_report ? (
+          <>
+            <p className={styles.metricValue} data-testid="v2-passive-actual">
+              {money(passive.selected_report.passive_income_actual)}
+            </p>
+            <p className={styles.metricDetail}>{passiveAverageDetail(passive.average)}</p>
+          </>
+        ) : (
+          <WidgetState retry={passiveReady ? undefined : retryPassive} />
+        )}
       </article>
     </section>
   );
 }
 
-function Readiness({ workflow }: { workflow: MonthCloseWorkflow }) {
-  const { readiness, final_review: review } = workflow;
-  const items = review.available
-    ? review.close_readiness.items.filter((item) => item.severity !== "info")
-    : [];
+function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) {
+  const data: Array<{
+    key: string;
+    label: string;
+    amount: string | null;
+    rubles: number | null;
+  }> = [];
+  let previous: CapitalCompositionPoint | undefined;
+  for (const point of points) {
+    if (previous && reportIndex(point) - reportIndex(previous) > 1) {
+      const gapIndex = reportIndex(previous) + 1;
+      const gapYear = Math.floor((gapIndex - 1) / 12);
+      const gapMonth = ((gapIndex - 1) % 12) + 1;
+      data.push({
+        key: `gap-${gapYear}-${gapMonth}`,
+        label: `${String(gapMonth).padStart(2, "0")}.${gapYear}`,
+        amount: null,
+        rubles: null,
+      });
+    }
+    data.push({
+      key: `${point.year}-${point.month}`,
+      label: `${String(point.month).padStart(2, "0")}.${point.year}`,
+      amount: point.liquid_capital_net.amount,
+      rubles: moneyToChartNumber(point.liquid_capital_net.amount),
+    });
+    previous = point;
+  }
+  const gapCount = data.filter((item) => item.amount === null).length;
   return (
-    <section className={styles.readiness} aria-labelledby="v2-readiness-title">
-      <p className={styles.eyebrow}>Проверки данных</p>
-      <h2 id="v2-readiness-title">
-        {workflow.month.status === "closed"
-          ? "Месяц зафиксирован"
-          : readiness.can_close
-            ? "Можно перейти к итоговой проверке"
-            : "Сначала проверь данные"}
-      </h2>
-      <dl className={styles.counts}>
+    <div className={styles.chart} data-gap-count={gapCount} data-testid="v2-capital-history">
+      <ResponsiveContainer height={245} width="100%">
+        <LineChart data={data} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
+          <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
+          <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
+          <YAxis axisLine={false} hide tickLine={false} />
+          <Tooltip
+            formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Капитал"]}
+            labelFormatter={(label) => `Отчёт ${label}`}
+          />
+          <Line
+            activeDot={{ r: 5 }}
+            connectNulls={false}
+            dataKey="rubles"
+            dot={{ fill: "#244f83", r: 3, strokeWidth: 0 }}
+            isAnimationActive={false}
+            stroke="#244f83"
+            strokeWidth={3}
+            type="linear"
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function CapitalHistoryBlock({
+  points,
+  ready,
+  retry,
+}: {
+  points: CapitalCompositionPoint[];
+  ready: boolean;
+  retry: () => void;
+}) {
+  const [window, setWindow] = useState<HistoryWindow>(12);
+  const visible = window === "all" ? points : points.slice(-window);
+  return (
+    <section
+      className={`${styles.panel} ${styles.widePanel}`}
+      aria-labelledby="capital-history-title"
+    >
+      <div className={styles.panelHeader}>
         <div>
-          <dt>Обязательных исправлений</dt>
-          <dd data-testid="v2-blockers">{readiness.hard_blocker_count}</dd>
+          <p className={styles.eyebrow}>Закрытые отчёты</p>
+          <h2 id="capital-history-title">Динамика капитала</h2>
         </div>
+        <fieldset className={styles.segmented} aria-label="Период динамики капитала">
+          {([3, 12, "all"] as const).map((value) => (
+            <button
+              aria-pressed={window === value}
+              key={value}
+              onClick={() => setWindow(value)}
+              type="button"
+            >
+              {value === 3 ? "3 месяца" : value === 12 ? "12 месяцев" : "Всё время"}
+            </button>
+          ))}
+        </fieldset>
+      </div>
+      {!ready ? (
+        <WidgetState retry={retry} />
+      ) : visible.length === 0 ? (
+        <WidgetState title="История появится после закрытия первого отчёта" />
+      ) : (
+        <>
+          <CapitalHistoryChart points={visible} />
+          <p className={styles.panelFootnote}>
+            Показаны последние {visible.length} закрытых отчёта. Пропуски показаны разрывами;
+            значения не интерполируются.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function CompositionBlock({
+  comparison,
+  ready,
+  retry,
+}: {
+  comparison: ClosedReportComparison | undefined;
+  ready: boolean;
+  retry: () => void;
+}) {
+  const allocation =
+    comparison?.current?.allocation.filter((item) => toKopecks(item.amount.amount) > 0n) ?? [];
+  const slices = allocation.map((item) => ({
+    ...item,
+    name: ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class,
+    color: ASSET_CLASS_META[item.asset_class]?.color ?? "#a4a8ad",
+    value: moneyToChartNumber(item.amount.amount),
+  }));
+  return (
+    <section className={styles.panel} aria-labelledby="composition-title">
+      <div className={styles.panelHeader}>
         <div>
-          <dt>Предупреждений</dt>
-          <dd data-testid="v2-warnings">{readiness.warning_count}</dd>
+          <p className={styles.eyebrow}>Текущий снимок</p>
+          <h2 id="composition-title">Структура активов</h2>
         </div>
-      </dl>
-      <p className={styles.caption}>
-        {workflow.month.status === "closed"
-          ? "Просмотр не открывает месяц заново и не меняет сохранённые данные."
-          : "Предупреждения не равны запрету закрытия. Финальное решение — после проверки итогов."}
-      </p>
-      {items.length > 0 ? (
-        <details className={styles.details}>
-          <summary>Что требует внимания</summary>
-          <ul className={styles.attentionList}>
-            {items.map((item) => (
-              <li key={`${item.code}-${item.message}-${JSON.stringify(item.context)}`}>
-                <strong>{item.severity === "hard_blocker" ? "Исправить: " : "Проверить: "}</strong>
-                {item.message}
+        <p className={styles.panelHint}>Только положительные ликвидные активы</p>
+      </div>
+      {!ready ? (
+        <WidgetState retry={retry} />
+      ) : !comparison?.current ? (
+        <WidgetState title="Нет закрытого снимка" />
+      ) : (
+        <>
+          {slices.length === 0 ? (
+            <WidgetState title="В закрытом снимке нет положительных ликвидных активов" />
+          ) : (
+            <div className={styles.compositionBody}>
+              <div className={styles.donut}>
+                <ResponsiveContainer height={185} width="100%">
+                  <PieChart>
+                    <Pie
+                      data={slices}
+                      dataKey="value"
+                      innerRadius="58%"
+                      isAnimationActive={false}
+                      nameKey="name"
+                      outerRadius="88%"
+                      paddingAngle={2}
+                      strokeWidth={0}
+                    >
+                      {slices.map((slice) => (
+                        <Cell fill={slice.color} key={slice.asset_class} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(_value, _name, item) => money(item.payload.amount)} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <ul className={styles.legend}>
+                {slices.map((slice) => (
+                  <li key={slice.asset_class}>
+                    <span aria-hidden="true" style={{ background: slice.color }} />
+                    <span>{slice.name}</span>
+                    <strong>{money(slice.amount)}</strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <dl className={styles.netSummary}>
+            <div>
+              <dt>Ликвидные активы</dt>
+              <dd>{money(comparison.current.liquid_assets_total)}</dd>
+            </div>
+            <div className={styles.deduction}>
+              <dt>Включённые обязательства</dt>
+              <dd>− {money(comparison.current.included_debts)}</dd>
+            </div>
+            <div>
+              <dt>Ликвидный капитал</dt>
+              <dd>{money(comparison.current.liquid_capital_net)}</dd>
+            </div>
+          </dl>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ChangeBlock({
+  comparison,
+  ready,
+  retry,
+}: {
+  comparison: ClosedReportComparison | undefined;
+  ready: boolean;
+  retry: () => void;
+}) {
+  return (
+    <section className={styles.panel} aria-labelledby="change-title">
+      <div className={styles.panelHeader}>
+        <div>
+          <p className={styles.eyebrow}>Изменение состояния</p>
+          <h2 id="change-title">Где изменились суммы</h2>
+        </div>
+        <p className={styles.panelHint}>Изменение состояния, не инвестиционная доходность</p>
+      </div>
+      {!ready ? (
+        <WidgetState retry={retry} />
+      ) : comparison?.availability !== "available" || !comparison.asset_class_deltas ? (
+        <WidgetState title="Нужны два закрытых отчёта для сравнения" />
+      ) : (
+        <>
+          <ul className={styles.changeList}>
+            {comparison.asset_class_deltas.map((item) => (
+              <li key={item.asset_class}>
+                <span>{ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class}</span>
+                <strong data-tone={tone(item.amount)}>{moneyDelta(item.amount)}</strong>
               </li>
             ))}
+            <li className={styles.liabilityChange}>
+              <span>Включённые обязательства</span>
+              <strong data-tone={liabilityTone(comparison.included_debts_delta)}>
+                {moneyDelta(comparison.included_debts_delta)}
+              </strong>
+            </li>
           </ul>
-        </details>
-      ) : null}
-      <Link
-        className={styles.textLink}
-        to={monthlyCloseReturnPath({ monthId: workflow.month.id, step: "final_review_close" })}
-      >
-        Все итоги и проверки в текущем интерфейсе →
-      </Link>
+          <div className={styles.changeTotal}>
+            <span>Изменение ликвидного капитала</span>
+            <strong data-tone={tone(comparison.liquid_capital_net_delta)}>
+              {moneyDelta(comparison.liquid_capital_net_delta)}
+            </strong>
+          </div>
+          <p className={styles.panelFootnote}>
+            Перемещение между классами может менять строки без роста капитала. Рост обязательств
+            уменьшает нетто.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function PassiveChart({ data }: { data: PassiveIncomeHistory["points"] }) {
+  const points = data.map((point) => ({
+    key: `${point.year}-${point.month}`,
+    label: `${String(point.month).padStart(2, "0")}.${point.year}`,
+    amount: point.passive_income_actual.amount,
+    rubles: moneyToChartNumber(point.passive_income_actual.amount),
+  }));
+  return (
+    <div className={styles.chart} data-point-count={points.length} data-testid="v2-passive-history">
+      <ResponsiveContainer height={220} width="100%">
+        <BarChart data={points} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
+          <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
+          <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
+          <YAxis axisLine={false} hide tickLine={false} />
+          <Tooltip
+            formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Факт"]}
+            labelFormatter={(label) => `Отчёт ${label}`}
+          />
+          <Bar
+            dataKey="rubles"
+            fill="#244f83"
+            isAnimationActive={false}
+            maxBarSize={34}
+            radius={[5, 5, 0, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function PassiveBlock({
+  history,
+  ready,
+  retry,
+}: {
+  history: PassiveIncomeHistory | undefined;
+  ready: boolean;
+  retry: () => void;
+}) {
+  const eligiblePoints = history?.points.filter((point) => point.included_in_average_window) ?? [];
+  return (
+    <section className={`${styles.panel} ${styles.widePanel}`} aria-labelledby="passive-title">
+      <div className={styles.panelHeader}>
+        <div>
+          <p className={styles.eyebrow}>Получено · факт</p>
+          <h2 id="passive-title">Пассивный доход</h2>
+        </div>
+        <Link className={styles.contextLink} to="/payouts">
+          Выплаты и прогноз →
+        </Link>
+      </div>
+      {!ready ? (
+        <WidgetState retry={retry} />
+      ) : !history?.selected_report ? (
+        <WidgetState title="История появится после закрытия первого отчёта" />
+      ) : (
+        <div className={styles.passiveLayout}>
+          <div>
+            {eligiblePoints.length > 0 ? (
+              <PassiveChart data={eligiblePoints} />
+            ) : (
+              <WidgetState title="Нет закрытой истории в выбранном периоде" />
+            )}
+            <p className={styles.panelFootnote}>{passiveAverageDetail(history.average)}</p>
+            {eligiblePoints.length > 0 ? (
+              <p className={styles.panelFootnote}>
+                На графике только отчёты, вошедшие в среднее: {eligiblePoints.length}.
+              </p>
+            ) : null}
+          </div>
+          <div className={styles.sourceBreakdown}>
+            <p className={styles.eyebrow}>
+              Источники · {formatMonth(history.selected_report.year, history.selected_report.month)}
+            </p>
+            <ul>
+              {PASSIVE_SOURCE_META.map(([key, label]) => (
+                <li key={key}>
+                  <span>{label}</span>
+                  <strong>{money(history.selected_report?.breakdown[key])}</strong>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.factNote}>Только фактически полученный доход от капитала.</p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function goalProgressStyle(value: string): CSSProperties {
+  const safe = /^\d+(?:\.\d+)?$/.test(value) ? value : "0";
+  return { "--goal-progress": `${safe}%` } as CSSProperties;
+}
+
+function GoalsBlock({
+  goals,
+  ready,
+  retry,
+}: {
+  goals: GoalSummary[];
+  ready: boolean;
+  retry: () => void;
+}) {
+  const supported = goals.filter(
+    (goal) =>
+      goal.is_active &&
+      goal.achievement_forecast.current_value !== null &&
+      goal.achievement_forecast.progress_pct !== null &&
+      (goal.goal_type !== "passive_income" ||
+        (goal.achievement_forecast.passive_income_months_count ?? 0) > 0),
+  );
+  return (
+    <section className={`${styles.panel} ${styles.widePanel}`} aria-labelledby="goals-title">
+      <div className={styles.panelHeader}>
+        <div>
+          <p className={styles.eyebrow}>Текущий прогресс</p>
+          <h2 id="goals-title">Ключевые цели</h2>
+        </div>
+        <Link className={styles.contextLink} to="/goals">
+          Все цели →
+        </Link>
+      </div>
+      {!ready ? (
+        <WidgetState retry={retry} />
+      ) : supported.length === 0 ? (
+        <WidgetState title="Нет активных целей с поддерживаемым прогрессом" />
+      ) : (
+        <div className={styles.goalsGrid}>
+          {supported.map((goal) => {
+            const forecast = goal.achievement_forecast;
+            return (
+              <article key={goal.id}>
+                <div className={styles.goalHeader}>
+                  <h3>{goal.name}</h3>
+                  <strong>{forecast.progress_pct?.replace(".", ",")}%</strong>
+                </div>
+                <div className={styles.goalTrack} aria-hidden="true">
+                  <span style={goalProgressStyle(forecast.progress_pct ?? "0")} />
+                </div>
+                <p>
+                  {money(forecast.current_value)} из {money(forecast.target_value)}
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
 
 export default function UiV2Page() {
   const [params] = useSearchParams();
-  const navigate = useNavigate();
-  const location = useLocation();
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
+    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const selection = resolveMonthSelection(params.getAll("month"), months);
-  const selectedMonth = selection.kind === "selected" ? selection.month : null;
-  const selectedId = selectedMonth?.id ?? null;
-  const workflowQuery = useMonthCloseWorkflow(monthsQuery.isError ? null : selectedId);
+  const latestClosed = months.find((month) => month.status === "closed") ?? null;
+  const newerDraft =
+    months.find(
+      (month) =>
+        month.status === "draft" &&
+        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
+    ) ?? null;
+  const closedId = latestClosed?.id ?? null;
 
-  // Pin the automatic entry choice once. Explicit invalid/deleted periods never fall back.
-  useEffect(() => {
-    if (monthsQuery.isSuccess && !params.has("month") && months[0]) {
-      navigate(monthWorkspacePath(months[0].id), { replace: true });
-    }
-  }, [months, monthsQuery.isSuccess, navigate, params]);
+  const comparisonQuery = useQuery({
+    enabled: closedId !== null,
+    queryKey: queryKeys.closedReportComparison,
+    queryFn: ({ signal }) => getClosedReportComparison(signal),
+    refetchOnWindowFocus: true,
+  });
+  const compositionQuery = useQuery({
+    enabled: closedId !== null,
+    queryKey: queryKeys.capitalComposition,
+    queryFn: ({ signal }) => getCapitalComposition(signal),
+    refetchOnWindowFocus: true,
+  });
+  const passiveQuery = useQuery({
+    enabled: closedId !== null,
+    queryKey: queryKeys.passiveIncomeHistory(closedId),
+    queryFn: ({ signal }) => getPassiveIncomeHistory(closedId as number, signal),
+    refetchOnWindowFocus: true,
+  });
+  const goalsQuery = useQuery({
+    enabled: closedId !== null,
+    queryKey: queryKeys.goalSummary(closedId),
+    queryFn: ({ signal }) => listGoalSummary(closedId as number, {}, signal),
+    refetchOnWindowFocus: true,
+  });
 
-  // Cached financial results are hidden until active revalidation is confirmed. React Query uses
-  // fetchStatus="paused" when an online-mode read cannot run (for example, after going offline),
-  // and isFetching is false in that state.
-  const paused = monthsQuery.fetchStatus === "paused" || workflowQuery.fetchStatus === "paused";
-  const loading =
-    monthsQuery.isPending || monthsQuery.isFetching || workflowQuery.isFetching || paused;
-  const response = workflowQuery.data;
-  const mismatch =
-    response != null &&
-    (response.contract_version !== "monthly_close_workflow_v1" ||
-      response.month.id !== selectedId ||
-      (response.final_review.available && response.final_review.month_header.id !== selectedId));
-  const workflow =
-    !loading && !monthsQuery.isError && !workflowQuery.isError && !mismatch ? response : undefined;
-  const requestedStep = params.get("step");
-  const requestedStepId = isGuidedCloseStepId(requestedStep) ? requestedStep : null;
-  const explicitStep = workflow?.steps.find((step) => step.id === requestedStepId);
-  const activeStep =
-    explicitStep ?? workflow?.steps.find((step) => step.id === workflow.recommended_step_id);
+  const monthsReady = queryReady(monthsQuery);
+  const comparisonIdentityMatches =
+    comparisonQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
+    comparisonQuery.data.current?.reporting_month_id === closedId;
+  const comparisonReady = queryReady(comparisonQuery) && comparisonIdentityMatches;
+  const compositionIdentityMatches =
+    compositionQuery.data?.points.at(-1)?.reporting_month_id === closedId;
+  const compositionReady = queryReady(compositionQuery) && compositionIdentityMatches;
+  const passiveIdentityMatches =
+    passiveQuery.data?.latest_closed_report_id === closedId &&
+    passiveQuery.data.selected_report?.reporting_month_id === closedId;
+  const passiveReady = queryReady(passiveQuery) && passiveIdentityMatches;
+  const goalsIdentityMatches =
+    goalsQuery.data?.every(
+      (goal) =>
+        goal.achievement_forecast.goal_id === goal.id &&
+        goal.achievement_forecast.reporting_month_id === closedId &&
+        goal.achievement_forecast.method_version === "goal_achievement_v1" &&
+        goal.achievement_forecast.source_forecast_version === null,
+    ) ?? false;
+  const goalsReady = queryReady(goalsQuery) && goalsIdentityMatches;
+  const loading = !monthsReady;
+
+  const requestedMonth = resolveMonthSelection(params.getAll("month"), months);
+  const requestedStepValues = params.getAll("step");
+  const requestedStep =
+    requestedStepValues.length === 1 && isGuidedCloseStepId(requestedStepValues[0])
+      ? requestedStepValues[0]
+      : null;
   const v1ReturnPath =
-    selectedId == null
-      ? "/"
-      : requestedStepId
-        ? monthlyCloseReturnPath({ monthId: selectedId, step: requestedStepId })
-        : `/months/${selectedId}`;
-  const actionRef = useRef<HTMLElement>(null);
-  const focusedLocation = useRef<string | null>(null);
-  const explicitStepId = explicitStep?.id;
-
-  useEffect(() => {
-    if (!explicitStepId || focusedLocation.current === location.key) return;
-    const panel = actionRef.current;
-    if (!panel) return;
-    focusedLocation.current = location.key;
-    panel.focus({ preventScroll: true });
-    panel.scrollIntoView({ block: "nearest" });
-  }, [explicitStepId, location.key]);
+    requestedMonth.kind === "selected"
+      ? requestedStep
+        ? monthlyCloseReturnPath({ monthId: requestedMonth.month.id, step: requestedStep })
+        : `/months/${requestedMonth.month.id}`
+      : latestClosed
+        ? `/months/${latestClosed.id}`
+        : "/";
 
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <Notice title="Не удалось загрузить месяцы" retry={() => void monthsQuery.refetch()}>
-        Проверь, запущено ли локальное приложение. Сохранённые данные не изменены.
+      <Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
+        Финансовые показатели скрыты, пока актуальный закрытый отчёт не подтверждён.
       </Notice>
     );
-  } else if (monthsQuery.isPending) {
+  } else if (!monthsReady) {
     content = (
       <p className={styles.loading} role="status">
-        Загружаем отчётные месяцы…
+        Проверяем последние закрытые отчёты…
       </p>
     );
-  } else if (selection.kind === "invalid" || selection.kind === "missing") {
+  } else if (!latestClosed) {
     content = (
-      <Notice title="Месяц по ссылке не найден">
-        Выбери отчётный месяц в списке. Другой период не подставлен автоматически.
-      </Notice>
-    );
-  } else if (months.length === 0) {
-    content = (
-      <Notice title="Начни с первого месяца">
-        Создай отчётный период в текущем интерфейсе. После этого здесь появятся его итоги и порядок
-        действий. <Link to="/months">Создать первый месяц →</Link>
-      </Notice>
-    );
-  } else if (workflowQuery.isError || mismatch) {
-    content = (
-      <Notice
-        title="Не удалось получить состояние месяца"
-        retry={() => void workflowQuery.refetch()}
-      >
-        Показатели и действия скрыты, чтобы не выдать устаревшие или чужие этому периоду данные за
-        актуальные. Повтори загрузку.
-      </Notice>
-    );
-  } else if (!workflow || loading) {
-    content = (
-      <p className={styles.loading} role="status">
-        {paused
-          ? "Ждём подключения, чтобы подтвердить состояние выбранного месяца…"
-          : "Обновляем состояние выбранного месяца…"}
-      </p>
+      <>
+        {newerDraft ? <DraftAction draft={newerDraft} /> : null}
+        <Notice title="Закрой первый отчёт">
+          «Мои финансы» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
+          финансовую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+        </Notice>
+      </>
     );
   } else {
     content = (
       <>
-        <div className={styles.contextLine}>
-          <span className={styles.status} data-closed={workflow.month.status === "closed"}>
-            {workflow.month.status === "closed" ? "Закрыт" : "Черновик"}
-          </span>
-          <span>
-            Дата снимка:{" "}
-            <strong>{formatDate(workflow.month.snapshot_date, { empty: "не задана" })}</strong>
-          </span>
-          <Link className={styles.textLink} to={`/months/${workflow.month.id}`}>
-            Открыть этот месяц в текущем интерфейсе →
-          </Link>
+        <ReportContext month={latestClosed} />
+        {newerDraft ? <DraftAction draft={newerDraft} /> : null}
+        <KpiGrid
+          comparison={comparisonReady ? comparisonQuery.data : undefined}
+          comparisonReady={comparisonReady}
+          passive={passiveReady ? passiveQuery.data : undefined}
+          passiveReady={passiveReady}
+          retryComparison={() => void comparisonQuery.refetch()}
+          retryPassive={() => void passiveQuery.refetch()}
+        />
+        <div className={styles.homeGrid}>
+          <CapitalHistoryBlock
+            points={compositionReady ? (compositionQuery.data?.points ?? []) : []}
+            ready={compositionReady}
+            retry={() => void compositionQuery.refetch()}
+          />
+          <CompositionBlock
+            comparison={comparisonReady ? comparisonQuery.data : undefined}
+            ready={comparisonReady}
+            retry={() => void comparisonQuery.refetch()}
+          />
+          <ChangeBlock
+            comparison={comparisonReady ? comparisonQuery.data : undefined}
+            ready={comparisonReady}
+            retry={() => void comparisonQuery.refetch()}
+          />
+          <PassiveBlock
+            history={passiveReady ? passiveQuery.data : undefined}
+            ready={passiveReady}
+            retry={() => void passiveQuery.refetch()}
+          />
+          <GoalsBlock
+            goals={goalsReady ? (goalsQuery.data ?? []) : []}
+            ready={goalsReady}
+            retry={() => void goalsQuery.refetch()}
+          />
         </div>
-        <Results workflow={workflow} />
-        <div className={styles.actionGrid}>
-          <section className={styles.action} id="v2-action" ref={actionRef} tabIndex={-1}>
-            <p className={styles.eyebrow}>
-              {explicitStep ? "Выбранный шаг" : "Следующее действие"}
-            </p>
-            {requestedStep && !explicitStep ? (
-              <p className={styles.caption}>
-                Шаг по ссылке не найден. Ниже — рекомендация для этого месяца.
-              </p>
-            ) : null}
-            <h2>{activeStep?.title ?? "Открой итоговую проверку"}</h2>
-            <p className={styles.actionWhy}>
-              {activeStep?.why ??
-                "Автоматической рекомендации нет. Посмотри сохранённые итоги месяца."}
-            </p>
-            {activeStep?.stale.is_stale ? (
-              <p className={styles.stale}>
-                Подтверждение этого шага устарело. Оно требует повторной проверки.
-              </p>
-            ) : null}
-            <div className={styles.actionFooter}>
-              <Link
-                className={styles.primaryButton}
-                data-testid="v2-primary-action"
-                to={monthlyCloseReturnPath({
-                  monthId: workflow.month.id,
-                  step: activeStep?.id ?? "final_review_close",
-                })}
-              >
-                Открыть шаг →
-              </Link>
-              <span className={styles.handoff}>
-                В текущем интерфейсе. Ничего не запускается автоматически.
-              </span>
-            </div>
-            {activeStep?.primary_action ? (
-              <p className={styles.caption}>
-                На следующем экране: {activeStep.primary_action.label}.
-              </p>
-            ) : null}
-          </section>
-          <Readiness workflow={workflow} />
-        </div>
-        <section className={styles.workflow} aria-labelledby="v2-workflow-title">
-          <div className={styles.sectionHeader}>
-            <div>
-              <p className={styles.eyebrow}>Порядок действий</p>
-              <h2 id="v2-workflow-title">От данных к закрытому месяцу</h2>
-            </div>
-            <p className={styles.progress} data-testid="v2-progress">
-              <strong>
-                {workflow.progress.completed_or_skipped} из {workflow.progress.total_applicable}
-              </strong>
-              <span>применимых шагов подтверждено или пропущено</span>
-            </p>
-          </div>
-          <ol className={styles.steps}>
-            {workflow.steps.map((step) => (
-              <li key={step.id}>
-                <button
-                  aria-label={step.title}
-                  aria-pressed={activeStep?.id === step.id}
-                  className={styles.step}
-                  data-state={step.state}
-                  data-testid={`v2-step-${step.id}`}
-                  onClick={() => navigate(monthWorkspacePath(workflow.month.id, step.id))}
-                  type="button"
-                >
-                  <span className={styles.stepNumber} aria-hidden="true">
-                    {step.order}
-                  </span>
-                  <span className={styles.stepTitle}>{step.title}</span>
-                  <span className={styles.stepState}>
-                    {step.applicability === "not_applicable"
-                      ? "Не применяется"
-                      : (STEP_LABELS[step.state] ?? "Проверить")}
-                  </span>
-                  <span aria-hidden="true">↗</span>
-                </button>
-              </li>
-            ))}
-          </ol>
-          <p className={styles.caption}>
-            Это прогресс подтверждений, а не оценка финансового здоровья. Готовность к закрытию
-            проверяется отдельно.
-          </p>
-        </section>
-        <details className={`${styles.details} ${styles.provenance}`}>
-          <summary>О данных и границах этой версии</summary>
-          <p>
-            Сводка рассчитана: {formatDateTime(workflow.generated_at)}. Это время расчёта, не
-            обновления котировок.
-          </p>
-          <p>
-            UI v2 читает сохранённые локальные данные. Импорт, редактирование, подтверждение
-            закрытия и повторное открытие пока выполняются в текущем интерфейсе. Дата снимка и
-            отчётный месяц имеют разный смысл. Прогноз и изменение капитала не заменяют XIRR или
-            TWRR.
-          </p>
-        </details>
       </>
     );
   }
@@ -407,40 +854,31 @@ export default function UiV2Page() {
           </span>
         </Link>
         <nav aria-label="Навигация UI v2" className={styles.navigation}>
-          <Link aria-current="page" to={selectedId ? monthWorkspacePath(selectedId) : "/v2"}>
-            <span aria-hidden="true">◷</span> Мой месяц
+          <Link aria-current="page" to="/v2">
+            <span aria-hidden="true">⌂</span> Мои финансы
           </Link>
         </nav>
         <div className={styles.sidebarNote}>
-          <span className={styles.eyebrow}>Твой месячный ритм</span>
-          <p>
-            Обновить данные.
-            <br />
-            Понять результат.
-            <br />
-            Зафиксировать месяц.
-          </p>
+          <span className={styles.eyebrow}>Финансовая картина</span>
+          <p>Капитал, изменения, доход и цели по подтверждённым отчётам.</p>
         </div>
         <div className={styles.legacyLinks}>
           <p className={styles.eyebrow}>В текущем интерфейсе</p>
-          <Link to="/months">
-            Все месяцы <span aria-hidden="true">↗</span>
+          <Link to="/monthly-close">
+            Закрыть месяц <span aria-hidden="true">↗</span>
           </Link>
           <Link to="/accounts">
-            Счета и инструменты <span aria-hidden="true">↗</span>
+            Капитал <span aria-hidden="true">↗</span>
           </Link>
           <Link to="/analytics">
-            История и доходность <span aria-hidden="true">↗</span>
+            История и результаты <span aria-hidden="true">↗</span>
           </Link>
           <Link to="/goals">
-            Цели <span aria-hidden="true">↗</span>
+            Доход и цели <span aria-hidden="true">↗</span>
           </Link>
           <Link to="/export">
-            Экспорт и копии <span aria-hidden="true">↗</span>
+            Данные и приложение <span aria-hidden="true">↗</span>
           </Link>
-          <p className={styles.caption}>
-            В этих разделах месяц выбирается по правилам текущего интерфейса.
-          </p>
         </div>
         <p className={styles.localOnly}>Только на этом компьютере</p>
       </aside>
@@ -451,32 +889,13 @@ export default function UiV2Page() {
           </span>
           <Link to={v1ReturnPath}>Вернуться к текущему интерфейсу →</Link>
         </div>
-        <RuntimeStatusBanner />
         <main aria-busy={loading} className={styles.main} id="v2-main" tabIndex={-1}>
           <header className={styles.header}>
             <div>
-              <p className={styles.eyebrow}>Ежемесячный обзор</p>
-              <h1>Мой месяц</h1>
-              <p className={styles.subtitle}>Результат, внимание и следующий шаг — вместе.</p>
+              <p className={styles.eyebrow}>Обзор подтверждённых данных</p>
+              <h1>Мои финансы</h1>
+              <p className={styles.subtitle}>Спокойная картина капитала, дохода и целей.</p>
             </div>
-            <label className={styles.monthPicker}>
-              <span>Отчётный месяц</span>
-              <select
-                aria-label="Отчётный месяц"
-                disabled={monthsQuery.isPending || monthsQuery.isError || months.length === 0}
-                onChange={(event) => navigate(monthWorkspacePath(Number(event.target.value)))}
-                value={selectedId ?? ""}
-              >
-                <option disabled value="">
-                  Выбери месяц
-                </option>
-                {months.map((month) => (
-                  <option key={month.id} value={month.id}>
-                    {formatMonth(month.year, month.month)}
-                  </option>
-                ))}
-              </select>
-            </label>
           </header>
           {content}
         </main>
