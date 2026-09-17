@@ -62,13 +62,17 @@ Owner acceptance for this exact code identity is complete:
 
 Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
-Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording. Tag/code/release identity is correct.
+Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording plus remaining changelog/history lifecycle metadata. Tag/code/release identity is correct.
 
 ### Canonical development main
 
-The immutable released code remains `c90a842...`; post-release `main` may advance through docs-only closeout commits without changing the published tag.
+Current canonical development `main` after the post-release closeout is:
 
-Product/runtime changes after `v0.9.0` require normal task/review/CI gates and do not retroactively alter the release.
+`814650806be5cb64aefffee15fccf7d5e1d364ec`
+
+Exact-main CI #702 / run `35238258485`: **SUCCESS** (attempt 2; attempt 1 failed only on hosted-runner `setup-uv` network timeout before tests).
+
+The immutable released code remains `c90a842...`; post-release `main` may advance without changing the published tag. Product/runtime changes after `v0.9.0` require normal task/review/CI gates and do not retroactively alter the release.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -294,7 +298,7 @@ The redesign acceptance boundary is now fulfilled on a real owner release transi
 - real release-to-release owner UAT passed;
 - architecture stayed composable rather than rebuilding the old state machine.
 
-#313 can close as **completed**. Any later diagnosis/recovery or launcher-wrapper work becomes a separate bounded follow-up.
+#313 is closed **completed**. Any later diagnosis/recovery or launcher-wrapper work becomes a separate bounded follow-up.
 
 Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
@@ -340,9 +344,9 @@ Permanent control endpoint: #124.
 
 Publication не равна Stable installation/update: release создаёт immutable published tag/release; local Stable меняется только отдельным OPS02 owner action.
 
-## 10. UI v2 — отдельный поток
+## 10. UI v2 — текущий checkpoint
 
-UI v2 tracked отдельно через #387 и children.
+UI v2 tracked отдельно через #387 и children. Временный release-window freeze для `v0.9.0` теперь снят.
 
 Текущее направление:
 
@@ -351,7 +355,17 @@ UI v2 tracked отдельно через #387 и children.
 - Monthly Close как contextual work mode;
 - v1 сохраняется до отдельного controlled cutover.
 
-Временный release-window freeze, который запрещал UI v2 merge в `main` во время `0.9.0` UAT/publication, после successful Stable UAT можно снять.
+Текущий статус первой законченной vertical slice:
+
+- #390 closed-to-closed comparison read model — integrated;
+- #391 passive-income history/source read model — integrated;
+- #392 / PR #406 `Мои финансы` Home — implementation complete;
+- exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9` прошёл independent review, exact-head CI, UI comparison evidence и **owner visual/product UAT PASS**;
+- owner проверил populated synthetic Home в обычном браузере и не запросил product/UX fixes;
+- PR #406 пока draft / not integrated только потому, что ждал завершения `v0.9.0` release window;
+- `/v2` остаётся opt-in, v1 остаётся default/rollback path.
+
+Теперь release-window закрыт, поэтому ближайший integration gate — обновить PR #406 относительно текущего canonical `main`, повторить relevant CI/UI evidence и только затем merge + exact-main CI. После этого #392 можно закрыть completed.
 
 UI v2 не входил в `v0.9.0`.
 
@@ -360,6 +374,15 @@ UI v2 не входил в `v0.9.0`.
 ### UI / product
 
 Главный активный product stream — UI v2 (#387 и children).
+
+Порядок на текущий момент:
+
+1. refresh/reconcile PR #406 с current `main`;
+2. rerun exact-head CI + UI comparison evidence;
+3. merge accepted Home, verify exact-main CI, close #392;
+4. затем открыть/стартовать следующий bounded slice — **Capital drill-down**;
+5. дальше: Income & Plans → contextual history/archive polish → новый Monthly Close shell → Data & App consolidation → final comparative owner UAT → controlled v2 default switch;
+6. retirement v1 — только отдельное решение после cutover.
 
 `1.0.0` разумно рассматривать как будущую большую отсечку только когда новый primary owner UX станет цельным и production lifecycle останется доказанным, а не просто потому что поменялась визуальная тема.
 
@@ -382,7 +405,7 @@ Account + internal-transfer decomposition backend завершён.
 
 ### Release metadata
 
-#410 — non-blocking metadata/docs follow-up: исправить stale `UAT-PENDING` wording в опубликованном GitHub Release description и hardened future release-note lifecycle.
+#410 — non-blocking metadata/history follow-up: исправить stale `UAT-PENDING` wording в опубликованном GitHub Release description, синхронизировать `CHANGELOG.md`, добавить финальный publication/UAT record в `docs/EXECUTION_HISTORY.md` и hardened future release-note lifecycle. Это не влияет на уже доказанные release/tag/Stable identities.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -411,8 +434,8 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #387 and children — UI v2 separate stream;
-- #410 — non-blocking v0.9.0 Release-description cleanup.
+- #387 and children — UI v2; #392 is owner-UAT PASS but pending post-release integration via PR #406;
+- #410 — non-blocking v0.9.0 Release-description / changelog / execution-history cleanup.
 
 #313 is completed after real owner OPS03 + OPS02 + production Start acceptance.
 

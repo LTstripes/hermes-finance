@@ -11,9 +11,11 @@
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
+- Current canonical development `main`: `814650806be5cb64aefffee15fccf7d5e1d364ec`.
+- Exact-main CI for that current development checkpoint: **#702 / run `35238258485` — SUCCESS** (attempt 2; attempt 1 failed only on hosted-runner `setup-uv` network timeout before tests).
 - PR #409 / issue #408 prepared the `0.9.0` candidate; the release was published only after owner OPS03 PASS.
-- `main` remains the only canonical source and release source. This documentation closeout may advance `main` with docs-only commits without changing the immutable `v0.9.0` release code.
-- Known non-blocking release-metadata follow-up: #410 corrects stale pre-publication wording in the GitHub Release description. Tag/code identity is correct.
+- `main` remains the only canonical source and release source. Post-release docs/product commits do not change the immutable `v0.9.0` tag identity.
+- Known non-blocking release-metadata follow-up: #410 corrects stale pre-publication wording in the GitHub Release description and remaining changelog/history lifecycle metadata. Tag/code identity is correct.
 
 ## Product/runtime invariants
 
@@ -88,7 +90,7 @@ Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 
 The launcher-owned Stable self-update experiment from #298/#311/#312 remains a historical failed experiment. It is not the canonical update path.
 
-#313 redesigned the runtime around small composable owner operations.
+#313 redesigned the runtime around small composable owner operations and is now closed **completed** after the real `v0.8.2 -> v0.9.0` owner transition.
 
 ### OPS01 — Prepare + deterministic Start — PASS
 
@@ -165,12 +167,6 @@ This provides reproducible exact code identity, backup-before-mutation, smaller 
 
 A future launcher may wrap these accepted operations, but must not recreate an independent update state machine.
 
-## #313 status
-
-The ten acceptance criteria from the runtime/launcher redesign are now materially proven on a real release transition, including exact release proof, backup-first mutation, production data preservation, no auto-start, explicit runtime version proof and real owner UAT.
-
-#313 is therefore ready to close as **completed**. Any diagnosis/recovery or launcher-wrapper work should be separate bounded follow-ups.
-
 ## Release flow
 
 Release publication and local Stable installation are separate operations:
@@ -184,15 +180,33 @@ Release publication and local Stable installation are separate operations:
 
 ## Active roadmap / what comes next
 
-### UI v2
+### UI v2 — active primary product stream
 
-UI v2 remains an independent workstream under #387 and children. The temporary `v0.9.0` release-window freeze can be lifted after this successful publication + Stable UAT.
+UI v2 remains the main active product stream under #387. The temporary `v0.9.0` release-window freeze is now lifted after successful publication + Stable UAT.
 
-Current direction remains a coherent owner-facing redesign while preserving v1 until controlled cutover. `1.0.0` remains a reasonable future milestone only after the new primary UX and production lifecycle are both accepted.
+Current accepted checkpoint:
+
+- #390 closed-report comparison backend read model — integrated;
+- #391 passive-income history/source backend read model — integrated;
+- #392 / PR #406 `Мои финансы` Home — implementation complete and **owner visual/product UAT PASS** on exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9`;
+- PR #406 is still **draft / not integrated** because it intentionally waited through the `v0.9.0` release window;
+- `/v2` remains opt-in and v1 remains the default/rollback path.
+
+Next UI integration gate:
+
+1. refresh PR #406 onto the then-current canonical `main` (currently `814650806be5cb64aefffee15fccf7d5e1d364ec`);
+2. reconcile any post-release compatibility changes without redefining the frozen Home contract;
+3. rerun relevant exact-head CI + UI comparison evidence;
+4. merge only if still clean, then verify exact-main push CI and close #392;
+5. only after Home is canonical, open/start the next bounded **Capital drill-down** slice from #387.
+
+Later planned UI sequence remains: Capital drill-down → Income & Plans → contextual history/archive polish → new Monthly Close shell over existing workflow semantics → Data & App consolidation → final comparative owner UAT → controlled default switch. v1 retirement remains a separate later decision.
+
+`1.0.0` remains a reasonable future milestone only after the new primary owner UX is cohesive and the proven production lifecycle remains intact.
 
 ### Runtime
 
-The redesign parent is complete. Future runtime work should be evidence-driven and bounded:
+The redesign parent #313 is complete. Future runtime work should be evidence-driven and bounded:
 
 - diagnosis/recovery operations only if owner value justifies them;
 - optional thin launcher wrappers over accepted primitives;
@@ -204,16 +218,16 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 
 ### Release metadata
 
-#410 tracks correction of the `v0.9.0` GitHub Release description and future lifecycle hardening so candidate-only wording is not published after owner PASS.
+#410 remains a non-blocking metadata/history follow-up. It tracks the stale candidate wording in the published `v0.9.0` GitHub Release body, `CHANGELOG.md` publication-state sync, final `EXECUTION_HISTORY` release closeout entry and future release-note lifecycle hardening. None of these items change the already-proven tag/code/Stable identity.
 
 ## Open umbrella/control issues
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #387 and children — UI v2;
-- #410 — non-blocking `v0.9.0` release-description metadata cleanup.
+- #387 and children — UI v2; #392 is UAT-PASS but pending post-release integration via PR #406;
+- #410 — non-blocking `v0.9.0` release-metadata/history cleanup.
 
-#313 is complete after the real `v0.8.2 -> v0.9.0` owner UAT.
+#313 is closed completed after the real `v0.8.2 -> v0.9.0` owner UAT.
 
 ## Canonical references
 
@@ -228,4 +242,4 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #313, #380, #386, #404, #408, #410
+- #124, #127, #313, #380, #386, #387, #392, #404, #408, #410
