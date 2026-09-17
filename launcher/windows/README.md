@@ -4,10 +4,12 @@
 
 **Что видит владелец без логов:**
 
-Во время подготовки кандидата `v0.9.0` (issue #408) launcher и его
-конфигурация продолжают обозначать опубликованный Stable `v0.8.2`. Кандидат
-проходит отдельный OPS03 Preview/UAT на изолированных данных; `expected_ref`
-Stable нельзя менять на `v0.9.0` до guarded publication.
+Во время подготовки кандидата `v0.9.0` (issue #408) launcher source/artifact
+и canonical config example уже несут current-release identity `v0.9.0`; это
+не означает, что tag или GitHub Release уже опубликованы. Уже установленный
+у владельца Stable остаётся опубликованным `v0.8.2` до guarded publication.
+Кандидат проходит отдельный OPS03 Preview/UAT на изолированных данных; старый
+установленный Stable не перепривязывается этим task.
 
 - **Stable** — зелёная карточка `STABLE · PRODUCTION` с pinned production identity: `Release v0.8.2` + короткий SHA + `Canonical production data` + `production` data boundary. Может открыть только canonical production DB.
 - `Обновить проверку` остаётся read-only preflight; она не является обещанием рабочего Stable self-update и не делает backup, fetch, switch, config write или start.
@@ -38,10 +40,10 @@ This packages the launcher, copies it and its bundled helpers (`launcher-schema-
 `%LOCALAPPDATA%\HermesFinance\launcher\config.json` — launcher-first, без placeholder-файлов:
 
 - если файла нет — launcher **не создаёт** placeholder из `config.example.json` (там `<absolute-...>` заглушки). Вместо этого fail closed с actionable guidance: run `install.ps1`, откройте launcher, нажмите «Обновить проверку». Авто-создание срабатывает только если bundled шаблон сам concrete (абсолютные пути, валидная shape) — shipped `config.example.json` таковым не является;
-- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0`/`v0.8.0`/`v0.8.1` — release update выполняется recovery-only по документированной owner-операции; launcher config **не меняется** от одного read-only preflight;
+- если Stable ещё указывает на старый `v0.6.3`/`v0.7.0`/`v0.8.0`/`v0.8.1`/`v0.8.2` — release update выполняется recovery-only по документированной owner-операции; launcher config **не меняется** от одного read-only preflight;
 - если есть неизвестные поля — schema-aware strip (top-level / canonical / profile allowlists); что не чинится — fail closed без изменения файла.
 
-Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с доказательством identity теми же preflight-инвариантами: Stable чист и `HEAD == refs/tags/v0.8.2`, Preview чист, на `refs/remotes/origin/main` и независим от Stable; без fetch/сети). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие.
+Обычный workflow **не требует** ручного редактирования `config.json`. Первый запуск без конфига — не тупик: launcher показывает «Нужна настройка» и кнопку **«Настроить…»** — явный owner-facing setup (выбор Stable/Preview checkout и data-каталогов с доказательством identity теми же preflight-инвариантами: candidate Stable source должен быть чистым и `HEAD == refs/tags/v0.9.0` после guarded publication, Preview — чистым, на `refs/remotes/origin/main` и независимым от Stable; без fetch/сети). `config.json` записывается только после валидных concrete values. Ручное редактирование — recovery-only, когда launcher показал blocker и подсказал корректное действие. Уже установленный Stable `v0.8.2` остаётся отдельным published/installed runtime до завершения release flow.
 
 The config may contain no secrets. Each profile names an independent checkout, data directory and database. `Stable` must exactly match `canonical_production`; Preview and Experiment must match none of it. Preview/Experiment databases that already exist require a matching `.hermes-data-identity.json` sidecar. For a fresh safe profile, the launcher writes the minimal sidecar only after the guarded startup reports health ready.
 
