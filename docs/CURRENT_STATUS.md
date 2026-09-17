@@ -1,18 +1,21 @@
 # Hermes Finance — current status
 
-> Canonical owner/integrator checkpoint. This document summarizes what is true **now** on canonical `main`; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
+> Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-16**.
+> Last synchronized: **2026-09-17**.
 
 ## Canonical identity
 
-- Published Stable release: **v0.8.2**.
-- Published Stable peeled commit: `a22542d7b20ebdf34e38384004162d409f163ab3`.
-- Canonical development `main`: `e5c09d55a21d4d4a25a9505a819977ed9a162f8c`.
-- Latest canonical merge: PR #402 / issue #400 — PERF04C account + internal-transfer decomposition read model.
-- Exact-main push CI: **#688 / run `35137779786` — SUCCESS**.
-- `main` remains the only canonical source of truth and the only release source.
-- Published Stable is intentionally behind development `main`; merged development work does not become Stable until a separately guarded release is published.
+- Published Stable release: **v0.9.0**.
+- Published release/source code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
+- Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
+- Guarded Release: **#253 / run `35235369797` — SUCCESS**.
+- Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
+- Current canonical development `main`: `814650806be5cb64aefffee15fccf7d5e1d364ec`.
+- Exact-main CI for that current development checkpoint: **#702 / run `35238258485` — SUCCESS** (attempt 2; attempt 1 failed only on hosted-runner `setup-uv` network timeout before tests).
+- PR #409 / issue #408 prepared the `0.9.0` candidate; the release was published only after owner OPS03 PASS.
+- `main` remains the only canonical source and release source. Post-release docs/product commits do not change the immutable `v0.9.0` tag identity.
+- Known non-blocking release-metadata follow-up: #410 corrects stale pre-publication wording in the GitHub Release description and remaining changelog/history lifecycle metadata. Tag/code identity is correct.
 
 ## Product/runtime invariants
 
@@ -24,195 +27,207 @@ Hermes Finance remains a local single-user Windows-first application:
 - provider/network operations remain explicit owner actions;
 - production Stable data, Preview/UAT data, `.env`, backups, credentials and private exports never enter agent/development workspaces;
 - closed-month and financial calculation contracts remain authoritative;
-- exact money uses integer minor units / Decimal semantics, not binary float shortcuts.
+- exact money uses integer minor units / Decimal semantics;
+- unknown/unavailable evidence is never silently converted to zero or approximate exact.
 
 ## Major completed product lines
 
 ### Monthly Close / owner workflow
 
-Guided Monthly Close and its owner UAT are complete. The current workflow is server-owned, fail-closed where evidence is incomplete, and remains available independently of the UI v2 workstream.
+Guided Monthly Close and owner UAT are complete. The workflow is server-owned and fail-closed where evidence is incomplete.
 
-Relevant closeout: #236 and its accepted owner UAT.
+Primary closeout: #236.
 
 ### Decision Support v1
 
-Decision Support v1 is complete and integrated.
+Complete and integrated:
 
-Delivered capabilities include Scenario Lab v1, AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance, Reconciliation Center, Tax/IIS Planner Lite and deterministic Insights backend.
+- Scenario Lab v1;
+- AI Analysis Bundle;
+- Monthly Close Cockpit;
+- Cash-flow Ladder;
+- Risk & Allocation;
+- Freshness & Provenance;
+- Reconciliation Center;
+- current-state Tax/IIS Planner Lite;
+- deterministic Insights backend.
 
-Scenario Lab is deterministic and read-only; it does not forecast markets or write financial data.
+Scenario Lab is deterministic/read-only and does not forecast markets or write financial data.
 
 Closeout: `docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md`.
 
 ### Performance v1
 
-Performance v1 is complete and integrated.
+Complete and integrated:
 
-Delivered:
-
-- external-flow / valuation / scope-membership hardening;
+- flow / valuation / scope-membership hardening;
 - transfer reconciliation and in-kind fail-closed handling;
 - portfolio and account XIRR;
 - portfolio and account exact TWRR;
-- PERF04A aggregate selected-scope `value_change_after_external_flows` monetary bridge;
+- PERF04A aggregate selected-scope `value_change_after_external_flows` bridge;
 - exact-zero versus unavailable/null distinction.
 
 Closeout: `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`.
 
-### PERF04B / PERF04C component decomposition
+### PERF04B / PERF04C bounded decomposition
 
-The next Performance slice has now also completed its accepted backend stage.
-
-#396 froze the financial contract with verdict **PARTIAL GO**:
+#396 froze a **PARTIAL GO** contract:
 
 `B_portfolio = Σ B_account + Σ T_internal_transfer`
 
-where the parent and account rows are existing PERF04A `value_change_after_external_flows` bridges and `T_internal_transfer` is a strict reconciliation component, not return/profit attribution.
+#400 / PR #402 implemented the bounded backend read model.
 
-#400 then implemented the bounded backend read model and was accepted through PR #402.
+Limits remain explicit:
 
-Canonical completion:
-
-- contract: #396 / PR #398;
-- implementation: #400 / PR #402;
-- accepted candidate: `65563330f16cf7191ac3b3560d0c3cfee2cbb57a`;
-- canonical merge: `e5c09d55a21d4d4a25a9505a819977ed9a162f8c`;
-- exact-head CI #687: SUCCESS;
-- exact-main CI #688: SUCCESS;
-- independent financial-semantics review: ACCEPT, no blockers.
-
-Important limits:
-
-- this is a **backend read model only**;
-- there is no API/UI exposure yet;
-- instrument/asset-class contribution remains unsupported from current evidence;
-- price-vs-FX and realised/unrealised/cost-basis attribution remain unsupported;
+- backend read model only;
+- no instrument/asset-class contribution from current evidence;
+- no price-vs-FX or realised/unrealised/cost-basis attribution;
 - unknown evidence remains unavailable/null rather than estimated.
 
-Canonical contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
+Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 
-## Runtime / launcher redesign status
+## Runtime/release redesign — completed and real-owner proven
 
-The old launcher-owned Stable self-update state machine from #298/#311/#312 remains a **failed experiment** and must not be revived incrementally.
+The launcher-owned Stable self-update experiment from #298/#311/#312 remains a historical failed experiment. It is not the canonical update path.
 
-#313 was deliberately redesigned around small composable owner operations.
+#313 redesigned the runtime around small composable owner operations and is now closed **completed** after the real `v0.8.2 -> v0.9.0` owner transition.
 
-### OPS01 — Prepare + deterministic Start — complete
+### OPS01 — Prepare + deterministic Start — PASS
 
-#380 / PR #385 is canonical.
+Canonical: #380 / PR #385.
 
-A checkout can be explicitly prepared with:
+- Prepare/Validate: `scripts/prepare-runtime.ps1`.
+- Start: `scripts/start-local.ps1`.
+- Start validates exact prepared-state proof and does not silently update Git, sync dependencies or rebuild.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 `
-  -Checkout <checkout-path> `
-  -Prepare
-```
+### OPS02 — explicit Stable update — real owner PASS
 
-Prepare installs only required locked dependencies, builds the production frontend and writes ignored `.hermes-runtime-prepared.json` proof tied to the exact checkout/build inputs.
+Canonical implementation: #386 / PR #393.
 
-Validate without changing preparation:
+Operation: `scripts/update-stable.ps1` from a trusted control checkout outside mutable Stable.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 `
-  -Checkout <checkout-path> `
-  -Validate
-```
+It proves one selected published annotated release, creates a verified production SQLite backup before mutation, fetches only that tag, pins Stable to the exact peeled release commit, runs target Prepare + Validate, and stops without Start/migration.
 
-Ordinary start:
+First real owner transition completed successfully on 2026-09-17:
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
-```
+`v0.8.2 -> v0.9.0`
 
-Start validates the prepared proof and does not silently build, install dependencies or update Git.
+Owner evidence:
 
-Canonical OPS01 merge: `cc85ad80c58fabb74de36f8bc67b04ccff14b6a4`; exact-main CI #665 succeeded.
+- before Stable: `v0.8.2` / `a22542d7b20ebdf34e38384004162d409f163ab3`;
+- verified backup: `finance_backup_20260917T144656192481Z`;
+- after Stable HEAD: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
+- local `v0.9.0^{}` peeled to the exact same SHA;
+- production DB hash unchanged by OPS02 before explicit Start;
+- target Prepare + Validate passed;
+- no auto-start or migration occurred inside OPS02.
 
-### OPS02 — explicit Stable update to one immutable release — complete in code
+Verdict: **PASS**.
 
-#386 / PR #393 is canonical.
+### OPS03 — exact-SHA isolated Preview/UAT — real owner PASS
 
-Owner-selected Stable update is now a separate script, intentionally **outside** the launcher state machine:
+Canonical implementation: #404 / PR #407.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
-  -StableCheckout <stable-checkout-path> `
-  -TargetVersion X.Y.Z
-```
+The first real OPS03 release UAT pinned Preview exactly to:
 
-The operation:
+`c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`
 
-1. proves the requested published annotated release;
-2. proves the current Stable state and safety prerequisites;
-3. creates a verified production SQLite backup before mutation;
-4. fetches only the selected tag;
-5. switches Stable to the exact proven release commit;
-6. invokes the target release's Prepare and Validate operations;
-7. stops without starting Hermes or running a DB migration.
+The owner used an independent Preview checkout and verified physical copy of production SQLite data. Exact SHA pinning, isolation, health/version and product checks passed; production DB remained unchanged.
 
-Canonical OPS02 merge: `c2eab48ef4e20fb14f64c527f543422a6d46f76a`; exact-main CI #673 succeeded; independent runtime/safety review accepted it with no blockers.
+Verdict: **PASS**.
 
-### What is still not proven
+### Production Stable v0.9.0 Start — PASS
 
-OPS02 has not yet had a **real owner Stable release-to-release transition UAT**, because no newer Stable release existed when it was implemented.
+After the successful OPS02 code transition, owner explicitly started Stable `v0.9.0` on production data.
 
-Do not publish a release merely to exercise this path.
+Verified:
 
-The first genuine proof should happen on the next real release transition from current Stable `v0.8.2` to the next published immutable Stable release.
+- production readiness smoke: PASS;
+- `/api/health`: `status=ok`, `version=0.9.0`;
+- owner data continuity: PASS.
 
-Until that UAT passes, #313 remains open.
+This completes the real-world acceptance boundary that intentionally remained open when OPS02 was originally integrated.
 
-## Current Windows launcher conclusion
+Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
-The Windows launcher itself is still useful for the existing prepared/pinned runtime profiles and ordinary owner Start/Stop workflow.
+## Why the launcher looks similar — and why quality changed
 
-It should **not** own Stable release mutation.
+The redesign was intentionally not a visual launcher rewrite.
 
-Current architecture is therefore:
+The launcher remains useful as an owner-facing profile/status/Start/Stop shell. What changed is responsibility and blast radius:
 
-- **launcher** — owner-facing profile/status/start/stop shell for the currently configured Stable/Preview runtimes;
+- **launcher** — presentation + ordinary Start/Stop;
 - **Prepare/Validate** — `scripts/prepare-runtime.ps1`;
-- **Start** — `scripts/start-local.ps1`;
-- **Stable release update** — `scripts/update-stable.ps1` from a trusted control checkout outside the mutable Stable checkout;
-- **release publication** — guarded repository-owned flow through permanent issue #124;
-- future launcher work, if retained, should become a thin wrapper over accepted operations rather than a second state machine.
+- **deterministic Start** — `scripts/start-local.ps1`;
+- **Stable release transition** — `scripts/update-stable.ps1`;
+- **exact candidate Preview/UAT** — `scripts/prepare-preview.ps1`;
+- **release publication** — guarded #124 flow.
 
-The current published `v0.8.2` predates OPS01/OPS02. Therefore the redesigned release-update flow is development-canonical now but will first become available inside a published target release at the next guarded release.
+This provides reproducible exact code identity, backup-before-mutation, smaller failure boundaries, clearer diagnosis and no accidental coupling between update, Preview, migration, Start and publication.
 
-## Current owner-test boundary
+A future launcher may wrap these accepted operations, but must not recreate an independent update state machine.
 
-What can be checked now without creating a fake release:
+## Release flow
 
-- open the already installed launcher and use the current pinned `v0.8.2` Stable profile for ordinary Start/Stop;
-- install/reinstall the existing launcher from the published Stable checkout if needed;
-- exercise Prepare/Validate/Start on a non-production development/Preview-style checkout with synthetic or owner-controlled isolated data;
-- run repository CI/runtime synthetic verification, which already covers real-Git update semantics.
+Release publication and local Stable installation are separate operations:
 
-What should wait for the next real release:
+1. exact candidate owner UAT through OPS03;
+2. guarded publication through permanent Release Control #124;
+3. explicit owner OPS02 Stable transition;
+4. explicit Start and data-continuity verification.
 
-- production Stable transition through `update-stable.ps1`;
-- proving the full #313 release-to-release owner flow on real Stable data;
-- deciding whether a thin launcher wrapper around the new operations is worth adding.
+`v0.9.0` is the first release to complete this full chain successfully.
 
 ## Active roadmap / what comes next
 
-UI v2 is an independent workstream tracked by #387 and its child issues. It is intentionally not managed from this non-UI checkpoint.
+### UI v2 — active primary product stream
 
-For the non-UI/runtime stream the next accepted architectural direction under #313 is:
+UI v2 remains the main active product stream under #387. The temporary `v0.9.0` release-window freeze is now lifted after successful publication + Stable UAT.
 
-1. exact Preview/UAT preparation pinned to one explicit candidate SHA, without auto-following newer `main` during UAT;
-2. bounded diagnosis/recovery operations if owner value justifies them;
-3. only then decide whether the launcher needs a thin wrapper around these accepted operations.
+Current accepted checkpoint:
 
-For Performance, account decomposition backend support is now complete. Before instrument/asset-class attribution can become exact, Hermes still needs a separately accepted data/evidence foundation; no approximate attribution should be added merely to fill a UI.
+- #390 closed-report comparison backend read model — integrated;
+- #391 passive-income history/source backend read model — integrated;
+- #392 / PR #406 `Мои финансы` Home — implementation complete and **owner visual/product UAT PASS** on exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9`;
+- PR #406 is still **draft / not integrated** because it intentionally waited through the `v0.9.0` release window;
+- `/v2` remains opt-in and v1 remains the default/rollback path.
+
+Next UI integration gate:
+
+1. refresh PR #406 onto the then-current canonical `main` (currently `814650806be5cb64aefffee15fccf7d5e1d364ec`);
+2. reconcile any post-release compatibility changes without redefining the frozen Home contract;
+3. rerun relevant exact-head CI + UI comparison evidence;
+4. merge only if still clean, then verify exact-main push CI and close #392;
+5. only after Home is canonical, open/start the next bounded **Capital drill-down** slice from #387.
+
+Later planned UI sequence remains: Capital drill-down → Income & Plans → contextual history/archive polish → new Monthly Close shell over existing workflow semantics → Data & App consolidation → final comparative owner UAT → controlled default switch. v1 retirement remains a separate later decision.
+
+`1.0.0` remains a reasonable future milestone only after the new primary owner UX is cohesive and the proven production lifecycle remains intact.
+
+### Runtime
+
+The redesign parent #313 is complete. Future runtime work should be evidence-driven and bounded:
+
+- diagnosis/recovery operations only if owner value justifies them;
+- optional thin launcher wrappers over accepted primitives;
+- no revival of the old launcher updater state machine.
+
+### Performance
+
+Account + internal-transfer decomposition backend support is complete. Exact instrument/asset-class attribution still requires a separately accepted data/evidence foundation.
+
+### Release metadata
+
+#410 remains a non-blocking metadata/history follow-up. It tracks the stale candidate wording in the published `v0.9.0` GitHub Release body, `CHANGELOG.md` publication-state sync, final `EXECUTION_HISTORY` release closeout entry and future release-note lifecycle hardening. None of these items change the already-proven tag/code/Stable identity.
 
 ## Open umbrella/control issues
 
-- #127 — product/technical roadmap umbrella;
-- #313 — runtime/launcher redesign parent; remains open until real Stable transition UAT and later accepted slices;
 - #124 — permanent Release Control; intentionally stays open;
-- #387 and children — UI v2, separate stream.
+- #127 — product/technical roadmap umbrella;
+- #387 and children — UI v2; #392 is UAT-PASS but pending post-release integration via PR #406;
+- #410 — non-blocking `v0.9.0` release-metadata/history cleanup.
+
+#313 is closed completed after the real `v0.8.2 -> v0.9.0` owner UAT.
 
 ## Canonical references
 
@@ -221,7 +236,10 @@ For Performance, account decomposition backend support is now complete. Before i
 - `docs/VERIFICATION_POLICY.md`
 - `docs/PROJECT_WIKI.md`
 - `docs/EXECUTION_HISTORY.md`
+- `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
 - `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
 - `docs/RELEASE_AUTOMATION.md`
-- #127, #313, #380, #386, #396, #400
+- `docs/releases/0.9.0.md`
+- `docs/release-notes-0.9.0.md`
+- #124, #127, #313, #380, #386, #387, #392, #404, #408, #410

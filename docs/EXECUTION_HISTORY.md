@@ -75,6 +75,32 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Not done:** no product-function work or Stable/Preview runtime action was included in release preparation.
 - **References:** issue #309, permanent Release Control #124, `docs/releases/0.8.2.md`, `docs/release-notes-0.8.2.md` and `CHANGELOG.md`.
 
+# 0.9.0 release preparation
+
+### R09-REL01 — prepare Hermes Finance v0.9.0 candidate for owner OPS03 UAT
+
+- **Recorded:** 2026-09-17 from issue #408. This is a preparation record, not an acceptance verdict or publication record.
+- **Exact baseline `main`:** `41de2827df8437ebbcb420f2583e86772e85f1a3`; exact-main CI #697 / run `35185238283` SUCCESS.
+- **Task branch:** `release/0.9.0-candidate`.
+- **Scope:** synchronize current release identity to `0.9.0`, document accepted post-v0.8.2 work, and preserve published Stable `v0.8.2` until owner OPS03 Preview/UAT passes.
+- **Included themes:** Decision Support/Scenario Lab, Performance v1 and bounded PERF04 decomposition, linked-financing integrity, AI review/export hardening, OPS01, OPS02, OPS03 and release-confidence CI improvements.
+- **Boundaries:** UI v2 is excluded; no new migration, formula, provider, runtime-data or network behavior; no tag, GitHub Release, #124 trigger, OPS02 run or owner/private data.
+- **Candidate identity:** exact SHA is recorded only after implementation and integration; the candidate remains `UAT-PENDING` until owner acceptance.
+- **References:** issue #408, `docs/releases/0.9.0.md`, `docs/release-notes-0.9.0.md`, `CHANGELOG.md` and permanent Release Control #124.
+
+### R09-REL01-POST — publish v0.9.0 and complete owner runtime/UAT closeout
+
+- **Published:** 2026-09-17 as GitHub Release `Hermes Finance 0.9.0`, `draft=false`, `prerelease=false`.
+- **Released identity:** annotated tag `v0.9.0`, tag object `07c06d44f8b780e721be346a21909ca02585d57d`, peeled commit `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
+- **Publication evidence:** exact-main CI #700 / run `35207551120` SUCCESS; Guarded Release #253 / run `35235369797` SUCCESS.
+- **Owner OPS03 Preview/UAT:** PASS on the exact released code in an isolated Preview using a verified owner-data copy; production data remained isolated.
+- **Owner OPS02 Stable transition:** PASS for the first real `v0.8.2 -> v0.9.0` transition, including verified pre-mutation backup, exact target pin, target Prepare + Validate, no auto-start and no migration during the update operation.
+- **Production acceptance:** explicit Stable `v0.9.0` Start, readiness smoke, `/api/health` version/status and owner data continuity all passed.
+- **History boundary:** the R09-REL01 preparation record above remains unchanged as historical pre-publication context; this separate entry records the final publication and owner-acceptance state.
+- **Closeout sync:** PR #411 merged the final current-truth documentation at canonical `main` `814650806be5cb64aefffee15fccf7d5e1d364ec`; exact-main CI #702 / run `35238258485` succeeded on attempt 2 without a code change after attempt 1 hit a hosted-runner `setup-uv` network timeout.
+- **Boundaries:** no product/runtime/financial/schema behavior, tag identity or released commit changed during closeout.
+- **References:** issues #408, #313, #124 and #410; `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`, `docs/releases/0.9.0.md` and `docs/release-notes-0.9.0.md`.
+
 # Post-v0.8.2 consolidation
 
 ### #306 — repository/process review and three-workstream split
