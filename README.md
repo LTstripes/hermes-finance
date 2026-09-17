@@ -11,11 +11,16 @@ Published Stable: **v0.8.2** (2026-09-05).
 - annotated tag object: `bfa1194d4151bb72882f4230f144b039d240eda9`;
 - released peeled commit: `a22542d7b20ebdf34e38384004162d409f163ab3`.
 
-Canonical development `main` at the 2026-09-16 checkpoint:
+Prepared release candidate: **v0.9.0** (UAT-PENDING; no tag or GitHub Release).
+The candidate is intended for an exact-SHA OPS03 Preview/UAT run before any
+guarded publication. Published Stable remains v0.8.2 until that owner gate
+passes.
 
-`e5c09d55a21d4d4a25a9505a819977ed9a162f8c`
+Canonical development `main` at the 2026-09-17 release-prep checkpoint:
 
-Exact-main CI: **#688 / run `35137779786` — SUCCESS**.
+`41de2827df8437ebbcb420f2583e86772e85f1a3`
+
+Exact-main CI: **#697 / run `35185238283` — SUCCESS**.
 
 Merged development work does **not** become Stable automatically. Release publication remains a separate guarded owner action.
 
@@ -201,7 +206,7 @@ Do not publish a throwaway release just to exercise the updater.
 
 The first real proof should be:
 
-`v0.8.2 → next genuine published immutable Stable release`.
+`v0.8.2 → v0.9.0` after owner Preview/UAT passes.
 
 Issue #313 therefore stays open.
 
@@ -217,7 +222,8 @@ A release publishes an immutable tag/GitHub Release from exact canonical `main`;
 
 ## Current product surfaces
 
-The current development product includes the published 0.8.2 capabilities plus post-release integrated work such as:
+The prepared 0.9.0 candidate includes the published 0.8.2 capabilities plus
+post-release integrated work such as:
 
 - Scenario Lab v1;
 - financial-context completeness / plan-vs-fact data;
@@ -226,7 +232,8 @@ The current development product includes the published 0.8.2 capabilities plus p
 - prepared runtime + deterministic Start;
 - explicit immutable Stable update operation;
 - PERF04C exact account + internal-transfer decomposition backend read model;
-- ongoing reversible UI v2 work under a separate roadmap while v1 remains available.
+- exact-SHA isolated Preview/UAT preparation for the owner release gate;
+- ongoing reversible UI v2 work under a separate roadmap while v1 remains available (UI v2 is not part of 0.9.0).
 
 For the authoritative current snapshot use `docs/CURRENT_STATUS.md` rather than inferring release state from old milestone docs.
 
@@ -234,11 +241,14 @@ For the authoritative current snapshot use `docs/CURRENT_STATUS.md` rather than 
 
 UI v2 is tracked independently through #387 and its children.
 
-For the non-UI runtime stream, the next bounded direction under #313 is **exact Preview/UAT preparation pinned to one explicit candidate SHA** so owner UAT cannot silently move when `main` advances.
+For the non-UI runtime stream, the 0.9.0 candidate is the first release target
+for **exact Preview/UAT preparation pinned to one explicit candidate SHA** so
+owner UAT cannot silently move when `main` advances.
 
 For Performance, exact account decomposition is implemented; instrument/asset-class attribution still requires a separately accepted data/evidence foundation before implementation.
 
-The next real Stable release will also be the first opportunity for mandatory OPS02 owner transition UAT.
+After owner PASS and guarded publication, v0.9.0 will be the first opportunity
+for mandatory OPS02 owner transition UAT from v0.8.2.
 
 ## Health
 
@@ -246,6 +256,15 @@ After a successful local start:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/api/health
+```
+
+For the prepared candidate, the response must include:
+
+```json
+{
+  "status": "ok",
+  "version": "0.9.0"
+}
 ```
 
 Open Hermes:
@@ -275,6 +294,8 @@ Canonical PR CI and exact-main push CI are mandatory for integrated changes.
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — current component-decomposition contract;
 - [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md) — guarded release publication;
+- [`docs/release-notes-0.9.0.md`](docs/release-notes-0.9.0.md) — prepared candidate public notes;
+- [`docs/releases/0.9.0.md`](docs/releases/0.9.0.md) — prepared/UAT-pending release record;
 - [`CHANGELOG.md`](CHANGELOG.md) — release/development change log.
 
 ## Privacy

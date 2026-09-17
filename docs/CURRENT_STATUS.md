@@ -2,17 +2,18 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now** on canonical `main`; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-16**.
+> Last synchronized: **2026-09-17**.
 
 ## Canonical identity
 
 - Published Stable release: **v0.8.2**.
 - Published Stable peeled commit: `a22542d7b20ebdf34e38384004162d409f163ab3`.
-- Canonical development `main`: `e5c09d55a21d4d4a25a9505a819977ed9a162f8c`.
-- Latest canonical merge: PR #402 / issue #400 — PERF04C account + internal-transfer decomposition read model.
-- Exact-main push CI: **#688 / run `35137779786` — SUCCESS**.
+- Canonical development `main`: `41de2827df8437ebbcb420f2583e86772e85f1a3`.
+- Latest canonical merge: PR #407 / issue #404 — exact-SHA Preview/UAT preparation.
+- Exact-main push CI: **#697 / run `35185238283` — SUCCESS**.
 - `main` remains the only canonical source of truth and the only release source.
 - Published Stable is intentionally behind development `main`; merged development work does not become Stable until a separately guarded release is published.
+- Release candidate `v0.9.0` is prepared under issue #408 and remains UAT-PENDING; no tag or GitHub Release exists, and Stable remains `v0.8.2`.
 
 ## Product/runtime invariants
 
@@ -159,7 +160,9 @@ OPS02 has not yet had a **real owner Stable release-to-release transition UAT**,
 
 Do not publish a release merely to exercise this path.
 
-The first genuine proof should happen on the next real release transition from current Stable `v0.8.2` to the next published immutable Stable release.
+The first genuine proof should happen on the real release transition from
+current Stable `v0.8.2` to the published immutable `v0.9.0` release after
+owner OPS03 Preview/UAT passes.
 
 Until that UAT passes, #313 remains open.
 
@@ -178,7 +181,10 @@ Current architecture is therefore:
 - **release publication** — guarded repository-owned flow through permanent issue #124;
 - future launcher work, if retained, should become a thin wrapper over accepted operations rather than a second state machine.
 
-The current published `v0.8.2` predates OPS01/OPS02. Therefore the redesigned release-update flow is development-canonical now but will first become available inside a published target release at the next guarded release.
+The current published `v0.8.2` predates OPS01/OPS02. The prepared `v0.9.0`
+candidate contains those accepted operations and will first make the
+redesigned release-update flow available inside a published target release
+after the guarded release gate.
 
 ## Current owner-test boundary
 
@@ -199,11 +205,12 @@ What should wait for the next real release:
 
 UI v2 is an independent workstream tracked by #387 and its child issues. It is intentionally not managed from this non-UI checkpoint.
 
-For the non-UI/runtime stream the next accepted architectural direction under #313 is:
+For the non-UI/runtime stream, issue #408 is the current release-prep and
+owner-gate checkpoint:
 
-1. exact Preview/UAT preparation pinned to one explicit candidate SHA, without auto-following newer `main` during UAT;
-2. bounded diagnosis/recovery operations if owner value justifies them;
-3. only then decide whether the launcher needs a thin wrapper around these accepted operations.
+1. pin the prepared `v0.9.0` candidate to one explicit SHA for OPS03 Preview/UAT;
+2. publish only after owner PASS, then run the first real OPS02 transition;
+3. bounded diagnosis/recovery operations and a thin launcher-wrapper decision remain subsequent work.
 
 For Performance, account decomposition backend support is now complete. Before instrument/asset-class attribution can become exact, Hermes still needs a separately accepted data/evidence foundation; no approximate attribution should be added merely to fill a UI.
 
@@ -212,6 +219,7 @@ For Performance, account decomposition backend support is now complete. Before i
 - #127 — product/technical roadmap umbrella;
 - #313 — runtime/launcher redesign parent; remains open until real Stable transition UAT and later accepted slices;
 - #124 — permanent Release Control; intentionally stays open;
+- #408 — `v0.9.0` release candidate for owner OPS03 UAT;
 - #387 and children — UI v2, separate stream.
 
 ## Canonical references
