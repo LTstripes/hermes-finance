@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-16**.
+> Last synchronized: **2026-09-17**.
 
 ## 1. Что мы строим
 
@@ -51,18 +51,24 @@ Hermes Finance не является торговой, банковской, б�
 
 Published Stable не меняется просто потому, что development `main` ушёл вперёд.
 
+### Prepared release candidate
+
+Issue #408 prepares **v0.9.0** for the first real owner OPS03 Preview/UAT
+gate. The candidate is UAT-PENDING: no `v0.9.0` tag or GitHub Release exists,
+and published Stable remains `v0.8.2` until owner PASS.
+
 ### Canonical development main
 
 Current canonical `main`:
 
-`e5c09d55a21d4d4a25a9505a819977ed9a162f8c`
+`41de2827df8437ebbcb420f2583e86772e85f1a3`
 
-Последний canonical merge на этом checkpoint — PR #402 / issue #400 (`PERF-04C — account + internal-transfer decomposition read model`).
+Последний canonical merge на этом checkpoint — PR #407 / issue #404 (`OPS03 — exact-SHA isolated Preview/UAT preparation`).
 
 Exact-main push CI:
 
-- run number: **#688**;
-- run id: `35137779786`;
+- run number: **#697**;
+- run id: `35185238283`;
 - conclusion: **SUCCESS**.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
@@ -246,7 +252,7 @@ OPS02 пока не прошёл real owner Stable release-to-release transition
 
 Первый настоящий UAT должен выполняться на следующем реальном релизе:
 
-`v0.8.2 → next published immutable Stable release`.
+`v0.8.2 → v0.9.0` after owner Preview/UAT PASS and guarded publication.
 
 До этого #313 остаётся open.
 
@@ -310,7 +316,8 @@ UI v2 tracked отдельно через #387 и children. Этот wiki фик
 
 ### Non-UI/runtime
 
-Следующий логичный bounded slice под #313 — **exact Preview/UAT preparation pinned to one explicit candidate SHA**:
+Issue #408 prepares the first real release candidate for **exact Preview/UAT
+preparation pinned to one explicit candidate SHA**:
 
 - explicit exact SHA;
 - separate Preview/UAT checkout + isolated UAT DB;
@@ -318,7 +325,9 @@ UI v2 tracked отдельно через #387 и children. Этот wiki фик
 - no production DB alias/mutation;
 - same accepted Prepare/Validate/Start primitives where applicable.
 
-После этого — только при реальной owner value — bounded diagnosis/recovery operations и решение, нужен ли thin launcher wrapper.
+После owner PASS и guarded publication OPS02 впервые проверит переход
+`v0.8.2 -> v0.9.0`; затем остаются только bounded diagnosis/recovery
+operations и решение, нужен ли thin launcher wrapper.
 
 ### Performance
 
