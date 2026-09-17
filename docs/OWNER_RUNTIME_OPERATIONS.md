@@ -1,44 +1,64 @@
 # Hermes Finance — owner runtime operations
 
-> Owner-facing operational guide for the current post-OPS01/OPS02 architecture.
+> Owner-facing operational guide for the proven post-R09 architecture.
 >
-> This is not a release checklist. Release publication remains documented in `docs/RELEASE_AUTOMATION.md` and controlled through permanent issue #124.
+> This is not a release checklist. Publication remains documented in `docs/RELEASE_AUTOMATION.md` and controlled through permanent issue #124.
 
 ## 1. Architecture in one sentence
 
-Hermes Finance no longer asks one launcher state machine to own release discovery, Git mutation, backup, dependency preparation and runtime startup.
+Hermes Finance uses small composable owner operations instead of one launcher state machine owning release discovery, Git mutation, backup, dependency preparation and runtime startup.
 
-The accepted model is composable:
+Accepted model:
 
-- launcher = owner-facing profile/status/start/stop shell;
+- launcher = owner-facing profile/status/Start/Stop shell;
 - Prepare/Validate = `scripts/prepare-runtime.ps1`;
 - deterministic Start = `scripts/start-local.ps1`;
-- Stable release switch = `scripts/update-stable.ps1`;
+- exact Preview/UAT = `scripts/prepare-preview.ps1`;
+- Stable release transition = `scripts/update-stable.ps1`;
 - release publication = guarded GitHub Release flow (#124).
+
+This full chain was owner-proven on the real `v0.8.2 -> v0.9.0` transition on 2026-09-17.
 
 ## 2. Current published Stable
 
-Current published Stable is **v0.8.2**.
+Current published Stable is **v0.9.0**.
 
-The published release predates OPS01/OPS02. The new composable operations are canonical on development `main` and will first exist inside a future published target release when that release is cut from canonical `main`.
+Release/source code identity:
 
-Do not move production Stable to development `main` merely to exercise the new scripts.
+`c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`
 
-## 3. Existing Windows launcher
+Annotated tag object:
 
-The launcher is still valid for its bounded role:
+`07c06d44f8b780e721be346a21909ca02585d57d`
 
-- show current Stable/Preview profile identity/status;
-- start/stop the currently configured runtime;
+The tag peels exactly to the release/source SHA above.
+
+Owner acceptance:
+
+- OPS03 exact-SHA Preview/UAT: PASS;
+- guarded publication: PASS;
+- OPS02 Stable update `v0.8.2 -> v0.9.0`: PASS;
+- production readiness smoke: PASS;
+- `/api/health` version `0.9.0`: PASS;
+- owner data continuity: PASS.
+
+Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
+
+## 3. Windows launcher
+
+The launcher is still valid and intentionally familiar for its bounded role:
+
+- show Stable/Preview profile identity/status;
+- ordinary Start/Stop;
 - open Hermes after health is ready;
-- provide owner-facing diagnostics/status;
-- install/package shortcuts.
+- diagnostics/status presentation;
+- installed shortcuts/package shell.
 
 It is **not** the canonical Stable release updater.
 
-If the current v0.8.2 launcher is already installed, it can be opened from the existing Desktop/Start menu shortcut and used for ordinary current-profile Start/Stop.
+That is the main architectural change: safety-critical release/update semantics are no longer hidden inside a second launcher-owned state machine.
 
-If it needs reinstalling from the published Stable checkout:
+Install/reinstall from the currently selected published Stable checkout:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
@@ -47,8 +67,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\insta
 Do not use the legacy launcher self-update experiment as release-update evidence.
 
 ## 4. Prepare an exact checkout
-
-For a checkout that contains OPS01:
 
 ```powershell
 $checkout = (Get-Location).Path
@@ -59,7 +77,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtim
 
 Prepare:
 
-- installs/synchronizes only locked dependencies needed for that exact checkout;
+- installs/synchronizes locked dependencies for that exact checkout;
 - builds the production frontend;
 - writes ignored `.hermes-runtime-prepared.json` proof;
 - does not start Hermes;
@@ -67,7 +85,7 @@ Prepare:
 - does not follow `main`;
 - does not mutate another checkout.
 
-Validate the existing prepared proof:
+Validate existing proof:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 `
@@ -75,7 +93,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtim
   -Validate
 ```
 
-If code, lock/build inputs or required artifacts changed, validation fails closed and owner explicitly prepares again.
+If code, lock/build inputs or required artifacts changed, validation fails closed and the owner explicitly prepares again.
 
 ## 5. Deterministic Start
 
@@ -85,26 +103,57 @@ From an already prepared checkout:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-The ordinary Start path:
+Ordinary Start:
 
 - validates prepared-runtime proof;
-- validates the selected runtime/database boundary;
-- runs accepted guarded startup/migration semantics for that selected DB;
+- uses the explicitly selected runtime/database boundary;
+- runs accepted guarded startup/migration semantics for that DB;
 - binds only `127.0.0.1:8000`;
 - performs health checks;
 - does not run dependency sync/build/Git update itself.
 
-Short smoke that exits after ready:
+Readiness smoke that exits automatically:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
 ```
 
-## 6. Explicit Stable update
+## 6. Exact Preview/UAT preparation
 
-Use this only for a real owner-selected published immutable target release.
+Use OPS03 when testing one unreleased candidate SHA before publication.
 
-The command must be launched from a trusted **control checkout outside the mutable Stable checkout**:
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-preview.ps1 `
+  -CandidateSha <full-40-char-sha> `
+  -PreviewCheckout <preview-checkout-path> `
+  -PreviewDataDirectory <isolated-preview-data-path> `
+  -PreviewDatabase <isolated-preview-db-path> `
+  -StableCheckout <stable-checkout-path> `
+  -StableDataDirectory <stable-data-path> `
+  -StableDatabase <stable-db-path> `
+  -ControlCheckout <trusted-control-checkout>
+```
+
+OPS03:
+
+- requires one explicit full 40-character SHA;
+- creates/uses an independent Preview clone with its own Git directory;
+- proves Preview/Stable/control checkout separation;
+- proves Preview DB cannot alias production DB;
+- composes candidate Prepare + Validate;
+- leaves Preview pinned to the selected SHA;
+- does not follow newer `main`;
+- does not Start or directly migrate.
+
+For owner UAT, populate Preview only with a verified physical copy/synthetic DB after the isolation boundary is prepared. Never point Preview at production SQLite.
+
+The first real release UAT for `v0.9.0` passed on exact SHA `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
+
+## 7. Explicit Stable update
+
+Use only for one real owner-selected **published immutable release**.
+
+Run from a trusted control checkout outside mutable Stable:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
@@ -118,7 +167,16 @@ Optional parameters:
 - `-BackupDirectory <path>` — explicit backup directory;
 - `-ControlCheckout <path>` — explicit trusted control checkout.
 
-The updater proves the published annotated target before mutation, performs a verified SQLite backup before Git/ref/worktree mutation, fetches only the selected tag, pins Stable to the exact target commit, runs the target release's Prepare + Validate, then stops.
+The updater:
+
+1. proves current Stable identity;
+2. proves the target is a published annotated release;
+3. creates a verified SQLite backup before Git/ref/worktree mutation;
+4. fetches only the selected tag;
+5. proves the fetched annotated tag/code identity;
+6. pins Stable to the exact target commit;
+7. runs target Prepare + Validate;
+8. stops.
 
 It never:
 
@@ -127,71 +185,94 @@ It never:
 - updates Preview;
 - starts Hermes;
 - runs DB migration;
-- creates a release/tag;
+- creates a tag/release;
 - performs automatic rollback/downgrade.
 
-## 7. First real OPS02 UAT
+## 8. Proven real OPS02 example
 
-The OPS02 implementation and CI are accepted, but the real Stable release-to-release owner operation is still pending.
+First real owner transition:
 
-Reason: there has not yet been a newer real published Stable release after OPS02 landed.
+`v0.8.2 -> v0.9.0`
 
-The correct first production UAT is:
+Verified owner evidence:
 
-1. prepare and publish the next genuine Stable release from canonical `main` through the guarded release flow;
-2. leave current production Stable on v0.8.2 until the owner explicitly starts the update operation;
-3. from a trusted control checkout run `update-stable.ps1` targeting that exact published version;
-4. verify backup evidence and exact target pinning;
-5. verify target Prepare/Validate succeeded;
-6. explicitly start the target runtime;
-7. verify runtime version/health and owner data continuity;
-8. record owner PASS/FAIL in #313.
+- source HEAD: `a22542d7b20ebdf34e38384004162d409f163ab3` / tag `v0.8.2`;
+- verified backup id: `finance_backup_20260917T144656192481Z`;
+- target HEAD: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
+- `v0.9.0^{}` peeled locally to the same SHA;
+- production DB hash unchanged by OPS02 before explicit Start;
+- target Prepare + Validate passed;
+- no application Start or DB migration occurred inside OPS02.
 
-Do not publish a throwaway version merely to test this.
+Then owner explicitly ran deterministic Start:
 
-## 8. What can safely be tested before the next release
+- readiness smoke: PASS;
+- health: `status=ok`, `version=0.9.0`;
+- owner data continuity: PASS.
 
-Safe now:
+This is the canonical evidence that the release-transition flow works on a real owner Stable runtime.
 
-- current launcher Start/Stop against its current pinned v0.8.2 profile;
-- launcher package/install smoke;
-- Prepare/Validate/Start on non-production checkout with synthetic or isolated UAT data;
-- repository synthetic update tests and temporary real-Git smoke already exercised in CI;
-- a no-op/read-only inspection of current release state where it does not mutate Stable.
+## 9. Normal future release sequence
 
-Not a substitute for the pending owner gate:
+For a normal future Stable release:
 
-- targeting the same already-installed v0.8.2 version;
-- running updater only on a synthetic checkout;
-- moving production Stable to unreleased `main`;
-- manually editing launcher expected refs to make a new checkout look accepted.
+1. prepare one exact candidate on canonical `main`;
+2. use OPS03 for isolated exact-SHA owner UAT;
+3. owner PASS;
+4. publish that same exact code identity through #124;
+5. independently verify annotated tag + peeled commit + published Release;
+6. stop Stable runtime;
+7. use OPS02 to update Stable to the selected version;
+8. verify target exact pin + backup evidence;
+9. explicitly Start Stable;
+10. verify health/version and owner data continuity.
 
-## 9. Launcher future
+Publication, Stable mutation and Start are intentionally separate actions.
 
-#313 intentionally remains open.
+## 10. Failure handling
 
-Next accepted runtime direction is to build the remaining small operations first, then decide whether launcher wrapping creates enough owner value.
+If any operation fails:
 
-The next bounded candidate is exact Preview/UAT preparation pinned to one explicit candidate SHA. A Preview/UAT session must not silently follow newer `main` while owner UAT is in progress.
+- do not improvise by manually editing launcher profile JSON or refs;
+- do not repoint Preview/Stable DB paths to bypass guards;
+- do not retry with another commit/version unless the failure is understood;
+- preserve the verified backup and error output;
+- diagnose the bounded operation that failed.
 
-Only after the composable operations are proven should the project decide whether launcher should become a thin wrapper around them.
+The architecture is designed so an update failure does not automatically imply Start, migration, Preview mutation or release publication.
 
-## 10. Safety reminders
+## 11. Launcher future
+
+The runtime redesign parent #313 is complete after the successful real `v0.8.2 -> v0.9.0` owner transition.
+
+Future launcher work is optional:
+
+- thin UX wrappers over accepted owner operations may be valuable;
+- diagnosis/recovery may be added as bounded operations if real owner pain justifies them;
+- do **not** rebuild the old monolithic launcher updater/state machine.
+
+## 12. Safety reminders
 
 - Production Stable data is never an agent/dev workspace.
 - Preview/UAT uses a separate checkout and isolated DB copy/synthetic DB.
 - Do not point arbitrary branches at the production DB.
 - Do not expose production `.env`, DB, backups, exports or credentials to development agents.
-- Stable update must remain explicit, backup-first and immutable-release based.
+- Stable update remains explicit, backup-first and immutable-release based.
 - Ordinary runtime remains loopback-only.
 
 ## References
 
-- #313 — launcher/runtime redesign parent
+- #313 — completed launcher/runtime redesign parent
 - #380 / PR #385 — OPS01 Prepare + deterministic Start
 - #386 / PR #393 — OPS02 explicit Stable update
+- #404 / PR #407 — OPS03 exact-SHA Preview/UAT
+- #408 / PR #409 — v0.9.0 release preparation
+- #124 — permanent guarded Release Control
+- #410 — non-blocking v0.9.0 Release-description cleanup
 - `docs/CURRENT_STATUS.md`
+- `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
 - `docs/RELEASE_AUTOMATION.md`
 - `scripts/prepare-runtime.ps1`
 - `scripts/start-local.ps1`
+- `scripts/prepare-preview.ps1`
 - `scripts/update-stable.ps1`
