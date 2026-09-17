@@ -4,6 +4,11 @@
 
 **Что видит владелец без логов:**
 
+Во время подготовки кандидата `v0.9.0` (issue #408) launcher и его
+конфигурация продолжают обозначать опубликованный Stable `v0.8.2`. Кандидат
+проходит отдельный OPS03 Preview/UAT на изолированных данных; `expected_ref`
+Stable нельзя менять на `v0.9.0` до guarded publication.
+
 - **Stable** — зелёная карточка `STABLE · PRODUCTION` с pinned production identity: `Release v0.8.2` + короткий SHA + `Canonical production data` + `production` data boundary. Может открыть только canonical production DB.
 - `Обновить проверку` остаётся read-only preflight; она не является обещанием рабочего Stable self-update и не делает backup, fetch, switch, config write или start.
 - **Preview** — фиолетовая `PREVIEW · ISOLATED` с `main / UNRELEASED` + `Isolated UAT / synthetic data`, строка `main <current> → <target> · UNRELEASED` + короткий SHA. Никогда не смешивает данные со Stable.

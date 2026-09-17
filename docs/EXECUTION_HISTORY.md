@@ -75,6 +75,19 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Not done:** no product-function work or Stable/Preview runtime action was included in release preparation.
 - **References:** issue #309, permanent Release Control #124, `docs/releases/0.8.2.md`, `docs/release-notes-0.8.2.md` and `CHANGELOG.md`.
 
+# 0.9.0 release preparation
+
+### R09-REL01 — prepare Hermes Finance v0.9.0 candidate for owner OPS03 UAT
+
+- **Recorded:** 2026-09-17 from issue #408. This is a preparation record, not an acceptance verdict or publication record.
+- **Exact baseline `main`:** `41de2827df8437ebbcb420f2583e86772e85f1a3`; exact-main CI #697 / run `35185238283` SUCCESS.
+- **Task branch:** `release/0.9.0-candidate`.
+- **Scope:** synchronize current release identity to `0.9.0`, document accepted post-v0.8.2 work, and preserve published Stable `v0.8.2` until owner OPS03 Preview/UAT passes.
+- **Included themes:** Decision Support/Scenario Lab, Performance v1 and bounded PERF04 decomposition, linked-financing integrity, AI review/export hardening, OPS01, OPS02, OPS03 and release-confidence CI improvements.
+- **Boundaries:** UI v2 is excluded; no new migration, formula, provider, runtime-data or network behavior; no tag, GitHub Release, #124 trigger, OPS02 run or owner/private data.
+- **Candidate identity:** exact SHA is recorded only after implementation and integration; the candidate remains `UAT-PENDING` until owner acceptance.
+- **References:** issue #408, `docs/releases/0.9.0.md`, `docs/release-notes-0.9.0.md`, `CHANGELOG.md` and permanent Release Control #124.
+
 # Post-v0.8.2 consolidation
 
 ### #306 — repository/process review and three-workstream split

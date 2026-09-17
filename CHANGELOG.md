@@ -2,6 +2,31 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [0.9.0] — PREPARED / UAT-PENDING
+
+Release candidate preparation on top of the published Stable `v0.8.2`.
+This entry records already integrated product work and synchronizes the
+candidate identity; it does not publish a tag or GitHub Release. Published
+Stable remains `v0.8.2` until owner OPS03 Preview/UAT passes.
+
+### Included since v0.8.2
+
+- Decision Support v1 / Scenario Lab and related deterministic owner decision surfaces;
+- Performance v1: exact portfolio/account XIRR and TWRR, valuation/flow hardening, and explicit exact-zero versus unavailable semantics;
+- bounded PERF04A/B/C decomposition and reconciliation evidence without unsupported instrument-level P&L attribution;
+- linked asset / credit-card debt and linked-financing integrity, plus canonical AI financial-review/export hardening;
+- OPS01 explicit Prepare + deterministic Start and OPS02 explicit immutable published Stable update operation;
+- OPS03 exact-SHA isolated Preview/UAT preparation and CI/release-safety improvements.
+
+### Not changed
+
+- UI v2 remains a separate workstream and is not part of this candidate;
+- canonical Alembic head remains `0041_debt_linked_account`; this release-prep task adds no migration or schema semantics;
+- local single-user Windows-first runtime remains loopback-only at `127.0.0.1:8000`;
+- no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
+- closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero;
+- private Stable/Preview/runtime data, `.env`, databases, backups, exports/PDFs and credentials remain outside release preparation.
+
 ## [Unreleased]
 
 Development `main` после `0.8.2` (интегрировано через PR #335, merge `420e10046a7adbe17078dcd47d8b803927f0a86a`). Это не новая опубликованная версия: Stable остаётся `0.8.2`, пока будущий релиз её не сменит.
