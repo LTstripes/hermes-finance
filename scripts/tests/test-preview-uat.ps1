@@ -422,7 +422,7 @@ if ($Validate) {
     New-TestDirectory -Path $foreignSeedPath
     Invoke-TestGit -WorkingDirectory $testRoot -Arguments @("init", "--bare", $foreignRemotePath) | Out-Null
     Invoke-TestGit -WorkingDirectory $foreignSeedPath -Arguments @("init", "--initial-branch", "main") | Out-Null
-    Invoke-TestGit -WorkingDirectory $foreignSeedPath -Arguments @("config", "user.email", "foreign@example.invalid") | Out-Null
+    Invoke-TestGit -WorkingDirectory $foreignSeedPath -Arguments @("config", "user.email", "foreign@example.com") | Out-Null
     Invoke-TestGit -WorkingDirectory $foreignSeedPath -Arguments @("config", "user.name", "Foreign Synthetic") | Out-Null
     Write-TestText -Path (Join-Path $foreignSeedPath "foreign.txt") -Content "foreign"
     Invoke-TestGit -WorkingDirectory $foreignSeedPath -Arguments @("add", "-A") | Out-Null
