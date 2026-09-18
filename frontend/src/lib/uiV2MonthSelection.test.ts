@@ -4,6 +4,7 @@ import { uiV2Months } from "../test/uiV2Fixtures";
 import {
   monthWorkspacePath,
   resolveMonthSelection,
+  selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "../ui-v2/monthSelection";
 
@@ -19,6 +20,16 @@ describe("UI v2 reporting-period URL", () => {
       month: uiV2Months[0],
     });
   });
+  it("shares one newest-draft-after-latest-closed decision across native surfaces", () => {
+    expect(selectNewestDraftAfterLatestClosed(uiV2Months)).toEqual({
+      latestClosed: uiV2Months[0],
+      newestDraft: uiV2Months[1],
+    });
+    expect(selectNewestDraftAfterLatestClosed([uiV2Months[0]])).toEqual({
+      latestClosed: uiV2Months[0],
+      newestDraft: null,
+    });
+  });
   it.each(["", "0", "-1", "1.0", "1e2", " 12", "12x", "012", "9007199254740992"])(
     "rejects ambiguous or invalid explicit ID %s",
     (value) => expect(resolveMonthSelection([value], uiV2Months)).toEqual({ kind: "invalid" }),
@@ -28,6 +39,6 @@ describe("UI v2 reporting-period URL", () => {
     expect(resolveMonthSelection(["12", "91"], uiV2Months)).toEqual({ kind: "invalid" });
   });
   it("encodes the complete period/step address without persistent financial state", () => {
-    expect(monthWorkspacePath(12, "actual_payouts")).toBe("/v2?month=12&step=actual_payouts");
+    expect(monthWorkspacePath(12, "actual_payouts")).toBe("/v2/close?month=12&step=actual_payouts");
   });
 });

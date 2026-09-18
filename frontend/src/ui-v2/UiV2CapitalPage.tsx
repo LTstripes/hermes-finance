@@ -26,7 +26,6 @@ import type {
   PortfolioTwrr,
   PortfolioXirr,
   PropertySnapshot,
-  ReportingMonth,
 } from "../api/types";
 import {
   CapitalCompositionChart,
@@ -52,7 +51,11 @@ import {
   type HoldingRow,
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
-import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import {
+  resolveMonthSelection,
+  selectNewestDraftAfterLatestClosed,
+  sortReportingMonths,
+} from "./monthSelection";
 import capitalStyles from "./UiV2Capital.module.css";
 import {
   isQueryReady,
@@ -95,10 +98,6 @@ const POSITION_TYPE_LABELS: Record<string, string> = {
 
 function classMeta(assetClass: string): { label: string; color: string } {
   return ASSET_CLASS_META[assetClass] ?? { label: assetClass, color: "#a4a8ad" };
-}
-
-function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
-  return month.year * 12 + month.month;
 }
 
 function rowsMatchMonth(
@@ -926,13 +925,7 @@ export default function UiV2CapitalPage() {
     refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const latestClosed = months.find((month) => month.status === "closed") ?? null;
-  const newerDraft =
-    months.find(
-      (month) =>
-        month.status === "draft" &&
-        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
-    ) ?? null;
+  const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
   const closedId = latestClosed?.id ?? null;
   const closed = closedId !== null;
 
@@ -1105,7 +1098,11 @@ export default function UiV2CapitalPage() {
   const v1ReturnPath =
     requestedMonth.kind === "selected"
       ? requestedStep
-        ? monthlyCloseReturnPath({ monthId: requestedMonth.month.id, step: requestedStep })
+        ? monthlyCloseReturnPath({
+            monthId: requestedMonth.month.id,
+            origin: "monthly-close",
+            step: requestedStep,
+          })
         : `/months/${requestedMonth.month.id}`
       : latestClosed
         ? `/months/${latestClosed.id}`

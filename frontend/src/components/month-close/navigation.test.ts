@@ -8,7 +8,12 @@ describe("monthly close navigation", () => {
       parseMonthlyCloseReturnContext(
         new URLSearchParams("from=monthly-close&step=market_quotes&monthId=42"),
       ),
-    ).toEqual({ monthId: 42, step: "market_quotes" });
+    ).toEqual({ monthId: 42, origin: "monthly-close", step: "market_quotes" });
+    expect(
+      parseMonthlyCloseReturnContext(
+        new URLSearchParams("from=monthly-close-v2&step=market_quotes&monthId=42"),
+      ),
+    ).toEqual({ monthId: 42, origin: "monthly-close-v2", step: "market_quotes" });
     expect(
       parseMonthlyCloseReturnContext(
         new URLSearchParams("from=https://evil.example&step=market_quotes&monthId=42"),
@@ -39,6 +44,9 @@ describe("monthly close navigation", () => {
     );
     expect(routeForGuidedAction("open_final_review", 3, "readiness")).toBe(
       "/months/3/close?from=monthly-close&step=readiness&monthId=3#final_review_close",
+    );
+    expect(routeForGuidedAction("open_freshness", 7, "readiness", "monthly-close-v2")).toBe(
+      "/freshness?from=monthly-close-v2&step=readiness&monthId=7",
     );
   });
 });

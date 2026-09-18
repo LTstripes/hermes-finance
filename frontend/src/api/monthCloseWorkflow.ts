@@ -51,11 +51,36 @@ export type WorkflowMonth = {
   source: string;
 };
 
+export type WorkflowFreshnessCoverage = {
+  row_count: number;
+  current_count: number;
+  stale_count: number;
+  unavailable_count: number;
+  unknown_count: number;
+  missing_count: number;
+  manual_count: number;
+  provider_count: number;
+};
+
+export type WorkflowFreshnessFamily = {
+  family_id:
+    | "market_quotes"
+    | "t_invest_payouts"
+    | "alfa_pro_positions"
+    | "alfa_statement_payouts"
+    | "manual_month_data"
+    | "deposit_cash_snapshots";
+  title: string;
+  status: "current" | "stale" | "mixed" | "unavailable" | "unknown" | "not_applicable" | "missing";
+  coverage: WorkflowFreshnessCoverage;
+  reason_codes: string[];
+};
+
 export type WorkflowFreshness = {
   available: boolean;
   evaluated_on: string | null;
   quote_valuation_target_date: string | null;
-  families: Array<Record<string, unknown>>;
+  families: WorkflowFreshnessFamily[];
   reason_codes: string[];
 };
 
@@ -73,6 +98,19 @@ export type ManualAttention = {
   code: string;
   message: string;
   context: Record<string, unknown>;
+};
+
+export type WorkflowProviderSummary = {
+  step_id: GuidedCloseStepId;
+  state: "not_started" | "ready" | "completed" | "skipped" | "warning" | "blocked";
+  evidence_scope: string;
+  reason_codes: string[];
+  evidence_summary: Record<string, unknown>;
+};
+
+export type WorkflowReconciliationAvailability = {
+  available: boolean;
+  reason_code: string | null;
 };
 
 export type FinalMonthReview = {
@@ -136,8 +174,8 @@ export type FinalMonthReview = {
     } | null;
     known_event_count: number;
   };
-  provider_summary: Array<Record<string, unknown>>;
-  reconciliation_availability: Record<string, unknown>;
+  provider_summary: WorkflowProviderSummary[];
+  reconciliation_availability: WorkflowReconciliationAvailability;
   freshness_summary: WorkflowFreshness;
   close_readiness: CloseReadiness;
   manual_review_cards: ManualReviewCard[];
@@ -217,7 +255,7 @@ export type MonthCloseWorkflow = {
     available: boolean;
     evaluated_on: string | null;
     quote_valuation_target_date: string | null;
-    families: Array<Record<string, unknown>>;
+    families: WorkflowFreshnessFamily[];
     reason_codes: string[];
   };
   final_review: FinalMonthReview | FinalMonthReviewUnavailable;

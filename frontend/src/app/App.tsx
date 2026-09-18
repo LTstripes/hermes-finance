@@ -20,7 +20,7 @@ import { ScenarioLabPage } from "../pages/ScenarioLabPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
-import { UiV2CapitalEntry, UiV2Entry } from "../ui-v2/UiV2Entry";
+import { UiV2CapitalEntry, UiV2CloseEntry, UiV2Entry } from "../ui-v2/UiV2Entry";
 
 type AppProps = {
   queryClient?: QueryClient;
@@ -35,6 +35,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
         <Routes>
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
+          <Route path="v2/close" element={<UiV2CloseEntry />} />
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

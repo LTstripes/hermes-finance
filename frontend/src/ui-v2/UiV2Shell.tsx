@@ -29,7 +29,7 @@ export function UiV2Shell({
   header,
   v1ReturnPath,
 }: {
-  active: UiV2Section;
+  active: UiV2Section | null;
   busy?: boolean;
   children: ReactNode;
   header: ReactNode;

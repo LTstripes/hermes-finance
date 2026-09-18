@@ -528,6 +528,7 @@ export function PayoutsPage() {
                       `/months/${selectedMonth.id}?section=flows`,
                       selectedMonth.id,
                       "actual_payouts",
+                      statementWizardContext.origin,
                     )
                   : `/months/${selectedMonth.id}?section=flows`
               }

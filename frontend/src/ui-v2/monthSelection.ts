@@ -5,6 +5,25 @@ export function sortReportingMonths(months: ReportingMonth[]): ReportingMonth[] 
   return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id);
 }
 
+function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
+  return month.year * 12 + month.month;
+}
+
+export function selectNewestDraftAfterLatestClosed(months: ReportingMonth[]): {
+  latestClosed: ReportingMonth | null;
+  newestDraft: ReportingMonth | null;
+} {
+  const sorted = sortReportingMonths(months);
+  const latestClosed = sorted.find((month) => month.status === "closed") ?? null;
+  const newestDraft =
+    sorted.find(
+      (month) =>
+        month.status === "draft" &&
+        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
+    ) ?? null;
+  return { latestClosed, newestDraft };
+}
+
 type MonthSelection =
   | { kind: "automatic" }
   | { kind: "invalid" }
@@ -23,5 +42,5 @@ export function resolveMonthSelection(values: string[], months: ReportingMonth[]
 export function monthWorkspacePath(monthId: number, step?: GuidedCloseStepId): string {
   const params = new URLSearchParams({ month: String(monthId) });
   if (step) params.set("step", step);
-  return `/v2?${params.toString()}`;
+  return `/v2/close?${params.toString()}`;
 }

@@ -678,6 +678,218 @@
   }
 }
 
+.closeWorkspace {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.closeContext,
+.closeAttention,
+.closeCompactReview,
+.closeLifecyclePanel,
+.closeClosedActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+
+.closeContext {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+
+.closeContext strong {
+  color: var(--ink);
+}
+
+.draftBadge,
+.closeStepState {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #edf2f7;
+  color: #43566d;
+  font-size: 0.77rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.closeStepState[data-state="completed"] {
+  background: #e4f3eb;
+  color: #216343;
+}
+
+.closeStepState[data-state="warning"] {
+  background: #fff2d8;
+  color: #76500d;
+}
+
+.closeStepState[data-state="blocked"] {
+  background: #fde8e7;
+  color: #8a302b;
+}
+
+.closeCurrent,
+.closeOutcome,
+.closeStepsDesktop,
+.closeStepsNarrow {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.closeCurrent {
+  display: grid;
+  gap: 14px;
+  border-color: #b8cbe0;
+  box-shadow: 0 12px 32px rgb(44 74 108 / 8%);
+}
+
+.closeCurrentHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.closeRecommendation,
+.closeOutcome p,
+.closeCompactReview p,
+.closeLifecyclePanel p,
+.closeStepCopy p {
+  color: var(--muted);
+}
+
+.closePrimaryRow,
+.closeSecondaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 9px 15px;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid #244f83;
+  background: #244f83;
+  color: white !important;
+}
+
+.secondaryButton {
+  border: 1px solid #b9c6d4;
+  background: white;
+  color: #244f83;
+}
+
+.closeError {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #fde8e7;
+  color: #7c2925;
+}
+
+.closeAttention strong {
+  display: block;
+}
+
+.closeStepsDesktop > h2 {
+  margin-bottom: 14px;
+}
+
+.closeStepsNarrow {
+  display: none;
+}
+
+.closeStepsNarrow > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.closeStepList {
+  display: grid;
+  gap: 8px;
+  max-height: min(58vh, 620px);
+  margin: 0;
+  padding: 0 5px 0 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.closeStep {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #f7f9fb;
+}
+
+.closeStep[data-active="true"] {
+  border-color: #9bb8d7;
+  background: #edf4fb;
+}
+
+.closeStepOrder {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #dfe7ef;
+  font-weight: 800;
+}
+
+.closeStepCopy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.closeStepCopy > a {
+  font-weight: 750;
+}
+
+.closeStepCopy > p {
+  margin-top: 4px;
+}
+
+.closeCompactReview > div,
+.closeLifecyclePanel > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.closeClosedActions {
+  justify-content: flex-start;
+}
+
 @media (max-width: 1050px) {
   .shell {
     grid-template-columns: 190px minmax(0, 1fr);
@@ -762,6 +974,35 @@
   .passiveLayout {
     grid-template-columns: 1fr;
   }
+
+  .closeStepsDesktop {
+    display: none;
+  }
+
+  .closeStepsNarrow {
+    display: block;
+  }
+
+  .closeStepsNarrow[open] > summary {
+    margin-bottom: 14px;
+  }
+
+  .closeAttention,
+  .closeCompactReview,
+  .closeLifecyclePanel,
+  .closeClosedActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .closePrimaryRow > *,
+  .closeSecondaryRow > *,
+  .closeAttention > a,
+  .closeCompactReview > a,
+  .closeLifecyclePanel > button,
+  .closeClosedActions > * {
+    width: 100%;
+  }
 }
 
 @media (max-width: 550px) {
@@ -823,5 +1064,25 @@
 
   .navigation a > span {
     display: none;
+  }
+
+  .closeCurrent,
+  .closeOutcome,
+  .closeStepsNarrow {
+    padding: 17px;
+  }
+
+  .closeCurrentHeading,
+  .closeStep {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .closeCurrentHeading {
+    display: grid;
+  }
+
+  .closeCurrentHeading .closeStepState,
+  .closeStep > .closeStepState {
+    grid-column: 2;
   }
 }

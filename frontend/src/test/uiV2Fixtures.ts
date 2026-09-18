@@ -557,7 +557,10 @@ export function makeUiV2Workflow({
             known_event_count: 0,
           },
           provider_summary: [],
-          reconciliation_availability: {},
+          reconciliation_availability: {
+            available: false,
+            reason_code: "reconciliation_not_run",
+          },
           freshness_summary: freshness,
           close_readiness: {
             year: month.year,

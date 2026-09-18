@@ -35,7 +35,12 @@ import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
-import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import {
+  monthWorkspacePath,
+  resolveMonthSelection,
+  selectNewestDraftAfterLatestClosed,
+  sortReportingMonths,
+} from "./monthSelection";
 import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
 import styles from "./UiV2Page.module.css";
@@ -121,7 +126,7 @@ function DraftAction({ draft }: { draft: ReportingMonth }) {
     <Link
       className={styles.draftAction}
       data-testid="v2-draft-action"
-      to={monthlyCloseReturnPath({ monthId: draft.id, step: recommended })}
+      to={monthWorkspacePath(draft.id, recommended)}
     >
       <span>{formatMonth(draft.year, draft.month)} ещё не закрыт</span>
       <strong>Продолжить →</strong>
@@ -615,13 +620,7 @@ export default function UiV2Page() {
     refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const latestClosed = months.find((month) => month.status === "closed") ?? null;
-  const newerDraft =
-    months.find(
-      (month) =>
-        month.status === "draft" &&
-        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
-    ) ?? null;
+  const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
   const closedId = latestClosed?.id ?? null;
 
   const comparisonQuery = useQuery({
@@ -681,7 +680,11 @@ export default function UiV2Page() {
   const v1ReturnPath =
     requestedMonth.kind === "selected"
       ? requestedStep
-        ? monthlyCloseReturnPath({ monthId: requestedMonth.month.id, step: requestedStep })
+        ? monthlyCloseReturnPath({
+            monthId: requestedMonth.month.id,
+            origin: "monthly-close",
+            step: requestedStep,
+          })
         : `/months/${requestedMonth.month.id}`
       : latestClosed
         ? `/months/${latestClosed.id}`
