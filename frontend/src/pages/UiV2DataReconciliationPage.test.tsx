@@ -219,4 +219,102 @@ describe("UI v2 Data reconciliation", () => {
     );
     expect(screen.queryByText("synthetic diagnostic report")).toBeNull();
   });
+
+  it("rejects a preview response whose reporting_month_id does not match the request", async () => {
+    const user = userEvent.setup();
+    const { mount, state } = setup();
+    state.preview = result({ reporting_month_id: 91 });
+    mount();
+    await screen.findByTestId("reconciliation-idle");
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Ответ сверки не соответствует выбранному месяцу");
+    expect(screen.queryByTestId("reconciliation-result")).toBeNull();
+    expect(screen.getByTestId("reconciliation-idle")).toBeTruthy();
+  });
+
+  it("ignores stale in-flight completion after the selected month changes", async () => {
+    const user = userEvent.setup();
+    const client = createQueryClient();
+    let releasePreview: ((value: Response) => void) | null = null;
+    const previewGate = new Promise<Response>((resolve) => {
+      releasePreview = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+        const url = new URL(String(input), "http://localhost");
+        const method = options?.method ?? "GET";
+        if (url.pathname === "/api/months") {
+          return new Response(JSON.stringify(uiV2Months), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (
+          method === "POST" &&
+          url.pathname === "/api/months/12/broker-reconciliation-preview"
+        ) {
+          return previewGate;
+        }
+        if (
+          method === "POST" &&
+          url.pathname === "/api/months/91/broker-reconciliation-preview"
+        ) {
+          return new Response(
+            JSON.stringify(
+              result({ reporting_month_id: 91, month_status: "closed", month_closed: true }),
+            ),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.pathname === "/api/accounts") {
+          return new Response(JSON.stringify(uiV2Accounts), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.pathname === "/api/instruments") {
+          return new Response(JSON.stringify(uiV2Instruments), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        throw new Error(`Unexpected ${method} ${url.pathname}`);
+      }),
+    );
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/v2/data/reconciliation"]}>
+          <Routes>
+            <Route path="v2/data/reconciliation" element={<UiV2DataReconciliationPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId("reconciliation-idle");
+    await waitFor(() =>
+      expect(screen.getByTestId("data-month-context")).toHaveTextContent("Август"),
+    );
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+    expect(await screen.findByRole("button", { name: "Получаем снимок…" })).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "91");
+    await waitFor(() =>
+      expect(screen.getByTestId("data-month-context")).toHaveTextContent("Июль"),
+    );
+    expect(screen.getByTestId("reconciliation-idle")).toBeTruthy();
+    releasePreview!(
+      new Response(JSON.stringify(result({ reporting_month_id: 12 })), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Получаем снимок…" })).toBeNull(),
+    );
+    expect(screen.queryByTestId("reconciliation-result")).toBeNull();
+    expect(screen.getByTestId("reconciliation-idle")).toBeTruthy();
+    expect(screen.getByTestId("data-month-context")).toHaveTextContent("Июль");
+  });
 });

@@ -168,6 +168,52 @@ describe("UI v2 Data sources", () => {
     expect(screen.queryByTestId("freshness-clocks")).toBeNull();
   });
 
+  it("hides freshness when year/month match but reporting_month.id differs", async () => {
+    const client = createQueryClient();
+    const selected = uiV2Months[0]; // id 91, July 2031
+    const spoofed = { ...selected, id: 999 }; // same year/month, different id
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        if (url.pathname === "/api/months") {
+          return new Response(JSON.stringify(uiV2Months), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.pathname === "/api/months/91/freshness-provenance") {
+          return new Response(JSON.stringify(makeUiV2Freshness(spoofed)), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.pathname === "/api/market-data/providers/capabilities") {
+          return new Response(JSON.stringify(makeUiV2ProviderCapabilities()), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        throw new Error(url.pathname);
+      }),
+    );
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/v2/data?month=91"]}>
+          <Routes>
+            <Route path="v2/data" element={<UiV2DataSourcesPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByTestId("data-month-context")).toHaveTextContent("Июль 2031");
+    expect(
+      await screen.findByRole("heading", { name: "Ответ не соответствует выбранному месяцу" }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("freshness-clocks")).toBeNull();
+  });
+
+
   it("keeps provider capability disclosure collapsed and read-only", async () => {
     const user = userEvent.setup();
     const { mount } = setup();

@@ -137,22 +137,28 @@ export function MonthToolbar({
 export function CapabilitiesDisclosure({
   profiles,
   ready,
+  failed = false,
   retry,
 }: {
   profiles: ProviderCapabilities[] | undefined;
   ready: boolean;
+  failed?: boolean;
   retry: () => void;
 }) {
   return (
     <details className={dataStyles.disclosure} data-testid="provider-capabilities">
       <summary>Технически: возможности источника</summary>
       {!ready ? (
-        <p className={dataStyles.muted}>
-          Не удалось загрузить профили возможностей.{" "}
-          <button className={dataStyles.secondaryButton} onClick={retry} type="button">
-            Повторить
-          </button>
-        </p>
+        failed ? (
+          <p className={dataStyles.muted}>
+            Не удалось загрузить профили возможностей.{" "}
+            <button className={dataStyles.secondaryButton} onClick={retry} type="button">
+              Повторить
+            </button>
+          </p>
+        ) : (
+          <p className={dataStyles.muted}>Загружаем профили возможностей…</p>
+        )
       ) : profiles && profiles.length > 0 ? (
         <div className={dataStyles.capabilityList}>
           {profiles.map((profile) => (

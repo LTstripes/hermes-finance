@@ -41,14 +41,11 @@ export default function UiV2DataSourcesPage() {
     refetchOnWindowFocus: true,
   });
 
-  // Prefer exact id match when DTO carries reporting_month.id; fall back to year/month.
+  // Exact reporting_month.id only — year/month coincidence is not identity.
   const summaryIdentityOk =
     freshnessQuery.data != null &&
     monthId !== null &&
-    (freshnessQuery.data.reporting_month.id === monthId ||
-      (resolution.kind === "ready" &&
-        freshnessQuery.data.reporting_month.year === resolution.month.year &&
-        freshnessQuery.data.reporting_month.month === resolution.month.month));
+    freshnessQuery.data.reporting_month.id === monthId;
   const freshnessReady = isQueryReady(freshnessQuery) && summaryIdentityOk;
   const capabilitiesReady = isQueryReady(capabilitiesQuery);
 
@@ -135,6 +132,7 @@ export default function UiV2DataSourcesPage() {
           <UiV2Loading label="Читаем сохранённую актуальность и происхождение…" />
         )}
         <CapabilitiesDisclosure
+          failed={capabilitiesQuery.isError}
           profiles={capabilitiesReady ? capabilitiesQuery.data : undefined}
           ready={capabilitiesReady}
           retry={() => void capabilitiesQuery.refetch()}

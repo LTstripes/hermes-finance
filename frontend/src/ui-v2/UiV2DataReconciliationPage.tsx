@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { listAccounts } from "../api/accounts";
@@ -50,6 +50,8 @@ export default function UiV2DataReconciliationPage() {
   const monthsReady = isQueryReady(monthsQuery);
   const resolution = resolveDataMonth(params.getAll("month"), months, monthsReady);
   const monthId = resolution.kind === "ready" ? resolution.month.id : null;
+  const monthIdRef = useRef(monthId);
+  monthIdRef.current = monthId;
 
   const accountsQuery = useQuery({
     enabled: result !== null && !isComparisonUnavailable(result),
@@ -91,16 +93,26 @@ export default function UiV2DataReconciliationPage() {
 
   async function runReconciliation() {
     if (monthId == null) return;
+    const requestedMonthId = monthId;
     setActionError(null);
     try {
       const next = await previewMutation.mutateAsync({
-        id: monthId,
+        id: requestedMonthId,
         mapping: mappingFromValues(accountValues, instrumentValues),
       });
+      // Reject mismatched identity or stale completion after month change.
+      if (next.reporting_month_id !== requestedMonthId) {
+        setActionError("Ответ сверки не соответствует выбранному месяцу.");
+        return;
+      }
+      if (monthIdRef.current !== requestedMonthId) {
+        return;
+      }
       setResult(next);
       setMappingDirty(false);
       if (next.error_code && next.message) setActionError(next.message);
     } catch (error) {
+      if (monthIdRef.current !== requestedMonthId) return;
       setActionError(formatApiError(error));
     }
   }
@@ -136,8 +148,10 @@ export default function UiV2DataReconciliationPage() {
     );
   } else {
     const month = resolution.month;
-    const unavailable = result ? isComparisonUnavailable(result) : false;
-    const unavailableMessage = result ? nonApplicableReason(result) : null;
+    const displayResult =
+      result != null && result.reporting_month_id === month.id ? result : null;
+    const unavailable = displayResult ? isComparisonUnavailable(displayResult) : false;
+    const unavailableMessage = displayResult ? nonApplicableReason(displayResult) : null;
     content = (
       <>
         <DataMonthContext automatic={resolution.automatic} month={month}>
@@ -150,7 +164,7 @@ export default function UiV2DataReconciliationPage() {
           </span>
         </div>
         <MonthToolbar
-          hasResult={result !== null}
+          hasResult={displayResult !== null}
           months={months}
           onRun={() => void runReconciliation()}
           onSelect={selectMonth}
@@ -162,7 +176,7 @@ export default function UiV2DataReconciliationPage() {
             {actionError}
           </div>
         ) : null}
-        {!result ? (
+        {!displayResult ? (
           <section className={dataStyles.idlePanel} data-testid="reconciliation-idle">
             <h2>Сверка ещё не запрашивалась</h2>
             <p>
@@ -187,12 +201,12 @@ export default function UiV2DataReconciliationPage() {
                 <h2>Сверка без изменений данных</h2>
                 <span
                   className={dataStyles.statusBadge}
-                  data-tone={resultStatusTone(result.status)}
+                  data-tone={resultStatusTone(displayResult.status)}
                 >
-                  {labelOf(RECONCILIATION_STATUS_LABELS, result.status)}
+                  {labelOf(RECONCILIATION_STATUS_LABELS, displayResult.status)}
                 </span>
               </div>
-              <ResultSummary result={result} />
+              <ResultSummary result={displayResult} />
               <p className={dataStyles.muted}>
                 <strong>Только чтение.</strong> Цена брокера, учётная цена, оценка, НКД и P&amp;L —
                 наблюдения только для сравнения.
@@ -229,11 +243,11 @@ export default function UiV2DataReconciliationPage() {
                   setInstrumentValues((current) => ({ ...current, [providerId]: hermesId }));
                   setMappingDirty(true);
                 }}
-                result={result}
+                result={displayResult}
               />
             ) : null}
-            <RowsPanel result={result} />
-            <DiagnosticPanel result={result} />
+            <RowsPanel result={displayResult} />
+            <DiagnosticPanel result={displayResult} />
             <p className={dataStyles.familyActions}>
               <Link
                 to={monthlyCloseReturnPath({

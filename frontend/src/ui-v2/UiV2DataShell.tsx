@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ReportingMonth } from "../api/types";
-import { formatMonth } from "../lib/format";
+import { formatDate, formatMonth } from "../lib/format";
 import {
   type DataAppSection,
   dataAppPath,
@@ -154,7 +154,7 @@ export function DataMonthContext({
       <span className={styles.contextDivider} aria-hidden="true">
         ·
       </span>
-      <span>Снимок {month.snapshot_date}</span>
+      <span>Снимок {formatDate(month.snapshot_date)}</span>
       {automatic ? (
         <>
           <span className={styles.contextDivider} aria-hidden="true">
