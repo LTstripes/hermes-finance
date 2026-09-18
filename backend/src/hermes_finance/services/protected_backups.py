@@ -74,10 +74,8 @@ class ProtectedBackupResult:
     protection_state: str
     protection_mode: str
     format_version: int
-    created_at: datetime
-    name: str | None
+    created_at: datetime | None
     size_bytes: int | None
-    artifact_sha256: str | None
     read_back: str
     action_required: str | None
 
@@ -91,10 +89,12 @@ class ProtectedBackupResult:
             "protection_state": self.protection_state,
             "protection_mode": self.protection_mode,
             "format_version": self.format_version,
-            "created_at": self.created_at.isoformat().replace("+00:00", "Z"),
-            "name": self.name,
+            "created_at": (
+                self.created_at.isoformat().replace("+00:00", "Z")
+                if self.created_at is not None
+                else None
+            ),
             "size_bytes": self.size_bytes,
-            "artifact_sha256": self.artifact_sha256,
             "read_back": self.read_back,
             "action_required": self.action_required,
         }
@@ -342,13 +342,28 @@ def _validate_manifest_shape(manifest: dict[str, Any]) -> None:
         raise ProtectedBackupError("managed artifact size identity is invalid")
 
 
+def _snapshot_revision_set(connection: sqlite3.Connection) -> tuple[str, ...]:
+    try:
+        rows = connection.execute(
+            "SELECT version_num FROM alembic_version ORDER BY version_num"
+        ).fetchall()
+    except sqlite3.Error as error:
+        raise ProtectedBackupError("managed artifact Alembic revision set is unreadable") from error
+    revisions = tuple(sorted({str(row[0]) for row in rows}))
+    if not revisions or any(not revision for revision in revisions):
+        raise ProtectedBackupError("managed artifact Alembic revision set is missing")
+    return revisions
+
+
 def _verify_artifact(path: Path) -> tuple[dict[str, Any], str, int]:
     try:
         _assert_no_reparse_components(path)
         if not path.is_file() or path.is_symlink():
             raise ProtectedBackupError("managed artifact is not a regular file")
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
-        with zipfile.ZipFile(path, "r") as archive:
+        artifact_bytes = path.read_bytes()
+        actual = hashlib.sha256(artifact_bytes).hexdigest()
+        size_bytes = len(artifact_bytes)
+        with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
             if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
                 raise ProtectedBackupError("managed artifact members are invalid")
             manifest = json.loads(archive.read(_MANIFEST_NAME))
@@ -373,10 +388,15 @@ def _verify_artifact(path: Path) -> tuple[dict[str, Any], str, int]:
                         raise ProtectedBackupError(
                             "managed artifact SQLite foreign keys are invalid"
                         )
+                    snapshot_revisions = _snapshot_revision_set(connection)
                 finally:
                     connection.close()
             finally:
                 snapshot_path.unlink(missing_ok=True)
+            if manifest.get("source_alembic_revisions") != list(snapshot_revisions):
+                raise ProtectedBackupError(
+                    "managed artifact Alembic revision identity does not verify"
+                )
         normalized = dict(manifest)
         expected = normalized.get("artifact_identity_sha256")
         normalized["artifact_identity_sha256"] = _ZERO_DIGEST
@@ -387,12 +407,12 @@ def _verify_artifact(path: Path) -> tuple[dict[str, Any], str, int]:
             != expected
         ):
             raise ProtectedBackupError("managed artifact canonical identity does not verify")
-        if manifest.get("artifact_size_bytes") != path.stat().st_size:
+        if manifest.get("artifact_size_bytes") != size_bytes:
             raise ProtectedBackupError("managed artifact size does not verify")
         name_match = _MANAGED_FILENAME_RE.fullmatch(path.name)
         if name_match is None or name_match.group("digest") != actual[:16]:
             raise ProtectedBackupError("managed artifact name identity does not verify")
-        return manifest, actual, path.stat().st_size
+        return manifest, actual, size_bytes
     except (OSError, KeyError, json.JSONDecodeError, sqlite3.Error, zipfile.BadZipFile) as error:
         raise ProtectedBackupError("managed artifact read-back verification failed") from error
 
@@ -433,8 +453,10 @@ def _expose_final_without_overwrite(
             f"-{digest[:16]}{suffix}{MANAGED_FILENAME_SUFFIX}"
         )
         try:
-            os.link(staged, final)
-            staged.unlink()
+            if final.exists():
+                sequence += 1
+                continue
+            os.rename(staged, final)
             return final
         except FileExistsError:
             sequence += 1
@@ -527,7 +549,7 @@ def publish_recovery_point(
                 final = _expose_final_without_overwrite(
                     staged, created_at, final_digest, validated_destination
                 )
-                read_manifest, artifact_hash, size_bytes = _verify_artifact(final)
+                read_manifest, _, size_bytes = _verify_artifact(final)
                 for key, value in manifest.items():
                     if (
                         key not in {"artifact_identity_sha256", "artifact_size_bytes"}
@@ -546,9 +568,7 @@ def publish_recovery_point(
                     protection_mode=PROTECTION_MODE,
                     format_version=FORMAT_VERSION,
                     created_at=created_at,
-                    name=final.name,
                     size_bytes=size_bytes,
-                    artifact_sha256=artifact_hash,
                     read_back="verified",
                     action_required=None,
                 )

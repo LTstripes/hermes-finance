@@ -69,10 +69,13 @@ def test_publisher_creates_verified_single_artifact_with_deterministic_manifest(
 
     assert result.status == "published"
     assert result.read_back == "verified"
-    assert result.name is not None
-    assert is_managed_recovery_name(result.name)
-    artifact = destination / result.name
-    assert result.artifact_sha256 == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    artifacts = [path for path in destination.iterdir() if is_managed_recovery_name(path.name)]
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert result.size_bytes == artifact.stat().st_size
+    operation_result = result.as_dict()
+    assert "name" not in operation_result
+    assert "artifact_sha256" not in operation_result
     with zipfile.ZipFile(artifact) as archive:
         assert archive.namelist() == ["manifest.json", "snapshot.sqlite3"]
         manifest = json.loads(archive.read("manifest.json"))
@@ -116,8 +119,9 @@ def test_source_revision_set_is_sorted_and_deterministic(
         )
     destination = tmp_path / "mounted-protected-destination"
     destination.mkdir()
-    result = _publish(monkeypatch, synthetic_database, destination)
-    with zipfile.ZipFile(destination / result.name) as archive:
+    _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    with zipfile.ZipFile(artifact) as archive:
         manifest = json.loads(archive.read("manifest.json"))
     assert manifest["source_alembic_revisions"] == [
         "0040_in_kind_boundary_coverage",
@@ -164,12 +168,84 @@ def test_publisher_fails_closed_for_boundary_and_lock(
 def test_corrupt_readback_is_not_verified(tmp_path: Path, synthetic_database, monkeypatch) -> None:
     destination = tmp_path / "mounted-protected-destination"
     destination.mkdir()
-    result = _publish(monkeypatch, synthetic_database, destination)
-    artifact = destination / result.name
+    _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
     artifact.write_bytes(b"corrupt")
 
     with pytest.raises(ProtectedBackupError, match="read-back verification"):
         protected_backups._verify_artifact(artifact)
+
+
+def test_readback_binds_one_immutable_artifact_byte_sequence(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    original_bytes = artifact.read_bytes()
+    original_hash = hashlib.sha256(original_bytes).hexdigest()
+    original_read_bytes = Path.read_bytes
+
+    def replace_after_read(path: Path) -> bytes:
+        content = original_read_bytes(path)
+        if path == artifact:
+            path.write_bytes(b"replacement-after-read")
+        return content
+
+    monkeypatch.setattr(Path, "read_bytes", replace_after_read)
+    _manifest, verified_hash, verified_size = protected_backups._verify_artifact(artifact)
+
+    assert verified_hash == original_hash
+    assert verified_size == len(original_bytes)
+    assert artifact.read_bytes() == b"replacement-after-read"
+
+
+def test_readback_binds_manifest_revisions_to_snapshot(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    result = _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    with zipfile.ZipFile(artifact) as archive:
+        snapshot_bytes = archive.read("snapshot.sqlite3")
+        manifest = json.loads(archive.read("manifest.json"))
+    manifest["source_alembic_revisions"] = ["0040_in_kind_boundary_coverage"]
+    snapshot_path = tmp_path / "mismatch.sqlite3"
+    snapshot_path.write_bytes(snapshot_bytes)
+    mismatched_bytes = protected_backups._artifact_bytes(snapshot_path, manifest)
+    mismatched_digest = hashlib.sha256(mismatched_bytes).hexdigest()
+    mismatched = (
+        destination
+        / protected_backups._managed_name(result.created_at, mismatched_digest, destination).name
+    )
+    mismatched.write_bytes(mismatched_bytes)
+
+    with pytest.raises(ProtectedBackupError, match="revision identity does not verify"):
+        protected_backups._verify_artifact(mismatched)
+
+
+def test_atomic_final_rename_preserves_existing_managed_point(tmp_path: Path) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    created_at = datetime(2035, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
+    digest = "a" * 64
+    existing = destination / (
+        "hermes_recovery_20350102T030405678000Z-aaaaaaaaaaaaaaaa.hermes-recovery"
+    )
+    existing.write_bytes(b"prior verified point")
+    staged = destination / ".hermes_recovery_staged.incomplete"
+    staged.write_bytes(b"new verified point")
+
+    final = protected_backups._expose_final_without_overwrite(
+        staged, created_at, digest, destination
+    )
+
+    assert final.name.endswith("-1.hermes-recovery")
+    assert final.read_bytes() == b"new verified point"
+    assert existing.read_bytes() == b"prior verified point"
+    assert not staged.exists()
 
 
 def test_interrupted_publication_leaves_only_unrecognized_incomplete_name(
@@ -222,7 +298,10 @@ def test_failed_next_run_preserves_prior_verified_point(
 ) -> None:
     destination = tmp_path / "mounted-protected-destination"
     destination.mkdir()
-    prior = _publish(monkeypatch, synthetic_database, destination)
+    _publish(monkeypatch, synthetic_database, destination)
+    prior_artifact = next(
+        path for path in destination.iterdir() if is_managed_recovery_name(path.name)
+    )
     monkeypatch.setattr(
         protected_backups,
         "_snapshot",
@@ -238,7 +317,7 @@ def test_failed_next_run_preserves_prior_verified_point(
             protection_mode=PROTECTION_MODE,
             source_checkout=Path(__file__).resolve().parents[2],
         )
-    assert (destination / prior.name).is_file()
+    assert prior_artifact.is_file()
 
 
 def test_concurrent_publication_fails_closed_on_destination_lock(
@@ -387,3 +466,7 @@ def test_explicit_cli_failure_is_privacy_safe(tmp_path: Path, capsys) -> None:
     assert payload["created"] is False
     assert payload["verified"] is False
     assert payload["published"] is False
+    assert payload["format_version"] == 1
+    assert payload["created_at"] is None
+    assert "name" not in payload
+    assert "artifact_sha256" not in payload

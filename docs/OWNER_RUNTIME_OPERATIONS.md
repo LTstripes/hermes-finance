@@ -314,7 +314,7 @@ uv run --project backend --locked hermes-finance-protected-backup `
 
 The command emits only privacy-safe machine-readable `created`, `verified`,
 `published`, `read_back`, and `action_required` state plus destination alias,
-format/protection identity, artifact name/size/hash, and creation time. A
+format/protection identity, artifact size, and creation time. A
 successful `published=true` result requires final read-back verification. The
 command does not accept caller-supplied producer SHA or Alembic revisions;
 those are derived from the trusted checkout and consistent snapshot.
