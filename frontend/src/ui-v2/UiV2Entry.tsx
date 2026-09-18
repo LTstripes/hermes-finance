@@ -1,8 +1,13 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
 import { Link } from "react-router";
 
+import type { DataAppSection } from "./monthSelection";
+
 const UiV2Page = lazy(() => import("./UiV2Page"));
 const UiV2CapitalPage = lazy(() => import("./UiV2CapitalPage"));
+const UiV2DataSourcesPage = lazy(() => import("./UiV2DataSourcesPage"));
+const UiV2DataReconciliationPage = lazy(() => import("./UiV2DataReconciliationPage"));
+const UiV2DataPlaceholderPage = lazy(() => import("./UiV2DataPlaceholderPage"));
 
 export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
@@ -25,22 +30,54 @@ export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { fail
   }
 }
 
-export function UiV2Entry() {
+function SuspenseFrame({ children }: { children: ReactNode }) {
   return (
     <UiV2ErrorBoundary>
-      <Suspense fallback={<p role="status">Загружаем новый интерфейс…</p>}>
-        <UiV2Page />
-      </Suspense>
+      <Suspense fallback={<p role="status">Загружаем новый интерфейс…</p>}>{children}</Suspense>
     </UiV2ErrorBoundary>
+  );
+}
+
+export function UiV2Entry() {
+  return (
+    <SuspenseFrame>
+      <UiV2Page />
+    </SuspenseFrame>
   );
 }
 
 export function UiV2CapitalEntry() {
   return (
-    <UiV2ErrorBoundary>
-      <Suspense fallback={<p role="status">Загружаем новый интерфейс…</p>}>
-        <UiV2CapitalPage />
-      </Suspense>
-    </UiV2ErrorBoundary>
+    <SuspenseFrame>
+      <UiV2CapitalPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2DataSourcesEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2DataSourcesPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2DataReconciliationEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2DataReconciliationPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2DataPlaceholderEntry({
+  section,
+}: {
+  section: Exclude<DataAppSection, "sources" | "reconciliation">;
+}) {
+  return (
+    <SuspenseFrame>
+      <UiV2DataPlaceholderPage section={section} />
+    </SuspenseFrame>
   );
 }
