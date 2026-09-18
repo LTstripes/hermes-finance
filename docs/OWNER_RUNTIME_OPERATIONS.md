@@ -327,22 +327,42 @@ fail closed.
 
 The supported rehearsal obtains the protected artifact and independently held
 recovery material after the encrypted container/volume has already been
-opened/mounted and is readable, then:
+opened/mounted and is readable. The Owner explicitly selects one immutable
+full 40-character recovery Git SHA and an independent checkout pinned exactly
+to it; a branch/ref-only, ambiguous, dirty, or non-independent checkout is
+not eligible. The selected recovery SHA may differ from the producer SHA when
+the schema compatibility gate accepts a forward upgrade. Then:
 
-1. verifies the manifest, hashes, protection state, container readability,
-   SQLite integrity, foreign keys, and schema/migration identity before any
-   target mutation; Hermes does not validate or authenticate the key or
-   recovery material;
-2. restores only into a fresh isolated Finance checkout/profile/data/database
+1. verifies the manifest, hashes, producer full SHA, exactly sorted source
+   Alembic revision set, protection state, container readability, SQLite
+   integrity, and foreign keys before any target mutation; Hermes does not
+   validate or authenticate the key or recovery material;
+2. loads the selected checkout's Alembic graph and supported head set and
+   accepts only `same_revision` (source set equals supported heads) or one
+   unambiguous supported `forward_upgrade` path from source set to those
+   heads;
+3. rejects unknown, ahead, divergent, downgrade-required, ambiguous, or
+   multiple unsupported schema paths before target mutation;
+4. restores only into a fresh isolated Finance checkout/profile/data/database
    boundary;
-3. rejects Stable, Preview, development workspaces, source/local-backup
+5. rejects Stable, Preview, development workspaces, source/local-backup
    aliases, reparse/linked paths, non-empty targets, and conflicting targets;
-4. preserves the source recovery artifact unchanged;
-5. validates broad non-private structural counts;
-6. composes the exact-checkout Prepare/Validate and deterministic
-   Start/readiness path; and
-7. confirms the restored application can read months and core financial
+6. preserves the source recovery artifact unchanged;
+7. re-reads the selected checkout SHA and clean state immediately before the
+   restore write and again before migration/Start. Any identity change fails
+   closed before target mutation where possible and never proceeds to
+   migration/Start;
+8. validates broad non-private structural counts;
+9. composes ADR 0014 schema-preflight with the exact-checkout
+   Prepare/Validate and deterministic Start/readiness path; and
+10. confirms the restored application can read months and core financial
    surfaces.
+
+Successful privacy-safe rehearsal evidence binds the managed artifact
+identity/hashes, producer SHA, sorted source revision set, selected recovery
+SHA, selected checkout head set, accepted relationship, and resulting
+readiness/schema/code identity. It contains no financial values, private
+paths, secrets, or recovery material.
 
 Never overwrite Stable, restore through an arbitrary code/schema path, or
 claim cloud delivery or Owner UAT from a local synthetic rehearsal.

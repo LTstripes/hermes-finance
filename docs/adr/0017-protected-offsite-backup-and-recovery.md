@@ -69,7 +69,10 @@ is fixed:
 - the snapshot is produced through the accepted SQLite online-backup path;
   copying a live `finance.db` is not a backup operation;
 - the manifest identifies format version, protection state/mode, creation
-  time, snapshot/schema identity, artifact size, and deterministic hashes;
+  time, snapshot/schema identity, artifact size, deterministic artifact and
+  snapshot hashes, the producing checkout's full 40-character Git SHA, and
+  the source database Alembic revision set as an exactly sorted deterministic
+  set;
 - a unique destination-local incomplete name is used while the artifact or
   manifest is incomplete;
 - only one exact managed final-name pattern is eligible for listing or
@@ -128,23 +131,53 @@ cleanup operation.
 The supported rehearsal proves recovery into a clean isolated Finance
 profile. It is not a production restore and never overwrites Stable.
 
+Before target mutation, the Owner explicitly selects one immutable full
+40-character recovery Git SHA and an independent checkout pinned exactly to
+that SHA. A branch or other ref without the full SHA, an ambiguous checkout,
+or a dirty checkout fails closed. The selected recovery SHA may differ from
+the producing SHA when the compatibility rule below accepts a forward
+upgrade; recovery is not restricted to the producer SHA.
+
 Before target mutation, the workflow must verify:
 
 1. the source artifact is the expected managed format and its manifest,
-   hashes, protection state, container readability, SQLite integrity,
-   foreign keys, and schema/migration identity all pass;
+   hashes, producer SHA, sorted source Alembic revision set, protection
+   state, container readability, SQLite integrity, and foreign keys all pass;
 2. the source artifact remains unchanged throughout verification and restore;
-3. the target is a fresh isolated checkout/profile/data/database boundary;
-4. Stable, Preview, development workspaces, local backup/source aliases,
+3. the selected recovery checkout is independent, clean, pinned exactly to
+   the selected SHA, and its Alembic migration graph and supported head set
+   are loaded;
+4. every source revision is known to that graph, and exactly one of these
+   relationships is accepted:
+   - `same_revision`: the source revision set equals the selected checkout's
+     supported head set;
+   - `forward_upgrade`: one unambiguous supported forward-only Alembic path
+     exists from the source revision set to the selected checkout's heads;
+5. unknown, ahead, divergent, downgrade-required, ambiguous, or multiple
+   unsupported paths fail closed before target mutation;
+6. the target is a fresh isolated checkout/profile/data/database boundary;
+7. Stable, Preview, development workspaces, local backup/source aliases,
    reparse/linked paths, non-empty targets, and conflicting targets are
    rejected;
-5. only broad non-private structural counts and readiness facts are emitted.
+8. only broad non-private structural counts and readiness facts are emitted.
 
-After the pre-mutation gate, the rehearsal restores into the isolated target,
-composes the accepted exact-checkout Prepare/Validate and deterministic
-Start/readiness path, and confirms that the application can read restored
-months and core financial surfaces. It does not create a second launcher or
-runtime state machine, perform cloud operations, or claim Owner UAT.
+After compatibility verification, re-read the selected checkout's Git SHA and
+clean state immediately before the restore target write. Re-read them again
+immediately before migration or Start, as applicable. Every read must still
+equal the selected full SHA and remain clean. An identity change fails closed
+before target mutation where possible and never proceeds to migration or
+Start. Verification, the existing ADR 0014 schema-preflight, guarded
+Prepare/Validate, migration, Start/readiness, and final evidence all use that
+same selected SHA; this workflow does not create a second runtime state
+machine.
+
+The rehearsal restores into the isolated target and confirms that the
+application can read restored months and core financial surfaces. Successful
+privacy-safe evidence binds the managed artifact identity and hashes, producer
+SHA, sorted source revision set, selected recovery SHA, selected checkout
+head set, accepted relationship (`same_revision` or `forward_upgrade`), and
+resulting readiness/schema/code identity. It does not perform cloud
+operations or claim Owner UAT.
 
 ## 6. Restore read-state contract
 
@@ -197,6 +230,11 @@ operation.
 | A10 | Restore with stale selected month/list | Month list reloads; stale selection cannot remain current | #462 |
 | A11 | Existing local backup/restore and OPS02/OPS03 safety | Existing safety regressions remain green; no production/Preview alias | #459 / #461 |
 | A12 | Privacy-safe status and logs | No financial values, secrets, keys, full private paths, or raw artifacts | #459 / #460 / #461 / #462 |
+| A13 | Manifest identity is incomplete or nondeterministic | Producer full SHA, sorted source Alembic revision set, format identity, and artifact/snapshot hashes are required | #459 / #461 |
+| A14 | Recovery SHA is missing, ambiguous, ref-only, or dirty/not independent | Rehearsal fails closed before target mutation | #461 |
+| A15 | Prepared checkout is schema-incompatible | Unknown, ahead, divergent, downgrade-required, ambiguous, or multiple unsupported paths fail before target mutation | #461 |
+| A16 | Checkout SHA or clean state changes between verification and execution | Re-check fails closed; no restore write where possible and never migration/Start | #461 |
+| A17 | Successful rehearsal identity binding | Evidence binds artifact/hash, producer SHA, source revisions, recovery SHA, checkout heads, accepted relationship, and readiness/schema/code identity | #461 |
 
 ## 9. Dependency-ordered implementation map
 
@@ -214,10 +252,11 @@ implement runtime behavior.
 3. **#460 / #417-C — retention.** Retain the newest 12 verified managed
    recovery points, with no age-based expiry/deletion in v1, only after #459
    publication/read-back. Depends on #459.
-4. **#461 / #417-D — isolated DR rehearsal.** Implement pre-mutation verify,
-   isolated restore, structural/readiness checks, and privacy-safe rehearsal
-   result over the #459 format and #460 retention contract. Depends on #459
-   and #460.
+4. **#461 / #417-D — isolated DR rehearsal.** Implement explicit recovery-SHA
+   selection, producer/schema identity binding, pre-mutation compatibility and
+   TOCTOU checks, isolated restore, structural/readiness checks, and
+   privacy-safe rehearsal evidence over the #459 format and #460 retention
+   contract. Depends on #459 and #460.
 5. **#462 / #417-E — restore read-state regression.** Update the existing
    Export/Backup page to reload restored month state and add its focused
    frontend regression. It is interface-independent of the backend chain but
