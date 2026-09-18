@@ -23,7 +23,7 @@ var tests = new (string Name, Action Run)[]
     ("rejects unknown config fields", RejectsUnknownConfigFields),
     ("presents the branded owner launcher surface", PresentsBrandedOwnerSurface),
     ("keeps the ordinary launcher surface free of updater and Git mutation paths", NoUpdaterOrGitMovementSurface),
-    ("exposes explicit prepare, repair, start, and stop actions", PresentsExplicitDependencyActions),
+    ("keeps dependency blockers read-only and points to external OPS01 Prepare", PresentsDependencyBlockerReadOnly),
     ("keeps Stable and Preview data boundaries visibly distinct", KeepsProfileBoundariesDistinct),
     ("sanitizes raw paths from owner-facing blockers", SanitizesOwnerFacingBlockers),
     ("requires exactly one stable profile", RequiresExactlyOneStableProfile),
@@ -31,7 +31,6 @@ var tests = new (string Name, Action Run)[]
     ("rejects preview hardlinks to the production database", RejectsProductionHardlink),
     ("rejects an existing preview database with the wrong sidecar", RejectsWrongPreviewSidecar),
     ("uses the bundled schema probe for a legacy checkout", UsesBundledSchemaProbeForLegacyCheckout),
-    ("uses the bundled dependency preparation helper", UsesBundledDependencyPreparationHelper),
     ("detects missing and outdated locked dependencies", DetectsDependencyDrift),
     ("keeps an offline backend cache miss actionable", KeepsOfflineBackendCacheMissActionable),
     ("fails closed on non-cache offline backend errors", FailsClosedOnInvalidOfflineBackendProbe),
@@ -62,8 +61,6 @@ var tests = new (string Name, Action Run)[]
     ("marks Stable identity mismatch recovery-only", StableMismatchIsRecoveryOnly),
     ("Stable Ready offers Start primary", StableReadyStartsPrimary),
     ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
-    ("setup rejects Stable off the v0.9.0 release commit", SetupRejectsStableOffRelease),
-    ("setup rejects Preview without origin/main", SetupRejectsPreviewWithoutOriginMain),
     ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
@@ -131,9 +128,7 @@ static void PresentsBrandedOwnerSurface()
     Assert(form.Text == "Hermes Finance — Launcher", "The launcher must carry the Hermes Finance title.");
     Assert(labels.Any(label => label.Text == "Запуск локального Hermes"), "The owner-facing launcher title is missing.");
     Assert(buttons.Any(button => button.Text == "Запустить" && button.Enabled), "Start must be the primary enabled action for a ready synthetic profile.");
-    Assert(buttons.Any(button => button.Text == "Подготовить" && !button.Enabled), "Prepare must be available as an explicit action and disabled for ready dependencies.");
-    // Repair remains as explicit recovery action — enabled via secondary when Ready
-    Assert(buttons.Any(button => button.Text == "Исправить"), "Repair button must exist as explicit recovery action.");
+    Assert(!buttons.Any(button => button.Text is "Подготовить" or "Исправить"), "Launcher must not expose dependency mutation actions.");
     Assert(buttons.Any(button => button.Text == "Остановить" && !button.Enabled), "Stop must be disabled before a runtime is launched.");
     Assert(buttons.Any(button => button.Text == "Открыть Hermes" && !button.Enabled), "Open Hermes must stay disabled until health probes pass.");
     Assert(buttons.Any(button => button.Text == "Диагностика и логи"), "Raw diagnostics must have a dedicated details action.");
@@ -165,7 +160,7 @@ static void NoUpdaterOrGitMovementSurface()
     }
 }
 
-static void PresentsExplicitDependencyActions()
+static void PresentsDependencyBlockerReadOnly()
 {
     var profile = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "HEAD");
     var config = new LauncherConfig
@@ -193,9 +188,10 @@ static void PresentsExplicitDependencyActions()
     apply.Invoke(form, [validated]);
 
     var buttons = AllControls(form).OfType<Button>().ToArray();
-    Assert(buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must be the primary enabled action when dependencies are missing or stale.");
-    Assert(buttons.Single(button => button.Text == "Исправить").Enabled, "Repair must be enabled for an explicitly validated profile.");
+    Assert(!buttons.Any(button => button.Text is "Подготовить" or "Исправить"), "Dependency mutation actions must not be present.");
     Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must remain blocked until dependencies are explicitly prepared.");
+    var readiness = AllControls(form).OfType<Label>().Single(label => label.Text.Contains("OPS01 Prepare", StringComparison.Ordinal));
+    Assert(readiness.Text.Contains("внешнем подготовленном runtime", StringComparison.Ordinal), "Dependency blockers must point to external preparation.");
     Assert(buttons.Single(button => button.Text == "Остановить").AccessibleName == "Остановить Hermes", "Stop must retain its owner-facing accessible name.");
 }
 
@@ -335,32 +331,6 @@ static void UsesBundledSchemaProbeForLegacyCheckout()
     }
 }
 
-static void UsesBundledDependencyPreparationHelper()
-{
-    var helper = Path.Combine(AppContext.BaseDirectory, "prepare-runtime-dependencies.ps1");
-    Assert(File.Exists(helper), "The launcher must package its dependency preparation helper.");
-    var source = File.ReadAllText(helper);
-    Assert(source.Contains("uv sync --locked", StringComparison.Ordinal), "The helper must use the locked uv sync command.");
-    Assert(source.Contains("--offline", StringComparison.Ordinal), "Dependency status checks must not reach the network implicitly.");
-    Assert(source.Contains("npm ci", StringComparison.Ordinal), "The helper must use npm ci for the locked frontend tree.");
-    Assert(source.Contains("$Repair", StringComparison.Ordinal), "The helper must expose an explicit repair mode.");
-    Assert(!System.Text.RegularExpressions.Regex.IsMatch(source, @"git\s+(pull|switch|checkout|reset)", System.Text.RegularExpressions.RegexOptions.IgnoreCase), "The dependency helper must not mutate Git state.");
-
-    var checkout = "C:\\Stable Runtime With Spaces";
-    var command = DependencyValidator.BuildPreparationCommand(checkout);
-    Assert(command.WorkingDirectory == checkout, "Dependency preparation must run in the selected checkout.");
-    Assert(
-        command.ArgumentList.ToArray().SequenceEqual(
-        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-Checkout", checkout, "-Prepare"]),
-        "Dependency preparation must pass the selected checkout as one argument and request preparation explicitly.");
-
-    var repairCommand = DependencyValidator.BuildPreparationCommand(checkout, repair: true);
-    Assert(
-        repairCommand.ArgumentList.ToArray().SequenceEqual(
-        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-Checkout", checkout, "-Repair"]),
-        "Dependency repair must pass the selected checkout as one argument and request repair explicitly.");
-}
-
 static void DetectsDependencyDrift()
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-dependency-drift-{Guid.NewGuid():N}");
@@ -400,7 +370,6 @@ static void KeepsOfflineBackendCacheMissActionable()
     var dataDir = Path.Combine(root, "Stable Data");
     var database = Path.Combine(dataDir, "finance.db");
     var toolDirectory = Path.Combine(root, "External Tools With Spaces");
-    var preparationMarker = Path.Combine(root, "network-preparation.marker");
     var originalPath = Environment.GetEnvironmentVariable("PATH");
     try
     {
@@ -412,19 +381,16 @@ static void KeepsOfflineBackendCacheMissActionable()
         RunGit(checkout, "add", ".");
         RunGit(checkout, "commit", "-m", "initial synthetic runtime");
         Directory.CreateDirectory(toolDirectory);
-        var marker = BatchQuote(preparationMarker);
         WriteCommandShim(
             Path.Combine(toolDirectory, "uv.cmd"),
             string.Join("\r\n", new[]
             {
                 "@echo off",
                 "if \"%~1\"==\"sync\" if \"%~2\"==\"--locked\" if \"%~3\"==\"--dry-run\" if \"%~4\"==\"--offline\" (",
-                $"  if exist {marker} exit /b 0",
                 "  echo error: No interpreter found for Python 3.13 in managed installations",
                 "  echo hint: A managed Python download is available for Python 3.13, but Python downloads are set to 'never'",
                 "  exit /b 2",
                 ")",
-                $"> {marker} echo prepared",
                 "exit /b 0",
             }));
         WriteCommandShim(
@@ -451,24 +417,16 @@ static void KeepsOfflineBackendCacheMissActionable()
         var dependencies = validated.Dependencies ?? throw new InvalidOperationException("Preflight did not return dependency status.");
         Assert(!dependencies.BackendReady && dependencies.FrontendReady, "An offline managed-Python cache miss must return a not-ready backend dependency status.");
         Assert(dependencies.BackendDetail.Contains("needs preparation", StringComparison.Ordinal), "The offline cache miss must be owner-visible as preparation work.");
-        Assert(!File.Exists(preparationMarker), "Read-only preflight must not run network-capable preparation.");
+        Assert(!File.Exists(Path.Combine(root, "network-preparation.marker")), "Read-only preflight must not run network-capable preparation.");
 
         using var form = new MainForm(config);
         var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher validation presentation.");
         apply.Invoke(form, [validated]);
         var buttons = AllControls(form).OfType<Button>().ToArray();
-        Assert(buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must be enabled after an offline backend cache miss.");
+        Assert(!buttons.Any(button => button.Text is "Подготовить" or "Исправить"), "Offline dependency blockers must not expose mutation actions.");
         Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Ordinary Start must remain disabled until preparation completes.");
-
-        using var preparation = Process.Start(DependencyValidator.BuildPreparationCommand(checkout))
-            ?? throw new InvalidOperationException("Synthetic owner action could not start the bundled preparation helper.");
-        preparation.WaitForExit();
-        Assert(preparation.ExitCode == 0, "The explicit owner preparation action must complete successfully for the synthetic cache-miss fixture.");
-        Assert(File.Exists(preparationMarker), "Network-capable preparation must run only after the explicit owner Prepare action.");
-        var prepared = ProfileValidator.Validate(config, profile);
-        apply.Invoke(form, [prepared]);
-        Assert(buttons.Single(button => button.Text == "Запустить").Enabled, "Start must become enabled after explicit preparation succeeds.");
+        Assert(AllControls(form).OfType<Label>().Any(label => label.Text.Contains("OPS01 Prepare", StringComparison.Ordinal)), "Offline dependency blockers must point to external OPS01 Prepare.");
     }
     finally
     {
@@ -1258,14 +1216,15 @@ static void ExposesSinglePrimaryCta()
     var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
     apply.Invoke(formReady, [validatedReady]);
     var buttonsReady = AllControls(formReady).OfType<Button>().ToArray();
-    var primaryReady = buttonsReady.Where(b => b.Enabled && (b.Text == "Запустить" || b.Text == "Подготовить" || b.Text == "Открыть Hermes" || b.Text == "Остановить")).ToList();
+    var primaryReady = buttonsReady.Where(b => b.Enabled && (b.Text == "Запустить" || b.Text == "Открыть Hermes" || b.Text == "Остановить")).ToList();
     Assert(primaryReady.Count == 1 && primaryReady[0].Text == "Запустить", $"Ready state must have exactly one primary CTA 'Запустить', found {string.Join(",", primaryReady.Select(b=>b.Text))}.");
 
     using var formNeeds = new MainForm(config);
     var validatedNeeds = new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc", "production", new DependencyStatus(false, false, "needs preparation", "needs preparation"));
     apply.Invoke(formNeeds, [validatedNeeds]);
     var buttonsNeeds = AllControls(formNeeds).OfType<Button>().ToArray();
-    Assert(buttonsNeeds.Single(b=>b.Text=="Подготовить").Enabled, "NeedsPreparation must have Prepare as primary CTA.");
+    Assert(!buttonsNeeds.Any(b => b.Text is "Подготовить" or "Исправить"), "NeedsPreparation must not expose dependency mutation CTAs.");
+    Assert(buttonsNeeds.Single(b => b.Text == "Обновить проверку").Enabled, "NeedsPreparation must offer read-only Refresh as the primary CTA.");
     Assert(!buttonsNeeds.Single(b=>b.Text=="Запустить").Enabled, "Start must not be primary when preparation needed.");
 
     // Blocked identity mismatch on Preview remains read-only Refresh.
@@ -1279,7 +1238,7 @@ static void ExposesSinglePrimaryCta()
     using var formBlocked = new MainForm(previewConfig);
     var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
     // Use overload with exception
-    applyBlocked.Invoke(formBlocked, [preview, new LauncherValidationException("Checkout identity does not match this profile."), false, false]);
+    applyBlocked.Invoke(formBlocked, [preview, new LauncherValidationException("Checkout identity does not match this profile."), false]);
     var buttonsBlocked = AllControls(formBlocked).OfType<Button>().ToArray();
     Assert(buttonsBlocked.Single(b=>b.Text=="Обновить проверку").Enabled, "Blocked Preview identity mismatch must enable Refresh as actionable primary.");
 }
@@ -1413,7 +1372,7 @@ static void PortCollisionOffersRefreshNotStop()
     using var form = new MainForm(config);
     var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
         ?? throw new InvalidOperationException("Could not find ApplyBlocked for port-collision presentation.");
-    applyBlocked.Invoke(form, [stable, portEx, false, false]);
+    applyBlocked.Invoke(form, [stable, portEx, false]);
     var buttons = AllControls(form).OfType<Button>().ToArray();
     Assert(!buttons.Single(button => button.Text == "Остановить").Enabled, "Stop must be disabled for an external port collision the launcher cannot stop.");
     Assert(buttons.Single(button => button.Text == "Обновить проверку").Enabled, "Refresh must be enabled for an external port collision.");
@@ -1438,7 +1397,7 @@ static void StableMismatchIsRecoveryOnly()
 
 static string[] PrimaryCtaTexts() =>
 [
-    "Запустить", "Подготовить", "Открыть Hermes", "Остановить",
+    "Запустить", "Открыть Hermes", "Остановить",
 ];
 
 static List<string> EnabledPrimaries(MainForm form) =>
@@ -1709,20 +1668,20 @@ static void SetupFlowCreatesConcreteConfig()
         RunGit(stableCheckout, "config", "--local", "user.email", "hermes-safety-test");
         RunGit(stableCheckout, "add", ".");
         RunGit(stableCheckout, "commit", "-m", "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         RunGit(previewCheckout, "init");
         RunGit(previewCheckout, "config", "--local", "user.name", "Hermes Safety Test");
         RunGit(previewCheckout, "config", "--local", "user.email", "hermes-safety-test");
         RunGit(previewCheckout, "add", ".");
-        RunGit(previewCheckout, "commit", "-m", "synthetic preview at origin/main");
-        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
+        RunGit(previewCheckout, "commit", "-m", "synthetic preview local identity");
 
         // Synthetic owner selections become a concrete valid config — no manual JSON.
         var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-        Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.9.0", "Setup must pin Stable to the v0.9.0 release.");
-        Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Setup must point Preview at origin/main.");
+        var stableHead = RunGit(stableCheckout, "rev-parse", "HEAD");
+        var previewHead = RunGit(previewCheckout, "rev-parse", "HEAD");
+        Assert(config.Profiles[0].ExpectedRef == stableHead, "Setup must persist the exact prepared local Stable identity.");
+        Assert(config.Profiles[1].ExpectedRef == previewHead, "Setup must persist the exact prepared local Preview identity.");
         Assert(LauncherConfig.IsConcreteConfig(config), "Setup result must be concrete (absolute paths, no placeholders).");
 
         var configPath = Path.Combine(root, "launcher", "config.json");
@@ -1751,83 +1710,6 @@ static void InitSyntheticRepo(string checkout, string commitMessage)
     RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
     RunGit(checkout, "add", ".");
     RunGit(checkout, "commit", "-m", commitMessage);
-}
-
-static void CommitSyntheticFile(string checkout, string fileName, string content, string commitMessage)
-{
-    File.WriteAllText(Path.Combine(checkout, fileName), content);
-    RunGit(checkout, "add", fileName);
-    RunGit(checkout, "commit", "-m", commitMessage);
-}
-
-static void SetupRejectsStableOffRelease()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-stale-{Guid.NewGuid():N}");
-    var stableCheckout = Path.Combine(root, "stable");
-    var stableData = Path.Combine(root, "stable-data");
-    var previewCheckout = Path.Combine(root, "preview");
-    var previewData = Path.Combine(root, "preview-data");
-    try
-    {
-        CreateRuntimeLayout(stableCheckout);
-        Directory.CreateDirectory(stableData);
-        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
-        // Tag exists, but HEAD moved past the release commit.
-        CommitSyntheticFile(stableCheckout, "post-release.txt", "drifted past v0.9.0", "synthetic post-release drift");
-        CreateRuntimeLayout(previewCheckout);
-        Directory.CreateDirectory(previewData);
-        InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
-        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
-
-        try
-        {
-            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-            throw new InvalidOperationException("Setup must reject a Stable checkout off the v0.9.0 release commit.");
-        }
-        catch (LauncherValidationException exception)
-        {
-            Assert(exception.Message.Contains("Stable", StringComparison.Ordinal), "Stable rejection must name the Stable checkout.");
-        }
-    }
-    finally
-    {
-        DeleteSyntheticTree(root);
-    }
-}
-
-static void SetupRejectsPreviewWithoutOriginMain()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-no-main-{Guid.NewGuid():N}");
-    var stableCheckout = Path.Combine(root, "stable");
-    var stableData = Path.Combine(root, "stable-data");
-    var previewCheckout = Path.Combine(root, "preview");
-    var previewData = Path.Combine(root, "preview-data");
-    try
-    {
-        CreateRuntimeLayout(stableCheckout);
-        Directory.CreateDirectory(stableData);
-        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
-        CreateRuntimeLayout(previewCheckout);
-        Directory.CreateDirectory(previewData);
-        // A plain git repo: no refs/remotes/origin/main exists.
-        InitSyntheticRepo(previewCheckout, "synthetic preview without origin/main");
-
-        try
-        {
-            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-            throw new InvalidOperationException("Setup must reject a Preview checkout without refs/remotes/origin/main.");
-        }
-        catch (LauncherValidationException exception)
-        {
-            Assert(exception.Message.Contains("Preview", StringComparison.Ordinal), "Preview rejection must name the Preview checkout.");
-        }
-    }
-    finally
-    {
-        DeleteSyntheticTree(root);
-    }
 }
 
 static void SetupRejectsPreviewSharingStableGitDir()

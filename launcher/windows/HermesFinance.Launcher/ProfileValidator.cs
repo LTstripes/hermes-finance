@@ -252,11 +252,7 @@ public static class ProfileValidator
     {
         var head = RunGit(checkout, "rev-parse", "HEAD");
         var expected = RunGit(checkout, "rev-parse", "--verify", profile.ExpectedRef + "^{commit}");
-        var canonicalMain = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
-            ? TryReadGitRef(checkout, "refs/remotes/origin/main^{commit}")
-            : null;
-        if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase)
-            && !head.Equals(canonicalMain, StringComparison.OrdinalIgnoreCase))
+        if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase))
         {
             throw new LauncherValidationException("Checkout identity does not match this profile.");
         }
@@ -280,6 +276,8 @@ public static class ProfileValidator
         }
         return head;
     }
+
+    internal static string ReadGitHead(string checkout) => RunGit(checkout, "rev-parse", "HEAD");
 
     internal static string AssertSidecar(LauncherProfile profile, string dataDir, string database)
     {
@@ -466,18 +464,6 @@ public static class ProfileValidator
         catch (Win32Exception exception)
         {
             throw new LauncherValidationException($"Checkout Git identity cannot be read because git is unavailable: {exception.Message}");
-        }
-    }
-
-    private static string? TryReadGitRef(string checkout, string reference)
-    {
-        try
-        {
-            return RunGit(checkout, "rev-parse", "--verify", reference);
-        }
-        catch (LauncherValidationException)
-        {
-            return null;
         }
     }
 

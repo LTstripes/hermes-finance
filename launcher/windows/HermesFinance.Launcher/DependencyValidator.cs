@@ -88,42 +88,6 @@ internal static class DependencyValidator
         return managedPythonCacheMiss || (cacheLanguage && missingLanguage);
     }
 
-    internal static ProcessStartInfo BuildPreparationCommand(string checkout, bool repair = false)
-    {
-        var powershell = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-        if (!File.Exists(powershell))
-        {
-            powershell = "powershell.exe";
-        }
-
-        var helper = Path.Combine(AppContext.BaseDirectory, "prepare-runtime-dependencies.ps1");
-        if (!File.Exists(helper))
-        {
-            throw new LauncherValidationException("Dependency preparation is unavailable: helper is missing.");
-        }
-
-        var command = new ProcessStartInfo
-        {
-            FileName = powershell,
-            WorkingDirectory = checkout,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        command.ArgumentList.Add("-NoProfile");
-        command.ArgumentList.Add("-ExecutionPolicy");
-        command.ArgumentList.Add("Bypass");
-        command.ArgumentList.Add("-File");
-        command.ArgumentList.Add(helper);
-        command.ArgumentList.Add("-Checkout");
-        command.ArgumentList.Add(checkout);
-        command.ArgumentList.Add(repair ? "-Repair" : "-Prepare");
-        return command;
-    }
-
     private static string ParseNpmStatus(DependencyCommandResult result, out bool needsPreparation)
     {
         if (string.IsNullOrWhiteSpace(result.StandardOutput))

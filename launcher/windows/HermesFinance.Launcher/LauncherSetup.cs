@@ -9,9 +9,6 @@ namespace HermesFinance.Launcher;
 /// </summary>
 public static class LauncherSetup
 {
-    private const string StableReleaseRef = "refs/tags/v0.9.0";
-    private const string PreviewExpectedRef = "refs/remotes/origin/main";
-
     public static string DefaultConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "HermesFinance", "launcher", "config.json");
@@ -34,6 +31,8 @@ public static class LauncherSetup
 
         var stableDatabaseFull = ResolveDatabasePath(stableDatabase, stableDataFull, "Stable database");
         var previewDatabaseFull = ResolveDatabasePath(previewDatabase, previewDataFull, "Preview database");
+        var stableHead = ProfileValidator.ReadGitHead(stableCheckoutFull);
+        var previewHead = ProfileValidator.ReadGitHead(previewCheckoutFull);
 
         var stable = new LauncherProfile
         {
@@ -41,7 +40,7 @@ public static class LauncherSetup
             DisplayName = "Hermes Finance — Stable",
             Type = "stable",
             Checkout = stableCheckoutFull,
-            ExpectedRef = StableReleaseRef,
+            ExpectedRef = stableHead,
             DataDir = stableDataFull,
             Database = stableDatabaseFull,
             OpenBrowser = true,
@@ -52,7 +51,7 @@ public static class LauncherSetup
             DisplayName = "Hermes Finance — Preview",
             Type = "preview",
             Checkout = previewCheckoutFull,
-            ExpectedRef = PreviewExpectedRef,
+            ExpectedRef = previewHead,
             DataDir = previewDataFull,
             Database = previewDatabaseFull,
             OpenBrowser = true,
@@ -64,10 +63,9 @@ public static class LauncherSetup
         ProfileValidator.AssertProfileTuple(preview, stableCheckoutFull, stableDataFull, stableDatabaseFull, previewCheckoutFull, previewDataFull, previewDatabaseFull);
 
         // Identity proof reuses the exact preflight invariants — no weaker
-        // parallel implementation. Stable: HEAD == v0.9.0 tag and clean.
-        // Preview: at refs/remotes/origin/main, clean, and independent from
-        // Stable (no linked worktree / shared git-common-dir). Read-only:
-        // no fetch, no network; Preview update stays an explicit owner action.
+        // parallel implementation. Setup records the exact already-prepared
+        // local HEAD for each selected checkout; it never discovers moving
+        // refs, fetches, or invokes an updater.
         try
         {
             ProfileValidator.AssertGitIdentity(stable, stableCheckoutFull, stableCheckoutFull);
@@ -75,7 +73,7 @@ public static class LauncherSetup
         catch (LauncherValidationException exception)
         {
             throw new LauncherValidationException(
-                $"Setup rejected the Stable checkout: {exception.Message} Select a clean prepared Stable checkout at released v0.9.0 (HEAD == refs/tags/v0.9.0).");
+                $"Setup rejected the Stable checkout: {exception.Message} Select a clean prepared Stable checkout and retry.");
         }
         try
         {
@@ -84,7 +82,7 @@ public static class LauncherSetup
         catch (LauncherValidationException exception)
         {
             throw new LauncherValidationException(
-                $"Setup rejected the Preview checkout: {exception.Message} Select a clean independent Preview checkout at refs/remotes/origin/main (not a Stable worktree).");
+                $"Setup rejected the Preview checkout: {exception.Message} Select a clean independent Preview checkout (not a Stable worktree).");
         }
 
         return new LauncherConfig
