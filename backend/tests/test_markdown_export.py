@@ -84,6 +84,7 @@ def make_dashboard() -> DashboardResult:
             passive_income_minus_mandatory_expenses=R(1_000_000),
             goal_target=R(10_000_000),
             goal_progress_pct=Decimal("60.00"),
+            forecast_goal_progress_pct=Decimal("70.00"),
             is_approximate=True,
             warnings=(),
         ),
@@ -236,7 +237,7 @@ def test_render_markdown_report_has_complete_stable_snapshot() -> None:
 - Статус: closed
 - Дата снимка: 31.07.2026
 - Источник: manual
-- Версия расчётов: v2
+- Версия расчётов: v3
 
 ## 2. Итоговые KPI
 | Показатель | Значение |

@@ -37,8 +37,10 @@ def test_coverage_and_progress_normal_case() -> None:
     # 10000.00 / 5000.00 * 100 = 200.00%
     assert result.coverage_pct == Decimal("200.00")
     assert result.actual_mandatory_expense_coverage_pct == Decimal("0.00")
-    # 10000.00 / 100000.00 * 100 = 10.00%
-    assert result.goal_progress_pct == Decimal("10.00")
+    # No closed-history actual average is available in this fixture.
+    assert result.goal_progress_pct == Decimal("0.00")
+    # 10000.00 / 100000.00 * 100 = 10.00% forecast projection
+    assert result.forecast_goal_progress_pct == Decimal("10.00")
     assert result.passive_income_minus_mandatory_expenses == RubleAmount(500_000)
     assert result.forecast_monthly == RubleAmount(1_000_000)
     assert result.mandatory_expenses == RubleAmount(500_000)
@@ -57,12 +59,14 @@ def test_zero_expenses_returns_none_coverage_and_warning() -> None:
     assert result.passive_income_minus_mandatory_expenses == RubleAmount(1_000_000)
     assert "Обязательные расходы равны нулю — покрытие не рассчитывается" in result.warnings
     # goal progress still works
-    assert result.goal_progress_pct == Decimal("10.00")
+    assert result.goal_progress_pct == Decimal("0.00")
+    assert result.forecast_goal_progress_pct == Decimal("10.00")
 
 
 def test_zero_goal_returns_none_progress_and_warning() -> None:
     result = run(forecast_monthly=1_000_000, expenses=500_000, goal=0)
     assert result.goal_progress_pct is None
+    assert result.forecast_goal_progress_pct is None
     assert "Цель равна нулю — прогресс не рассчитывается" in result.warnings
     assert result.coverage_pct == Decimal("200.00")
 
@@ -71,6 +75,7 @@ def test_both_zero_denominators_warn() -> None:
     result = run(forecast_monthly=1_000_000, expenses=0, goal=0)
     assert result.coverage_pct is None
     assert result.goal_progress_pct is None
+    assert result.forecast_goal_progress_pct is None
     assert len(result.warnings) == 2
 
 
@@ -85,9 +90,10 @@ def test_coverage_below_hundred_and_negative_remainder() -> None:
 
 
 def test_progress_above_hundred() -> None:
-    result = run(forecast_monthly=20_000_000, expenses=500_000)
+    result = run(forecast_monthly=20_000_000, expenses=500_000, actual_average=20_000_000)
     # 200000.00 / 100000.00 * 100 = 200.00%
     assert result.goal_progress_pct == Decimal("200.00")
+    assert result.forecast_goal_progress_pct == Decimal("200.00")
 
 
 # --- rounding to 0.01 with ROUND_HALF_UP ---
@@ -106,11 +112,19 @@ def test_actual_average_coverage_rounds_with_half_up() -> None:
 
 
 def test_percent_rounds_half_up() -> None:
-    result = run(forecast_monthly=7250, expenses=100_000)
+    result = run(forecast_monthly=7250, expenses=100_000, actual_average=7250)
     # 72.50 / 1000.00 * 100 = 7.25
     assert result.coverage_pct == Decimal("7.25")
     # 72.50 / 100000.00 * 100 = 0.0725 -> 0.07
     assert result.goal_progress_pct == Decimal("0.07")
+    assert result.forecast_goal_progress_pct == Decimal("0.07")
+
+
+def test_actual_goal_progress_is_distinct_from_forecast_projection() -> None:
+    result = run(forecast_monthly=1_000_000, expenses=500_000, actual_average=333_333)
+
+    assert result.goal_progress_pct == Decimal("3.33")
+    assert result.forecast_goal_progress_pct == Decimal("10.00")
 
 
 # --- approximate propagation and warning merge ---

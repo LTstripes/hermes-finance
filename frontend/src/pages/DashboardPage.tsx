@@ -371,7 +371,7 @@ function ForecastOverviewCard({
         </div>
         <div>
           <span>Прогноз / цель</span>
-          <strong>{ready ? pctLabel(kpis.goal_progress_pct) : "…"}</strong>
+          <strong>{ready ? pctLabel(kpis.forecast_goal_progress_pct) : "…"}</strong>
         </div>
       </div>
       {ready ? <ForecastBreakdown forecast={forecast} /> : null}

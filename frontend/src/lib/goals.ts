@@ -61,7 +61,7 @@ export function defaultCalculationMode(goalType: string): string {
 
 export function goalForecastSupportLabel(goalType: string, calculationMode: string): string {
   if (goalType === "passive_income" && calculationMode === "monthly_net_passive_income") {
-    return "Прогресс считается по прогнозу чистого пассивного дохода в месяц.";
+    return "Прогресс считается по фактическому среднему чистому пассивному доходу закрытых месяцев.";
   }
   if (goalType === "capital" && calculationMode === "liquid_capital_net") {
     return "Прогресс считается по ликвидному капиталу выбранного отчётного месяца.";

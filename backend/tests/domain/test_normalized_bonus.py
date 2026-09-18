@@ -12,10 +12,10 @@ def mk_month(year: int, month: int, kopecks: int) -> MonthlyPassiveIncome:
 # --- empty input ---
 
 
-def test_empty_input_returns_zeros_and_warning() -> None:
+def test_empty_input_returns_unavailable_and_warning() -> None:
     result = calculate_normalized_bonus(())
-    assert result.monthly_average == RubleAmount(0)
-    assert result.sum_total == RubleAmount(0)
+    assert result.monthly_average is None
+    assert result.sum_total is None
     assert result.count_months == 0
     assert result.is_complete_12m is False
     assert result.months == ()
@@ -25,16 +25,18 @@ def test_empty_input_returns_zeros_and_warning() -> None:
 # --- single month ---
 
 
-def test_single_month_average_equals_amount() -> None:
+def test_single_month_is_normalized_over_selected_twelve_month_period() -> None:
     result = calculate_normalized_bonus((mk_month(2031, 3, 300_000),))
-    assert result.monthly_average == RubleAmount(300_000)
+    # One observed 3,000 RUB bonus is 250 RUB/month over the selected 12m
+    # normalization period; missing months are not inferred as observed rows.
+    assert result.monthly_average == RubleAmount(25_000)
     assert result.sum_total == RubleAmount(300_000)
     assert result.count_months == 1
     assert result.is_complete_12m is False
     assert result.warnings == ("Премия оценена по 1 месяцев из 12",)
 
 
-# --- three months: sum / 3 ---
+# --- three months: sum / 12 ---
 
 
 def test_three_months_average_is_sum_over_count() -> None:
@@ -45,8 +47,8 @@ def test_three_months_average_is_sum_over_count() -> None:
             mk_month(2031, 3, 300_000),
         )
     )
-    # 600000 / 3 = 200000 kopecks = 2000.00 RUB
-    assert result.monthly_average == RubleAmount(200_000)
+    # 600000 / 12 = 50000 kopecks = 500.00 RUB
+    assert result.monthly_average == RubleAmount(50_000)
     assert result.sum_total == RubleAmount(600_000)
     assert result.count_months == 3
     assert result.is_complete_12m is False
@@ -82,6 +84,23 @@ def test_thirteen_months_keeps_last_twelve() -> None:
     assert result.warnings == ()
 
 
+def test_partial_calendar_window_does_not_stretch_to_twelve_records() -> None:
+    # The latest month is March 2032, so the selected period starts in April
+    # 2031.  April 2031 is missing; the older March row is outside the period.
+    months = (
+        mk_month(2031, 3, 900_000),
+        mk_month(2031, 4, 100_000),
+        mk_month(2031, 5, 100_000),
+        mk_month(2032, 3, 100_000),
+    )
+    result = calculate_normalized_bonus(months)
+    assert result.count_months == 3
+    assert result.months == (months[1], months[2], months[3])
+    assert result.sum_total == RubleAmount(300_000)
+    assert result.monthly_average == RubleAmount(25_000)
+    assert result.is_complete_12m is False
+
+
 # --- rounding ROUND_HALF_UP ---
 
 
@@ -93,8 +112,8 @@ def test_average_rounds_half_up() -> None:
             mk_month(2031, 3, 0),
         )
     )
-    # 10000 / 3 = 3333.33 -> 3333
-    assert result.monthly_average == RubleAmount(3_333)
+    # 10000 / 12 = 833.33 -> 833
+    assert result.monthly_average == RubleAmount(833)
     assert result.sum_total == RubleAmount(10_000)
 
 

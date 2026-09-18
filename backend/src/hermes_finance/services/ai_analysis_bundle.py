@@ -91,7 +91,7 @@ LIQUIDITY_RULE = "real_estate_and_mortgage_are_excluded_from_liquid_capital"
 IIS_RESULT_RULE = "only_received_tax_benefits_are_added_to_actual_result"
 DIVIDEND_COMPONENT_SOURCE = "actual_closed_month_dividend_average_annualized"
 DEPOSIT_PROJECTION_METHOD = "persisted_monthly_estimate_times_12_plus_expected_interest"
-MONTHLY_SUMMARY_VERSION = "v2"
+MONTHLY_SUMMARY_VERSION = "v3"
 ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 _SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
 

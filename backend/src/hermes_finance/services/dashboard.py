@@ -73,9 +73,9 @@ class AccountResultSlice:
 @dataclass(frozen=True, slots=True)
 class InstrumentClassResult:
     instrument_type: str
-    market_value: RubleAmount
-    cost_basis: RubleAmount
-    unrealized_result: RubleAmount
+    market_value: RubleAmount | None
+    cost_basis: RubleAmount | None
+    unrealized_result: RubleAmount | None
     realized_result: RubleAmount
 
 
@@ -194,6 +194,12 @@ def _asset_allocation_delta(
 def _instrument_class_results(
     session: Session, reporting_month_id: int
 ) -> tuple[InstrumentClassResult, ...]:
+    """Return position results plus classes with known cash income only.
+
+    A class represented only by persisted cash-flow evidence has no current
+    valuation/cost-basis evidence. Those fields stay unavailable rather than
+    being fabricated as zero; the exact cash income remains available.
+    """
     rows = session.execute(
         select(
             Instrument.instrument_type,
@@ -212,15 +218,22 @@ def _instrument_class_results(
         bucket[2] += int(unrealized)
 
     realized_by_type = _cash_income_by_class(session, reporting_month_id)
+    instrument_types = sorted({*aggregated, *realized_by_type})
     return tuple(
         InstrumentClassResult(
             instrument_type=instrument_type,
-            market_value=RubleAmount(values[0]),
-            cost_basis=RubleAmount(values[1]),
-            unrealized_result=RubleAmount(values[2]),
+            market_value=RubleAmount(aggregated[instrument_type][0])
+            if instrument_type in aggregated
+            else None,
+            cost_basis=RubleAmount(aggregated[instrument_type][1])
+            if instrument_type in aggregated
+            else None,
+            unrealized_result=RubleAmount(aggregated[instrument_type][2])
+            if instrument_type in aggregated
+            else None,
             realized_result=RubleAmount(realized_by_type.get(instrument_type, 0)),
         )
-        for instrument_type, values in sorted(aggregated.items())
+        for instrument_type in instrument_types
     )
 
 

@@ -125,6 +125,7 @@ class CoverageOut(BaseModel):
     passive_income_minus_mandatory_expenses: MoneyValue
     goal_target: MoneyValue
     goal_progress_pct: str | None
+    forecast_goal_progress_pct: str | None
     is_approximate: bool
     warnings: list[str]
 
@@ -171,8 +172,8 @@ class SalaryTaxOut(BaseModel):
 class NormalizedBonusOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    monthly_average: MoneyValue
-    sum_total: MoneyValue
+    monthly_average: MoneyValue | None
+    sum_total: MoneyValue | None
     count_months: int
     is_complete_12m: bool
     warnings: list[str]
@@ -268,9 +269,9 @@ class InstrumentClassResultOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     instrument_type: str
-    market_value: MoneyValue
-    cost_basis: MoneyValue
-    unrealized_result: MoneyValue
+    market_value: MoneyValue | None
+    cost_basis: MoneyValue | None
+    unrealized_result: MoneyValue | None
     realized_result: MoneyValue
 
 
@@ -323,6 +324,7 @@ class KpiOut(BaseModel):
     passive_income_history_start_month: str | None
     passive_income_average_months_used: list[str]
     goal_progress_pct: str | None
+    forecast_goal_progress_pct: str | None
     goal_target: MoneyValue
     mandatory_expenses: MoneyValue
     mandatory_expense_coverage_pct: str | None
@@ -449,6 +451,7 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             ),
             goal_target=_money(coverage.goal_target),
             goal_progress_pct=_dec_str(coverage.goal_progress_pct),
+            forecast_goal_progress_pct=_dec_str(coverage.forecast_goal_progress_pct),
             is_approximate=coverage.is_approximate,
             warnings=list(coverage.warnings),
         ),
@@ -484,8 +487,8 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
         ),
         salary_actual_net=_money(summary.salary_actual_net),
         normalized_bonus=NormalizedBonusOut(
-            monthly_average=_money(bonus.monthly_average),
-            sum_total=_money(bonus.sum_total),
+            monthly_average=_money_opt(bonus.monthly_average),
+            sum_total=_money_opt(bonus.sum_total),
             count_months=bonus.count_months,
             is_complete_12m=bonus.is_complete_12m,
             warnings=list(bonus.warnings),
@@ -568,6 +571,7 @@ def _income_plan_summary_out(result: IncomePlanSummaryResult) -> IncomePlanSumma
             ),
             goal_target=_money(coverage.goal_target),
             goal_progress_pct=_dec_str(coverage.goal_progress_pct),
+            forecast_goal_progress_pct=_dec_str(coverage.forecast_goal_progress_pct),
             is_approximate=coverage.is_approximate,
             warnings=list(coverage.warnings),
         ),
@@ -617,6 +621,7 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
             passive_income_history_start_month=summary_out.passive_income_history_start_month,
             passive_income_average_months_used=summary_out.passive_income_average_months_used,
             goal_progress_pct=summary_out.coverage.goal_progress_pct,
+            forecast_goal_progress_pct=summary_out.coverage.forecast_goal_progress_pct,
             goal_target=summary_out.coverage.goal_target,
             mandatory_expenses=summary_out.coverage.mandatory_expenses,
             mandatory_expense_coverage_pct=summary_out.coverage.coverage_pct,
@@ -661,9 +666,9 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         result_by_instrument_class=[
             InstrumentClassResultOut(
                 instrument_type=item.instrument_type,
-                market_value=_money(item.market_value),
-                cost_basis=_money(item.cost_basis),
-                unrealized_result=_money(item.unrealized_result),
+                market_value=_money_opt(item.market_value),
+                cost_basis=_money_opt(item.cost_basis),
+                unrealized_result=_money_opt(item.unrealized_result),
                 realized_result=_money(item.realized_result),
             )
             for item in dashboard.result_by_instrument_class

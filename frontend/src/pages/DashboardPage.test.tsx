@@ -60,7 +60,8 @@ function dashboard(
       passive_income_average_complete: false,
       passive_income_history_start_month: historyStartMonth,
       passive_income_average_months_used: historyStartMonth ? ["2031-05", "2031-06"] : [],
-      goal_progress_pct: "68.0",
+      goal_progress_pct: "42.0",
+      forecast_goal_progress_pct: "68.0",
       goal_target: { amount: "100000.00", currency: "RUB" },
       mandatory_expenses: { amount: "150000.00", currency: "RUB" },
       mandatory_expense_coverage_pct: "56.8",
@@ -157,6 +158,7 @@ describe("DashboardPage R03-04 semantics", () => {
     expect(within(overview).getByText("Пассивный доход · факт")).toBeInTheDocument();
     expect(within(overview).getByText("Прогноз · 12 месяцев")).toBeInTheDocument();
     expect(within(overview).getByText("Прогноз / цель")).toBeInTheDocument();
+    expect(within(overview).getByText(/68/)).toBeInTheDocument();
     expect(within(overview).getByText("Вклады")).toBeInTheDocument();
     expect(within(overview).getByText("Купоны")).toBeInTheDocument();
     expect(within(overview).getByText("Дивиденды")).toBeInTheDocument();

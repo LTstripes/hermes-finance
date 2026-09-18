@@ -76,13 +76,15 @@ function ResultTooltip({ active, payload }: TooltipContentProps) {
   );
 }
 
-function resultTableRow(key: string, label: string, cash: string, unrealized: string) {
+function resultTableRow(key: string, label: string, cash: string, unrealized: string | null) {
   return (
     <tr key={key}>
       <Td>{label}</Td>
       <Td numeric>{formatMoneyDelta(cash)}</Td>
       <Td numeric>{formatMoneyDelta(unrealized)}</Td>
-      <Td numeric>{formatMoneyDelta(sumMoneyAmounts([cash, unrealized]))}</Td>
+      <Td numeric>
+        {formatMoneyDelta(unrealized == null ? null : sumMoneyAmounts([cash, unrealized]))}
+      </Td>
     </tr>
   );
 }
@@ -192,7 +194,7 @@ export function InvestmentResultChart({
                   item.instrument_type,
                   label,
                   moneyAmount(item.realized_result),
-                  moneyAmount(item.unrealized_result),
+                  item.unrealized_result == null ? null : moneyAmount(item.unrealized_result),
                 );
               })}
             </tbody>
