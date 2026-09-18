@@ -29,7 +29,8 @@ export function UiV2Shell({
   header,
   v1ReturnPath,
 }: {
-  active: UiV2Section;
+  /** No native section is marked current on the contextual history routes. */
+  active?: UiV2Section;
   busy?: boolean;
   children: ReactNode;
   header: ReactNode;

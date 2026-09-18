@@ -32,6 +32,9 @@ function point(month: number): CapitalCompositionPoint {
     liquid_assets_total: rub("500.00"),
     included_debts: rub("50.00"),
     liquid_capital_net: rub("450.00"),
+    linked_pair_assets: rub("0.00"),
+    linked_pair_debts: rub("0.00"),
+    linked_pair_net_contribution: rub("0.00"),
   };
 }
 

@@ -168,6 +168,9 @@ export function makeUiV2CapitalHistory({
       liquid_assets_total: money(zeroLatest ? "0.00" : point.assets),
       included_debts: money(zeroLatest ? "0.00" : point.debts),
       liquid_capital_net: money(zeroLatest ? "0.00" : point.net),
+      linked_pair_assets: money("0.00"),
+      linked_pair_debts: money("0.00"),
+      linked_pair_net_contribution: money("0.00"),
     };
   });
   const points = firstClosed ? allPoints.slice(-1) : allPoints;
@@ -591,6 +594,45 @@ export function makeUiV2Workflow({
 
 export const uiV2CapitalMonthId = 91;
 export const uiV2CapitalPreviousMonthId = 90;
+export const uiV2PriorYearClosedMonthId = 87;
+
+/**
+ * Archive fixtures: the accepted set plus one prior-year CLOSED month, so year
+ * grouping and the inter-year gap bounds are exercised without touching the
+ * Home/Capital fixtures.
+ */
+export const uiV2ArchiveMonths: ReportingMonth[] = [
+  ...uiV2Months,
+  {
+    id: uiV2PriorYearClosedMonthId,
+    year: 2030,
+    month: 11,
+    status: "closed",
+    snapshot_date: "2030-11-30",
+    source: "manual",
+  },
+];
+
+export function makeUiV2ArchiveHistory(): CapitalCompositionHistory {
+  const base = makeUiV2CapitalHistory();
+  const prior = {
+    reporting_month_id: uiV2PriorYearClosedMonthId,
+    year: 2030,
+    month: 11,
+    snapshot_date: "2030-11-30",
+    allocation: allocation(-303900),
+    liquid_assets_total: money("2900000.00"),
+    included_debts: money("300000.00"),
+    liquid_capital_net: money("2600000.00"),
+    linked_pair_assets: money("0.00"),
+    linked_pair_debts: money("0.00"),
+    linked_pair_net_contribution: money("0.00"),
+  };
+  return {
+    asset_classes: base.asset_classes,
+    points: [prior, ...base.points],
+  };
+}
 
 export const uiV2Accounts: Account[] = [
   {
@@ -677,11 +719,17 @@ export const uiV2Instruments: Instrument[] = [
   },
 ];
 
-export function makeUiV2Cash({ excluded = false }: { excluded?: boolean } = {}): CashBalance[] {
+export function makeUiV2Cash({
+  excluded = false,
+  monthId = uiV2CapitalMonthId,
+}: {
+  excluded?: boolean;
+  monthId?: number;
+} = {}): CashBalance[] {
   return [
     {
       id: 701,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: null,
       name: "Синтетический кошелёк",
       amount: money(excluded ? "0.00" : "803900.00"),
@@ -691,7 +739,7 @@ export function makeUiV2Cash({ excluded = false }: { excluded?: boolean } = {}):
     },
     {
       id: 702,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: 2,
       name: "Синтетическая касса",
       amount: money("20000.00"),
@@ -702,11 +750,15 @@ export function makeUiV2Cash({ excluded = false }: { excluded?: boolean } = {}):
   ];
 }
 
-export function makeUiV2Deposits(): DepositSnapshot[] {
+export function makeUiV2Deposits({
+  monthId = uiV2CapitalMonthId,
+}: {
+  monthId?: number;
+} = {}): DepositSnapshot[] {
   return [
     {
       id: 601,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: 1,
       name: "Синтетический вклад",
       deposit_type: "deposit",
@@ -719,7 +771,7 @@ export function makeUiV2Deposits(): DepositSnapshot[] {
     },
     {
       id: 602,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: 2,
       name: "Синтетический старый вклад",
       deposit_type: "savings",
@@ -733,11 +785,15 @@ export function makeUiV2Deposits(): DepositSnapshot[] {
   ];
 }
 
-export function makeUiV2Positions(): PositionSnapshot[] {
+export function makeUiV2Positions({
+  monthId = uiV2CapitalMonthId,
+}: {
+  monthId?: number;
+} = {}): PositionSnapshot[] {
   return [
     {
       id: 501,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: 3,
       instrument_id: 10,
       quantity: "1000.000000",
@@ -754,7 +810,7 @@ export function makeUiV2Positions(): PositionSnapshot[] {
     },
     {
       id: 502,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: 3,
       instrument_id: 11,
       quantity: "790.000000",
@@ -771,7 +827,7 @@ export function makeUiV2Positions(): PositionSnapshot[] {
     },
     {
       id: 503,
-      reporting_month_id: uiV2CapitalMonthId,
+      reporting_month_id: monthId,
       account_id: 4,
       instrument_id: 13,
       quantity: "250.000000",
@@ -896,15 +952,17 @@ export function makeUiV2Dashboard({
 export function makeUiV2RiskAllocation({
   accountSupport = "supported",
   unsupportedPositions = false,
+  monthId = uiV2CapitalMonthId,
 }: {
   accountSupport?: "supported" | "unavailable" | "unknown";
   unsupportedPositions?: boolean;
+  monthId?: number;
 } = {}): RiskAllocationResponse {
   const support = unsupportedPositions
     ? { status: "unavailable" as const, reason_codes: ["unsupported_position_valuation"] }
     : { status: "supported" as const, reason_codes: [] };
   return {
-    reporting_month_id: uiV2CapitalMonthId,
+    reporting_month_id: monthId,
     as_of_date: "2031-07-31",
     base_currency: "RUB",
     liquid_assets_total: money("3203900.00"),

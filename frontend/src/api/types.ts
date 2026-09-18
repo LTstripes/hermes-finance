@@ -400,6 +400,10 @@ export type CapitalCompositionPoint = {
   liquid_assets_total: MoneyValue;
   included_debts: MoneyValue;
   liquid_capital_net: MoneyValue;
+  /** Returned by `/api/analytics/capital-composition` for every point (ADR 0007). */
+  linked_pair_assets: MoneyValue;
+  linked_pair_debts: MoneyValue;
+  linked_pair_net_contribution: MoneyValue;
 };
 
 export type CapitalCompositionHistory = {

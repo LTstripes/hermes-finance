@@ -6,6 +6,7 @@ import type {
   MoneyValue,
   PositionSnapshot,
 } from "../api/types";
+import { POSITION_TYPE_LABELS } from "./assetClasses";
 
 /**
  * Observe-only holdings rows for the native Capital page.
@@ -37,6 +38,14 @@ export type HoldingFilter =
   | null;
 
 export const UNASSIGNED_CASH_KEY = "unassigned_cash";
+
+/** Row context label of a holding row. Row context only — never a capital fact. */
+export function holdingContextLabel(row: HoldingRow): string {
+  if (row.kind === "cash") return "Деньги";
+  if (row.kind === "deposit") return "Вклад";
+  if (row.contextLabel === null) return "Позиция";
+  return POSITION_TYPE_LABELS[row.contextLabel] ?? row.contextLabel;
+}
 
 export function accountBucketKey(accountId: number): string {
   return `account:${accountId}`;

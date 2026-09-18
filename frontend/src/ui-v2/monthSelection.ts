@@ -5,6 +5,30 @@ export function sortReportingMonths(months: ReportingMonth[]): ReportingMonth[] 
   return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id);
 }
 
+/** Calendar position of a reporting month; used only for ordering, never for money. */
+export function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
+  return month.year * 12 + month.month;
+}
+
+/** The single CLOSED report that is the normal Home/Capital context. */
+export function latestClosedMonth(months: ReportingMonth[]): ReportingMonth | null {
+  return sortReportingMonths(months).find((month) => month.status === "closed") ?? null;
+}
+
+/** The newest unfinished month that sits after the latest CLOSED report. */
+export function newerDraftMonth(
+  months: ReportingMonth[],
+  latestClosed: ReportingMonth | null,
+): ReportingMonth | null {
+  return (
+    sortReportingMonths(months).find(
+      (month) =>
+        month.status === "draft" &&
+        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
+    ) ?? null
+  );
+}
+
 type MonthSelection =
   | { kind: "automatic" }
   | { kind: "invalid" }

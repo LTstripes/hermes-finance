@@ -35,7 +35,13 @@ import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
-import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import {
+  latestClosedMonth,
+  newerDraftMonth,
+  reportIndex,
+  resolveMonthSelection,
+  sortReportingMonths,
+} from "./monthSelection";
 import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
 import styles from "./UiV2Page.module.css";
@@ -62,10 +68,6 @@ const PASSIVE_SOURCE_META = [
   ["dividends", "Дивиденды"],
   ["other_capital_income", "Прочий доход от капитала"],
 ] as const;
-
-function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
-  return month.year * 12 + month.month;
-}
 
 function configuredBoundary(value: string | null): string | null {
   if (!value) return null;
@@ -615,13 +617,8 @@ export default function UiV2Page() {
     refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const latestClosed = months.find((month) => month.status === "closed") ?? null;
-  const newerDraft =
-    months.find(
-      (month) =>
-        month.status === "draft" &&
-        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
-    ) ?? null;
+  const latestClosed = useMemo(() => latestClosedMonth(months), [months]);
+  const newerDraft = useMemo(() => newerDraftMonth(months, latestClosed), [latestClosed, months]);
   const closedId = latestClosed?.id ?? null;
 
   const comparisonQuery = useQuery({
@@ -714,7 +711,7 @@ export default function UiV2Page() {
     content = (
       <>
         <UiV2ReportContext month={latestClosed}>
-          <Link to="/months">История отчётов →</Link>
+          <Link to="/v2/reports">История отчётов →</Link>
         </UiV2ReportContext>
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
         <KpiGrid
