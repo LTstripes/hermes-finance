@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { BackupMetadata } from "../api/types";
-import { createQueryClient } from "../queryClient";
+import { createQueryClient, queryKeys } from "../queryClient";
 import { uiV2Months } from "../test/uiV2Fixtures";
 import UiV2DataFilesPage from "../ui-v2/UiV2DataFilesPage";
 
@@ -111,7 +111,7 @@ function setup({
     );
   }
 
-  return { calls, fetchMock, mount };
+  return { calls, client, fetchMock, mount };
 }
 
 afterEach(() => {
@@ -200,16 +200,41 @@ describe("UI v2 Data files", () => {
       preRestoreBackup.name,
     );
     expect(screen.getByRole("status")).toHaveTextContent(/восстановлена/i);
-    expect(calls.at(-1)).toMatchObject({
+    expect(calls).toContainEqual({
       method: "POST",
       path: `/api/backups/${target.id}/restore`,
       body: JSON.stringify({ confirm: true }),
     });
   });
 
+  it("invalidates cached financial reads and refetches active reads after a successful restore", async () => {
+    const user = userEvent.setup();
+    const { calls, client, mount } = setup();
+    client.setQueryData(queryKeys.accounts, { source: "pre-restore" });
+    mount();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/восстановлена/i);
+    await waitFor(() => {
+      expect(
+        calls.filter(({ method, path }) => method === "GET" && path === "/api/months"),
+      ).toHaveLength(2);
+    });
+    expect(client.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(queryKeys.months)?.isInvalidated).toBe(false);
+  });
+
   it("shows restore failure without claiming success", async () => {
     const user = userEvent.setup();
-    const { mount } = setup({ restoreStatus: 422 });
+    const { calls, client, mount } = setup({ restoreStatus: 422 });
+    client.setQueryData(queryKeys.accounts, { source: "current" });
     mount();
 
     await user.click(
@@ -221,6 +246,11 @@ describe("UI v2 Data files", () => {
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/восстановление не выполнено/i);
+    expect(
+      calls.filter(({ method, path }) => method === "GET" && path === "/api/months"),
+    ).toHaveLength(1);
+    expect(client.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(queryKeys.months)?.isInvalidated).toBe(false);
     expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });

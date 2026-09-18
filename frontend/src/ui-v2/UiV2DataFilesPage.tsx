@@ -341,6 +341,7 @@ export default function UiV2DataFilesPage() {
           result.restored_backup,
         ),
       );
+      await queryClient.invalidateQueries();
       setPreRestoreEvidence(result.pre_restore_backup);
       setRestoreCandidate(null);
       setRestoreSuccess(`База восстановлена из ${result.restored_backup.name}.`);
