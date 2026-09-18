@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -50,11 +50,15 @@ function setup({
   months = uiV2Months,
   listedBackups = backups,
   restoreStatus = 200,
+  restoreStatuses,
+  restoreNetworkError = false,
   path = "/v2/data/files",
 }: {
   months?: typeof uiV2Months;
   listedBackups?: BackupMetadata[];
   restoreStatus?: number;
+  restoreStatuses?: number[];
+  restoreNetworkError?: boolean;
   path?: string;
 } = {}) {
   const client = createQueryClient();
@@ -63,6 +67,7 @@ function setup({
     restored_backup: listedBackups[0] ?? backups[0],
     pre_restore_backup: preRestoreBackup,
   };
+  let restoreAttempt = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const url = new NativeURL(String(input), "http://localhost");
     const method = options?.method ?? "GET";
@@ -77,10 +82,15 @@ function setup({
       return jsonResponse(preRestoreBackup, 201);
     }
     if (method === "POST" && /^\/api\/backups\/[^/]+\/restore$/.test(url.pathname)) {
-      if (restoreStatus !== 200) {
+      const currentRestoreStatus = restoreStatuses?.[restoreAttempt] ?? restoreStatus;
+      restoreAttempt += 1;
+      if (restoreNetworkError) {
+        throw new TypeError("Failed to fetch");
+      }
+      if (currentRestoreStatus !== 200) {
         return jsonResponse(
           { error: { code: "unprocessable", message: "Backup is corrupt", details: [] } },
-          restoreStatus,
+          currentRestoreStatus,
         );
       }
       return jsonResponse(restoreResponse);
@@ -207,6 +217,32 @@ describe("UI v2 Data files", () => {
     });
   });
 
+  it("contains Tab and Shift+Tab inside the restore confirmation", async () => {
+    const user = userEvent.setup();
+    const { mount } = setup();
+    mount();
+
+    const target = backups[0];
+    await user.click(
+      await screen.findByRole("button", { name: `Восстановить резервную копию ${target.name}` }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    const cancel = within(dialog).getByRole("button", { name: "Отмена" });
+    const confirm = within(dialog).getByRole("button", { name: "Восстановить" });
+    const createButton = screen.getByRole("button", { name: "Создать резервную копию" });
+
+    expect(document.activeElement).toBe(cancel);
+    await user.tab();
+    expect(document.activeElement).toBe(confirm);
+    await user.tab();
+    expect(document.activeElement).toBe(cancel);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(confirm);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(cancel);
+    expect(document.activeElement).not.toBe(createButton);
+  });
+
   it("invalidates cached financial reads and refetches active reads after a successful restore", async () => {
     const user = userEvent.setup();
     const { calls, client, mount } = setup();
@@ -253,5 +289,143 @@ describe("UI v2 Data files", () => {
     expect(client.getQueryState(queryKeys.months)?.isInvalidated).toBe(false);
     expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("treats a restore transport failure as unknown and refreshes reads without retrying", async () => {
+    const user = userEvent.setup();
+    const { calls, client, mount } = setup({ restoreNetworkError: true });
+    client.setQueryData(queryKeys.accounts, { source: "current" });
+    mount();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/результат восстановления не подтверждён/i);
+    expect(alert).not.toHaveTextContent(/восстановление не выполнено/i);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      calls.filter(({ method, path }) => method === "POST" && path.endsWith("/restore")),
+    ).toHaveLength(1);
+    await waitFor(() => {
+      expect(
+        calls.filter(({ method, path }) => method === "GET" && path === "/api/months"),
+      ).toHaveLength(2);
+    });
+    expect(client.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+  });
+
+  it("clears prior pre-restore evidence before a later failed restore attempt", async () => {
+    const user = userEvent.setup();
+    const secondTarget: BackupMetadata = {
+      ...backups[0],
+      id: "finance_backup_20320803T123456789000Z",
+      name: "finance_backup_20320803T123456789000Z.sqlite3",
+    };
+    const { mount } = setup({
+      listedBackups: [backups[0], secondTarget],
+      restoreStatuses: [200, 422],
+    });
+    mount();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    expect(await screen.findByTestId("pre-restore-evidence")).toHaveTextContent(
+      preRestoreBackup.name,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${secondTarget.name}`,
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/восстановление не выполнено/i);
+    expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("guards restore from starting while backup creation is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (response: Response) => void;
+    const pendingCreate = new Promise<Response>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const { fetchMock, mount } = setup();
+    mount();
+    const createButton = await screen.findByRole("button", { name: "Создать резервную копию" });
+    fetchMock.mockImplementationOnce(() => pendingCreate);
+    await user.click(createButton);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input, options]) =>
+          options?.method === "POST" && String(input).endsWith(`/backups/${backups[0].id}/restore`),
+      ),
+    ).toHaveLength(0);
+
+    resolveCreate(jsonResponse(preRestoreBackup, 201));
+    expect(await screen.findByRole("status")).toHaveTextContent(/создана/i);
+  });
+
+  it("guards backup creation from starting while restore is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveRestore!: (response: Response) => void;
+    const pendingRestore = new Promise<Response>((resolve) => {
+      resolveRestore = resolve;
+    });
+    const { fetchMock, mount } = setup();
+    mount();
+
+    fetchMock.mockImplementationOnce(() => pendingRestore);
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "…" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Создать резервную копию" }));
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input, options]) => options?.method === "POST" && String(input) === "/api/backups",
+      ),
+    ).toHaveLength(0);
+
+    resolveRestore(
+      jsonResponse({ restored_backup: backups[0], pre_restore_backup: preRestoreBackup }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(/восстановлена/i);
   });
 });

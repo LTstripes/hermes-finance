@@ -1,8 +1,8 @@
 import { type UseQueryResult, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { createBackup, listBackups, restoreBackup } from "../api/backups";
-import { type ApiDownload, formatApiError } from "../api/client";
+import { ApiClientError, type ApiDownload, formatApiError } from "../api/client";
 import {
   downloadAiAnalysisBundleJson,
   downloadAiAnalysisBundleMarkdown,
@@ -34,6 +34,7 @@ type DownloadKind =
   | "month-json"
   | "bundle-markdown"
   | "bundle-json";
+type RestoreErrorKind = "confirmed" | "unknown";
 
 function triggerDownload(file: ApiDownload) {
   const url = URL.createObjectURL(file.blob);
@@ -238,8 +239,10 @@ export default function UiV2DataFilesPage() {
   const [restoreCandidate, setRestoreCandidate] = useState<BackupMetadata | null>(null);
   const [restoringBackupId, setRestoringBackupId] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreErrorKind, setRestoreErrorKind] = useState<RestoreErrorKind | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
   const [preRestoreEvidence, setPreRestoreEvidence] = useState<BackupMetadata | null>(null);
+  const mutationInFlightRef = useRef<"create" | "restore" | null>(null);
 
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
@@ -309,6 +312,15 @@ export default function UiV2DataFilesPage() {
   }
 
   async function handleCreateBackup() {
+    if (
+      mutationInFlightRef.current !== null ||
+      creatingBackup ||
+      restoringBackupId !== null ||
+      restoreCandidate !== null
+    ) {
+      return;
+    }
+    mutationInFlightRef.current = "create";
     setCreatingBackup(true);
     setBackupError(null);
     setBackupSuccess(null);
@@ -322,16 +334,29 @@ export default function UiV2DataFilesPage() {
     } catch (error) {
       setBackupError(formatApiError(error));
     } finally {
+      if (mutationInFlightRef.current === "create") {
+        mutationInFlightRef.current = null;
+      }
       setCreatingBackup(false);
     }
   }
 
   async function handleRestore() {
-    if (restoreCandidate === null) return;
+    if (
+      restoreCandidate === null ||
+      mutationInFlightRef.current !== null ||
+      creatingBackup ||
+      restoringBackupId !== null
+    ) {
+      return;
+    }
     const candidate = restoreCandidate;
+    mutationInFlightRef.current = "restore";
     setRestoringBackupId(candidate.id);
     setRestoreError(null);
+    setRestoreErrorKind(null);
     setRestoreSuccess(null);
+    setPreRestoreEvidence(null);
     setBackupError(null);
     try {
       const result: RestoreResponse = await restoreBackup(candidate.id);
@@ -346,8 +371,21 @@ export default function UiV2DataFilesPage() {
       setRestoreCandidate(null);
       setRestoreSuccess(`База восстановлена из ${result.restored_backup.name}.`);
     } catch (error) {
-      setRestoreError(formatApiError(error));
+      if (error instanceof ApiClientError && error.code === "network_error") {
+        await queryClient.invalidateQueries().catch(() => undefined);
+        setRestoreErrorKind("unknown");
+        setRestoreError(
+          "Результат восстановления не подтверждён. Состояние данных обновлено; сначала проверь его вручную.",
+        );
+        setRestoreCandidate(null);
+      } else {
+        setRestoreErrorKind("confirmed");
+        setRestoreError(formatApiError(error));
+      }
     } finally {
+      if (mutationInFlightRef.current === "restore") {
+        mutationInFlightRef.current = null;
+      }
       setRestoringBackupId(null);
     }
   }
@@ -516,7 +554,9 @@ export default function UiV2DataFilesPage() {
           ) : null}
           {restoreError ? (
             <div className={styles.error} role="alert">
-              Восстановление не выполнено: {restoreError}
+              {restoreErrorKind === "unknown"
+                ? restoreError
+                : `Восстановление не выполнено: ${restoreError}`}
             </div>
           ) : null}
           {restoreSuccess ? (
@@ -554,7 +594,15 @@ export default function UiV2DataFilesPage() {
                     className={styles.dangerButton}
                     disabled={creatingBackup || restoringBackupId !== null}
                     onClick={() => {
+                      if (
+                        mutationInFlightRef.current !== null ||
+                        creatingBackup ||
+                        restoringBackupId !== null
+                      ) {
+                        return;
+                      }
                       setRestoreError(null);
+                      setRestoreErrorKind(null);
                       setRestoreSuccess(null);
                       setRestoreCandidate(backup);
                     }}
