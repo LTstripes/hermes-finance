@@ -124,9 +124,7 @@ Do not use a production runtime checkout as an agent/development workspace.
 
 ## Windows launcher — current role
 
-The launcher is **not retired**, and it intentionally still looks/behaves familiar for ordinary owner use.
-
-Its proven role is the owner-facing shell for the configured Stable/Preview profiles:
+The launcher is a quiet owner-facing shell for configured, already-prepared Stable and isolated Main/Preview profiles:
 
 - profile/status presentation;
 - ordinary Start/Stop;
@@ -134,9 +132,9 @@ Its proven role is the owner-facing shell for the configured Stable/Preview prof
 - diagnostics;
 - installed Desktop/Start-menu shortcuts.
 
-The historical launcher-owned Stable self-update experiment (#298/#311/#312) is **not** the canonical update path.
+It shows exact version/SHA identity, readiness and the production/isolated data boundary. Its ordinary Start and status refresh are read-only with respect to Git and release state: it never follows `origin/main`, fetches, switches refs, publishes releases or performs OPS02/OPS03 work. Dependency readiness is read-only in the launcher; run external OPS01 Prepare when needed, then use Start, Stop, Open Hermes, setup and secondary diagnostics/logs.
 
-The important v0.9.0 improvement is architectural: release mutation, Preview/UAT preparation, runtime preparation and Start are separate accepted operations instead of one launcher-owned state machine.
+Stable release transition remains `scripts/update-stable.ps1`; exact Preview/UAT preparation remains `scripts/prepare-preview.ps1`. These composable operations are intentionally outside the launcher.
 
 To install/reinstall the launcher from the current published Stable checkout:
 
