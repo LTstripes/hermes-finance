@@ -1375,7 +1375,11 @@ public sealed class MainForm : Form
         _stop.Enabled = false;
         _open.Enabled = false;
         _refresh.Enabled = false;
-        _setup.Enabled = false;
+        // Reconfigure is always an explicit secondary recovery path for an
+        // existing selected profile, but never while a runtime is starting
+        // or running. Saving setup is the only path that can rebind identity.
+        _setup.Enabled = state != LauncherReadinessState.Starting
+            && state != LauncherReadinessState.Running;
 
         // Always allow details and refresh as secondary where sensible
         _refresh.Enabled = state != LauncherReadinessState.Checking

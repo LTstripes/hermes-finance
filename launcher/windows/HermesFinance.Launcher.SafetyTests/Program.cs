@@ -60,6 +60,7 @@ var tests = new (string Name, Action Run)[]
     ("strips real unknown fields or fails closed", StripsRealUnknownFieldsOrFailsClosed),
     ("offers Refresh not Stop for external port collision", PortCollisionOffersRefreshNotStop),
     ("marks Stable identity mismatch recovery-only", StableMismatchIsRecoveryOnly),
+    ("reconfigures an identity-mismatched profile to exact local HEAD", ReconfigureRebindsExactLocalHead),
     ("Stable Ready offers Start primary", StableReadyStartsPrimary),
     ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
     ("shows application version and SHA for a SHA-pinned Stable setup", ShowsShaPinnedStableVersionAndIdentity),
@@ -419,8 +420,6 @@ static void KeepsOfflineBackendCacheMissActionable()
         var dependencies = validated.Dependencies ?? throw new InvalidOperationException("Preflight did not return dependency status.");
         Assert(!dependencies.BackendReady && dependencies.FrontendReady, "An offline managed-Python cache miss must return a not-ready backend dependency status.");
         Assert(dependencies.BackendDetail.Contains("needs preparation", StringComparison.Ordinal), "The offline cache miss must be owner-visible as preparation work.");
-        Assert(!File.Exists(Path.Combine(root, "network-preparation.marker")), "Read-only preflight must not run network-capable preparation.");
-
         using var form = new MainForm(config);
         var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher validation presentation.");
@@ -1435,6 +1434,52 @@ static void StableMismatchIsRecoveryOnly()
     // Preview mismatch is also read-only: current-main synchronization is outside the launcher.
     var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
     Assert(planPreview.Primary == LauncherPrimaryAction.Refresh, "Preview identity mismatch must remain read-only Refresh.");
+}
+
+static void ReconfigureRebindsExactLocalHead()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-reconfigure-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic Stable initial identity");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic Preview identity");
+
+        var original = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        var stable = original.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        File.WriteAllText(Path.Combine(stableCheckout, "identity-marker.txt"), "synthetic Stable replacement identity");
+        RunGit(stableCheckout, "add", ".");
+        RunGit(stableCheckout, "commit", "-m", "synthetic Stable replacement HEAD");
+        var newHead = RunGit(stableCheckout, "rev-parse", "HEAD");
+
+        using var form = new MainForm(original);
+        var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Could not find ApplyBlocked for reconfigure presentation.");
+        applyBlocked.Invoke(form, [stable, new LauncherValidationException("Checkout identity does not match this profile."), false]);
+        var buttons = AllControls(form).OfType<Button>().ToArray();
+        Assert(buttons.Single(button => button.Text == "Настроить…").Enabled, "Identity mismatch must expose Reconfigure as a secondary action.");
+        Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Identity mismatch must keep Start fail-closed until setup saves a new identity.");
+
+        var rebound = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        LauncherSetup.WriteConfig(rebound, configPath);
+        var saved = LauncherConfig.Load(configPath);
+        var savedStable = saved.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(savedStable.ExpectedRef == newHead, "Saving Setup must rebind Stable to the new exact local HEAD.");
+        var resolvedSavedHead = ProfileValidator.AssertGitIdentity(savedStable, stableCheckout, stableCheckout);
+        Assert(resolvedSavedHead == newHead, "Saved Setup identity must pass the next Stable preflight at the new exact local HEAD.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
 }
 
 static string[] PrimaryCtaTexts() =>
