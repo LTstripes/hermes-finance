@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text;
+using System.Text.RegularExpressions;
 
 if (args.Contains("--synthetic-ui-smoke", StringComparer.OrdinalIgnoreCase))
 {
@@ -21,8 +22,8 @@ var tests = new (string Name, Action Run)[]
     ("loads the canonical config example", LoadsCanonicalConfigExample),
     ("rejects unknown config fields", RejectsUnknownConfigFields),
     ("presents the branded owner launcher surface", PresentsBrandedOwnerSurface),
-    ("exposes explicit prepare, repair, start, and stop actions", PresentsExplicitDependencyActions),
-    ("exposes explicit Preview update actions and SHA labels", PresentsPreviewUpdateActions),
+    ("keeps the ordinary launcher surface free of updater and Git mutation paths", NoUpdaterOrGitMovementSurface),
+    ("keeps dependency blockers read-only and points to external OPS01 Prepare", PresentsDependencyBlockerReadOnly),
     ("keeps Stable and Preview data boundaries visibly distinct", KeepsProfileBoundariesDistinct),
     ("sanitizes raw paths from owner-facing blockers", SanitizesOwnerFacingBlockers),
     ("requires exactly one stable profile", RequiresExactlyOneStableProfile),
@@ -30,7 +31,6 @@ var tests = new (string Name, Action Run)[]
     ("rejects preview hardlinks to the production database", RejectsProductionHardlink),
     ("rejects an existing preview database with the wrong sidecar", RejectsWrongPreviewSidecar),
     ("uses the bundled schema probe for a legacy checkout", UsesBundledSchemaProbeForLegacyCheckout),
-    ("uses the bundled dependency preparation helper", UsesBundledDependencyPreparationHelper),
     ("detects missing and outdated locked dependencies", DetectsDependencyDrift),
     ("keeps an offline backend cache miss actionable", KeepsOfflineBackendCacheMissActionable),
     ("fails closed on non-cache offline backend errors", FailsClosedOnInvalidOfflineBackendProbe),
@@ -39,6 +39,7 @@ var tests = new (string Name, Action Run)[]
     ("packages the branded cat icon", PackagesBrandedCatIcon),
     ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
     ("starts and stops only a synthetic runtime", StartsAndStopsSyntheticRuntime),
+    ("blocks setup during the real StartSelected lifecycle and restores it after Stop", SetupIsBlockedDuringOwnedStartAndRestoredAfterStop),
     ("returns Ready and enables Start after launcher-owned Stop", OwnerStopReturnsToReady),
     ("recovers Stable ownership after launcher restart", RecoversStableOwnershipAfterLauncherRestart),
     ("recovers Preview ownership after launcher restart", RecoversPreviewOwnershipAfterLauncherRestart),
@@ -50,33 +51,7 @@ var tests = new (string Name, Action Run)[]
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
     ("accepts an annotated release tag that peels to HEAD", AcceptsAnnotatedReleaseTag),
-    ("updates only Preview to unreleased origin main and preserves its data", UpdatesPreviewAndPreservesData),
-    ("rejects dirty, conflicted, and unexpected Preview checkouts", RejectsUnsafePreviewUpdateStates),
-    ("rejects Stable as an update target", RejectsStableUpdate),
-    ("discovers a published immutable Stable target without GitHub CLI auth or mutation", DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation),
-    ("does not offer Stable upgrade for unpublished or prerelease candidates", IgnoresUnpublishedStableCandidates),
-    ("fails closed before backup on dirty Stable checkout", StableUpgradeFailsClosedOnDirtyCheckout),
-    ("fails closed when Stable target is not an annotated tag", StableUpgradeRejectsUnprovenTarget),
-    ("upgrades Stable after backup and preserves production and Preview boundaries", UpgradesStableAfterBackupPreservingData),
-    ("allows a Git-safe Stable data directory inside the checkout", AllowsStableDataInsideCheckoutWhenGitSafe),
-    ("blocks a current Git-tracked production database before backup", BlocksCurrentTrackedProductionData),
-    ("blocks a target Git path under production data before backup", BlocksTargetTrackedProductionSubtree),
-    ("blocks a target Git collision with the production database before backup", BlocksTargetTrackedDatabase),
-    ("fails closed when target Git tree proof is unavailable", BlocksUnavailableTargetTreeProof),
-    ("blocks production data containing Git metadata before backup", BlocksProductionDataContainingGitMetadata),
-    ("fails closed when the canonical tuple is rebound before persistence", BlocksStableConfigRebindBeforePersistence),
-    ("blocks a Stable profile-ID rebind before backup", BlocksStableProfileIdRebindBeforeBackup),
-    ("refuses a Stable profile-ID rebind at expected-ref persistence", BlocksStableProfileIdRebindAtPersistence),
-    ("blocks a production database hardlink alias before backup", BlocksProductionHardlinkAlias),
-    ("blocks a target-only ignored hardlink alias before backup", BlocksTargetOnlyHardlinkAlias),
-    ("blocks a target-only junction ancestor before backup", BlocksTargetOnlyJunctionAncestor),
-    ("allows the canonical empty data placeholder", AllowsCanonicalEmptyDataGitKeep),
-    ("allows the canonical empty data placeholder in target release", AllowsCanonicalEmptyDataGitKeepInTarget),
-    ("blocks a non-gitkeep file under production data before backup", BlocksNonGitKeepFileUnderData),
-    ("blocks a nested gitkeep under production data before backup", BlocksNestedGitKeepUnderData),
-    ("blocks a non-empty canonical gitkeep before backup", BlocksNonEmptyCanonicalGitKeep),
-    ("blocks a gitkeep that collides with the backup directory", BlocksGitKeepInBackupDirectory),
-    ("fails before checkout and config mutation when target backend version disagrees", StableUpgradeRejectsBackendVersionMismatch),
+    ("rejects Preview identity mismatch despite origin/main matching HEAD", RejectsPreviewExpectedRefMismatchDespiteOriginMain),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
     ("offers launcher-owned action for identity mismatch", OffersActionableMismatch),
@@ -84,17 +59,12 @@ var tests = new (string Name, Action Run)[]
     ("summarizes health alembic deps checkout in plain language", SummarizesChecksPlainLanguage),
     ("missing config fails closed without placeholder", MissingConfigFailsClosedWithoutPlaceholder),
     ("strips real unknown fields or fails closed", StripsRealUnknownFieldsOrFailsClosed),
-    ("leaves stale Stable ref untouched when checkout is off release", LeavesStaleStableRefUntouchedWhenCheckoutOffRelease),
-    ("migrates stale Stable ref only when checkout proves release", MigratesStaleStableRefOnlyWhenCheckoutProvesRelease),
     ("offers Refresh not Stop for external port collision", PortCollisionOffersRefreshNotStop),
     ("marks Stable identity mismatch recovery-only", StableMismatchIsRecoveryOnly),
-    ("Preview current offers Start primary", PreviewCurrentStartsPrimary),
-    ("Preview behind offers Update primary", PreviewBehindUpdatesPrimary),
-    ("Preview behind with missing deps offers a single safe primary", PreviewBehindMissingDepsOffersSingleSafePrimary),
+    ("reconfigures an identity-mismatched profile to exact local HEAD", ReconfigureRebindsExactLocalHead),
     ("Stable Ready offers Start primary", StableReadyStartsPrimary),
     ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
-    ("setup rejects Stable off the v0.9.0 release commit", SetupRejectsStableOffRelease),
-    ("setup rejects Preview without origin/main", SetupRejectsPreviewWithoutOriginMain),
+    ("shows application version and SHA for a SHA-pinned Stable setup", ShowsShaPinnedStableVersionAndIdentity),
     ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
@@ -144,12 +114,12 @@ static void LoadsCanonicalConfigExample()
     Assert(config.Profiles.Count == 2, "The canonical config example must load both documented profiles.");
     Assert(config.Profiles[0].Id == "stable", "The stable profile id must use the documented JSON name.");
     Assert(config.Profiles[0].DisplayName == "Hermes Finance — Stable", "The stable profile display name must load from the canonical example.");
-    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.9.0", "The stable profile expected ref must be v0.9.0.");
+    Assert(config.Profiles[0].ExpectedRef == "<exact-prepared-stable-commit>", "The stable profile expected ref must document an exact prepared commit.");
     Assert(config.Profiles[0].DataDir == "<absolute-stable-data-dir>", "The stable profile data directory must use the documented JSON name.");
     Assert(config.Profiles[0].Database == "<absolute-stable-database>", "The stable profile database must use the documented JSON name.");
     Assert(config.Profiles[0].OpenBrowser, "The stable profile browser setting must use the documented JSON name.");
     Assert(config.Profiles[1].Id == "preview", "Preview profile id must be preview.");
-    Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Preview expected_ref must be origin/main for #279.");
+    Assert(config.Profiles[1].ExpectedRef == "<exact-prepared-preview-commit>", "Preview expected_ref must document an exact prepared commit.");
 }
 
 static void PresentsBrandedOwnerSurface()
@@ -162,9 +132,7 @@ static void PresentsBrandedOwnerSurface()
     Assert(form.Text == "Hermes Finance — Launcher", "The launcher must carry the Hermes Finance title.");
     Assert(labels.Any(label => label.Text == "Запуск локального Hermes"), "The owner-facing launcher title is missing.");
     Assert(buttons.Any(button => button.Text == "Запустить" && button.Enabled), "Start must be the primary enabled action for a ready synthetic profile.");
-    Assert(buttons.Any(button => button.Text == "Подготовить" && !button.Enabled), "Prepare must be available as an explicit action and disabled for ready dependencies.");
-    // Repair remains as explicit recovery action — enabled via secondary when Ready
-    Assert(buttons.Any(button => button.Text == "Исправить"), "Repair button must exist as explicit recovery action.");
+    Assert(!buttons.Any(button => button.Text is "Подготовить" or "Исправить"), "Launcher must not expose dependency mutation actions.");
     Assert(buttons.Any(button => button.Text == "Остановить" && !button.Enabled), "Stop must be disabled before a runtime is launched.");
     Assert(buttons.Any(button => button.Text == "Открыть Hermes" && !button.Enabled), "Open Hermes must stay disabled until health probes pass.");
     Assert(buttons.Any(button => button.Text == "Диагностика и логи"), "Raw diagnostics must have a dedicated details action.");
@@ -176,7 +144,27 @@ static void PresentsBrandedOwnerSurface()
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
 }
 
-static void PresentsExplicitDependencyActions()
+static void NoUpdaterOrGitMovementSurface()
+{
+    using var form = MainForm.CreateSyntheticSmoke();
+    var buttons = AllControls(form).OfType<Button>().Select(button => button.Text).ToArray();
+    foreach (var obsolete in new[] { "Обновить Preview", "Обновить и запустить", "Обновить Stable" })
+    {
+        Assert(!buttons.Contains(obsolete, StringComparer.Ordinal), $"obsolete updater CTA remains: {obsolete}");
+    }
+
+    var sourceRoot = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..");
+    foreach (var file in new[] { "MainForm.cs", "LauncherUi.cs", "ProfileValidator.cs", "LauncherConfig.cs" })
+    {
+        var source = File.ReadAllText(Path.Combine(sourceRoot, "HermesFinance.Launcher", file));
+        Assert(!source.Contains("PreviewUpdateService", StringComparison.Ordinal), $"{file} must not reference PreviewUpdateService");
+        Assert(!source.Contains("StableReleaseService", StringComparison.Ordinal), $"{file} must not reference StableReleaseService");
+        Assert(!Regex.IsMatch(source, @"(?i)\bgit\s+(fetch|pull|switch|reset)\b"), $"{file} must not expose Git mutation commands");
+        Assert(!Regex.IsMatch(source, @"(?i)[""'](fetch|pull|switch|reset)[""']"), $"{file} must not invoke Git mutation verbs");
+    }
+}
+
+static void PresentsDependencyBlockerReadOnly()
 {
     var profile = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "HEAD");
     var config = new LauncherConfig
@@ -204,26 +192,13 @@ static void PresentsExplicitDependencyActions()
     apply.Invoke(form, [validated]);
 
     var buttons = AllControls(form).OfType<Button>().ToArray();
-    Assert(buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must be the primary enabled action when dependencies are missing or stale.");
-    Assert(buttons.Single(button => button.Text == "Исправить").Enabled, "Repair must be enabled for an explicitly validated profile.");
+    Assert(!buttons.Any(button => button.Text is "Подготовить" or "Исправить"), "Dependency mutation actions must not be present.");
     Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must remain blocked until dependencies are explicitly prepared.");
+    var readiness = AllControls(form).OfType<Label>().Single(label => label.Text.Contains("OPS01 Prepare", StringComparison.Ordinal));
+    Assert(readiness.Text.Contains("внешнем подготовленном runtime", StringComparison.Ordinal), "Dependency blockers must point to external preparation.");
     Assert(buttons.Single(button => button.Text == "Остановить").AccessibleName == "Остановить Hermes", "Stop must retain its owner-facing accessible name.");
 }
 
-static void PresentsPreviewUpdateActions()
-{
-    using var form = MainForm.CreateSyntheticSmoke();
-    var controls = AllControls(form).ToArray();
-    var buttons = controls.OfType<Button>().ToArray();
-    var labels = controls.OfType<Label>().ToArray();
-
-    var updateButton = buttons.Single(button => button.Text == "Обновить Preview");
-    var updateAndStartButton = buttons.Single(button => button.Text == "Обновить и запустить");
-    Assert(updateButton.Parent is FlowLayoutPanel && !updateButton.Enabled, "Preview update must be present but disabled while Stable is selected.");
-    Assert(updateAndStartButton.Parent is FlowLayoutPanel && !updateAndStartButton.Enabled, "Update-and-start must be present but disabled while Stable is selected.");
-    Assert(labels.Any(label => label.Text.Contains("SHA", StringComparison.Ordinal) || label.Text.Contains("Release", StringComparison.Ordinal)), "The owner surface must show Stable release/SHA and Preview main/SHA identity labels.");
-    Assert(updateButton.AccessibleName == "Обновить Preview", "The Preview update action must be accessible by name.");
-}
 
 static void KeepsProfileBoundariesDistinct()
 {
@@ -360,32 +335,6 @@ static void UsesBundledSchemaProbeForLegacyCheckout()
     }
 }
 
-static void UsesBundledDependencyPreparationHelper()
-{
-    var helper = Path.Combine(AppContext.BaseDirectory, "prepare-runtime-dependencies.ps1");
-    Assert(File.Exists(helper), "The launcher must package its dependency preparation helper.");
-    var source = File.ReadAllText(helper);
-    Assert(source.Contains("uv sync --locked", StringComparison.Ordinal), "The helper must use the locked uv sync command.");
-    Assert(source.Contains("--offline", StringComparison.Ordinal), "Dependency status checks must not reach the network implicitly.");
-    Assert(source.Contains("npm ci", StringComparison.Ordinal), "The helper must use npm ci for the locked frontend tree.");
-    Assert(source.Contains("$Repair", StringComparison.Ordinal), "The helper must expose an explicit repair mode.");
-    Assert(!System.Text.RegularExpressions.Regex.IsMatch(source, @"git\s+(pull|switch|checkout|reset)", System.Text.RegularExpressions.RegexOptions.IgnoreCase), "The dependency helper must not mutate Git state.");
-
-    var checkout = "C:\\Stable Runtime With Spaces";
-    var command = DependencyValidator.BuildPreparationCommand(checkout);
-    Assert(command.WorkingDirectory == checkout, "Dependency preparation must run in the selected checkout.");
-    Assert(
-        command.ArgumentList.ToArray().SequenceEqual(
-        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-Checkout", checkout, "-Prepare"]),
-        "Dependency preparation must pass the selected checkout as one argument and request preparation explicitly.");
-
-    var repairCommand = DependencyValidator.BuildPreparationCommand(checkout, repair: true);
-    Assert(
-        repairCommand.ArgumentList.ToArray().SequenceEqual(
-        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-Checkout", checkout, "-Repair"]),
-        "Dependency repair must pass the selected checkout as one argument and request repair explicitly.");
-}
-
 static void DetectsDependencyDrift()
 {
     var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-dependency-drift-{Guid.NewGuid():N}");
@@ -425,7 +374,6 @@ static void KeepsOfflineBackendCacheMissActionable()
     var dataDir = Path.Combine(root, "Stable Data");
     var database = Path.Combine(dataDir, "finance.db");
     var toolDirectory = Path.Combine(root, "External Tools With Spaces");
-    var preparationMarker = Path.Combine(root, "network-preparation.marker");
     var originalPath = Environment.GetEnvironmentVariable("PATH");
     try
     {
@@ -437,19 +385,16 @@ static void KeepsOfflineBackendCacheMissActionable()
         RunGit(checkout, "add", ".");
         RunGit(checkout, "commit", "-m", "initial synthetic runtime");
         Directory.CreateDirectory(toolDirectory);
-        var marker = BatchQuote(preparationMarker);
         WriteCommandShim(
             Path.Combine(toolDirectory, "uv.cmd"),
             string.Join("\r\n", new[]
             {
                 "@echo off",
                 "if \"%~1\"==\"sync\" if \"%~2\"==\"--locked\" if \"%~3\"==\"--dry-run\" if \"%~4\"==\"--offline\" (",
-                $"  if exist {marker} exit /b 0",
                 "  echo error: No interpreter found for Python 3.13 in managed installations",
                 "  echo hint: A managed Python download is available for Python 3.13, but Python downloads are set to 'never'",
                 "  exit /b 2",
                 ")",
-                $"> {marker} echo prepared",
                 "exit /b 0",
             }));
         WriteCommandShim(
@@ -476,24 +421,14 @@ static void KeepsOfflineBackendCacheMissActionable()
         var dependencies = validated.Dependencies ?? throw new InvalidOperationException("Preflight did not return dependency status.");
         Assert(!dependencies.BackendReady && dependencies.FrontendReady, "An offline managed-Python cache miss must return a not-ready backend dependency status.");
         Assert(dependencies.BackendDetail.Contains("needs preparation", StringComparison.Ordinal), "The offline cache miss must be owner-visible as preparation work.");
-        Assert(!File.Exists(preparationMarker), "Read-only preflight must not run network-capable preparation.");
-
         using var form = new MainForm(config);
         var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Synthetic smoke could not find the launcher validation presentation.");
         apply.Invoke(form, [validated]);
         var buttons = AllControls(form).OfType<Button>().ToArray();
-        Assert(buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must be enabled after an offline backend cache miss.");
+        Assert(!buttons.Any(button => button.Text is "Подготовить" or "Исправить"), "Offline dependency blockers must not expose mutation actions.");
         Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Ordinary Start must remain disabled until preparation completes.");
-
-        using var preparation = Process.Start(DependencyValidator.BuildPreparationCommand(checkout))
-            ?? throw new InvalidOperationException("Synthetic owner action could not start the bundled preparation helper.");
-        preparation.WaitForExit();
-        Assert(preparation.ExitCode == 0, "The explicit owner preparation action must complete successfully for the synthetic cache-miss fixture.");
-        Assert(File.Exists(preparationMarker), "Network-capable preparation must run only after the explicit owner Prepare action.");
-        var prepared = ProfileValidator.Validate(config, profile);
-        apply.Invoke(form, [prepared]);
-        Assert(buttons.Single(button => button.Text == "Запустить").Enabled, "Start must become enabled after explicit preparation succeeds.");
+        Assert(AllControls(form).OfType<Label>().Any(label => label.Text.Contains("OPS01 Prepare", StringComparison.Ordinal)), "Offline dependency blockers must point to external OPS01 Prepare.");
     }
     finally
     {
@@ -682,6 +617,133 @@ static void StartsAndStopsSyntheticRuntime()
             process.WaitForExit(5_000);
         }
         form?.Dispose();
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void SetupIsBlockedDuringOwnedStartAndRestoredAfterStop()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-owner-{Guid.NewGuid():N}");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    Process? process = null;
+    MainForm? form = null;
+    try
+    {
+        var checkout = Path.Combine(root, "stable-runtime");
+        var dataDir = Path.Combine(checkout, "data");
+        var database = Path.Combine(dataDir, "finance.db");
+        var ownershipDirectory = Path.Combine(root, "ownership");
+        var toolDirectory = Path.Combine(root, "tools");
+        Directory.CreateDirectory(root);
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(toolDirectory);
+        File.WriteAllText(
+            Path.Combine(checkout, "scripts", "start-local.ps1"),
+            "$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000)\n"
+                + "$listener.Start()\n"
+                + "Write-Output 'Hermes Finance is ready: http://127.0.0.1:8000'\n"
+                + "while ($true) { Start-Sleep -Milliseconds 100 }\n",
+            new UTF8Encoding(true));
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "user.name", "Hermes launcher safety test");
+        RunGit(checkout, "config", "user.email", "hermes-launcher-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "synthetic setup lifecycle runtime");
+        WriteCommandShim(Path.Combine(toolDirectory, "uv.cmd"), "@echo off\r\nexit /b 0\r\n");
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "npm.cmd"),
+            "@echo off\r\necho {\"dependencies\":{}}\r\nexit /b 0\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory + Path.PathSeparator + originalPath);
+
+        var profile = StableProfile(checkout, dataDir, database, "HEAD");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction
+            {
+                Checkout = checkout,
+                DataDir = dataDir,
+                Database = database,
+            },
+            Profiles = [profile],
+        };
+
+        form = new MainForm(config, ownershipDirectory)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-2000, -2000),
+        };
+        form.Show();
+        form.Hide();
+
+        var validated = ProfileValidator.Validate(config, profile);
+        Assert(validated.Dependencies?.Ready == true, "Real preflight fixture must prove locked dependencies ready before StartSelectedAsync.");
+        var applyValidated = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find ApplyValidated.");
+        applyValidated.Invoke(form, [validated]);
+        Assert(GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску", "Real preflight did not establish the Ready state before StartSelectedAsync.");
+        Assert(GetButton(form, "Настроить…").Enabled, "Setup must be available in the genuine Ready state.");
+
+        var start = typeof(MainForm).GetMethod("StartSelectedAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find StartSelectedAsync.");
+        var startTask = (Task)start.Invoke(form, null)!;
+        var processField = typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find launcher process state.");
+        WaitForUi(
+            form,
+            () => processField.GetValue(form) is not null
+                && GetPrivate<Label>(form, "_readinessTitle").Text == "Hermes запускается",
+            $"StartSelectedAsync did not expose the Starting/owned-process window (title={GetPrivate<Label>(form, "_readinessTitle").Text}; status={GetPrivate<TextBox>(form, "_status").Text}; task={startTask.Status}; error={startTask.Exception?.GetBaseException().Message}).");
+        process = (Process?)processField.GetValue(form);
+        Assert(!GetButton(form, "Настроить…").Enabled, "Setup must be disabled immediately while the launcher-owned runtime is starting.");
+        startTask.GetAwaiter().GetResult();
+
+        var openSetup = typeof(MainForm).GetMethod("OpenSetupAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find OpenSetupAsync.");
+        var openSetupTask = (Task)openSetup.Invoke(form, null)!;
+        openSetupTask.GetAwaiter().GetResult();
+        Assert(
+            GetPrivate<TextBox>(form, "_status").Text.Contains("Setup refused while a launcher-owned runtime is starting or running.", StringComparison.Ordinal),
+            "Setup entry must refuse without opening a modal while the owned runtime is active.");
+
+        var blockedConfig = Path.Combine(root, "blocked-config.json");
+        using (var guardedSetup = new SetupForm(blockedConfig, () => true))
+        {
+            var save = typeof(SetupForm).GetMethod("Save", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Setup lifecycle regression could not find SetupForm.Save.");
+            save.Invoke(guardedSetup, null);
+        }
+        Assert(!File.Exists(blockedConfig), "Setup Save must refuse while a launcher-owned runtime is active.");
+
+        WaitForUi(
+            form,
+            () => GetPrivate<bool>(form, "_ready")
+                && GetButton(form, "Остановить").Enabled,
+            "Synthetic runtime did not reach Running after StartSelectedAsync.");
+        var stop = typeof(MainForm).GetMethod(
+                "StopLaunchedStack",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find launcher Stop.");
+        stop.Invoke(form, ["Synthetic setup lifecycle stopped the runtime."]);
+        var startedProcess = process ?? throw new InvalidOperationException("Synthetic process disappeared before Stop.");
+        Assert(startedProcess.WaitForExit(5_000), "Synthetic runtime did not stop after launcher-owned Stop.");
+        WaitForUi(
+            form,
+            () => GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску"
+                && GetButton(form, "Настроить…").Enabled,
+            "Setup was not restored after launcher-owned Stop returned to Ready.");
+        process = null;
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        form?.Dispose();
+        Environment.SetEnvironmentVariable("PATH", originalPath);
         DeleteSyntheticTree(root);
     }
 }
@@ -1205,727 +1267,44 @@ static void AcceptsAnnotatedReleaseTag()
     }
 }
 
-static void UpdatesPreviewAndPreservesData()
+
+static void RejectsPreviewExpectedRefMismatchDespiteOriginMain()
 {
-    var fixture = CreatePreviewUpdateFixture();
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-preview-identity-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
     try
     {
-        var database = Path.Combine(fixture.DataDir, "finance.db");
-        var sidecar = Path.Combine(fixture.DataDir, ".hermes-data-identity.json");
-        File.WriteAllText(database, "synthetic Preview database; never Stable");
-        File.WriteAllText(sidecar, "{\"kind\":\"preview\",\"profile_id\":\"preview\"}");
-        var databaseBefore = File.ReadAllBytes(database);
-        var sidecarBefore = File.ReadAllText(sidecar);
-        var targetContent = File.ReadAllText(Path.Combine(fixture.Seed, "runtime-marker.txt"));
-        var profile = NewValidatedPreviewProfile(fixture.Preview, fixture.DataDir, database, fixture.CurrentSha);
-        var cleanStatus = RunGit(fixture.Preview, "status", "--porcelain=v1", "--untracked-files=all");
-        Assert(string.IsNullOrWhiteSpace(cleanStatus), $"The clean Preview fixture must start clean: {cleanStatus}");
-        Assert(RunGit(fixture.Preview, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}") == fixture.CurrentSha, "The Preview fixture must expose its initial origin/main commit.");
+        CreateRuntimeLayout(stableCheckout);
+        InitSyntheticRepo(stableCheckout, "synthetic stable identity");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic preview configured identity");
+        RunGit(previewCheckout, "tag", "configured-preview");
+        File.WriteAllText(Path.Combine(previewCheckout, "identity-marker.txt"), "synthetic current preview");
+        RunGit(previewCheckout, "add", ".");
+        RunGit(previewCheckout, "commit", "-m", "synthetic preview HEAD");
+        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
 
-        var result = PreviewUpdateService.Update(profile);
-
-        Assert(result.Updated, "An unreleased origin/main commit must update the Preview checkout.");
-        Assert(result.TargetSha == fixture.TargetSha, "Preview must update to the fetched origin/main commit, not a tag.");
-        Assert(RunGit(fixture.Preview, "rev-parse", "HEAD") == fixture.TargetSha, "Preview HEAD must equal origin/main after update.");
-        Assert(File.ReadAllText(Path.Combine(fixture.Preview, "runtime-marker.txt")) == targetContent, "Preview must receive the canonical main code.");
-        Assert(File.ReadAllBytes(database).SequenceEqual(databaseBefore), "Preview database bytes must remain unchanged.");
-        Assert(File.ReadAllText(sidecar) == sidecarBefore, "Preview data identity sidecar must remain unchanged.");
-        Assert(File.ReadAllText(fixture.StableMarker) == "stable untouched", "Stable data must remain untouched by Preview update.");
-        Assert(
-            ProfileValidator.AssertGitIdentity(profile.Profile, fixture.Preview, fixture.Seed) == fixture.TargetSha,
-            "A clean Preview at unreleased origin/main must remain an accepted identity without editing expected_ref.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void RejectsUnsafePreviewUpdateStates()
-{
-    var dirtyFixture = CreatePreviewUpdateFixture();
-    try
-    {
-        var dirtyProfile = NewValidatedPreviewProfile(dirtyFixture.Preview, dirtyFixture.DataDir, Path.Combine(dirtyFixture.DataDir, "finance.db"), dirtyFixture.CurrentSha);
-        File.WriteAllText(Path.Combine(dirtyFixture.Preview, "owner-edit.txt"), "must block");
-        AssertThrowsMessage(
-            () => PreviewUpdateService.Update(dirtyProfile),
-            "Preview checkout is dirty or conflicted; update is blocked.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(dirtyFixture.Root);
-    }
-
-    var conflictFixture = CreatePreviewUpdateFixture();
-    try
-    {
-        var conflictProfile = NewValidatedPreviewProfile(conflictFixture.Preview, conflictFixture.DataDir, Path.Combine(conflictFixture.DataDir, "finance.db"), conflictFixture.CurrentSha);
-        RunGit(conflictFixture.Preview, "fetch", "origin", "main");
-        File.WriteAllText(Path.Combine(conflictFixture.Preview, "runtime-marker.txt"), "local conflicting edit");
-        RunGit(conflictFixture.Preview, "add", "runtime-marker.txt");
-        RunGit(conflictFixture.Preview, "commit", "-m", "synthetic local preview edit");
-        Assert(RunGitMayFail(conflictFixture.Preview, "merge", "origin/main") != 0, "The synthetic conflict setup must fail to merge cleanly.");
-        var conflictStatus = RunGit(conflictFixture.Preview, "status", "--porcelain=v1", "--untracked-files=all");
-        Assert(!string.IsNullOrWhiteSpace(conflictStatus), $"The conflicted Preview fixture must expose a non-clean status: {conflictStatus}");
-        AssertThrowsMessage(
-            () => PreviewUpdateService.Update(conflictProfile),
-            "Preview checkout is dirty or conflicted; update is blocked.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(conflictFixture.Root);
-    }
-
-    var unexpectedFixture = CreatePreviewUpdateFixture();
-    try
-    {
-        var unexpectedProfile = NewValidatedPreviewProfile(unexpectedFixture.Preview, unexpectedFixture.DataDir, Path.Combine(unexpectedFixture.DataDir, "finance.db"), unexpectedFixture.CurrentSha);
-        File.WriteAllText(Path.Combine(unexpectedFixture.Preview, "unexpected-marker.txt"), "unexpected clean commit");
-        RunGit(unexpectedFixture.Preview, "add", "unexpected-marker.txt");
-        RunGit(unexpectedFixture.Preview, "commit", "-m", "synthetic unexpected preview commit");
-        AssertThrowsMessage(
-            () => PreviewUpdateService.Update(unexpectedProfile),
-            "Preview checkout identity is unexpected; update is blocked.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(unexpectedFixture.Root);
-    }
-}
-
-static void RejectsStableUpdate()
-{
-    var profile = new ValidatedProfile(
-        new LauncherProfile
+        var profile = new LauncherProfile
         {
-            Id = "stable",
-            DisplayName = "Stable",
-            Type = "stable",
-            Checkout = "C:\\stable",
-            ExpectedRef = "HEAD",
-            DataDir = "C:\\stable\\data",
-            Database = "C:\\stable\\data\\finance.db",
+            Id = "preview",
+            DisplayName = "Hermes Finance — Preview",
+            Type = "preview",
+            Checkout = previewCheckout,
+            ExpectedRef = "refs/tags/configured-preview",
+            DataDir = previewData,
+            Database = Path.Combine(previewData, "finance.db"),
             OpenBrowser = false,
-        },
-        "C:\\stable",
-        "C:\\stable\\data",
-        "C:\\stable\\data\\finance.db",
-        "stable-head",
-        "production");
-
-    AssertThrowsMessage(
-        () => PreviewUpdateService.Update(profile),
-        "Only the configured Preview profile may be updated.");
-}
-
-static void DiscoversPublishedStableTargetWithoutGitHubCliAuthOrMutation()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
-    try
-    {
-        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
-        var beforeStatus = RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all");
-        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var discoveredTarget = status.Target ?? throw new InvalidOperationException("Synthetic discovery returned no target.");
-
-        Assert(status.Current is not null && status.Current.Version == "0.8.0", "Discovery must prove the configured current immutable Stable release.");
-        Assert(status.TargetAvailable, "A published newer release must produce an explicit Stable target.");
-        Assert(discoveredTarget.Version == "0.8.2", "Discovery must select the published newer release.");
-        Assert(discoveredTarget.CommitSha == fixture.TargetSha, "Discovery target must use the remote tag's peeled commit SHA.");
-        Assert(fixture.ReleaseHandler.RequestCount == 1, "Stable release discovery must use the standard public REST client.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Read-only release discovery must not switch Stable.");
-        Assert(RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all") == beforeStatus, "Read-only release discovery must not dirty Stable.");
-        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "Read-only release discovery must not write launcher config.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "Read-only release discovery must not create a production backup.");
-
-        var validated = fixture.Profile with { StableUpgrade = status };
-        var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, validated, fixture.Profile.Profile);
-        Assert(plan.Primary == LauncherPrimaryAction.UpgradeStable, "A proven newer Stable release must be the primary owner CTA.");
-        using var form = new MainForm(fixture.Config);
-        ApplyValidatedOn(form, validated);
-        var buttons = AllControls(form).OfType<Button>().ToArray();
-        var update = buttons.Single(button => button.Text.StartsWith("Обновить Stable", StringComparison.Ordinal));
-        Assert(update.Enabled && OwnVisible(update), $"The Stable release CTA must be visible and enabled only after target proof (ownVisible={OwnVisible(update)}, effectiveVisible={update.Visible}, enabled={update.Enabled}, buttons={string.Join(" | ", buttons.Select(button => $"{button.Text}:{OwnVisible(button)}/{button.Enabled}"))}).");
-        Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must not compete with a pending Stable upgrade.");
-        var labels = AllControls(form).OfType<Label>().ToArray();
-        Assert(labels.Any(label => label.Text.Contains("v0.8.0", StringComparison.Ordinal)
-            && label.Text.Contains("v0.8.2", StringComparison.Ordinal)), "The owner surface must show current and target Stable release identities.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void IgnoresUnpublishedStableCandidates()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2", draft: true, prerelease: false));
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        Assert(status.Current is not null, "Current Stable identity must still be proven when a candidate is ignored.");
-        Assert(status.Target is null && !status.TargetAvailable, "Draft releases must never become a Stable upgrade target.");
-        var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, fixture.Profile with { StableUpgrade = status }, fixture.Profile.Profile);
-        Assert(plan.Primary == LauncherPrimaryAction.Start, "No published target must leave Stable at the normal Start CTA.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "Ignored release candidates must not create a backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-
-    var prereleaseFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2", draft: false, prerelease: true));
-    try
-    {
-        var status = StableReleaseService.Discover(prereleaseFixture.Profile, prereleaseFixture.ReleaseHandler);
-        Assert(status.Target is null && !status.TargetAvailable, "Prerelease releases must never become a Stable upgrade target.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(prereleaseFixture.Root);
-    }
-}
-
-static void StableUpgradeFailsClosedOnDirtyCheckout()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
-        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
-        var tamperedTarget = status.Target! with { TagObjectSha = new string('0', 40) };
+        };
         AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, tamperedTarget, fixture.ConfigPath, fixture.ReleaseHandler),
-            "Stable upgrade target identity changed; the immutable tag proof no longer matches.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A tampered tag-object proof must not move Stable.");
-        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A tampered tag-object proof must not rewrite launcher config.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A tampered tag-object proof must fail before creating a backup.");
-
-        File.WriteAllText(Path.Combine(fixture.StableCheckout, "owner-edit.txt"), "must block Stable upgrade");
-
-        AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
-            "Stable checkout is dirty or conflicted; upgrade is blocked.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "Dirty Stable must not switch releases.");
-        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "Dirty Stable must not rewrite launcher config.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "Dirty Stable must fail before creating a backup.");
+            () => ProfileValidator.AssertGitIdentity(profile, previewCheckout, stableCheckout),
+            "Checkout identity does not match this profile.");
     }
     finally
     {
-        DeleteSyntheticTree(fixture.Root);
-    }
-
-    var unpublishedFixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2", draft: false, prerelease: false, publishedAt: null));
-    try
-    {
-        var status = StableReleaseService.Discover(unpublishedFixture.Profile, unpublishedFixture.ReleaseHandler);
-        Assert(status.Target is null && !status.TargetAvailable, "A release without published_at must never become a Stable upgrade target.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(unpublishedFixture.Root);
-    }
-}
-
-static void StableUpgradeRejectsUnprovenTarget()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"), annotatedTarget: false);
-    try
-    {
-        AssertThrowsMessage(
-            () => StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler),
-            "Stable release tag is not proven as an immutable annotated remote tag.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.CurrentSha, "An unproven target must not move Stable.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "An unproven target must not create a backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void UpgradesStableAfterBackupPreservingData()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var databaseBefore = File.ReadAllBytes(fixture.Database);
-        var previewBefore = File.ReadAllText(fixture.PreviewMarker);
-        var configBefore = LauncherConfig.Load(fixture.ConfigPath);
-        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler);
-
-        Assert(result.Target.CommitSha == fixture.TargetSha, "Upgrade result must report the proven target commit.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Stable must switch only to the proven immutable tag commit.");
-        Assert(RunGit(fixture.StableCheckout, "status", "--porcelain=v1", "--untracked-files=all") == "", "Upgraded Stable must remain clean.");
-        var configAfter = LauncherConfig.Load(fixture.ConfigPath);
-        var stableAfter = configAfter.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        Assert(stableAfter.ExpectedRef == "refs/tags/v0.8.2", "Config identity must be updated to the proven release tag after checkout verification.");
-        Assert(configAfter.CanonicalProduction.DataDir == configBefore.CanonicalProduction.DataDir
-            && configAfter.CanonicalProduction.Database == configBefore.CanonicalProduction.Database,
-            "Stable upgrade must preserve canonical production data paths.");
-        Assert(File.ReadAllBytes(fixture.Database).SequenceEqual(databaseBefore), "Stable upgrade must not mutate the production database contents.");
-        Assert(ProfileValidator.ReadApplicationVersion(fixture.StableCheckout) == "0.8.2", "Checked-out backend version must agree with the release identity.");
-        Assert(File.ReadAllText(fixture.PreviewMarker) == previewBefore, "Stable upgrade must not touch Preview data.");
-        var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
-        Assert(backups.Length == 1, "Stable upgrade must create exactly one synthetic production backup before mutation.");
-        Assert(Path.GetDirectoryName(backups[0])!.Equals(Path.Combine(fixture.DataDir, "backups"), StringComparison.OrdinalIgnoreCase), "Backup must remain beside the configured production database.");
-        Assert(result.BackupId == Path.GetFileNameWithoutExtension(backups[0]), "Upgrade result must report the verified backup identity.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void AllowsStableDataInsideCheckoutWhenGitSafe()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true);
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var databaseBefore = File.ReadAllBytes(fixture.Database);
-        var dataPathBefore = fixture.DataDir;
-        var result = StableReleaseService.Upgrade(
-            fixture.Profile,
-            status.Target!,
-            fixture.ConfigPath,
-            fixture.ReleaseHandler);
-
-        Assert(result.Target.CommitSha == fixture.TargetSha, "Inside-checkout upgrade must reach the proven target commit.");
-        Assert(fixture.ReleaseHandler.GitTreeRequestCount == 1, "Inside-checkout upgrade must prove the target Git tree before mutation.");
-        Assert(string.Equals(fixture.DataDir, dataPathBefore, StringComparison.OrdinalIgnoreCase), "Inside-checkout upgrade must preserve the production data directory path.");
-        Assert(File.Exists(fixture.Database), "Inside-checkout upgrade must preserve the production database path.");
-        Assert(File.ReadAllBytes(fixture.Database).SequenceEqual(databaseBefore), "Inside-checkout upgrade must preserve production database bytes.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Inside-checkout upgrade must switch only to the proven release tag.");
-        Assert(LauncherConfig.Load(fixture.ConfigPath).Profiles.Single(profile => profile.Type == "stable").ExpectedRef == "refs/tags/v0.8.2", "Inside-checkout config identity must update only after the verified switch.");
-        var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
-        Assert(backups.Length == 1, "Inside-checkout upgrade must create one verified production backup before Git mutation.");
-        Assert(File.ReadAllText(fixture.PreviewMarker).Contains("untouched", StringComparison.Ordinal), "Inside-checkout Stable upgrade must preserve Preview data.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksCurrentTrackedProductionData()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        currentTrackedPath: "data/finance.db");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "current Stable release tracks the canonical production database path; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksTargetTrackedProductionSubtree()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        targetTrackedPath: "data/tracked-release-file.txt");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "target Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksTargetTrackedDatabase()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        targetTrackedPath: "data/finance.db");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "target Stable release tracks the canonical production database path; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksUnavailableTargetTreeProof()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        targetTreeProofAvailable: false);
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "Stable target Git tree proof failed: public GitHub API returned HTTP 404.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksProductionDataContainingGitMetadata()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        productionDataContainsGitMetadata: true);
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "Stable production data overlaps Git metadata; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksStableConfigRebindBeforePersistence()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
-    try
-    {
-        var reboundDataDir = Path.Combine(fixture.Root, "rebound-data");
-        var reboundDatabase = Path.Combine(reboundDataDir, "finance.db");
-        Directory.CreateDirectory(reboundDataDir);
-        File.WriteAllText(reboundDatabase, "synthetic rebound database\n");
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
-        fixture.ReleaseHandler.OnGitTreeRequest = () => RebindStableConfig(fixture, reboundDataDir, reboundDatabase);
-
-        AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
-            "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A config tuple rebind must fail before switching Stable.");
-        Assert(RunGitMayFail(fixture.StableCheckout, "rev-parse", "--verify", "refs/tags/v0.8.2") != 0, "A config tuple rebind must fail before fetching the target tag.");
-        var rebound = LauncherConfig.Load(fixture.ConfigPath);
-        var stable = rebound.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        Assert(stable.DataDir == reboundDataDir && stable.Database == reboundDatabase, "The synthetic config rebind must remain observable after the guarded failure.");
-        Assert(stable.ExpectedRef == "refs/tags/v0.8.0", "A config tuple rebind must not be overwritten with the target release identity.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A config tuple rebind must fail before creating a production backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksStableProfileIdRebindBeforeBackup()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
-        fixture.ReleaseHandler.OnGitTreeRequest = () => RebindStableConfig(
-            fixture,
-            fixture.DataDir,
-            fixture.Database,
-            stableId: "rebound-stable");
-
-        AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
-            "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A Stable profile-ID rebind must fail before switching Stable.");
-        Assert(RunGitMayFail(fixture.StableCheckout, "rev-parse", "--verify", "refs/tags/v0.8.2") != 0, "A Stable profile-ID rebind must fail before fetching the target tag.");
-        var rebound = LauncherConfig.Load(fixture.ConfigPath);
-        var stable = rebound.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        Assert(stable.Id == "rebound-stable", "The synthetic Stable profile-ID rebind must remain observable after the guarded failure.");
-        Assert(stable.ExpectedRef == "refs/tags/v0.8.0", "A Stable profile-ID rebind must not be overwritten with the target release identity.");
-        Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A Stable profile-ID rebind must fail before creating a production backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksStableProfileIdRebindAtPersistence()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"));
-    try
-    {
-        RebindStableConfig(
-            fixture,
-            fixture.DataDir,
-            fixture.Database,
-            stableId: "rebound-stable");
-        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
-
-        AssertThrowsMessage(
-            () => LauncherConfig.UpdateStableExpectedRef(fixture.ConfigPath, "refs/tags/v0.8.2", fixture.Profile),
-            "Stable upgrade is blocked: canonical production identity changed; refresh the launcher state.");
-        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A Stable profile-ID rebind must be rejected before the atomic config write.");
-        var rebound = LauncherConfig.Load(fixture.ConfigPath);
-        var stable = rebound.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        Assert(stable.Id == "rebound-stable", "The rejected Stable profile-ID rebind must remain in the config for recovery.");
-        Assert(stable.ExpectedRef == "refs/tags/v0.8.0", "The rejected Stable profile-ID rebind must preserve the original expected_ref.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void RebindStableConfig(StableUpgradeFixture fixture, string dataDir, string database, string? stableId = null)
-{
-    var stable = fixture.Config.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-    var reboundStable = new LauncherProfile
-    {
-        Id = stableId ?? stable.Id,
-        DisplayName = stable.DisplayName,
-        Type = stable.Type,
-        Checkout = stable.Checkout,
-        ExpectedRef = stable.ExpectedRef,
-        DataDir = dataDir,
-        Database = database,
-        OpenBrowser = stable.OpenBrowser,
-    };
-    var rebound = new LauncherConfig
-    {
-        Version = fixture.Config.Version,
-        CanonicalProduction = new CanonicalProduction
-        {
-            Checkout = fixture.Config.CanonicalProduction.Checkout,
-            DataDir = dataDir,
-            Database = database,
-        },
-        Profiles = fixture.Config.Profiles
-            .Select(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase) ? reboundStable : profile)
-            .ToList(),
-    };
-    File.WriteAllText(fixture.ConfigPath, JsonSerializer.Serialize(rebound, new JsonSerializerOptions { WriteIndented = true }));
-}
-
-static void BlocksProductionHardlinkAlias()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        databaseHardlinkToTrackedFile: true);
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "Stable production data aliases a tracked release file; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksTargetOnlyHardlinkAlias()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        targetTrackedPath: "data/target-only.txt",
-        targetOnlyHardlinkToProduction: true);
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "Stable production data aliases a tracked release file; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksTargetOnlyJunctionAncestor()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        targetTrackedPath: "data/future/new-file",
-        targetOnlyJunctionToProduction: true);
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "target Stable release tracked path uses a symlink, junction, or reparse point; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        RemoveSyntheticJunction(Path.Combine(fixture.StableCheckout, "data"));
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void AllowsCanonicalEmptyDataGitKeep()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        currentTrackedPath: "data/.gitkeep",
-        currentTrackedContent: "");
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler);
-        Assert(result.Target.CommitSha == fixture.TargetSha, "Canonical empty data/.gitkeep must be allowed for current release.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Upgrade with canonical gitkeep must switch to target.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void AllowsCanonicalEmptyDataGitKeepInTarget()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        targetTrackedPath: "data/.gitkeep",
-        targetTrackedContent: "");
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var result = StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler);
-        Assert(result.Target.CommitSha == fixture.TargetSha, "Canonical empty data/.gitkeep must be allowed for target release.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == fixture.TargetSha, "Upgrade with target gitkeep must switch to target.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksNonGitKeepFileUnderData()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        currentTrackedPath: "data/readme.txt");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "current Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksNestedGitKeepUnderData()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        targetTrackedPath: "data/subdir/.gitkeep",
-        targetTrackedContent: "");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "target Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksNonEmptyCanonicalGitKeep()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        currentTrackedPath: "data/.gitkeep",
-        currentTrackedContent: "not empty\n");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "current Stable release tracks a path under the canonical production data directory; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void BlocksGitKeepInBackupDirectory()
-{
-    var fixture = CreateStableUpgradeFixture(
-        PublishedReleaseJson("v0.8.2"),
-        dataInsideCheckout: true,
-        targetTrackedPath: "data/backups/.gitkeep",
-        targetTrackedContent: "");
-    try
-    {
-        AssertStableUpgradeBlockedBeforeMutation(
-            fixture,
-            "target Stable release tracks the canonical production backup path; upgrade is blocked before backup.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
-    }
-}
-
-static void AssertStableUpgradeBlockedBeforeMutation(
-    StableUpgradeFixture fixture,
-    string expectedMessage)
-{
-    var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-    var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
-    var beforeConfig = File.ReadAllText(fixture.ConfigPath);
-
-    AssertThrowsMessage(
-        () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
-        expectedMessage);
-    Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A pre-safety failure must not switch Stable.");
-    Assert(RunGitMayFail(fixture.StableCheckout, "rev-parse", "--verify", "refs/tags/v0.8.2") != 0, "A pre-safety failure must not fetch the target tag.");
-    Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A pre-safety failure must not rewrite launcher config.");
-    Assert(!Directory.Exists(Path.Combine(fixture.DataDir, "backups")), "A pre-safety failure must not create a production backup.");
-}
-
-static void StableUpgradeRejectsBackendVersionMismatch()
-{
-    var fixture = CreateStableUpgradeFixture(PublishedReleaseJson("v0.8.2"), targetApplicationVersion: "0.8.1");
-    try
-    {
-        var status = StableReleaseService.Discover(fixture.Profile, fixture.ReleaseHandler);
-        var beforeHead = RunGit(fixture.StableCheckout, "rev-parse", "HEAD");
-        var beforeConfig = File.ReadAllText(fixture.ConfigPath);
-        AssertThrowsMessage(
-            () => StableReleaseService.Upgrade(fixture.Profile, status.Target!, fixture.ConfigPath, fixture.ReleaseHandler),
-            "Stable upgrade target backend version does not match its release tag.");
-        Assert(RunGit(fixture.StableCheckout, "rev-parse", "HEAD") == beforeHead, "A target version mismatch must fail before switching Stable.");
-        Assert(File.ReadAllText(fixture.ConfigPath) == beforeConfig, "A target version mismatch must fail before rewriting launcher config.");
-        var backups = Directory.GetFiles(Path.Combine(fixture.DataDir, "backups"), "finance_backup_*.sqlite3");
-        Assert(backups.Length == 1, "The mandatory backup must precede the target-code proof failure.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(fixture.Root);
+        DeleteSyntheticTree(root);
     }
 }
 
@@ -1965,11 +1344,11 @@ static void ShowsPreviewUnreleasedIdentity()
         Database = "C:\\synthetic\\preview\\data\\finance.db",
         OpenBrowser = false,
     };
-    var labelBehind = LauncherUi.PreviewIdentityLabel(preview, "aaaaaaa1111111111111111111111111111111111", "bbbbbbb2222222222222222222222222222222222");
+    var labelBehind = LauncherUi.PreviewIdentityLabel(preview, "aaaaaaa1111111111111111111111111111111111");
     Assert(labelBehind.Contains("main", StringComparison.OrdinalIgnoreCase), "Preview must show main.");
     Assert(labelBehind.Contains("UNRELEASED", StringComparison.Ordinal), "Preview must be clearly marked UNRELEASED.");
     Assert(labelBehind.Contains("Isolated", StringComparison.OrdinalIgnoreCase) || labelBehind.Contains("isolated", StringComparison.OrdinalIgnoreCase), "Preview must show isolated data identity.");
-    var labelCurrent = LauncherUi.PreviewIdentityLabel(preview, "cccccccc33333333333333333333333333333333333", "cccccccc33333333333333333333333333333333333");
+    var labelCurrent = LauncherUi.PreviewIdentityLabel(preview, "cccccccc33333333333333333333333333333333333");
     Assert(labelCurrent.Contains("UNRELEASED", StringComparison.Ordinal), "Preview at origin/main is still UNRELEASED code.");
     // Card data boundary for preview must be distinct from stable
     Assert(LauncherUi.DataBoundary("preview") != LauncherUi.DataBoundary("stable"), "Preview and Stable data boundaries must differ.");
@@ -1982,13 +1361,13 @@ static void OffersActionableMismatch()
 
     var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
     var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
-    Assert(planPreview.Primary == LauncherPrimaryAction.Update, "Identity mismatch on Preview must offer Update as primary launcher-owned action, not dead-end.");
+    Assert(planPreview.Primary == LauncherPrimaryAction.Refresh, "Identity mismatch on Preview must offer read-only Refresh, not an update action.");
 
     var planBlockedGeneric = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, stable, mismatch);
     Assert(planBlockedGeneric.Primary != LauncherPrimaryAction.None, "Blocked state must offer at least one actionable CTA.");
 
     var human = LauncherUi.OwnerFacingFailure(mismatch.Message);
-    Assert(human.Contains("Обновить Preview", StringComparison.Ordinal) || human.Contains("expected_ref", StringComparison.OrdinalIgnoreCase) || human.Contains("Code identity", StringComparison.OrdinalIgnoreCase), "Human failure must explain mismatch and hint correct launcher action.");
+    Assert(human.Contains("expected_ref", StringComparison.OrdinalIgnoreCase) || human.Contains("Code identity", StringComparison.OrdinalIgnoreCase), "Human failure must explain mismatch without implying launcher update.");
     Assert(!human.Contains("C:\\", StringComparison.Ordinal), "Human message must not leak raw paths.");
 }
 
@@ -2006,17 +1385,18 @@ static void ExposesSinglePrimaryCta()
     var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
     apply.Invoke(formReady, [validatedReady]);
     var buttonsReady = AllControls(formReady).OfType<Button>().ToArray();
-    var primaryReady = buttonsReady.Where(b => b.Enabled && (b.Text == "Запустить" || b.Text == "Подготовить" || b.Text == "Обновить Preview" || b.Text == "Открыть Hermes" || b.Text == "Остановить")).ToList();
+    var primaryReady = buttonsReady.Where(b => b.Enabled && (b.Text == "Запустить" || b.Text == "Открыть Hermes" || b.Text == "Остановить")).ToList();
     Assert(primaryReady.Count == 1 && primaryReady[0].Text == "Запустить", $"Ready state must have exactly one primary CTA 'Запустить', found {string.Join(",", primaryReady.Select(b=>b.Text))}.");
 
     using var formNeeds = new MainForm(config);
     var validatedNeeds = new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc", "production", new DependencyStatus(false, false, "needs preparation", "needs preparation"));
     apply.Invoke(formNeeds, [validatedNeeds]);
     var buttonsNeeds = AllControls(formNeeds).OfType<Button>().ToArray();
-    Assert(buttonsNeeds.Single(b=>b.Text=="Подготовить").Enabled, "NeedsPreparation must have Prepare as primary CTA.");
+    Assert(!buttonsNeeds.Any(b => b.Text is "Подготовить" or "Исправить"), "NeedsPreparation must not expose dependency mutation CTAs.");
+    Assert(buttonsNeeds.Single(b => b.Text == "Обновить проверку").Enabled, "NeedsPreparation must offer read-only Refresh as the primary CTA.");
     Assert(!buttonsNeeds.Single(b=>b.Text=="Запустить").Enabled, "Start must not be primary when preparation needed.");
 
-    // Blocked identity mismatch on Preview should have Update as primary
+    // Blocked identity mismatch on Preview remains read-only Refresh.
     var preview = new LauncherProfile { Id="preview", DisplayName="Preview", Type="preview", Checkout="C:\\p", ExpectedRef="HEAD", DataDir="C:\\p\\data", Database="C:\\p\\data\\finance.db", OpenBrowser=false };
     var previewConfig = new LauncherConfig
     {
@@ -2027,9 +1407,9 @@ static void ExposesSinglePrimaryCta()
     using var formBlocked = new MainForm(previewConfig);
     var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
     // Use overload with exception
-    applyBlocked.Invoke(formBlocked, [preview, new LauncherValidationException("Checkout identity does not match this profile."), false, false]);
+    applyBlocked.Invoke(formBlocked, [preview, new LauncherValidationException("Checkout identity does not match this profile."), false]);
     var buttonsBlocked = AllControls(formBlocked).OfType<Button>().ToArray();
-    Assert(buttonsBlocked.Single(b=>b.Text=="Обновить Preview").Enabled, "Blocked Preview identity mismatch must enable Update as actionable primary.");
+    Assert(buttonsBlocked.Single(b=>b.Text=="Обновить проверку").Enabled, "Blocked Preview identity mismatch must enable Refresh as actionable primary.");
 }
 
 static void SummarizesChecksPlainLanguage()
@@ -2131,89 +1511,6 @@ static void StripsRealUnknownFieldsOrFailsClosed()
     }
 }
 
-static void LeavesStaleStableRefUntouchedWhenCheckoutOffRelease()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-nomigrate-{Guid.NewGuid():N}");
-    var checkout = Path.Combine(root, "checkout");
-    var dataDir = Path.Combine(root, "data");
-    try
-    {
-        CreateRuntimeLayout(checkout);
-        Directory.CreateDirectory(dataDir);
-        RunGit(checkout, "init");
-        RunGit(checkout, "config", "--local", "user.name", "Hermes Safety Test");
-        RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
-        RunGit(checkout, "add", ".");
-        RunGit(checkout, "commit", "-m", "synthetic stable at old release");
-        RunGit(checkout, "tag", "v0.6.3");
-        // No v0.9.0 tag exists and HEAD is not on v0.9.0: migration must not fire.
-        var configPath = Path.Combine(root, "launcher", "config.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-        var config = new LauncherConfig
-        {
-            Version = 1,
-            CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db") },
-            Profiles =
-            [
-                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.6.3", DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db"), OpenBrowser = false },
-            ],
-        };
-        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
-        var before = File.ReadAllText(configPath);
-
-        var loaded = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.6.3", "Stale Stable ref must NOT be rewritten when the checkout is not proven at v0.9.0.");
-        Assert(File.ReadAllText(configPath) == before, "Config file must be byte-identical when migration is blocked.");
-        Assert(diag.Contains("blocked", StringComparison.OrdinalIgnoreCase), "Blocked migration must be diagnosable.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(root);
-    }
-}
-
-static void MigratesStaleStableRefOnlyWhenCheckoutProvesRelease()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-migrate-{Guid.NewGuid():N}");
-    var checkout = Path.Combine(root, "checkout");
-    var dataDir = Path.Combine(root, "data");
-    try
-    {
-        CreateRuntimeLayout(checkout);
-        Directory.CreateDirectory(dataDir);
-        RunGit(checkout, "init");
-        RunGit(checkout, "config", "--local", "user.name", "Hermes Safety Test");
-        RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
-        RunGit(checkout, "add", ".");
-        RunGit(checkout, "commit", "-m", "synthetic stable at old release");
-        RunGit(checkout, "tag", "v0.6.3");
-        File.WriteAllText(Path.Combine(checkout, "release-marker.txt"), "synthetic v0.9.0 release");
-        RunGit(checkout, "add", "release-marker.txt");
-        RunGit(checkout, "commit", "-m", "synthetic stable at v0.9.0");
-        RunGit(checkout, "tag", "v0.9.0");
-        var configPath = Path.Combine(root, "launcher", "config.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-        var config = new LauncherConfig
-        {
-            Version = 1,
-            CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db") },
-            Profiles =
-            [
-                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.8.0", DataDir = dataDir, Database = Path.Combine(dataDir, "finance.db"), OpenBrowser = false },
-            ],
-        };
-        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
-
-        var loaded = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(loaded.Profiles[0].ExpectedRef == "refs/tags/v0.9.0", "Stale Stable ref must migrate once HEAD is proven at the v0.9.0 release commit.");
-        Assert(diag.Contains("migrated", StringComparison.OrdinalIgnoreCase), "Proven migration must be diagnosable.");
-        Assert(File.ReadAllText(configPath).Contains("refs/tags/v0.9.0", StringComparison.Ordinal), "Migrated file must persist the new expected_ref.");
-    }
-    finally
-    {
-        DeleteSyntheticTree(root);
-    }
-}
 
 static void PortCollisionOffersRefreshNotStop()
 {
@@ -2244,7 +1541,7 @@ static void PortCollisionOffersRefreshNotStop()
     using var form = new MainForm(config);
     var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
         ?? throw new InvalidOperationException("Could not find ApplyBlocked for port-collision presentation.");
-    applyBlocked.Invoke(form, [stable, portEx, false, false]);
+    applyBlocked.Invoke(form, [stable, portEx, false]);
     var buttons = AllControls(form).OfType<Button>().ToArray();
     Assert(!buttons.Single(button => button.Text == "Остановить").Enabled, "Stop must be disabled for an external port collision the launcher cannot stop.");
     Assert(buttons.Single(button => button.Text == "Обновить проверку").Enabled, "Refresh must be enabled for an external port collision.");
@@ -2262,32 +1559,65 @@ static void StableMismatchIsRecoveryOnly()
     Assert(!human.Contains("C:\\", StringComparison.Ordinal), "Human message must not leak raw paths.");
     Assert(human.Contains("expected_ref", StringComparison.OrdinalIgnoreCase) || human.Contains("Обновить проверку", StringComparison.Ordinal), "Stable mismatch guidance must point at released-tag verification plus Refresh.");
 
-    // No regression for Preview: its mismatch stays launcher-owned Update.
+    // Preview mismatch is also read-only: current-main synchronization is outside the launcher.
     var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
-    Assert(planPreview.Primary == LauncherPrimaryAction.Update, "Preview identity mismatch must keep launcher-owned Update.");
+    Assert(planPreview.Primary == LauncherPrimaryAction.Refresh, "Preview identity mismatch must remain read-only Refresh.");
+}
+
+static void ReconfigureRebindsExactLocalHead()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-reconfigure-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic Stable initial identity");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic Preview identity");
+
+        var original = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        var stable = original.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        File.WriteAllText(Path.Combine(stableCheckout, "identity-marker.txt"), "synthetic Stable replacement identity");
+        RunGit(stableCheckout, "add", ".");
+        RunGit(stableCheckout, "commit", "-m", "synthetic Stable replacement HEAD");
+        var newHead = RunGit(stableCheckout, "rev-parse", "HEAD");
+
+        using var form = new MainForm(original);
+        var applyBlocked = typeof(MainForm).GetMethod("ApplyBlocked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Could not find ApplyBlocked for reconfigure presentation.");
+        applyBlocked.Invoke(form, [stable, new LauncherValidationException("Checkout identity does not match this profile."), false]);
+        var buttons = AllControls(form).OfType<Button>().ToArray();
+        Assert(buttons.Single(button => button.Text == "Настроить…").Enabled, "Identity mismatch must expose Reconfigure as a secondary action.");
+        Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Identity mismatch must keep Start fail-closed until setup saves a new identity.");
+
+        var rebound = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        var configPath = Path.Combine(root, "launcher", "config.json");
+        LauncherSetup.WriteConfig(rebound, configPath);
+        var saved = LauncherConfig.Load(configPath);
+        var savedStable = saved.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(savedStable.ExpectedRef == newHead, "Saving Setup must rebind Stable to the new exact local HEAD.");
+        var resolvedSavedHead = ProfileValidator.AssertGitIdentity(savedStable, stableCheckout, stableCheckout);
+        Assert(resolvedSavedHead == newHead, "Saved Setup identity must pass the next Stable preflight at the new exact local HEAD.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
 }
 
 static string[] PrimaryCtaTexts() =>
 [
-    "Запустить", "Подготовить", "Обновить Preview", "Обновить и запустить", "Открыть Hermes", "Остановить",
+    "Запустить", "Открыть Hermes", "Остановить",
 ];
 
 static List<string> EnabledPrimaries(MainForm form) =>
     AllControls(form).OfType<Button>().Where(button => button.Enabled
-        && (PrimaryCtaTexts().Contains(button.Text)
-            || button.Text.StartsWith("Обновить Stable", StringComparison.Ordinal))).Select(button => button.Text).ToList();
-
-static LauncherProfile PreviewProfileForCta() => new()
-{
-    Id = "preview",
-    DisplayName = "Preview",
-    Type = "preview",
-    Checkout = "C:\\p",
-    ExpectedRef = "refs/remotes/origin/main",
-    DataDir = "C:\\p\\data",
-    Database = "C:\\p\\data\\finance.db",
-    OpenBrowser = false,
-};
+        && PrimaryCtaTexts().Contains(button.Text)).Select(button => button.Text).ToList();
 
 static void ApplyValidatedOn(MainForm form, ValidatedProfile validated)
 {
@@ -2296,73 +1626,6 @@ static void ApplyValidatedOn(MainForm form, ValidatedProfile validated)
     apply.Invoke(form, [validated]);
 }
 
-static void PreviewCurrentStartsPrimary()
-{
-    var preview = PreviewProfileForCta();
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.9.0");
-    using var form = new MainForm(new LauncherConfig
-    {
-        Version = 1,
-        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
-        Profiles = [stable, preview],
-    });
-    var validated = new ValidatedProfile(
-        preview, preview.Checkout, preview.DataDir, preview.Database, "cur1234",
-        "preview", new DependencyStatus(true, true, "ready", "ready"),
-        new PreviewUpdateStatus("cur1234", "cur1234"));
-    ApplyValidatedOn(form, validated);
-    var primaries = EnabledPrimaries(form);
-    Assert(primaries.Count == 1 && primaries[0] == "Запустить", $"Preview current + deps ready must have exactly one primary CTA 'Запустить', found [{string.Join(",", primaries)}].");
-}
-
-static void PreviewBehindUpdatesPrimary()
-{
-    var preview = PreviewProfileForCta();
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.9.0");
-    using var form = new MainForm(new LauncherConfig
-    {
-        Version = 1,
-        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
-        Profiles = [stable, preview],
-    });
-    var validated = new ValidatedProfile(
-        preview, preview.Checkout, preview.DataDir, preview.Database, "cur1111",
-        "preview", new DependencyStatus(true, true, "ready", "ready"),
-        new PreviewUpdateStatus("cur1111", "tgt2222"));
-    ApplyValidatedOn(form, validated);
-    var primaries = EnabledPrimaries(form);
-    Assert(primaries.Count == 2 && primaries.Contains("Обновить Preview") && primaries.Contains("Обновить и запустить"),
-        $"Preview behind + deps ready must offer Update primaries, found [{string.Join(",", primaries)}].");
-    var buttons = AllControls(form).OfType<Button>().ToArray();
-    Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must not be offered while a prepared Preview update is pending.");
-    var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, validated, preview, null);
-    Assert(plan.Primary == LauncherPrimaryAction.Update, $"Preview behind + deps ready must plan Update primary, got {plan.Primary}.");
-}
-
-static void PreviewBehindMissingDepsOffersSingleSafePrimary()
-{
-    var preview = PreviewProfileForCta();
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.9.0");
-    using var form = new MainForm(new LauncherConfig
-    {
-        Version = 1,
-        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
-        Profiles = [stable, preview],
-    });
-    var validated = new ValidatedProfile(
-        preview, preview.Checkout, preview.DataDir, preview.Database, "cur1111",
-        "preview", new DependencyStatus(false, false, "needs preparation", "needs preparation"),
-        new PreviewUpdateStatus("cur1111", "tgt2222"));
-    ApplyValidatedOn(form, validated);
-    var primaries = EnabledPrimaries(form);
-    Assert(primaries.Count == 1 && primaries[0] == "Обновить и запустить",
-        $"Preview behind + deps missing must offer exactly one primary CTA 'Обновить и запустить', found [{string.Join(",", primaries)}].");
-    var buttons = AllControls(form).OfType<Button>().ToArray();
-    Assert(!buttons.Single(button => button.Text == "Подготовить").Enabled, "Prepare must not compete with the update-first chain when Preview is behind.");
-    Assert(!buttons.Single(button => button.Text == "Запустить").Enabled, "Start must stay disabled until update + preparation complete.");
-    var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.NeedsPreparation, validated, preview, null);
-    Assert(plan.Primary == LauncherPrimaryAction.UpdateAndStart, $"Preview behind + deps missing must plan UpdateAndStart primary, got {plan.Primary}.");
-}
 
 static void StableReadyStartsPrimary()
 {
@@ -2620,20 +1883,20 @@ static void SetupFlowCreatesConcreteConfig()
         RunGit(stableCheckout, "config", "--local", "user.email", "hermes-safety-test");
         RunGit(stableCheckout, "add", ".");
         RunGit(stableCheckout, "commit", "-m", "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         RunGit(previewCheckout, "init");
         RunGit(previewCheckout, "config", "--local", "user.name", "Hermes Safety Test");
         RunGit(previewCheckout, "config", "--local", "user.email", "hermes-safety-test");
         RunGit(previewCheckout, "add", ".");
-        RunGit(previewCheckout, "commit", "-m", "synthetic preview at origin/main");
-        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
+        RunGit(previewCheckout, "commit", "-m", "synthetic preview local identity");
 
         // Synthetic owner selections become a concrete valid config — no manual JSON.
         var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-        Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.9.0", "Setup must pin Stable to the v0.9.0 release.");
-        Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Setup must point Preview at origin/main.");
+        var stableHead = RunGit(stableCheckout, "rev-parse", "HEAD");
+        var previewHead = RunGit(previewCheckout, "rev-parse", "HEAD");
+        Assert(config.Profiles[0].ExpectedRef == stableHead, "Setup must persist the exact prepared local Stable identity.");
+        Assert(config.Profiles[1].ExpectedRef == previewHead, "Setup must persist the exact prepared local Preview identity.");
         Assert(LauncherConfig.IsConcreteConfig(config), "Setup result must be concrete (absolute paths, no placeholders).");
 
         var configPath = Path.Combine(root, "launcher", "config.json");
@@ -2655,6 +1918,52 @@ static void SetupFlowCreatesConcreteConfig()
     }
 }
 
+static void ShowsShaPinnedStableVersionAndIdentity()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-version-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(Path.Combine(stableCheckout, "backend", "src", "hermes_finance"));
+        File.WriteAllText(Path.Combine(stableCheckout, "backend", "src", "hermes_finance", "__init__.py"), "__version__ = '0.9.0'\n");
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic SHA-pinned Stable");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic Preview");
+
+        var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        var stable = config.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(stable.ExpectedRef.Length == 40 && stable.ExpectedRef.All(char.IsAsciiHexDigit), "Setup Stable identity must be an exact local SHA.");
+        var validated = new ValidatedProfile(
+            stable,
+            stableCheckout,
+            stableData,
+            stable.Database,
+            stable.ExpectedRef,
+            "production",
+            new DependencyStatus(true, true, "ready", "ready"),
+            "0.9.0");
+        using var form = new MainForm(config);
+        var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Could not find ApplyValidated for Stable identity presentation.");
+        apply.Invoke(form, [validated]);
+        var summary = (Label)typeof(MainForm)
+            .GetField("_shaSummary", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(form)!;
+        Assert(summary.Text.Contains("Version 0.9.0", StringComparison.Ordinal), "SHA-pinned Stable presentation must retain the validated application version.");
+        Assert(summary.Text.Contains($"SHA {stable.ExpectedRef[..7]}", StringComparison.Ordinal), "SHA-pinned Stable presentation must show the exact SHA.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
 static void InitSyntheticRepo(string checkout, string commitMessage)
 {
     RunGit(checkout, "init");
@@ -2662,83 +1971,6 @@ static void InitSyntheticRepo(string checkout, string commitMessage)
     RunGit(checkout, "config", "--local", "user.email", "hermes-safety-test");
     RunGit(checkout, "add", ".");
     RunGit(checkout, "commit", "-m", commitMessage);
-}
-
-static void CommitSyntheticFile(string checkout, string fileName, string content, string commitMessage)
-{
-    File.WriteAllText(Path.Combine(checkout, fileName), content);
-    RunGit(checkout, "add", fileName);
-    RunGit(checkout, "commit", "-m", commitMessage);
-}
-
-static void SetupRejectsStableOffRelease()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-stale-{Guid.NewGuid():N}");
-    var stableCheckout = Path.Combine(root, "stable");
-    var stableData = Path.Combine(root, "stable-data");
-    var previewCheckout = Path.Combine(root, "preview");
-    var previewData = Path.Combine(root, "preview-data");
-    try
-    {
-        CreateRuntimeLayout(stableCheckout);
-        Directory.CreateDirectory(stableData);
-        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
-        // Tag exists, but HEAD moved past the release commit.
-        CommitSyntheticFile(stableCheckout, "post-release.txt", "drifted past v0.9.0", "synthetic post-release drift");
-        CreateRuntimeLayout(previewCheckout);
-        Directory.CreateDirectory(previewData);
-        InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
-        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
-
-        try
-        {
-            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-            throw new InvalidOperationException("Setup must reject a Stable checkout off the v0.9.0 release commit.");
-        }
-        catch (LauncherValidationException exception)
-        {
-            Assert(exception.Message.Contains("Stable", StringComparison.Ordinal), "Stable rejection must name the Stable checkout.");
-        }
-    }
-    finally
-    {
-        DeleteSyntheticTree(root);
-    }
-}
-
-static void SetupRejectsPreviewWithoutOriginMain()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-no-main-{Guid.NewGuid():N}");
-    var stableCheckout = Path.Combine(root, "stable");
-    var stableData = Path.Combine(root, "stable-data");
-    var previewCheckout = Path.Combine(root, "preview");
-    var previewData = Path.Combine(root, "preview-data");
-    try
-    {
-        CreateRuntimeLayout(stableCheckout);
-        Directory.CreateDirectory(stableData);
-        InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
-        CreateRuntimeLayout(previewCheckout);
-        Directory.CreateDirectory(previewData);
-        // A plain git repo: no refs/remotes/origin/main exists.
-        InitSyntheticRepo(previewCheckout, "synthetic preview without origin/main");
-
-        try
-        {
-            LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
-            throw new InvalidOperationException("Setup must reject a Preview checkout without refs/remotes/origin/main.");
-        }
-        catch (LauncherValidationException exception)
-        {
-            Assert(exception.Message.Contains("Preview", StringComparison.Ordinal), "Preview rejection must name the Preview checkout.");
-        }
-    }
-    finally
-    {
-        DeleteSyntheticTree(root);
-    }
 }
 
 static void SetupRejectsPreviewSharingStableGitDir()
@@ -2936,389 +2168,6 @@ static void CreateDependencyValidationLayout(string checkout)
     Directory.CreateDirectory(Path.Combine(checkout, "frontend", "node_modules"));
 }
 
-static (string Root, string Seed, string Remote, string Preview, string DataDir, string StableMarker, string CurrentSha, string TargetSha) CreatePreviewUpdateFixture()
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-preview-update-{Guid.NewGuid():N}");
-    var seed = Path.Combine(root, "seed");
-    var remote = Path.Combine(root, "preview-origin.git");
-    var preview = Path.Combine(root, "configured-preview");
-    var dataDir = Path.Combine(root, "preview-data");
-    var stableMarker = Path.Combine(root, "stable-data", "stable-marker.txt");
-    Directory.CreateDirectory(root);
-    Directory.CreateDirectory(Path.GetDirectoryName(stableMarker)!);
-    File.WriteAllText(stableMarker, "stable untouched");
-    Directory.CreateDirectory(remote);
-    RunGit(remote, "init", "--bare");
-    CreateRuntimeLayout(seed);
-    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "initial Preview runtime");
-    RunGit(seed, "init");
-    RunGit(seed, "config", "user.name", "Hermes Preview Safety Test");
-    RunGit(seed, "config", "user.email", "hermes-preview-safety-test");
-    RunGit(seed, "add", ".");
-    RunGit(seed, "commit", "-m", "initial synthetic Preview runtime");
-    RunGit(seed, "branch", "-M", "main");
-    RunGit(seed, "remote", "add", "origin", remote);
-    RunGit(seed, "push", "--set-upstream", "origin", "main");
-    var currentSha = RunGit(seed, "rev-parse", "HEAD");
-    RunGit(root, "clone", "-b", "main", remote, preview);
-    RunGit(preview, "config", "--local", "user.name", "Hermes Preview Safety Test");
-    RunGit(preview, "config", "--local", "user.email", "hermes-preview-safety-test");
-    RunGit(preview, "branch", "legacy-preview", currentSha);
-
-    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "unreleased canonical main runtime");
-    RunGit(seed, "add", "runtime-marker.txt");
-    RunGit(seed, "commit", "-m", "unreleased canonical main change");
-    RunGit(seed, "push", "origin", "main");
-    var targetSha = RunGit(seed, "rev-parse", "HEAD");
-    Directory.CreateDirectory(dataDir);
-    return (root, seed, remote, preview, dataDir, stableMarker, currentSha, targetSha);
-}
-
-static string PublishedReleaseJson(
-    string tag,
-    bool draft = false,
-    bool prerelease = false,
-    string? publishedAt = "2026-09-05T00:00:00Z") =>
-    JsonSerializer.Serialize(new[]
-    {
-        new
-        {
-            tag_name = tag,
-            draft,
-            prerelease,
-            published_at = publishedAt,
-            html_url = "https://github.com/LTstripes/hermes-finance/releases/tag/" + tag,
-        },
-    });
-
-static string SyntheticGitTreeJson(string checkout, string commit)
-{
-    var output = RunGit(checkout, "ls-tree", "--full-tree", "-r", "-z", commit);
-    var tree = new List<object>();
-    foreach (var item in output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
-    {
-        var separator = item.IndexOf('\t');
-        Assert(separator > 0, "Synthetic target Git tree must have valid metadata and path.");
-        var metadata = item[..separator].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        Assert(metadata.Length == 3, "Synthetic target Git tree must have mode, type, and SHA.");
-        tree.Add(new
-        {
-            path = item[(separator + 1)..],
-            mode = metadata[0],
-            type = metadata[1],
-            sha = metadata[2],
-        });
-    }
-    return JsonSerializer.Serialize(new { truncated = false, tree });
-}
-
-static StableUpgradeFixture CreateStableUpgradeFixture(
-    string releaseJson,
-    bool annotatedTarget = true,
-    string targetApplicationVersion = "0.8.2",
-    bool dataInsideCheckout = false,
-    bool productionDataContainsGitMetadata = false,
-    string? currentTrackedPath = null,
-    string? targetTrackedPath = null,
-    bool databaseHardlinkToTrackedFile = false,
-    bool targetTreeProofAvailable = true,
-    bool targetOnlyHardlinkToProduction = false,
-    bool targetOnlyJunctionToProduction = false,
-    string? currentTrackedContent = null,
-    string? targetTrackedContent = null)
-{
-    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-stable-upgrade-{Guid.NewGuid():N}");
-    var seed = Path.Combine(root, "seed");
-    var remote = Path.Combine(root, "stable-origin.git");
-    var stableCheckout = Path.Combine(root, "stable-checkout");
-    var dataDir = dataInsideCheckout ? Path.Combine(stableCheckout, "data") : Path.Combine(root, "stable-data");
-    var previewCheckout = Path.Combine(root, "preview-checkout");
-    var previewData = Path.Combine(root, "preview-data");
-    var previewMarker = Path.Combine(previewData, "preview-marker.txt");
-    var configPath = Path.Combine(root, "launcher", "config.json");
-    Directory.CreateDirectory(root);
-    Directory.CreateDirectory(remote);
-    RunGit(remote, "init", "--bare");
-    CreateRuntimeLayout(seed);
-    Directory.CreateDirectory(Path.Combine(seed, "backend", "src", "hermes_finance"));
-    File.WriteAllText(
-        Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
-        "__version__ = \"0.8.0\"\n");
-    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.0\n");
-    if (!string.IsNullOrWhiteSpace(currentTrackedPath))
-    {
-        var currentPath = Path.Combine(seed, currentTrackedPath.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(currentPath)!);
-        if (currentTrackedContent is not null)
-        {
-            File.WriteAllText(currentPath, currentTrackedContent);
-        }
-        else
-        {
-            File.WriteAllText(currentPath, "synthetic tracked production path\n");
-        }
-    }
-    RunGit(seed, "init");
-    RunGit(seed, "config", "user.name", "Hermes Stable Safety Test");
-    RunGit(seed, "config", "user.email", "hermes-stable-safety-test");
-    RunGit(seed, "add", ".");
-    if (!string.IsNullOrWhiteSpace(currentTrackedPath))
-    {
-        RunGit(seed, "add", "-f", currentTrackedPath);
-    }
-    RunGit(seed, "commit", "-m", "synthetic Stable v0.8.0 runtime");
-    RunGit(seed, "branch", "-M", "main");
-    RunGit(seed, "tag", "-a", "v0.8.0", "-m", "synthetic published Stable v0.8.0");
-    RunGit(seed, "remote", "add", "origin", remote);
-    RunGit(seed, "push", "--set-upstream", "origin", "main");
-    RunGit(seed, "push", "origin", "refs/tags/v0.8.0");
-    var currentSha = RunGit(seed, "rev-parse", "HEAD");
-
-    File.WriteAllText(
-        Path.Combine(seed, "backend", "src", "hermes_finance", "__init__.py"),
-        $"__version__ = \"{targetApplicationVersion}\"\n");
-    File.WriteAllText(Path.Combine(seed, "runtime-marker.txt"), "synthetic Stable v0.8.2\n");
-    if (!string.IsNullOrWhiteSpace(targetTrackedPath))
-    {
-        var targetPath = Path.Combine(seed, targetTrackedPath.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-        if (targetTrackedContent is not null)
-        {
-            File.WriteAllText(targetPath, targetTrackedContent);
-        }
-        else
-        {
-            File.WriteAllText(targetPath, "synthetic target collision\n");
-        }
-    }
-    RunGit(seed, "add", ".");
-    if (!string.IsNullOrWhiteSpace(targetTrackedPath))
-    {
-        RunGit(seed, "add", "-f", targetTrackedPath);
-    }
-    RunGit(seed, "commit", "-m", "synthetic Stable v0.8.2 runtime");
-    if (annotatedTarget)
-    {
-        RunGit(seed, "tag", "-a", "v0.8.2", "-m", "synthetic published Stable v0.8.2");
-    }
-    else
-    {
-        RunGit(seed, "tag", "v0.8.2");
-    }
-    RunGit(seed, "push", "origin", "main");
-    RunGit(seed, "push", "origin", "refs/tags/v0.8.2");
-    var targetSha = RunGit(seed, "rev-parse", "refs/tags/v0.8.2^{commit}");
-
-    RunGit(root, "clone", "-b", "main", remote, stableCheckout);
-    RunGit(stableCheckout, "switch", "--detach", "refs/tags/v0.8.0");
-    Assert(RunGitMayFail(stableCheckout, "tag", "-d", "v0.8.2") == 0, "The synthetic Stable checkout must start without a local target tag.");
-    Directory.CreateDirectory(dataDir);
-    var database = Path.Combine(dataDir, "finance.db");
-    var trackedDatabasePath = string.Equals(
-        currentTrackedPath,
-        "data/finance.db",
-        StringComparison.OrdinalIgnoreCase);
-    if (databaseHardlinkToTrackedFile)
-    {
-        Assert(
-            NativeMethods.CreateHardLink(
-                database,
-                Path.Combine(stableCheckout, "runtime-marker.txt"),
-                IntPtr.Zero),
-            "Synthetic Stable hardlink alias setup must succeed.");
-    }
-    else if (!trackedDatabasePath)
-    {
-        CreateSyntheticSqliteDatabase(database);
-    }
-    if (productionDataContainsGitMetadata)
-    {
-        RunGit(
-            stableCheckout,
-            "init",
-            "--separate-git-dir",
-            Path.Combine(dataDir, "git-meta"));
-    }
-    if (targetOnlyHardlinkToProduction)
-    {
-        Assert(!string.IsNullOrWhiteSpace(targetTrackedPath), "Target-only hardlink setup requires a target tracked path.");
-        var targetOnlyPath = Path.Combine(
-            stableCheckout,
-            targetTrackedPath!.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(targetOnlyPath)!);
-        Assert(
-            NativeMethods.CreateHardLink(targetOnlyPath, database, IntPtr.Zero),
-            "Synthetic target-only hardlink alias setup must succeed.");
-    }
-    if (targetOnlyJunctionToProduction)
-    {
-        Assert(!string.IsNullOrWhiteSpace(targetTrackedPath), "Target-only junction setup requires a target tracked path.");
-        var junctionPath = Path.Combine(stableCheckout, "data");
-        CreateSyntheticJunction(junctionPath, dataDir);
-    }
-    CreateRuntimeLayout(previewCheckout);
-    Directory.CreateDirectory(previewData);
-    File.WriteAllText(previewMarker, "Preview untouched by Stable upgrade\n");
-    Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-    var treeJsonByCommit = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    if (targetTreeProofAvailable)
-    {
-        treeJsonByCommit[targetSha] = SyntheticGitTreeJson(seed, targetSha);
-    }
-    var releaseHandler = new SyntheticReleaseHandler(releaseJson, treeJsonByCommit);
-    var stable = new LauncherProfile
-    {
-        Id = "stable",
-        DisplayName = "Stable",
-        Type = "stable",
-        Checkout = stableCheckout,
-        ExpectedRef = "refs/tags/v0.8.0",
-        DataDir = dataDir,
-        Database = database,
-        OpenBrowser = false,
-    };
-    var preview = new LauncherProfile
-    {
-        Id = "preview",
-        DisplayName = "Preview",
-        Type = "preview",
-        Checkout = previewCheckout,
-        ExpectedRef = "HEAD",
-        DataDir = previewData,
-        Database = Path.Combine(previewData, "preview.db"),
-        OpenBrowser = false,
-    };
-    var config = new LauncherConfig
-    {
-        Version = 1,
-        CanonicalProduction = new CanonicalProduction { Checkout = stableCheckout, DataDir = dataDir, Database = database },
-        Profiles = [stable, preview],
-    };
-    File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
-    var profile = new ValidatedProfile(
-        stable,
-        stableCheckout,
-        dataDir,
-        database,
-        currentSha,
-        "production",
-        new DependencyStatus(true, true, "ready", "ready"),
-        null,
-        null,
-        "0.8.0");
-    return new StableUpgradeFixture(
-        root,
-        seed,
-        remote,
-        stableCheckout,
-        dataDir,
-        database,
-        previewCheckout,
-        previewMarker,
-        configPath,
-        releaseHandler,
-        config,
-        profile,
-        currentSha,
-        targetSha);
-}
-
-static void CreateSyntheticSqliteDatabase(string database)
-{
-    var workingDirectory = Path.GetDirectoryName(database)!;
-    string python;
-    string[] prefixArguments;
-    try
-    {
-        python = DependencyValidator.ResolveCommand("python", workingDirectory);
-        prefixArguments = [];
-    }
-    catch (LauncherValidationException)
-    {
-        try
-        {
-            python = DependencyValidator.ResolveCommand("py", workingDirectory);
-            prefixArguments = [];
-        }
-        catch (LauncherValidationException)
-        {
-            python = DependencyValidator.ResolveCommand("uv", workingDirectory);
-            prefixArguments = ["run", "--no-project", "--offline", "python"];
-        }
-    }
-    var command = new ProcessStartInfo
-    {
-        FileName = python,
-        WorkingDirectory = workingDirectory,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-    };
-    foreach (var argument in prefixArguments)
-    {
-        command.ArgumentList.Add(argument);
-    }
-    command.ArgumentList.Add("-c");
-    command.ArgumentList.Add("import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('create table ledger (id integer primary key, amount text not null)'); c.execute(\"insert into ledger(amount) values ('synthetic')\"); c.commit(); c.close()");
-    command.ArgumentList.Add(database);
-    using var process = Process.Start(command) ?? throw new InvalidOperationException("Could not start synthetic Python.");
-    var output = process.StandardOutput.ReadToEnd();
-    var error = process.StandardError.ReadToEnd();
-    process.WaitForExit();
-    Assert(process.ExitCode == 0, $"Synthetic SQLite setup failed: {error.Trim()} {output.Trim()}".Trim());
-}
-
-static void CreateSyntheticJunction(string link, string target)
-{
-    var command = new ProcessStartInfo
-    {
-        FileName = "cmd.exe",
-        Arguments = $"/c mklink /J \"{link}\" \"{target}\"",
-        WorkingDirectory = Path.GetDirectoryName(link)!,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-    };
-    using var process = Process.Start(command) ?? throw new InvalidOperationException("Could not start synthetic junction setup.");
-    var output = process.StandardOutput.ReadToEnd();
-    var error = process.StandardError.ReadToEnd();
-    process.WaitForExit();
-    Assert(process.ExitCode == 0, $"Synthetic junction setup failed: {error.Trim()} {output.Trim()}".Trim());
-}
-
-static void RemoveSyntheticJunction(string path)
-{
-    if (!Directory.Exists(path) && !File.Exists(path))
-    {
-        return;
-    }
-
-    if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-    {
-        Directory.Delete(path);
-    }
-}
-
-static ValidatedProfile NewValidatedPreviewProfile(string checkout, string dataDir, string database, string currentSha) =>
-    new(
-        new LauncherProfile
-        {
-            Id = "preview",
-            DisplayName = "Preview",
-            Type = "preview",
-            Checkout = checkout,
-            ExpectedRef = "refs/heads/legacy-preview",
-            DataDir = dataDir,
-            Database = database,
-            OpenBrowser = false,
-        },
-        checkout,
-        dataDir,
-        database,
-        currentSha,
-        "preview");
 
 static void WriteCommandShim(string path, string contents)
 {
@@ -3349,29 +2198,6 @@ static string RunGit(string workingDirectory, params string[] arguments)
     process.WaitForExit();
     Assert(process.ExitCode == 0, $"Synthetic git command failed: {standardError.Trim()} {standardOutput.Trim()}".Trim());
     return standardOutput.Trim();
-}
-
-static int RunGitMayFail(string workingDirectory, params string[] arguments)
-{
-    var startInfo = new ProcessStartInfo
-    {
-        FileName = "git",
-        WorkingDirectory = workingDirectory,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-    };
-    foreach (var argument in arguments)
-    {
-        startInfo.ArgumentList.Add(argument);
-    }
-
-    using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start synthetic Git command.");
-    _ = process.StandardOutput.ReadToEnd();
-    _ = process.StandardError.ReadToEnd();
-    process.WaitForExit();
-    return process.ExitCode;
 }
 
 static void DeleteSyntheticTree(string root)
@@ -3663,89 +2489,6 @@ static bool OwnVisible(Control control)
         }
     }
     return true;
-}
-
-sealed record StableUpgradeFixture(
-    string Root,
-    string Seed,
-    string Remote,
-    string StableCheckout,
-    string DataDir,
-    string Database,
-    string PreviewCheckout,
-    string PreviewMarker,
-    string ConfigPath,
-    SyntheticReleaseHandler ReleaseHandler,
-    LauncherConfig Config,
-    ValidatedProfile Profile,
-    string CurrentSha,
-    string TargetSha);
-
-sealed class SyntheticReleaseHandler : HttpMessageHandler
-{
-    private const string ReleasesEndpoint =
-        "https://api.github.com/repos/LTstripes/hermes-finance/releases?per_page=100";
-    private const string GitTreeEndpointPrefix =
-        "https://api.github.com/repos/LTstripes/hermes-finance/git/trees/";
-    private readonly string _releaseJson;
-    private readonly IReadOnlyDictionary<string, string> _treeJsonByCommit;
-
-    public SyntheticReleaseHandler(
-        string releaseJson,
-        IReadOnlyDictionary<string, string>? treeJsonByCommit = null)
-    {
-        _releaseJson = releaseJson;
-        _treeJsonByCommit = treeJsonByCommit
-            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    }
-
-    public int RequestCount { get; private set; }
-    public int GitTreeRequestCount { get; private set; }
-    public Action? OnGitTreeRequest { get; set; }
-
-    protected override Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        RequestCount++;
-        if (request.Method != HttpMethod.Get || request.Headers.Authorization is not null)
-        {
-            throw new InvalidOperationException("Synthetic Stable release discovery request was not an unauthenticated public GET.");
-        }
-
-        if (string.Equals(request.RequestUri?.AbsoluteUri, ReleasesEndpoint, StringComparison.Ordinal))
-        {
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(_releaseJson, Encoding.UTF8, "application/json"),
-            });
-        }
-
-        var absolute = request.RequestUri?.AbsoluteUri;
-        if (absolute is not null
-            && absolute.StartsWith(GitTreeEndpointPrefix, StringComparison.Ordinal)
-            && absolute.EndsWith("?recursive=1", StringComparison.Ordinal))
-        {
-            GitTreeRequestCount++;
-            const string query = "?recursive=1";
-            var commit = absolute.Substring(
-                GitTreeEndpointPrefix.Length,
-                absolute.Length - GitTreeEndpointPrefix.Length - query.Length);
-            if (_treeJsonByCommit.TryGetValue(commit, out var treeJson))
-            {
-                var callback = OnGitTreeRequest;
-                OnGitTreeRequest = null;
-                callback?.Invoke();
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(treeJson, Encoding.UTF8, "application/json"),
-                });
-            }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-        }
-
-        throw new InvalidOperationException("Synthetic Stable request used an unexpected public GitHub endpoint.");
-    }
 }
 
 static class NativeMethods

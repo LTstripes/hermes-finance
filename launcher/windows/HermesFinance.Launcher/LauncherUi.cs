@@ -10,11 +10,7 @@ internal enum LauncherReadinessState
     Ready,
     NeedsPreparation,
     Blocked,
-    Preparing,
-    Repairing,
     Starting,
-    Updating,
-    UpgradingStable,
     Running,
     Stopped,
 }
@@ -22,11 +18,6 @@ internal enum LauncherReadinessState
 internal enum LauncherPrimaryAction
 {
     None,
-    Update,
-    UpdateAndStart,
-    UpgradeStable,
-    Prepare,
-    Repair,
     Start,
     Open,
     Stop,
@@ -124,34 +115,22 @@ internal static class LauncherUi
         return "Prepared release";
     }
 
-    public static string StableIdentityLabel(
-        LauncherProfile profile,
-        string? headSha,
-        StableUpgradeStatus? upgrade = null)
+    public static string StableIdentityLabel(LauncherProfile profile, string? headSha, string? applicationVersion = null)
     {
-        var release = upgrade?.Current is { } current
-            ? ReleaseBadge(current.Tag)
+        var release = IsExactCommit(profile.ExpectedRef) && !string.IsNullOrWhiteSpace(applicationVersion)
+            ? $"Version {applicationVersion}"
             : ReleaseBadge(profile.ExpectedRef);
         var sha = string.IsNullOrWhiteSpace(headSha) ? "—" : headSha[..Math.Min(7, headSha.Length)];
-        if (upgrade?.TargetAvailable == true && upgrade.Target is { } target)
-        {
-            return $"{release}  ·  {sha}  →  {ReleaseBadge(target.Tag)}  ·  {ShaShort(target.CommitSha)}  ·  {DataBoundary(profile.Type)}";
-        }
-        // Stable must show pinned release identity clearly
-        return $"{release}  ·  {sha}  ·  {DataBoundary(profile.Type)}";
+        return $"{release}  ·  SHA {sha}  ·  {DataBoundary(profile.Type)}";
     }
 
-    public static string PreviewIdentityLabel(LauncherProfile profile, string? currentSha, string? targetSha)
+    private static bool IsExactCommit(string expectedRef) =>
+        expectedRef.Length == 40 && expectedRef.All(static character => char.IsAsciiHexDigit(character));
+
+    public static string PreviewIdentityLabel(LauncherProfile profile, string? currentSha)
     {
         var cur = string.IsNullOrWhiteSpace(currentSha) ? "—" : currentSha[..Math.Min(7, currentSha.Length)];
-        var tgt = string.IsNullOrWhiteSpace(targetSha) ? "not fetched" : targetSha[..Math.Min(7, targetSha.Length)];
-        var unreleased = "UNRELEASED";
-        if (!string.IsNullOrWhiteSpace(targetSha) && !string.IsNullOrWhiteSpace(currentSha)
-            && targetSha.Equals(currentSha, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"main {cur} · {unreleased} · {DataBoundary(profile.Type)}";
-        }
-        return $"main {cur} → {tgt} · {unreleased} · {DataBoundary(profile.Type)}";
+        return $"main {cur} · UNRELEASED · {DataBoundary(profile.Type)}";
     }
 
     public static string ShaShort(string? sha) => string.IsNullOrWhiteSpace(sha) ? "—" : sha[..Math.Min(7, sha.Length)];
@@ -163,11 +142,7 @@ internal static class LauncherUi
         LauncherReadinessState.Ready => "ГОТОВО",
         LauncherReadinessState.NeedsPreparation => "НУЖНА ПОДГОТОВКА",
         LauncherReadinessState.Blocked => "ЗАБЛОКИРОВАНО",
-        LauncherReadinessState.Preparing => "ПОДГОТАВЛИВАЕМ",
-        LauncherReadinessState.Repairing => "ИСПРАВЛЯЕМ",
         LauncherReadinessState.Starting => "ЗАПУСКАЕМ",
-        LauncherReadinessState.Updating => "ОБНОВЛЯЕМ",
-        LauncherReadinessState.UpgradingStable => "ОБНОВЛЯЕМ STABLE",
         LauncherReadinessState.Running => "ЗАПУЩЕНО",
         LauncherReadinessState.Stopped => "ОСТАНОВЛЕНО",
         _ => "НЕ ПРОВЕРЕНО",
@@ -180,11 +155,7 @@ internal static class LauncherUi
         LauncherReadinessState.Ready => "Готово к запуску",
         LauncherReadinessState.NeedsPreparation => "Нужна подготовка зависимостей",
         LauncherReadinessState.Blocked => "Запуск заблокирован",
-        LauncherReadinessState.Preparing => "Подготавливаем зависимости",
-        LauncherReadinessState.Repairing => "Исправляем зависимости",
         LauncherReadinessState.Starting => "Hermes запускается",
-        LauncherReadinessState.Updating => "Обновляем Preview",
-        LauncherReadinessState.UpgradingStable => "Обновляем Stable до опубликованного релиза",
         LauncherReadinessState.Running => "Hermes работает",
         LauncherReadinessState.Stopped => "Hermes остановлен",
         _ => "Проверка ещё не запускалась",
@@ -195,13 +166,9 @@ internal static class LauncherUi
         LauncherReadinessState.NotChecked => "Выберите профиль, чтобы проверить его готовность.",
         LauncherReadinessState.Checking => "Проверяем runtime, данные, зависимости и loopback-порт.",
         LauncherReadinessState.Ready => "Все проверки пройдены. Можно запускать Hermes.",
-        LauncherReadinessState.NeedsPreparation => "Нажмите «Подготовить» — установка только locked-зависимостей этого профиля.",
+        LauncherReadinessState.NeedsPreparation => "Зависимости не готовы. Выполните OPS01 Prepare во внешнем подготовленном runtime, затем обновите проверку.",
         LauncherReadinessState.Blocked => "Исправьте blocker в подготовленном runtime и повторите проверку. Подсказка ниже — какое launcher-действие исправляет это.",
-        LauncherReadinessState.Preparing => "Выполняем owner-triggered установку только locked-зависимостей выбранного профиля.",
-        LauncherReadinessState.Repairing => "Принудительно восстанавливаем только locked-зависимости выбранного профиля.",
         LauncherReadinessState.Starting => "Ждём штатные health probes существующего guarded startup.",
-        LauncherReadinessState.Updating => "Получаем canonical origin/main и обновляем только настроенный Preview checkout.",
-        LauncherReadinessState.UpgradingStable => "Создаём и проверяем backup production данных, затем переключаем только настроенный Stable checkout на доказанный immutable release. Автозапуска после обновления нет.",
         LauncherReadinessState.Running => "Сервис доступен только локально на 127.0.0.1:8000.",
         LauncherReadinessState.Stopped => "Профиль остановлен. Можно снова выполнить preflight.",
         _ => "Выберите профиль, чтобы проверить его готовность.",
@@ -226,24 +193,6 @@ internal static class LauncherUi
         {
             return "Stable должен использовать только canonical production database.";
         }
-        if (message.Contains("production backup") || message.Contains("backup"))
-        {
-            return "Обязательную резервную копию production данных не удалось создать или подтвердить. Stable не изменён — проверьте доступ к данным и повторите действие.";
-        }
-        if (message.Contains("backend version") || message.Contains("checked-out release identity"))
-        {
-            return "Версия backend не совпала с release identity. Stable не считается готовым — повторите проверку и откройте диагностику при необходимости.";
-        }
-        if (message.Contains("config identity") || message.Contains("could not be persisted"))
-        {
-            return "Launcher не смог сохранить новую Stable identity. Запуск заблокирован до повторной проверки конфигурации.";
-        }
-        if (message.Contains("published") || message.Contains("prerelease") || message.Contains("immutable")
-            || message.Contains("annotated") || message.Contains("release tag")
-            || message.Contains("release discovery") || message.Contains("target identity"))
-        {
-            return "Безопасное обновление Stable недоступно: опубликованный immutable release не удалось доказать. Проверьте сеть/доступ GitHub и повторите «Обновить проверку».";
-        }
         if (message.Contains("cannot open production data") || message.Contains("aliases production"))
         {
             return "Preview и Experiment должны использовать собственные данные, не production. Выберите другой data_dir/database и нажмите «Обновить проверку».";
@@ -254,7 +203,7 @@ internal static class LauncherUi
         }
         if (message.Contains("identity does not match"))
         {
-            return "Code identity не совпадает с ожидаемой версией. Для Preview нажмите «Обновить Preview»; для Stable проверьте expected_ref (released tag) и нажмите «Обновить проверку».";
+            return "Code identity не совпадает с ожидаемой версией. Проверьте configured expected_ref и нажмите «Обновить проверку».";
         }
         if (message.Contains("identity is ambiguous"))
         {
@@ -262,15 +211,11 @@ internal static class LauncherUi
         }
         if (message.Contains("dirty or conflicted"))
         {
-            return "Preview checkout изменён или содержит конфликт. Нажмите «Обновить проверку» после очистки или «Исправить» если нужно восстановить зависимости.";
+            return "Checkout изменён или содержит конфликт. Очистите подготовленный runtime вне launcher и нажмите «Обновить проверку».";
         }
         if (message.Contains("unexpected; update is blocked"))
         {
-            return "Preview checkout не совпадает с ожидаемой подготовленной версией. Обновление заблокировано — сделайте checkout чистым и повторите.";
-        }
-        if (message.Contains("origin/main") && message.Contains("update"))
-        {
-            return "Preview не удалось безопасно обновить до canonical origin/main. Проверьте сеть и нажмите «Обновить Preview» снова.";
+            return "Checkout не совпадает с ожидаемой подготовленной версией. Действие заблокировано — проверьте configured expected_ref и повторите.";
         }
         if (message.Contains("sidecar") || message.Contains("unstamped data"))
         {
@@ -278,7 +223,7 @@ internal static class LauncherUi
         }
         if (message.Contains("schema") || message.Contains("alembic"))
         {
-            return "Схема базы не совместима с подготовленным runtime профиля. Проверьте базу/миграции, затем «Обновить проверку». При нужде — «Исправить» для зависимостей.";
+            return "Схема базы не совместима с подготовленным runtime профиля. Проверьте базу/миграции, затем «Обновить проверку».";
         }
         if (message.Contains("another hermes instance") || message.Contains("port 8000"))
         {
@@ -290,7 +235,7 @@ internal static class LauncherUi
         }
         if (message.Contains("dependency") || message.Contains("npm") || message.Contains("uv "))
         {
-            return "Проверка зависимостей не пройдена. Нажмите «Подготовить» или «Исправить», если launcher может восстановить этот профиль.";
+            return "Проверка зависимостей не пройдена. Launcher не меняет runtime: выполните OPS01 Prepare во внешнем подготовленном runtime и обновите проверку.";
         }
         if (message.Contains("access") || message.Contains("permission"))
         {
@@ -313,66 +258,36 @@ internal static class LauncherUi
         {
             return new(LauncherPrimaryAction.Stop, "Hermes работает — можно остановить или открыть.", "Hermes запущен на 127.0.0.1:8000");
         }
-        if (IsStableUpgradeAvailable(validated, profile)
-            && state is (LauncherReadinessState.Ready
-                or LauncherReadinessState.NeedsPreparation
-                or LauncherReadinessState.Stopped))
-        {
-            var target = validated!.StableUpgrade!.Target!;
-            return new(
-                LauncherPrimaryAction.UpgradeStable,
-                "Опубликован новый Stable release",
-                $"Доступен {target.Tag} — нажмите «Обновить Stable», чтобы создать backup, переключить только Stable и проверить новую identity");
-        }
         if (state == LauncherReadinessState.Ready)
         {
-            // Preview behind origin/main with an available target must update
-            // first: Update is the primary CTA, Start is not offered while the
-            // prepared update is pending.
-            if (IsPreviewBehindWithTarget(validated, profile))
-            {
-                return new(LauncherPrimaryAction.Update, "Preview отстал — доступно обновление", "Preview отстал от canonical origin/main — нажмите «Обновить Preview» (или «Обновить и запустить»)");
-            }
-            // Running already handled; Ready means validated and deps ready
             return new(LauncherPrimaryAction.Start, "Готово к запуску", "Preflight пройден — нажмите «Запустить»");
         }
         if (state == LauncherReadinessState.NeedsPreparation)
         {
-            // Behind + deps missing: one unambiguous primary covering the safe
-            // owner chain (update Preview, then prepare locked deps, then start).
-            if (IsPreviewBehindWithTarget(validated, profile))
-            {
-                return new(LauncherPrimaryAction.UpdateAndStart, "Preview отстал и зависимости не готовы", "Нажмите «Обновить и запустить»: сначала обновление Preview до origin/main, затем подготовка locked-зависимостей и запуск");
-            }
-            return new(LauncherPrimaryAction.Prepare, "Зависимости требуют подготовки", "Locked зависимости не готовы — нажмите «Подготовить» (offline проверка, сеть только по явному нажатию)");
+            return new(LauncherPrimaryAction.Refresh, "Зависимости требуют внешней подготовки", "Locked зависимости не готовы — выполните OPS01 Prepare во внешнем подготовленном runtime, затем «Обновить проверку»");
         }
         if (state == LauncherReadinessState.Blocked && blockedException is not null)
         {
             var msg = blockedException.Message.ToLowerInvariant();
-            var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
             var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
-            if (msg.Contains("identity does not match") && isPreview)
-            {
-                return new(LauncherPrimaryAction.Update, "Code identity не совпадает — нужно обновление Preview", "Preview отстал от canonical origin/main — нажмите «Обновить Preview»");
-            }
             if (msg.Contains("identity does not match") && isStable)
             {
                 // Stable is pinned: launcher never updates Stable, so a mismatch
                 // is recovery-only. Refresh re-checks; the fix happens outside
                 // the launcher (verify released tag / reinstall Stable).
-                return new(LauncherPrimaryAction.Refresh, "Stable code identity не совпадает — recovery-only", "Stable pinned: launcher не обновляет Stable. Проверьте released tag или переустановите Stable, затем «Обновить проверку»");
+                return new(LauncherPrimaryAction.Refresh, "Stable code identity не совпадает", "Проверьте подготовленный опубликованный Stable runtime и нажмите «Обновить проверку»");
             }
             if (msg.Contains("identity is ambiguous") && isStable)
             {
-                return new(LauncherPrimaryAction.Refresh, "Stable checkout изменён — recovery-only", "Сделайте Stable checkout чистым (released tag), затем «Обновить проверку». Launcher не исправляет Stable автоматически");
+                return new(LauncherPrimaryAction.Refresh, "Stable checkout изменён", "Сделайте Stable checkout чистым и нажмите «Обновить проверку»");
             }
-            if (msg.Contains("dirty or conflicted") && isPreview)
+            if (msg.Contains("dirty or conflicted"))
             {
                 return new(LauncherPrimaryAction.Refresh, "Заблокировано: checkout изменён", "Сделайте checkout чистым и «Обновить проверку»");
             }
             if ((msg.Contains("dependency") || msg.Contains("npm") || msg.Contains("uv ")) )
             {
-                return new(LauncherPrimaryAction.Prepare, "Зависимости не готовы", "Нажмите «Подготовить» или «Исправить»");
+                return new(LauncherPrimaryAction.Refresh, "Зависимости не готовы", "Выполните OPS01 Prepare во внешнем подготовленном runtime, затем «Обновить проверку»");
             }
             if (msg.Contains("another hermes instance") || msg.Contains("port 8000"))
             {
@@ -396,16 +311,6 @@ internal static class LauncherUi
         return new(LauncherPrimaryAction.Refresh, "Проверка не запускалась", "Нажмите «Обновить проверку»");
     }
 
-    internal static bool IsPreviewBehindWithTarget(ValidatedProfile? validated, LauncherProfile profile) =>
-        profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
-        && validated?.PreviewUpdate is not null
-        && !validated.PreviewUpdate.IsCurrent
-        && validated.PreviewUpdate.TargetAvailable;
-
-    internal static bool IsStableUpgradeAvailable(ValidatedProfile? validated, LauncherProfile profile) =>
-        profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
-        && validated?.StableUpgrade?.TargetAvailable == true;
-
     public static string CheckValue(bool passed, string success, string failure = "Требует внимания") =>
         passed ? success : failure;
 
@@ -420,7 +325,7 @@ internal static class LauncherUi
     public static Color StatusColor(LauncherReadinessState state) => state switch
     {
         LauncherReadinessState.Ready or LauncherReadinessState.Running => Color.FromArgb(102, 227, 190),
-        LauncherReadinessState.NeedsPreparation or LauncherReadinessState.Preparing or LauncherReadinessState.Repairing or LauncherReadinessState.Starting or LauncherReadinessState.Updating or LauncherReadinessState.UpgradingStable => Color.FromArgb(255, 196, 116),
+        LauncherReadinessState.NeedsPreparation or LauncherReadinessState.Starting => Color.FromArgb(255, 196, 116),
         LauncherReadinessState.Blocked => Color.FromArgb(255, 125, 139),
         LauncherReadinessState.Stopped => Color.FromArgb(190, 165, 255),
         _ => Color.FromArgb(148, 161, 181),
@@ -501,7 +406,7 @@ internal sealed class ProfileCard : Panel
 
         _identity.Text = isStable
             ? LauncherUi.StableIdentityLabel(profile, null)
-            : isPreview ? LauncherUi.PreviewIdentityLabel(profile, null, null) : LauncherUi.ReleaseBadge(profile.ExpectedRef);
+            : isPreview ? LauncherUi.PreviewIdentityLabel(profile, null) : LauncherUi.ReleaseBadge(profile.ExpectedRef);
         _identity.Font = new Font("Cascadia Mono", 7.5F);
         _identity.ForeColor = Color.FromArgb(164, 190, 225);
         _identity.AutoEllipsis = true;
@@ -562,7 +467,7 @@ internal sealed class ProfileCard : Panel
         Invalidate();
     }
 
-    public void SetIdentity(string? headSha, string? targetSha)
+    public void SetIdentity(string? headSha, string? targetSha = null, string? applicationVersion = null)
     {
         // #302: re-derive the title on every identity refresh so a stale
         // display_name can never linger beside validated identity lines.
@@ -572,39 +477,15 @@ internal sealed class ProfileCard : Panel
         var isPreview = Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
         if (isStable)
         {
-            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha);
+            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha, applicationVersion);
         }
         else if (isPreview)
         {
-            _identity.Text = LauncherUi.PreviewIdentityLabel(Profile, headSha, targetSha);
+            _identity.Text = LauncherUi.PreviewIdentityLabel(Profile, headSha);
         }
         else
         {
             _identity.Text = headSha is not null ? $"SHA {LauncherUi.ShaShort(headSha)}" : LauncherUi.ReleaseBadge(Profile.ExpectedRef);
-        }
-    }
-
-    public void SetStableUpgrade(StableUpgradeStatus? upgrade, string? headSha)
-    {
-        if (Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
-        {
-            // #302: title stays version-free; the pinned/current release
-            // comes from the validated upgrade when proven, otherwise from
-            // the configured expected_ref (honest pre-validation display).
-            _name.Text = LauncherUi.OwnerTitle(Profile);
-            AccessibleName = LauncherUi.OwnerTitle(Profile);
-            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha, upgrade);
-            var pinned = upgrade?.Current is { } current
-                ? LauncherUi.ReleaseBadge(current.Tag)
-                : LauncherUi.ReleaseBadge(Profile.ExpectedRef);
-            if (upgrade?.TargetAvailable == true && upgrade.Target is { } target)
-            {
-                _description.Text = $"Pinned {pinned}  ·  доступен {LauncherUi.ReleaseBadge(target.Tag)}  ·  production";
-            }
-            else
-            {
-                _description.Text = $"Pinned {pinned}  ·  production";
-            }
         }
     }
 

@@ -35,8 +35,6 @@ $initialStatus = (@(& git -C $repoRoot status --porcelain) -join "`n")
 $expectedAssets = @(
     "HermesFinance.Launcher.exe",
     "hermes-finance-cat.ico",
-    "prepare-runtime-dependencies.ps1",
-    "launcher-production-backup.py",
     "launcher-schema-check.py"
 )
 
@@ -50,6 +48,9 @@ try {
 
     foreach ($asset in $expectedAssets) {
         Assert-True (Test-Path -LiteralPath (Join-Path $packageDirectory $asset) -PathType Leaf) "Packaged launcher is missing '$asset'."
+    }
+    foreach ($obsolete in @("prepare-runtime-dependencies.ps1", "launcher-production-backup.py")) {
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $packageDirectory $obsolete))) "Packaged launcher must not include obsolete launcher-owned asset '$obsolete'."
     }
     foreach ($asset in @("HermesFinance.Launcher.dll", "HermesFinance.Launcher.deps.json", "HermesFinance.Launcher.runtimeconfig.json")) {
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $packageDirectory $asset))) "Packaged launcher is not self-contained: '$asset' was emitted."
@@ -68,6 +69,9 @@ try {
     $shortcutPath = Join-Path $shortcutDirectory "Hermes Finance.lnk"
     foreach ($asset in $expectedAssets) {
         Assert-True (Test-Path -LiteralPath (Join-Path $installDirectory $asset) -PathType Leaf) "Installed launcher is missing '$asset'."
+    }
+    foreach ($obsolete in @("prepare-runtime-dependencies.ps1", "launcher-production-backup.py")) {
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $installDirectory $obsolete))) "Installed launcher must not include obsolete launcher-owned asset '$obsolete'."
     }
     Assert-True (Test-Path -LiteralPath $shortcutPath -PathType Leaf) "Synthetic installer did not create the expected shortcut."
 
