@@ -412,7 +412,6 @@ export default function UiV2ClosePage() {
 
   return (
     <UiV2Shell
-      active={null}
       busy={!monthsReady || (monthId !== null && !workflowReady)}
       header={
         <>

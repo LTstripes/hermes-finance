@@ -76,7 +76,11 @@ export default function UiV2DataReconciliationPage() {
   const v1ReturnPath =
     resolution.kind === "ready"
       ? requestedStep
-        ? monthlyCloseReturnPath({ monthId: resolution.month.id, step: requestedStep })
+        ? monthlyCloseReturnPath({
+            monthId: resolution.month.id,
+            origin: "monthly-close",
+            step: requestedStep,
+          })
         : "/reconciliation"
       : "/reconciliation";
 
@@ -186,6 +190,7 @@ export default function UiV2DataReconciliationPage() {
               <Link
                 to={monthlyCloseReturnPath({
                   monthId: month.id,
+                  origin: "monthly-close",
                   step: "broker_reconciliation",
                 })}
               >
@@ -251,6 +256,7 @@ export default function UiV2DataReconciliationPage() {
               <Link
                 to={monthlyCloseReturnPath({
                   monthId: month.id,
+                  origin: "monthly-close",
                   step: "broker_reconciliation",
                 })}
               >

@@ -887,7 +887,11 @@ export default function UiV2IncomePage() {
       : null;
   const v1ReturnPath = latestClosed
     ? requestedStep
-      ? monthlyCloseReturnPath({ monthId: latestClosed.id, step: requestedStep })
+      ? monthlyCloseReturnPath({
+          monthId: latestClosed.id,
+          origin: "monthly-close",
+          step: requestedStep,
+        })
       : `/months/${latestClosed.id}`
     : "/";
 

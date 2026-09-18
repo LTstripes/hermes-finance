@@ -53,7 +53,11 @@ export default function UiV2DataSourcesPage() {
   const v1ReturnPath =
     resolution.kind === "ready"
       ? requestedStep
-        ? monthlyCloseReturnPath({ monthId: resolution.month.id, step: requestedStep })
+        ? monthlyCloseReturnPath({
+            monthId: resolution.month.id,
+            origin: "monthly-close",
+            step: requestedStep,
+          })
         : "/freshness"
       : "/freshness";
 
@@ -135,7 +139,13 @@ export default function UiV2DataSourcesPage() {
         />
         <p className={dataStyles.muted} style={{ marginTop: 14 }}>
           Импорт и apply выполняются только в закрытии месяца. Здесь — состояние и handoff.{" "}
-          <Link to={monthlyCloseReturnPath({ monthId: month.id, step: "readiness" })}>
+          <Link
+            to={monthlyCloseReturnPath({
+              monthId: month.id,
+              origin: "monthly-close",
+              step: "readiness",
+            })}
+          >
             Открыть закрытие месяца →
           </Link>
         </p>
