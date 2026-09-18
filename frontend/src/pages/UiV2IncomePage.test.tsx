@@ -302,6 +302,40 @@ describe("UI v2 Income and plans", () => {
     expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
   });
 
+  it("puts the payout ladder last before handoffs and keeps event columns semantic", async () => {
+    const { mount } = setup();
+    mount();
+
+    await screen.findByTestId("income-history-91");
+    const panelOrder = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid$="-panel"]'),
+    ).map((panel) => panel.dataset.testid);
+    expect(panelOrder).toEqual([
+      "income-history-panel",
+      "income-forecast-panel",
+      "income-goals-panel",
+      "income-plan-panel",
+      "income-ladder-panel",
+      "income-handoffs-panel",
+    ]);
+
+    const ladder = screen.getByTestId("income-ladder-panel");
+    const controls = within(ladder).getByRole("group", { name: "Окно ожидаемых выплат" });
+    expect(controls).toHaveAttribute("aria-controls", "income-ladder-content");
+
+    const selectedWindow = within(ladder).getByTestId("income-window-30");
+    const coupon = within(selectedWindow).getByTestId("income-event-provider-701");
+    expect(coupon.children).toHaveLength(3);
+    expect(coupon.children[0]).toHaveTextContent("Купон");
+    expect(coupon.children[1]).toHaveTextContent("Синтетическая облигация");
+    expect(coupon.children[1]).toHaveTextContent("провайдер");
+    expect(coupon.children[2]).toHaveTextContent("8 500 ₽");
+
+    const principal = within(selectedWindow).getByTestId("income-event-provider-702");
+    expect(principal).toHaveTextContent("Возврат principal");
+    expect(principal.children[2]).toHaveTextContent("100 000 ₽ · не доход");
+  });
+
   it("keeps planning context on latest CLOSED while history selection changes the factual breakdown", async () => {
     const { mount, reads } = setup();
     mount();
