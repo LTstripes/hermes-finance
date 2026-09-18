@@ -148,8 +148,7 @@ export default function UiV2DataReconciliationPage() {
     );
   } else {
     const month = resolution.month;
-    const displayResult =
-      result != null && result.reporting_month_id === month.id ? result : null;
+    const displayResult = result != null && result.reporting_month_id === month.id ? result : null;
     const unavailable = displayResult ? isComparisonUnavailable(displayResult) : false;
     const unavailableMessage = displayResult ? nonApplicableReason(displayResult) : null;
     content = (

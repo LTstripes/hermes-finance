@@ -3,10 +3,7 @@ import path from "node:path";
 
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 
-import {
-  makeUiV2Freshness,
-  makeUiV2ProviderCapabilities,
-} from "../src/test/uiV2DataFixtures";
+import { makeUiV2Freshness, makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
 import { uiV2Accounts, uiV2Instruments, uiV2Months } from "../src/test/uiV2Fixtures";
 
 async function assertBounded(page: Page) {

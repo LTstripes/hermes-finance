@@ -227,9 +227,9 @@ describe("UI v2 Data reconciliation", () => {
     mount();
     await screen.findByTestId("reconciliation-idle");
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
-    expect(
-      await screen.findByRole("alert"),
-    ).toHaveTextContent("Ответ сверки не соответствует выбранному месяцу");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Ответ сверки не соответствует выбранному месяцу",
+    );
     expect(screen.queryByTestId("reconciliation-result")).toBeNull();
     expect(screen.getByTestId("reconciliation-idle")).toBeTruthy();
   });
@@ -252,16 +252,10 @@ describe("UI v2 Data reconciliation", () => {
             headers: { "Content-Type": "application/json" },
           });
         }
-        if (
-          method === "POST" &&
-          url.pathname === "/api/months/12/broker-reconciliation-preview"
-        ) {
+        if (method === "POST" && url.pathname === "/api/months/12/broker-reconciliation-preview") {
           return previewGate;
         }
-        if (
-          method === "POST" &&
-          url.pathname === "/api/months/91/broker-reconciliation-preview"
-        ) {
+        if (method === "POST" && url.pathname === "/api/months/91/broker-reconciliation-preview") {
           return new Response(
             JSON.stringify(
               result({ reporting_month_id: 91, month_status: "closed", month_closed: true }),
@@ -300,9 +294,7 @@ describe("UI v2 Data reconciliation", () => {
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
     expect(await screen.findByRole("button", { name: "Получаем снимок…" })).toBeTruthy();
     await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "91");
-    await waitFor(() =>
-      expect(screen.getByTestId("data-month-context")).toHaveTextContent("Июль"),
-    );
+    await waitFor(() => expect(screen.getByTestId("data-month-context")).toHaveTextContent("Июль"));
     expect(screen.getByTestId("reconciliation-idle")).toBeTruthy();
     releasePreview!(
       new Response(JSON.stringify(result({ reporting_month_id: 12 })), {

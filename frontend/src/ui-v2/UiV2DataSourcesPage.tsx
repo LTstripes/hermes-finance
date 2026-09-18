@@ -9,11 +9,7 @@ import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month
 import { queryKeys } from "../queryClient";
 import { DataMonthContext, resolveDataMonth, UiV2DataFrame } from "./UiV2DataShell";
 import dataStyles from "./UiV2Data.module.css";
-import {
-  CapabilitiesDisclosure,
-  FreshnessBody,
-  MonthToolbar,
-} from "./UiV2DataFreshnessPanels";
+import { CapabilitiesDisclosure, FreshnessBody, MonthToolbar } from "./UiV2DataFreshnessPanels";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import { sortReportingMonths } from "./monthSelection";
 

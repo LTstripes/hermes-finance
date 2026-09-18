@@ -213,7 +213,6 @@ describe("UI v2 Data sources", () => {
     expect(screen.queryByTestId("freshness-clocks")).toBeNull();
   });
 
-
   it("keeps provider capability disclosure collapsed and read-only", async () => {
     const user = userEvent.setup();
     const { mount } = setup();
