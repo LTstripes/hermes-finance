@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 
 import {
+  makeUiV2ArchiveHistory,
   makeUiV2CapitalHistory,
   makeUiV2Cash,
   makeUiV2Comparison,
@@ -11,6 +12,7 @@ import {
   makeUiV2Debts,
   makeUiV2Deposits,
   makeUiV2Goals,
+  makeUiV2LongHistory,
   makeUiV2PassiveHistory,
   makeUiV2Performance,
   makeUiV2Positions,
@@ -18,9 +20,11 @@ import {
   makeUiV2RiskAllocation,
   makeUiV2Workflow,
   uiV2Accounts,
+  uiV2ArchiveMonths,
   uiV2CapitalMonthId,
   uiV2CapitalPreviousMonthId,
   uiV2Instruments,
+  uiV2LongHistoryFirstMonthId,
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
 
@@ -143,6 +147,10 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   await expect(
     page.getByText("Изменение состояния, не инвестиционная доходность", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("link", { name: "История отчётов →" })).toHaveAttribute(
+    "href",
+    "/v2/reports",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-home-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
@@ -381,6 +389,10 @@ test("ui-v2 Capital desktop: closed composition, accounts and performance stay b
   ).toBeVisible();
   expect(await page.locator(".capital-composition-chart path[fill='#27734c']").count()).toBe(0);
   await expect(page.getByText("164,9%", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Все отчёты →" })).toHaveAttribute(
+    "href",
+    "/v2/reports",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
@@ -476,3 +488,298 @@ test("ui-v2 Capital interactions: filters, windows and the v1 escape preserve se
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
+
+/* ------------------------------------------------------------------ *
+ * Contextual report history / archive (#427).
+ * Synthetic fixtures only: no owner runtime, no provider, read-only GET.
+ * ------------------------------------------------------------------ */
+
+type ReportsScene =
+  | "archive"
+  | "no-closed"
+  | "first-closed"
+  | "money-error"
+  | "report"
+  | "report-partial"
+  | "report-older-than-window";
+
+/** 2030-12: older than the latest twelve CLOSED reports (2031-01 … 2031-12). */
+const olderReportId = uiV2LongHistoryFirstMonthId + 11;
+
+async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
+  const report = scene === "report" || scene === "report-partial";
+  const olderThanWindow = scene === "report-older-than-window";
+  const long = olderThanWindow ? makeUiV2LongHistory({ count: 24 }) : null;
+  const rowMonthId = olderThanWindow ? olderReportId : uiV2CapitalPreviousMonthId;
+  const months =
+    long !== null
+      ? long.months
+      : scene === "no-closed"
+        ? [uiV2Months[1]]
+        : scene === "first-closed"
+          ? [uiV2Months[0], uiV2Months[1]]
+          : uiV2ArchiveMonths;
+  const state = {
+    monthsError: false,
+    compositionError: scene === "money-error",
+    riskError: scene === "report-partial",
+    instrumentsError: scene === "report-partial",
+    composition:
+      long !== null ? long.history : report ? makeUiV2CapitalHistory() : makeUiV2ArchiveHistory(),
+    risk: makeUiV2RiskAllocation({ monthId: rowMonthId }),
+    cash: makeUiV2Cash({ monthId: rowMonthId }),
+    deposits: makeUiV2Deposits({ monthId: rowMonthId }),
+    positions: makeUiV2Positions({ monthId: rowMonthId }),
+  };
+  const unexpected: string[] = [];
+  const reads: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!["127.0.0.1", "localhost"].includes(url.hostname))
+      unexpected.push(`external: ${url.origin}`);
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith("/api/")) {
+      await route.continue();
+      return;
+    }
+    reads.push(`${request.method()} ${url.pathname}${url.search}`);
+    if (request.method() !== "GET") {
+      unexpected.push(`${request.method()} ${url.pathname}`);
+      await route.abort();
+      return;
+    }
+    let json: unknown;
+    let status = 200;
+    if (url.pathname === "/api/months") {
+      json = months;
+      status = state.monthsError ? 503 : 200;
+    } else if (url.pathname === "/api/analytics/capital-composition") {
+      json = state.composition;
+      status = state.compositionError ? 503 : 200;
+    } else if (url.pathname === "/api/analytics/risk-allocation") {
+      json = state.risk;
+      status = state.riskError ? 503 : 200;
+    } else if (url.pathname === "/api/cash-balances") {
+      json = state.cash;
+    } else if (url.pathname === "/api/deposits") {
+      json = state.deposits;
+    } else if (url.pathname === "/api/positions") {
+      json = state.positions;
+    } else if (url.pathname === "/api/accounts") {
+      json = uiV2Accounts;
+    } else if (url.pathname === "/api/instruments") {
+      json = uiV2Instruments;
+      status = state.instrumentsError ? 503 : 200;
+    } else {
+      unexpected.push(`${request.method()} ${url.pathname}`);
+      status = 404;
+      json = { error: { code: "synthetic_missing", message: "Missing fixture", details: [] } };
+    }
+    await route.fulfill({
+      status,
+      json:
+        status === 200
+          ? json
+          : { error: { code: "synthetic_error", message: "Synthetic failure", details: [] } },
+    });
+  });
+  return { errors, reads, state, unexpected };
+}
+
+test("ui-v2 reports archive desktop: year groups, gaps and the current report stay bounded", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installReportsApi(page);
+  await page.goto("/v2/reports");
+  await expect(page.getByRole("heading", { level: 1, name: "Отчёты" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "2031" })).toBeVisible();
+  await expect(page.getByTestId("reports-row-91")).toContainText("Текущий отчёт");
+  await expect(page.getByTestId("reports-row-91")).toContainText("2 803 900 ₽");
+  await expect(page.getByTestId("reports-row-90")).toContainText("2 761 300 ₽");
+  await expect(page.getByTestId("reports-row-90")).toContainText("− 390 000 ₽");
+  await expect(page.getByTestId("reports-gap-2031-6")).toContainText("отчёта нет");
+  await expect(page.getByTestId("reports-row-12")).toHaveCount(0);
+  await expect(page.getByTestId("reports-draft-note")).toContainText("Август 2031 ещё не закрыт");
+  await expect(page.getByTestId("reports-year-2030")).toContainText("Ноябрь 2030");
+  await expect(page.getByRole("link", { name: "Месяцы в текущем интерфейсе →" })).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-reports-archive-desktop");
+  expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
+  // No extra endpoint on the archive path, regardless of duplicate dev-mode reads.
+  expect([...new Set(evidence.reads.map((read) => read.split(" ")[1]))].sort()).toEqual([
+    "/api/analytics/capital-composition",
+    "/api/months",
+  ]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 reports archive narrow: rows stay readable as cards", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installReportsApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/reports");
+  await expect(page.getByTestId("reports-row-90")).toContainText("2 761 300 ₽");
+  await expect(page.getByTestId("reports-gap-2031-6")).toContainText("отчёта нет");
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-reports-archive-narrow");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+for (const scene of ["no-closed", "first-closed", "money-error"] as const) {
+  test(`ui-v2 reports archive state ${scene}: honest partial result`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "1440x900", "State evidence captured once");
+    const evidence = await installReportsApi(page, scene);
+    await page.goto("/v2/reports");
+    if (scene === "no-closed") {
+      await expect(page.getByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+      await expect(page.getByTestId("reports-archive")).toHaveCount(0);
+    } else if (scene === "first-closed") {
+      await expect(page.getByTestId("reports-single-note")).toBeVisible();
+      await expect(page.getByText("отчёта нет")).toHaveCount(0);
+    } else {
+      await expect(page.getByTestId("reports-archive")).toHaveAttribute(
+        "data-money-state",
+        "unavailable",
+      );
+      await expect(page.getByTestId("reports-row-90")).toContainText("—");
+    }
+    await assertBounded(page);
+    await capture(page, testInfo, `ui-v2-reports-archive-${scene}`);
+    expect(evidence.unexpected).toEqual([]);
+    expect(evidence.errors).toEqual([]);
+  });
+}
+
+test("ui-v2 historical report desktop: context, values and place in history stay bounded", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installReportsApi(page, "report");
+  await page.goto(`/v2/reports/${uiV2CapitalPreviousMonthId}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Исторический отчёт" })).toBeVisible();
+  await expect(page.getByTestId("v2-report-context")).toHaveAttribute("data-context", "historical");
+  await expect(page.getByTestId("v2-report-context")).toContainText("Май 2031");
+  await expect(page.getByTestId("v2-report-context")).toContainText("Снимок 31.05.2031");
+  await expect(page.getByTestId("report-net")).toHaveText("2 761 300 ₽");
+  await expect(page.getByTestId("report-assets")).toHaveText("3 151 300 ₽");
+  await expect(page.getByTestId("report-debts")).toHaveText("− 390 000 ₽");
+  await expect(page.getByTestId("report-class-cash")).toContainText("751 300 ₽");
+  await expect(page.getByTestId("report-history")).toBeVisible();
+  await expect(page.locator('[data-highlight-key="2031-05"]')).toHaveCount(1);
+  await expect(page.getByTestId("report-neighbour-previous")).toHaveAttribute(
+    "href",
+    "/v2/reports/89",
+  );
+  await expect(page.getByTestId("report-neighbour-next")).toHaveAttribute("href", "/v2/reports/91");
+  await expect(page.getByTestId("report-change-unavailable")).toContainText(
+    "Изменение между отчётами",
+  );
+  await expect(
+    page.getByText(/Поздние цены, остатки и позиции никогда не подставляются/),
+  ).toBeVisible();
+  await expect(page.getByTestId("report-holding-deposit-601")).toBeVisible();
+  await expect(page.getByTestId("report-top-positions")).toBeVisible();
+  await expect(page.getByText(/XIRR|TWRR/)).toHaveCount(0);
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-desktop");
+  expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
+  expect(evidence.reads.some((read) => read.includes("/api/performance/"))).toBe(false);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 historical report narrow: header, values and handoff stay operable", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installReportsApi(page, "report");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/v2/reports/${uiV2CapitalPreviousMonthId}`);
+  await expect(page.getByTestId("report-net")).toContainText("2 761 300 ₽");
+  await expect(page.getByRole("link", { name: "← Все отчёты" })).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-narrow");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 historical report partial: one failed widget never blanks the report", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Failure-state proof once");
+  const evidence = await installReportsApi(page, "report-partial");
+  await page.goto(`/v2/reports/${uiV2CapitalPreviousMonthId}`);
+  await expect(page.getByTestId("report-net")).toContainText("2 761 300 ₽");
+  await expect(page.getByText("Данные временно недоступны").first()).toBeVisible();
+  await expect(page.getByTestId("report-holding-cash-701")).toBeVisible();
+  await expect(page.getByTestId("report-holding-position-501")).toHaveCount(0);
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-partial");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 historical report contextual window: an older report keeps its highlight for 3 and 12", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Regression evidence captured once");
+  const evidence = await installReportsApi(page, "report-older-than-window");
+  await page.goto(`/v2/reports/${olderReportId}`);
+  const history = page.getByTestId("report-history");
+
+  // 2030-12 is older than the latest twelve CLOSED reports, so the window must end
+  // at the opened report instead of sliding to latest-global history.
+  await expect(history).toHaveAttribute("data-point-count", "12");
+  await expect(history).toHaveAttribute("data-window-last-id", String(olderReportId));
+  await expect(history.locator('[data-highlight-key="2030-12"]')).toHaveCount(1);
+  await expect(page.getByText(/окно заканчивается открытым отчётом/)).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-contextual-window-12");
+
+  await page.getByRole("button", { name: "3 месяца" }).click();
+  await expect(history).toHaveAttribute("data-point-count", "3");
+  await expect(history).toHaveAttribute("data-window-last-id", String(olderReportId));
+  await expect(history.locator('[data-highlight-key="2030-12"]')).toHaveCount(1);
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-contextual-window-3");
+
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+for (const scene of ["draft", "unknown", "current"] as const) {
+  test(`ui-v2 historical report deep link ${scene}: current and historical never blur`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "1440x900", "State evidence captured once");
+    const evidence = await installReportsApi(page, "report");
+    const path =
+      scene === "draft"
+        ? "/v2/reports/12"
+        : scene === "unknown"
+          ? "/v2/reports/999"
+          : `/v2/reports/${uiV2CapitalMonthId}`;
+    await page.goto(path);
+    if (scene === "draft") {
+      await expect(page.getByRole("heading", { name: "Этот месяц ещё не закрыт" })).toBeVisible();
+      await expect(page.getByText(/черновик, не исторический отчёт/)).toBeVisible();
+    } else if (scene === "unknown") {
+      await expect(page.getByRole("heading", { name: "Отчёт не найден" })).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "Это текущий отчёт" })).toBeVisible();
+    }
+    await expect(page.getByTestId("report-net")).toHaveCount(0);
+    await assertBounded(page);
+    await capture(page, testInfo, `ui-v2-report-deep-link-${scene}`);
+    expect(evidence.unexpected).toEqual([]);
+    expect(evidence.errors).toEqual([]);
+  });
+}

@@ -379,6 +379,17 @@ it("recovers the root report list without querying a guessed report", async () =
   expect(await screen.findByTestId("v2-capital")).toBeVisible();
 });
 
+it("links the report-context line to the contextual archive", async () => {
+  const { mount } = setup();
+  mount();
+
+  await screen.findByTestId("v2-capital");
+  expect(screen.getByRole("link", { name: "История отчётов →" })).toHaveAttribute(
+    "href",
+    "/v2/reports",
+  );
+});
+
 describe("UI v2 isolation", () => {
   it("keeps the v1 rollback path when the lazy Home crashes", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});

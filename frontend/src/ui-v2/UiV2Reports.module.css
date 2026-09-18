@@ -1,0 +1,303 @@
+/* Contextual history/archive blocks. The shared shell, panel, metric and
+   report-context styles live in UiV2Page.module.css and are reused unchanged. */
+
+/* ---------------------------------------------------------------- archive */
+
+.backLink {
+  margin-top: 10px !important;
+  font-size: 12px;
+}
+
+.backLink a {
+  text-decoration: none;
+}
+
+.archiveIntro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.archiveNote {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.yearGroup {
+  margin-bottom: 22px;
+}
+
+.yearGroup h2 {
+  margin-bottom: 8px;
+  font-size: 1.05rem;
+}
+
+.gapRow td,
+.gapPeriod {
+  color: var(--muted);
+}
+
+.reportCell {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.moneyCell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.draftNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+  padding: 10px 14px;
+  border: 1px solid #d8e2ee;
+  border-radius: 10px;
+  background: #f4f7fb;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.draftNote strong {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- report */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.caveat {
+  margin-bottom: 16px !important;
+  padding: 10px 14px;
+  border: 1px solid #ecdcc4;
+  border-radius: 10px;
+  background: #fdf8f0;
+  color: #6b4a1c;
+  font-size: 12px;
+}
+
+.compositionList,
+.positionList,
+.holdingList,
+.pairList {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.compositionList li,
+.pairList li {
+  min-height: 42px;
+  padding: 9px 11px;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  font-size: 12px;
+}
+
+.pairList li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.classDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.className {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.classShare {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.compositionList strong,
+.pairList strong,
+.positionList strong,
+.holdingAmount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.subBlock {
+  margin-top: 18px;
+}
+
+.subBlock h3 {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.muted {
+  margin-top: 9px !important;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.handoffList {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.neighbours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.positionList {
+  margin-top: 11px;
+}
+
+.positionList li {
+  padding: 8px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  border-bottom: 1px solid #edf0f3;
+  font-size: 12px;
+}
+
+.positionList li:last-child {
+  border-bottom: 0;
+}
+
+.holdingList {
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.holdingRow {
+  min-width: 0;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 14px;
+  border: 1px solid #e8ecf0;
+  border-radius: 9px;
+  background: #fbfcfd;
+}
+
+.holdingMain {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.holdingName {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.holdingMeta {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.holdingAmount {
+  font-size: 13px;
+  text-align: right;
+}
+
+.excludedBadge {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f1f3f6;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 800px) {
+  .controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 550px) {
+  .holdingRow {
+    grid-template-columns: 1fr;
+  }
+
+  .holdingAmount {
+    text-align: left;
+  }
+}
+
+@media (max-width: 800px) {
+  /* Archive rows become cards; the year heading and the money stay readable. */
+  .archiveTable,
+  .archiveTable tbody,
+  .archiveTable tr,
+  .archiveTable td {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .archiveTable thead {
+    display: none !important;
+  }
+
+  .archiveTable tr {
+    margin-bottom: 10px !important;
+    padding: 12px 14px !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 12px !important;
+    background: white;
+  }
+
+  .archiveTable td {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    padding: 4px 0 !important;
+    border-bottom: 0 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .archiveTable td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .archiveTable td:last-child {
+    justify-content: flex-start !important;
+  }
+}

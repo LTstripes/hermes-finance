@@ -257,6 +257,29 @@
   color: #aab4bf;
 }
 
+/* A historical report must never read as current state. */
+.reportContext[data-context="historical"] .closedBadge {
+  background: #f3e6d4;
+  color: #8a5a1d;
+}
+
+.reportStatus {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.reportContextLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.reportContextLinks > a[href] {
+  margin-left: 0;
+}
+
 .draftAction {
   min-height: 47px;
   margin-bottom: 16px;
