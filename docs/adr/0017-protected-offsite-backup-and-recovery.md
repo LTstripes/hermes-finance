@@ -1,0 +1,235 @@
+# ADR 0017 — Protected off-site recovery points and isolated recovery
+
+- **Status:** Contract-frozen design candidate; pending independent security/recovery review and project acceptance
+- **Date:** 2026-09-18
+- **Source task:** #417-A / #458
+- **Parent contract:** #417 execution-contract freeze, `issuecomment-5731304512`
+- **Related:** [ADR 0004](0004-localhost-request-security.md), [ADR 0012](0012-runtime-and-agent-workspace-isolation.md), [ADR 0014](0014-launcher-runtime-profile-safety.md), [`OWNER_RUNTIME_OPERATIONS.md`](../OWNER_RUNTIME_OPERATIONS.md)
+
+## 1. Decision summary
+
+Hermes supports one provider-neutral protected-destination mode for the first
+off-site recovery workflow: `external_encrypted_destination_v1`.
+
+Hermes does not encrypt an archive, derive or store keys, call a cloud API,
+upload in the background, or claim that an ordinary synced folder is
+protected. The configured destination must be the writable view of an already
+existing Owner-managed encrypted container or volume whose encrypted backing
+storage is synchronized off-device. Hermes proves only the local publication
+and read-back boundary.
+
+This ADR freezes the contract for the managed recovery-point publisher,
+retention, isolated disaster-recovery rehearsal, and post-restore read-state
+invalidation. It does not implement those capabilities and is not Owner UAT
+or project acceptance.
+
+## 2. At-rest protection contract
+
+The protection decision is explicit and machine-readable:
+
+```text
+protection_state=protected
+protection_mode=external_encrypted_destination_v1
+format_version=1
+```
+
+The state is valid only after the Owner has attested outside Git that the
+destination is an existing encrypted container/volume and that recovery
+material is available independently of the backed-up laptop. Hermes records
+or returns only the protection mode, format version, and a privacy-safe
+destination alias.
+
+The following are mandatory fail-closed rules:
+
+- missing, unknown, or unattested protection fails before destination staging;
+- a normal Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
+  folder is not protected merely because it synchronizes;
+- no key, credential, full private path, financial value, or reconstructive
+  payload is persisted or logged;
+- recovery material is not stored inside the recovery artifact or only on the
+  laptop being backed up;
+- wrong, missing, or unauthenticated recovery material fails before restore
+  target mutation;
+- there is no successful plaintext-publication state in v1.
+
+Portable Hermes archive encryption would require a separate accepted design
+for a vetted format/library, authenticated encryption, key derivation and
+storage, rotation, packaging, and recovery. This ADR does not authorize it.
+
+## 3. Managed recovery-point contract
+
+A recovery point is a single versioned managed artifact containing a
+consistent SQLite snapshot and a deterministic manifest. The concrete
+serialization is an implementation detail of #459, but the logical contract
+is fixed:
+
+- the snapshot is produced through the accepted SQLite online-backup path;
+  copying a live `finance.db` is not a backup operation;
+- the manifest identifies format version, protection state/mode, creation
+  time, snapshot/schema identity, artifact size, and deterministic hashes;
+- a unique destination-local incomplete name is used while the artifact or
+  manifest is incomplete;
+- only one exact managed final-name pattern is eligible for listing or
+  retention; incomplete, stale, corrupt, foreign, and unknown names are not
+  recovery points;
+- staging, manifest construction, SQLite integrity/foreign-key/schema checks,
+  and deterministic hash checks complete before final exposure;
+- final exposure uses an atomic same-filesystem rename/move;
+- the destination artifact is read back and fully verified before the result
+  may report `published` and `verified`;
+- a destination-scoped exclusive lock rejects or safely serializes concurrent
+  publication; a contended or ambiguous lock fails closed;
+- an interrupted run must not leave a name that can be mistaken for a
+  completed recovery point;
+- a failed run preserves the newest previously verified recovery point.
+
+Destination validation occurs before staging. It rejects production data,
+Stable/Preview/development checkouts, the normal local backup directory,
+source artifacts, non-regular or reparse-linked paths, and ambiguous roots.
+Path aliases are never treated as a substitute for proving the allowed
+destination boundary.
+
+The operation result is privacy-safe and distinguishes at least:
+
+| Result fact | Meaning |
+|---|---|
+| `created` | A consistent snapshot was produced; it is not yet a published recovery point. |
+| `verified` | Manifest, hashes, SQLite checks, and protection state passed before/after publication as applicable. |
+| `published` | The exact final name was atomically exposed and destination read-back verification passed. |
+| `action_required` | The operation did not complete or a follow-up owner action is required. |
+
+The result may include only a destination alias/class, format/protection
+versions, creation time, size, read-back state, retention outcome, and action
+required. It must not include financial values, account identifiers,
+credentials, encryption material, full private paths, or raw payloads.
+
+## 4. Retention boundary
+
+Retention runs only after a replacement has been fully published and read-back
+verified. It is deliberately not a catalogue service:
+
+- enumerate only exact managed final names whose artifact and manifest verify;
+- use the bounded count/age policy implemented by #460;
+- preserve the newest verified recovery point;
+- never delete unknown, partial, corrupt, foreign, or unrelated files;
+- never delete the newest verified point before its replacement is complete;
+- report cleanup failure separately without invalidating a newly verified point.
+
+Any cleanup of incomplete staging artifacts remains limited to the exact
+managed incomplete-name contract. It must never become a general folder
+cleanup operation.
+
+## 5. Isolated disaster-recovery rehearsal
+
+The supported rehearsal proves recovery into a clean isolated Finance
+profile. It is not a production restore and never overwrites Stable.
+
+Before target mutation, the workflow must verify:
+
+1. the source artifact is the expected managed format and its manifest,
+   hashes, protection state, container readability, SQLite integrity,
+   foreign keys, and schema/migration identity all pass;
+2. the source artifact remains unchanged throughout verification and restore;
+3. the target is a fresh isolated checkout/profile/data/database boundary;
+4. Stable, Preview, development workspaces, local backup/source aliases,
+   reparse/linked paths, non-empty targets, and conflicting targets are
+   rejected;
+5. only broad non-private structural counts and readiness facts are emitted.
+
+After the pre-mutation gate, the rehearsal restores into the isolated target,
+composes the accepted exact-checkout Prepare/Validate and deterministic
+Start/readiness path, and confirms that the application can read restored
+months and core financial surfaces. It does not create a second launcher or
+runtime state machine, perform cloud operations, or claim Owner UAT.
+
+## 6. Restore read-state contract
+
+Successful existing in-app restore must invalidate affected owner-facing read
+state. The month list is reloaded from the restored database; the selected
+month ID is retained only when it exists in that list. Otherwise the client
+selects the restored list's allowed fallback or clears selection when the list
+is empty. Stale pre-restore month IDs and lists must not remain visible as
+current.
+
+The focused implementation and frontend regression belong to #462. This ADR
+freezes the behavior without adding a new UI state system or a backup-publisher
+UI.
+
+## 7. Owner gates and boundaries
+
+The first real protected Google Drive recovery point, independently held
+recovery material, and clean Owner disaster-recovery rehearsal are
+Owner-controlled gates after the synthetic implementation is accepted. Hermes
+does not prove Google cloud delivery, and no Worker may access Owner data,
+credentials, backups, or private artifacts.
+
+The following remain outside this ADR:
+
+- Google Drive or any other provider API/OAuth/SDK;
+- archive encryption, key handling, or cloud account management;
+- background sync, telemetry, resident services, or an unbounded scheduler;
+- automatic restore over Stable or Preview;
+- plaintext cloud-sync success claims;
+- production code, dependency changes, schema migrations, backup artifacts,
+  or Owner runtime mutation in #458.
+
+## 8. Synthetic acceptance matrix
+
+Automated acceptance uses only temporary/synthetic databases and simulated
+mounted protected destinations. No row authorizes Owner data or a real cloud
+operation.
+
+| ID | Boundary and adversarial case | Required evidence | Owning child |
+|---|---|---|---|
+| A01 | Consistent SQLite snapshot through accepted backup primitives | Snapshot passes integrity, foreign-key, and schema/migration checks | #459 |
+| A02 | Complete-then-publish into simulated protected destination | Atomic final name appears only after complete verification; read-back passes | #459 |
+| A03 | Interrupted or partial publication | Incomplete/stale name is never listed or accepted | #459 |
+| A04 | Destination read-back corruption | Publication/read-back verification fails closed | #459 |
+| A05 | Missing, unknown, or unattested protection | Fails before staging or restore mutation; no plaintext success state | #459 / #461 |
+| A06 | Concurrent publication to one destination | Exclusive lock rejects or safely serializes; ambiguous/stale contention fails closed | #459 |
+| A07 | Retention with unknown, foreign, partial, and corrupt files | Only exact verified managed artifacts are eligible; newest verified point survives | #460 |
+| A08 | Failed next run after a good point | Prior newest verified point remains usable; failure is explicit | #459 / #460 |
+| A09 | Clean isolated restore and rehearsal | Source unchanged; target boundary, DB/schema/readiness checks pass | #461 |
+| A10 | Restore with stale selected month/list | Month list reloads; stale selection cannot remain current | #462 |
+| A11 | Existing local backup/restore and OPS02/OPS03 safety | Existing safety regressions remain green; no production/Preview alias | #459 / #461 |
+| A12 | Privacy-safe status and logs | No financial values, secrets, keys, full private paths, or raw artifacts | #459 / #460 / #461 / #462 |
+
+## 9. Dependency-ordered implementation map
+
+The child tasks are sequential and each starts from the exact internally
+accepted predecessor candidate. #458 is the contract baseline and does not
+implement runtime behavior.
+
+1. **#458 / #417-A — contract (this ADR and runbook).** Freeze protection,
+   managed artifact, retention, isolated recovery, privacy status, matrix, and
+   owner gates.
+2. **#459 / #417-B — managed publisher.** Implement the SQLite snapshot,
+   destination validation, protected-state attestation, manifest/hashes,
+   incomplete staging, atomic finalization, read-back, lock, and privacy-safe
+   result. Depends on #458.
+3. **#460 / #417-C — retention.** Implement bounded cleanup only over verified
+   managed artifacts after #459 publication/read-back. Depends on #459.
+4. **#461 / #417-D — isolated DR rehearsal.** Implement pre-mutation verify,
+   isolated restore, structural/readiness checks, and privacy-safe rehearsal
+   result over the #459 format and #460 retention contract. Depends on #459
+   and #460.
+5. **#462 / #417-E — restore read-state regression.** Update the existing
+   Export/Backup page to reload restored month state and add its focused
+   frontend regression. It is interface-independent of the backend chain but
+   is intentionally executed only after the backend chain stops or reaches its
+   explicitly allowed gate.
+
+Project acceptance still requires independent security/recovery review and
+the Owner-controlled live gates above. A Worker or internal execution verdict
+does not equal project acceptance.
+
+## References
+
+- #417 — Owner durability: protected off-site backup and disaster-recovery rehearsal
+- #458 — freeze protected off-site backup and DR contract
+- #459, #460, #461, #462 — dependency-ordered implementation children
+- [`MASTER_SPEC.md`](../MASTER_SPEC.md)
+- [`OWNER_RUNTIME_OPERATIONS.md`](../OWNER_RUNTIME_OPERATIONS.md)
+- [ADR 0004](0004-localhost-request-security.md)
+- [ADR 0012](0012-runtime-and-agent-workspace-isolation.md)
+- [ADR 0014](0014-launcher-runtime-profile-safety.md)
