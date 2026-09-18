@@ -237,7 +237,7 @@ def test_render_markdown_report_has_complete_stable_snapshot() -> None:
 - Статус: closed
 - Дата снимка: 31.07.2026
 - Источник: manual
-- Версия расчётов: v2
+- Версия расчётов: v3
 
 ## 2. Итоговые KPI
 | Показатель | Значение |

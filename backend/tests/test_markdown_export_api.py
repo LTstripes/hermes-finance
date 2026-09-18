@@ -171,8 +171,8 @@ def test_json_export_downloads_money_safe_raw_and_derived_data(
         == 'attachment; filename="finance_data_2032-07.json"'
     )
     payload = json.loads(response.content.decode("utf-8"))
-    assert payload["schema_version"] == "1.1"
-    assert payload["calculation_version"] == "v2"
+    assert payload["schema_version"] == "1.2"
+    assert payload["calculation_version"] == "v3"
     assert payload["raw"]["reporting_month"]["id"] == month_id
     assert payload["raw"]["income_entries"][0]["gross_amount"] == {
         "amount": "100000.00",

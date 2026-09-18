@@ -14,7 +14,7 @@
     ],
     "integrated_contracts": ["#336 financial context contract"],
     "calculation_versions": {
-      "monthly_summary": "v2",
+      "monthly_summary": "v3",
       "passive_income_forecast": "r08-v1",
       "goal_achievement": "r02-27-v1",
       "freshness_provenance": "r07-07-v1",

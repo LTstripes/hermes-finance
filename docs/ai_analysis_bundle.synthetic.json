@@ -12,7 +12,7 @@
     },
     "generation_mode": "read_only",
     "calculation_versions": {
-      "monthly_summary": "v2",
+      "monthly_summary": "v3",
       "passive_income_forecast": "v1",
       "goal_achievement": "goal_achievement_v1",
       "deterministic_insights": "v1"

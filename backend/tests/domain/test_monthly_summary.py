@@ -257,9 +257,9 @@ def test_result_field_names_and_count() -> None:
 
 
 def test_calculation_version_constant_and_default() -> None:
-    assert CALCULATION_VERSION == "v2"
+    assert CALCULATION_VERSION == "v3"
     result = make_result()
-    assert result.calculation_version == "v2"
+    assert result.calculation_version == "v3"
 
 
 def test_result_is_frozen() -> None:
