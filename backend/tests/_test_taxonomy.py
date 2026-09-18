@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 TESTS_ROOT = Path(__file__).resolve().parent
@@ -28,6 +29,11 @@ CI_LANE_MARKERS = (
     "ci_integrations",
     "ci_runtime_release",
     "ci_benchmark",
+)
+
+CI_CORE_SHARD_MARKERS = (
+    "ci_core_a",
+    "ci_core_b",
 )
 
 _CI_LANE_OVERRIDES = {
@@ -261,6 +267,20 @@ def ci_lane_for_test_path(test_path: Path) -> str | None:
     if markers.intersection({"domain", "api", "service"}):
         return "ci_core"
     return None
+
+
+def ci_core_shard_for_test_path(test_path: Path) -> str | None:
+    """Return a stable shard for a test file owned by the core lane."""
+
+    if ci_lane_for_test_path(test_path) != "ci_core":
+        return None
+
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+
+    digest = hashlib.sha256(relative_path.as_posix().encode("utf-8")).digest()
+    return CI_CORE_SHARD_MARKERS[digest[0] % len(CI_CORE_SHARD_MARKERS)]
 
 
 def iter_backend_test_files() -> tuple[Path, ...]:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from _test_taxonomy import (
+    CI_CORE_SHARD_MARKERS,
     CI_LANE_MARKERS,
+    ci_core_shard_for_test_path,
     ci_lane_for_test_path,
     iter_backend_test_files,
     semantic_markers_for,
@@ -32,3 +34,14 @@ def test_benchmark_files_are_isolated_from_normal_ci_lanes() -> None:
     )
 
     assert all(ci_lane_for_test_path(test_path) == "ci_benchmark" for test_path in benchmark_files)
+
+
+def test_core_files_have_one_stable_shard() -> None:
+    core_files = (
+        test_path
+        for test_path in iter_backend_test_files()
+        if ci_lane_for_test_path(test_path) == "ci_core"
+    )
+
+    shards = {ci_core_shard_for_test_path(test_path) for test_path in core_files}
+    assert shards == set(CI_CORE_SHARD_MARKERS)
