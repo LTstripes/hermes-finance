@@ -23,6 +23,8 @@ export const queryKeys = {
     ["portfolio-xirr", startDate, endDate] as const,
   portfolioTwrr: (startDate: string | null, endDate: string | null) =>
     ["portfolio-twrr", startDate, endDate] as const,
+  freshnessProvenance: (monthId: number | null) => ["freshness-provenance", monthId] as const,
+  providerCapabilities: ["provider-capabilities"] as const,
 };
 
 export function createQueryClient(): QueryClient {
