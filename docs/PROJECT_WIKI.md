@@ -302,28 +302,31 @@ The redesign acceptance boundary is now fulfilled on a real owner release transi
 
 Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
-## 8. Windows launcher — what changed and what did not
+## 8. Windows launcher — thin shell after #412
 
-Launcher не retired, и внешне он специально не обязан выглядеть новым.
+Launcher не retired, но после #412 его ответственность намеренно минимальна.
 
-Его полезная роль:
+Он владеет только:
 
 - owner-facing Stable/Preview profile/status UI;
-- ordinary Start/Stop;
+- exact configured SHA/version + data-boundary checks;
+- local read-only refresh/preflight;
+- ordinary Start/Stop/Open;
 - shortcut/install shell;
-- diagnostics/status presentation.
+- diagnostics and setup/reconfigure.
 
-Но launcher **не является canonical Stable updater**.
+Он **не** владеет Stable update, Preview follow-main, dependency preparation или release discovery. Setup принимает Stable только на local annotated `vX.Y.Z` tag, который peel'ится ровно в HEAD, а Preview pin'ит на exact local HEAD SHA; обычные Refresh/Start никогда не двигают Git.
 
-Поэтому главный результат R09 — не новая кнопка, а качественно другая система под ней:
+Поэтому proven architecture остаётся композиционной:
 
-- exact code tested = exact code published = exact code installed;
-- backup exists before mutation;
-- publication, update, Preview and Start are separate actions;
-- failures локализованы по операции;
-- future UI can wrap proven primitives instead of duplicating their safety semantics.
+- exact code tested/published/installed остаётся явно доказуемым;
+- OPS01 готовит runtime;
+- OPS02 делает backup-first Stable transition;
+- OPS03 готовит exact-SHA isolated Preview/UAT;
+- launcher только проверяет выбранную prepared identity и управляет локальным процессом;
+- publication, update, Preview preparation и Start остаются отдельными операциями.
 
-Если позже launcher получает новые кнопки, они должны быть thin wrappers над accepted operations, а не вторая state machine.
+Не возрождать updater/state-machine внутри launcher под видом удобного wrapper.
 
 ## 9. Release flow — теперь доказанный
 

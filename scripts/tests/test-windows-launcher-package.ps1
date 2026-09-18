@@ -35,8 +35,6 @@ $initialStatus = (@(& git -C $repoRoot status --porcelain) -join "`n")
 $expectedAssets = @(
     "HermesFinance.Launcher.exe",
     "hermes-finance-cat.ico",
-    "prepare-runtime-dependencies.ps1",
-    "launcher-production-backup.py",
     "launcher-schema-check.py"
 )
 
@@ -55,6 +53,13 @@ try {
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $packageDirectory $asset))) "Packaged launcher is not self-contained: '$asset' was emitted."
     }
 
+    # Simulate residue from a pre-#412 launcher install. Reinstall must
+    # remove retired GUI-owned mutation helpers without touching checkout scripts.
+    New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
+    foreach ($retiredAsset in @("prepare-runtime-dependencies.ps1", "launcher-production-backup.py")) {
+        Set-Content -LiteralPath (Join-Path $installDirectory $retiredAsset) -Value "synthetic retired launcher residue"
+    }
+
     & $installScript `
         -PackageDirectory $packageDirectory `
         -InstallDirectory $installDirectory `
@@ -68,6 +73,9 @@ try {
     $shortcutPath = Join-Path $shortcutDirectory "Hermes Finance.lnk"
     foreach ($asset in $expectedAssets) {
         Assert-True (Test-Path -LiteralPath (Join-Path $installDirectory $asset) -PathType Leaf) "Installed launcher is missing '$asset'."
+    }
+    foreach ($retiredAsset in @("prepare-runtime-dependencies.ps1", "launcher-production-backup.py")) {
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $installDirectory $retiredAsset))) "Installed launcher retained retired asset '$retiredAsset'."
     }
     Assert-True (Test-Path -LiteralPath $shortcutPath -PathType Leaf) "Synthetic installer did not create the expected shortcut."
 

@@ -1,17 +1,16 @@
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+
 namespace HermesFinance.Launcher;
 
 /// <summary>
-/// Launcher-owned first-time setup: turns explicit owner folder selections
-/// into a concrete, boundary-validated config.json. Never guesses private
-/// Stable/Preview paths and never writes placeholder configs — every path
-/// comes from the owner via the setup dialog, and the file is written only
-/// after all safety checks pass. Manual JSON editing stays recovery-only.
+/// First-time/reconfigure setup binds owner-selected prepared runtimes without
+/// network discovery: Stable must be on one local annotated vX.Y.Z tag that
+/// peels to HEAD; Preview is pinned to exact local HEAD. It never fetches,
+/// follows main, selects a remote release, or mutates either checkout.
 /// </summary>
 public static class LauncherSetup
 {
-    private const string StableReleaseRef = "refs/tags/v0.9.0";
-    private const string PreviewExpectedRef = "refs/remotes/origin/main";
-
     public static string DefaultConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "HermesFinance", "launcher", "config.json");
@@ -34,6 +33,8 @@ public static class LauncherSetup
 
         var stableDatabaseFull = ResolveDatabasePath(stableDatabase, stableDataFull, "Stable database");
         var previewDatabaseFull = ResolveDatabasePath(previewDatabase, previewDataFull, "Preview database");
+        var stableReleaseRef = ReadStableReleaseRef(stableCheckoutFull);
+        var previewHead = ReadExactHead(previewCheckoutFull, "Preview");
 
         var stable = new LauncherProfile
         {
@@ -41,7 +42,7 @@ public static class LauncherSetup
             DisplayName = "Hermes Finance — Stable",
             Type = "stable",
             Checkout = stableCheckoutFull,
-            ExpectedRef = StableReleaseRef,
+            ExpectedRef = stableReleaseRef,
             DataDir = stableDataFull,
             Database = stableDatabaseFull,
             OpenBrowser = true,
@@ -52,30 +53,22 @@ public static class LauncherSetup
             DisplayName = "Hermes Finance — Preview",
             Type = "preview",
             Checkout = previewCheckoutFull,
-            ExpectedRef = PreviewExpectedRef,
+            ExpectedRef = previewHead,
             DataDir = previewDataFull,
             Database = previewDatabaseFull,
             OpenBrowser = true,
         };
 
-        // Stable must be the canonical production tuple; Preview must be fully
-        // isolated from it. Reuses the same preflight boundary rules, read-only.
         ProfileValidator.AssertProfileTuple(stable, stableCheckoutFull, stableDataFull, stableDatabaseFull, stableCheckoutFull, stableDataFull, stableDatabaseFull);
         ProfileValidator.AssertProfileTuple(preview, stableCheckoutFull, stableDataFull, stableDatabaseFull, previewCheckoutFull, previewDataFull, previewDatabaseFull);
 
-        // Identity proof reuses the exact preflight invariants — no weaker
-        // parallel implementation. Stable: HEAD == v0.9.0 tag and clean.
-        // Preview: at refs/remotes/origin/main, clean, and independent from
-        // Stable (no linked worktree / shared git-common-dir). Read-only:
-        // no fetch, no network; Preview update stays an explicit owner action.
         try
         {
             ProfileValidator.AssertGitIdentity(stable, stableCheckoutFull, stableCheckoutFull);
         }
         catch (LauncherValidationException exception)
         {
-            throw new LauncherValidationException(
-                $"Setup rejected the Stable checkout: {exception.Message} Select a clean prepared Stable checkout at released v0.9.0 (HEAD == refs/tags/v0.9.0).");
+            throw new LauncherValidationException($"Setup rejected the Stable checkout: {exception.Message} Select the already prepared production runtime.");
         }
         try
         {
@@ -83,8 +76,7 @@ public static class LauncherSetup
         }
         catch (LauncherValidationException exception)
         {
-            throw new LauncherValidationException(
-                $"Setup rejected the Preview checkout: {exception.Message} Select a clean independent Preview checkout at refs/remotes/origin/main (not a Stable worktree).");
+            throw new LauncherValidationException($"Setup rejected the Preview checkout: {exception.Message} Select a clean independent prepared Preview clone, never the Stable worktree.");
         }
 
         return new LauncherConfig
@@ -113,6 +105,84 @@ public static class LauncherSetup
             Directory.CreateDirectory(directory);
         }
         File.WriteAllText(configPath, System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static string ReadStableReleaseRef(string checkout)
+    {
+        var head = ReadExactHead(checkout, "Stable");
+        var output = RunGitOutput(
+            checkout,
+            "for-each-ref",
+            "--points-at",
+            head,
+            "--format=%(refname) %(objecttype)",
+            "refs/tags");
+
+        var candidates = output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(parts => parts.Length == 2
+                && parts[1].Equals("tag", StringComparison.Ordinal)
+                && Regex.IsMatch(parts[0], @"^refs/tags/v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$", RegexOptions.CultureInvariant))
+            .Select(parts => parts[0])
+            .Where(reference => RunGitOutput(checkout, "rev-parse", "--verify", reference + "^{commit}")
+                .Trim()
+                .Equals(head, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (candidates.Length != 1)
+        {
+            throw new LauncherValidationException(
+                "Setup rejected the Stable checkout: HEAD must be pinned by exactly one local annotated vX.Y.Z release tag. Run canonical OPS02 first or select the prepared published Stable runtime.");
+        }
+        return candidates[0];
+    }
+
+    private static string ReadExactHead(string checkout, string description)
+    {
+        var head = RunGitOutput(checkout, "rev-parse", "--verify", "HEAD").Trim();
+        if (head.Length != 40 || !head.All(Uri.IsHexDigit))
+        {
+            throw new LauncherValidationException($"Setup cannot prove exact {description} HEAD.");
+        }
+        return head.ToLowerInvariant();
+    }
+
+    private static string RunGitOutput(string checkout, params string[] arguments)
+    {
+        var command = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = checkout,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            command.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            using var process = Process.Start(command)
+                ?? throw new LauncherValidationException("Setup cannot inspect Git identity.");
+            var stdout = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                throw new LauncherValidationException(
+                    $"Setup cannot inspect Git identity: {(string.IsNullOrWhiteSpace(stderr) ? stdout : stderr).Trim()}");
+            }
+            return stdout;
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            throw new LauncherValidationException($"Setup cannot inspect Git identity because git is unavailable: {exception.Message}");
+        }
     }
 
     private static string RequireExistingDirectory(string path, string description)

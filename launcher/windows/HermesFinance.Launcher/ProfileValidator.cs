@@ -16,8 +16,6 @@ public sealed record ValidatedProfile(
     string Head,
     string SidecarKind,
     DependencyStatus? Dependencies = null,
-    PreviewUpdateStatus? PreviewUpdate = null,
-    StableUpgradeStatus? StableUpgrade = null,
     string? ApplicationVersion = null);
 
 public static class ProfileValidator
@@ -65,11 +63,7 @@ public static class ProfileValidator
             AssertPortAvailable();
         }
         var applicationVersion = ReadApplicationVersion(checkout);
-        var previewUpdate = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
-            ? PreviewUpdateService.ReadStatus(new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, null, null, applicationVersion))
-            : null;
-
-        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, previewUpdate, null, applicationVersion);
+        return new ValidatedProfile(profile, checkout, dataDir, database, head, sidecarKind, dependencies, applicationVersion);
     }
 
     internal static string? ReadApplicationVersion(string checkout)
@@ -304,13 +298,9 @@ public static class ProfileValidator
     {
         var head = RunGit(checkout, "rev-parse", "HEAD");
         var expected = RunGit(checkout, "rev-parse", "--verify", profile.ExpectedRef + "^{commit}");
-        var canonicalMain = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
-            ? TryReadGitRef(checkout, "refs/remotes/origin/main^{commit}")
-            : null;
-        if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase)
-            && !head.Equals(canonicalMain, StringComparison.OrdinalIgnoreCase))
+        if (!head.Equals(expected, StringComparison.OrdinalIgnoreCase))
         {
-            throw new LauncherValidationException("Checkout identity does not match this profile.");
+            throw new LauncherValidationException("Checkout identity does not match the exact configured profile.");
         }
 
         if (profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase) || profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase))

@@ -11,7 +11,7 @@
       "display_name": "Hermes Finance — Stable",
       "type": "stable",
       "checkout": "<absolute-stable-checkout>",
-      "expected_ref": "refs/tags/v0.9.0",
+      "expected_ref": "<annotated-stable-release-ref>",
       "data_dir": "<absolute-stable-data-dir>",
       "database": "<absolute-stable-database>",
       "open_browser": true
@@ -21,7 +21,7 @@
       "display_name": "Hermes Finance — Preview",
       "type": "preview",
       "checkout": "<absolute-preview-checkout>",
-      "expected_ref": "refs/remotes/origin/main",
+      "expected_ref": "<exact-preview-sha>",
       "data_dir": "<absolute-preview-data-dir>",
       "database": "<absolute-preview-database>",
       "open_browser": true

@@ -46,25 +46,24 @@ Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
 ## 3. Windows launcher
 
-The launcher is still valid and intentionally familiar for its bounded role:
+The launcher is a thin owner shell for **already prepared exact runtimes**:
 
-- show Stable/Preview profile identity/status;
+- show Stable/Preview exact SHA/version and data boundary;
+- local read-only refresh/preflight;
 - ordinary Start/Stop;
 - open Hermes after health is ready;
 - diagnostics/status presentation;
-- installed shortcuts/package shell.
+- setup/reconfigure and installed shortcuts.
 
-It is **not** the canonical Stable release updater.
+It does **not** prepare dependencies, discover/select releases, update Stable, follow `origin/main`, update Preview or otherwise move Git refs. Launcher setup binds Stable only when its HEAD is pinned by exactly one local annotated `vX.Y.Z` tag; Preview is bound to its exact local HEAD SHA. Identity mismatch fails closed until the intended runtime is prepared externally and explicitly rebound.
 
-That is the main architectural change: safety-critical release/update semantics are no longer hidden inside a second launcher-owned state machine.
-
-Install/reinstall from the currently selected published Stable checkout:
+Install/reinstall:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
 
-Do not use the legacy launcher self-update experiment as release-update evidence.
+The launcher package contains only launcher-owned assets; OPS01/OPS02 mutation helpers are not bundled into the GUI shell.
 
 ## 4. Prepare an exact checkout
 
@@ -241,14 +240,17 @@ If any operation fails:
 
 The architecture is designed so an update failure does not automatically imply Start, migration, Preview mutation or release publication.
 
-## 11. Launcher future
+## 11. Launcher boundary
 
-The runtime redesign parent #313 is complete after the successful real `v0.8.2 -> v0.9.0` owner transition.
+The runtime redesign parent #313 is complete after the successful real `v0.8.2 -> v0.9.0` owner transition. #412 then removes the remaining launcher-owned updater/orchestrator surface.
 
-Future launcher work is optional:
+The durable boundary is:
 
-- thin UX wrappers over accepted owner operations may be valuable;
-- diagnosis/recovery may be added as bounded operations if real owner pain justifies them;
+- launcher owns local presentation, exact configured identity checks and process lifecycle;
+- OPS01 owns runtime preparation;
+- OPS02 owns Stable release transition;
+- OPS03 owns exact-SHA Preview/UAT preparation;
+- future diagnosis/recovery may be added only as bounded operations;
 - do **not** rebuild the old monolithic launcher updater/state machine.
 
 ## 12. Safety reminders

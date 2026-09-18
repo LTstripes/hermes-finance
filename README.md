@@ -124,21 +124,22 @@ Do not use a production runtime checkout as an agent/development workspace.
 
 ## Windows launcher — current role
 
-The launcher is **not retired**, and it intentionally still looks/behaves familiar for ordinary owner use.
+The launcher is a **thin owner shell for already prepared exact runtimes**.
 
-Its proven role is the owner-facing shell for the configured Stable/Preview profiles:
+Its bounded role is:
 
-- profile/status presentation;
+- configured Stable/Preview identity + data-boundary presentation;
+- local read-only refresh/preflight;
 - ordinary Start/Stop;
 - open Hermes after health is ready;
 - diagnostics;
-- installed Desktop/Start-menu shortcuts.
+- setup/reconfigure and installed Desktop/Start-menu shortcuts.
 
-The historical launcher-owned Stable self-update experiment (#298/#311/#312) is **not** the canonical update path.
+The launcher does **not** prepare dependencies, update Stable, follow `main`, update Preview, select releases or silently move Git refs. Those responsibilities remain in the accepted OPS01/OPS02/OPS03 operations.
 
-The important v0.9.0 improvement is architectural: release mutation, Preview/UAT preparation, runtime preparation and Start are separate accepted operations instead of one launcher-owned state machine.
+Stable uses the canonical production tuple and setup requires its HEAD to be pinned by exactly one local annotated `vX.Y.Z` tag. Preview is an independent checkout pinned to an exact local SHA with isolated data. An identity mismatch fails closed until the intended runtime is prepared externally and explicitly rebound.
 
-To install/reinstall the launcher from the current published Stable checkout:
+Install/reinstall:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1

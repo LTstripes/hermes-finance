@@ -1,8 +1,6 @@
-using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 
 namespace HermesFinance.Launcher;
 
@@ -22,84 +20,6 @@ public sealed class LauncherConfig
         var json = File.ReadAllText(configPath);
         return JsonSerializer.Deserialize<LauncherConfig>(json, JsonOptions)
             ?? throw new LauncherValidationException("Launcher config is invalid: the document is empty.");
-    }
-
-    /// <summary>
-    /// Persist the Stable release identity only after the upgrade service has
-    /// proven the new immutable tag and switched the configured checkout. The
-    /// write is atomic from the launcher's point of view and never changes the
-    /// canonical production data paths.
-    /// </summary>
-    internal static LauncherConfig UpdateStableExpectedRef(
-        string configPath,
-        string expectedRef,
-        ValidatedProfile expectedProfile)
-    {
-        if (string.IsNullOrWhiteSpace(configPath) || !Path.IsPathFullyQualified(configPath))
-        {
-            throw new LauncherValidationException("Stable release identity cannot be persisted without an absolute config path.");
-        }
-        if (string.IsNullOrWhiteSpace(expectedRef)
-            || !StableReleaseRefPattern.IsMatch(expectedRef))
-        {
-            throw new LauncherValidationException("Stable release identity cannot be persisted: expected_ref is not a release tag.");
-        }
-
-        var config = Load(configPath);
-        ProfileValidator.ValidateConfiguration(config);
-        ProfileValidator.AssertStableProductionTuple(config, expectedProfile);
-        var stable = config.Profiles.SingleOrDefault(
-            profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        if (stable is null)
-        {
-            throw new LauncherValidationException("Stable release identity cannot be persisted: Stable profile is missing.");
-        }
-
-        var updated = new LauncherConfig
-        {
-            Version = config.Version,
-            CanonicalProduction = config.CanonicalProduction,
-            Profiles = config.Profiles.Select(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
-                ? new LauncherProfile
-                {
-                    Id = profile.Id,
-                    DisplayName = profile.DisplayName,
-                    Type = profile.Type,
-                    Checkout = profile.Checkout,
-                    ExpectedRef = expectedRef,
-                    DataDir = profile.DataDir,
-                    Database = profile.Database,
-                    OpenBrowser = profile.OpenBrowser,
-                }
-                : profile).ToList(),
-        };
-
-        var temporary = configPath + $".tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(updated, new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(temporary, configPath, overwrite: true);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            throw new LauncherValidationException($"Stable release identity could not be persisted: {exception.Message}");
-        }
-        finally
-        {
-            try
-            {
-                if (File.Exists(temporary))
-                {
-                    File.Delete(temporary);
-                }
-            }
-            catch (IOException)
-            {
-                // The original config is still the authoritative file if the
-                // best-effort temporary cleanup loses a race.
-            }
-        }
-        return updated;
     }
 
     /// <summary>
@@ -148,13 +68,9 @@ public sealed class LauncherConfig
             var strict = JsonSerializer.Deserialize<LauncherConfig>(raw, JsonOptions);
             if (strict is not null)
             {
-                // Auto-migrate stable expected_ref only where provably safe
-                var migrated = TryMigrateStableTag(strict, configPath, out var migrateDiag);
-                if (!string.IsNullOrWhiteSpace(migrateDiag))
-                {
-                    diagnostic = migrateDiag;
-                }
-                return migrated;
+                // Prepared runtime identity is owner/config controlled. Loading
+                // config never follows releases or rewrites a pinned ref.
+                return strict;
             }
         }
         catch (JsonException)
@@ -267,132 +183,7 @@ public sealed class LauncherConfig
         return true;
     }
 
-    private static readonly string[] StaleStableRefs = ["refs/tags/v0.6.3", "refs/tags/v0.7.0", "refs/tags/v0.8.0", "refs/tags/v0.8.1", "refs/tags/v0.8.2", "origin/r07"];
-    private const string CurrentStableRef = "refs/tags/v0.9.0";
-    private static readonly Regex StableReleaseRefPattern = new(
-        "^refs/tags/v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static LauncherConfig TryMigrateStableTag(LauncherConfig config, string configPath, out string diagnostic)
-    {
-        diagnostic = "";
-        // Migrate a stale Stable expected_ref ONLY when provably safe: the
-        // configured Stable checkout exists, is clean, and its HEAD already
-        // equals the v0.9.0 release commit. Otherwise fail closed WITHOUT
-        // touching the config file (preflight will surface recovery-only guidance).
-        var stable = config.Profiles.FirstOrDefault(p => p.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-        if (stable is null || !StaleStableRefs.Contains(stable.ExpectedRef, StringComparer.Ordinal))
-        {
-            return config;
-        }
-        if (!Directory.Exists(stable.Checkout))
-        {
-            diagnostic = "Stable expected_ref migration blocked: Stable checkout does not exist; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
-            return config;
-        }
-        string? head;
-        string? target;
-        try
-        {
-            head = RunGitRef(stable.Checkout, "HEAD");
-            target = RunGitRef(stable.Checkout, CurrentStableRef + "^{commit}");
-        }
-        catch
-        {
-            diagnostic = "Stable expected_ref migration blocked: release identity cannot be proven (git unavailable or v0.9.0 tag missing); config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
-            return config;
-        }
-        if (string.IsNullOrWhiteSpace(head) || string.IsNullOrWhiteSpace(target)
-            || !head.Equals(target, StringComparison.OrdinalIgnoreCase))
-        {
-            diagnostic = $"Stable expected_ref migration blocked: checkout HEAD {Short(head)} does not match release v0.9.0 {Short(target)}; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
-            return config;
-        }
-        try
-        {
-            var status = RunGitOutput(stable.Checkout, "status", "--porcelain");
-            if (!string.IsNullOrWhiteSpace(status))
-            {
-                diagnostic = "Stable expected_ref migration blocked: Stable checkout is not clean; config left unchanged. Recovery-only: make the checkout clean, then press «Обновить проверку».";
-                return config;
-            }
-        }
-        catch
-        {
-            diagnostic = "Stable expected_ref migration blocked: checkout cleanliness cannot be proven; config left unchanged. Recovery-only: verify the prepared Stable runtime, then press «Обновить проверку».";
-            return config;
-        }
-        var fromRef = stable.ExpectedRef;
-        var updated = new LauncherConfig
-        {
-            Version = config.Version,
-            CanonicalProduction = config.CanonicalProduction,
-            Profiles = config.Profiles.Select(p => p.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
-                ? new LauncherProfile
-                {
-                    Id = p.Id,
-                    DisplayName = p.DisplayName,
-                    Type = p.Type,
-                    Checkout = p.Checkout,
-                    ExpectedRef = CurrentStableRef,
-                    DataDir = p.DataDir,
-                    Database = p.Database,
-                    OpenBrowser = p.OpenBrowser,
-                }
-                : p).ToList(),
-        };
-        try
-        {
-            File.WriteAllText(configPath, JsonSerializer.Serialize(updated, new JsonSerializerOptions { WriteIndented = true }));
-            diagnostic = $"Launcher config migrated Stable expected_ref to {CurrentStableRef} (from {fromRef}); checkout HEAD proven at release commit.";
-        }
-        catch
-        {
-            diagnostic = "";
-            return config;
-        }
-        return updated;
-    }
-
-    private static string Short(string? sha) => string.IsNullOrWhiteSpace(sha) ? "—" : sha[..Math.Min(7, sha.Length)];
-
-    private static string RunGitRef(string workingDirectory, string reference)
-    {
-        var output = RunGitOutput(workingDirectory, "rev-parse", "--verify", reference);
-        var value = output.Trim();
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new LauncherValidationException($"Checkout Git identity cannot be read: empty result for '{reference}'.");
-        }
-        return value;
-    }
-
-    private static string RunGitOutput(string workingDirectory, params string[] arguments)
-    {
-        var startInfo = new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = "git",
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-        using var process = System.Diagnostics.Process.Start(startInfo)
-            ?? throw new LauncherValidationException("Could not start 'git'.");
-        var standardOutput = process.StandardOutput.ReadToEnd();
-        var standardError = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        if (process.ExitCode != 0)
-        {
-            throw new LauncherValidationException($"Checkout Git identity cannot be read: {(string.IsNullOrWhiteSpace(standardError) ? standardOutput : standardError).Trim()}");
-        }
-        return standardOutput;
-    }
 
     private static readonly HashSet<string> TopLevelAllowed = new(StringComparer.Ordinal)
     {

@@ -150,22 +150,22 @@ This completes the real-world acceptance boundary that intentionally remained op
 
 Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
-## Why the launcher looks similar — and why quality changed
+## Windows launcher — thin prepared-runtime shell
 
-The redesign was intentionally not a visual launcher rewrite.
+After the production-proven R09 lifecycle, #412 removes the remaining launcher-owned updater/orchestrator concepts.
 
-The launcher remains useful as an owner-facing profile/status/Start/Stop shell. What changed is responsibility and blast radius:
+The responsibility boundary is now explicit:
 
-- **launcher** — presentation + ordinary Start/Stop;
+- **launcher** — configured exact identity + data-boundary presentation, local read-only preflight, Start/Stop/Open, diagnostics and setup/reconfigure;
 - **Prepare/Validate** — `scripts/prepare-runtime.ps1`;
 - **deterministic Start** — `scripts/start-local.ps1`;
 - **Stable release transition** — `scripts/update-stable.ps1`;
 - **exact candidate Preview/UAT** — `scripts/prepare-preview.ps1`;
 - **release publication** — guarded #124 flow.
 
-This provides reproducible exact code identity, backup-before-mutation, smaller failure boundaries, clearer diagnosis and no accidental coupling between update, Preview, migration, Start and publication.
+Launcher setup binds Stable only to a local annotated `vX.Y.Z` tag that peels exactly to HEAD, and binds Preview to its exact local HEAD SHA. Refresh and Start do not fetch, switch, fast-forward, select a release, install dependencies or rewrite the configured identity. Stable remains bound to production; Preview remains an independent exact checkout with isolated data.
 
-A future launcher may wrap these accepted operations, but must not recreate an independent update state machine.
+This removes the second update state machine while preserving profile/data/process/loopback/package safety.
 
 ## Release flow
 

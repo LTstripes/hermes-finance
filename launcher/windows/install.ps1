@@ -31,12 +31,22 @@ if ($packageDirectoryWasProvided) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
-foreach ($asset in @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "prepare-runtime-dependencies.ps1", "launcher-production-backup.py", "launcher-schema-check.py", "config.example.json")) {
+foreach ($asset in @("HermesFinance.Launcher.exe", "hermes-finance-cat.ico", "launcher-schema-check.py", "config.example.json")) {
     $source = Join-Path $PackageDirectory $asset
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Cannot install launcher: packaged asset '$asset' is missing."
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $InstallDirectory $asset) -Force
+}
+
+# #412: remove helpers that belonged to the retired launcher-owned updater/preparer.
+# Canonical OPS01/OPS02 scripts remain in the selected checkout; these copies are
+# only stale package residue from older launcher installations.
+foreach ($retiredAsset in @("prepare-runtime-dependencies.ps1", "launcher-production-backup.py")) {
+    $retiredPath = Join-Path $InstallDirectory $retiredAsset
+    if (Test-Path -LiteralPath $retiredPath -PathType Leaf) {
+        Remove-Item -LiteralPath $retiredPath -Force
+    }
 }
 
 $executable = Join-Path $InstallDirectory "HermesFinance.Launcher.exe"
