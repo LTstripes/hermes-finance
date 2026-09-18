@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
 import UiV2ClosePage from "../ui-v2/UiV2ClosePage";
 
@@ -63,6 +64,7 @@ function setup(path = "/v2/close") {
     writes: [] as string[],
     workflowResponse: null as null | ((read: number) => MonthCloseWorkflow),
     finalizeWrite: null as null | ((status: "closed" | "draft") => void),
+    persistedResponse: null as null | ((status: ReportingMonthStatus) => ReportingMonth),
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
@@ -87,7 +89,12 @@ function setup(path = "/v2/close") {
               month: { ...state.workflow.month, status: "draft" },
             };
       if (state.finalizeWrite) state.finalizeWrite(expectedStatus);
-      return jsonResponse({ ...state.workflow.month, status: expectedStatus });
+      return jsonResponse(
+        state.persistedResponse?.(expectedStatus) ?? {
+          ...state.workflow.month,
+          status: expectedStatus,
+        },
+      );
     }
     throw new Error(`Unexpected API: ${method} ${url.pathname}`);
   });
@@ -212,6 +219,73 @@ describe("native Monthly Close work mode", () => {
         String(input).endsWith("/close-workflow") && (init?.method ?? "GET") === "GET",
     );
     expect(workflowGets.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("fails closed when a pre-close refetch returns another month", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const draft = readyForClose();
+    const wrongMonth = readyForClose(91);
+    state.workflow = draft;
+    state.workflowResponse = (read) => (read >= 2 ? wrongMonth : draft);
+    mount();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Состояние месяца не подтверждено");
+    expect(screen.queryByRole("alertdialog", { name: "Закрыть месяц?" })).toBeNull();
+    expect(state.writes).toEqual([]);
+  });
+
+  it("fails closed when a pre-close refetch returns another workflow contract", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const draft = readyForClose();
+    const wrongContract = {
+      ...structuredClone(draft),
+      contract_version: "monthly_close_workflow_v2",
+    } as unknown as MonthCloseWorkflow;
+    state.workflow = draft;
+    state.workflowResponse = (read) => (read >= 2 ? wrongContract : draft);
+    mount();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Состояние месяца не подтверждено");
+    expect(screen.queryByRole("alertdialog", { name: "Закрыть месяц?" })).toBeNull();
+    expect(state.writes).toEqual([]);
+  });
+
+  it("rejects a persisted close response for another month", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
+    const selectedMonth = state.months.find((month) => month.id === 12);
+    if (!selectedMonth) throw new Error("Synthetic selected month is missing");
+    state.persistedResponse = (status) => ({
+      ...selectedMonth,
+      id: 91,
+      status,
+    });
+    mount();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("изменение для другого месяца");
+    expect(state.writes).toEqual(["close"]);
+  });
+
+  it("rejects a post-close workflow refetch for another month", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const draft = readyForClose();
+    const wrongMonth = closedFrom(readyForClose(91));
+    state.workflow = draft;
+    state.workflowResponse = (read) => (read === 4 ? wrongMonth : state.workflow);
+    mount();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("состояние другого месяца");
+    expect(state.writes).toEqual(["close"]);
   });
 
   it("stops a close race when another tab closes the month before confirmation", async () => {
