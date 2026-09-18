@@ -14,7 +14,7 @@ import type {
 } from "../../api/types";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../../lib/format";
 import { Badge, DataValue, Panel } from "../ui";
-import { withMonthlyCloseReturn } from "./navigation";
+import { type MonthlyCloseOrigin, withMonthlyCloseReturn } from "./navigation";
 
 const MANUAL_CARD_ORDER = [
   "cash",
@@ -117,7 +117,7 @@ function cardTone(card: ManualReviewCard): "ok" | "info" | "unknown" {
   return isOptionalEmpty(card) ? "info" : "ok";
 }
 
-function editLinks(card: ManualReviewCard, month: WorkflowMonth) {
+function editLinks(card: ManualReviewCard, month: WorkflowMonth, origin: MonthlyCloseOrigin) {
   return (CARD_SECTIONS[card.id] ?? []).map((section) => (
     <Link
       className="btn btn--ghost btn--sm"
@@ -126,6 +126,7 @@ function editLinks(card: ManualReviewCard, month: WorkflowMonth) {
         `/months/${month.id}?section=${section}`,
         month.id,
         "final_review_close",
+        origin,
       )}
     >
       {card.id === "income_budget" ? (section === "income" ? "Доходы" : "Бюджет") : "Изменить"}
@@ -301,22 +302,15 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
             {review.freshness_summary.families.length > 0 ? (
               <ul className="final-review__diagnostic-list">
                 {review.freshness_summary.families.map((family, index) => {
-                  const coverage =
-                    typeof family.coverage === "object" && family.coverage !== null
-                      ? (family.coverage as Record<string, unknown>)
-                      : null;
                   return (
-                    <li key={`${String(family.family_id ?? index)}`}>
+                    <li key={family.family_id || String(index)}>
                       <span>
-                        <strong>{String(family.title ?? family.family_id ?? "Источник")}</strong> ·{" "}
-                        {String(family.status ?? "unknown")}
+                        <strong>{family.title}</strong> · {family.status}
                       </span>
-                      {coverage ? (
-                        <span className="muted">
-                          Строк: {String(coverage.row_count ?? "—")} · недоступно:{" "}
-                          {String(coverage.unavailable_count ?? "—")}
-                        </span>
-                      ) : null}
+                      <span className="muted">
+                        Строк: {family.coverage.row_count} · недоступно:{" "}
+                        {family.coverage.unavailable_count}
+                      </span>
                     </li>
                   );
                 })}
@@ -330,17 +324,13 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
             <h3>Провайдерские шаги</h3>
             {review.provider_summary.length > 0 ? (
               <ul className="final-review__diagnostic-list">
-                {review.provider_summary.map((item, index) => {
-                  const stepId = String(item.step_id ?? index);
-                  const state = String(item.state ?? "unknown");
-                  const reasonCodes = Array.isArray(item.reason_codes)
-                    ? item.reason_codes.map(String).join(", ")
-                    : "";
+                {review.provider_summary.map((item) => {
+                  const reasonCodes = item.reason_codes.join(", ");
                   return (
-                    <li key={stepId}>
+                    <li key={item.step_id}>
                       <span>
-                        <strong>{STEP_TITLES[stepId] ?? "Провайдерская проверка"}</strong> ·{" "}
-                        {STATE_LABELS[state] ?? "Состояние неизвестно"}
+                        <strong>{STEP_TITLES[item.step_id] ?? "Провайдерская проверка"}</strong> ·{" "}
+                        {STATE_LABELS[item.state] ?? "Состояние неизвестно"}
                       </span>
                       {reasonCodes ? <code>{reasonCodes}</code> : null}
                     </li>
@@ -355,11 +345,11 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
           <section>
             <h3>Сверка Alfa</h3>
             <p className="muted">
-              {review.reconciliation_availability.available === true
+              {review.reconciliation_availability.available
                 ? "Есть результат текущей проверки."
                 : "Результат не получен: проверка запускается отдельно и здесь не сохраняется."}
             </p>
-            {typeof review.reconciliation_availability.reason_code === "string" ? (
+            {review.reconciliation_availability.reason_code ? (
               <code>{review.reconciliation_availability.reason_code}</code>
             ) : null}
           </section>
@@ -410,7 +400,15 @@ function FutureEvents({ review }: { review: FinalMonthReviewModel }) {
   );
 }
 
-function Attention({ review, month }: { review: FinalMonthReviewModel; month: WorkflowMonth }) {
+function Attention({
+  review,
+  month,
+  origin,
+}: {
+  review: FinalMonthReviewModel;
+  month: WorkflowMonth;
+  origin: MonthlyCloseOrigin;
+}) {
   return (
     <Panel label="Требует внимания" title="Что проверить перед закрытием">
       {review.manual_attention.length > 0 ? (
@@ -432,6 +430,7 @@ function Attention({ review, month }: { review: FinalMonthReviewModel; month: Wo
                       `/months/${month.id}?section=${CARD_SECTIONS[card.id][0]}`,
                       month.id,
                       "final_review_close",
+                      origin,
                     )}
                   >
                     Открыть {card.title.toLocaleLowerCase()}
@@ -452,7 +451,15 @@ function Attention({ review, month }: { review: FinalMonthReviewModel; month: Wo
   );
 }
 
-function ManualCards({ review, month }: { review: FinalMonthReviewModel; month: WorkflowMonth }) {
+function ManualCards({
+  review,
+  month,
+  origin,
+}: {
+  review: FinalMonthReviewModel;
+  month: WorkflowMonth;
+  origin: MonthlyCloseOrigin;
+}) {
   const cardsById = new Map(review.manual_review_cards.map((card) => [card.id, card]));
   const cards = MANUAL_CARD_ORDER.map((id) => cardsById.get(id)).filter(
     (card): card is ManualReviewCard => card !== undefined,
@@ -473,7 +480,7 @@ function ManualCards({ review, month }: { review: FinalMonthReviewModel; month: 
             </div>
             <div className="final-review__card-grid">{cardSummary(card)}</div>
             {!card.available ? <p className="muted tiny">{reasonLabel(card.reason_code)}</p> : null}
-            <div className="final-review__card-actions">{editLinks(card, month)}</div>
+            <div className="final-review__card-actions">{editLinks(card, month, origin)}</div>
           </article>
         ))}
       </div>
@@ -483,8 +490,10 @@ function ManualCards({ review, month }: { review: FinalMonthReviewModel; month: 
 
 export function FinalMonthReview({
   review,
+  origin = "monthly-close",
 }: {
   review: FinalMonthReviewModel | FinalMonthReviewUnavailable;
+  origin?: MonthlyCloseOrigin;
 }) {
   if (!review.available) {
     return (
@@ -549,8 +558,8 @@ export function FinalMonthReview({
         </div>
       </Panel>
 
-      <Attention month={review.month_header} review={review} />
-      <ManualCards month={review.month_header} review={review} />
+      <Attention month={review.month_header} origin={origin} review={review} />
+      <ManualCards month={review.month_header} origin={origin} review={review} />
       <ReadinessDetails review={review} />
       <FutureEvents review={review} />
     </section>

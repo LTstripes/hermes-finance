@@ -20,7 +20,17 @@ import { ScenarioLabPage } from "../pages/ScenarioLabPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
-import { UiV2CapitalEntry, UiV2Entry } from "../ui-v2/UiV2Entry";
+import {
+  UiV2CapitalEntry,
+  UiV2CloseEntry,
+  UiV2DataPlaceholderEntry,
+  UiV2DataReconciliationEntry,
+  UiV2DataSourcesEntry,
+  UiV2Entry,
+  UiV2IncomeEntry,
+  UiV2ReportEntry,
+  UiV2ReportsEntry,
+} from "../ui-v2/UiV2Entry";
 
 type AppProps = {
   queryClient?: QueryClient;
@@ -35,6 +45,18 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
         <Routes>
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
+          <Route path="v2/reports" element={<UiV2ReportsEntry />} />
+          <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
+          <Route path="v2/close" element={<UiV2CloseEntry />} />
+          <Route path="v2/data" element={<UiV2DataSourcesEntry />} />
+          <Route path="v2/data/reconciliation" element={<UiV2DataReconciliationEntry />} />
+          <Route
+            path="v2/data/catalogs"
+            element={<UiV2DataPlaceholderEntry section="catalogs" />}
+          />
+          <Route path="v2/data/files" element={<UiV2DataPlaceholderEntry section="files" />} />
+          <Route path="v2/data/app" element={<UiV2DataPlaceholderEntry section="app" />} />
+          <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

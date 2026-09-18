@@ -26,7 +26,6 @@ import type {
   PortfolioTwrr,
   PortfolioXirr,
   PropertySnapshot,
-  ReportingMonth,
 } from "../api/types";
 import {
   CapitalCompositionChart,
@@ -50,10 +49,17 @@ import {
   filterHoldingRows,
   type HoldingFilter,
   type HoldingRow,
+  holdingContextLabel,
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
-import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import { CLASS_COLORS, classMeta } from "./assetClasses";
+import {
+  resolveMonthSelection,
+  selectNewestDraftAfterLatestClosed,
+  sortReportingMonths,
+} from "./monthSelection";
 import capitalStyles from "./UiV2Capital.module.css";
+import { UiV2Panel } from "./UiV2Panel";
 import {
   isQueryReady,
   UiV2Loading,
@@ -71,35 +77,6 @@ import {
 } from "./valueFormat";
 
 type HistoryWindow = 3 | 12 | "all";
-
-const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
-  cash: { label: "Деньги", color: "#5f7e9e" },
-  deposits: { label: "Депозиты", color: "#8e73a6" },
-  stocks: { label: "Акции", color: "#c68b51" },
-  bonds: { label: "Облигации", color: "#5f9b82" },
-  gold_other: { label: "Золото и прочее", color: "#a4a8ad" },
-};
-
-const CLASS_COLORS: Record<string, string> = Object.fromEntries(
-  Object.entries(ASSET_CLASS_META).map(([assetClass, meta]) => [assetClass, meta.color]),
-);
-
-const POSITION_TYPE_LABELS: Record<string, string> = {
-  stock: "Акция",
-  bond: "Облигация",
-  fund: "Фонд",
-  currency: "Валюта",
-  gold: "Золото",
-  other: "Прочее",
-};
-
-function classMeta(assetClass: string): { label: string; color: string } {
-  return ASSET_CLASS_META[assetClass] ?? { label: assetClass, color: "#a4a8ad" };
-}
-
-function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
-  return month.year * 12 + month.month;
-}
 
 function rowsMatchMonth(
   rows: Array<{ reporting_month_id: number }> | undefined,
@@ -141,30 +118,19 @@ function Panel({
   id,
   title,
   wide = false,
-}: {
-  action?: ReactNode;
-  children: ReactNode;
-  eyebrow: string;
-  hint?: string;
-  id: string;
-  title: string;
-  wide?: boolean;
-}) {
+}: Omit<Parameters<typeof UiV2Panel>[0], "testIdPrefix">) {
   return (
-    <section
-      aria-labelledby={id}
-      className={`${styles.panel} ${wide ? styles.widePanel : ""}`}
-      data-testid={`capital-panel-${id}`}
+    <UiV2Panel
+      action={action}
+      eyebrow={eyebrow}
+      hint={hint}
+      id={id}
+      testIdPrefix="capital-panel"
+      title={title}
+      wide={wide}
     >
-      <div className={styles.panelHeader}>
-        <div>
-          <p className={styles.eyebrow}>{eyebrow}</p>
-          <h2 id={id}>{title}</h2>
-        </div>
-        {action ?? (hint ? <p className={styles.panelHint}>{hint}</p> : null)}
-      </div>
       {children}
-    </section>
+    </UiV2Panel>
   );
 }
 
@@ -529,13 +495,6 @@ function AccountBuckets({
       </p>
     </>
   );
-}
-
-function holdingContextLabel(row: HoldingRow): string {
-  if (row.kind === "cash") return "Деньги";
-  if (row.kind === "deposit") return "Вклад";
-  if (row.contextLabel === null) return "Позиция";
-  return POSITION_TYPE_LABELS[row.contextLabel] ?? row.contextLabel;
 }
 
 function HoldingsBlock({
@@ -926,13 +885,7 @@ export default function UiV2CapitalPage() {
     refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const latestClosed = months.find((month) => month.status === "closed") ?? null;
-  const newerDraft =
-    months.find(
-      (month) =>
-        month.status === "draft" &&
-        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
-    ) ?? null;
+  const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
   const closedId = latestClosed?.id ?? null;
   const closed = closedId !== null;
 
@@ -1105,7 +1058,11 @@ export default function UiV2CapitalPage() {
   const v1ReturnPath =
     requestedMonth.kind === "selected"
       ? requestedStep
-        ? monthlyCloseReturnPath({ monthId: requestedMonth.month.id, step: requestedStep })
+        ? monthlyCloseReturnPath({
+            monthId: requestedMonth.month.id,
+            origin: "monthly-close",
+            step: requestedStep,
+          })
         : `/months/${requestedMonth.month.id}`
       : latestClosed
         ? `/months/${latestClosed.id}`
@@ -1146,7 +1103,10 @@ export default function UiV2CapitalPage() {
     content = (
       <>
         <UiV2ReportContext month={latestClosed}>
-          <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в текущем интерфейсе →</Link>
+          <span className={styles.reportContextLinks}>
+            <Link to="/v2/reports">Все отчёты →</Link>
+            <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в текущем интерфейсе →</Link>
+          </span>
         </UiV2ReportContext>
         {newerDraft ? (
           <p className={capitalStyles.draftNote} data-testid="capital-draft-note">

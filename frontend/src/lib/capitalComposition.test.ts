@@ -22,6 +22,9 @@ function point(year: number, month: number, total: string, net: string): Capital
     liquid_assets_total: rub(total),
     included_debts: rub("50.00"),
     liquid_capital_net: rub(net),
+    linked_pair_assets: rub("0.00"),
+    linked_pair_debts: rub("0.00"),
+    linked_pair_net_contribution: rub("0.00"),
   };
 }
 

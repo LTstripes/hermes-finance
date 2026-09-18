@@ -5,6 +5,8 @@ import { isContiguousMonth } from "./chartData";
 
 export type CapitalCompositionDatum = {
   key: string;
+  /** Canonical reporting month of this datum; null for a gap row. */
+  reportingMonthId: number | null;
   year: number;
   month: number;
   label: string;
@@ -43,6 +45,7 @@ function signedSharePercent(partAmount: string, totalAmount: string): string | n
 function createGap(index: number): CapitalCompositionDatum {
   return {
     key: `gap-${index}`,
+    reportingMonthId: null,
     year: 0,
     month: 0,
     label: "",
@@ -96,6 +99,7 @@ export function buildCapitalCompositionSeries(
 
     data.push({
       key: `${point.year}-${String(point.month).padStart(2, "0")}`,
+      reportingMonthId: point.reporting_month_id,
       year: point.year,
       month: point.month,
       label: formatMonth(point.year, point.month),
