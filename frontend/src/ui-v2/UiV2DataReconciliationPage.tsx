@@ -17,15 +17,17 @@ import { sortReportingMonths } from "./monthSelection";
 import dataStyles from "./UiV2Data.module.css";
 import {
   DiagnosticPanel,
-  isComparisonUnavailable,
   MappingPanel,
-  type MappingValues,
   MonthToolbar,
+  ResultSummary,
+  RowsPanel,
+} from "./UiV2DataReconciliationPanels";
+import {
+  isComparisonUnavailable,
+  type MappingValues,
   mappingFromValues,
   nonApplicableReason,
   RECONCILIATION_STATUS_LABELS,
-  ResultSummary,
-  RowsPanel,
   resultStatusTone,
 } from "./UiV2DataReconciliationParts";
 import { DataMonthContext, resolveDataMonth, UiV2DataFrame } from "./UiV2DataShell";
