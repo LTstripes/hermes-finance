@@ -67,7 +67,7 @@ describe("AppLayout", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Локальное приложение недоступно");
     expect(screen.getByRole("link", { name: /Диагностика/i })).toHaveAttribute(
       "href",
-      "/settings#diagnostics",
+      "/v2/data/app#diagnostics",
     );
   });
 });

@@ -57,7 +57,7 @@ export function RuntimeStatusBanner() {
           <strong>Локальное приложение недоступно</strong>
           <span>Проверь, что Hermes Finance запущен, или открой диагностику.</span>
         </div>
-        <Link className="runtime-alert__link" to="/settings#diagnostics">
+        <Link className="runtime-alert__link" to="/v2/data/app#diagnostics">
           Диагностика →
         </Link>
       </div>
