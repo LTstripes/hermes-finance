@@ -19,6 +19,10 @@ from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.dashboard import DashboardResult, build_dashboard
+from hermes_finance.services.income_plan_summary import (
+    IncomePlanSummaryResult,
+    income_plan_summary,
+)
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
 from hermes_finance.services.reporting_months import get_reporting_month
 
@@ -227,6 +231,17 @@ class MonthlySummaryOut(BaseModel):
     iis: list[IisOut]
     warnings: list[str]
     calculation_version: str
+
+
+class IncomePlanSummaryOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    month: MonthRefOut
+    forecast_version: str
+    forecast: ForecastOut
+    coverage: CoverageOut
+    cash_balance: CashBalanceOut
+    warnings: list[str]
 
 
 class HistoricalPointOut(BaseModel):
@@ -507,6 +522,82 @@ def get_month_summary(
     month = get_reporting_month(session, month_id)
     summary = monthly_summary(session, month_id, forecast_version=forecast_version)
     return _summary_out(month, summary)
+
+
+def _income_plan_summary_out(result: IncomePlanSummaryResult) -> IncomePlanSummaryOut:
+    forecast = result.forecast
+    coverage = result.coverage
+    cash = result.cash_balance
+    return IncomePlanSummaryOut(
+        month=MonthRefOut(
+            id=result.month.id,
+            year=result.month.year,
+            month=result.month.month,
+            status=result.month.status,
+            snapshot_date=result.month.snapshot_date,
+            source=result.month.source,
+        ),
+        forecast_version=result.forecast_version,
+        forecast=ForecastOut(
+            annual_total=_money(forecast.annual_total),
+            monthly_total=_money(forecast.monthly_total),
+            breakdown=ForecastBreakdownOut(
+                expected_deposit_interest=_money(forecast.breakdown.expected_deposit_interest),
+                expected_coupon_net=_money(forecast.breakdown.expected_coupon_net),
+                expected_dividend_component=_money(forecast.breakdown.expected_dividend_component),
+                other_expected_capital_income=_money(
+                    forecast.breakdown.other_expected_capital_income
+                ),
+            ),
+            is_approximate=forecast.is_approximate,
+            warnings=list(forecast.warnings),
+            dividend_average=_money(forecast.dividend_average),
+            configured_start_month=forecast.configured_start_month,
+            dividend_month_keys_used=list(forecast.dividend_month_keys_used),
+        ),
+        coverage=CoverageOut(
+            forecast_monthly=_money(coverage.forecast_monthly),
+            actual_average=_money(coverage.actual_average),
+            mandatory_expenses=_money(coverage.mandatory_expenses),
+            coverage_pct=_dec_str(coverage.coverage_pct),
+            actual_mandatory_expense_coverage_pct=_dec_str(
+                coverage.actual_mandatory_expense_coverage_pct
+            ),
+            passive_income_minus_mandatory_expenses=_money(
+                coverage.passive_income_minus_mandatory_expenses
+            ),
+            goal_target=_money(coverage.goal_target),
+            goal_progress_pct=_dec_str(coverage.goal_progress_pct),
+            is_approximate=coverage.is_approximate,
+            warnings=list(coverage.warnings),
+        ),
+        cash_balance=CashBalanceOut(
+            total=_money(cash.total),
+            breakdown=CashBalanceBreakdownOut(
+                salary_net=_money(cash.breakdown.salary_net),
+                bonus_net=_money(cash.breakdown.bonus_net),
+                side_income_net=_money(cash.breakdown.side_income_net),
+                cashback=_money(cash.breakdown.cashback),
+                other_income=_money(cash.breakdown.other_income),
+                passive_income=_money(cash.breakdown.passive_income),
+                mandatory_expenses=_money(cash.breakdown.mandatory_expenses),
+                other_expenses=_money(cash.breakdown.other_expenses),
+                saving_allocations=_money(cash.breakdown.saving_allocations),
+            ),
+        ),
+        warnings=list(result.warnings),
+    )
+
+
+@router.get("/{month_id}/income-plan-summary", response_model=IncomePlanSummaryOut)
+def get_income_plan_summary(
+    month_id: int,
+    forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
+    session: Session = Depends(session_for_request),
+) -> IncomePlanSummaryOut:
+    return _income_plan_summary_out(
+        income_plan_summary(session, month_id, forecast_version=forecast_version)
+    )
 
 
 def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:

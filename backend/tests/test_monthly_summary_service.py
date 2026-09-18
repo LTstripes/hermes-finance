@@ -30,9 +30,13 @@ from hermes_finance.domain import (
 )
 from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.cash_balance import cash_balance_for_month
+from hermes_finance.services.coverage_goals import coverage_and_goals
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
+from hermes_finance.services.forecast_passive_income import forecast_passive_income
 from hermes_finance.services.iis import create_iis_profile, create_tax_benefit
+from hermes_finance.services.income_plan_summary import income_plan_summary
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.monthly_summary import monthly_summary
@@ -204,6 +208,25 @@ def test_forecast_version_passthrough(tmp_path: Path) -> None:
         v1_summary = monthly_summary(session, month_id)
         assert v1_summary.forecast.annual_total == RubleAmount(0)
         assert v1_summary.calculation_version == "v2"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_income_plan_summary_reuses_canonical_planning_services(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session, 2031, 6)
+        close_reporting_month(session, month_id)
+
+        result = income_plan_summary(session, month_id, forecast_version="v2")
+
+        assert result.month.id == month_id
+        assert result.forecast_version == "v2"
+        assert result.forecast == forecast_passive_income(session, month_id, "v2")
+        assert result.coverage == coverage_and_goals(session, month_id, "v2")
+        assert result.cash_balance == cash_balance_for_month(session, month_id)
+        assert result.warnings == result.coverage.warnings
     finally:
         session.close()
         database.engine.dispose()
