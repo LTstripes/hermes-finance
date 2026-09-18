@@ -50,6 +50,7 @@ var tests = new (string Name, Action Run)[]
     ("constructs a PowerShell -File command without splitting spaces", ConstructsQuotedStartCommand),
     ("binds the validated database into the actual child process", BindsValidatedDatabaseToChildProcess),
     ("accepts an annotated release tag that peels to HEAD", AcceptsAnnotatedReleaseTag),
+    ("rejects Preview identity mismatch despite origin/main matching HEAD", RejectsPreviewExpectedRefMismatchDespiteOriginMain),
     ("shows Stable pinned release identity and production data", ShowsStablePinnedIdentity),
     ("shows Preview main SHA as unreleased with isolated data", ShowsPreviewUnreleasedIdentity),
     ("offers launcher-owned action for identity mismatch", OffersActionableMismatch),
@@ -1138,6 +1139,46 @@ static void AcceptsAnnotatedReleaseTag()
     }
 }
 
+
+static void RejectsPreviewExpectedRefMismatchDespiteOriginMain()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-preview-identity-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        InitSyntheticRepo(stableCheckout, "synthetic stable identity");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic preview configured identity");
+        RunGit(previewCheckout, "tag", "configured-preview");
+        File.WriteAllText(Path.Combine(previewCheckout, "identity-marker.txt"), "synthetic current preview");
+        RunGit(previewCheckout, "add", ".");
+        RunGit(previewCheckout, "commit", "-m", "synthetic preview HEAD");
+        RunGit(previewCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
+
+        var profile = new LauncherProfile
+        {
+            Id = "preview",
+            DisplayName = "Hermes Finance — Preview",
+            Type = "preview",
+            Checkout = previewCheckout,
+            ExpectedRef = "refs/tags/configured-preview",
+            DataDir = previewData,
+            Database = Path.Combine(previewData, "finance.db"),
+            OpenBrowser = false,
+        };
+        AssertThrowsMessage(
+            () => ProfileValidator.AssertGitIdentity(profile, previewCheckout, stableCheckout),
+            "Checkout identity does not match this profile.");
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
 
 static void ShowsStablePinnedIdentity()
 {

@@ -132,7 +132,7 @@ The launcher is a quiet owner-facing shell for configured, already-prepared Stab
 - diagnostics;
 - installed Desktop/Start-menu shortcuts.
 
-It shows exact version/SHA identity, readiness and the production/isolated data boundary. Its ordinary Start and status refresh are read-only with respect to Git and release state: it never follows `origin/main`, fetches, switches refs, publishes releases or performs OPS02/OPS03 work. Explicit Prepare/Repair, Start, Stop, Open Hermes, setup and secondary diagnostics/logs remain available.
+It shows exact version/SHA identity, readiness and the production/isolated data boundary. Its ordinary Start and status refresh are read-only with respect to Git and release state: it never follows `origin/main`, fetches, switches refs, publishes releases or performs OPS02/OPS03 work. Dependency readiness is read-only in the launcher; run external OPS01 Prepare when needed, then use Start, Stop, Open Hermes, setup and secondary diagnostics/logs.
 
 Stable release transition remains `scripts/update-stable.ps1`; exact Preview/UAT preparation remains `scripts/prepare-preview.ps1`. These composable operations are intentionally outside the launcher.
 

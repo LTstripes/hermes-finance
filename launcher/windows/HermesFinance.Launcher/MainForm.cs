@@ -1382,8 +1382,7 @@ public sealed class MainForm : Form
         _refresh.Enabled = state != LauncherReadinessState.Checking
             && state != LauncherReadinessState.Starting;
         _profiles.Enabled = state != LauncherReadinessState.Starting
-            && state != LauncherReadinessState.Running
-            && state != LauncherReadinessState.Starting;
+            && state != LauncherReadinessState.Running;
 
         // Enable correct primary CTA only — exactly one obvious primary per #279, others secondary or disabled
         switch (plan.Primary)
