@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-17**.
+> Last synchronized: **2026-09-18**.
 
 ## 1. Что мы строим
 
@@ -344,30 +344,31 @@ Permanent control endpoint: #124.
 
 Publication не равна Stable installation/update: release создаёт immutable published tag/release; local Stable меняется только отдельным OPS02 owner action.
 
-## 10. UI v2 — текущий checkpoint
+## 10. UI v2 — owner-UAT milestone integrated
 
-UI v2 tracked отдельно через #387 и children. Временный release-window freeze для `v0.9.0` теперь снят.
+UI v2 tracked через #387 и children. Первый цельный owner-facing milestone теперь принят не по отдельным synthetic страницам, а одним общим exact-SHA UAT на изолированном Preview с копией реальных owner data.
 
-Текущее направление:
+Owner-UAT aggregate:
 
-- Home = `Мои финансы`;
-- latest closed report as normal financial view;
-- Monthly Close как contextual work mode;
-- v1 сохраняется до отдельного controlled cutover.
+- exact candidate: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
+- PR #441;
+- owner verdict: **PASS**;
+- canonical integration commit: `3bd0cd742672955538a70d895ddba3ff654f9434`.
 
-Текущий статус первой законченной vertical slice:
+В canonical opt-in UI v2 теперь вместе работают:
 
-- #390 closed-to-closed comparison read model — integrated;
-- #391 passive-income history/source read model — integrated;
-- #392 / PR #406 `Мои финансы` Home — implementation complete;
-- exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9` прошёл independent review, exact-head CI, UI comparison evidence и **owner visual/product UAT PASS**;
-- owner проверил populated synthetic Home в обычном браузере и не запросил product/UX fixes;
-- PR #406 пока draft / not integrated только потому, что ждал завершения `v0.9.0` release window;
-- `/v2` остаётся opt-in, v1 остаётся default/rollback path.
+- Home = «Мои финансы»;
+- Capital;
+- «Доход и планы»;
+- contextual Reports/history;
+- native Monthly Close поверх server-owned workflow;
+- «Данные и приложение» shell с freshness/provenance и explicit read-only reconciliation.
 
-Теперь release-window закрыт, поэтому ближайший integration gate — обновить PR #406 относительно текущего canonical `main`, повторить relevant CI/UI evidence и только затем merge + exact-main CI. После этого #392 можно закрыть completed.
+History/Reports и Monthly Close не становятся постоянными sidebar-разделами. v1 остаётся default/rollback path до отдельного controlled cutover.
 
-UI v2 не входил в `v0.9.0`.
+Во время общего UAT выявлены только non-blocking polish items (#444–#448): кнопка «Наверх», языковая/терминологическая чистка, hierarchy/alignment Expected payouts, spacing Reports archive и упрощение copy в Reconciliation.
+
+Интеграционный урок этого milestone закреплён в `AGENTS.md` через PR #443: parallel slices с общим application spine должны собираться в milestone staging branch постепенно после каждого ACCEPT, а owner UAT должен проверять один exact aggregate tree.
 
 ## 11. Что идёт дальше
 
@@ -375,16 +376,19 @@ UI v2 не входил в `v0.9.0`.
 
 Главный активный product stream — UI v2 (#387 и children).
 
-Порядок на текущий момент:
+Ближайший функциональный порядок:
 
-1. refresh/reconcile PR #406 с current `main`;
-2. rerun exact-head CI + UI comparison evidence;
-3. merge accepted Home, verify exact-main CI, close #392;
-4. затем открыть/стартовать следующий bounded slice — **Capital drill-down**;
-5. дальше: Income & Plans → contextual history/archive polish → новый Monthly Close shell → Data & App consolidation → final comparative owner UAT → controlled v2 default switch;
-6. retirement v1 — только отдельное решение после cutover.
+1. #432 — native catalogs + persistent mappings;
+2. #433 — exports + safety-gated local backup/restore;
+3. #434 — app settings + tax brackets + runtime diagnostics;
+4. #444–#448 — owner-UAT polish backlog, можно выполнять параллельно там, где scopes независимы;
+5. final comparative owner UAT;
+6. controlled v2 default switch;
+7. retirement v1 — только отдельное решение после cutover.
 
-`1.0.0` разумно рассматривать как будущую большую отсечку только когда новый primary owner UX станет цельным и production lifecycle останется доказанным, а не просто потому что поменялась визуальная тема.
+Для следующей parallel серии использовать ранний `integration/*` staging branch и Integrator-owned reconciliation общих `App/Entry/Shell/navigation` spine-файлов, а не откладывать все sibling conflicts на финальный aggregate.
+
+`1.0.0` разумно рассматривать как будущую большую отсечку только когда новый primary owner UX станет цельным и production lifecycle останется доказанным.
 
 ### Runtime
 
@@ -405,7 +409,7 @@ Account + internal-transfer decomposition backend завершён.
 
 ### Release metadata
 
-#410 — non-blocking metadata/history follow-up: исправить stale `UAT-PENDING` wording в опубликованном GitHub Release description, синхронизировать `CHANGELOG.md`, добавить финальный publication/UAT record в `docs/EXECUTION_HISTORY.md` и hardened future release-note lifecycle. Это не влияет на уже доказанные release/tag/Stable identities.
+#410 — non-blocking metadata/history follow-up. Это не влияет на уже доказанные release/tag/Stable identities.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -434,7 +438,7 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #387 and children — UI v2; #392 is owner-UAT PASS but pending post-release integration via PR #406;
+- #387 and children — UI v2; core owner-UAT milestone integrated, #432–#434 and polish #444–#448 remain open;
 - #410 — non-blocking v0.9.0 Release-description / changelog / execution-history cleanup.
 
 #313 is completed after real owner OPS03 + OPS02 + production Start acceptance.
