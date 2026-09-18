@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, type Page, test, type TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
 import { makeUiV2Freshness, makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
 import { uiV2Accounts, uiV2Instruments, uiV2Months } from "../src/test/uiV2Fixtures";
@@ -141,6 +141,50 @@ async function installDataApi(page: Page) {
   return { errors, posts, reads, unexpected };
 }
 
+async function installFilesApi(page: Page) {
+  const unexpected: string[] = [];
+  const posts: string[] = [];
+  const errors: string[] = [];
+  const backup = {
+    id: "synthetic-backup-2031-12-28",
+    name: "synthetic-finance-visual-audit.db",
+    created_at: "2031-12-28T12:00:00+00:00",
+    size_bytes: 987654321,
+    source_database: { name: "synthetic-finance.db", size_bytes: 987654321 },
+  };
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
+      unexpected.push(`external: ${url.origin}`);
+    }
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith("/api/")) {
+      await route.continue();
+      return;
+    }
+    const line = `${request.method()} ${url.pathname}`;
+    if (request.method() === "POST") posts.push(line);
+    if (request.method() === "GET" && url.pathname === "/api/months") {
+      await route.fulfill({ status: 200, json: uiV2Months });
+      return;
+    }
+    if (request.method() === "GET" && url.pathname === "/api/backups") {
+      await route.fulfill({ status: 200, json: [backup] });
+      return;
+    }
+    unexpected.push(line);
+    await route.fulfill({
+      status: 404,
+      json: { error: { code: "synthetic_missing", message: "Missing fixture", details: [] } },
+    });
+  });
+  return { errors, posts, unexpected, backup };
+}
+
 test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", async ({
   page,
 }, testInfo) => {
@@ -189,5 +233,51 @@ test("ui-v2 Data reconciliation: no provider call on mount; preview only on clic
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-reconciliation-desktop");
   expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Files desktop: exports and irreversible restore remain separated", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installFilesApi(page);
+  await page.goto("/v2/data/files");
+  await expect(page.getByRole("heading", { name: "Файлы" })).toBeVisible();
+  await expect(page.getByTestId("files-exports")).toBeVisible();
+  await expect(page.getByTestId("files-backups")).toBeVisible();
+  await expect(page.getByText("Необратимо")).toBeVisible();
+  await expect(page.getByText(evidence.backup.name)).toBeVisible();
+  await expect(
+    page.getByText("Дополнительные / технические выгрузки").locator(".."),
+  ).not.toHaveAttribute("open");
+
+  await page
+    .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
+    .click();
+  await expect(page.getByRole("alertdialog")).toContainText(
+    `Точный target: ${evidence.backup.name}`,
+  );
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-desktop");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Files narrow: mutation gate and backup cards stay operable", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installFilesApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/data/files");
+  await expect(page.getByTestId("files-exports")).toBeVisible();
+  await expect(page.getByTestId("files-backups")).toBeVisible();
+  await page
+    .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
+    .click();
+  await expect(page.getByRole("alertdialog")).toContainText("Это необратимое действие");
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-narrow");
+  expect(evidence.posts).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

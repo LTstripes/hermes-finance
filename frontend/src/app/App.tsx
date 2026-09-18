@@ -10,9 +10,9 @@ import { ExportPage } from "../pages/ExportPage";
 import { FreshnessProvenancePage } from "../pages/FreshnessProvenancePage";
 import { GoalsPage } from "../pages/GoalsPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
-import { MonthsPage } from "../pages/MonthsPage";
 import { MonthlyCloseLandingPage } from "../pages/MonthlyCloseLandingPage";
 import { MonthlyCloseWorkflowPage } from "../pages/MonthlyCloseWorkflowPage";
+import { MonthsPage } from "../pages/MonthsPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
 import { RiskAllocationPage } from "../pages/RiskAllocationPage";
@@ -23,6 +23,7 @@ import { createQueryClient } from "../queryClient";
 import {
   UiV2CapitalEntry,
   UiV2CloseEntry,
+  UiV2DataFilesEntry,
   UiV2DataPlaceholderEntry,
   UiV2DataReconciliationEntry,
   UiV2DataSourcesEntry,
@@ -54,7 +55,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
             path="v2/data/catalogs"
             element={<UiV2DataPlaceholderEntry section="catalogs" />}
           />
-          <Route path="v2/data/files" element={<UiV2DataPlaceholderEntry section="files" />} />
+          <Route path="v2/data/files" element={<UiV2DataFilesEntry />} />
           <Route path="v2/data/app" element={<UiV2DataPlaceholderEntry section="app" />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route element={<AppLayout />}>
