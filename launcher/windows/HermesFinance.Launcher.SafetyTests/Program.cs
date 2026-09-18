@@ -19,12 +19,17 @@ var tests = new (string Name, Action Run)[]
     ("shows exact Stable and isolated Preview identity", ShowsConfiguredIdentity),
     ("sanitizes raw paths from owner-facing blockers", SanitizesOwnerFacingBlockers),
     ("requires exactly one stable profile", RequiresExactlyOneStableProfile),
+    ("rejects unsupported profile types and duplicate ids", RejectsInvalidProfileShape),
+    ("rejects Preview production tuple aliases", RejectsProductionTupleAlias),
+    ("rejects a wrong Preview data sidecar", RejectsWrongPreviewSidecar),
     ("returns Start for a ready prepared profile", ReadyProfileStarts),
     ("returns Prepare when dependencies are missing", MissingDependenciesPrepare),
     ("returns Refresh for identity mismatch", IdentityMismatchRefreshes),
     ("returns Stop only for a running profile", RunningProfileStops),
     ("does not expose updater or follow-main copy", NoUpdaterCopy),
     ("parses the runtime application version", ParsesApplicationVersion),
+    ("binds Start to the validated checkout and database", BuildsGuardedStartCommand),
+    ("keeps process ownership and loopback guards wired", KeepsRuntimeGuardsWired),
     ("builds an offline dependency check for the selected checkout", BuildsDependencyCheck),
     ("keeps package/install scripts free of Git mutation", PackageScriptsRemainGuarded),
     ("keeps package/install smoke script present", PackageSmokeRemainsPresent),
@@ -96,6 +101,60 @@ static void RequiresExactlyOneStableProfile()
     AssertThrows<LauncherValidationException>(() => ProfileValidator.ValidateConfiguration(config));
 }
 
+static void RejectsInvalidProfileShape()
+{
+    var duplicate = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = new CanonicalProduction { Checkout = "C:\\s", DataDir = "C:\\s\\data", Database = "C:\\s\\data\\finance.db" },
+        Profiles = [StableProfile("refs/tags/v0.9.0"), StableProfile("refs/tags/v0.9.0", "stable-copy")],
+    };
+    AssertThrows<LauncherValidationException>(() => ProfileValidator.ValidateConfiguration(duplicate));
+
+    var unsupported = new LauncherConfig
+    {
+        Version = 1,
+        CanonicalProduction = duplicate.CanonicalProduction,
+        Profiles = [StableProfile("refs/tags/v0.9.0"), new LauncherProfile
+        {
+            Id = "custom", DisplayName = "Custom", Type = "production", Checkout = "C:\\x",
+            ExpectedRef = "refs/heads/main", DataDir = "C:\\x\\data", Database = "C:\\x\\data\\finance.db", OpenBrowser = false,
+        }],
+    };
+    AssertThrows<LauncherValidationException>(() => ProfileValidator.ValidateConfiguration(unsupported));
+}
+
+static void RejectsProductionTupleAlias()
+{
+    var preview = PreviewProfile();
+    AssertThrows<LauncherValidationException>(() => ProfileValidator.AssertProfileTuple(
+        preview,
+        "C:\\synthetic\\stable",
+        "C:\\synthetic\\stable\\data",
+        "C:\\synthetic\\stable\\data\\finance.db",
+        preview.Checkout,
+        "C:\\synthetic\\stable\\data",
+        "C:\\synthetic\\stable\\data\\finance.db"));
+}
+
+static void RejectsWrongPreviewSidecar()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-safety-{Guid.NewGuid():N}");
+    var data = Path.Combine(root, "preview-data");
+    var database = Path.Combine(data, "finance.db");
+    Directory.CreateDirectory(data);
+    File.WriteAllText(database, "synthetic");
+    File.WriteAllText(Path.Combine(data, ".hermes-data-identity.json"), "{\"kind\":\"production\",\"profile_id\":\"preview\"}");
+    try
+    {
+        AssertThrows<LauncherValidationException>(() => ProfileValidator.AssertSidecar(PreviewProfile(), data, database));
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
 static void ReadyProfileStarts()
 {
     var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Ready, null, StableProfile("refs/tags/v0.9.0"));
@@ -137,6 +196,30 @@ static void ParsesApplicationVersion()
 {
     Assert(ProfileValidator.ParseApplicationVersion("__version__ = '0.9.0'\n") == "0.9.0", "version parser must preserve runtime identity");
     Assert(ProfileValidator.ParseApplicationVersion("__version__ = 'unknown'\n") is null, "invalid version must remain unknown");
+}
+
+static void BuildsGuardedStartCommand()
+{
+    var profile = new LauncherProfile
+    {
+        Id = "stable", DisplayName = "Hermes Finance — Stable", Type = "stable", Checkout = "C:\\synthetic\\checkout with spaces",
+        ExpectedRef = "refs/tags/v0.9.0", DataDir = "C:\\synthetic\\data", Database = "C:\\synthetic\\data\\finance.db", OpenBrowser = false,
+    };
+    var validated = new ValidatedProfile(profile, profile.Checkout, profile.DataDir, profile.Database, "abc", "production");
+    var command = ProfileValidator.BuildStartCommand(validated);
+    Assert(command.WorkingDirectory == profile.Checkout, "start must use validated checkout");
+    Assert(command.Environment["HERMES_FINANCE_DATABASE_PATH"] == profile.Database, "start must bind validated database");
+    Assert(command.Environment["UV_OFFLINE"] == "1", "ordinary Start must stay offline");
+    Assert(command.ArgumentList.Contains(Path.Combine(profile.Checkout, "scripts", "start-local.ps1")), "start must invoke the guarded local script");
+}
+
+static void KeepsRuntimeGuardsWired()
+{
+    var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "HermesFinance.Launcher");
+    var validator = File.ReadAllText(Path.Combine(root, "ProfileValidator.cs"));
+    var form = File.ReadAllText(Path.Combine(root, "MainForm.cs"));
+    Assert(validator.Contains("AssertPortAvailable", StringComparison.Ordinal), "loopback guard must remain in profile validation");
+    Assert(form.Contains("LauncherProcessOwnership", StringComparison.Ordinal) && form.Contains("ProvesOwnership", StringComparison.Ordinal), "process ownership guard must remain wired");
 }
 
 static void BuildsDependencyCheck()
