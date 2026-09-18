@@ -125,6 +125,7 @@ class CoverageOut(BaseModel):
     passive_income_minus_mandatory_expenses: MoneyValue
     goal_target: MoneyValue
     goal_progress_pct: str | None
+    forecast_goal_progress_pct: str | None
     is_approximate: bool
     warnings: list[str]
 
@@ -323,6 +324,7 @@ class KpiOut(BaseModel):
     passive_income_history_start_month: str | None
     passive_income_average_months_used: list[str]
     goal_progress_pct: str | None
+    forecast_goal_progress_pct: str | None
     goal_target: MoneyValue
     mandatory_expenses: MoneyValue
     mandatory_expense_coverage_pct: str | None
@@ -449,6 +451,7 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             ),
             goal_target=_money(coverage.goal_target),
             goal_progress_pct=_dec_str(coverage.goal_progress_pct),
+            forecast_goal_progress_pct=_dec_str(coverage.forecast_goal_progress_pct),
             is_approximate=coverage.is_approximate,
             warnings=list(coverage.warnings),
         ),
@@ -568,6 +571,7 @@ def _income_plan_summary_out(result: IncomePlanSummaryResult) -> IncomePlanSumma
             ),
             goal_target=_money(coverage.goal_target),
             goal_progress_pct=_dec_str(coverage.goal_progress_pct),
+            forecast_goal_progress_pct=_dec_str(coverage.forecast_goal_progress_pct),
             is_approximate=coverage.is_approximate,
             warnings=list(coverage.warnings),
         ),
@@ -617,6 +621,7 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
             passive_income_history_start_month=summary_out.passive_income_history_start_month,
             passive_income_average_months_used=summary_out.passive_income_average_months_used,
             goal_progress_pct=summary_out.coverage.goal_progress_pct,
+            forecast_goal_progress_pct=summary_out.coverage.forecast_goal_progress_pct,
             goal_target=summary_out.coverage.goal_target,
             mandatory_expenses=summary_out.coverage.mandatory_expenses,
             mandatory_expense_coverage_pct=summary_out.coverage.coverage_pct,

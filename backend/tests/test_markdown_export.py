@@ -84,6 +84,7 @@ def make_dashboard() -> DashboardResult:
             passive_income_minus_mandatory_expenses=R(1_000_000),
             goal_target=R(10_000_000),
             goal_progress_pct=Decimal("60.00"),
+            forecast_goal_progress_pct=Decimal("70.00"),
             is_approximate=True,
             warnings=(),
         ),

@@ -125,9 +125,11 @@ def test_full_scenario_coverage_and_progress(tmp_path: Path) -> None:
         assert result.coverage_pct == Decimal("1.45")
         assert result.mandatory_expenses == RubleAmount(500_000)
         assert result.passive_income_minus_mandatory_expenses == RubleAmount(-492_750)
-        # goal seeded 100000.00 -> 72.50 / 100000.00 * 100 = 0.07%
+        # No closed-history actual average -> canonical progress is 0.00%.
         assert result.goal_target == RubleAmount(10_000_000)
-        assert result.goal_progress_pct == Decimal("0.07")
+        assert result.goal_progress_pct == Decimal("0.00")
+        # Forecast projection remains separately named: 72.50 / 100000.00.
+        assert result.forecast_goal_progress_pct == Decimal("0.07")
         assert result.is_approximate is False
         # forecast has no closed months -> honest dividend-history warning
         assert result.warnings == (WARN_NO_DIVIDEND_MONTHS,)
@@ -167,6 +169,7 @@ def test_actual_average_from_closed_months(tmp_path: Path) -> None:
         result = coverage_and_goals(session, month_id, FORECAST_VERSION)
         # actual average = 500.00 (single closed month)
         assert result.actual_average == RubleAmount(50_000)
+        assert result.goal_progress_pct == Decimal("0.50")
     finally:
         session.close()
         database.engine.dispose()
@@ -191,7 +194,8 @@ def test_approximate_forecast_propagates_flag(tmp_path: Path) -> None:
         result = coverage_and_goals(session, month_id, FORECAST_VERSION)
         assert result.is_approximate is True
         assert result.forecast_monthly == RubleAmount(8_333)  # 100000/12 = 8333.33 -> 8333
-        assert result.goal_progress_pct == Decimal("0.08")
+        assert result.goal_progress_pct == Decimal("0.00")
+        assert result.forecast_goal_progress_pct == Decimal("0.08")
     finally:
         session.close()
         database.engine.dispose()

@@ -582,6 +582,9 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert all(ref.startswith("acct-") for ref in refs)
     goal_refs = [goal["ref"] for goal in payload["goals"]]
     assert goal_refs == sorted(goal_refs)
+    passive_goal = next(goal for goal in payload["goals"] if goal["goal_type"] == "passive_income")
+    assert passive_goal["source_metric_path"] == "passive_income.rolling_actual_average.value"
+    assert passive_goal["progress"]["availability"] == "available"
     assert payload["iis_and_tax"]["iis_accounts"]
     assert (
         payload["iis_and_tax"]["salary_tax_context"]["history_coverage"]["status"] == "unavailable"

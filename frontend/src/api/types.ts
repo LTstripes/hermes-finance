@@ -245,6 +245,7 @@ export type MonthSummary = {
     coverage_pct: string | null;
     goal_target?: MoneyValue;
     goal_progress_pct?: string | null;
+    forecast_goal_progress_pct?: string | null;
     warnings?: string[];
   };
 };
@@ -268,6 +269,7 @@ export type DashboardKpis = {
   passive_income_history_start_month?: string | null;
   passive_income_average_months_used?: string[];
   goal_progress_pct: string | null;
+  forecast_goal_progress_pct?: string | null;
   goal_target: MoneyValue;
   mandatory_expenses: MoneyValue;
   mandatory_expense_coverage_pct: string | null;

@@ -418,6 +418,11 @@ def _kpis_out(
             if summary.coverage.goal_progress_pct is not None
             else None
         ),
+        forecast_goal_progress_pct=(
+            format(summary.coverage.forecast_goal_progress_pct, "f")
+            if summary.coverage.forecast_goal_progress_pct is not None
+            else None
+        ),
         goal_target=MoneyValue(amount=summary.coverage.goal_target.to_api(), currency="RUB"),
         mandatory_expenses=MoneyValue(
             amount=summary.coverage.mandatory_expenses.to_api(), currency="RUB"

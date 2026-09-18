@@ -1,5 +1,6 @@
 import json
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,8 +8,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from hermes_finance.database import Database, create_database
+from hermes_finance.domain.cash_flows import ExpectedCashFlowType
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
 
 
 @pytest.fixture
@@ -273,7 +276,7 @@ def test_exports_preserve_selected_main_goal_and_mark_progress_only_on_main(
 def test_legacy_exports_use_actual_passive_goal_progress_not_forecast_coverage(
     app_context: tuple[TestClient, Database],
 ) -> None:
-    client, _database = app_context
+    client, database = app_context
     historical = client.post(
         "/api/months",
         json={"year": 2032, "month": 1, "snapshot_date": "2032-01-31"},
@@ -308,6 +311,29 @@ def test_legacy_exports_use_actual_passive_goal_progress_not_forecast_coverage(
     assert close.status_code == 200, close.text
 
     month_id = _create_month(client)
+    with database.session_factory() as session:
+        create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.json()["id"],
+            instrument_id=instrument.json()["id"],
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2032, 8, 1),
+            gross_amount="1200.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="1200.00",
+            source="synthetic",
+            source_as_of_date=date(2032, 7, 31),
+            forecast_version="v1",
+        )
+    dashboard = client.get(f"/api/months/{month_id}/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    dashboard_payload = dashboard.json()
+    assert dashboard_payload["kpis"]["goal_progress_pct"] == "1.00"
+    assert dashboard_payload["kpis"]["forecast_goal_progress_pct"] == "1.10"
+    assert dashboard_payload["summary"]["coverage"]["goal_progress_pct"] == "1.00"
+    assert dashboard_payload["summary"]["coverage"]["forecast_goal_progress_pct"] == "1.10"
+
     markdown = client.post(f"/api/months/{month_id}/export/markdown")
     assert markdown.status_code == 200, markdown.text
     main_line = next(

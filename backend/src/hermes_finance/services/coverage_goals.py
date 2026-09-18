@@ -11,6 +11,9 @@ Implements MASTER_SPEC §10.7-§10.8:
         forecast_monthly_net_passive_income / mandatory_expenses * 100
 
     passive_income_goal_progress_pct =
+        actual_average_net_passive_income / goal_target * 100
+
+    forecast_passive_income_goal_progress_pct =
         forecast_monthly_net_passive_income / goal_target * 100
 
     passive_income_minus_mandatory_expenses =
@@ -21,7 +24,9 @@ Key facts:
   created/loaded via ``get_or_create_main_goal`` seeded from app settings.
 - Only ``mandatory`` expenses participate (wiki §7; saving allocations are
   not expenses for this coverage).
-- ``coverage_pct`` / ``goal_progress_pct`` are ``None`` on zero denominator
+- ``goal_progress_pct`` is canonical actual closed-history progress.
+- ``forecast_goal_progress_pct`` is the separately named forecast projection.
+- Both progress values and ``coverage_pct`` are ``None`` on zero denominator
   (UI must not show infinity).
 - Reads on closed months are allowed (B19-R2 guard is for writes only).
 """
