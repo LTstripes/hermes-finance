@@ -34,6 +34,21 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-18 UI v2 owner-UAT milestone
+
+### UI v2 aggregate — Home + Capital + Income + Reports + Monthly Close + Data/App shell
+
+- **Owner acceptance:** PASS on one exact isolated Preview/UAT aggregate using an owner-data copy; production Stable data remained isolated.
+- **Aggregate candidate:** `fa8db7f0b22857499a6b05432caa1cd0a24131ef`.
+- **Aggregate PR / integration:** #441 -> canonical `main` merge `3bd0cd742672955538a70d895ddba3ff654f9434`.
+- **Included accepted slice heads:** #435 `6c927fc3...` (Reports/history), #436 `4442d0b3...` (native Monthly Close), #437 `1991a995...` (Data/App shell + freshness/reconciliation), #438 `5b3d5566...` (Income & Plans), with #439 planning read model already canonical.
+- **Implementation workers (runtime-confirmed where available):** #426 Luna Max; #427 DeepSeek; #428 GPT-5.6 Sol High; #431 Grok worker set; #439 model not independently confirmed.
+- **Integrator/reviewer:** ChatGPT — GPT-5.6 Sol, with independent bounded reviews and exact-head CI/evidence gates per slice.
+- **Aggregate verification:** 131 targeted integration/component tests; full frontend 73 files / 570 tests; production build; full synthetic visual audit 99 passed / 66 declared skips; exact-head CI run `35338714757` SUCCESS; UI comparison run `35338714741` SUCCESS.
+- **Owner UAT result:** no blocking product/financial/workflow defect. Non-blocking polish was split to #444–#448.
+- **Process lesson:** four sibling UI PRs all touched shared application-spine files, so end-loaded aggregation required semantic merge work. PR #443 codified early milestone staging, incremental accepted-head integration, Integrator-owned spine reconciliation and exact-aggregate UAT as the default for future parallel slices.
+- **Boundaries:** v1 remains default; UI v2 remains opt-in; History and Monthly Close remain contextual; no cloud/auth/telemetry or background provider behavior was introduced.
+
 # 0.8.0 release
 
 ### 0.8.0 — owner-workflow release publication
