@@ -80,6 +80,10 @@ const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
   gold_other: { label: "Золото и прочее", color: "#a4a8ad" },
 };
 
+const CLASS_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(ASSET_CLASS_META).map(([assetClass, meta]) => [assetClass, meta.color]),
+);
+
 const POSITION_TYPE_LABELS: Record<string, string> = {
   stock: "Акция",
   bond: "Облигация",
@@ -287,7 +291,12 @@ function CompositionOverTime({
         <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
         <div data-point-count={visible.length} data-testid="capital-composition">
-          <CapitalCompositionChart assetClasses={assetClasses} mode={mode} points={visible} />
+          <CapitalCompositionChart
+            assetClasses={assetClasses}
+            classColors={CLASS_COLORS}
+            mode={mode}
+            points={visible}
+          />
           <p className={styles.panelFootnote}>
             Показаны последние {visible.length} закрытых отчёта. Пропуски остаются пропусками;
             значения не интерполируются.
@@ -475,13 +484,19 @@ function ChangeBlock({
 function AccountBuckets({
   filter,
   onPickAccount,
+  retry,
   risk,
 }: {
   filter: HoldingFilter;
   onPickAccount: (key: string, label: string) => void;
+  retry: () => void;
   risk: RiskAllocationResponse;
 }) {
   const metric = risk.allocation_by_account;
+  const unsupported = unsupportedMetricReason(metric.support.status, metric.support.reason_codes);
+  if (unsupported) {
+    return <UiV2WidgetState retry={retry} title={unsupported} />;
+  }
   if (metric.items.length === 0) {
     return <p className={capitalStyles.muted}>В закрытом отчёте нет строк для этого среза.</p>;
   }
@@ -565,7 +580,12 @@ function HoldingsBlock({
         {!riskReady || !risk ? (
           <UiV2WidgetState retry={retryRisk} />
         ) : (
-          <AccountBuckets filter={filter} onPickAccount={onPickAccount} risk={risk} />
+          <AccountBuckets
+            filter={filter}
+            onPickAccount={onPickAccount}
+            retry={retryRisk}
+            risk={risk}
+          />
         )}
       </div>
       {sections.map((section) => {
@@ -878,15 +898,17 @@ function PropertyBlock({
                 </dd>
               </div>
               {mortgageClosed ? null : (
-                <div className={styles.deduction}>
-                  <dt>Не хватает до полного покрытия</dt>
-                  <dd>{money(mortgage.gap)}</dd>
+                <div>
+                  <dt>Разница: капитал − ипотека</dt>
+                  <dd>{moneyDelta(mortgage.gap)}</dd>
                 </div>
               )}
             </dl>
           ) : null}
           <p className={styles.panelFootnote}>
             Недвижимость и ипотека не входят в ликвидный капитал и не смешиваются с составом.
+            Разница показана со знаком: положительная — капитала больше остатка ипотеки,
+            отрицательная — меньше.
           </p>
         </>
       )}
@@ -990,13 +1012,17 @@ export default function UiV2CapitalPage() {
   const riskReady = isQueryReady(riskQuery) && riskQuery.data?.reporting_month_id === closedId;
   const dashboardReady =
     isQueryReady(dashboardQuery) && dashboardQuery.data?.month?.id === closedId;
-  const catalogsReady = isQueryReady(accountsQuery) && isQueryReady(instrumentsQuery);
+  const accountsReady = isQueryReady(accountsQuery);
+  const instrumentsReady = isQueryReady(instrumentsQuery);
   const cashReady =
-    catalogsReady && isQueryReady(cashQuery) && rowsMatchMonth(cashQuery.data, closedId);
+    accountsReady && isQueryReady(cashQuery) && rowsMatchMonth(cashQuery.data, closedId);
   const depositsReady =
-    catalogsReady && isQueryReady(depositsQuery) && rowsMatchMonth(depositsQuery.data, closedId);
+    accountsReady && isQueryReady(depositsQuery) && rowsMatchMonth(depositsQuery.data, closedId);
   const positionsReady =
-    catalogsReady && isQueryReady(positionsQuery) && rowsMatchMonth(positionsQuery.data, closedId);
+    accountsReady &&
+    instrumentsReady &&
+    isQueryReady(positionsQuery) &&
+    rowsMatchMonth(positionsQuery.data, closedId);
   const debtsReady = isQueryReady(debtsQuery) && rowsMatchMonth(debtsQuery.data, closedId);
   const propertiesReady =
     isQueryReady(propertiesQuery) && rowsMatchMonth(propertiesQuery.data, closedId);
@@ -1039,7 +1065,9 @@ export default function UiV2CapitalPage() {
     period.start_date === pairStart &&
     period.end_date === pairEnd;
   const attributionReady =
-    isQueryReady(attributionQuery) && periodMatches(attributionQuery.data?.period);
+    isQueryReady(attributionQuery) &&
+    attributionQuery.data?.scope === "portfolio" &&
+    periodMatches(attributionQuery.data.period);
   const xirrReady =
     isQueryReady(xirrQuery) &&
     xirrQuery.data?.scope === "portfolio" &&
@@ -1056,7 +1084,7 @@ export default function UiV2CapitalPage() {
         cash: cashQuery.data ?? [],
         deposits: depositsQuery.data ?? [],
         instruments: instrumentsQuery.data ?? [],
-        positions: positionsQuery.data ?? [],
+        positions: positionsReady ? (positionsQuery.data ?? []) : [],
       }),
     [
       accountsQuery.data,
@@ -1064,6 +1092,7 @@ export default function UiV2CapitalPage() {
       depositsQuery.data,
       instrumentsQuery.data,
       positionsQuery.data,
+      positionsReady,
     ],
   );
 
@@ -1113,7 +1142,7 @@ export default function UiV2CapitalPage() {
       ? (dashboardQuery.data?.summary?.liquid_capital?.linked_pairs ?? null)
       : null;
     const mortgage = dashboardReady ? (dashboardQuery.data?.mortgage ?? null) : null;
-    const pairsReady = dashboardReady && pairs !== null && debtsReady && catalogsReady;
+    const pairsReady = dashboardReady && pairs !== null && debtsReady && accountsReady;
     content = (
       <>
         <UiV2ReportContext month={latestClosed}>

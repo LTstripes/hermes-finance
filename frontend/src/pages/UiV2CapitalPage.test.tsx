@@ -44,6 +44,7 @@ function setup(path = "/v2/capital") {
     properties: makeUiV2Properties(),
     accounts: uiV2Accounts,
     instruments: uiV2Instruments,
+    instrumentsError: false,
     performance: makeUiV2Performance(),
     monthsError: false,
     riskError: false,
@@ -100,6 +101,7 @@ function setup(path = "/v2/capital") {
           break;
         case "/api/instruments":
           data = state.instruments;
+          failed = state.instrumentsError;
           break;
         case "/api/performance/attribution":
           expect(url.searchParams.get("scope")).toBe("portfolio");
@@ -468,6 +470,96 @@ it("recovers the report list without querying a guessed snapshot", async () => {
   state.monthsError = false;
   fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
   expect(await screen.findByTestId("capital-net")).toBeVisible();
+});
+
+it("labels the mortgage difference with a truthful sign instead of a shortfall", async () => {
+  const { mount } = setup();
+  mount();
+  await screen.findByTestId("capital-net");
+
+  const surplus = screen.getByText("Разница: капитал − ипотека").parentElement;
+  if (!surplus) throw new Error("Mortgage difference row is missing");
+  expect(surplus).toHaveTextContent("+1 103 900 ₽");
+  expect(surplus).not.toHaveTextContent(/Не хватает/);
+  expect(screen.queryByText(/Не хватает до полного покрытия/)).toBeNull();
+  expect(screen.getByText(/положительная — капитала больше остатка ипотеки/)).toBeVisible();
+
+  cleanup();
+  const under = setup();
+  under.state.dashboard = makeUiV2Dashboard({ coveragePct: "60.0", gapAmount: "-680000.00" });
+  under.mount();
+  await screen.findByTestId("capital-net");
+
+  const shortfall = screen.getByText("Разница: капитал − ипотека").parentElement;
+  if (!shortfall) throw new Error("Mortgage difference row is missing");
+  expect(shortfall).toHaveTextContent("680 000 ₽");
+  expect(shortfall).toHaveTextContent(/[−-]/);
+  expect(shortfall).not.toHaveTextContent(/\+/);
+
+  cleanup();
+  const closed = setup();
+  closed.state.dashboard = makeUiV2Dashboard({ mortgageClosed: true });
+  closed.mount();
+  expect(await screen.findByText("ипотека закрыта")).toBeVisible();
+  expect(screen.queryByText("Разница: капитал − ипотека")).toBeNull();
+});
+
+it("keeps cash, deposits and linked pairs when only the instrument catalog fails", async () => {
+  const { mount, state } = setup();
+  state.instrumentsError = true;
+  mount();
+
+  await screen.findByTestId("capital-net");
+  expect(await screen.findByTestId("capital-holding-cash-701")).toBeVisible();
+  expect(screen.getByTestId("capital-holding-deposit-601")).toBeVisible();
+  expect(screen.getByTestId("capital-pair-21")).toBeVisible();
+  expect(screen.queryByTestId("capital-holding-position-501")).toBeNull();
+  expect(screen.queryByTestId("capital-holding-position-502")).toBeNull();
+
+  const positions = screen.getByRole("heading", { name: "Позиции" }).closest("div");
+  if (!positions) throw new Error("Positions sub-block is missing");
+  expect(within(positions).getByText("Данные временно недоступны")).toBeVisible();
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+});
+
+it("fails the account slice closed when its support status is not supported", async () => {
+  const { mount, state } = setup();
+  state.risk = makeUiV2RiskAllocation({ accountSupport: "unknown" });
+  mount();
+
+  await screen.findByTestId("capital-net");
+  expect(
+    await screen.findByText("Этот срез нельзя построить: банк не хранится в текущей схеме."),
+  ).toBeVisible();
+  expect(screen.queryByTestId("capital-bucket-account:1")).toBeNull();
+  expect(screen.queryByTestId("capital-bucket-unassigned_cash")).toBeNull();
+  expect(screen.getByTestId("capital-holding-cash-701")).toBeVisible();
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+
+  cleanup();
+  const supported = setup();
+  supported.mount();
+  expect(await screen.findByTestId("capital-bucket-account:1")).toHaveTextContent(
+    "Синтетический депозитный счёт",
+  );
+});
+
+it("refuses a non-portfolio attribution response on the portfolio panel", async () => {
+  const { mount, state } = setup();
+  state.performance = makeUiV2Performance({ attributionScope: "account" });
+  mount();
+
+  await screen.findByTestId("capital-net");
+  const pair = await waitFor(() => {
+    const element = document.querySelector("details[open]");
+    if (!element) throw new Error("performance disclosure is not open");
+    return element as HTMLElement;
+  });
+  const bridge = within(pair).getByTestId("capital-performance-bridge");
+  expect(bridge).not.toHaveTextContent("+42 600 ₽");
+  expect(within(pair).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
+  expect(within(pair).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
 
 describe("UI v2 Capital isolation", () => {

@@ -261,6 +261,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     monthsError: false,
     propertiesError: partial,
     riskError: partial,
+    instrumentsError: partial,
     comparison: makeUiV2Comparison({ firstClosed, zero }),
     composition: makeUiV2CapitalHistory({ firstClosed, zero }),
     risk: makeUiV2RiskAllocation(),
@@ -328,6 +329,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       json = uiV2Accounts;
     } else if (url.pathname === "/api/instruments") {
       json = uiV2Instruments;
+      status = state.instrumentsError ? 503 : 200;
     } else if (url.pathname === "/api/performance/attribution") {
       json = state.performance.attribution;
     } else if (url.pathname === "/api/performance/xirr") {
@@ -373,6 +375,11 @@ test("ui-v2 Capital desktop: closed composition, accounts and performance stay b
   await expect(page.getByTestId("capital-pair-gap")).toBeVisible();
   await expect(page.getByTestId("capital-pair-22")).toContainText("—");
   await expect(page.getByTestId("capital-performance-bridge")).toContainText("+42 600 ₽");
+  await expect(page.getByText("Разница: капитал − ипотека")).toBeVisible();
+  await expect(
+    page.locator(".capital-composition-chart path[fill='#5f7e9e']").first(),
+  ).toBeVisible();
+  expect(await page.locator(".capital-composition-chart path[fill='#27734c']").count()).toBe(0);
   await expect(page.getByText("164,9%", { exact: false })).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-desktop");
@@ -428,6 +435,10 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
       if (scene === "partial") {
         await expect(page.getByText("Данные временно недоступны").first()).toBeVisible();
         await expect(page.getByTestId("capital-composition")).toBeVisible();
+        await expect(page.getByTestId("capital-holding-cash-701")).toBeVisible();
+        await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
+        await expect(page.getByTestId("capital-holding-position-501")).toHaveCount(0);
+        await expect(page.getByTestId("capital-pair-21")).toBeVisible();
       }
     }
     await assertBounded(page);

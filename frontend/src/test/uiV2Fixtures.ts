@@ -842,9 +842,13 @@ export function makeUiV2Properties({
 }
 
 export function makeUiV2Dashboard({
+  coveragePct = "164.9",
+  gapAmount = "1103900.00",
   mortgageClosed = false,
   noPairs = false,
 }: {
+  coveragePct?: string | null;
+  gapAmount?: string;
   mortgageClosed?: boolean;
   noPairs?: boolean;
 } = {}) {
@@ -854,8 +858,8 @@ export function makeUiV2Dashboard({
     month,
     mortgage: {
       mortgage_balance: money(mortgageClosed ? "0.00" : "1700000.00"),
-      coverage_pct: mortgageClosed ? null : "164.9",
-      gap: money(mortgageClosed ? "0.00" : "0.00"),
+      coverage_pct: mortgageClosed ? null : coveragePct,
+      gap: money(mortgageClosed ? "0.00" : gapAmount),
     },
     summary: {
       forecast: {
@@ -890,8 +894,10 @@ export function makeUiV2Dashboard({
 }
 
 export function makeUiV2RiskAllocation({
+  accountSupport = "supported",
   unsupportedPositions = false,
 }: {
+  accountSupport?: "supported" | "unavailable" | "unknown";
   unsupportedPositions?: boolean;
 } = {}): RiskAllocationResponse {
   const support = unsupportedPositions
@@ -912,7 +918,10 @@ export function makeUiV2RiskAllocation({
       excluded: [],
     },
     allocation_by_account: {
-      support: { status: "supported", reason_codes: ["cash_not_account_linked"] },
+      support:
+        accountSupport === "supported"
+          ? { status: "supported" as const, reason_codes: ["cash_not_account_linked"] }
+          : { status: accountSupport, reason_codes: ["bank_identity_not_persisted"] },
       denominator: money("3203900.00"),
       covered_amount: money("2400000.00"),
       unallocated_amount: money("803900.00"),
@@ -1013,7 +1022,13 @@ export function makeUiV2RiskAllocation({
   };
 }
 
-export function makeUiV2Performance({ notComputable = false }: { notComputable?: boolean } = {}): {
+export function makeUiV2Performance({
+  attributionScope = "portfolio",
+  notComputable = false,
+}: {
+  attributionScope?: "portfolio" | "account";
+  notComputable?: boolean;
+} = {}): {
   attribution: PerformanceAttribution;
   twrr: PortfolioTwrr;
   xirr: PortfolioXirr;
@@ -1025,8 +1040,8 @@ export function makeUiV2Performance({ notComputable = false }: { notComputable?:
       contract_version: 1,
       metric: "value_change_after_external_flows",
       grain: "selected_scope",
-      scope: "portfolio",
-      account_id: null,
+      scope: attributionScope,
+      account_id: attributionScope === "account" ? 3 : null,
       period,
       performance_currency: "RUB",
       availability: notComputable ? "not_computable" : "available",

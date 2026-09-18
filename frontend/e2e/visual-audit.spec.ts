@@ -230,6 +230,8 @@ for (const route of routes) {
       await expect(page.getByText("PERF04A", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Это изменение стоимости, а не доходность.")).toBeVisible();
       await expect(page.getByText(syntheticXirrReasonCode, { exact: true })).toHaveCount(0);
+      expect(await page.locator(".capital-composition-chart path").count()).toBeGreaterThan(0);
+      expect(await page.locator(".capital-composition-chart path[fill='#5f7e9e']").count()).toBe(0);
     }
     if (route.slug === "month-assets" || route.slug === "month-liabilities") {
       const pair = page.getByTestId("linked-pair-901");
