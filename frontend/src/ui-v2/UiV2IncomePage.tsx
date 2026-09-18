@@ -425,18 +425,22 @@ function EventList({ events }: { events: CashFlowLadderEvent[] }) {
   return (
     <ul className={incomeStyles.eventList}>
       {events.map((event) => (
-        <li key={`${event.source_kind}-${event.source_id}-${event.expected_date}`}>
-          <span>
-            <strong>
-              {formatDate(event.expected_date)} · {eventLabel(event)}
-            </strong>
+        <li
+          data-testid={`income-event-${event.source_kind}-${event.source_id}`}
+          key={`${event.source_kind}-${event.source_id}-${event.expected_date}`}
+        >
+          <span className={incomeStyles.eventTitle}>
+            <time dateTime={event.expected_date}>{formatDate(event.expected_date)}</time>
+            <strong>{eventLabel(event)}</strong>
+          </span>
+          <span className={incomeStyles.eventContext}>
+            <span>{event.instrument_name ?? "Без инструмента"}</span>
             <small>
-              {event.instrument_name ?? "Без инструмента"} · {event.account_name} ·{" "}
-              {eventSourceLabel(event)}
+              {event.account_name} · {eventSourceLabel(event)}
               {event.is_approximate ? " · оценка" : ""}
             </small>
           </span>
-          <strong>
+          <strong className={incomeStyles.eventAmount}>
             {money(event.expected_net_amount)}
             {event.component === "redemption_principal" ? " · не доход" : ""}
           </strong>
@@ -487,20 +491,6 @@ function LadderBlock({
   const selectedWindow = window === 14 ? ladder?.upcoming_14_days : ladder?.upcoming_30_days;
   return (
     <Panel
-      action={
-        <fieldset aria-label="Окно ожидаемых выплат" className={sharedStyles.segmented}>
-          {([14, 30, 12] as const).map((value) => (
-            <button
-              aria-pressed={window === value}
-              key={value}
-              onClick={() => setWindow(value)}
-              type="button"
-            >
-              {value === 12 ? "12 месяцев" : `${value} дней`}
-            </button>
-          ))}
-        </fieldset>
-      }
       eyebrow="Датированные события"
       id="income-ladder-title"
       testId="income-ladder-panel"
@@ -511,36 +501,57 @@ function LadderBlock({
         <UiV2WidgetState retry={retry} />
       ) : (
         <>
-          {window === 12 ? (
-            <p className={sharedStyles.panelFootnote}>
-              12 месяцев от даты снимка. Principal всегда показан отдельно и не входит в пассивный
-              доход.
-            </p>
-          ) : selectedWindow ? (
-            <div className={incomeStyles.windowSummary} data-testid={`income-window-${window}`}>
-              <div>
-                <span>
-                  {selectedWindow.days} дней · {formatDate(selectedWindow.from_date)}–
-                  {formatDate(selectedWindow.to_date)}
-                </span>
-                <strong>{money(selectedWindow.passive_income)} пассивно</strong>
+          <div className={incomeStyles.ladderControls}>
+            <span className={incomeStyles.ladderControlsLabel}>Период выплат ниже</span>
+            <fieldset
+              aria-controls="income-ladder-content"
+              aria-label="Окно ожидаемых выплат"
+              className={`${sharedStyles.segmented} ${incomeStyles.ladderWindow}`}
+            >
+              {([14, 30, 12] as const).map((value) => (
+                <button
+                  aria-pressed={window === value}
+                  key={value}
+                  onClick={() => setWindow(value)}
+                  type="button"
+                >
+                  {value === 12 ? "12 месяцев" : `${value} дней`}
+                </button>
+              ))}
+            </fieldset>
+          </div>
+          <div id="income-ladder-content">
+            {window === 12 ? (
+              <p className={sharedStyles.panelFootnote}>
+                12 месяцев от даты снимка. Principal всегда показан отдельно и не входит в пассивный
+                доход.
+              </p>
+            ) : selectedWindow ? (
+              <div className={incomeStyles.windowSummary} data-testid={`income-window-${window}`}>
+                <div>
+                  <span>
+                    {selectedWindow.days} дней · {formatDate(selectedWindow.from_date)}–
+                    {formatDate(selectedWindow.to_date)}
+                  </span>
+                  <strong>{money(selectedWindow.passive_income)} пассивно</strong>
+                </div>
+                <div>
+                  <span>Возврат principal</span>
+                  <strong>{money(selectedWindow.redemption_principal)} · не доход</strong>
+                </div>
+                <div>
+                  <span>Всего поступлений</span>
+                  <strong>{money(selectedWindow.total_cash_flow)}</strong>
+                </div>
+                <EventList events={selectedWindow.items} />
               </div>
-              <div>
-                <span>Возврат principal</span>
-                <strong>{money(selectedWindow.redemption_principal)} · не доход</strong>
-              </div>
-              <div>
-                <span>Всего поступлений</span>
-                <strong>{money(selectedWindow.total_cash_flow)}</strong>
-              </div>
-              <EventList events={selectedWindow.items} />
-            </div>
-          ) : null}
-          <section aria-label="Выплаты по месяцам" className={incomeStyles.ladderList}>
-            {ladder.months.map((month) => (
-              <LadderMonth key={`${month.year}-${month.month}`} month={month} />
-            ))}
-          </section>
+            ) : null}
+            <section aria-label="Выплаты по месяцам" className={incomeStyles.ladderList}>
+              {ladder.months.map((month) => (
+                <LadderMonth key={`${month.year}-${month.month}`} month={month} />
+              ))}
+            </section>
+          </div>
           {ladder.warnings.length > 0 ? (
             <ul className={incomeStyles.warningList}>
               {ladder.warnings.map((warning) => (
@@ -950,11 +961,6 @@ export default function UiV2IncomePage() {
             ready={forecastReady}
             retry={() => void summaryQuery.refetch()}
           />
-          <LadderBlock
-            ladder={ladderReady ? ladderQuery.data : undefined}
-            ready={ladderReady}
-            retry={() => void ladderQuery.refetch()}
-          />
           <GoalsBlock
             goals={goalsReady ? (goalsQuery.data ?? []) : []}
             ready={goalsReady}
@@ -973,6 +979,11 @@ export default function UiV2IncomePage() {
             savings={savingsReady ? (savingsQuery.data ?? []) : []}
             savingsReady={savingsReady}
             narrow={narrow}
+          />
+          <LadderBlock
+            ladder={ladderReady ? ladderQuery.data : undefined}
+            ready={ladderReady}
+            retry={() => void ladderQuery.refetch()}
           />
           <Handoffs narrow={narrow} />
         </div>
