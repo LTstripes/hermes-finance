@@ -402,6 +402,112 @@ def test_summary_missing_month_is_404(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "not_found"
 
 
+def test_income_plan_summary_closed_month_matches_summary_components(client: TestClient) -> None:
+    m1_id, _m2_id = _seed_two_months(client)
+
+    summary = client.get(f"/api/months/{m1_id}/summary")
+    planning = client.get(f"/api/months/{m1_id}/income-plan-summary")
+
+    assert summary.status_code == 200, summary.text
+    assert planning.status_code == 200, planning.text
+    summary_body = summary.json()
+    planning_body = planning.json()
+    assert set(planning_body) == {
+        "month",
+        "forecast_version",
+        "forecast",
+        "coverage",
+        "cash_balance",
+        "warnings",
+    }
+    assert planning_body["month"] == summary_body["month"]
+    assert planning_body["forecast"] == summary_body["forecast"]
+    assert planning_body["coverage"] == summary_body["coverage"]
+    assert planning_body["cash_balance"] == summary_body["cash_balance"]
+    assert planning_body["forecast_version"] == "v1"
+
+
+def test_income_plan_summary_passes_forecast_version_and_month_identity(
+    client: TestClient,
+) -> None:
+    month = client.post(
+        "/api/months",
+        json={"year": 2032, "month": 7, "snapshot_date": "2032-07-31"},
+    )
+    assert month.status_code == 201, month.text
+    month_body = month.json()
+    account = client.post(
+        "/api/accounts", json={"name": "Синтетический брокер", "account_type": "brokerage"}
+    ).json()
+    instrument = client.post(
+        "/api/instruments", json={"name": "Синтетическая облигация", "instrument_type": "bond"}
+    ).json()
+    expected = client.post(
+        "/api/expected-flows",
+        json={
+            "reporting_month_id": month_body["id"],
+            "account_id": account["id"],
+            "instrument_id": instrument["id"],
+            "flow_type": "coupon",
+            "expected_date": "2032-08-15",
+            "gross_amount": _rub("1000.00"),
+            "expected_tax_amount": _rub("130.00"),
+            "expected_net_amount": _rub("870.00"),
+            "source": "synthetic",
+            "source_as_of_date": "2032-07-31",
+            "forecast_version": "v2",
+        },
+    )
+    assert expected.status_code == 201, expected.text
+
+    response = client.get(f"/api/months/{month_body['id']}/income-plan-summary?forecast_version=v2")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["month"] == month_body
+    assert body["forecast_version"] == "v2"
+    assert body["forecast"]["annual_total"] == _rub("870.00")
+    assert body["coverage"]["forecast_monthly"] == _rub("72.50")
+
+
+def test_income_plan_summary_is_independent_of_incomplete_salary_tax_and_summary_stays_strict(
+    client: TestClient,
+) -> None:
+    month = client.post(
+        "/api/months",
+        json={"year": 2031, "month": 5, "snapshot_date": "2031-05-15"},
+    )
+    assert month.status_code == 201, month.text
+    month_id = month.json()["id"]
+    income = client.post(
+        "/api/incomes",
+        json={
+            "reporting_month_id": month_id,
+            "income_type": "salary",
+            "name": "Synthetic Salary",
+            "gross_amount": _rub("100000.00"),
+            "tax_amount": _rub("0.00"),
+            "net_amount": _rub("100000.00"),
+        },
+    )
+    assert income.status_code == 201, income.text
+
+    planning = client.get(f"/api/months/{month_id}/income-plan-summary")
+    strict_summary = client.get(f"/api/months/{month_id}/summary")
+
+    assert planning.status_code == 200, planning.text
+    assert planning.json()["cash_balance"]["breakdown"]["salary_net"] == _rub("100000.00")
+    assert "salary_tax_history_incomplete" not in planning.json()["warnings"]
+    assert strict_summary.status_code == 422, strict_summary.text
+    assert strict_summary.json()["error"]["code"] == "salary_tax_history_incomplete"
+
+
+def test_income_plan_summary_missing_month_is_404(client: TestClient) -> None:
+    response = client.get("/api/months/99999/income-plan-summary")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
 def test_dashboard_first_month_has_null_deltas(client: TestClient) -> None:
     month = client.post(
         "/api/months",
