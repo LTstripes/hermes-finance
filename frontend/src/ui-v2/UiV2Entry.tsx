@@ -11,6 +11,7 @@ const UiV2ClosePage = lazy(() => import("./UiV2ClosePage"));
 const UiV2DataSourcesPage = lazy(() => import("./UiV2DataSourcesPage"));
 const UiV2DataReconciliationPage = lazy(() => import("./UiV2DataReconciliationPage"));
 const UiV2DataPlaceholderPage = lazy(() => import("./UiV2DataPlaceholderPage"));
+const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
 
 export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
@@ -88,7 +89,7 @@ export function UiV2DataPlaceholderEntry({
 export function UiV2ReportsEntry() {
   return (
     <SuspenseFrame>
-        <UiV2ReportsPage />
+      <UiV2ReportsPage />
     </SuspenseFrame>
   );
 }
@@ -96,7 +97,7 @@ export function UiV2ReportsEntry() {
 export function UiV2ReportEntry() {
   return (
     <SuspenseFrame>
-        <UiV2ReportPage />
+      <UiV2ReportPage />
     </SuspenseFrame>
   );
 }
@@ -104,7 +105,15 @@ export function UiV2ReportEntry() {
 export function UiV2CloseEntry() {
   return (
     <SuspenseFrame>
-        <UiV2ClosePage />
+      <UiV2ClosePage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2IncomeEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2IncomePage />
     </SuspenseFrame>
   );
 }
