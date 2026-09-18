@@ -58,7 +58,7 @@ semantic marker.
 
 | Primary marker | CI lane | Ownership rule |
 | --- | --- | --- |
-| `ci_core` | Backend core (two deterministic shards) | Domain, service, general API, and explicitly mapped flat financial tests; `ci_core_a` and `ci_core_b` split the same ownership by stable test-file path |
+| `ci_core` | Backend core (two deterministic weighted shards) | Domain, service, general API, and explicitly mapped flat financial tests; `ci_core_a` and `ci_core_b` split the same ownership by a committed duration-weighted test-file assignment |
 | `ci_persistence` | Backend persistence | SQLite, persisted state, and migration tests |
 | `ci_integrations` | Backend integrations | Provider, reconciliation, and import/export boundaries |
 | `ci_runtime_release` | Backend runtime/release | Runtime, release, legacy, Windows, and CI-contract tests |
@@ -72,7 +72,7 @@ test file. A new flat test module therefore requires an explicit owner before
 any lane can pass; benchmark tests cannot silently join a correctness lane.
 
 CI runs the five ownership surfaces as independent matrix jobs with the core
-surface split into two deterministic shards (`ci_core_a` and `ci_core_b`),
+surface split into two deterministic duration-weighted shards (`ci_core_a` and `ci_core_b`),
 `--durations=40`, and a 10-minute job timeout. The shard markers are additive
 to `ci_core`; both shards together are the complete Backend core lane.
 
