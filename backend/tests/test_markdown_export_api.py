@@ -1,5 +1,6 @@
 import json
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,8 +8,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from hermes_finance.database import Database, create_database
+from hermes_finance.domain.cash_flows import ExpectedCashFlowType
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
 
 
 @pytest.fixture
@@ -168,8 +171,8 @@ def test_json_export_downloads_money_safe_raw_and_derived_data(
         == 'attachment; filename="finance_data_2032-07.json"'
     )
     payload = json.loads(response.content.decode("utf-8"))
-    assert payload["schema_version"] == "1.1"
-    assert payload["calculation_version"] == "v2"
+    assert payload["schema_version"] == "1.2"
+    assert payload["calculation_version"] == "v3"
     assert payload["raw"]["reporting_month"]["id"] == month_id
     assert payload["raw"]["income_entries"][0]["gross_amount"] == {
         "amount": "100000.00",
@@ -268,3 +271,83 @@ def test_exports_preserve_selected_main_goal_and_mark_progress_only_on_main(
     non_main_line = next(line for line in markdown_lines if initial_goal["name"] in line)
     assert "0,00%" in main_line
     assert "—" in non_main_line
+
+
+def test_legacy_exports_use_actual_passive_goal_progress_not_forecast_coverage(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    historical = client.post(
+        "/api/months",
+        json={"year": 2032, "month": 1, "snapshot_date": "2032-01-31"},
+    )
+    assert historical.status_code == 201, historical.text
+    historical_id = historical.json()["id"]
+    account = client.post(
+        "/api/accounts", json={"name": "Synthetic broker", "account_type": "brokerage"}
+    )
+    assert account.status_code == 201, account.text
+    instrument = client.post(
+        "/api/instruments", json={"name": "Synthetic stock", "instrument_type": "stock"}
+    )
+    assert instrument.status_code == 201, instrument.text
+    flow = client.post(
+        "/api/investment-flows",
+        json={
+            "reporting_month_id": historical_id,
+            "account_id": account.json()["id"],
+            "instrument_id": instrument.json()["id"],
+            "flow_type": "dividend",
+            "event_date": "2032-01-15",
+            "gross_amount": {"amount": "1000.00", "currency": "RUB"},
+            "tax_amount": {"amount": "0.00", "currency": "RUB"},
+            "commission_amount": {"amount": "0.00", "currency": "RUB"},
+            "net_amount": {"amount": "1000.00", "currency": "RUB"},
+            "source": "synthetic",
+        },
+    )
+    assert flow.status_code == 201, flow.text
+    close = client.post(f"/api/months/{historical_id}/close")
+    assert close.status_code == 200, close.text
+
+    month_id = _create_month(client)
+    with database.session_factory() as session:
+        create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.json()["id"],
+            instrument_id=instrument.json()["id"],
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2032, 8, 1),
+            gross_amount="1200.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="1200.00",
+            source="synthetic",
+            source_as_of_date=date(2032, 7, 31),
+            forecast_version="v1",
+        )
+    dashboard = client.get(f"/api/months/{month_id}/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    dashboard_payload = dashboard.json()
+    assert dashboard_payload["kpis"]["goal_progress_pct"] == "1.00"
+    assert dashboard_payload["kpis"]["forecast_goal_progress_pct"] == "1.10"
+    assert dashboard_payload["summary"]["coverage"]["goal_progress_pct"] == "1.00"
+    assert dashboard_payload["summary"]["coverage"]["forecast_goal_progress_pct"] == "1.10"
+
+    markdown = client.post(f"/api/months/{month_id}/export/markdown")
+    assert markdown.status_code == 200, markdown.text
+    main_line = next(
+        line
+        for line in markdown.content.decode("utf-8").splitlines()
+        if "Пассивный доход в месяц" in line
+    )
+    # One actual 1,000 RUB closed-month average against the 100,000 RUB goal
+    # is 1.00%; forecast coverage is a separate metric and has no rows here.
+    assert "1,00%" in main_line
+
+    exported = client.post(f"/api/months/{month_id}/export/json")
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    goal_rows = payload["derived"]["report"]["goal_rows"]
+    main_row = next(row for row in goal_rows if row["name"] == "Пассивный доход в месяц")
+    assert main_row["progress_pct"] == "1.00"

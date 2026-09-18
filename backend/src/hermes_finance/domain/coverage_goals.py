@@ -3,6 +3,9 @@
 Implements MASTER_SPEC §10.7-§10.8:
 
     passive_income_goal_progress_pct =
+        actual_average_net_passive_income / goal_target * 100
+
+    forecast_passive_income_goal_progress_pct =
         forecast_monthly_net_passive_income / goal_target * 100
 
     mandatory_expense_coverage_pct =
@@ -17,9 +20,9 @@ Implements MASTER_SPEC §10.7-§10.8:
 Zero denominators return ``None`` so the UI never shows infinity — the same
 safe-denominator pattern as ``mortgage_coverage`` (services/properties.py).
 
-Progress is built on the forecast monthly figure by default; the actual
-average is returned alongside (MASTER_SPEC §10.7: "рядом показывается
-фактическое среднее").
+Unqualified goal progress is built on the actual closed-history average. The
+forecast-derived progress remains available separately so forecast coverage
+does not silently acquire the goal's canonical identity.
 
 All money values use :class:`~hermes_finance.domain.values.RubleAmount`
 (integer kopecks); binary ``float`` is never used.  Percentages are
@@ -65,6 +68,7 @@ class CoverageGoalsResult:
     passive_income_minus_mandatory_expenses: RubleAmount
     goal_target: RubleAmount
     goal_progress_pct: Decimal | None
+    forecast_goal_progress_pct: Decimal | None
     is_approximate: bool
     warnings: tuple[str, ...]
 
@@ -90,14 +94,15 @@ def calculate_coverage_goals(input_data: CoverageGoalsInput) -> CoverageGoalsRes
     actual_mandatory_expense_coverage_pct = _percent(
         input_data.actual_average.kopecks, input_data.mandatory_expenses.kopecks
     )
-    goal_progress_pct = _percent(
+    goal_progress_pct = _percent(input_data.actual_average.kopecks, input_data.goal_target.kopecks)
+    forecast_goal_progress_pct = _percent(
         input_data.forecast_monthly.kopecks, input_data.goal_target.kopecks
     )
 
     warnings = list(input_data.forecast_warnings)
     if coverage_pct is None:
         warnings.append("Обязательные расходы равны нулю — покрытие не рассчитывается")
-    if goal_progress_pct is None:
+    if goal_progress_pct is None or forecast_goal_progress_pct is None:
         warnings.append("Цель равна нулю — прогресс не рассчитывается")
 
     return CoverageGoalsResult(
@@ -111,6 +116,7 @@ def calculate_coverage_goals(input_data: CoverageGoalsInput) -> CoverageGoalsRes
         ),
         goal_target=input_data.goal_target,
         goal_progress_pct=goal_progress_pct,
+        forecast_goal_progress_pct=forecast_goal_progress_pct,
         is_approximate=input_data.is_approximate,
         warnings=tuple(warnings),
     )

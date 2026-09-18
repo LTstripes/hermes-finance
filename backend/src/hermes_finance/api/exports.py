@@ -24,6 +24,7 @@ from hermes_finance.services.comments import list_monthly_comments
 from hermes_finance.services.dashboard import build_dashboard
 from hermes_finance.services.debts import list_debts
 from hermes_finance.services.expenses import list_expense_entries
+from hermes_finance.services.goal_achievement import build_goal_achievement_summary
 from hermes_finance.services.goals import (
     DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
     MainGoalSelectionError,
@@ -107,6 +108,15 @@ def _report_for_month(
     month = get_reporting_month(session, month_id)
     _prepare_read_only_defaults(session, month.year)
     dashboard = build_dashboard(session, month_id, forecast_version=forecast_version)
+    goal_achievement_by_id = {
+        item.goal.id: item.achievement_forecast
+        for item in build_goal_achievement_summary(
+            session,
+            month_id,
+            include_inactive=True,
+            forecast_version=forecast_version,
+        )
+    }
 
     incomes = tuple(
         IncomeReportRow(
@@ -151,14 +161,19 @@ def _report_for_month(
         for item in list_debts(session)
         if item.reporting_month_id == month_id
     )
+    # Legacy report goal progress is the canonical actual-history value used
+    # by Goals/AI surfaces.  Forecast coverage remains separately exposed by
+    # the dashboard summary and is not substituted into this goal row.
     goals = tuple(
         GoalReportRow(
             name=item.name,
             goal_type=item.goal_type,
             target=RubleAmount(item.target_value_kopecks),
             progress_pct=(
-                dashboard.summary.coverage.goal_progress_pct
-                if item.goal_type == "passive_income" and item.is_main
+                goal_achievement_by_id[item.id].progress_pct
+                if item.goal_type == "passive_income"
+                and item.is_main
+                and item.id in goal_achievement_by_id
                 else None
             ),
         )

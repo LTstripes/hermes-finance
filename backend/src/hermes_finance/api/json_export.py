@@ -38,7 +38,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.markdown_export import MarkdownReport
 
-JSON_SCHEMA_VERSION: Literal["1.1"] = "1.1"
+JSON_SCHEMA_VERSION: Literal["1.2"] = "1.2"
 
 
 class ExportModel(BaseModel):
@@ -356,7 +356,7 @@ class DerivedData(ExportModel):
 
 
 class JsonExport(ExportModel):
-    schema_version: Literal["1.1"]
+    schema_version: Literal["1.2"]
     calculation_version: str
     raw: RawSourceData
     derived: DerivedData

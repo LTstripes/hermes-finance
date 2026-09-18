@@ -44,12 +44,12 @@ def add_bonus(session: Session, month_id: int, net: str) -> None:
 # --- no closed months ---
 
 
-def test_no_closed_months_returns_zeros(tmp_path: Path) -> None:
+def test_no_closed_months_returns_unavailable(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         result = normalized_bonus(session)
-        assert result.monthly_average == RubleAmount(0)
-        assert result.sum_total == RubleAmount(0)
+        assert result.monthly_average is None
+        assert result.sum_total is None
         assert result.count_months == 0
         assert result.is_complete_12m is False
         assert result.warnings == ("Нет закрытых месяцев для оценки нормализованной премии",)
@@ -58,7 +58,7 @@ def test_no_closed_months_returns_zeros(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-# --- three closed months average ---
+# --- three closed months normalized over twelve months ---
 
 
 def test_three_closed_months_average(tmp_path: Path) -> None:
@@ -70,8 +70,8 @@ def test_three_closed_months_average(tmp_path: Path) -> None:
             close_reporting_month(session, month_id)
 
         result = normalized_bonus(session)
-        # (3000 + 6000 + 9000) / 3 = 6000.00 RUB
-        assert result.monthly_average == RubleAmount(600_000)
+        # (3000 + 6000 + 9000) / 12 = 1500.00 RUB
+        assert result.monthly_average == RubleAmount(150_000)
         assert result.sum_total == RubleAmount(1_800_000)
         assert result.count_months == 3
         assert result.is_complete_12m is False
@@ -97,7 +97,7 @@ def test_draft_months_are_excluded(tmp_path: Path) -> None:
         result = normalized_bonus(session)
         assert result.count_months == 1
         assert result.sum_total == RubleAmount(200_000)
-        assert result.monthly_average == RubleAmount(200_000)
+        assert result.monthly_average == RubleAmount(16_667)
     finally:
         session.close()
         database.engine.dispose()
@@ -165,10 +165,11 @@ def test_closed_month_without_bonus_counts_as_zero(tmp_path: Path) -> None:
         close_reporting_month(session, empty_id)
 
         result = normalized_bonus(session)
-        # (500 + 0) / 2 = 250.00 RUB
+        # (500 + 0) / 12 = 41.67 RUB; observed closed months are explicit,
+        # while missing calendar months remain outside the evidence window.
         assert result.count_months == 2
         assert result.sum_total == RubleAmount(50_000)
-        assert result.monthly_average == RubleAmount(25_000)
+        assert result.monthly_average == RubleAmount(4_167)
     finally:
         session.close()
         database.engine.dispose()
@@ -187,7 +188,6 @@ def test_result_months_ordered_by_year_month(tmp_path: Path) -> None:
 
         result = normalized_bonus(session)
         assert [(m.year, m.month) for m in result.months] == [
-            (2031, 1),
             (2031, 12),
             (2032, 1),
             (2032, 3),

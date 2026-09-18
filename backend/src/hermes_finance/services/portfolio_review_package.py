@@ -1870,7 +1870,7 @@ def assemble_portfolio_review_package(
         "source_contract_name": "hermes.finance.ai_analysis_bundle",
         "source_contract_version": BUNDLE_SCHEMA_VERSION,
         "calculation_versions": {
-            "monthly_summary": str(calculation_versions.get("monthly_summary", "v2")),
+            "monthly_summary": str(calculation_versions.get("monthly_summary", "v3")),
             "passive_income_forecast": str(
                 calculation_versions.get("passive_income_forecast", version)
             ),
