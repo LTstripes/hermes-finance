@@ -5,7 +5,8 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "../queryClient";
-import { makeUiV2Freshness, makeUiV2ProviderCapabilities, uiV2Months } from "../test/uiV2Fixtures";
+import { makeUiV2Freshness, makeUiV2ProviderCapabilities } from "../test/uiV2DataFixtures";
+import { uiV2Months } from "../test/uiV2Fixtures";
 import UiV2DataSourcesPage from "../ui-v2/UiV2DataSourcesPage";
 
 function setup(path = "/v2/data") {
