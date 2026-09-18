@@ -115,12 +115,17 @@ internal static class LauncherUi
         return "Prepared release";
     }
 
-    public static string StableIdentityLabel(LauncherProfile profile, string? headSha)
+    public static string StableIdentityLabel(LauncherProfile profile, string? headSha, string? applicationVersion = null)
     {
-        var release = ReleaseBadge(profile.ExpectedRef);
+        var release = IsExactCommit(profile.ExpectedRef) && !string.IsNullOrWhiteSpace(applicationVersion)
+            ? $"Version {applicationVersion}"
+            : ReleaseBadge(profile.ExpectedRef);
         var sha = string.IsNullOrWhiteSpace(headSha) ? "—" : headSha[..Math.Min(7, headSha.Length)];
-        return $"{release}  ·  {sha}  ·  {DataBoundary(profile.Type)}";
+        return $"{release}  ·  SHA {sha}  ·  {DataBoundary(profile.Type)}";
     }
+
+    private static bool IsExactCommit(string expectedRef) =>
+        expectedRef.Length == 40 && expectedRef.All(static character => char.IsAsciiHexDigit(character));
 
     public static string PreviewIdentityLabel(LauncherProfile profile, string? currentSha)
     {
@@ -462,7 +467,7 @@ internal sealed class ProfileCard : Panel
         Invalidate();
     }
 
-    public void SetIdentity(string? headSha, string? targetSha = null)
+    public void SetIdentity(string? headSha, string? targetSha = null, string? applicationVersion = null)
     {
         // #302: re-derive the title on every identity refresh so a stale
         // display_name can never linger beside validated identity lines.
@@ -472,7 +477,7 @@ internal sealed class ProfileCard : Panel
         var isPreview = Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
         if (isStable)
         {
-            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha);
+            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha, applicationVersion);
         }
         else if (isPreview)
         {

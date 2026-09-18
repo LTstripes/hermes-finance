@@ -62,6 +62,7 @@ var tests = new (string Name, Action Run)[]
     ("marks Stable identity mismatch recovery-only", StableMismatchIsRecoveryOnly),
     ("Stable Ready offers Start primary", StableReadyStartsPrimary),
     ("setup flow creates concrete config from owner selections", SetupFlowCreatesConcreteConfig),
+    ("shows application version and SHA for a SHA-pinned Stable setup", ShowsShaPinnedStableVersionAndIdentity),
     ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
@@ -111,12 +112,12 @@ static void LoadsCanonicalConfigExample()
     Assert(config.Profiles.Count == 2, "The canonical config example must load both documented profiles.");
     Assert(config.Profiles[0].Id == "stable", "The stable profile id must use the documented JSON name.");
     Assert(config.Profiles[0].DisplayName == "Hermes Finance — Stable", "The stable profile display name must load from the canonical example.");
-    Assert(config.Profiles[0].ExpectedRef == "refs/tags/v0.9.0", "The stable profile expected ref must be v0.9.0.");
+    Assert(config.Profiles[0].ExpectedRef == "<exact-prepared-stable-commit>", "The stable profile expected ref must document an exact prepared commit.");
     Assert(config.Profiles[0].DataDir == "<absolute-stable-data-dir>", "The stable profile data directory must use the documented JSON name.");
     Assert(config.Profiles[0].Database == "<absolute-stable-database>", "The stable profile database must use the documented JSON name.");
     Assert(config.Profiles[0].OpenBrowser, "The stable profile browser setting must use the documented JSON name.");
     Assert(config.Profiles[1].Id == "preview", "Preview profile id must be preview.");
-    Assert(config.Profiles[1].ExpectedRef == "refs/remotes/origin/main", "Preview expected_ref must be origin/main for #279.");
+    Assert(config.Profiles[1].ExpectedRef == "<exact-prepared-preview-commit>", "Preview expected_ref must document an exact prepared commit.");
 }
 
 static void PresentsBrandedOwnerSurface()
@@ -1737,6 +1738,52 @@ static void SetupFlowCreatesConcreteConfig()
         AssertThrows<LauncherValidationException>(() => LauncherSetup.BuildConfig(stableCheckout, stableData, stableCheckout, stableData));
         // Nothing is guessed: missing selections fail closed.
         AssertThrows<LauncherValidationException>(() => LauncherSetup.BuildConfig("", stableData, previewCheckout, previewData));
+    }
+    finally
+    {
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void ShowsShaPinnedStableVersionAndIdentity()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-version-{Guid.NewGuid():N}");
+    var stableCheckout = Path.Combine(root, "stable");
+    var stableData = Path.Combine(root, "stable-data");
+    var previewCheckout = Path.Combine(root, "preview");
+    var previewData = Path.Combine(root, "preview-data");
+    try
+    {
+        CreateRuntimeLayout(stableCheckout);
+        Directory.CreateDirectory(Path.Combine(stableCheckout, "backend", "src", "hermes_finance"));
+        File.WriteAllText(Path.Combine(stableCheckout, "backend", "src", "hermes_finance", "__init__.py"), "__version__ = '0.9.0'\n");
+        Directory.CreateDirectory(stableData);
+        InitSyntheticRepo(stableCheckout, "synthetic SHA-pinned Stable");
+        CreateRuntimeLayout(previewCheckout);
+        Directory.CreateDirectory(previewData);
+        InitSyntheticRepo(previewCheckout, "synthetic Preview");
+
+        var config = LauncherSetup.BuildConfig(stableCheckout, stableData, previewCheckout, previewData);
+        var stable = config.Profiles.Single(profile => profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
+        Assert(stable.ExpectedRef.Length == 40 && stable.ExpectedRef.All(char.IsAsciiHexDigit), "Setup Stable identity must be an exact local SHA.");
+        var validated = new ValidatedProfile(
+            stable,
+            stableCheckout,
+            stableData,
+            stable.Database,
+            stable.ExpectedRef,
+            "production",
+            new DependencyStatus(true, true, "ready", "ready"),
+            "0.9.0");
+        using var form = new MainForm(config);
+        var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Could not find ApplyValidated for Stable identity presentation.");
+        apply.Invoke(form, [validated]);
+        var summary = (Label)typeof(MainForm)
+            .GetField("_shaSummary", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(form)!;
+        Assert(summary.Text.Contains("Version 0.9.0", StringComparison.Ordinal), "SHA-pinned Stable presentation must retain the validated application version.");
+        Assert(summary.Text.Contains($"SHA {stable.ExpectedRef[..7]}", StringComparison.Ordinal), "SHA-pinned Stable presentation must show the exact SHA.");
     }
     finally
     {

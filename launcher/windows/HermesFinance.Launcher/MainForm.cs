@@ -1241,7 +1241,7 @@ public sealed class MainForm : Form
         // Human plain-language checks (summarized, raw in diagnostics)
         var identity = validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
             ? $"main · SHA {LauncherUi.ShaShort(validated.Head)} · UNRELEASED"
-            : $"{LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef)} — проверено";
+            : $"{LauncherUi.StableIdentityLabel(validated.Profile, validated.Head, validated.ApplicationVersion)} — проверено";
         SetCheck(_identityCheck, identity, true);
         SetCheck(_dataCheck, validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase) ? "production — isolated OK" : LauncherUi.DataBoundary(validated.Profile.Type) + " — isolated OK", true);
         SetCheck(
@@ -1345,11 +1345,10 @@ public sealed class MainForm : Form
         var card = _profileCards.TryGetValue(validated.Profile.Id, out var c) ? c : null;
         if (validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
         {
-            var shortSha = LauncherUi.ShaShort(validated.Head);
-            var release = LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef);
-            _shaSummary.Text = $"{release}  ·  SHA {shortSha}  ·  production data boundary";
-            _selectedType.Text = $"{LauncherUi.TypeBadge(validated.Profile.Type)}  /  {release}  ·  production";
-            card?.SetIdentity(validated.Head, null);
+            var identity = LauncherUi.StableIdentityLabel(validated.Profile, validated.Head, validated.ApplicationVersion);
+            _shaSummary.Text = identity;
+            _selectedType.Text = $"{LauncherUi.TypeBadge(validated.Profile.Type)}  /  {LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef)}  ·  production";
+            card?.SetIdentity(validated.Head, null, validated.ApplicationVersion);
             return;
         }
         _shaSummary.Text = $"SHA {LauncherUi.ShaShort(validated.Head)}  ·  {LauncherUi.DataBoundary(validated.Profile.Type)}";
