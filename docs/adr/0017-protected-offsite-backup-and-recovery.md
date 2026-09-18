@@ -162,14 +162,15 @@ Before target mutation, the workflow must verify:
 8. only broad non-private structural counts and readiness facts are emitted.
 
 After compatibility verification, re-read the selected checkout's Git SHA and
-clean state immediately before the restore target write. Re-read them again
-immediately before migration or Start, as applicable. Every read must still
-equal the selected full SHA and remain clean. An identity change fails closed
-before target mutation where possible and never proceeds to migration or
-Start. Verification, the existing ADR 0014 schema-preflight, guarded
-Prepare/Validate, migration, Start/readiness, and final evidence all use that
-same selected SHA; this workflow does not create a second runtime state
-machine.
+clean state immediately before the restore target write. If migration occurs,
+perform a new identity/clean-state re-check immediately before migration. If
+Start occurs, perform another new re-check immediately before Start. Every
+phase must still equal the selected full SHA and remain clean. An identity
+change fails closed before target mutation where possible and never proceeds
+to migration or Start. Verification, the existing ADR 0014 schema-preflight,
+guarded Prepare/Validate, migration, Start/readiness, and final evidence all
+use that same selected SHA; this workflow does not create a second runtime
+state machine.
 
 The rehearsal restores into the isolated target and confirms that the
 application can read restored months and core financial surfaces. Successful
@@ -231,10 +232,12 @@ operation.
 | A11 | Existing local backup/restore and OPS02/OPS03 safety | Existing safety regressions remain green; no production/Preview alias | #459 / #461 |
 | A12 | Privacy-safe status and logs | No financial values, secrets, keys, full private paths, or raw artifacts | #459 / #460 / #461 / #462 |
 | A13 | Manifest identity is incomplete or nondeterministic | Producer full SHA, sorted source Alembic revision set, format identity, and artifact/snapshot hashes are required | #459 / #461 |
-| A14 | Recovery SHA is missing, ambiguous, ref-only, or dirty/not independent | Rehearsal fails closed before target mutation | #461 |
-| A15 | Prepared checkout is schema-incompatible | Unknown, ahead, divergent, downgrade-required, ambiguous, or multiple unsupported paths fail before target mutation | #461 |
-| A16 | Checkout SHA or clean state changes between verification and execution | Re-check fails closed; no restore write where possible and never migration/Start | #461 |
-| A17 | Successful rehearsal identity binding | Evidence binds artifact/hash, producer SHA, source revisions, recovery SHA, checkout heads, accepted relationship, and readiness/schema/code identity | #461 |
+| A14 | Prepared but schema-incompatible checkout | Ambiguous or multiple unsupported paths, or any other incompatible relationship, fails before target mutation | #461 |
+| A15 | Missing or ambiguous recovery SHA/checkout identity | Ref-only, dirty, or non-independent identity fails closed before target mutation | #461 |
+| A16 | Source revision unknown to selected checkout | Compatibility fails before target mutation | #461 |
+| A17 | Source revision ahead/divergent or requiring downgrade | Compatibility fails before target mutation | #461 |
+| A18 | Checkout HEAD or dirty state changes between compatibility verification and execution | Each occurring phase has its own immediate re-check; failure prevents restore write where possible and never migration/Start | #461 |
+| A19 | Successful rehearsal identity binding | Evidence binds artifact/hash, producer SHA, source revisions, recovery SHA, checkout heads, accepted relationship, and readiness/schema/code identity | #461 |
 
 ## 9. Dependency-ordered implementation map
 

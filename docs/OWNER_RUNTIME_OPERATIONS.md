@@ -349,9 +349,10 @@ the schema compatibility gate accepts a forward upgrade. Then:
    aliases, reparse/linked paths, non-empty targets, and conflicting targets;
 6. preserves the source recovery artifact unchanged;
 7. re-reads the selected checkout SHA and clean state immediately before the
-   restore write and again before migration/Start. Any identity change fails
-   closed before target mutation where possible and never proceeds to
-   migration/Start;
+   restore write; if migration occurs, performs a new re-check immediately
+   before migration; and if Start occurs, performs another new re-check
+   immediately before Start. Any identity change fails closed before target
+   mutation where possible and never proceeds to migration/Start;
 8. validates broad non-private structural counts;
 9. composes ADR 0014 schema-preflight with the exact-checkout
    Prepare/Validate and deterministic Start/readiness path; and
