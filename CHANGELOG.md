@@ -30,8 +30,25 @@ continuity all passed.
 
 ## [Unreleased]
 
-Development `main` after the published Stable `v0.9.0`. No post-`v0.9.0`
-release-note entries have been recorded yet.
+Development `main` after the published Stable `v0.9.0`.
+
+### Added
+
+- cohesive opt-in UI v2 owner experience: «Мои финансы», Capital, «Доход и планы», contextual Reports/history, native Monthly Close, and «Данные и приложение» shell with freshness/provenance and explicit read-only reconciliation (#387, #426–#439, aggregate #441);
+- bounded `income-plan-summary` read model so planning/forecast/coverage/cash context is independent from salary-tax/IIS availability (#439);
+- staged-integration process for parallel slices that share application-spine files (#443).
+
+### Changed
+
+- Windows launcher simplified to a prepared-runtime owner shell; launcher-owned Stable self-update, Preview follow-main and dependency mutation were removed in favor of the already-proven external OPS01/OPS02/OPS03 operations (#412 / PR #421);
+- UI v2 parallel integration now validates one exact aggregate tree in owner UAT before canonical merge; the 2026-09-18 aggregate `fa8db7f0...` passed owner UAT and entered `main` through #441.
+
+### Still pending
+
+- native Data/App completion #432–#434;
+- UI v2 owner-UAT polish #444–#448;
+- final comparative UAT / controlled default-switch candidate #430;
+- v1 remains the default/rollback path until that later gate.
 
 ## [0.8.2] — 2026-09-05
 

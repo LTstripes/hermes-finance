@@ -12,8 +12,8 @@ Published Stable: **v0.9.0** (2026-09-17).
 - annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
 - guarded Release #253 / run `35235369797`: SUCCESS;
 - exact-main release-gate CI #700 / run `35207551120`: SUCCESS;
-- current development `main`: `814650806be5cb64aefffee15fccf7d5e1d364ec`;
-- exact-main CI #702 / run `35238258485`: SUCCESS.
+- current development truth: canonical GitHub `main` + [CURRENT_STATUS](docs/CURRENT_STATUS.md);
+- latest cohesive UI v2 owner-UAT milestone: PASS and integrated (details below).
 
 Owner release acceptance is complete:
 
@@ -25,8 +25,6 @@ Owner release acceptance is complete:
 
 Detailed checkpoint: [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 Runtime/release closeout: [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
-
-Known non-blocking metadata follow-up: #410 corrects stale candidate wording in the GitHub Release description plus remaining changelog/history lifecycle metadata; published tag/code identity is unaffected.
 
 ## Product/runtime invariants
 
@@ -233,39 +231,46 @@ The proven sequence is now:
 
 ## Current product surfaces
 
-Published `v0.9.0` includes:
+Published `v0.9.0` remains the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release work.
 
-- Scenario Lab v1;
-- financial-context completeness / plan-vs-fact data;
-- Performance v1 (XIRR/TWRR/PERF04A);
-- linked asset/card financing integrity and AI-review hardening;
-- deterministic Prepare + Start;
-- explicit immutable Stable update;
-- exact-SHA isolated Preview/UAT preparation;
-- PERF04C exact account + internal-transfer decomposition backend read model.
+UI v2 is **not part of the published v0.9.0 release**, but its first cohesive owner-facing milestone is now canonical on development `main` and remains opt-in.
 
-UI v2 remains a separate workstream and is **not** part of `v0.9.0`.
+Owner-UAT milestone:
 
-Current UI v2 checkpoint:
+- exact aggregate tested: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
+- aggregate PR: #441;
+- owner verdict: **PASS** on isolated Preview/UAT with an owner-data copy;
+- canonical integration: `3bd0cd742672955538a70d895ddba3ff654f9434`;
+- v1 remains the default/rollback path.
 
-- `Мои финансы` Home (#392 / PR #406) is implemented and has **owner visual/product UAT PASS** on exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9`;
-- it is not yet canonical on `main` because integration intentionally waited for the v0.9.0 release window;
-- that release-window freeze is now lifted;
-- `/v2` remains opt-in and v1 remains the default/rollback path.
+Native opt-in UI v2 now includes:
+
+- «Мои финансы» Home;
+- Capital;
+- «Доход и планы»;
+- contextual Reports/history;
+- native Monthly Close over the authoritative server workflow;
+- «Данные и приложение» shell with freshness/provenance and explicit read-only reconciliation.
 
 ## What comes next
 
-The immediate product step is to refresh PR #406 onto current canonical `main`, rerun exact-head CI/UI evidence, merge only if still clean, verify exact-main CI and close #392. After Home becomes canonical, the next bounded UI slice is the **Capital drill-down** under #387.
+The next functional UI v2 milestone is the remaining native «Данные и приложение» completion:
 
-The later UI v2 sequence remains: Capital → Income & Plans → history/archive polish → new Monthly Close shell → Data & App consolidation → final comparative owner UAT → controlled default switch. v1 retirement remains a separate later decision.
+1. #432 — catalogs + persistent mappings;
+2. #433 — exports + safety-gated local backup/restore;
+3. #434 — application settings + tax brackets + runtime diagnostics.
 
-The runtime redesign parent #313 is closed completed after the first real OPS03 + OPS02 owner lifecycle. Further diagnosis/recovery or launcher wrappers should be separate bounded tasks, not extensions of the old update state machine.
+Owner-UAT polish is tracked separately in #444–#448 (scroll-to-top, Russian terminology cleanup, expected-payout hierarchy/alignment, Reports spacing, Reconciliation copy deduplication).
 
-For Performance, instrument/asset-class exact attribution still requires a separately accepted data/evidence foundation.
+After those slices: #430 final comparative owner UAT and a controlled default-switch candidate. v1 retirement remains a separate later decision.
 
-#410 remains a non-blocking metadata/history cleanup for the published `v0.9.0` Release body plus remaining changelog/execution-history lifecycle sync.
+Parallel UI work now follows the staged-integration rule in `AGENTS.md`: create the milestone `integration/*` line early, integrate ACCEPTed heads incrementally, keep shared App/Entry/Shell/navigation reconciliation Integrator-owned, and owner-UAT one exact aggregate tree.
 
-`1.0.0` remains a reasonable future milestone only after a cohesive UI v2 owner experience and the production lifecycle are both accepted.
+The runtime redesign parent #313 is complete. The launcher is now only a prepared-runtime owner shell; release/update/Preview preparation remain separate accepted operations.
+
+For Performance, exact instrument/asset-class attribution still requires a separately accepted data/evidence foundation.
+
+`1.0.0` remains a reasonable future milestone only after the new primary owner UX is cohesive and the proven production lifecycle remains intact.
 
 ## Health
 
