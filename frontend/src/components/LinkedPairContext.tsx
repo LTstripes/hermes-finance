@@ -3,7 +3,7 @@ import { formatMoney } from "../lib/format";
 import { moneyAmount } from "../lib/money";
 import { Badge, DataValue, EmptyState, ErrorState, Panel } from "./ui";
 
-type PairFact = {
+export type PairFact = {
   debtId: number;
   debtName: string;
   accountName: string;
@@ -34,7 +34,12 @@ function fallbackFact(debt: DebtEntry, accountName: string): PairFact {
   };
 }
 
-function buildFacts(
+/**
+ * Canonical linked-pair facts: backend pair facts first, then a fail-closed
+ * fallback for a persisted link whose asset fact is missing. Shared so another
+ * surface cannot invent a different A / D / A − D reading.
+ */
+export function buildLinkedPairFacts(
   pairs: DashboardLinkedPair[] | null,
   debts: DebtEntry[],
   accounts: Account[],
@@ -67,7 +72,7 @@ function buildFacts(
   return facts;
 }
 
-function pairDescription(fact: PairFact): string {
+export function pairFactNote(fact: PairFact): string {
   if (!fact.contextAvailable) {
     return "Связь сохранена, но факт актива за выбранный месяц недоступен. A и A − D не подменяются нулём.";
   }
@@ -82,7 +87,7 @@ export function LinkedPairContext({
   label = "Связь",
   title = "Контекст связанных пар",
 }: Props) {
-  const facts = buildFacts(pairs, debts, accounts);
+  const facts = buildLinkedPairFacts(pairs, debts, accounts);
   const hasUnavailableFact = facts.some((fact) => !fact.contextAvailable);
 
   return (
@@ -148,7 +153,7 @@ export function LinkedPairContext({
                     value={formatMoney(moneyAmount(fact.netContribution))}
                   />
                 </div>
-                <p className="linked-pair-card__note">{pairDescription(fact)}</p>
+                <p className="linked-pair-card__note">{pairFactNote(fact)}</p>
               </article>
             ))}
           </div>

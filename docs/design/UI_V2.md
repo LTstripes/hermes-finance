@@ -148,6 +148,15 @@ S01 читает только GET `/api/health`, `/api/months`, `/api/months/{id
 Backend, DTO, persistence, migrations, зависимости/lockfile, launcher и release identity
 не меняются. Существующий SPA fallback обслуживает `/v2`; новый endpoint не нужен.
 
+Первый перенесённый раздел (капитал) добавляет sibling route `/v2/capital` на том же build,
+том же общем shell, тех же CSS Modules и той же локальной error boundary. Он читает только
+существующие GET read models (`closed-report-comparison`, `capital-composition`,
+`risk-allocation`, month dashboard, cash/депозиты/позиции/долги/недвижимость, accounts,
+instruments и performance attribution/XIRR/TWRR) и не добавляет ни endpoint, ни финансовую
+семантику: три итоговых значения берутся из подтверждённой сводки, а не пересчитываются из
+строк. «Сейчас» совпадает с Home для того же DTO; жильё/ипотека показаны отдельно от
+ликвидного капитала.
+
 Переход в v1 идёт на существующий month-specific route с hash явно выбранного шага;
 если шаг не выбирался, основной escape сохраняет выбранный месяц. Это **явный handoff,
 не завершённый native wizard**. Browser Back возвращает URL v2; повторный mount
@@ -175,6 +184,7 @@ Backend, DTO, persistence, migrations, зависимости/lockfile, launcher
 | **S03 — один provider/import путь за раз** | Сначала выбранный существующий Alfa baseline или payout-import: preview → видимый scope/mapping → явное apply → обновлённый месяц | Переиспользовать accepted contracts; никакого mount-time fetch/apply, одинаковые privacy и selected-row guarantees |
 | **S04 — native final close и outlook** | Полный компактный итог, ручные карточки по мере готовности, свежая readiness, explicit close, view-only closed state и известные будущие события | Не менять обязательные блокеры и race rechecks; close/reopen и UAT — отдельные acceptance gates |
 | **S05 — капитал, планы и история** | Переносить законченные задачи с drill-down и одинаковыми backend числами; включить risk, tax/IIS, linked financing, return availability и export | Capability parity по таблице выше; v1 escape до приёмки каждой области |
+| **S05a — капитал (этот кандидат)** | Native `/v2/capital`: три итоговых значения, состав во времени и изменения по закрытым отчётам, счета/строки с пометкой исключённых сумм, связанные пары, доступность доходности и отдельный блок недвижимости/ипотеки | Только чтение существующих GET; строки не пересчитывают итоги; каждое состояние fail-closed отдельно; v1 escape сохраняет месяц и шаг |
 | **S06 — cutover** | Owner сравнительный UAT, проверка всех привычных операций и controlled default switch | Только явное approval. Удаление v1 — отдельное решение после периода успешного использования |
 
 Зависимости: S01 → S02; затем последовательно принять общие interaction patterns до
@@ -215,6 +225,7 @@ Runtime code не импортирует fixture. Новые тесты живу
 cd frontend
 npm ci
 npm test -- src/pages/UiV2Page.test.tsx src/lib/uiV2MonthSelection.test.ts
+npm test -- src/pages/UiV2CapitalPage.test.tsx src/ui-v2/capitalHoldings.test.ts
 npm run lint
 npm run format-check
 npm test

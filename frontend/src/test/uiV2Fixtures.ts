@@ -1,10 +1,21 @@
 import type { GuidedCloseStep, MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { GoalSummary } from "../api/goals";
+import type { RiskAllocationResponse } from "../api/riskAllocation";
 import type {
+  Account,
   CapitalCompositionHistory,
+  CashBalance,
   ClosedReportComparison,
   DashboardKpis,
+  DebtEntry,
+  DepositSnapshot,
+  Instrument,
   PassiveIncomeHistory,
+  PerformanceAttribution,
+  PortfolioTwrr,
+  PortfolioXirr,
+  PositionSnapshot,
+  PropertySnapshot,
   ReportingMonth,
 } from "../api/types";
 
@@ -566,6 +577,502 @@ export function makeUiV2Workflow({
       month: `/months/${monthId}`,
       close_readiness: `/api/months/${monthId}/close-readiness`,
       freshness: `/api/months/${monthId}/freshness-provenance`,
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * UI v2 Capital fixtures.
+ *
+ * Entirely fictional 2031 data. Rows are deliberately not a substitute for
+ * the backend totals: Capital shows row amounts as they are stored, and the
+ * headline numbers come from the comparison read model.
+ * ------------------------------------------------------------------ */
+
+export const uiV2CapitalMonthId = 91;
+export const uiV2CapitalPreviousMonthId = 90;
+
+export const uiV2Accounts: Account[] = [
+  {
+    id: 1,
+    name: "Синтетический депозитный счёт",
+    account_type: "deposit",
+    status: "active",
+    external_code: null,
+    include_in_capital: true,
+    include_in_returns: true,
+    notes: null,
+  },
+  {
+    id: 2,
+    name: "Синтетический старый вклад",
+    account_type: "deposit",
+    status: "active",
+    external_code: null,
+    include_in_capital: false,
+    include_in_returns: false,
+    notes: null,
+  },
+  {
+    id: 3,
+    name: "Синтетический брокерский счёт",
+    account_type: "brokerage",
+    status: "active",
+    external_code: null,
+    include_in_capital: true,
+    include_in_returns: true,
+    notes: null,
+  },
+  {
+    id: 4,
+    name: "Синтетический брокерский счёт вне капитала",
+    account_type: "brokerage",
+    status: "active",
+    external_code: null,
+    include_in_capital: false,
+    include_in_returns: false,
+    notes: null,
+  },
+];
+
+export const uiV2Instruments: Instrument[] = [
+  {
+    id: 10,
+    name: "Синтетическая акция",
+    instrument_type: "stock",
+    isin: null,
+    ticker: "SYN1",
+    moex_secid: null,
+    currency: "RUB",
+    nominal_value: null,
+    is_active: true,
+    manual_price_allowed: true,
+    notes: null,
+  },
+  {
+    id: 11,
+    name: "Синтетическая облигация",
+    instrument_type: "bond",
+    isin: null,
+    ticker: "SYN2",
+    moex_secid: null,
+    currency: "RUB",
+    nominal_value: null,
+    is_active: true,
+    manual_price_allowed: true,
+    notes: null,
+  },
+  {
+    id: 13,
+    name: "Синтетический фонд",
+    instrument_type: "fund",
+    isin: null,
+    ticker: "SYN3",
+    moex_secid: null,
+    currency: "RUB",
+    nominal_value: null,
+    is_active: true,
+    manual_price_allowed: true,
+    notes: null,
+  },
+];
+
+export function makeUiV2Cash({ excluded = false }: { excluded?: boolean } = {}): CashBalance[] {
+  return [
+    {
+      id: 701,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: null,
+      name: "Синтетический кошелёк",
+      amount: money(excluded ? "0.00" : "803900.00"),
+      currency: "RUB",
+      include_in_capital: true,
+      notes: null,
+    },
+    {
+      id: 702,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: 2,
+      name: "Синтетическая касса",
+      amount: money("20000.00"),
+      currency: "RUB",
+      include_in_capital: false,
+      notes: null,
+    },
+  ];
+}
+
+export function makeUiV2Deposits(): DepositSnapshot[] {
+  return [
+    {
+      id: 601,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: 1,
+      name: "Синтетический вклад",
+      deposit_type: "deposit",
+      balance: money("1000000.00"),
+      annual_rate: "8.10",
+      expected_monthly_interest: money("6750.00"),
+      actual_interest_received: money("6750.00"),
+      notes: null,
+      updated_at: "2031-07-31T12:00:00",
+    },
+    {
+      id: 602,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: 2,
+      name: "Синтетический старый вклад",
+      deposit_type: "savings",
+      balance: money("150000.00"),
+      annual_rate: "4.00",
+      expected_monthly_interest: money("500.00"),
+      actual_interest_received: money("0.00"),
+      notes: null,
+      updated_at: "2031-07-31T12:00:00",
+    },
+  ];
+}
+
+export function makeUiV2Positions(): PositionSnapshot[] {
+  return [
+    {
+      id: 501,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: 3,
+      instrument_id: 10,
+      quantity: "1000.000000",
+      average_cost_per_unit: money("500.00"),
+      market_price_per_unit: money("610.00"),
+      market_value: money("610000.00"),
+      cost_basis: money("500000.00"),
+      unrealized_result: money("110000.00"),
+      accrued_interest: null,
+      price_source: "manual",
+      price_date: "2031-07-31",
+      notes: null,
+      updated_at: "2031-07-31T12:00:00",
+    },
+    {
+      id: 502,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: 3,
+      instrument_id: 11,
+      quantity: "790.000000",
+      average_cost_per_unit: money("1000.00"),
+      market_price_per_unit: money("1000.00"),
+      market_value: money("790000.00"),
+      cost_basis: money("790000.00"),
+      unrealized_result: money("0.00"),
+      accrued_interest: null,
+      price_source: "manual",
+      price_date: "2031-07-31",
+      notes: null,
+      updated_at: "2031-07-31T12:00:00",
+    },
+    {
+      id: 503,
+      reporting_month_id: uiV2CapitalMonthId,
+      account_id: 4,
+      instrument_id: 13,
+      quantity: "250.000000",
+      average_cost_per_unit: money("1000.00"),
+      market_price_per_unit: money("1000.00"),
+      market_value: money("250000.00"),
+      cost_basis: money("250000.00"),
+      unrealized_result: money("0.00"),
+      accrued_interest: null,
+      price_source: "manual",
+      price_date: "2031-07-31",
+      notes: null,
+      updated_at: "2031-07-31T12:00:00",
+    },
+  ];
+}
+
+export function makeUiV2Debts({ linkedOnly = false }: { linkedOnly?: boolean } = {}): DebtEntry[] {
+  const debts: DebtEntry[] = [
+    {
+      id: 21,
+      reporting_month_id: uiV2CapitalMonthId,
+      debt_type: "credit_card",
+      name: "Синтетическая кредитная карта",
+      current_balance: money("400000.00"),
+      include_in_liquid_capital: true,
+      linked_account_id: 3,
+      annual_rate: null,
+      next_due_date: null,
+      contract_end_date: null,
+      notes: null,
+    },
+    {
+      id: 22,
+      reporting_month_id: uiV2CapitalMonthId,
+      debt_type: "other",
+      name: "Синтетический кредит без факта актива",
+      current_balance: money("120000.00"),
+      include_in_liquid_capital: false,
+      linked_account_id: 2,
+      annual_rate: null,
+      next_due_date: null,
+      contract_end_date: null,
+      notes: null,
+    },
+  ];
+  return linkedOnly ? debts.slice(0, 1) : debts;
+}
+
+export function makeUiV2Properties({
+  empty = false,
+}: {
+  empty?: boolean;
+} = {}): PropertySnapshot[] {
+  if (empty) return [];
+  return [
+    {
+      id: 301,
+      reporting_month_id: uiV2CapitalMonthId,
+      name: "Синтетическая квартира",
+      estimated_value: money("3500000.00"),
+      mortgage_balance: money("1700000.00"),
+      monthly_payment: money("45000.00"),
+      mortgage_annual_rate: null,
+      notes: null,
+    },
+  ];
+}
+
+export function makeUiV2Dashboard({
+  mortgageClosed = false,
+  noPairs = false,
+}: {
+  mortgageClosed?: boolean;
+  noPairs?: boolean;
+} = {}) {
+  const month = uiV2Months.find((candidate) => candidate.id === uiV2CapitalMonthId);
+  if (!month) throw new Error("Synthetic closed month is missing");
+  return {
+    month,
+    mortgage: {
+      mortgage_balance: money(mortgageClosed ? "0.00" : "1700000.00"),
+      coverage_pct: mortgageClosed ? null : "164.9",
+      gap: money(mortgageClosed ? "0.00" : "0.00"),
+    },
+    summary: {
+      forecast: {
+        breakdown: {
+          expected_deposit_interest: money("6750.00"),
+          expected_coupon_net: money("5000.00"),
+          expected_dividend_component: money("4000.00"),
+          other_expected_capital_income: money("0.00"),
+        },
+        is_approximate: false,
+        warnings: [],
+      },
+      liquid_capital: {
+        linked_pairs: noPairs
+          ? []
+          : [
+              {
+                debt_id: 21,
+                debt_name: "Синтетическая кредитная карта",
+                debt_type: "credit_card",
+                debt_balance: money("400000.00"),
+                account_id: 3,
+                account_name: "Синтетический брокерский счёт",
+                account_type: "brokerage",
+                account_balance: money("1400000.00"),
+                net_contribution: money("1000000.00"),
+              },
+            ],
+      },
+    },
+  };
+}
+
+export function makeUiV2RiskAllocation({
+  unsupportedPositions = false,
+}: {
+  unsupportedPositions?: boolean;
+} = {}): RiskAllocationResponse {
+  const support = unsupportedPositions
+    ? { status: "unavailable" as const, reason_codes: ["unsupported_position_valuation"] }
+    : { status: "supported" as const, reason_codes: [] };
+  return {
+    reporting_month_id: uiV2CapitalMonthId,
+    as_of_date: "2031-07-31",
+    base_currency: "RUB",
+    liquid_assets_total: money("3203900.00"),
+    allocation_by_asset_class: {
+      support: { status: "supported", reason_codes: [] },
+      denominator: money("3203900.00"),
+      covered_amount: money("3203900.00"),
+      unallocated_amount: money("0.00"),
+      coverage_pct: "100.00",
+      items: [],
+      excluded: [],
+    },
+    allocation_by_account: {
+      support: { status: "supported", reason_codes: ["cash_not_account_linked"] },
+      denominator: money("3203900.00"),
+      covered_amount: money("2400000.00"),
+      unallocated_amount: money("803900.00"),
+      coverage_pct: "74.91",
+      items: [
+        {
+          key: "account:1",
+          label: "Синтетический депозитный счёт",
+          amount: money("1000000.00"),
+          share_pct: "31.21",
+          account_id: 1,
+          instrument_id: null,
+          instrument_type: null,
+        },
+        {
+          key: "account:3",
+          label: "Синтетический брокерский счёт",
+          amount: money("1400000.00"),
+          share_pct: "43.70",
+          account_id: 3,
+          instrument_id: null,
+          instrument_type: null,
+        },
+        {
+          key: "unassigned_cash",
+          label: "Unassigned cash",
+          amount: money("803900.00"),
+          share_pct: "25.09",
+          account_id: null,
+          instrument_id: null,
+          instrument_type: null,
+        },
+      ],
+      excluded: [],
+    },
+    top_positions: {
+      support,
+      denominator: money("3203900.00"),
+      top_n: 5,
+      top_amount: money("1400000.00"),
+      top_share_pct: "43.70",
+      items: unsupportedPositions
+        ? []
+        : [
+            {
+              key: "position:502",
+              label: "Синтетическая облигация",
+              amount: money("790000.00"),
+              share_pct: "24.66",
+              account_id: 3,
+              account_name: "Синтетический брокерский счёт",
+              instrument_id: 11,
+              instrument_name: "Синтетическая облигация",
+              instrument_type: "bond",
+              position_id: 502,
+              event_count: null,
+              is_approximate: false,
+            },
+            {
+              key: "position:501",
+              label: "Синтетическая акция",
+              amount: money("610000.00"),
+              share_pct: "19.04",
+              account_id: 3,
+              account_name: "Синтетический брокерский счёт",
+              instrument_id: 10,
+              instrument_name: "Синтетическая акция",
+              instrument_type: "stock",
+              position_id: 501,
+              event_count: null,
+              is_approximate: false,
+            },
+          ],
+      excluded: [],
+      is_approximate: false,
+    },
+    payout_concentration: {
+      support: { status: "unavailable", reason_codes: ["no_dated_payouts"] },
+      denominator: money("0.00"),
+      top_n: 5,
+      top_amount: money("0.00"),
+      top_share_pct: null,
+      items: [],
+      excluded: [],
+      is_approximate: false,
+    },
+    redemption_concentration: {
+      support: { status: "unavailable", reason_codes: ["no_dated_payouts"] },
+      denominator: money("0.00"),
+      top_n: 5,
+      top_amount: money("0.00"),
+      top_share_pct: null,
+      items: [],
+      excluded: [],
+      is_approximate: false,
+    },
+    support: {},
+  };
+}
+
+export function makeUiV2Performance({ notComputable = false }: { notComputable?: boolean } = {}): {
+  attribution: PerformanceAttribution;
+  twrr: PortfolioTwrr;
+  xirr: PortfolioXirr;
+} {
+  const period = { start_date: "2031-05-31", end_date: "2031-07-31" };
+  return {
+    attribution: {
+      contract: "PERF04A",
+      contract_version: 1,
+      metric: "value_change_after_external_flows",
+      grain: "selected_scope",
+      scope: "portfolio",
+      account_id: null,
+      period,
+      performance_currency: "RUB",
+      availability: notComputable ? "not_computable" : "available",
+      quality: notComputable ? "unavailable" : "exact",
+      opening_value: notComputable ? null : money("3151300.00"),
+      closing_value: notComputable ? null : money("3203900.00"),
+      value: notComputable ? null : money("42600.00"),
+      external_flow_summary: {
+        contributions: money("0.00"),
+        withdrawals: money("0.00"),
+        signed_total: money("0.00"),
+      },
+      evidence: {
+        opening_valuation: { availability: "available", reason_codes: [] },
+        closing_valuation: { availability: "available", reason_codes: [] },
+        scope_membership: { status: "complete", reason_codes: [] },
+        cash_boundary_coverage: { status: "complete", reason_codes: [] },
+        in_kind_boundary_coverage: { status: "complete", reason_codes: [] },
+        external_flows: { status: "complete", reason_codes: [] },
+      },
+      reason_codes: notComputable ? ["valuation_boundary_unavailable"] : [],
+    },
+    xirr: {
+      metric: "xirr",
+      scope: "portfolio",
+      performance_currency: "RUB",
+      value: notComputable ? null : "7.42",
+      value_unit: "percentage_points",
+      annualized: true,
+      period,
+      availability: notComputable ? "not_computable" : "available",
+      quality: notComputable ? "unavailable" : "exact",
+      reason_codes: notComputable ? ["not_computable_xirr_root_ambiguity"] : [],
+    },
+    twrr: {
+      metric: "twrr",
+      scope: "portfolio",
+      account_id: null,
+      performance_currency: "RUB",
+      value: notComputable ? null : "6.10",
+      value_unit: "percentage_points",
+      annualized: false,
+      period,
+      availability: notComputable ? "not_computable" : "available",
+      quality: notComputable ? "unavailable" : "exact",
+      reason_codes: notComputable ? ["valuation_boundary_unavailable"] : [],
     },
   };
 }
