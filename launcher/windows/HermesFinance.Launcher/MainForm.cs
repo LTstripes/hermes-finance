@@ -160,7 +160,7 @@ public sealed class MainForm : Form
         Font = new Font("Cascadia Mono", 8F),
         ForeColor = Color.FromArgb(164, 190, 225),
         AutoEllipsis = true,
-        Text = "Current SHA: —   Target origin/main: —",
+        Text = "Current SHA: —",
         Margin = new Padding(0, 0, 0, 3),
     };
     private readonly ReadinessContainerPanel _readinessPanel = new()
@@ -311,33 +311,6 @@ public sealed class MainForm : Form
         Width = 154,
         Height = 34,
         AccessibleName = "Показать диагностику и логи",
-    };
-    private readonly Button _updatePreview = new()
-    {
-        Text = "Обновить Preview",
-        Width = 138,
-        Height = 34,
-        Enabled = false,
-        Visible = true,
-        AccessibleName = "Обновить Preview",
-    };
-    private readonly Button _updateStable = new()
-    {
-        Text = "Обновить Stable",
-        Width = 172,
-        Height = 34,
-        Enabled = false,
-        Visible = false,
-        AccessibleName = "Обновить Stable до опубликованного релиза",
-    };
-    private readonly Button _updateAndStartPreview = new()
-    {
-        Text = "Обновить и запустить",
-        Width = 162,
-        Height = 34,
-        Enabled = false,
-        Visible = true,
-        AccessibleName = "Обновить и запустить Preview",
     };
     private readonly Button _setup = new()
     {
@@ -574,10 +547,7 @@ public sealed class MainForm : Form
         StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 4);
         StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 5);
         StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 6);
-        StyleButton(_updatePreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 7);
-        StyleButton(_updateStable, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 8);
-        StyleButton(_updateAndStartPreview, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 9);
-        StyleButton(_setup, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 10);
+        StyleButton(_setup, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 7);
         _actionButtons.Controls.Add(_prepare);
         _actionButtons.Controls.Add(_repair);
         _actionButtons.Controls.Add(_start);
@@ -585,9 +555,6 @@ public sealed class MainForm : Form
         _secondaryButtons.Controls.Add(_open);
         _secondaryButtons.Controls.Add(_refresh);
         _secondaryButtons.Controls.Add(_detailsToggle);
-        _secondaryButtons.Controls.Add(_updatePreview);
-        _secondaryButtons.Controls.Add(_updateStable);
-        _secondaryButtons.Controls.Add(_updateAndStartPreview);
         _secondaryButtons.Controls.Add(_setup);
 
         var detailsLayout = new TableLayoutPanel
@@ -618,9 +585,6 @@ public sealed class MainForm : Form
         _stop.Click += (_, _) => StopLaunchedStack("Hermes остановлен владельцем.");
         _open.Click += (_, _) => OpenHermes();
         _refresh.Click += async (_, _) => await RefreshSelectedAsync();
-        _updatePreview.Click += async (_, _) => await UpdatePreviewAsync(startAfter: false);
-        _updateStable.Click += async (_, _) => await UpdateStableAsync();
-        _updateAndStartPreview.Click += async (_, _) => await UpdatePreviewAsync(startAfter: true);
         _setup.Click += async (_, _) => await OpenSetupAsync();
         _detailsToggle.Click += (_, _) => ToggleDetails();
         _profiles.Resize += (_, _) => ResizeProfileCards();
@@ -783,8 +747,6 @@ public sealed class MainForm : Form
         }
         SetSelectedIdentity(profile);
         SetDependencyActions(enabled: false, preparationRequired: false);
-        SetPreviewUpdateActions(profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase), enabled: false);
-        SetStableUpgradeActions(visible: profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase), enabled: false, target: null);
         SetReadiness(profile, LauncherReadinessState.NotChecked);
         if (runPreflight)
         {
@@ -799,15 +761,10 @@ public sealed class MainForm : Form
             ShowConfigurationFailure();
             return;
         }
-        // Release discovery is a read-only network operation, and this call
-        // is the explicit owner CTA. It never fetches, switches, backs up, or
-        // writes config; the separate Stable button owns that mutation path.
-        await RunPreflightAsync(_selectedProfile, discoverStableUpgrade: true);
+        await RunPreflightAsync(_selectedProfile);
     }
 
-    private async Task<ValidatedProfile?> RunPreflightAsync(
-        LauncherProfile profile,
-        bool discoverStableUpgrade = false)
+    private async Task<ValidatedProfile?> RunPreflightAsync(LauncherProfile profile)
     {
         var generation = Interlocked.Increment(ref _validationGeneration);
         SetReadiness(profile, LauncherReadinessState.Checking);
@@ -827,45 +784,8 @@ public sealed class MainForm : Form
                 ProfileValidator.AssertPortAvailable();
             }
 
-            if (discoverStableUpgrade && profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    var stableUpgrade = await Task.Run(() => StableReleaseService.Discover(validated));
-                    validated = validated with { StableUpgrade = stableUpgrade };
-                    if (stableUpgrade.TargetAvailable && stableUpgrade.Target is { } target)
-                    {
-                        AppendDiagnostic($"Published Stable release discovered: current {stableUpgrade.Current!.Version}/{stableUpgrade.Current.CommitSha}; target {target.Version}/{target.CommitSha}.");
-                    }
-                    else
-                    {
-                        AppendDiagnostic($"Stable release discovery completed: current {stableUpgrade.Current?.Version ?? "unproven"}; no proven newer release.");
-                    }
-                }
-                catch (LauncherValidationException exception)
-                {
-                    // A failed read-only discovery must not turn a usable old
-                    // Stable runtime into an upgrade, and must never fall back
-                    // to main or an arbitrary ref. Keep the failure transient
-                    // and visible only in diagnostics.
-                    validated = validated with
-                    {
-                        StableUpgrade = new StableUpgradeStatus(null, null, exception.Message),
-                    };
-                    AppendDiagnostic($"Stable release discovery failed closed: {exception.Message}");
-                }
-            }
-
             _validatedProfile = validated;
             AppendDiagnostic($"Release/tag check passed: {validated.Profile.ExpectedRef} -> {validated.Head}.");
-            if (validated.PreviewUpdate is not null)
-            {
-                AppendDiagnostic($"Preview code identity: current {validated.PreviewUpdate.CurrentSha}; target origin/main {validated.PreviewUpdate.TargetSha ?? "not available locally"}.");
-            }
-            if (validated.StableUpgrade?.FailureReason is { } stableFailure)
-            {
-                AppendDiagnostic($"Stable upgrade remains unavailable: {stableFailure}");
-            }
             AppendDiagnostic("DB/Alembic, data identity, loopback port, and runtime layout checks passed.");
             AppendDiagnostic($"Dependency check: backend {validated.Dependencies?.BackendDetail}; frontend {validated.Dependencies?.FrontendDetail}.");
             ApplyValidated(validated);
@@ -905,8 +825,6 @@ public sealed class MainForm : Form
         _stop.Enabled = false;
         _open.Enabled = false;
         _refresh.Enabled = false;
-        SetPreviewUpdateActions(visible: false, enabled: false);
-        SetStableUpgradeActions(visible: false, enabled: false, target: null);
         _profiles.Enabled = false;
 
         try
@@ -959,7 +877,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task StartSelectedAsync(bool allowPreparation = false)
+    private async Task StartSelectedAsync()
     {
         if (_launcherProcess is not null && !_launcherProcess.HasExited)
         {
@@ -977,9 +895,6 @@ public sealed class MainForm : Form
         _start.Enabled = false;
         _refresh.Enabled = false;
         _open.Enabled = false;
-        // Normal Start stays offline. Stable release discovery belongs to the
-        // explicit read-only «Обновить проверку» action; the separate Stable
-        // upgrade CTA re-proves the target immediately before mutation.
         var validated = await RunPreflightAsync(profile);
         if (validated is null)
         {
@@ -995,19 +910,6 @@ public sealed class MainForm : Form
 
         try
         {
-            if (validated.Dependencies?.Ready != true && allowPreparation)
-            {
-                SetDependencyActions(enabled: false, preparationRequired: false);
-                _start.Enabled = false;
-                _refresh.Enabled = false;
-                _open.Enabled = false;
-                SetReadiness(profile, LauncherReadinessState.Preparing, "Обновление Preview явно запрошено вместе с подготовкой locked-зависимостей…");
-                AppendDiagnostic("Update-and-start explicitly authorizes locked dependency preparation for this Preview action.");
-                await PrepareDependenciesAsync(validated.Checkout, repair: false);
-                validated = await RunPreflightAsync(profile)
-                    ?? throw new LauncherValidationException("Preview dependencies are not ready after explicit preparation.");
-            }
-
             if (validated.Dependencies?.Ready != true)
             {
                 SetReadiness(
@@ -1037,165 +939,6 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task UpdatePreviewAsync(bool startAfter)
-    {
-        if (_launcherProcess is not null && !_launcherProcess.HasExited)
-        {
-            ShowTransientMessage("Сначала остановите Hermes: обновление Preview во время работы заблокировано.");
-            return;
-        }
-        if (_config is null || _selectedProfile is null)
-        {
-            ShowConfigurationFailure();
-            return;
-        }
-        if (!_selectedProfile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase))
-        {
-            ShowTransientMessage("Обновить можно только настроенный Preview; Stable никогда не изменяется этим действием.");
-            return;
-        }
-
-        var profile = _selectedProfile;
-        _updatePreview.Enabled = false;
-        _updateAndStartPreview.Enabled = false;
-        _start.Enabled = false;
-        _refresh.Enabled = false;
-        _open.Enabled = false;
-        _profiles.Enabled = false;
-        var validated = await RunPreflightAsync(profile);
-        if (validated is null)
-        {
-            return;
-        }
-
-        SetDependencyActions(enabled: false, preparationRequired: false);
-        _start.Enabled = false;
-        _refresh.Enabled = false;
-        _open.Enabled = false;
-        SetPreviewUpdateActions(visible: false, enabled: false);
-        SetStableUpgradeActions(visible: false, enabled: false, target: null);
-        _profiles.Enabled = false;
-
-        try
-        {
-            SetReadiness(profile, LauncherReadinessState.Updating);
-            AppendDiagnostic("Explicit Preview update requested: fetching only origin/main for the configured Preview checkout.");
-            var result = await Task.Run(() => PreviewUpdateService.Update(validated));
-            AppendDiagnostic($"Preview update reached target SHA {result.TargetSha}; current SHA {result.CurrentSha}; changed={result.Updated}.");
-            var refreshed = await RunPreflightAsync(profile);
-            if (refreshed is null)
-            {
-                throw new LauncherValidationException("Preview update completed, but the refreshed Preview preflight did not pass.");
-            }
-            if (startAfter)
-            {
-                await StartSelectedAsync(allowPreparation: true);
-            }
-        }
-        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
-        {
-            ApplyBlocked(profile, exception);
-        }
-        finally
-        {
-            if (_launcherProcess is null || _launcherProcess.HasExited)
-            {
-                _refresh.Enabled = true;
-                _profiles.Enabled = true;
-            }
-        }
-    }
-
-    private async Task UpdateStableAsync()
-    {
-        if (_launcherProcess is not null && !_launcherProcess.HasExited)
-        {
-            ShowTransientMessage("Сначала остановите Hermes: обновление Stable во время работы заблокировано.");
-            return;
-        }
-        if (_config is null || _selectedProfile is null)
-        {
-            ShowConfigurationFailure();
-            return;
-        }
-        if (!_selectedProfile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
-        {
-            ShowTransientMessage("Обновить Stable можно только для настроенного Stable-профиля; Preview этим действием не затрагивается.");
-            return;
-        }
-
-        var profile = _selectedProfile;
-        SetDependencyActions(enabled: false, preparationRequired: false);
-        _start.Enabled = false;
-        _stop.Enabled = false;
-        _open.Enabled = false;
-        _refresh.Enabled = false;
-        SetPreviewUpdateActions(visible: false, enabled: false);
-        SetStableUpgradeActions(visible: true, enabled: false, target: null);
-        _profiles.Enabled = false;
-
-        try
-        {
-            // Re-discover immediately before mutation. This remains read-only
-            // and prevents a stale target from authorizing the upgrade.
-            var validated = await RunPreflightAsync(profile, discoverStableUpgrade: true);
-            if (validated is null)
-            {
-                return;
-            }
-            if (!LauncherUi.IsStableUpgradeAvailable(validated, profile)
-                || validated.StableUpgrade?.Target is not { } target)
-            {
-                AppendDiagnostic("Stable upgrade was not started: no currently proven published target is available.");
-                return;
-            }
-
-            SetReadiness(profile, LauncherReadinessState.UpgradingStable);
-            AppendDiagnostic($"Explicit Stable upgrade requested: target {target.Version}/{target.CommitSha}; backup is mandatory before any Git/config mutation.");
-            var result = await Task.Run(() => StableReleaseService.Upgrade(validated, target, _configPath));
-            AppendDiagnostic($"Stable checkout reached {result.Target.Version}/{result.Target.CommitSha}; backup proof {result.BackupId}; config identity updated.");
-
-            _config = result.Config;
-            BindProfiles(runInitialPreflight: false);
-            var updatedProfile = _config.Profiles.Single(profileCandidate =>
-                profileCandidate.Type.Equals("stable", StringComparison.OrdinalIgnoreCase));
-            SelectProfile(updatedProfile, runPreflight: false);
-            var refreshed = await RunPreflightAsync(updatedProfile);
-            if (refreshed is null)
-            {
-                throw new LauncherValidationException("Stable upgrade completed, but the post-upgrade preflight did not pass.");
-            }
-
-            if (refreshed.Dependencies?.Ready != true)
-            {
-                SetReadiness(updatedProfile, LauncherReadinessState.Preparing, "Stable обновлён; теперь launcher явно подготавливает locked-зависимости. Автозапуска не будет.");
-                AppendDiagnostic("Stable upgrade explicitly authorizes locked dependency preparation for the new release; no runtime will start automatically.");
-                await PrepareDependenciesAsync(refreshed.Checkout, repair: false);
-                refreshed = await RunPreflightAsync(updatedProfile)
-                    ?? throw new LauncherValidationException("Stable dependencies are not ready after explicit locked preparation.");
-                if (refreshed.Dependencies?.Ready != true)
-                {
-                    throw new LauncherValidationException("Stable dependencies are not ready after explicit locked preparation.");
-                }
-            }
-
-            ApplyValidated(refreshed);
-            AppendDiagnostic($"Stable upgrade completed without auto-start: launcher/backend identity is {target.Version}/{target.CommitSha}.");
-        }
-        catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception or JsonException)
-        {
-            ApplyBlocked(_selectedProfile ?? profile, exception, allowRetry: true);
-        }
-        finally
-        {
-            if (_launcherProcess is null || _launcherProcess.HasExited)
-            {
-                _profiles.Enabled = true;
-                _refresh.Enabled = true;
-            }
-        }
-    }
-
     private void StartProcess(ValidatedProfile profile)
     {
         _validatedProfile = profile;
@@ -1212,8 +955,6 @@ public sealed class MainForm : Form
             processStartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks;
             _ownership.Write(profile, process);
             _stop.Enabled = true;
-            SetPreviewUpdateActions(false, enabled: false);
-            SetStableUpgradeActions(visible: false, enabled: false, target: null);
             _profiles.Enabled = false;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
@@ -1588,26 +1329,16 @@ public sealed class MainForm : Form
 
     private void ApplyValidated(ValidatedProfile validated)
     {
-        var isPreview = validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-        var isStable = validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
         var state = validated.Dependencies?.RequiresPreparation == true
             ? LauncherReadinessState.NeedsPreparation
             : LauncherReadinessState.Ready;
-        // Preview behind origin/main is planned in PlanPrimaryAction:
-        // Update (or UpdateAndStart when deps are missing) is primary.
         SetReadiness(validated.Profile, state);
         SetShaSummary(validated);
-        SetStableUpgradeActions(
-            visible: isStable && validated.StableUpgrade?.TargetAvailable == true,
-            enabled: false,
-            target: validated.StableUpgrade?.Target);
         // Human plain-language checks (summarized, raw in diagnostics)
-        var stableIdentity = validated.StableUpgrade?.TargetAvailable == true
-            && validated.StableUpgrade.Current is { } current
-            && validated.StableUpgrade.Target is { } target
-            ? $"{LauncherUi.ReleaseBadge(current.Tag)} → {LauncherUi.ReleaseBadge(target.Tag)} — обновление доступно"
+        var identity = validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
+            ? $"main · SHA {LauncherUi.ShaShort(validated.Head)} · UNRELEASED"
             : $"{LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef)} — проверено";
-        SetCheck(_identityCheck, isPreview ? "main · UNRELEASED" : stableIdentity, true);
+        SetCheck(_identityCheck, identity, true);
         SetCheck(_dataCheck, validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase) ? "production — isolated OK" : LauncherUi.DataBoundary(validated.Profile.Type) + " — isolated OK", true);
         SetCheck(
             _dependenciesCheck,
@@ -1629,7 +1360,6 @@ public sealed class MainForm : Form
         AppendDiagnostic($"Start blocked for profile '{profile.Id}': {exception.Message}");
         _validatedProfile = null;
         _ready = false;
-        SetStableUpgradeActions(visible: false, enabled: false, target: null);
         var human = LauncherUi.OwnerFacingFailure(exception.Message);
         // Extract actionable hint from failure message
         var plan = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, profile, exception);
@@ -1672,8 +1402,6 @@ public sealed class MainForm : Form
         _start.Enabled = false;
         _stop.Enabled = false;
         _open.Enabled = false;
-        SetPreviewUpdateActions(false, enabled: false);
-        SetStableUpgradeActions(visible: false, enabled: false, target: null);
         _refresh.Enabled = true;
         _setup.Enabled = true;
         _profiles.Enabled = false;
@@ -1716,36 +1444,12 @@ public sealed class MainForm : Form
         if (validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
         {
             var shortSha = LauncherUi.ShaShort(validated.Head);
-            var release = validated.StableUpgrade?.Current is { } current
-                ? LauncherUi.ReleaseBadge(current.Tag)
-                : LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef);
-            if (validated.StableUpgrade?.TargetAvailable == true && validated.StableUpgrade.Target is { } target)
-            {
-                _shaSummary.Text = $"{release}  ·  SHA {shortSha}  →  {LauncherUi.ReleaseBadge(target.Tag)}  ·  SHA {LauncherUi.ShaShort(target.CommitSha)}  ·  production data path preserved";
-                _selectedType.Text = $"{LauncherUi.TypeBadge(validated.Profile.Type)}  /  {release}  →  {LauncherUi.ReleaseBadge(target.Tag)}  ·  production";
-            }
-            else
-            {
-                _shaSummary.Text = $"{release}  ·  SHA {shortSha}  ·  production data path preserved";
-                _selectedType.Text = $"{LauncherUi.TypeBadge(validated.Profile.Type)}  /  {release}  ·  production";
-            }
-            card?.SetStableUpgrade(validated.StableUpgrade, validated.Head);
+            var release = LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef);
+            _shaSummary.Text = $"{release}  ·  SHA {shortSha}  ·  production data boundary";
+            _selectedType.Text = $"{LauncherUi.TypeBadge(validated.Profile.Type)}  /  {release}  ·  production";
+            card?.SetIdentity(validated.Head, null);
             return;
         }
-        if (validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase))
-        {
-            SetStableUpgradeActions(visible: false, enabled: false, target: null);
-        }
-        if (validated.PreviewUpdate is { } preview)
-        {
-            var cur = LauncherUi.ShaShort(preview.CurrentSha);
-            var tgt = preview.TargetSha is null ? "not fetched locally" : LauncherUi.ShaShort(preview.TargetSha);
-            var unreleased = preview.IsCurrent ? "UNRELEASED — up to date with origin/main" : "UNRELEASED — update available";
-            _shaSummary.Text = $"Preview main {cur} → {tgt}  ·  {unreleased}  ·  isolated data";
-            card?.SetIdentity(preview.CurrentSha, preview.TargetSha);
-            return;
-        }
-        // Preview without update info (fallback) or experiment
         _shaSummary.Text = $"SHA {LauncherUi.ShaShort(validated.Head)}  ·  {LauncherUi.DataBoundary(validated.Profile.Type)}";
         card?.SetIdentity(validated.Head, null);
     }
@@ -1754,29 +1458,6 @@ public sealed class MainForm : Form
     {
         _prepare.Enabled = enabled && preparationRequired;
         _repair.Enabled = enabled;
-    }
-
-    private void SetPreviewUpdateActions(bool visible, bool enabled)
-    {
-        _updatePreview.Visible = true;
-        _updateAndStartPreview.Visible = true;
-        _updatePreview.Enabled = visible && enabled;
-        _updateAndStartPreview.Enabled = visible && enabled;
-    }
-
-    private void SetStableUpgradeActions(bool visible, bool enabled, StableReleaseIdentity? target)
-    {
-        var shouldShow = visible && target is not null;
-        _updateStable.Visible = shouldShow;
-        _updateStable.Enabled = shouldShow && enabled;
-        if (target is null)
-        {
-            _updateStable.Text = "Обновить Stable";
-            _updateStable.AccessibleName = "Обновить Stable до опубликованного релиза";
-            return;
-        }
-        _updateStable.Text = $"Обновить Stable до {target.Tag}";
-        _updateStable.AccessibleName = $"Обновить Stable до {target.Tag}";
     }
 
     private void ApplyPrimaryPlan(LauncherProfile profile, LauncherReadinessState state, ValidatedProfile? validated, Exception? blockedEx)
@@ -1801,23 +1482,15 @@ public sealed class MainForm : Form
         _stop.Enabled = false;
         _open.Enabled = false;
         _refresh.Enabled = false;
-        _updatePreview.Enabled = false;
-        _updateStable.Enabled = false;
-        _updateStable.Visible = false;
-        _updateAndStartPreview.Enabled = false;
         _setup.Enabled = false;
 
         // Always allow details and refresh as secondary where sensible
         _refresh.Enabled = state != LauncherReadinessState.Checking
             && state != LauncherReadinessState.Preparing
             && state != LauncherReadinessState.Repairing
-            && state != LauncherReadinessState.Starting
-            && state != LauncherReadinessState.Updating
-            && state != LauncherReadinessState.UpgradingStable;
+            && state != LauncherReadinessState.Starting;
         _profiles.Enabled = state != LauncherReadinessState.Starting
             && state != LauncherReadinessState.Running
-            && state != LauncherReadinessState.Updating
-            && state != LauncherReadinessState.UpgradingStable
             && state != LauncherReadinessState.Preparing
             && state != LauncherReadinessState.Repairing;
 
@@ -1834,28 +1507,6 @@ public sealed class MainForm : Form
             case LauncherPrimaryAction.Start:
                 _start.Enabled = true;
                 _repair.Enabled = true; // repair stays available as recovery even when ready
-                // Allow Update as secondary only when the target is actually
-                // available; behind without a target keeps Start alone.
-                if (validated?.PreviewUpdate is not null && !validated.PreviewUpdate.IsCurrent && validated.PreviewUpdate.TargetAvailable)
-                {
-                    _updatePreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-                    _updateAndStartPreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-                }
-                break;
-            case LauncherPrimaryAction.Update:
-                _updatePreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-                _updateAndStartPreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-                break;
-            case LauncherPrimaryAction.UpgradeStable:
-                var shouldShowStableUpgrade = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
-                    && validated?.StableUpgrade?.TargetAvailable == true;
-                _updateStable.Visible = shouldShowStableUpgrade;
-                _updateStable.Enabled = shouldShowStableUpgrade;
-                break;
-            case LauncherPrimaryAction.UpdateAndStart:
-                // Single unambiguous CTA for the safe chain (update, then
-                // prepare locked deps, then start) — no competing buttons.
-                _updateAndStartPreview.Enabled = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
                 break;
             case LauncherPrimaryAction.Open:
                 _open.Enabled = true;
@@ -1867,13 +1518,6 @@ public sealed class MainForm : Form
                 break;
             case LauncherPrimaryAction.Refresh:
                 _refresh.Enabled = true;
-                // For blocked identity mismatch on preview, keep Update enabled as well
-                if (blockedEx is not null && blockedEx.Message.ToLowerInvariant().Contains("identity does not match")
-                    && profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase))
-                {
-                    _updatePreview.Enabled = true;
-                    _updateAndStartPreview.Enabled = true;
-                }
                 if (blockedEx is not null && (blockedEx.Message.ToLowerInvariant().Contains("dependency") || blockedEx.Message.ToLowerInvariant().Contains("npm")))
                 {
                     _prepare.Enabled = true;
@@ -1891,7 +1535,7 @@ public sealed class MainForm : Form
 
     private void HighlightPrimary(LauncherPrimaryAction primary)
     {
-        var buttons = new[] { _prepare, _repair, _start, _stop, _open, _refresh, _updatePreview, _updateStable, _updateAndStartPreview };
+        var buttons = new[] { _prepare, _repair, _start, _stop, _open, _refresh, _setup };
         foreach (var b in buttons)
         {
             b.FlatAppearance.BorderSize = 1;
@@ -1904,9 +1548,6 @@ public sealed class MainForm : Form
             LauncherPrimaryAction.Stop => _stop,
             LauncherPrimaryAction.Open => _open,
             LauncherPrimaryAction.Refresh => _refresh,
-            LauncherPrimaryAction.Update => _updatePreview,
-            LauncherPrimaryAction.UpgradeStable => _updateStable,
-            LauncherPrimaryAction.UpdateAndStart => _updateAndStartPreview,
             _ => null,
         };
         if (primaryBtn is not null && primaryBtn.Enabled)
