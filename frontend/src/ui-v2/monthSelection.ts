@@ -25,3 +25,37 @@ export function monthWorkspacePath(monthId: number, step?: GuidedCloseStepId): s
   if (step) params.set("step", step);
   return `/v2?${params.toString()}`;
 }
+
+/** Calendar index for comparing reporting periods. */
+export function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
+  return month.year * 12 + month.month;
+}
+
+/**
+ * Shared active-work selector for Data/App diagnostics:
+ * newest DRAFT when one exists, otherwise latest CLOSED.
+ */
+export function selectDiagnosticMonth(months: ReportingMonth[]): ReportingMonth | null {
+  const sorted = sortReportingMonths(months);
+  const newestDraft = sorted.find((month) => month.status === "draft");
+  if (newestDraft) return newestDraft;
+  return sorted.find((month) => month.status === "closed") ?? null;
+}
+
+export type DataAppSection = "sources" | "reconciliation" | "catalogs" | "files" | "app";
+
+export function dataAppPath(section: DataAppSection, monthId?: number): string {
+  const base =
+    section === "sources"
+      ? "/v2/data"
+      : section === "reconciliation"
+        ? "/v2/data/reconciliation"
+        : section === "catalogs"
+          ? "/v2/data/catalogs"
+          : section === "files"
+            ? "/v2/data/files"
+            : "/v2/data/app";
+  if (monthId == null) return base;
+  const params = new URLSearchParams({ month: String(monthId) });
+  return `${base}?${params.toString()}`;
+}
