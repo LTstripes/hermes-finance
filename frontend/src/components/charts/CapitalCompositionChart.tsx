@@ -32,13 +32,15 @@ const CLASS_META: Record<string, { label: string; color: string }> = {
 
 const FALLBACK_COLORS = ["#496f5a", "#8a9c8d", "#b27d35", "#4f5a52", "#a7b8a9"];
 
-function metaFor(assetClass: string, index: number) {
-  return (
-    CLASS_META[assetClass] ?? {
+function metaFor(assetClass: string, index: number, classColors?: Record<string, string>) {
+  const base =
+    CLASS_META[assetClass] ??
+    ({
       label: assetClass,
       color: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
-    }
-  );
+    } as { label: string; color: string });
+  const override = classColors?.[assetClass];
+  return override ? { ...base, color: override } : base;
 }
 
 function axisPercent(value: number) {
@@ -49,8 +51,13 @@ export function CapitalCompositionTooltip({
   active,
   payload,
   assetClasses,
+  classColors,
   mode,
-}: TooltipContentProps & { assetClasses: string[]; mode: CapitalCompositionMode }) {
+}: TooltipContentProps & {
+  assetClasses: string[];
+  classColors?: Record<string, string>;
+  mode: CapitalCompositionMode;
+}) {
   const datum = (payload?.[0]?.payload ?? undefined) as CapitalCompositionDatum | undefined;
   if (!active || !datum || datum.isGap) return null;
 
@@ -62,7 +69,7 @@ export function CapitalCompositionTooltip({
       <strong>{datum.label}</strong>
       <div className="composition-tooltip__breakdown">
         {assetClasses.map((assetClass, index) => {
-          const meta = metaFor(assetClass, index);
+          const meta = metaFor(assetClass, index, classColors);
           const amount = datum.amounts[assetClass] ?? null;
           const share = datum.shares[assetClass] ?? null;
           return (
@@ -96,10 +103,13 @@ export function CapitalCompositionTooltip({
 
 export function CapitalCompositionChart({
   assetClasses,
+  classColors,
   mode,
   points,
 }: {
   assetClasses: string[];
+  /** Optional presentation-only palette override; v1 keeps its own colours. */
+  classColors?: Record<string, string>;
   mode: CapitalCompositionMode;
   points: CapitalCompositionPoint[];
 }) {
@@ -175,7 +185,12 @@ export function CapitalCompositionChart({
           />
           <Tooltip
             content={(props) => (
-              <CapitalCompositionTooltip {...props} assetClasses={assetClasses} mode={mode} />
+              <CapitalCompositionTooltip
+                {...props}
+                assetClasses={assetClasses}
+                classColors={classColors}
+                mode={mode}
+              />
             )}
             cursor={{ stroke: "#b9c4b9" }}
           />
@@ -185,19 +200,19 @@ export function CapitalCompositionChart({
                 ? "Всего активов"
                 : value === "net"
                   ? "Капитал нетто"
-                  : metaFor(value, assetClasses.indexOf(value)).label
+                  : metaFor(value, assetClasses.indexOf(value), classColors).label
             }
           />
           {assetClasses.map((assetClass, index) => (
             <Area
               dataKey={assetClass}
-              fill={metaFor(assetClass, index).color}
+              fill={metaFor(assetClass, index, classColors).color}
               fillOpacity={0.82}
               isAnimationActive={false}
               key={assetClass}
               name={assetClass}
               stackId="assets"
-              stroke={metaFor(assetClass, index).color}
+              stroke={metaFor(assetClass, index, classColors).color}
               type="linear"
             />
           ))}

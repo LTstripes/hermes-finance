@@ -556,6 +556,8 @@ export type DepositUpdate = {
 export type CashBalance = {
   id: number;
   reporting_month_id: number;
+  /** Optional row context only (migration 0032); R07-06A keeps cash unassigned. */
+  account_id: number | null;
   name: string;
   amount: MoneyValue;
   currency: string;

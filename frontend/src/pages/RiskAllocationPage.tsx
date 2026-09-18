@@ -9,7 +9,6 @@ import {
   type RiskMetricSupport,
   type RiskMoneyValue,
   type RiskSupportIssue,
-  type RiskSupportStatus,
 } from "../api/riskAllocation";
 import { listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
@@ -29,19 +28,13 @@ import {
 import { queryKeys } from "../queryClient";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { labelOf } from "../lib/labels";
-
-const ASSET_CLASS_LABELS: Record<string, string> = {
-  cash: "Наличные",
-  deposits: "Депозиты",
-  stock: "Акции",
-  bond: "Облигации",
-  fund: "Фонды",
-  currency: "Валюта",
-  gold: "Золото",
-  other: "Прочее",
-  unknown_asset_class: "Неизвестный класс активов",
-  unassigned_cash: "Наличные без привязки к счёту",
-};
+import {
+  ASSET_CLASS_LABELS,
+  sourceKindLabel,
+  supportReasonLabel,
+  supportStatusLabel,
+  supportStatusTone,
+} from "../lib/riskSupportCopy";
 
 const SUPPORT_LABELS: Record<string, string> = {
   asset_class: "Класс активов",
@@ -56,35 +49,8 @@ const SUPPORT_LABELS: Record<string, string> = {
   redemption: "Погашения",
 };
 
-const REASON_LABELS: Record<string, string> = {
-  bank_identity_not_persisted: "банк не хранится в текущей схеме",
-  broker_identity_not_persisted: "брокер не хранится в текущей схеме",
-  cash_not_account_linked: "наличные не связаны со счётом",
-  currency_conversion_not_supported: "конвертация валюты не поддерживается",
-  currency_not_persisted: "валюта не сохранена",
-  deposit_forecast_not_concentratable: "оценка депозита не имеет датированного события",
-  instrument_not_persisted: "инструмент не сохранён для события",
-  instrument_type_not_authoritative: "класс инструмента не подтверждён сохранёнными данными",
-  issuer_not_persisted: "эмитент не хранится в текущей схеме",
-  maturity_not_persisted: "срок погашения не хранится в текущей схеме",
-  no_dated_payouts: "датированных событий в окне нет",
-  unsupported_position_valuation: "оценка позиции непригодна для расчёта",
-};
-
 function sortMonths(months: ReportingMonth[]): ReportingMonth[] {
   return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id);
-}
-
-function statusLabel(status: RiskSupportStatus): string {
-  return labelOf(
-    { supported: "Поддерживается", unavailable: "Недоступно", unknown: "Неизвестно" },
-    status,
-  );
-}
-
-function statusTone(status: RiskSupportStatus): "ok" | "missing" | "unknown" {
-  if (status === "supported") return "ok";
-  return status === "unavailable" ? "missing" : "unknown";
 }
 
 function money(value: RiskMoneyValue): string {
@@ -93,10 +59,6 @@ function money(value: RiskMoneyValue): string {
 
 function percent(value: string | null): string {
   return formatPercent(value, { digits: 2 });
-}
-
-function supportReason(reason: string): string {
-  return REASON_LABELS[reason] ?? "дополнительное ограничение данных";
 }
 
 function concentrationEmptyState(
@@ -109,7 +71,7 @@ function concentrationEmptyState(
     return {
       title: "События недоступны",
       description: reason
-        ? `Этот срез нельзя построить: ${supportReason(reason)}.`
+        ? `Этот срез нельзя построить: ${supportReasonLabel(reason)}.`
         : "Этот срез нельзя построить из доступных данных.",
     };
   }
@@ -137,21 +99,10 @@ function concentrationEmptyState(
   };
 }
 
-const SOURCE_KIND_LABELS: Record<string, string> = {
-  cash_balance: "Денежный остаток",
-  deposit: "Депозит",
-  expected_flow: "Ожидаемая выплата",
-  payout: "Выплата",
-  position: "Позиция",
-  property: "Недвижимость",
-};
-
-function sourceKindLabel(value: string): string {
-  return SOURCE_KIND_LABELS[value] ?? "Исключённая строка";
-}
-
 function SupportBadge({ support }: { support: RiskMetricSupport }) {
-  return <Badge tone={statusTone(support.status)}>{statusLabel(support.status)}</Badge>;
+  return (
+    <Badge tone={supportStatusTone(support.status)}>{supportStatusLabel(support.status)}</Badge>
+  );
 }
 
 function SupportReasons({ reasons }: { reasons: string[] }) {
@@ -159,7 +110,7 @@ function SupportReasons({ reasons }: { reasons: string[] }) {
   return (
     <ul className="risk-allocation__reasons">
       {reasons.map((reason) => (
-        <li key={reason}>{supportReason(reason)}</li>
+        <li key={reason}>{supportReasonLabel(reason)}</li>
       ))}
     </ul>
   );
@@ -175,9 +126,9 @@ function ExcludedIssues({ issues }: { issues: RiskSupportIssue[] }) {
           <li
             key={`${issue.source_kind}-${issue.source_id ?? "none"}-${issue.status}-${issue.reason_codes.join("|")}`}
           >
-            <Badge tone={statusTone(issue.status)}>{statusLabel(issue.status)}</Badge>{" "}
+            <Badge tone={supportStatusTone(issue.status)}>{supportStatusLabel(issue.status)}</Badge>{" "}
             {sourceKindLabel(issue.source_kind)} —{" "}
-            {issue.reason_codes.map(supportReason).join(", ")}
+            {issue.reason_codes.map((reason) => supportReasonLabel(reason)).join(", ")}
           </li>
         ))}
       </ul>

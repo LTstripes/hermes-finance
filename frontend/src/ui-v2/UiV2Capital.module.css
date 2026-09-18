@@ -1,0 +1,318 @@
+/* Capital page blocks. The shared shell, panel and metric styles live in
+   UiV2Page.module.css and are reused unchanged. */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.draftNote {
+  margin-bottom: 15px !important;
+  padding: 10px 14px;
+  border: 1px solid #d8e2ee;
+  border-radius: 10px;
+  background: #f4f7fb;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.backLink {
+  margin-top: 10px !important;
+  font-size: 12px;
+}
+
+.backLink a {
+  text-decoration: none;
+}
+
+.classList,
+.positionList,
+.holdingList,
+.bucketList,
+.pairList,
+.performanceList {
+  list-style: none;
+  padding: 0;
+}
+
+.classList,
+.bucketList,
+.pairList,
+.performanceList {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.classButton,
+.bucketButton {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.bucketButton {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.classButton:hover,
+.bucketButton:hover {
+  background: var(--soft);
+}
+
+.classButton[aria-pressed="true"],
+.bucketButton[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: #eef4fb;
+}
+
+.classDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.className {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.classShare {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.classButton strong,
+.bucketButton strong,
+.positionList strong,
+.holdingAmount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.subBlock {
+  margin-top: 18px;
+}
+
+.subBlock h3 {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.muted {
+  margin-top: 9px !important;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.positionList {
+  margin-top: 11px;
+}
+
+.positionList li {
+  padding: 8px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  border-bottom: 1px solid #edf0f3;
+  font-size: 12px;
+}
+
+.positionList li:last-child {
+  border-bottom: 0;
+}
+
+.filterBar {
+  margin-top: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d8e2ee;
+  border-radius: 9px;
+  background: #f4f7fb;
+  font-size: 12px;
+}
+
+.filterBar button {
+  min-height: 32px;
+  padding: 5px 11px;
+  border: 1px solid #bdcadd;
+  border-radius: 7px;
+  background: white;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.holdingList {
+  display: grid;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.holdingRow {
+  min-width: 0;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 14px;
+  border: 1px solid #e8ecf0;
+  border-radius: 9px;
+  background: #fbfcfd;
+}
+
+.holdingMain {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.holdingName {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.holdingMeta {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.holdingAmount {
+  font-size: 13px;
+  text-align: right;
+}
+
+.excludedBadge {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f1f3f6;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.pairCard {
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid #e8ecf0;
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.pairNames {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pairValues {
+  margin-top: 11px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pairValues dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pairValues dd {
+  margin-top: 3px !important;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.performanceList {
+  margin-top: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.performanceList article {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e8ecf0;
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.performanceValue {
+  margin-top: 9px !important;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.collapsible {
+  margin-top: 12px;
+}
+
+.collapsible summary {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.collapsible[open] summary {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 1050px) {
+  .performanceList {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .pairValues {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 550px) {
+  .holdingRow {
+    grid-template-columns: 1fr;
+  }
+
+  .holdingAmount {
+    text-align: left;
+  }
+}

@@ -27,17 +27,24 @@ import { listMonths } from "../api/months";
 import type {
   CapitalCompositionPoint,
   ClosedReportComparison,
-  MoneyValue,
   PassiveIncomeAverage,
   PassiveIncomeHistory,
   ReportingMonth,
 } from "../api/types";
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
-import { formatDate, formatMoney, formatMoneyDelta, formatMonth } from "../lib/format";
+import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
 import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
+import { UiV2Shell } from "./UiV2Shell";
 import styles from "./UiV2Page.module.css";
+import {
+  liabilityTone,
+  moneyDeltaText as moneyDelta,
+  moneyText as money,
+  moneyTone as tone,
+} from "./valueFormat";
 
 type HistoryWindow = 3 | 12 | "all";
 
@@ -56,45 +63,8 @@ const PASSIVE_SOURCE_META = [
   ["other_capital_income", "Прочий доход от капитала"],
 ] as const;
 
-function queryReady(query: {
-  isPending: boolean;
-  isFetching: boolean;
-  isError: boolean;
-  fetchStatus: string;
-}): boolean {
-  return !query.isPending && !query.isFetching && !query.isError && query.fetchStatus !== "paused";
-}
-
 function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
   return month.year * 12 + month.month;
-}
-
-function money(value: MoneyValue | null | undefined, empty = "Недоступно"): string {
-  return formatMoney(value?.amount, {
-    currency: value?.currency === "RUB" ? "₽" : value?.currency,
-    empty,
-  });
-}
-
-function moneyDelta(value: MoneyValue | null | undefined, empty = "Недоступно"): string {
-  return formatMoneyDelta(value?.amount, {
-    currency: value?.currency === "RUB" ? "₽" : value?.currency,
-    empty,
-  });
-}
-
-function tone(value: MoneyValue | null | undefined): "positive" | "negative" | "neutral" {
-  const amount = value?.amount.trim() ?? "";
-  if (/^-/.test(amount) && !/^-0(?:\.0+)?$/.test(amount)) return "negative";
-  if (/^\+?[0-9]/.test(amount) && !/^\+?0(?:\.0+)?$/.test(amount)) return "positive";
-  return "neutral";
-}
-
-function liabilityTone(value: MoneyValue | null | undefined): "positive" | "negative" | "neutral" {
-  const ordinary = tone(value);
-  if (ordinary === "positive") return "negative";
-  if (ordinary === "negative") return "positive";
-  return "neutral";
 }
 
 function configuredBoundary(value: string | null): string | null {
@@ -115,64 +85,9 @@ function passiveAverageDetail(average: PassiveIncomeAverage): string {
   return `Среднее ${money(average.average)} · ${average.count_months} из ${average.target_window_months} закрытых отчётов${suffix}`;
 }
 
-function Notice({
-  title,
-  children,
-  retry,
-}: {
-  title: string;
-  children: ReactNode;
-  retry?: () => void;
-}) {
-  return (
-    <section className={styles.notice} role={retry ? "alert" : undefined}>
-      <h2>{title}</h2>
-      <p>{children}</p>
-      {retry ? (
-        <button className={styles.secondaryButton} onClick={retry} type="button">
-          Повторить
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
-function WidgetState({
-  title = "Данные временно недоступны",
-  retry,
-}: {
-  title?: string;
-  retry?: () => void;
-}) {
-  return (
-    <div className={styles.widgetState} role={retry ? "alert" : "status"}>
-      <p>{title}</p>
-      {retry ? (
-        <button onClick={retry} type="button">
-          Повторить
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function ReportContext({ month }: { month: ReportingMonth }) {
-  return (
-    <div className={styles.reportContext}>
-      <span className={styles.closedBadge}>Закрытый отчёт</span>
-      <span>{formatMonth(month.year, month.month)}</span>
-      <span className={styles.contextDivider} aria-hidden="true">
-        ·
-      </span>
-      <span>Снимок {formatDate(month.snapshot_date)}</span>
-      <Link to="/months">История отчётов →</Link>
-    </div>
-  );
-}
-
 function DraftAction({ draft }: { draft: ReportingMonth }) {
   const workflowQuery = useMonthCloseWorkflow(draft.id);
-  const ready = queryReady(workflowQuery);
+  const ready = isQueryReady(workflowQuery);
   const workflow = ready ? workflowQuery.data : undefined;
   const valid =
     workflow?.contract_version === "monthly_close_workflow_v1" &&
@@ -242,7 +157,7 @@ function KpiGrid({
             <p className={styles.metricDetail}>Активы за вычетом включённых обязательств</p>
           </>
         ) : (
-          <WidgetState retry={comparisonReady ? undefined : retryComparison} />
+          <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />
         )}
       </article>
 
@@ -269,7 +184,7 @@ function KpiGrid({
             <p className={styles.metricDetail}>Появится после следующего закрытого отчёта</p>
           </>
         ) : (
-          <WidgetState retry={comparisonReady ? undefined : retryComparison} />
+          <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />
         )}
       </article>
 
@@ -283,7 +198,7 @@ function KpiGrid({
             <p className={styles.metricDetail}>{passiveAverageDetail(passive.average)}</p>
           </>
         ) : (
-          <WidgetState retry={passiveReady ? undefined : retryPassive} />
+          <UiV2WidgetState retry={passiveReady ? undefined : retryPassive} />
         )}
       </article>
     </section>
@@ -381,9 +296,9 @@ function CapitalHistoryBlock({
         </fieldset>
       </div>
       {!ready ? (
-        <WidgetState retry={retry} />
+        <UiV2WidgetState retry={retry} />
       ) : visible.length === 0 ? (
-        <WidgetState title="История появится после закрытия первого отчёта" />
+        <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
         <>
           <CapitalHistoryChart points={visible} />
@@ -424,13 +339,13 @@ function CompositionBlock({
         <p className={styles.panelHint}>Только положительные ликвидные активы</p>
       </div>
       {!ready ? (
-        <WidgetState retry={retry} />
+        <UiV2WidgetState retry={retry} />
       ) : !comparison?.current ? (
-        <WidgetState title="Нет закрытого снимка" />
+        <UiV2WidgetState title="Нет закрытого снимка" />
       ) : (
         <>
           {slices.length === 0 ? (
-            <WidgetState title="В закрытом снимке нет положительных ликвидных активов" />
+            <UiV2WidgetState title="В закрытом снимке нет положительных ликвидных активов" />
           ) : (
             <div className={styles.compositionBody}>
               <div className={styles.donut}>
@@ -504,9 +419,9 @@ function ChangeBlock({
         <p className={styles.panelHint}>Изменение состояния, не инвестиционная доходность</p>
       </div>
       {!ready ? (
-        <WidgetState retry={retry} />
+        <UiV2WidgetState retry={retry} />
       ) : comparison?.availability !== "available" || !comparison.asset_class_deltas ? (
-        <WidgetState title="Нужны два закрытых отчёта для сравнения" />
+        <UiV2WidgetState title="Нужны два закрытых отчёта для сравнения" />
       ) : (
         <>
           <ul className={styles.changeList}>
@@ -592,16 +507,16 @@ function PassiveBlock({
         </Link>
       </div>
       {!ready ? (
-        <WidgetState retry={retry} />
+        <UiV2WidgetState retry={retry} />
       ) : !history?.selected_report ? (
-        <WidgetState title="История появится после закрытия первого отчёта" />
+        <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
         <div className={styles.passiveLayout}>
           <div>
             {eligiblePoints.length > 0 ? (
               <PassiveChart data={eligiblePoints} />
             ) : (
-              <WidgetState title="Нет закрытой истории в выбранном периоде" />
+              <UiV2WidgetState title="Нет закрытой истории в выбранном периоде" />
             )}
             <p className={styles.panelFootnote}>{passiveAverageDetail(history.average)}</p>
             {eligiblePoints.length > 0 ? (
@@ -664,9 +579,9 @@ function GoalsBlock({
         </Link>
       </div>
       {!ready ? (
-        <WidgetState retry={retry} />
+        <UiV2WidgetState retry={retry} />
       ) : supported.length === 0 ? (
-        <WidgetState title="Нет активных целей с поддерживаемым прогрессом" />
+        <UiV2WidgetState title="Нет активных целей с поддерживаемым прогрессом" />
       ) : (
         <div className={styles.goalsGrid}>
           {supported.map((goal) => {
@@ -734,18 +649,18 @@ export default function UiV2Page() {
     refetchOnWindowFocus: true,
   });
 
-  const monthsReady = queryReady(monthsQuery);
+  const monthsReady = isQueryReady(monthsQuery);
   const comparisonIdentityMatches =
     comparisonQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
     comparisonQuery.data.current?.reporting_month_id === closedId;
-  const comparisonReady = queryReady(comparisonQuery) && comparisonIdentityMatches;
+  const comparisonReady = isQueryReady(comparisonQuery) && comparisonIdentityMatches;
   const compositionIdentityMatches =
     compositionQuery.data?.points.at(-1)?.reporting_month_id === closedId;
-  const compositionReady = queryReady(compositionQuery) && compositionIdentityMatches;
+  const compositionReady = isQueryReady(compositionQuery) && compositionIdentityMatches;
   const passiveIdentityMatches =
     passiveQuery.data?.latest_closed_report_id === closedId &&
     passiveQuery.data.selected_report?.reporting_month_id === closedId;
-  const passiveReady = queryReady(passiveQuery) && passiveIdentityMatches;
+  const passiveReady = isQueryReady(passiveQuery) && passiveIdentityMatches;
   const goalsIdentityMatches =
     goalsQuery.data?.every(
       (goal) =>
@@ -754,7 +669,7 @@ export default function UiV2Page() {
         goal.achievement_forecast.method_version === "goal_achievement_v1" &&
         goal.achievement_forecast.source_forecast_version === null,
     ) ?? false;
-  const goalsReady = queryReady(goalsQuery) && goalsIdentityMatches;
+  const goalsReady = isQueryReady(goalsQuery) && goalsIdentityMatches;
   const loading = !monthsReady;
 
   const requestedMonth = resolveMonthSelection(params.getAll("month"), months);
@@ -775,9 +690,9 @@ export default function UiV2Page() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
+      <UiV2Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
         Финансовые показатели скрыты, пока актуальный закрытый отчёт не подтверждён.
-      </Notice>
+      </UiV2Notice>
     );
   } else if (!monthsReady) {
     content = (
@@ -789,16 +704,18 @@ export default function UiV2Page() {
     content = (
       <>
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
-        <Notice title="Закрой первый отчёт">
+        <UiV2Notice title="Закрой первый отчёт">
           «Мои финансы» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
           финансовую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
-        </Notice>
+        </UiV2Notice>
       </>
     );
   } else {
     content = (
       <>
-        <ReportContext month={latestClosed} />
+        <UiV2ReportContext month={latestClosed}>
+          <Link to="/months">История отчётов →</Link>
+        </UiV2ReportContext>
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
         <KpiGrid
           comparison={comparisonReady ? comparisonQuery.data : undefined}
@@ -840,66 +757,19 @@ export default function UiV2Page() {
   }
 
   return (
-    <div className={styles.shell}>
-      <a className={styles.skipLink} href="#v2-main">
-        К содержанию
-      </a>
-      <aside className={styles.sidebar}>
-        <Link className={styles.brand} to="/v2">
-          <span className={styles.brandMark} aria-hidden="true">
-            H
-          </span>
-          <span>
-            Hermes Finance<small>Личные финансы</small>
-          </span>
-        </Link>
-        <nav aria-label="Навигация UI v2" className={styles.navigation}>
-          <Link aria-current="page" to="/v2">
-            <span aria-hidden="true">⌂</span> Мои финансы
-          </Link>
-        </nav>
-        <div className={styles.sidebarNote}>
-          <span className={styles.eyebrow}>Финансовая картина</span>
-          <p>Капитал, изменения, доход и цели по подтверждённым отчётам.</p>
-        </div>
-        <div className={styles.legacyLinks}>
-          <p className={styles.eyebrow}>В текущем интерфейсе</p>
-          <Link to="/monthly-close">
-            Закрыть месяц <span aria-hidden="true">↗</span>
-          </Link>
-          <Link to="/accounts">
-            Капитал <span aria-hidden="true">↗</span>
-          </Link>
-          <Link to="/analytics">
-            История и результаты <span aria-hidden="true">↗</span>
-          </Link>
-          <Link to="/goals">
-            Доход и цели <span aria-hidden="true">↗</span>
-          </Link>
-          <Link to="/export">
-            Данные и приложение <span aria-hidden="true">↗</span>
-          </Link>
-        </div>
-        <p className={styles.localOnly}>Только на этом компьютере</p>
-      </aside>
-      <div className={styles.workspace}>
-        <div className={styles.topbar}>
-          <span>
-            UI v2 <span className={styles.previewBadge}>Предварительная версия</span>
-          </span>
-          <Link to={v1ReturnPath}>Вернуться к текущему интерфейсу →</Link>
-        </div>
-        <main aria-busy={loading} className={styles.main} id="v2-main" tabIndex={-1}>
-          <header className={styles.header}>
-            <div>
-              <p className={styles.eyebrow}>Обзор подтверждённых данных</p>
-              <h1>Мои финансы</h1>
-              <p className={styles.subtitle}>Спокойная картина капитала, дохода и целей.</p>
-            </div>
-          </header>
-          {content}
-        </main>
-      </div>
-    </div>
+    <UiV2Shell
+      active="home"
+      busy={loading}
+      header={
+        <>
+          <p className={styles.eyebrow}>Обзор подтверждённых данных</p>
+          <h1>Мои финансы</h1>
+          <p className={styles.subtitle}>Спокойная картина капитала, дохода и целей.</p>
+        </>
+      }
+      v1ReturnPath={v1ReturnPath}
+    >
+      {content}
+    </UiV2Shell>
   );
 }

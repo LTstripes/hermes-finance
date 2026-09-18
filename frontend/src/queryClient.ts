@@ -12,6 +12,17 @@ export const queryKeys = {
   goalSummary: (monthId: number | null) => ["goal-summary", monthId] as const,
   riskAllocation: (monthId: number | null, topN = 5, forecastVersion = "v1") =>
     ["risk-allocation", monthId, topN, forecastVersion] as const,
+  cashBalances: (monthId: number | null) => ["cash-balances", monthId] as const,
+  deposits: (monthId: number | null) => ["deposits", monthId] as const,
+  positions: (monthId: number | null) => ["positions", monthId] as const,
+  debts: (monthId: number | null) => ["debts", monthId] as const,
+  properties: (monthId: number | null) => ["properties", monthId] as const,
+  performanceAttribution: (startDate: string | null, endDate: string | null) =>
+    ["performance-attribution", startDate, endDate] as const,
+  portfolioXirr: (startDate: string | null, endDate: string | null) =>
+    ["portfolio-xirr", startDate, endDate] as const,
+  portfolioTwrr: (startDate: string | null, endDate: string | null) =>
+    ["portfolio-twrr", startDate, endDate] as const,
 };
 
 export function createQueryClient(): QueryClient {

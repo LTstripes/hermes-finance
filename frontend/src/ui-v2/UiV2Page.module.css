@@ -98,6 +98,11 @@
   font-weight: 400;
 }
 
+.navigation {
+  display: grid;
+  gap: 6px;
+}
+
 .navigation a {
   display: flex;
   align-items: center;
@@ -725,6 +730,11 @@
   .legacyLinks,
   .localOnly {
     display: none;
+  }
+
+  .navigation {
+    display: flex;
+    gap: 6px;
   }
 
   .navigation a {
