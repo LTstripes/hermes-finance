@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { uiV2Months } from "../test/uiV2Fixtures";
 import {
+  dataAppPath,
   monthWorkspacePath,
   resolveMonthSelection,
+  selectNewestDraftAfterLatestClosed,
+  selectDiagnosticMonth,
   sortReportingMonths,
 } from "../ui-v2/monthSelection";
 
@@ -19,6 +22,16 @@ describe("UI v2 reporting-period URL", () => {
       month: uiV2Months[0],
     });
   });
+  it("shares one newest-draft-after-latest-closed decision across native surfaces", () => {
+    expect(selectNewestDraftAfterLatestClosed(uiV2Months)).toEqual({
+      latestClosed: uiV2Months[0],
+      newestDraft: uiV2Months[1],
+    });
+    expect(selectNewestDraftAfterLatestClosed([uiV2Months[0]])).toEqual({
+      latestClosed: uiV2Months[0],
+      newestDraft: null,
+    });
+  });
   it.each(["", "0", "-1", "1.0", "1e2", " 12", "12x", "012", "9007199254740992"])(
     "rejects ambiguous or invalid explicit ID %s",
     (value) => expect(resolveMonthSelection([value], uiV2Months)).toEqual({ kind: "invalid" }),
@@ -28,6 +41,29 @@ describe("UI v2 reporting-period URL", () => {
     expect(resolveMonthSelection(["12", "91"], uiV2Months)).toEqual({ kind: "invalid" });
   });
   it("encodes the complete period/step address without persistent financial state", () => {
-    expect(monthWorkspacePath(12, "actual_payouts")).toBe("/v2?month=12&step=actual_payouts");
+    expect(monthWorkspacePath(12, "actual_payouts")).toBe("/v2/close?month=12&step=actual_payouts");
+  });
+});
+
+describe("Data/App diagnostic month", () => {
+  it("prefers the newest DRAFT when one exists", () => {
+    expect(selectDiagnosticMonth(uiV2Months)?.id).toBe(12);
+  });
+
+  it("falls back to the latest CLOSED when no draft exists", () => {
+    const closedOnly = uiV2Months.filter((month) => month.status === "closed");
+    expect(selectDiagnosticMonth(closedOnly)?.id).toBe(91);
+  });
+
+  it("returns null when there are no months", () => {
+    expect(selectDiagnosticMonth([])).toBeNull();
+  });
+
+  it("builds Data/App paths with optional month identity", () => {
+    expect(dataAppPath("sources")).toBe("/v2/data");
+    expect(dataAppPath("reconciliation", 12)).toBe("/v2/data/reconciliation?month=12");
+    expect(dataAppPath("catalogs")).toBe("/v2/data/catalogs");
+    expect(dataAppPath("files")).toBe("/v2/data/files");
+    expect(dataAppPath("app", 91)).toBe("/v2/data/app?month=91");
   });
 });

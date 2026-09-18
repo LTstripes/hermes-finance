@@ -6,6 +6,7 @@ import {
   CartesianGrid,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -104,12 +105,18 @@ export function CapitalCompositionTooltip({
 export function CapitalCompositionChart({
   assetClasses,
   classColors,
+  highlightMonthId,
   mode,
   points,
 }: {
   assetClasses: string[];
   /** Optional presentation-only palette override; v1 keeps its own colours. */
   classColors?: Record<string, string>;
+  /**
+   * Presentation-only marker for one already-rendered closed report. It never
+   * changes the series, the ordering or any value; a gap can never be marked.
+   */
+  highlightMonthId?: number;
   mode: CapitalCompositionMode;
   points: CapitalCompositionPoint[];
 }) {
@@ -152,11 +159,16 @@ export function CapitalCompositionChart({
   }));
   const hasGap = series.some((datum) => datum.isGap);
   const labelByKey = new Map(series.map((datum) => [datum.key, datum.shortLabel]));
+  const highlightKey =
+    highlightMonthId == null
+      ? null
+      : (series.find((datum) => datum.reportingMonthId === highlightMonthId)?.key ?? null);
 
   return (
     <section
       aria-label="Состав ликвидных активов по закрытым месяцам"
       className="capital-composition-chart"
+      data-highlight-key={highlightKey ?? undefined}
     >
       <ResponsiveContainer height={360} width="100%">
         <AreaChart
@@ -237,6 +249,22 @@ export function CapitalCompositionChart({
             strokeWidth={2}
             type="linear"
           />
+          {highlightKey ? (
+            <ReferenceLine
+              className="capital-composition-chart__highlight"
+              ifOverflow="extendDomain"
+              label={{
+                fill: "#244f83",
+                fontSize: 11,
+                position: "insideTopRight",
+                value: "Этот отчёт",
+              }}
+              stroke="#244f83"
+              strokeDasharray="4 3"
+              strokeWidth={2}
+              x={highlightKey}
+            />
+          ) : null}
         </AreaChart>
       </ResponsiveContainer>
       <div className="capital-composition-chart__summary">

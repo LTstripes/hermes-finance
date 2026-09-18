@@ -1,16 +1,17 @@
-# Hermes Finance UI v2 — месячное рабочее пространство
+# Hermes Finance UI v2 — design history and accepted direction
 
-**Статус:** draft-кандидат S01 в PR #378; это не принятый релиз и не переключение default UI.
-Pre-review candidate `e6d82c4100a49562c4ccb61568c607bc8c1babbd` был полностью опубликован в GitHub,
-прошёл exact-head CI и synthetic browser QA, после чего независимое ревью вернуло
-`FIXES REQUIRED`. Текущая task branch содержит remediation этого review; её точный head,
-CI и повторный независимый verdict фиксируются в PR перед owner UAT.
-Задача: [#377](https://github.com/LTstripes/hermes-finance/issues/377).
-Кандидат: [draft PR #378](https://github.com/LTstripes/hermes-finance/pull/378),
-`feat/377-ui-v2-month-workspace`.
-Исследовательский baseline: `a06e1fb58cc77b6bd2c4db8ca7cfd3e870df9c18`, 14 сентября 2026.
-Owner UAT #236 подтверждает существующий v1 guided close; он не является UAT новой оболочки v2.
-Owner UAT v2 и явное решение о default switch по-прежнему обязательны.
+**Current status (2026-09-18):** the first cohesive UI v2 milestone is **owner-UAT PASS and integrated** on development `main`.
+
+- exact owner-UAT aggregate: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
+- aggregate PR: #441;
+- canonical integration: `3bd0cd742672955538a70d895ddba3ff654f9434`;
+- v1 remains default/rollback; v2 remains opt-in;
+- native milestone: Home, Capital, Income & Plans, contextual Reports/history, native Monthly Close, Data/App shell + freshness/reconciliation;
+- remaining native Data/App slices: #432–#434;
+- owner-UAT polish: #444–#448;
+- final comparative/cutover task: #430.
+
+This document began as the S01 design record. Sections below intentionally preserve historical rationale and intermediate decisions. For current execution status use canonical GitHub `main`, #387, `docs/CURRENT_STATUS.md` and `docs/PROJECT_WIKI.md`.
 
 ## 1. Продукт, который мы сохраняем
 
@@ -100,9 +101,10 @@ AI review и экспорт конкретного месяца также до�
 возможностью backend: нет обещания автоматически построенного советника или новых правил.
 Исторические инструменты и справочники не превращаются в month-local дубликаты.
 
-Это целевая карта, не список уже созданных экранов. S01 показывает только настоящий
-native пункт «Мой месяц»; остальные ссылки явно помечены «В текущем интерфейсе».
-Неработающих tabs, фиктивных графиков, тестовых чисел в продукте и будущих кнопок нет.
+Историческая пометка S01: на первом coexistence-этапе эта таблица была целевой картой,
+а не списком уже созданных экранов. После owner-UAT milestone #441 часть этой карты уже
+стала native UI v2: «Мои финансы», Capital, «Доход и планы», contextual Reports/history,
+Monthly Close и Data/App shell. Оставшиеся Data/App slices tracked в #432–#434.
 
 ### Основной путь
 
@@ -159,6 +161,20 @@ instruments и performance attribution/XIRR/TWRR) и не добавляет н�
 нехватке. Классы активов на графике и в списке «Сейчас» используют одну палитру v2
 (`classColors` — presentation-only override, v1-страницы сохраняют свои цвета).
 
+Контекстная история (#427) добавляет sibling routes `/v2/reports` (архив закрытых отчётов
+по годам) и `/v2/reports/{monthId}` (исторический отчёт того же месяца) на том же build,
+том же общем shell, тех же CSS Modules и той же локальной error boundary; нового пункта
+боковой навигации нет. Входы остаются контекстными: `История отчётов →` в строке контекста
+Home и `Все отчёты →` в строке контекста Capital. Архив читает те же два уже кэшированные
+read model, что Home и Capital (`/api/months` и `/api/analytics/capital-composition`),
+поэтому открытие архива по обычному пути не добавляет сетевых запросов; исторический отчёт
+читает `risk-allocation?month_id=<месяц>`, cash/депозиты/позиции этого месяца, справочники
+счетов и инструментов. Пропуски календарных месяцев остаются `отчёта нет` без нулей,
+черновик никогда не становится строкой истории, последний закрытый отчёт в архиве подписан
+как текущий, а значения прошлого отчёта всегда несут видимую оговорку о текущей методике.
+Исторические PERF04A/XIRR/TWRR и любые сравнения произвольных пар закрытых месяцев в этот
+срез не входят: у них нет принятой канонической модели, и React их не вычитает.
+
 Переход в v1 идёт на существующий month-specific route с hash явно выбранного шага;
 если шаг не выбирался, основной escape сохраняет выбранный месяц. Это **явный handoff,
 не завершённый native wizard**. Browser Back возвращает URL v2; повторный mount
@@ -188,6 +204,7 @@ instruments и performance attribution/XIRR/TWRR) и не добавляет н�
 | **S05 — капитал, планы и история** | Переносить законченные задачи с drill-down и одинаковыми backend числами; включить risk, tax/IIS, linked financing, return availability и export | Capability parity по таблице выше; v1 escape до приёмки каждой области |
 | **S05a — капитал (этот кандидат)** | Native `/v2/capital`: три итоговых значения, состав во времени и изменения по закрытым отчётам, счета/строки с пометкой исключённых сумм, связанные пары, доступность доходности и отдельный блок недвижимости/ипотеки | Только чтение существующих GET; строки не пересчитывают итоги; каждое состояние fail-closed отдельно; v1 escape сохраняет месяц и шаг |
 | **S06 — cutover** | Owner сравнительный UAT, проверка всех привычных операций и controlled default switch | Только явное approval. Удаление v1 — отдельное решение после периода успешного использования |
+| **S11 — контекстная история / архив (#427)** | Native `/v2/reports` — архив закрытых отчётов по годам, и `/v2/reports/{monthId}` — исторический отчёт: контекст отчёта, три значения, состав, место в истории с прошлым/следующим закрытым отчётом, связанные пары агрегатом, строки месяца, топ позиций и явный handoff v1 | Только чтение уже принятых GET read models. Без исторических PERF04A/XIRR/TWRR, без произвольных сравнений пар месяцев и без React-вычитания, без провайдера/редактирования/готовности; архив читает те же два кэшированных read model, что Home и Capital |
 
 Зависимости: S01 → S02; затем последовательно принять общие interaction patterns до
 параллельного переноса областей. Не строить отдельную большую design-system библиотеку,
@@ -228,6 +245,7 @@ cd frontend
 npm ci
 npm test -- src/pages/UiV2Page.test.tsx src/lib/uiV2MonthSelection.test.ts
 npm test -- src/pages/UiV2CapitalPage.test.tsx src/ui-v2/capitalHoldings.test.ts
+npm test -- src/pages/UiV2ReportsPage.test.tsx src/pages/UiV2ReportPage.test.tsx src/ui-v2/reportsArchive.test.ts
 npm run lint
 npm run format-check
 npm test

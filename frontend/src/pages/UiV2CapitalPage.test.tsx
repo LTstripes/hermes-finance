@@ -562,6 +562,19 @@ it("refuses a non-portfolio attribution response on the portfolio panel", async 
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
 
+it("adds the contextual archive link without changing the labelled v1 handoff", async () => {
+  const { mount } = setup();
+  mount();
+
+  await screen.findByTestId("capital-net");
+  expect(screen.getByRole("link", { name: "Все отчёты →" })).toHaveAttribute("href", "/v2/reports");
+  expect(
+    within(screen.getByTestId("v2-report-context")).getByRole("link", {
+      name: "Отчёт месяца в текущем интерфейсе →",
+    }),
+  ).toHaveAttribute("href", `/months/${uiV2CapitalMonthId}`);
+});
+
 describe("UI v2 Capital isolation", () => {
   it("keeps the v1 rollback path when the lazy page crashes", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});

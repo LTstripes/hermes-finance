@@ -9,7 +9,11 @@ export const queryKeys = {
   closedReportComparison: ["closed-report-comparison"] as const,
   capitalComposition: ["capital-composition"] as const,
   passiveIncomeHistory: (monthId: number | null) => ["passive-income-history", monthId] as const,
+  incomePlanSummary: (monthId: number | null) => ["income-plan-summary", monthId] as const,
+  cashFlowLadder: (monthId: number | null) => ["cash-flow-ladder", monthId] as const,
   goalSummary: (monthId: number | null) => ["goal-summary", monthId] as const,
+  planVsActual: (monthId: number | null) => ["plan-vs-actual", monthId] as const,
+  savings: (monthId: number | null) => ["savings", monthId] as const,
   riskAllocation: (monthId: number | null, topN = 5, forecastVersion = "v1") =>
     ["risk-allocation", monthId, topN, forecastVersion] as const,
   cashBalances: (monthId: number | null) => ["cash-balances", monthId] as const,
@@ -23,6 +27,8 @@ export const queryKeys = {
     ["portfolio-xirr", startDate, endDate] as const,
   portfolioTwrr: (startDate: string | null, endDate: string | null) =>
     ["portfolio-twrr", startDate, endDate] as const,
+  freshnessProvenance: (monthId: number | null) => ["freshness-provenance", monthId] as const,
+  providerCapabilities: ["provider-capabilities"] as const,
 };
 
 export function createQueryClient(): QueryClient {

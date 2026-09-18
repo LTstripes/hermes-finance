@@ -2,7 +2,7 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-17**.
+> Last synchronized: **2026-09-18**.
 
 ## Canonical identity
 
@@ -11,8 +11,9 @@
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
-- Current canonical development `main`: `814650806be5cb64aefffee15fccf7d5e1d364ec`.
-- Exact-main CI for that current development checkpoint: **#702 / run `35238258485` — SUCCESS** (attempt 2; attempt 1 failed only on hosted-runner `setup-uv` network timeout before tests).
+- Latest accepted UI v2 milestone integration: PR #441 / `3bd0cd742672955538a70d895ddba3ff654f9434`.
+- Staged-integration process rules: PR #443 / `34ae76f0cbb6bc31c333e30e3feef83b746ba2ca`.
+- Canonical `main` may advance with documentation-only closeout commits; GitHub `main` is authoritative for the live SHA.
 - PR #409 / issue #408 prepared the `0.9.0` candidate; the release was published only after owner OPS03 PASS.
 - `main` remains the only canonical source and release source. Post-release docs/product commits do not change the immutable `v0.9.0` tag identity.
 - Known non-blocking release-metadata follow-up: #410 corrects stale pre-publication wording in the GitHub Release description and remaining changelog/history lifecycle metadata. Tag/code identity is correct.
@@ -180,27 +181,45 @@ Release publication and local Stable installation are separate operations:
 
 ## Active roadmap / what comes next
 
-### UI v2 — active primary product stream
+### UI v2 — owner-UAT milestone integrated
 
-UI v2 remains the main active product stream under #387. The temporary `v0.9.0` release-window freeze is now lifted after successful publication + Stable UAT.
+UI v2 remains the main active product stream under #387. The first cohesive owner-facing milestone has now passed combined owner UAT on real-data Preview and is integrated into canonical `main`.
 
-Current accepted checkpoint:
+Owner-UAT aggregate:
 
-- #390 closed-report comparison backend read model — integrated;
-- #391 passive-income history/source backend read model — integrated;
-- #392 / PR #406 `Мои финансы` Home — implementation complete and **owner visual/product UAT PASS** on exact candidate `ba0e1c28b7901072b25ad627653540882ad1cae9`;
-- PR #406 is still **draft / not integrated** because it intentionally waited through the `v0.9.0` release window;
-- `/v2` remains opt-in and v1 remains the default/rollback path.
+- exact candidate: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
+- aggregate PR: #441;
+- owner verdict: **PASS**;
+- canonical integration commit: `3bd0cd742672955538a70d895ddba3ff654f9434`.
 
-Next UI integration gate:
+Canonical opt-in UI v2 now includes:
 
-1. refresh PR #406 onto the then-current canonical `main` (currently `814650806be5cb64aefffee15fccf7d5e1d364ec`);
-2. reconcile any post-release compatibility changes without redefining the frozen Home contract;
-3. rerun relevant exact-head CI + UI comparison evidence;
-4. merge only if still clean, then verify exact-main push CI and close #392;
-5. only after Home is canonical, open/start the next bounded **Capital drill-down** slice from #387.
+- Home «Мои финансы»;
+- Capital;
+- Income & Plans;
+- contextual Reports/history;
+- native Monthly Close over authoritative `monthly_close_workflow_v1`;
+- Data/App shell with freshness/provenance and explicit read-only reconciliation.
 
-Later planned UI sequence remains: Capital drill-down → Income & Plans → contextual history/archive polish → new Monthly Close shell over existing workflow semantics → Data & App consolidation → final comparative owner UAT → controlled default switch. v1 retirement remains a separate later decision.
+v1 remains the default/rollback path. History and Monthly Close remain contextual rather than permanent sidebar destinations.
+
+The remaining functional Data/App work is:
+
+1. #432 — catalogs and persistent mappings;
+2. #433 — exports and safety-gated local backup/restore;
+3. #434 — application settings, tax brackets and runtime diagnostics.
+
+Owner-UAT polish backlog is non-blocking:
+
+- #444 — global «Наверх» affordance for long pages;
+- #445 — Russian terminology/copy consistency audit;
+- #446 — Expected payouts hierarchy/alignment/page order;
+- #447 — Reports archive desktop spacing;
+- #448 — Reconciliation copy deduplication and owner-facing labels.
+
+Process lesson from this milestone is now durable in `AGENTS.md`: for parallel slices that share application spine files, create the milestone `integration/*` staging line early, integrate accepted heads incrementally, keep shared spine reconciliation Integrator-owned, and run owner UAT on one exact aggregate SHA rather than reconstructing a different tree afterward.
+
+The controlled v2 default switch and any v1 retirement remain later decisions after the remaining Data/App slices and final comparative acceptance.
 
 `1.0.0` remains a reasonable future milestone only after the new primary owner UX is cohesive and the proven production lifecycle remains intact.
 
@@ -224,7 +243,7 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #387 and children — UI v2; #392 is UAT-PASS but pending post-release integration via PR #406;
+- #387 and children — UI v2; core owner-UAT milestone is integrated, with #432–#434 plus polish #444–#448 still open;
 - #410 — non-blocking `v0.9.0` release-metadata/history cleanup.
 
 #313 is closed completed after the real `v0.8.2 -> v0.9.0` owner UAT.
@@ -242,4 +261,4 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #313, #380, #386, #387, #392, #404, #408, #410
+- #124, #127, #313, #380, #386, #387, #404, #408, #410, #432–#434, #444–#448

@@ -12,13 +12,26 @@ const STEP_IDS = new Set<GuidedCloseStepId>([
   "next_month_outlook",
 ]);
 
-export type MonthlyCloseReturnContext = { monthId: number; step: GuidedCloseStepId };
+export type MonthlyCloseOrigin = "monthly-close" | "monthly-close-v2";
+
+export type MonthlyCloseReturnContext = {
+  monthId: number;
+  origin: MonthlyCloseOrigin;
+  step: GuidedCloseStepId;
+};
 
 export function isGuidedCloseStepId(value: string | null): value is GuidedCloseStepId {
   return value !== null && STEP_IDS.has(value as GuidedCloseStepId);
 }
 
 export function monthlyCloseReturnPath(context: MonthlyCloseReturnContext): string {
+  if (context.origin === "monthly-close-v2") {
+    const params = new URLSearchParams({
+      month: String(context.monthId),
+      step: context.step,
+    });
+    return `/v2/close?${params.toString()}`;
+  }
   return `/months/${context.monthId}/close#${context.step}`;
 }
 
@@ -27,26 +40,31 @@ export function parseMonthlyCloseReturnContext(
 ): MonthlyCloseReturnContext | null {
   const monthId = Number(params.get("monthId"));
   const step = params.get("step");
+  const origin = params.get("from");
   if (
-    params.get("from") !== "monthly-close" ||
+    (origin !== "monthly-close" && origin !== "monthly-close-v2") ||
+    params.getAll("from").length !== 1 ||
+    params.getAll("monthId").length !== 1 ||
+    params.getAll("step").length !== 1 ||
     !Number.isInteger(monthId) ||
     monthId < 1 ||
     !isGuidedCloseStepId(step)
   ) {
     return null;
   }
-  return { monthId, step };
+  return { monthId, origin, step };
 }
 
 export function withMonthlyCloseReturn(
   path: string,
   monthId: number,
   step: GuidedCloseStepId,
+  origin: MonthlyCloseOrigin = "monthly-close",
 ): string {
   const [pathAndQuery, hash = ""] = path.split("#", 2);
   const [pathname, query = ""] = pathAndQuery.split("?", 2);
   const params = new URLSearchParams(query);
-  params.set("from", "monthly-close");
+  params.set("from", origin);
   params.set("step", step);
   params.set("monthId", String(monthId));
   return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
@@ -71,6 +89,7 @@ export function routeForGuidedAction(
   actionId: GuidedCloseActionId,
   monthId: number,
   step: GuidedCloseStepId,
+  origin: MonthlyCloseOrigin = "monthly-close",
 ): string {
-  return withMonthlyCloseReturn(ACTION_PATHS[actionId](monthId), monthId, step);
+  return withMonthlyCloseReturn(ACTION_PATHS[actionId](monthId), monthId, step, origin);
 }

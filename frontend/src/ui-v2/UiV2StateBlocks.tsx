@@ -65,20 +65,38 @@ export function UiV2Loading({ label }: { label: string }) {
 }
 
 export function UiV2ReportContext({
-  month,
   children,
+  kind = "current",
+  month,
+  source,
+  status,
 }: {
-  month: ReportingMonth;
   children?: ReactNode;
+  /** `historical` is used only by the historical report route; never for current state. */
+  kind?: "current" | "historical";
+  month: ReportingMonth;
+  source?: string;
+  status?: string;
 }) {
   return (
-    <div className={styles.reportContext}>
-      <span className={styles.closedBadge}>Закрытый отчёт</span>
+    <div className={styles.reportContext} data-context={kind} data-testid="v2-report-context">
+      <span className={styles.closedBadge}>
+        {kind === "historical" ? "Исторический отчёт" : "Закрытый отчёт"}
+      </span>
+      {status ? <span className={styles.reportStatus}>{status}</span> : null}
       <span>{formatMonth(month.year, month.month)}</span>
       <span className={styles.contextDivider} aria-hidden="true">
         ·
       </span>
       <span>Снимок {formatDate(month.snapshot_date)}</span>
+      {source ? (
+        <>
+          <span className={styles.contextDivider} aria-hidden="true">
+            ·
+          </span>
+          <span>Источник: {source}</span>
+        </>
+      ) : null}
       {children}
     </div>
   );
