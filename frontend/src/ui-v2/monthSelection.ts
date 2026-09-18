@@ -27,6 +27,19 @@ export function newerDraftMonth(
         (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
     ) ?? null
   );
+export function selectNewestDraftAfterLatestClosed(months: ReportingMonth[]): {
+  latestClosed: ReportingMonth | null;
+  newestDraft: ReportingMonth | null;
+} {
+  const sorted = sortReportingMonths(months);
+  const latestClosed = sorted.find((month) => month.status === "closed") ?? null;
+  const newestDraft =
+    sorted.find(
+      (month) =>
+        month.status === "draft" &&
+        (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
+    ) ?? null;
+  return { latestClosed, newestDraft };
 }
 
 type MonthSelection =
@@ -47,5 +60,5 @@ export function resolveMonthSelection(values: string[], months: ReportingMonth[]
 export function monthWorkspacePath(monthId: number, step?: GuidedCloseStepId): string {
   const params = new URLSearchParams({ month: String(monthId) });
   if (step) params.set("step", step);
-  return `/v2?${params.toString()}`;
+  return `/v2/close?${params.toString()}`;
 }

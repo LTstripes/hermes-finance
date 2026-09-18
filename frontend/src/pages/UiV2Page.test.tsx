@@ -136,7 +136,7 @@ it("keeps a newer draft separate and routes its single CTA to the server recomme
   mount();
   expect(await screen.findByTestId("v2-draft-action")).toHaveAttribute(
     "href",
-    "/months/12/close#alfa_baseline",
+    "/v2/close?month=12&step=alfa_baseline",
   );
   expect(screen.getByTestId("v2-draft-action")).toHaveTextContent("Август 2031 ещё не закрыт");
   expect(screen.getByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");

@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
-import { useMonthCloseWorkflow, type MonthCloseWorkflow } from "../api/monthCloseWorkflow";
-import { closeMonth, reopenMonth } from "../api/months";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
 import { routeForGuidedAction } from "../components/month-close/navigation";
@@ -13,6 +10,7 @@ import {
   parseAlfaStatementTransientOutcome,
   type AlfaStatementTransientOutcome,
 } from "../components/month-close/statementOutcome";
+import { useMonthCloseLifecycle } from "../components/month-close/useMonthCloseLifecycle";
 import {
   Badge,
   Button,
@@ -24,7 +22,6 @@ import {
 } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
-import { queryKeys } from "../queryClient";
 
 const STATE_LABELS = {
   not_started: "Ещё не начато",
@@ -56,12 +53,17 @@ export function MonthlyCloseWorkflowPage() {
   const navigate = useNavigate();
   const parsedMonthId = Number(params.monthId);
   const monthId = Number.isInteger(parsedMonthId) && parsedMonthId > 0 ? parsedMonthId : null;
-  const workflowQuery = useMonthCloseWorkflow(monthId);
-  const queryClient = useQueryClient();
-  const [pendingLifecycle, setPendingLifecycle] = useState<"close" | "reopen" | null>(null);
-  const [lifecycleBusy, setLifecycleBusy] = useState(false);
-  const [preparingClose, setPreparingClose] = useState(false);
-  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const {
+    cancelLifecycle,
+    confirmLifecycle,
+    lifecycleBusy,
+    lifecycleError,
+    pendingLifecycle,
+    prepareClose,
+    preparingClose,
+    requestReopen,
+    workflowQuery,
+  } = useMonthCloseLifecycle(monthId);
   const [statementOutcome] = useState<AlfaStatementTransientOutcome | null>(() =>
     parseAlfaStatementTransientOutcome(
       (location.state as { alfaStatementOutcome?: unknown } | null)?.alfaStatementOutcome,
@@ -76,14 +78,6 @@ export function MonthlyCloseWorkflowPage() {
       state: null,
     });
   }, [location.hash, location.pathname, location.search, navigate, statementOutcome]);
-
-  useEffect(() => {
-    function refetchOnFocus() {
-      void workflowQuery.refetch();
-    }
-    window.addEventListener("focus", refetchOnFocus);
-    return () => window.removeEventListener("focus", refetchOnFocus);
-  }, [workflowQuery.refetch]);
 
   const workflow = workflowQuery.data;
   const activeStep = workflow
@@ -109,93 +103,6 @@ export function MonthlyCloseWorkflowPage() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeStep, location.hash]);
-
-  async function refetchAuthoritativeWorkflow(): Promise<MonthCloseWorkflow> {
-    const result = await workflowQuery.refetch();
-    if (result.error) throw result.error;
-    if (!result.data) throw new Error("Актуальное состояние месяца не получено.");
-    return result.data;
-  }
-
-  function closeIsAllowed(current: MonthCloseWorkflow): boolean {
-    return current.month.status === "draft" && current.readiness.can_close;
-  }
-
-  async function prepareClose() {
-    if (!workflow || preparingClose || lifecycleBusy) return;
-    setPreparingClose(true);
-    setLifecycleError(null);
-    try {
-      const latest = await refetchAuthoritativeWorkflow();
-      if (latest.month.status === "closed") {
-        setLifecycleError("Месяц уже закрыт в другой вкладке. Состояние обновлено.");
-      } else if (!closeIsAllowed(latest)) {
-        setLifecycleError(
-          "Состояние готовности изменилось. Проверь актуальные блокеры и предупреждения.",
-        );
-      } else {
-        setPendingLifecycle("close");
-      }
-    } catch (error) {
-      setLifecycleError(formatApiError(error));
-    } finally {
-      setPreparingClose(false);
-    }
-  }
-
-  async function confirmLifecycle() {
-    if (!pendingLifecycle || !workflow || lifecycleBusy) return;
-    setLifecycleBusy(true);
-    setLifecycleError(null);
-    try {
-      const latest = await refetchAuthoritativeWorkflow();
-      if (pendingLifecycle === "close" && !closeIsAllowed(latest)) {
-        setPendingLifecycle(null);
-        setLifecycleError(
-          latest.month.status === "closed"
-            ? "Месяц уже закрыт в другой вкладке. Состояние обновлено."
-            : "Состояние готовности изменилось. Проверь актуальные блокеры и предупреждения.",
-        );
-        return;
-      }
-      if (pendingLifecycle === "reopen" && latest.month.status !== "closed") {
-        setPendingLifecycle(null);
-        setLifecycleError("Месяц уже открыт для редактирования. Состояние обновлено.");
-        return;
-      }
-
-      const persisted =
-        pendingLifecycle === "close"
-          ? await closeMonth(monthId as number)
-          : await reopenMonth(monthId as number);
-      const expectedStatus = pendingLifecycle === "close" ? "closed" : "draft";
-      if (persisted.status !== expectedStatus) {
-        throw new Error("Сервер не подтвердил новое состояние месяца.");
-      }
-
-      await queryClient.invalidateQueries({ queryKey: queryKeys.months });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.monthCloseWorkflow(monthId),
-        refetchType: "none",
-      });
-      const refreshed = await refetchAuthoritativeWorkflow();
-      if (refreshed.month.status !== expectedStatus) {
-        throw new Error("Актуальное состояние месяца не совпало с ответом сервера.");
-      }
-      setPendingLifecycle(null);
-    } catch (error) {
-      setPendingLifecycle(null);
-      setLifecycleError(formatApiError(error));
-      try {
-        await refetchAuthoritativeWorkflow();
-      } catch {
-        // The query state contains the authoritative error, including a possible 404.
-      }
-    } finally {
-      setLifecycleBusy(false);
-    }
-  }
 
   if (monthId === null) {
     return (
@@ -371,10 +278,7 @@ export function MonthlyCloseWorkflowPage() {
         {workflow.month.status === "closed" ? (
           <Button
             disabled={lifecycleBusy}
-            onClick={() => {
-              setLifecycleError(null);
-              setPendingLifecycle("reopen");
-            }}
+            onClick={requestReopen}
             type="button"
             variant="secondary"
           >
@@ -398,7 +302,7 @@ export function MonthlyCloseWorkflowPage() {
             ? "Закрыть месяц? Данные будут зафиксированы до явного повторного открытия."
             : "Открыть месяц заново? Данные снова станут редактируемыми."
         }
-        onCancel={() => setPendingLifecycle(null)}
+        onCancel={cancelLifecycle}
         onConfirm={() => void confirmLifecycle()}
         open={pendingLifecycle !== null}
         title={pendingLifecycle === "close" ? "Закрыть месяц?" : "Открыть месяц заново?"}

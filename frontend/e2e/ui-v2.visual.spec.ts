@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 
+import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
+
 import {
   makeUiV2ArchiveHistory,
   makeUiV2CapitalHistory,
@@ -136,7 +138,7 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   await expect(page.getByTestId("v2-capital")).toHaveText("2 803 900 ₽");
   await expect(page.getByTestId("v2-draft-action")).toHaveAttribute(
     "href",
-    "/months/12/close#alfa_baseline",
+    "/v2/close?month=12&step=alfa_baseline",
   );
   await expect(
     page.getByRole("region", { name: "Главные показатели" }).getByRole("article"),
@@ -255,6 +257,153 @@ test("ui-v2 Home draft workflow error never exposes a stale recommendation", asy
   await expect(page.getByTestId("v2-capital")).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-home-draft-action-error");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+function closeReadyWorkflow(): MonthCloseWorkflow {
+  const workflow = structuredClone(makeUiV2Workflow());
+  const finalStep = workflow.steps.find((step) => step.id === "final_review_close");
+  if (!finalStep) throw new Error("Synthetic final close step is missing");
+  finalStep.primary_action = {
+    id: "confirm_close",
+    label: "Закрыть месяц",
+    target: "confirm_close",
+  };
+  finalStep.state = "ready";
+  return workflow;
+}
+
+function closePersistedWorkflow(workflow: MonthCloseWorkflow): MonthCloseWorkflow {
+  const closed = structuredClone(workflow);
+  closed.month.status = "closed";
+  closed.recommended_step_id = "next_month_outlook";
+  if (closed.final_review.available) closed.final_review.month_header.status = "closed";
+  for (const step of closed.steps) step.primary_action = null;
+  closed.outlook = {
+    available: false,
+    reason_code: "no_known_dated_events",
+    source_month: { ...closed.month },
+    next_month: null,
+    upcoming_14_days: null,
+    upcoming_30_days: null,
+    known_event_count: 0,
+    evidence_version: "ui-v2-browser-closed-v1",
+  };
+  return closed;
+}
+
+async function installCloseApi(page: Page) {
+  const state = {
+    workflow: closeReadyWorkflow(),
+    months: structuredClone(uiV2Months),
+  };
+  const errors: string[] = [];
+  const unexpected: string[] = [];
+  const requests: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) unexpected.push(url.origin);
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith("/api/")) {
+      await route.continue();
+      return;
+    }
+    const method = request.method();
+    requests.push(`${method} ${url.pathname}${url.search}`);
+    let json: unknown;
+    if (method === "POST" && url.pathname === "/api/months/12/close") {
+      state.workflow = closePersistedWorkflow(state.workflow);
+      state.months = state.months.map((month) =>
+        month.id === 12 ? { ...month, status: "closed" as const } : month,
+      );
+      json = state.workflow.month;
+    } else if (method !== "GET") {
+      unexpected.push(`${method} ${url.pathname}`);
+      await route.abort();
+      return;
+    } else if (url.pathname === "/api/months") {
+      json = state.months;
+    } else if (url.pathname === "/api/months/12/close-workflow") {
+      json = state.workflow;
+    } else if (url.pathname === "/api/accounts" || url.pathname === "/api/instruments") {
+      json = [];
+    } else if (url.pathname === "/api/health") {
+      json = { status: "ok", version: "0.9.0-synthetic" };
+    } else if (url.pathname === "/api/analytics/closed-report-comparison") {
+      json = makeUiV2Comparison();
+    } else if (url.pathname === "/api/analytics/capital-composition") {
+      json = makeUiV2CapitalHistory();
+    } else if (url.pathname === "/api/analytics/passive-income") {
+      json = makeUiV2PassiveHistory();
+    } else if (url.pathname === "/api/goals/summary") {
+      json = makeUiV2Goals();
+    } else {
+      unexpected.push(`${method} ${url.pathname}`);
+      await route.fulfill({
+        status: 404,
+        json: { error: { code: "synthetic_missing", message: "Missing fixture", details: [] } },
+      });
+      return;
+    }
+    await route.fulfill({ status: 200, json });
+  });
+  return { errors, requests, state, unexpected };
+}
+
+test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Home journey", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Interaction proof once");
+  const evidence = await installCloseApi(page);
+  await page.goto("/v2");
+  await page.getByTestId("v2-draft-action").click();
+  await expect(page).toHaveURL(/\/v2\/close\?month=12&step=alfa_baseline$/);
+  await expect(page.getByRole("heading", { name: "Сверить состав портфеля" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Открыть предпросмотр Alfa" }).click();
+  await expect(page).toHaveURL(/\/accounts\?from=monthly-close-v2&step=alfa_baseline&monthId=12$/);
+  await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=12&step=alfa_baseline",
+  );
+  await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
+
+  await page.getByRole("link", { name: "Проверить итоги и закрыть месяц" }).first().click();
+  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
+  await page.getByRole("button", { name: "Закрыть месяц" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible();
+  await expect(page.getByText(/из 8 шагов/)).toHaveCount(0);
+  await capture(page, testInfo, "ui-v2-close-closed-desktop");
+
+  await page.getByRole("link", { name: "Вернуться в «Мои финансы»" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
+  expect(
+    evidence.requests.filter((request) => request === "POST /api/months/12/close"),
+  ).toHaveLength(1);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Monthly Close narrow: current action and collapsed step list stay bounded", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installCloseApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/close?month=12&step=actual_payouts");
+  await expect(page.getByRole("heading", { name: "Проверить полученные выплаты" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Выбрать выписку с выплатами" })).toBeVisible();
+  const steps = page.locator("details").filter({ hasText: "Шаги закрытия" });
+  await expect(steps).not.toHaveAttribute("open", "");
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-close-narrow");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

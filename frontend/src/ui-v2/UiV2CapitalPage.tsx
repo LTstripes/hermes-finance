@@ -54,9 +54,8 @@ import {
 } from "./capitalHoldings";
 import { CLASS_COLORS, classMeta } from "./assetClasses";
 import {
-  latestClosedMonth,
-  newerDraftMonth,
   resolveMonthSelection,
+  selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "./monthSelection";
 import capitalStyles from "./UiV2Capital.module.css";
@@ -886,8 +885,7 @@ export default function UiV2CapitalPage() {
     refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const latestClosed = useMemo(() => latestClosedMonth(months), [months]);
-  const newerDraft = useMemo(() => newerDraftMonth(months, latestClosed), [latestClosed, months]);
+  const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
   const closedId = latestClosed?.id ?? null;
   const closed = closedId !== null;
 
@@ -1060,7 +1058,11 @@ export default function UiV2CapitalPage() {
   const v1ReturnPath =
     requestedMonth.kind === "selected"
       ? requestedStep
-        ? monthlyCloseReturnPath({ monthId: requestedMonth.month.id, step: requestedStep })
+        ? monthlyCloseReturnPath({
+            monthId: requestedMonth.month.id,
+            origin: "monthly-close",
+            step: requestedStep,
+          })
         : `/months/${requestedMonth.month.id}`
       : latestClosed
         ? `/months/${latestClosed.id}`
