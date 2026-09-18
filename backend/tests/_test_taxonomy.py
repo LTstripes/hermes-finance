@@ -97,6 +97,7 @@ _PERSISTENCE_FILES = frozenset(
     {
         "test_applied_payouts.py",
         "test_backups_api.py",
+        "test_protected_backups.py",
         "test_broker_baseline_apply.py",
         "test_broker_identity_mappings.py",
         "test_broker_snapshot_apply.py",
