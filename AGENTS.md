@@ -108,6 +108,23 @@ For a GitHub-native Integrator without a local checkout, the equivalent requirem
 - The Integrator may incorporate accepted `main` changes into an integration branch when compatibility requires it; do not churn branches merely because `main` advanced.
 - An integration milestone reaches `main` only after its own review, CI and applicable UAT gates pass.
 
+## Staged integration for parallel slices
+
+Use an explicit `integration/*` staging branch **at the start of a multi-slice milestone**, not only after every sibling PR is finished, when several accepted tasks are expected to touch shared application spine files or must be owner-UATed together.
+
+Rules:
+
+- `main` remains canonical and release-only; the staging branch is temporary coordination state.
+- Each Worker still writes only its isolated task branch/workspace and does not merge siblings.
+- After Integrator `ACCEPT` of a task, integrate that exact accepted head into the milestone staging branch promptly and run a proportional integration smoke. Do not defer all semantic conflict resolution until the final owner-UAT aggregate.
+- Later sibling Workers should finish against the current milestone integration context when practical: refresh/reconcile their task branch with the latest accepted staging head before final handoff, or explicitly prove compatibility with it. Do not silently replace their original task contract with staging-only behavior.
+- The Integrator owns shared spine reconciliation. Files such as application route registries, `UiV2Entry`, `UiV2Shell`, shared month-selection/navigation helpers and shared visual-test registration must not become independently authoritative in several sibling PRs. Workers should prefer leaf pages/components/tests; central route/navigation union is reconciled by one Integrator-owned commit when multiple slices overlap.
+- When a shared configuration can be made additive/declarative (for example route metadata or visual-spec discovery), prefer that design so new slices do not repeatedly edit one central list.
+- Owner UAT for a milestone runs on one exact aggregate SHA that contains the ancestry of all accepted slice heads and has its own CI/evidence. The exact aggregate tree the Owner tested is the integration candidate; do not reconstruct a different tree after PASS.
+- High-risk flows (financial mutation, Monthly Close, backup/restore, migrations, runtime/provider actions) remain gated from canonical `main` until their required owner UAT/review passes even if lower-risk sibling pages are already accepted.
+- After owner PASS, integrate the proven aggregate tree or an exact-equivalent tree with explicit proof; then require canonical `main` push CI on the merged SHA.
+- If milestone integration reveals a semantic conflict rather than a mechanical merge conflict, stop and resolve it as an Integrator decision against the accepted task contracts. Do not let a Worker choose which sibling contract wins.
+
 ## Parallel task isolation — physical workspace invariant
 
 - **Never run two active write or verification tasks in the same physical working tree, even when they use different Git branches.**
