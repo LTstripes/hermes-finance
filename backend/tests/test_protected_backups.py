@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import threading
 import zipfile
 from datetime import UTC, datetime
@@ -283,7 +284,7 @@ def test_concurrent_publication_fails_closed_on_destination_lock(
 
 
 def test_managed_name_recognition_is_exact_and_dirty_checkout_fails_closed(
-    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     assert is_managed_recovery_name(
         "hermes_recovery_20350102T030405678000Z-abcdef0123456789.hermes-recovery"
@@ -294,6 +295,14 @@ def test_managed_name_recognition_is_exact_and_dirty_checkout_fails_closed(
     assert not is_managed_recovery_name(
         "foreign_20350102T030405678000Z-abcdef0123456789.hermes-recovery"
     )
+    original_run = protected_backups.subprocess.run
+
+    def dirty_status_run(*args, **kwargs):
+        if args and args[0][:2] == ["git", "status"]:
+            return subprocess.CompletedProcess(args[0], 0, stdout=" M synthetic.txt\n", stderr="")
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(protected_backups.subprocess, "run", dirty_status_run)
     with pytest.raises(ProtectedBackupError, match="not clean"):
         protected_backups._git_identity(Path(__file__).resolve().parents[2])
 
