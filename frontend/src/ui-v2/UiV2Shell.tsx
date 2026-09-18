@@ -3,11 +3,12 @@ import { Link } from "react-router";
 
 import styles from "./UiV2Page.module.css";
 
-export type UiV2Section = "home" | "capital";
+export type UiV2Section = "home" | "capital" | "data";
 
 const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to: string }> = [
   { id: "home", label: "Мои финансы", icon: "⌂", to: "/v2" },
   { id: "capital", label: "Капитал", icon: "◧", to: "/v2/capital" },
+  { id: "data", label: "Данные", icon: "◫", to: "/v2/data" },
 ];
 
 const LEGACY_LINKS: Array<{ label: string; to: string }> = [
@@ -15,7 +16,8 @@ const LEGACY_LINKS: Array<{ label: string; to: string }> = [
   { label: "Счета и справочники", to: "/accounts" },
   { label: "История и результаты", to: "/analytics" },
   { label: "Доход и цели", to: "/goals" },
-  { label: "Данные и приложение", to: "/export" },
+  { label: "Экспорт и копии", to: "/export" },
+  { label: "Настройки", to: "/settings" },
 ];
 
 /**
@@ -27,12 +29,14 @@ export function UiV2Shell({
   busy = false,
   children,
   header,
+  sidebarExtra,
   v1ReturnPath,
 }: {
   active: UiV2Section;
   busy?: boolean;
   children: ReactNode;
   header: ReactNode;
+  sidebarExtra?: ReactNode;
   v1ReturnPath: string;
 }) {
   return (
@@ -60,6 +64,7 @@ export function UiV2Shell({
             </Link>
           ))}
         </nav>
+        {sidebarExtra}
         <div className={styles.sidebarNote}>
           <span className={styles.eyebrow}>Финансовая картина</span>
           <p>Капитал, изменения, доход и цели по подтверждённым отчётам.</p>
