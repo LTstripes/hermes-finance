@@ -756,6 +756,20 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
   await expect(page.getByTestId("reports-draft-note")).toContainText("Август 2031 ещё не закрыт");
   await expect(page.getByTestId("reports-year-2030")).toContainText("Ноябрь 2030");
   await expect(page.getByRole("link", { name: "Месяцы в текущем интерфейсе →" })).toBeVisible();
+  const archiveLayout = await page.getByTestId("reports-row-91").evaluate((row) => {
+    const cells = Array.from(row.children).map((cell) => cell.getBoundingClientRect());
+    const action = row.querySelector("td:last-child a")?.getBoundingClientRect();
+    return {
+      cellCount: cells.length,
+      tableLayout: getComputedStyle(row.closest("table") as HTMLTableElement).tableLayout,
+      actionGap: action && cells.at(-2) ? action.left - cells.at(-2).right : -1,
+      widths: cells.map((cell) => cell.width),
+    };
+  });
+  expect(archiveLayout.cellCount).toBe(7);
+  expect(archiveLayout.tableLayout).toBe("fixed");
+  expect(archiveLayout.actionGap).toBeGreaterThanOrEqual(12);
+  expect(archiveLayout.widths.every((width) => width > 0)).toBe(true);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-reports-archive-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
@@ -775,6 +789,7 @@ test("ui-v2 reports archive narrow: rows stay readable as cards", async ({ page 
   await page.goto("/v2/reports");
   await expect(page.getByTestId("reports-row-90")).toContainText("2 761 300 ₽");
   await expect(page.getByTestId("reports-gap-2031-6")).toContainText("отчёта нет");
+  await expect(page.getByTestId("reports-row-90")).toHaveCSS("display", "block");
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-reports-archive-narrow");
   expect(evidence.unexpected).toEqual([]);
