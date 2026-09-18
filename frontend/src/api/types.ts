@@ -287,6 +287,55 @@ export type DashboardForecast = {
   warnings: string[];
 };
 
+export type IncomePlanForecast = {
+  annual_total: MoneyValue;
+  monthly_total: MoneyValue;
+  breakdown: {
+    expected_deposit_interest: MoneyValue;
+    expected_coupon_net: MoneyValue;
+    expected_dividend_component: MoneyValue;
+    other_expected_capital_income: MoneyValue;
+  };
+  is_approximate: boolean;
+  warnings: string[];
+  dividend_average: MoneyValue;
+  configured_start_month: string | null;
+  dividend_month_keys_used: string[];
+};
+
+export type IncomePlanCoverage = {
+  forecast_monthly: MoneyValue;
+  actual_average: MoneyValue;
+  mandatory_expenses: MoneyValue;
+  coverage_pct: string | null;
+  actual_mandatory_expense_coverage_pct: string | null;
+  passive_income_minus_mandatory_expenses: MoneyValue;
+  goal_target: MoneyValue;
+  goal_progress_pct: string | null;
+  is_approximate: boolean;
+  warnings: string[];
+};
+
+export type IncomePlanSummary = {
+  month: DashboardMonthRef;
+  passive_income_actual: MoneyValue;
+  passive_income_delta: MoneyValue | null;
+  passive_income_average: MoneyValue;
+  passive_income_average_months: number;
+  passive_income_average_complete: boolean;
+  passive_income_history_start_month: string | null;
+  passive_income_average_months_used: string[];
+  forecast: IncomePlanForecast | null;
+  coverage: IncomePlanCoverage | null;
+  cash_balance: {
+    total: MoneyValue;
+    breakdown: {
+      saving_allocations: MoneyValue;
+    };
+  } | null;
+  warnings: string[];
+};
+
 /** Backend-owned presentation facts for one linked liquid account and debt. */
 export type DashboardLinkedPair = {
   debt_id: number;

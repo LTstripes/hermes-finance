@@ -3,6 +3,7 @@ import { Link } from "react-router";
 
 const UiV2Page = lazy(() => import("./UiV2Page"));
 const UiV2CapitalPage = lazy(() => import("./UiV2CapitalPage"));
+const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
 
 export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
@@ -40,6 +41,16 @@ export function UiV2CapitalEntry() {
     <UiV2ErrorBoundary>
       <Suspense fallback={<p role="status">Загружаем новый интерфейс…</p>}>
         <UiV2CapitalPage />
+      </Suspense>
+    </UiV2ErrorBoundary>
+  );
+}
+
+export function UiV2IncomeEntry() {
+  return (
+    <UiV2ErrorBoundary>
+      <Suspense fallback={<p role="status">Загружаем новый интерфейс…</p>}>
+        <UiV2IncomePage />
       </Suspense>
     </UiV2ErrorBoundary>
   );

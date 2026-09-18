@@ -1,5 +1,5 @@
 import { ApiClientError, apiRequest } from "./client";
-import type { MonthSummary, MoneyValue } from "./types";
+import type { IncomePlanSummary, MonthSummary, MoneyValue } from "./types";
 
 const UNAVAILABLE_MONEY: MoneyValue = { amount: "", currency: "RUB" };
 
@@ -39,4 +39,16 @@ export async function getMonthSummary(
     }
     throw error;
   }
+}
+
+/** Read-only summary slice used by the UI v2 Income and plans section. */
+export function getIncomePlanSummary(
+  monthId: number,
+  signal?: AbortSignal,
+): Promise<IncomePlanSummary> {
+  const params = new URLSearchParams({ forecast_version: "v1" });
+  return apiRequest<IncomePlanSummary>(`/api/months/${monthId}/summary?${params.toString()}`, {
+    method: "GET",
+    signal,
+  });
 }
