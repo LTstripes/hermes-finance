@@ -16,13 +16,7 @@ import UiV2IncomePage from "../ui-v2/UiV2IncomePage";
 
 const money = (amount: string) => ({ amount, currency: "RUB" });
 
-function makeIncomeSummary({
-  forecast = true,
-  zero = false,
-}: {
-  forecast?: boolean;
-  zero?: boolean;
-} = {}): IncomePlanSummary {
+function makeIncomeSummary({ zero = false }: { zero?: boolean } = {}): IncomePlanSummary {
   const amount = (value: string) => money(zero ? "0.00" : value);
   return {
     month: {
@@ -33,44 +27,34 @@ function makeIncomeSummary({
       snapshot_date: "2031-07-31",
       source: "manual",
     },
-    passive_income_actual: amount("17500.00"),
-    passive_income_delta: amount("1100.00"),
-    passive_income_average: amount("15300.00"),
-    passive_income_average_months: zero ? 0 : 4,
-    passive_income_average_complete: false,
-    passive_income_history_start_month: null,
-    passive_income_average_months_used: zero ? [] : ["2031-02", "2031-04", "2031-05", "2031-07"],
-    forecast: forecast
-      ? {
-          annual_total: amount("252000.00"),
-          monthly_total: amount("21000.00"),
-          breakdown: {
-            expected_deposit_interest: amount("6750.00"),
-            expected_coupon_net: amount("5000.00"),
-            expected_dividend_component: amount("4000.00"),
-            other_expected_capital_income: amount("0.00"),
-          },
-          is_approximate: true,
-          warnings: ["Дивиденды оценены по подтверждённому среднему."],
-          dividend_average: amount("4000.00"),
-          configured_start_month: null,
-          dividend_month_keys_used: ["2031-02", "2031-04", "2031-05", "2031-07"],
-        }
-      : null,
-    coverage: forecast
-      ? {
-          forecast_monthly: amount("21000.00"),
-          actual_average: amount("15300.00"),
-          mandatory_expenses: amount("60000.00"),
-          coverage_pct: zero ? "0.00" : "35.00",
-          actual_mandatory_expense_coverage_pct: zero ? "0.00" : "25.50",
-          passive_income_minus_mandatory_expenses: zero ? amount("0.00") : money("-39000.00"),
-          goal_target: money("50000.00"),
-          goal_progress_pct: zero ? "0.00" : "30.60",
-          is_approximate: true,
-          warnings: [],
-        }
-      : null,
+    forecast_version: "v1",
+    forecast: {
+      annual_total: amount("252000.00"),
+      monthly_total: amount("21000.00"),
+      breakdown: {
+        expected_deposit_interest: amount("6750.00"),
+        expected_coupon_net: amount("5000.00"),
+        expected_dividend_component: amount("4000.00"),
+        other_expected_capital_income: amount("0.00"),
+      },
+      is_approximate: true,
+      warnings: ["Дивиденды оценены по подтверждённому среднему."],
+      dividend_average: amount("4000.00"),
+      configured_start_month: null,
+      dividend_month_keys_used: ["2031-02", "2031-04", "2031-05", "2031-07"],
+    },
+    coverage: {
+      forecast_monthly: amount("21000.00"),
+      actual_average: amount("15300.00"),
+      mandatory_expenses: amount("60000.00"),
+      coverage_pct: zero ? "0.00" : "35.00",
+      actual_mandatory_expense_coverage_pct: zero ? "0.00" : "25.50",
+      passive_income_minus_mandatory_expenses: zero ? amount("0.00") : money("-39000.00"),
+      goal_target: money("50000.00"),
+      goal_progress_pct: zero ? "0.00" : "30.60",
+      is_approximate: true,
+      warnings: [],
+    },
     cash_balance: {
       total: amount("803900.00"),
       breakdown: { saving_allocations: amount("25000.00") },
@@ -233,7 +217,7 @@ function setup(path = "/v2/income") {
       if (url.pathname === "/api/months") {
         data = state.months;
         failed = state.monthsError;
-      } else if (url.pathname === "/api/months/91/summary") {
+      } else if (url.pathname === "/api/months/91/income-plan-summary") {
         expect(url.searchParams.get("forecast_version")).toBe("v1");
         data = state.summary;
         failed = state.summaryError;
@@ -335,10 +319,30 @@ describe("UI v2 Income and plans", () => {
     await screen.findByTestId("income-average");
     expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
     expect(screen.getByTestId("income-forecast")).toHaveTextContent("21 000 ₽");
-    expect(reads.filter((read) => read.includes("/api/months/91/summary")).length).toBe(1);
+    expect(reads.filter((read) => read.includes("/api/months/91/income-plan-summary")).length).toBe(
+      1,
+    );
     expect(reads.filter((read) => read.includes("/api/months/91/cash-flow-ladder")).length).toBe(1);
     expect(reads.some((read) => read.includes("reporting_month_id=90"))).toBe(true);
   });
+
+  it.each(["12", "999"])(
+    "keeps the latest historical average when factual month %s is invalid or not CLOSED",
+    async (monthId) => {
+      const { mount, reads } = setup(`/v2/income?month=${monthId}`);
+      mount();
+
+      expect(await screen.findByTestId("income-average")).toHaveTextContent("15 300 ₽");
+      expect(screen.getByTestId("income-history-panel")).toHaveTextContent(
+        "Выберите только закрытый отчёт для фактической разбивки",
+      );
+      expect(
+        reads.some((read) =>
+          read.includes(`/api/analytics/passive-income?reporting_month_id=${monthId}`),
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("does not turn an empty average window into a measured zero", async () => {
     const { mount, state } = setup();
@@ -357,14 +361,14 @@ describe("UI v2 Income and plans", () => {
     expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("0 ₽");
   });
 
-  it("fails forecast or one secondary read closed without blanking confirmed siblings", async () => {
-    const forecastUnavailable = setup();
-    forecastUnavailable.state.summary = makeIncomeSummary({ forecast: false });
-    forecastUnavailable.mount();
+  it("fails planning or one secondary read closed without blanking confirmed siblings", async () => {
+    const planningUnavailable = setup();
+    planningUnavailable.state.summaryError = true;
+    planningUnavailable.mount();
+    expect(await screen.findByTestId("income-average")).toHaveTextContent("15 300 ₽");
     expect(
-      await screen.findByText(/Прогноз недоступен: backend не подтвердил этот блок/),
+      within(screen.getByTestId("income-forecast-panel")).getByText("Данные временно недоступны"),
     ).toBeVisible();
-    expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
     cleanup();
     vi.unstubAllGlobals();
 

@@ -47,8 +47,11 @@ export function getIncomePlanSummary(
   signal?: AbortSignal,
 ): Promise<IncomePlanSummary> {
   const params = new URLSearchParams({ forecast_version: "v1" });
-  return apiRequest<IncomePlanSummary>(`/api/months/${monthId}/summary?${params.toString()}`, {
-    method: "GET",
-    signal,
-  });
+  return apiRequest<IncomePlanSummary>(
+    `/api/months/${monthId}/income-plan-summary?${params.toString()}`,
+    {
+      method: "GET",
+      signal,
+    },
+  );
 }

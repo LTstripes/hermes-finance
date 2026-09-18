@@ -11,64 +11,42 @@ import type {
 } from "../src/api/types";
 import { makeUiV2Goals, makeUiV2PassiveHistory, uiV2Months } from "../src/test/uiV2Fixtures";
 
-type IncomeScene =
-  | "normal"
-  | "no-closed"
-  | "first-closed"
-  | "zero"
-  | "partial"
-  | "forecast-unavailable";
+type IncomeScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial";
 
 const money = (amount: string) => ({ amount, currency: "RUB" });
 
-function makeSummary({
-  forecast = true,
-  zero = false,
-}: {
-  forecast?: boolean;
-  zero?: boolean;
-} = {}): IncomePlanSummary {
+function makeSummary({ zero = false }: { zero?: boolean } = {}): IncomePlanSummary {
   const amount = (value: string) => money(zero ? "0.00" : value);
   return {
     month: { ...uiV2Months[0], status: "closed" },
-    passive_income_actual: amount("17500.00"),
-    passive_income_delta: amount("1100.00"),
-    passive_income_average: amount("15300.00"),
-    passive_income_average_months: zero ? 4 : 4,
-    passive_income_average_complete: false,
-    passive_income_history_start_month: null,
-    passive_income_average_months_used: ["2031-02", "2031-04", "2031-05", "2031-07"],
-    forecast: forecast
-      ? {
-          annual_total: amount("252000.00"),
-          monthly_total: amount("21000.00"),
-          breakdown: {
-            expected_deposit_interest: amount("6750.00"),
-            expected_coupon_net: amount("5000.00"),
-            expected_dividend_component: amount("4000.00"),
-            other_expected_capital_income: amount("0.00"),
-          },
-          is_approximate: true,
-          warnings: ["Дивиденды оценены по подтверждённому среднему."],
-          dividend_average: amount("4000.00"),
-          configured_start_month: null,
-          dividend_month_keys_used: ["2031-02", "2031-04", "2031-05", "2031-07"],
-        }
-      : null,
-    coverage: forecast
-      ? {
-          forecast_monthly: amount("21000.00"),
-          actual_average: amount("15300.00"),
-          mandatory_expenses: amount("60000.00"),
-          coverage_pct: zero ? "0.00" : "35.00",
-          actual_mandatory_expense_coverage_pct: zero ? "0.00" : "25.50",
-          passive_income_minus_mandatory_expenses: zero ? amount("0.00") : money("-39000.00"),
-          goal_target: money("50000.00"),
-          goal_progress_pct: zero ? "0.00" : "30.60",
-          is_approximate: true,
-          warnings: [],
-        }
-      : null,
+    forecast_version: "v1",
+    forecast: {
+      annual_total: amount("252000.00"),
+      monthly_total: amount("21000.00"),
+      breakdown: {
+        expected_deposit_interest: amount("6750.00"),
+        expected_coupon_net: amount("5000.00"),
+        expected_dividend_component: amount("4000.00"),
+        other_expected_capital_income: amount("0.00"),
+      },
+      is_approximate: true,
+      warnings: ["Дивиденды оценены по подтверждённому среднему."],
+      dividend_average: amount("4000.00"),
+      configured_start_month: null,
+      dividend_month_keys_used: ["2031-02", "2031-04", "2031-05", "2031-07"],
+    },
+    coverage: {
+      forecast_monthly: amount("21000.00"),
+      actual_average: amount("15300.00"),
+      mandatory_expenses: amount("60000.00"),
+      coverage_pct: zero ? "0.00" : "35.00",
+      actual_mandatory_expense_coverage_pct: zero ? "0.00" : "25.50",
+      passive_income_minus_mandatory_expenses: zero ? amount("0.00") : money("-39000.00"),
+      goal_target: money("50000.00"),
+      goal_progress_pct: zero ? "0.00" : "30.60",
+      is_approximate: true,
+      warnings: [],
+    },
     cash_balance: {
       total: amount("803900.00"),
       breakdown: { saving_allocations: amount("25000.00") },
@@ -170,7 +148,7 @@ async function installIncomeApi(page: Page, scene: IncomeScene = "normal") {
   const firstClosed = scene === "first-closed";
   const zero = scene === "zero";
   const state = {
-    summary: makeSummary({ forecast: scene !== "forecast-unavailable", zero }),
+    summary: makeSummary({ zero }),
     history: makeUiV2PassiveHistory({ firstClosed, zero }),
     ladder: makeLadder(zero),
     goals: makeUiV2Goals({ firstClosed, zero }),
@@ -217,7 +195,7 @@ async function installIncomeApi(page: Page, scene: IncomeScene = "normal") {
           : scene === "first-closed"
             ? [uiV2Months[0], uiV2Months[1]]
             : uiV2Months;
-    } else if (url.pathname === "/api/months/91/summary") {
+    } else if (url.pathname === "/api/months/91/income-plan-summary") {
       expect(url.searchParams.get("forecast_version")).toBe("v1");
       json = state.summary;
     } else if (url.pathname === "/api/analytics/passive-income") {
@@ -326,13 +304,7 @@ test("ui-v2 Income and plans narrow: secondary plan handoffs collapse and no pag
   expect(evidence.errors).toEqual([]);
 });
 
-for (const scene of [
-  "no-closed",
-  "first-closed",
-  "zero",
-  "partial",
-  "forecast-unavailable",
-] as const) {
+for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
   test(`ui-v2 Income and plans state ${scene}: honest partial result`, async ({
     page,
   }, testInfo) => {
@@ -355,12 +327,6 @@ for (const scene of [
         await expect(page.getByTestId("income-ladder-panel")).toContainText(
           "Данные временно недоступны",
         );
-        await expect(page.getByTestId("income-average")).toHaveText("15 300 ₽");
-      }
-      if (scene === "forecast-unavailable") {
-        await expect(
-          page.getByText(/Прогноз недоступен: backend не подтвердил этот блок/),
-        ).toBeVisible();
         await expect(page.getByTestId("income-average")).toHaveText("15 300 ₽");
       }
     }

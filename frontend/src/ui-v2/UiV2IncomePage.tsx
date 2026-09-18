@@ -162,7 +162,7 @@ function Headlines({
 }: {
   history: PassiveIncomeHistory | undefined;
   historyReady: boolean;
-  forecast: IncomePlanForecast | null | undefined;
+  forecast: IncomePlanForecast | undefined;
   forecastReady: boolean;
   ladder: CashFlowLadder | undefined;
   ladderReady: boolean;
@@ -200,8 +200,6 @@ function Headlines({
               {forecast.is_approximate ? "оценка" : "расчёт"}
             </p>
           </>
-        ) : forecastReady ? (
-          <UiV2WidgetState title="Прогноз недоступен" retry={retrySummary} />
         ) : (
           <UiV2WidgetState retry={retrySummary} />
         )}
@@ -346,7 +344,7 @@ function ForecastBlock({
   ready,
   retry,
 }: {
-  forecast: IncomePlanForecast | null | undefined;
+  forecast: IncomePlanForecast | undefined;
   ready: boolean;
   retry: () => void;
 }) {
@@ -360,10 +358,7 @@ function ForecastBlock({
       {!ready ? (
         <UiV2WidgetState retry={retry} />
       ) : !forecast ? (
-        <UiV2WidgetState
-          title="Прогноз недоступен: backend не подтвердил этот блок"
-          retry={retry}
-        />
+        <UiV2WidgetState retry={retry} />
       ) : (
         <>
           <div className={incomeStyles.forecastSummary}>
@@ -637,7 +632,7 @@ function CoveragePlanBlock({
   retrySavings,
   narrow,
 }: {
-  coverage: IncomePlanCoverage | null | undefined;
+  coverage: IncomePlanCoverage | undefined;
   coverageReady: boolean;
   budget: PlanVsActualRow[];
   budgetReady: boolean;
@@ -697,7 +692,7 @@ function CoveragePlanBlock({
                     : "Недоступно"}
                 </strong>
                 <small>
-                  Сумма пришла из backend summary; строки ниже не пересчитываются в React.
+                  Сумма пришла из income-plan-summary; строки ниже не пересчитываются в React.
                 </small>
               </div>
             </div>
@@ -801,7 +796,13 @@ export default function UiV2IncomePage() {
     queryFn: ({ signal }) => getIncomePlanSummary(planningId as number, signal),
     refetchOnWindowFocus: true,
   });
-  const historyQuery = useQuery({
+  const headlineHistoryQuery = useQuery({
+    enabled: planningId !== null,
+    queryKey: queryKeys.passiveIncomeHistory(planningId),
+    queryFn: ({ signal }) => getPassiveIncomeHistory(planningId as number, signal),
+    refetchOnWindowFocus: true,
+  });
+  const factHistoryQuery = useQuery({
     enabled: factId !== null,
     queryKey: queryKeys.passiveIncomeHistory(factId),
     queryFn: ({ signal }) => getPassiveIncomeHistory(factId as number, signal),
@@ -838,14 +839,19 @@ export default function UiV2IncomePage() {
     planningId !== null &&
     isQueryReady(summaryQuery) &&
     summaryQuery.data?.month.id === planningId &&
-    summaryQuery.data.month.status === "closed";
+    summaryQuery.data.month.status === "closed" &&
+    summaryQuery.data.forecast_version === "v1";
   const forecastReady = summaryReady && summaryQuery.data?.forecast !== undefined;
   const coverageReady = summaryReady && summaryQuery.data?.coverage !== undefined;
-  const historyReady =
+  const headlineHistoryReady =
+    planningId !== null &&
+    isQueryReady(headlineHistoryQuery) &&
+    headlineHistoryQuery.data?.latest_closed_report_id === planningId;
+  const factHistoryReady =
     factId !== null &&
-    isQueryReady(historyQuery) &&
-    historyQuery.data?.latest_closed_report_id === planningId &&
-    historyQuery.data.selected_report?.reporting_month_id === factId;
+    isQueryReady(factHistoryQuery) &&
+    factHistoryQuery.data?.latest_closed_report_id === planningId &&
+    factHistoryQuery.data.selected_report?.reporting_month_id === factId;
   const ladderReady =
     planningId !== null &&
     isQueryReady(ladderQuery) &&
@@ -917,21 +923,21 @@ export default function UiV2IncomePage() {
         <Headlines
           forecast={summary?.forecast}
           forecastReady={forecastReady}
-          history={historyReady ? historyQuery.data : undefined}
-          historyReady={historyReady}
+          history={headlineHistoryReady ? headlineHistoryQuery.data : undefined}
+          historyReady={headlineHistoryReady}
           ladder={ladderReady ? ladderQuery.data : undefined}
           ladderReady={ladderReady}
-          retryHistory={() => void historyQuery.refetch()}
+          retryHistory={() => void headlineHistoryQuery.refetch()}
           retryLadder={() => void ladderQuery.refetch()}
           retrySummary={() => void summaryQuery.refetch()}
         />
         <div className={incomeStyles.layout}>
           <FactHistoryBlock
             closedMonths={closedMonths}
-            history={historyReady ? historyQuery.data : undefined}
+            history={factHistoryReady ? factHistoryQuery.data : undefined}
             onSelect={selectFactMonth}
-            ready={historyReady}
-            retry={() => void historyQuery.refetch()}
+            ready={factHistoryReady}
+            retry={() => void factHistoryQuery.refetch()}
             selectedMonth={factSelection.month}
             selectionValid={factSelection.valid}
           />

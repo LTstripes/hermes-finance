@@ -318,21 +318,15 @@ export type IncomePlanCoverage = {
 
 export type IncomePlanSummary = {
   month: DashboardMonthRef;
-  passive_income_actual: MoneyValue;
-  passive_income_delta: MoneyValue | null;
-  passive_income_average: MoneyValue;
-  passive_income_average_months: number;
-  passive_income_average_complete: boolean;
-  passive_income_history_start_month: string | null;
-  passive_income_average_months_used: string[];
-  forecast: IncomePlanForecast | null;
-  coverage: IncomePlanCoverage | null;
+  forecast_version: string;
+  forecast: IncomePlanForecast;
+  coverage: IncomePlanCoverage;
   cash_balance: {
     total: MoneyValue;
     breakdown: {
       saving_allocations: MoneyValue;
     };
-  } | null;
+  };
   warnings: string[];
 };
 
