@@ -63,6 +63,41 @@ async function installDataApi(page: Page) {
       json = makeUiV2Freshness(uiV2Months[0]);
     } else if (url.pathname === "/api/market-data/providers/capabilities") {
       json = makeUiV2ProviderCapabilities();
+    } else if (/^\/api\/instruments\/\d+\/market-mapping$/.test(url.pathname)) {
+      const instrumentId = Number(url.pathname.split("/")[3]);
+      json = {
+        instrument_id: instrumentId,
+        state: instrumentId === 10 ? "mapped" : "unmapped",
+        identity:
+          instrumentId === 10
+            ? {
+                provider: "t_invest",
+                provider_instrument_id: "SYNTHETIC-UID-001",
+                provider_venue_id: null,
+              }
+            : null,
+        instrument_isin: null,
+        legacy_moex_secid: null,
+      };
+    } else if (url.pathname === "/api/broker-identity-mappings") {
+      json = [
+        {
+          mapping_id: 20,
+          provider: "alfa_pro",
+          subject_kind: "account",
+          provider_identity: "SYNTHETIC-ACCOUNT-001",
+          hermes_target_id: 1,
+          status: "effective",
+          observed_isin: null,
+          confirmed_at: "2031-08-31T12:00:00Z",
+          source_as_of: null,
+          captured_at: null,
+          predecessor_mapping_id: null,
+          successor_mapping_id: null,
+          revoked_at: null,
+          revoke_reason: null,
+        },
+      ];
     } else if (url.pathname === "/api/accounts") {
       json = uiV2Accounts;
     } else if (url.pathname === "/api/instruments") {
@@ -189,5 +224,37 @@ test("ui-v2 Data reconciliation: no provider call on mount; preview only on clic
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-reconciliation-desktop");
   expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Catalogs desktop: accounts, instruments and mappings stay bounded", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installDataApi(page);
+  await page.goto("/v2/data/catalogs");
+  await expect(page.getByRole("heading", { name: "Справочники и сопоставления" })).toBeVisible();
+  await expect(page.getByTestId("catalog-accounts")).toBeVisible();
+  await expect(page.getByText("Синтетический брокерский счёт", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /Инструменты/ }).click();
+  await expect(page.getByText("Синтетическая акция", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("catalog-mapping-identity-10")).toContainText("SYNTHETIC-UID-001");
+  await page.getByRole("tab", { name: /Постоянные сопоставления/ }).click();
+  await expect(page.getByText("SYNTHETIC-ACCOUNT-001", { exact: true })).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-catalogs-desktop");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Catalogs narrow: catalog controls remain operable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installDataApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/data/catalogs");
+  await expect(page.getByTestId("catalog-accounts")).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-catalogs-narrow");
+  expect(evidence.posts).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

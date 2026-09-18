@@ -23,6 +23,7 @@ import { createQueryClient } from "../queryClient";
 import {
   UiV2CapitalEntry,
   UiV2CloseEntry,
+  UiV2DataCatalogsEntry,
   UiV2DataPlaceholderEntry,
   UiV2DataReconciliationEntry,
   UiV2DataSourcesEntry,
@@ -50,10 +51,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/close" element={<UiV2CloseEntry />} />
           <Route path="v2/data" element={<UiV2DataSourcesEntry />} />
           <Route path="v2/data/reconciliation" element={<UiV2DataReconciliationEntry />} />
-          <Route
-            path="v2/data/catalogs"
-            element={<UiV2DataPlaceholderEntry section="catalogs" />}
-          />
+          <Route path="v2/data/catalogs" element={<UiV2DataCatalogsEntry />} />
           <Route path="v2/data/files" element={<UiV2DataPlaceholderEntry section="files" />} />
           <Route path="v2/data/app" element={<UiV2DataPlaceholderEntry section="app" />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
