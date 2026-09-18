@@ -27,6 +27,8 @@ export function newerDraftMonth(
         (latestClosed === null || reportIndex(month) > reportIndex(latestClosed)),
     ) ?? null
   );
+}
+
 export function selectNewestDraftAfterLatestClosed(months: ReportingMonth[]): {
   latestClosed: ReportingMonth | null;
   newestDraft: ReportingMonth | null;
@@ -61,11 +63,6 @@ export function monthWorkspacePath(monthId: number, step?: GuidedCloseStepId): s
   const params = new URLSearchParams({ month: String(monthId) });
   if (step) params.set("step", step);
   return `/v2/close?${params.toString()}`;
-}
-
-/** Calendar index for comparing reporting periods. */
-export function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
-  return month.year * 12 + month.month;
 }
 
 /**
