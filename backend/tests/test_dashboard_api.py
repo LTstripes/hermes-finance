@@ -396,6 +396,52 @@ def test_realized_pnl_without_instrument_stays_in_account_result(client: TestCli
     assert dash["result_by_instrument_class"] == []
 
 
+def test_cash_income_class_survives_after_position_exits_without_fake_valuation(
+    client: TestClient,
+) -> None:
+    month = client.post(
+        "/api/months",
+        json={"year": 2031, "month": 8, "snapshot_date": "2031-08-31"},
+    )
+    assert month.status_code == 201, month.text
+    month_id = month.json()["id"]
+    account = client.post(
+        "/api/accounts", json={"name": "Брокер cash-only", "account_type": "brokerage"}
+    )
+    assert account.status_code == 201, account.text
+    instrument = client.post(
+        "/api/instruments", json={"name": "Exited stock", "instrument_type": "stock"}
+    )
+    assert instrument.status_code == 201, instrument.text
+    flow = client.post(
+        "/api/investment-flows",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account.json()["id"],
+            "instrument_id": instrument.json()["id"],
+            "flow_type": "dividend",
+            "event_date": "2031-08-10",
+            "gross_amount": _rub("125.00"),
+            "tax_amount": _rub("0.00"),
+            "commission_amount": _rub("0.00"),
+            "net_amount": _rub("125.00"),
+            "source": "synthetic",
+        },
+    )
+    assert flow.status_code == 201, flow.text
+    close = client.post(f"/api/months/{month_id}/close")
+    assert close.status_code == 200, close.text
+
+    dashboard = client.get(f"/api/months/{month_id}/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    rows = dashboard.json()["result_by_instrument_class"]
+    stock = next(row for row in rows if row["instrument_type"] == "stock")
+    assert stock["realized_result"] == _rub("125.00")
+    assert stock["market_value"] is None
+    assert stock["cost_basis"] is None
+    assert stock["unrealized_result"] is None
+
+
 def test_summary_missing_month_is_404(client: TestClient) -> None:
     response = client.get("/api/months/99999/summary")
     assert response.status_code == 404

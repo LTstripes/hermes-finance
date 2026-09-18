@@ -171,8 +171,8 @@ class SalaryTaxOut(BaseModel):
 class NormalizedBonusOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    monthly_average: MoneyValue
-    sum_total: MoneyValue
+    monthly_average: MoneyValue | None
+    sum_total: MoneyValue | None
     count_months: int
     is_complete_12m: bool
     warnings: list[str]
@@ -268,9 +268,9 @@ class InstrumentClassResultOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     instrument_type: str
-    market_value: MoneyValue
-    cost_basis: MoneyValue
-    unrealized_result: MoneyValue
+    market_value: MoneyValue | None
+    cost_basis: MoneyValue | None
+    unrealized_result: MoneyValue | None
     realized_result: MoneyValue
 
 
@@ -484,8 +484,8 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
         ),
         salary_actual_net=_money(summary.salary_actual_net),
         normalized_bonus=NormalizedBonusOut(
-            monthly_average=_money(bonus.monthly_average),
-            sum_total=_money(bonus.sum_total),
+            monthly_average=_money_opt(bonus.monthly_average),
+            sum_total=_money_opt(bonus.sum_total),
             count_months=bonus.count_months,
             is_complete_12m=bonus.is_complete_12m,
             warnings=list(bonus.warnings),
@@ -661,9 +661,9 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         result_by_instrument_class=[
             InstrumentClassResultOut(
                 instrument_type=item.instrument_type,
-                market_value=_money(item.market_value),
-                cost_basis=_money(item.cost_basis),
-                unrealized_result=_money(item.unrealized_result),
+                market_value=_money_opt(item.market_value),
+                cost_basis=_money_opt(item.cost_basis),
+                unrealized_result=_money_opt(item.unrealized_result),
                 realized_result=_money(item.realized_result),
             )
             for item in dashboard.result_by_instrument_class

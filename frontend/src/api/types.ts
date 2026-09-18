@@ -484,9 +484,9 @@ export type AccountResultPoint = {
 /** Monetary result per instrument class (E15). */
 export type InstrumentClassResultPoint = {
   instrument_type: string;
-  market_value: MoneyValue;
-  cost_basis: MoneyValue;
-  unrealized_result: MoneyValue;
+  market_value: MoneyValue | null;
+  cost_basis: MoneyValue | null;
+  unrealized_result: MoneyValue | null;
   realized_result: MoneyValue;
 };
 

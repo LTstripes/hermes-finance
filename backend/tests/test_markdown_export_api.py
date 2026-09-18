@@ -268,3 +268,60 @@ def test_exports_preserve_selected_main_goal_and_mark_progress_only_on_main(
     non_main_line = next(line for line in markdown_lines if initial_goal["name"] in line)
     assert "0,00%" in main_line
     assert "—" in non_main_line
+
+
+def test_legacy_exports_use_actual_passive_goal_progress_not_forecast_coverage(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    historical = client.post(
+        "/api/months",
+        json={"year": 2032, "month": 1, "snapshot_date": "2032-01-31"},
+    )
+    assert historical.status_code == 201, historical.text
+    historical_id = historical.json()["id"]
+    account = client.post(
+        "/api/accounts", json={"name": "Synthetic broker", "account_type": "brokerage"}
+    )
+    assert account.status_code == 201, account.text
+    instrument = client.post(
+        "/api/instruments", json={"name": "Synthetic stock", "instrument_type": "stock"}
+    )
+    assert instrument.status_code == 201, instrument.text
+    flow = client.post(
+        "/api/investment-flows",
+        json={
+            "reporting_month_id": historical_id,
+            "account_id": account.json()["id"],
+            "instrument_id": instrument.json()["id"],
+            "flow_type": "dividend",
+            "event_date": "2032-01-15",
+            "gross_amount": {"amount": "1000.00", "currency": "RUB"},
+            "tax_amount": {"amount": "0.00", "currency": "RUB"},
+            "commission_amount": {"amount": "0.00", "currency": "RUB"},
+            "net_amount": {"amount": "1000.00", "currency": "RUB"},
+            "source": "synthetic",
+        },
+    )
+    assert flow.status_code == 201, flow.text
+    close = client.post(f"/api/months/{historical_id}/close")
+    assert close.status_code == 200, close.text
+
+    month_id = _create_month(client)
+    markdown = client.post(f"/api/months/{month_id}/export/markdown")
+    assert markdown.status_code == 200, markdown.text
+    main_line = next(
+        line
+        for line in markdown.content.decode("utf-8").splitlines()
+        if "Пассивный доход в месяц" in line
+    )
+    # One actual 1,000 RUB closed-month average against the 100,000 RUB goal
+    # is 1.00%; forecast coverage is a separate metric and has no rows here.
+    assert "1,00%" in main_line
+
+    exported = client.post(f"/api/months/{month_id}/export/json")
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    goal_rows = payload["derived"]["report"]["goal_rows"]
+    main_row = next(row for row in goal_rows if row["name"] == "Пассивный доход в месяц")
+    assert main_row["progress_pct"] == "1.00"

@@ -11,7 +11,11 @@ Implements:
 
 Key facts:
 - Only CLOSED reporting months participate (the available actual history),
-  ordered by year/month — same window contract as C03/C04.
+  within the selected calendar 12-month period ending at the latest observed
+  month. Missing calendar months are not synthesized.
+- The selected period is normalized to twelve months even when only a partial
+  evidence window is available; ``count_months``/``is_complete_12m`` and the
+  warning make that coverage explicit.
 - Per month the bonus figure is the sum of ``net_amount_kopecks`` of BONUS
   income entries (actual payment), consistent with the cash-balance service.
 - Reads on closed months are allowed (B19-R2 guard is for writes only).

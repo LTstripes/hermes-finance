@@ -134,7 +134,9 @@ def _format_date(value: date) -> str:
     return value.strftime("%d.%m.%Y")
 
 
-def _format_money(amount: RubleAmount) -> str:
+def _format_money(amount: RubleAmount | None) -> str:
+    if amount is None:
+        return "—"
     text = format(abs(amount.as_decimal()), ".2f")
     integer, fraction = text.split(".")
     groups: list[str] = []

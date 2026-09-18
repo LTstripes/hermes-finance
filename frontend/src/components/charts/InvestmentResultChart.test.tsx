@@ -40,6 +40,14 @@ const bondClass: InstrumentClassResultPoint = {
   realized_result: rub("870.00"),
 };
 
+const cashOnlyClass: InstrumentClassResultPoint = {
+  instrument_type: "stock",
+  market_value: null,
+  cost_basis: null,
+  unrealized_result: null,
+  realized_result: rub("125.00"),
+};
+
 describe("InvestmentResultChart", () => {
   it("renders the chart section and both accessibility tables", () => {
     render(<InvestmentResultChart accounts={[broker, iis]} classes={[bondClass]} />);
@@ -92,5 +100,18 @@ describe("InvestmentResultChart", () => {
     expect(
       cellWithText(formatMoneyDelta(sumMoneyAmounts(["870.00", "1000.00"]))),
     ).toBeInTheDocument();
+  });
+
+  it("keeps cash-only class income separate from unavailable attribution", () => {
+    render(<InvestmentResultChart accounts={[]} classes={[cashOnlyClass]} />);
+    const classTable = screen.getByRole("table", { name: "Результат по классам активов" });
+    const unavailableCells = within(classTable).getAllByText("—");
+
+    expect(
+      within(classTable).getByText(
+        (_, element) => element?.textContent === formatMoneyDelta("125.00"),
+      ),
+    ).toBeInTheDocument();
+    expect(unavailableCells).toHaveLength(2);
   });
 });
