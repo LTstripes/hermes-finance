@@ -52,6 +52,43 @@ function prependUnique(items: BackupMetadata[], item: BackupMetadata): BackupMet
   return [item, ...items.filter((current) => current.id !== item.id)];
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isBackupMetadata(value: unknown): value is BackupMetadata {
+  if (!isRecord(value)) return false;
+  const sourceDatabase = value.source_database;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.created_at === "string" &&
+    typeof value.size_bytes === "number" &&
+    Number.isFinite(value.size_bytes) &&
+    isRecord(sourceDatabase) &&
+    typeof sourceDatabase.name === "string" &&
+    typeof sourceDatabase.size_bytes === "number" &&
+    Number.isFinite(sourceDatabase.size_bytes)
+  );
+}
+
+function isRestoreResponse(value: unknown): value is RestoreResponse {
+  return (
+    isRecord(value) &&
+    isBackupMetadata(value.restored_backup) &&
+    isBackupMetadata(value.pre_restore_backup)
+  );
+}
+
+function isConfirmedRestoreFailure(error: unknown): error is ApiClientError {
+  return (
+    error instanceof ApiClientError &&
+    Number.isInteger(error.status) &&
+    error.status >= 300 &&
+    error.status <= 599
+  );
+}
+
 function BackupMetadataList({ backup }: { backup: BackupMetadata }) {
   return (
     <dl className={styles.metadataGrid}>
@@ -359,7 +396,10 @@ export default function UiV2DataFilesPage() {
     setPreRestoreEvidence(null);
     setBackupError(null);
     try {
-      const result: RestoreResponse = await restoreBackup(candidate.id);
+      const result: unknown = await restoreBackup(candidate.id);
+      if (!isRestoreResponse(result)) {
+        throw new Error("Restore response payload is missing or malformed");
+      }
       queryClient.setQueryData<BackupMetadata[]>(queryKeys.backups, (current) =>
         prependUnique(
           prependUnique(current ?? [], result.pre_restore_backup),
@@ -371,7 +411,7 @@ export default function UiV2DataFilesPage() {
       setRestoreCandidate(null);
       setRestoreSuccess(`База восстановлена из ${result.restored_backup.name}.`);
     } catch (error) {
-      if (error instanceof ApiClientError && error.code === "network_error") {
+      if (!isConfirmedRestoreFailure(error)) {
         await queryClient.invalidateQueries().catch(() => undefined);
         setRestoreErrorKind("unknown");
         setRestoreError(

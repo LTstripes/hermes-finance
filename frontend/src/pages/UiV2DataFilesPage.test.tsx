@@ -36,6 +36,14 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function unreadableBodyResponse(): Response {
+  return {
+    ok: true,
+    status: 200,
+    text: vi.fn().mockRejectedValue(new TypeError("Response body unavailable")),
+  } as unknown as Response;
+}
+
 function downloadResponse(filename: string): Response {
   return new Response("synthetic export\n", {
     status: 200,
@@ -52,6 +60,8 @@ function setup({
   restoreStatus = 200,
   restoreStatuses,
   restoreNetworkError = false,
+  restoreBodyReadError = false,
+  restorePayload,
   path = "/v2/data/files",
 }: {
   months?: typeof uiV2Months;
@@ -59,6 +69,8 @@ function setup({
   restoreStatus?: number;
   restoreStatuses?: number[];
   restoreNetworkError?: boolean;
+  restoreBodyReadError?: boolean;
+  restorePayload?: unknown;
   path?: string;
 } = {}) {
   const client = createQueryClient();
@@ -93,7 +105,10 @@ function setup({
           currentRestoreStatus,
         );
       }
-      return jsonResponse(restoreResponse);
+      if (restoreBodyReadError) {
+        return unreadableBodyResponse();
+      }
+      return jsonResponse(restorePayload ?? restoreResponse);
     }
     if (method === "POST" && /\/export\/(markdown|json)$/.test(url.pathname)) {
       const suffix = url.pathname.endsWith("/json") ? "json" : "md";
@@ -311,6 +326,72 @@ describe("UI v2 Data files", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      calls.filter(({ method, path }) => method === "POST" && path.endsWith("/restore")),
+    ).toHaveLength(1);
+    await waitFor(() => {
+      expect(
+        calls.filter(({ method, path }) => method === "GET" && path === "/api/months"),
+      ).toHaveLength(2);
+    });
+    expect(client.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+  });
+
+  it("treats a successful response body read failure as unknown and refreshes reads once", async () => {
+    const user = userEvent.setup();
+    const { calls, client, mount } = setup({ restoreBodyReadError: true });
+    client.setQueryData(queryKeys.accounts, { source: "current" });
+    mount();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/результат восстановления не подтверждён/i);
+    expect(alert).not.toHaveTextContent(/восстановление не выполнено/i);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
+    expect(
+      calls.filter(({ method, path }) => method === "POST" && path.endsWith("/restore")),
+    ).toHaveLength(1);
+    await waitFor(() => {
+      expect(
+        calls.filter(({ method, path }) => method === "GET" && path === "/api/months"),
+      ).toHaveLength(2);
+    });
+    expect(client.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+  });
+
+  it("treats a successful response with a missing restore payload as unknown and refreshes reads", async () => {
+    const user = userEvent.setup();
+    const { calls, client, mount } = setup({ restorePayload: { restored_backup: backups[0] } });
+    client.setQueryData(queryKeys.accounts, { source: "current" });
+    mount();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/результат восстановления не подтверждён/i);
+    expect(alert).not.toHaveTextContent(/восстановление не выполнено/i);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
     expect(
       calls.filter(({ method, path }) => method === "POST" && path.endsWith("/restore")),
     ).toHaveLength(1);
