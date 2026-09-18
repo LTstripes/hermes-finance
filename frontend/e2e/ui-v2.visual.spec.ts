@@ -12,6 +12,7 @@ import {
   makeUiV2Debts,
   makeUiV2Deposits,
   makeUiV2Goals,
+  makeUiV2LongHistory,
   makeUiV2PassiveHistory,
   makeUiV2Performance,
   makeUiV2Positions,
@@ -23,6 +24,7 @@ import {
   uiV2CapitalMonthId,
   uiV2CapitalPreviousMonthId,
   uiV2Instruments,
+  uiV2LongHistoryFirstMonthId,
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
 
@@ -498,26 +500,36 @@ type ReportsScene =
   | "first-closed"
   | "money-error"
   | "report"
-  | "report-partial";
+  | "report-partial"
+  | "report-older-than-window";
+
+/** 2030-12: older than the latest twelve CLOSED reports (2031-01 … 2031-12). */
+const olderReportId = uiV2LongHistoryFirstMonthId + 11;
 
 async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
   const report = scene === "report" || scene === "report-partial";
+  const olderThanWindow = scene === "report-older-than-window";
+  const long = olderThanWindow ? makeUiV2LongHistory({ count: 24 }) : null;
+  const rowMonthId = olderThanWindow ? olderReportId : uiV2CapitalPreviousMonthId;
   const months =
-    scene === "no-closed"
-      ? [uiV2Months[1]]
-      : scene === "first-closed"
-        ? [uiV2Months[0], uiV2Months[1]]
-        : uiV2ArchiveMonths;
+    long !== null
+      ? long.months
+      : scene === "no-closed"
+        ? [uiV2Months[1]]
+        : scene === "first-closed"
+          ? [uiV2Months[0], uiV2Months[1]]
+          : uiV2ArchiveMonths;
   const state = {
     monthsError: false,
     compositionError: scene === "money-error",
     riskError: scene === "report-partial",
     instrumentsError: scene === "report-partial",
-    composition: report ? makeUiV2CapitalHistory() : makeUiV2ArchiveHistory(),
-    risk: makeUiV2RiskAllocation({ monthId: uiV2CapitalPreviousMonthId }),
-    cash: makeUiV2Cash({ monthId: uiV2CapitalPreviousMonthId }),
-    deposits: makeUiV2Deposits({ monthId: uiV2CapitalPreviousMonthId }),
-    positions: makeUiV2Positions({ monthId: uiV2CapitalPreviousMonthId }),
+    composition:
+      long !== null ? long.history : report ? makeUiV2CapitalHistory() : makeUiV2ArchiveHistory(),
+    risk: makeUiV2RiskAllocation({ monthId: rowMonthId }),
+    cash: makeUiV2Cash({ monthId: rowMonthId }),
+    deposits: makeUiV2Deposits({ monthId: rowMonthId }),
+    positions: makeUiV2Positions({ monthId: rowMonthId }),
   };
   const unexpected: string[] = [];
   const reads: string[] = [];
@@ -711,6 +723,34 @@ test("ui-v2 historical report partial: one failed widget never blanks the report
   await expect(page.getByTestId("report-holding-position-501")).toHaveCount(0);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-report-partial");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 historical report contextual window: an older report keeps its highlight for 3 and 12", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Regression evidence captured once");
+  const evidence = await installReportsApi(page, "report-older-than-window");
+  await page.goto(`/v2/reports/${olderReportId}`);
+  const history = page.getByTestId("report-history");
+
+  // 2030-12 is older than the latest twelve CLOSED reports, so the window must end
+  // at the opened report instead of sliding to latest-global history.
+  await expect(history).toHaveAttribute("data-point-count", "12");
+  await expect(history).toHaveAttribute("data-window-last-id", String(olderReportId));
+  await expect(history.locator('[data-highlight-key="2030-12"]')).toHaveCount(1);
+  await expect(page.getByText(/окно заканчивается открытым отчётом/)).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-contextual-window-12");
+
+  await page.getByRole("button", { name: "3 месяца" }).click();
+  await expect(history).toHaveAttribute("data-point-count", "3");
+  await expect(history).toHaveAttribute("data-window-last-id", String(olderReportId));
+  await expect(history.locator('[data-highlight-key="2030-12"]')).toHaveCount(1);
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-report-contextual-window-3");
+
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

@@ -595,6 +595,53 @@ export function makeUiV2Workflow({
 export const uiV2CapitalMonthId = 91;
 export const uiV2CapitalPreviousMonthId = 90;
 export const uiV2PriorYearClosedMonthId = 87;
+export const uiV2LongHistoryFirstMonthId = 100;
+
+/**
+ * Sixteen consecutive CLOSED months (2030-01 … 2031-04) so a selected report can
+ * be older than the latest twelve CLOSED reports. Fictional data.
+ */
+export function makeUiV2LongHistory({ count = 16 }: { count?: number } = {}): {
+  history: CapitalCompositionHistory;
+  months: ReportingMonth[];
+} {
+  const months: ReportingMonth[] = [];
+  const points: CapitalCompositionHistory["points"] = [];
+  for (let index = 0; index < count; index += 1) {
+    const year = 2030 + Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    const snapshotDate = `${year}-${String(month).padStart(2, "0")}-28`;
+    const assets = 3203900 + index * 10000;
+    months.push({
+      id: uiV2LongHistoryFirstMonthId + index,
+      year,
+      month,
+      status: "closed",
+      snapshot_date: snapshotDate,
+      source: "manual",
+    });
+    points.push({
+      reporting_month_id: uiV2LongHistoryFirstMonthId + index,
+      year,
+      month,
+      snapshot_date: snapshotDate,
+      allocation: allocation(index * 10000),
+      liquid_assets_total: money(`${assets}.00`),
+      included_debts: money("400000.00"),
+      liquid_capital_net: money(`${assets - 400000}.00`),
+      linked_pair_assets: money("0.00"),
+      linked_pair_debts: money("0.00"),
+      linked_pair_net_contribution: money("0.00"),
+    });
+  }
+  return {
+    history: {
+      asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
+      points,
+    },
+    months,
+  };
+}
 
 /**
  * Archive fixtures: the accepted set plus one prior-year CLOSED month, so year

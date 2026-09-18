@@ -8,12 +8,14 @@ import {
   makeUiV2CapitalHistory,
   makeUiV2Cash,
   makeUiV2Deposits,
+  makeUiV2LongHistory,
   makeUiV2Positions,
   makeUiV2RiskAllocation,
   uiV2Accounts,
   uiV2CapitalMonthId,
   uiV2CapitalPreviousMonthId,
   uiV2Instruments,
+  uiV2LongHistoryFirstMonthId,
   uiV2Months,
 } from "../test/uiV2Fixtures";
 import UiV2ReportPage from "../ui-v2/UiV2ReportPage";
@@ -25,16 +27,19 @@ function LocationProbe() {
   return <output data-testid="test-location">{`${location.pathname}${location.search}`}</output>;
 }
 
-function setup(path = `/v2/reports/${historicalId}`) {
+function setup(
+  path = `/v2/reports/${historicalId}`,
+  { monthId = historicalId }: { monthId?: number } = {},
+) {
   const client = createQueryClient();
   const reads: string[] = [];
   const state = {
     months: uiV2Months,
     composition: makeUiV2CapitalHistory(),
-    risk: makeUiV2RiskAllocation({ monthId: historicalId }),
-    cash: makeUiV2Cash({ monthId: historicalId }),
-    deposits: makeUiV2Deposits({ monthId: historicalId }),
-    positions: makeUiV2Positions({ monthId: historicalId }),
+    risk: makeUiV2RiskAllocation({ monthId }),
+    cash: makeUiV2Cash({ monthId }),
+    deposits: makeUiV2Deposits({ monthId }),
+    positions: makeUiV2Positions({ monthId }),
     accounts: uiV2Accounts,
     instruments: uiV2Instruments,
     monthsError: false,
@@ -61,22 +66,22 @@ function setup(path = `/v2/reports/${historicalId}`) {
           failed = state.compositionError;
           break;
         case "/api/analytics/risk-allocation":
-          expect(url.searchParams.get("month_id")).toBe(String(historicalId));
+          expect(url.searchParams.get("month_id")).toBe(String(monthId));
           expect(url.searchParams.get("top_n")).toBe("5");
           data = state.risk;
           failed = state.riskError;
           break;
         case "/api/cash-balances":
-          expect(url.searchParams.get("month_id")).toBe(String(historicalId));
+          expect(url.searchParams.get("month_id")).toBe(String(monthId));
           data = state.cash;
           failed = state.cashError;
           break;
         case "/api/deposits":
-          expect(url.searchParams.get("month_id")).toBe(String(historicalId));
+          expect(url.searchParams.get("month_id")).toBe(String(monthId));
           data = state.deposits;
           break;
         case "/api/positions":
-          expect(url.searchParams.get("month_id")).toBe(String(historicalId));
+          expect(url.searchParams.get("month_id")).toBe(String(monthId));
           data = state.positions;
           break;
         case "/api/accounts":
@@ -157,7 +162,12 @@ describe("UI v2 historical report", () => {
     expect(screen.getByTestId("report-class-cash")).toHaveTextContent("%");
     expect(screen.queryByTestId("report-composition-empty")).toBeNull();
 
-    expect(screen.getByTestId("report-history")).toHaveAttribute("data-point-count", "4");
+    await screen.findByTestId("report-history");
+    expect(screen.getByTestId("report-history")).toHaveAttribute("data-point-count", "3");
+    expect(screen.getByTestId("report-history")).toHaveAttribute(
+      "data-window-last-id",
+      String(historicalId),
+    );
     expect(view.container.querySelector('[data-highlight-key="2031-05"]')).not.toBeNull();
     expect(screen.getByText(/Пропуски остаются пропусками/)).toBeVisible();
     expect(screen.getByTestId("report-neighbour-previous")).toHaveAttribute(
@@ -417,17 +427,72 @@ describe("UI v2 historical report", () => {
     expect(screen.getByTestId("report-class-cash")).toHaveTextContent("—");
   });
 
-  it("switches the history window over closed reports only", async () => {
+  it("keeps the history window anchored to the opened report", async () => {
     const { mount } = setup();
     mount();
 
-    expect(await screen.findByTestId("report-history")).toHaveAttribute("data-point-count", "4");
+    const history = await screen.findByTestId("report-history");
+    // February + April end before the opened May report; the window must not slide
+    // to the newest closed month.
+    expect(history).toHaveAttribute("data-point-count", "3");
+    expect(history).toHaveAttribute("data-window-first-id", "88");
+    expect(history).toHaveAttribute("data-window-last-id", String(historicalId));
+    expect(screen.getByText(/окно заканчивается открытым отчётом/)).toBeVisible();
+
     fireEvent.click(
       within(screen.getByTestId("report-panel-report-history-title")).getByRole("button", {
         name: "3 месяца",
       }),
     );
     expect(screen.getByTestId("report-history")).toHaveAttribute("data-point-count", "3");
-    expect(screen.getByText(/Показаны последние 3 закрытых отчёта/)).toBeVisible();
+    expect(screen.getByTestId("report-history")).toHaveAttribute(
+      "data-window-last-id",
+      String(historicalId),
+    );
+
+    fireEvent.click(
+      within(screen.getByTestId("report-panel-report-history-title")).getByRole("button", {
+        name: "Всё время",
+      }),
+    );
+    expect(screen.getByTestId("report-history")).toHaveAttribute("data-point-count", "4");
+    expect(screen.getByText(/Показаны все закрытые отчёты \(4\)/)).toBeVisible();
+  });
+
+  it("regression: an older report keeps its highlight when newer closed months exceed the window", async () => {
+    const long = makeUiV2LongHistory({ count: 24 });
+    // 2030-12: the latest twelve CLOSED reports are 2031-01 … 2031-12, so the
+    // opened report is not part of latest-global history.
+    const selected = uiV2LongHistoryFirstMonthId + 11;
+    const { mount, state } = setup(`/v2/reports/${selected}`, { monthId: selected });
+    state.months = long.months;
+    state.composition = long.history;
+    const view = mount();
+
+    const twelve = await screen.findByTestId("report-history");
+    expect(twelve).toHaveAttribute("data-point-count", "12");
+    expect(twelve).toHaveAttribute("data-window-first-id", String(uiV2LongHistoryFirstMonthId));
+    expect(twelve).toHaveAttribute("data-window-last-id", String(selected));
+    expect(view.container.querySelector('[data-highlight-key="2030-12"]')).not.toBeNull();
+    expect(screen.getByText(/Показано 12 закрытых отчётов/)).toBeVisible();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-panel-report-history-title")).getByRole("button", {
+        name: "3 месяца",
+      }),
+    );
+    const three = screen.getByTestId("report-history");
+    expect(three).toHaveAttribute("data-point-count", "3");
+    expect(three).toHaveAttribute("data-window-first-id", String(uiV2LongHistoryFirstMonthId + 9));
+    expect(three).toHaveAttribute("data-window-last-id", String(selected));
+    expect(view.container.querySelector('[data-highlight-key="2030-12"]')).not.toBeNull();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-panel-report-history-title")).getByRole("button", {
+        name: "Всё время",
+      }),
+    );
+    expect(screen.getByTestId("report-history")).toHaveAttribute("data-point-count", "24");
+    expect(view.container.querySelector('[data-highlight-key="2030-12"]')).not.toBeNull();
   });
 });

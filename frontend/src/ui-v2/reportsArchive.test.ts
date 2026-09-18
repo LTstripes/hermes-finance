@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  makeUiV2ArchiveHistory,
-  uiV2ArchiveMonths,
-  uiV2CapitalMonthId,
-  uiV2Months,
-  uiV2PriorYearClosedMonthId,
-} from "../test/uiV2Fixtures";
-import {
   buildArchive,
+  contextualHistoryWindow,
   GAP_ROW_LABEL,
   REPORTS_PATH,
   reportPath,
@@ -16,6 +10,15 @@ import {
   seriesPosition,
   SINGLE_REPORT_NOTE,
 } from "./reportsArchive";
+import {
+  makeUiV2ArchiveHistory,
+  makeUiV2LongHistory,
+  uiV2ArchiveMonths,
+  uiV2CapitalMonthId,
+  uiV2LongHistoryFirstMonthId,
+  uiV2Months,
+  uiV2PriorYearClosedMonthId,
+} from "../test/uiV2Fixtures";
 
 const history = makeUiV2ArchiveHistory();
 
@@ -150,5 +153,56 @@ describe("paths", () => {
   it("uses one contextual archive path", () => {
     expect(REPORTS_PATH).toBe("/v2/reports");
     expect(reportPath(90)).toBe("/v2/reports/90");
+  });
+});
+
+describe("contextualHistoryWindow", () => {
+  const long = makeUiV2LongHistory({ count: 24 });
+  const points = long.history.points;
+  // 2030-01 … 2031-12. The selected report is the twelfth-old month, so it is
+  // outside the latest twelve CLOSED reports (2031-01 … 2031-12).
+  const selectedId = uiV2LongHistoryFirstMonthId + 11;
+
+  it("regression: keeps a historical report that is older than the latest 12 inside its own 3/12 window", () => {
+    const naiveLatestTwelve = points.slice(-12).map((point) => point.reporting_month_id);
+    expect(naiveLatestTwelve).not.toContain(selectedId);
+
+    const twelve = contextualHistoryWindow(points, selectedId, 12);
+    expect(twelve).toHaveLength(12);
+    expect(twelve[0]?.reporting_month_id).toBe(uiV2LongHistoryFirstMonthId);
+    expect(twelve.at(-1)?.reporting_month_id).toBe(selectedId);
+    expect(twelve.map((point) => point.reporting_month_id)).toContain(selectedId);
+
+    const three = contextualHistoryWindow(points, selectedId, 3);
+    expect(three.map((point) => point.reporting_month_id)).toEqual([
+      uiV2LongHistoryFirstMonthId + 9,
+      uiV2LongHistoryFirstMonthId + 10,
+      selectedId,
+    ]);
+    expect(three.at(-1)?.reporting_month_id).toBe(selectedId);
+    expect(three.map((point) => point.reporting_month_id)).toContain(selectedId);
+  });
+
+  it("never starts before the first closed report and never drops the selected one", () => {
+    const oldest = contextualHistoryWindow(points, uiV2LongHistoryFirstMonthId, 12);
+    expect(oldest.map((point) => point.reporting_month_id)).toEqual([uiV2LongHistoryFirstMonthId]);
+
+    const newest = uiV2LongHistoryFirstMonthId + 23;
+    const newestTwelve = contextualHistoryWindow(points, newest, 12);
+    expect(newestTwelve).toHaveLength(12);
+    expect(newestTwelve[0]?.reporting_month_id).toBe(uiV2LongHistoryFirstMonthId + 12);
+    expect(newestTwelve.at(-1)?.reporting_month_id).toBe(newest);
+
+    const newestThree = contextualHistoryWindow(points, newest, 3);
+    expect(newestThree.map((point) => point.reporting_month_id)).toEqual([
+      uiV2LongHistoryFirstMonthId + 21,
+      uiV2LongHistoryFirstMonthId + 22,
+      newest,
+    ]);
+  });
+
+  it("keeps the whole closed series for «Всё время» and for an unknown selection", () => {
+    expect(contextualHistoryWindow(points, selectedId, "all")).toHaveLength(points.length);
+    expect(contextualHistoryWindow(points, 9999, 12)).toHaveLength(points.length);
   });
 });

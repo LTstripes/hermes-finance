@@ -24,7 +24,11 @@ import { CLASS_COLORS, classMeta } from "./assetClasses";
 import { buildHoldingRows, holdingContextLabel, type HoldingRow } from "./capitalHoldings";
 import { latestClosedMonth } from "./monthSelection";
 import {
+  contextualHistoryWindow,
   CURRENT_METHODOLOGY_CAVEAT,
+  HISTORY_WINDOWS,
+  historyWindowLabel,
+  type HistoryWindowSize,
   NO_HISTORICAL_CHANGE_TEXT,
   REPORTS_PATH,
   resolveReportTarget,
@@ -43,16 +47,6 @@ import { UiV2Shell } from "./UiV2Shell";
 import styles from "./UiV2Page.module.css";
 import reportStyles from "./UiV2Reports.module.css";
 import { moneyText as money } from "./valueFormat";
-
-type HistoryWindow = 3 | 12 | "all";
-
-const HISTORY_WINDOWS: HistoryWindow[] = [3, 12, "all"];
-
-function historyWindowLabel(value: HistoryWindow): string {
-  if (value === 3) return "3 месяца";
-  if (value === 12) return "12 месяцев";
-  return "Всё время";
-}
 
 function isZeroAmount(amount: string): boolean {
   return /^-?0(?:\.0+)?$/.test(amount.trim());
@@ -230,9 +224,9 @@ function HistoryBlock({
   points: CapitalCompositionPoint[];
   position: SeriesPosition;
 }) {
-  const [window, setWindow] = useState<HistoryWindow>(12);
+  const [window, setWindow] = useState<HistoryWindowSize>(12);
   const [mode, setMode] = useState<CapitalCompositionMode>("amount");
-  const visible = window === "all" ? points : points.slice(-window);
+  const visible = contextualHistoryWindow(points, monthId, window);
   return (
     <Panel
       action={
@@ -268,7 +262,12 @@ function HistoryBlock({
       title="Отчёт в истории закрытых месяцев"
       wide
     >
-      <div data-point-count={visible.length} data-testid="report-history">
+      <div
+        data-point-count={visible.length}
+        data-testid="report-history"
+        data-window-first-id={visible[0]?.reporting_month_id}
+        data-window-last-id={visible.at(-1)?.reporting_month_id}
+      >
         <CapitalCompositionChart
           assetClasses={assetClasses}
           classColors={CLASS_COLORS}
@@ -278,8 +277,11 @@ function HistoryBlock({
         />
       </div>
       <p className={styles.panelFootnote}>
-        Показаны последние {visible.length} закрытых отчёта. Пропуски остаются пропусками; значения
-        не интерполируются. Выделенный отчёт — тот, который открыт на этой странице.
+        {window === "all"
+          ? `Показаны все закрытые отчёты (${visible.length}).`
+          : `Показано ${visible.length} закрытых отчётов — окно заканчивается открытым отчётом.`}{" "}
+        Пропуски остаются пропусками; значения не интерполируются. Выделенный отчёт — тот, который
+        открыт на этой странице.
       </p>
       <div className={reportStyles.neighbours}>
         {position.previous ? (

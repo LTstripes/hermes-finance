@@ -182,6 +182,36 @@ export type SeriesPosition = {
   next: CapitalCompositionPoint | null;
 };
 
+export type HistoryWindowSize = 3 | 12 | "all";
+
+export const HISTORY_WINDOWS: HistoryWindowSize[] = [3, 12, "all"];
+
+export function historyWindowLabel(value: HistoryWindowSize): string {
+  if (value === 3) return "3 месяца";
+  if (value === 12) return "12 месяцев";
+  return "Всё время";
+}
+
+/**
+ * Contextual history window for one CLOSED report.
+ *
+ * The window always ends at the selected report, so a historical report is part
+ * of its own history view and its highlight can never fall outside the chart.
+ * It never silently becomes latest-global history: `all` keeps the full closed
+ * series, and an unknown selection falls back to the full series rather than to
+ * a window that could hide the report being viewed.
+ */
+export function contextualHistoryWindow(
+  points: CapitalCompositionPoint[],
+  selectedMonthId: number,
+  size: HistoryWindowSize,
+): CapitalCompositionPoint[] {
+  if (size === "all") return points;
+  const index = points.findIndex((point) => point.reporting_month_id === selectedMonthId);
+  if (index < 0) return points;
+  return points.slice(Math.max(0, index - size + 1), index + 1);
+}
+
 /** Previous/next CLOSED neighbour of a point in the canonical series order. */
 export function seriesPosition(
   points: CapitalCompositionPoint[],
