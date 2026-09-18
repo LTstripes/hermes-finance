@@ -34,22 +34,25 @@ format_version=1
 ```
 
 The state is valid only after the Owner has attested outside Git that the
-destination is an existing encrypted container/volume and that recovery
-material is available independently of the backed-up laptop. Hermes records
-or returns only the protection mode, format version, and a privacy-safe
+existing encrypted container/volume has already been successfully opened or
+mounted and is readable and writable by the supported workflow. Independent
+availability of recovery material remains an Owner-controlled UAT gate;
+Hermes does not validate or authenticate that material. Hermes records or
+returns only the protection mode, format version, and a privacy-safe
 destination alias.
 
 The following are mandatory fail-closed rules:
 
-- missing, unknown, or unattested protection fails before destination staging;
+- missing, unknown, unattested, unreadable, or unwritable protection boundary
+  fails before destination staging;
 - a normal Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
   folder is not protected merely because it synchronizes;
 - no key, credential, full private path, financial value, or reconstructive
   payload is persisted or logged;
-- recovery material is not stored inside the recovery artifact or only on the
-  laptop being backed up;
-- wrong, missing, or unauthenticated recovery material fails before restore
-  target mutation;
+- Hermes does not validate or authenticate a key or recovery material;
+- independently available recovery material remains an Owner-controlled UAT
+  gate and is not stored inside the recovery artifact or only on the laptop
+  being backed up;
 - there is no successful plaintext-publication state in v1.
 
 Portable Hermes archive encryption would require a separate accepted design
@@ -109,7 +112,8 @@ Retention runs only after a replacement has been fully published and read-back
 verified. It is deliberately not a catalogue service:
 
 - enumerate only exact managed final names whose artifact and manifest verify;
-- use the bounded count/age policy implemented by #460;
+- retain the newest 12 verified managed recovery points;
+- perform no age-based expiry or deletion in v1;
 - preserve the newest verified recovery point;
 - never delete unknown, partial, corrupt, foreign, or unrelated files;
 - never delete the newest verified point before its replacement is complete;
@@ -185,7 +189,7 @@ operation.
 | A02 | Complete-then-publish into simulated protected destination | Atomic final name appears only after complete verification; read-back passes | #459 |
 | A03 | Interrupted or partial publication | Incomplete/stale name is never listed or accepted | #459 |
 | A04 | Destination read-back corruption | Publication/read-back verification fails closed | #459 |
-| A05 | Missing, unknown, or unattested protection | Fails before staging or restore mutation; no plaintext success state | #459 / #461 |
+| A05 | Missing, unknown, unattested, unreadable, or unwritable protection boundary | Fails before staging or restore mutation; Hermes does not validate key/recovery material | #459 / #461 |
 | A06 | Concurrent publication to one destination | Exclusive lock rejects or safely serializes; ambiguous/stale contention fails closed | #459 |
 | A07 | Retention with unknown, foreign, partial, and corrupt files | Only exact verified managed artifacts are eligible; newest verified point survives | #460 |
 | A08 | Failed next run after a good point | Prior newest verified point remains usable; failure is explicit | #459 / #460 |
@@ -207,8 +211,9 @@ implement runtime behavior.
    destination validation, protected-state attestation, manifest/hashes,
    incomplete staging, atomic finalization, read-back, lock, and privacy-safe
    result. Depends on #458.
-3. **#460 / #417-C — retention.** Implement bounded cleanup only over verified
-   managed artifacts after #459 publication/read-back. Depends on #459.
+3. **#460 / #417-C — retention.** Retain the newest 12 verified managed
+   recovery points, with no age-based expiry/deletion in v1, only after #459
+   publication/read-back. Depends on #459.
 4. **#461 / #417-D — isolated DR rehearsal.** Implement pre-mutation verify,
    isolated restore, structural/readiness checks, and privacy-safe rehearsal
    result over the #459 format and #460 retention contract. Depends on #459

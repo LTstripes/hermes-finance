@@ -264,7 +264,9 @@ Future launcher work is optional:
 
 The supported v1 mode is `external_encrypted_destination_v1`. The configured
 destination must be the writable view of an Owner-managed encrypted
-container/volume whose encrypted backing storage is synchronized off-device.
+container/volume that the Owner has already successfully opened or mounted
+and that is readable and writable by the supported workflow. Its encrypted
+backing storage is synchronized off-device.
 An ordinary Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
 folder is not protected merely because it synchronizes. Hermes proves local
 publication and read-back, not cloud delivery.
@@ -278,7 +280,8 @@ archive operation.
 
 Before a real run, the Owner must attest outside Git that:
 
-1. the destination is an existing encrypted container/volume;
+1. the existing encrypted container/volume is already successfully
+   opened/mounted and is readable and writable;
 2. recovery material is available independently of the backed-up laptop; and
 3. the destination is not production data, a Stable/Preview/development
    checkout, the normal local backup directory, or an ambiguous/reparse-linked
@@ -292,16 +295,18 @@ protection_mode=external_encrypted_destination_v1
 format_version=1
 ```
 
-Keys, credentials, full private paths, financial values, and raw recovery
-payloads must never enter Git, CI, logs, or Worker workspaces.
+Hermes does not validate or authenticate the key or recovery material.
+Independent availability of recovery material remains an Owner-controlled UAT
+gate. Keys, credentials, full private paths, financial values, and raw
+recovery payloads must never enter Git, CI, logs, or Worker workspaces.
 
 ### Publication sequence
 
 When the managed publisher is available, use its documented explicit command
 from a trusted prepared checkout and follow this sequence:
 
-1. validate the attested protected destination and acquire its exclusive
-   publication lock;
+1. validate the already-mounted, readable/writable protected boundary and
+   acquire its exclusive publication lock;
 2. create a consistent SQLite snapshot through the accepted online-backup
    path;
 3. stage under the destination's unique incomplete name;
@@ -310,7 +315,8 @@ from a trusted prepared checkout and follow this sequence:
 5. atomically expose the exact managed final name on the same filesystem;
 6. read back and fully verify the final artifact;
 7. report `published`/`verified` only after read-back succeeds;
-8. run bounded retention only after that verified replacement exists.
+8. retain the newest 12 verified managed recovery points, with no age-based
+   expiry/deletion in v1, only after that verified replacement exists.
 
 Interrupted, stale, corrupt, foreign, or unknown files are never recovery
 points and are never eligible for retention. A failed next run must preserve
@@ -319,12 +325,14 @@ fail closed.
 
 ### Isolated recovery rehearsal
 
-The supported rehearsal obtains the protected artifact and recovery material
-independently of the lost profile, then:
+The supported rehearsal obtains the protected artifact and independently held
+recovery material after the encrypted container/volume has already been
+opened/mounted and is readable, then:
 
 1. verifies the manifest, hashes, protection state, container readability,
    SQLite integrity, foreign keys, and schema/migration identity before any
-   target mutation;
+   target mutation; Hermes does not validate or authenticate the key or
+   recovery material;
 2. restores only into a fresh isolated Finance checkout/profile/data/database
    boundary;
 3. rejects Stable, Preview, development workspaces, source/local-backup
