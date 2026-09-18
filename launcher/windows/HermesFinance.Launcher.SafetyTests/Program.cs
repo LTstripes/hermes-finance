@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text;
+using System.Text.RegularExpressions;
 
 if (args.Contains("--synthetic-ui-smoke", StringComparer.OrdinalIgnoreCase))
 {
@@ -21,6 +22,7 @@ var tests = new (string Name, Action Run)[]
     ("loads the canonical config example", LoadsCanonicalConfigExample),
     ("rejects unknown config fields", RejectsUnknownConfigFields),
     ("presents the branded owner launcher surface", PresentsBrandedOwnerSurface),
+    ("keeps the ordinary launcher surface free of updater and Git mutation paths", NoUpdaterOrGitMovementSurface),
     ("exposes explicit prepare, repair, start, and stop actions", PresentsExplicitDependencyActions),
     ("keeps Stable and Preview data boundaries visibly distinct", KeepsProfileBoundariesDistinct),
     ("sanitizes raw paths from owner-facing blockers", SanitizesOwnerFacingBlockers),
@@ -141,6 +143,26 @@ static void PresentsBrandedOwnerSurface()
 
     var status = controls.OfType<TextBox>().Single();
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
+}
+
+static void NoUpdaterOrGitMovementSurface()
+{
+    using var form = MainForm.CreateSyntheticSmoke();
+    var buttons = AllControls(form).OfType<Button>().Select(button => button.Text).ToArray();
+    foreach (var obsolete in new[] { "Обновить Preview", "Обновить и запустить", "Обновить Stable" })
+    {
+        Assert(!buttons.Contains(obsolete, StringComparer.Ordinal), $"obsolete updater CTA remains: {obsolete}");
+    }
+
+    var sourceRoot = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..");
+    foreach (var file in new[] { "MainForm.cs", "LauncherUi.cs", "ProfileValidator.cs", "LauncherConfig.cs" })
+    {
+        var source = File.ReadAllText(Path.Combine(sourceRoot, "HermesFinance.Launcher", file));
+        Assert(!source.Contains("PreviewUpdateService", StringComparison.Ordinal), $"{file} must not reference PreviewUpdateService");
+        Assert(!source.Contains("StableReleaseService", StringComparison.Ordinal), $"{file} must not reference StableReleaseService");
+        Assert(!Regex.IsMatch(source, @"(?i)\bgit\s+(fetch|pull|switch|reset)\b"), $"{file} must not expose Git mutation commands");
+        Assert(!Regex.IsMatch(source, @"(?i)[""'](fetch|pull|switch|reset)[""']"), $"{file} must not invoke Git mutation verbs");
+    }
 }
 
 static void PresentsExplicitDependencyActions()
