@@ -671,15 +671,49 @@ public sealed class MainForm : Form
 
     private async Task OpenSetupAsync()
     {
-        using var dialog = new SetupForm(_configPath);
+        if (IsLauncherRuntimeActive())
+        {
+            AppendDiagnostic("Setup refused while a launcher-owned runtime is starting or running.");
+            ShowTransientMessage("Настройка недоступна, пока Hermes запускается или работает. Сначала остановите launcher-owned runtime.");
+            return;
+        }
+
+        using var dialog = new SetupForm(_configPath, IsLauncherRuntimeActive);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
+            if (IsLauncherRuntimeActive())
+            {
+                AppendDiagnostic("Setup save was accepted, but config reload was refused because a launcher-owned runtime became active.");
+                ShowTransientMessage("Конфигурация не перезагружена: Hermes запустился во время настройки. Остановите runtime и повторите настройку.");
+                return;
+            }
             AppendDiagnostic("Setup saved a concrete launcher config; reloading.");
             await LoadConfigAsync();
         }
         else
         {
             AppendDiagnostic("Setup was cancelled; launcher config unchanged.");
+        }
+    }
+
+    private bool IsLauncherRuntimeActive()
+    {
+        var process = _launcherProcess;
+        if (process is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return !process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            // AttachProcess assigns the process before Process.Start. Treat
+            // an unobservable startup/disposal state as active so setup cannot
+            // race it.
+            return true;
         }
     }
 
@@ -1456,6 +1490,13 @@ public sealed class MainForm : Form
             ? Color.FromArgb(49, 27, 43)
             : Color.FromArgb(21, 35, 57);
         _readinessDot.AccessibleName = LauncherUi.ReadinessLabel(state);
+        if (state is LauncherReadinessState.Starting or LauncherReadinessState.Running)
+        {
+            // SetReadiness is also used by the startup/health callbacks before
+            // the full action plan is recomputed. Keep Setup fail-closed during
+            // that narrow transition window as well as in ApplyPrimaryPlan.
+            _setup.Enabled = false;
+        }
     }
 
     private void SetAllChecks(string text, bool passed)

@@ -39,6 +39,7 @@ var tests = new (string Name, Action Run)[]
     ("packages the branded cat icon", PackagesBrandedCatIcon),
     ("installs shortcuts beside the stable launcher", InstallsShortcutsBesideStableLauncher),
     ("starts and stops only a synthetic runtime", StartsAndStopsSyntheticRuntime),
+    ("blocks setup during the real StartSelected lifecycle and restores it after Stop", SetupIsBlockedDuringOwnedStartAndRestoredAfterStop),
     ("returns Ready and enables Start after launcher-owned Stop", OwnerStopReturnsToReady),
     ("recovers Stable ownership after launcher restart", RecoversStableOwnershipAfterLauncherRestart),
     ("recovers Preview ownership after launcher restart", RecoversPreviewOwnershipAfterLauncherRestart),
@@ -616,6 +617,133 @@ static void StartsAndStopsSyntheticRuntime()
             process.WaitForExit(5_000);
         }
         form?.Dispose();
+        DeleteSyntheticTree(root);
+    }
+}
+
+static void SetupIsBlockedDuringOwnedStartAndRestoredAfterStop()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"hermes-launcher-setup-owner-{Guid.NewGuid():N}");
+    var originalPath = Environment.GetEnvironmentVariable("PATH");
+    Process? process = null;
+    MainForm? form = null;
+    try
+    {
+        var checkout = Path.Combine(root, "stable-runtime");
+        var dataDir = Path.Combine(checkout, "data");
+        var database = Path.Combine(dataDir, "finance.db");
+        var ownershipDirectory = Path.Combine(root, "ownership");
+        var toolDirectory = Path.Combine(root, "tools");
+        Directory.CreateDirectory(root);
+        CreateDependencyValidationLayout(checkout);
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(toolDirectory);
+        File.WriteAllText(
+            Path.Combine(checkout, "scripts", "start-local.ps1"),
+            "$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000)\n"
+                + "$listener.Start()\n"
+                + "Write-Output 'Hermes Finance is ready: http://127.0.0.1:8000'\n"
+                + "while ($true) { Start-Sleep -Milliseconds 100 }\n",
+            new UTF8Encoding(true));
+        RunGit(checkout, "init");
+        RunGit(checkout, "config", "user.name", "Hermes launcher safety test");
+        RunGit(checkout, "config", "user.email", "hermes-launcher-safety-test");
+        RunGit(checkout, "add", ".");
+        RunGit(checkout, "commit", "-m", "synthetic setup lifecycle runtime");
+        WriteCommandShim(Path.Combine(toolDirectory, "uv.cmd"), "@echo off\r\nexit /b 0\r\n");
+        WriteCommandShim(
+            Path.Combine(toolDirectory, "npm.cmd"),
+            "@echo off\r\necho {\"dependencies\":{}}\r\nexit /b 0\r\n");
+        Environment.SetEnvironmentVariable("PATH", toolDirectory + Path.PathSeparator + originalPath);
+
+        var profile = StableProfile(checkout, dataDir, database, "HEAD");
+        var config = new LauncherConfig
+        {
+            Version = 1,
+            CanonicalProduction = new CanonicalProduction
+            {
+                Checkout = checkout,
+                DataDir = dataDir,
+                Database = database,
+            },
+            Profiles = [profile],
+        };
+
+        form = new MainForm(config, ownershipDirectory)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-2000, -2000),
+        };
+        form.Show();
+        form.Hide();
+
+        var validated = ProfileValidator.Validate(config, profile);
+        Assert(validated.Dependencies?.Ready == true, "Real preflight fixture must prove locked dependencies ready before StartSelectedAsync.");
+        var applyValidated = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find ApplyValidated.");
+        applyValidated.Invoke(form, [validated]);
+        Assert(GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску", "Real preflight did not establish the Ready state before StartSelectedAsync.");
+        Assert(GetButton(form, "Настроить…").Enabled, "Setup must be available in the genuine Ready state.");
+
+        var start = typeof(MainForm).GetMethod("StartSelectedAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find StartSelectedAsync.");
+        var startTask = (Task)start.Invoke(form, null)!;
+        var processField = typeof(MainForm).GetField("_launcherProcess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find launcher process state.");
+        WaitForUi(
+            form,
+            () => processField.GetValue(form) is not null
+                && GetPrivate<Label>(form, "_readinessTitle").Text == "Hermes запускается",
+            $"StartSelectedAsync did not expose the Starting/owned-process window (title={GetPrivate<Label>(form, "_readinessTitle").Text}; status={GetPrivate<TextBox>(form, "_status").Text}; task={startTask.Status}; error={startTask.Exception?.GetBaseException().Message}).");
+        process = (Process?)processField.GetValue(form);
+        Assert(!GetButton(form, "Настроить…").Enabled, "Setup must be disabled immediately while the launcher-owned runtime is starting.");
+        startTask.GetAwaiter().GetResult();
+
+        var openSetup = typeof(MainForm).GetMethod("OpenSetupAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find OpenSetupAsync.");
+        var openSetupTask = (Task)openSetup.Invoke(form, null)!;
+        openSetupTask.GetAwaiter().GetResult();
+        Assert(
+            GetPrivate<TextBox>(form, "_status").Text.Contains("Setup refused while a launcher-owned runtime is starting or running.", StringComparison.Ordinal),
+            "Setup entry must refuse without opening a modal while the owned runtime is active.");
+
+        var blockedConfig = Path.Combine(root, "blocked-config.json");
+        using (var guardedSetup = new SetupForm(blockedConfig, () => true))
+        {
+            var save = typeof(SetupForm).GetMethod("Save", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Setup lifecycle regression could not find SetupForm.Save.");
+            save.Invoke(guardedSetup, null);
+        }
+        Assert(!File.Exists(blockedConfig), "Setup Save must refuse while a launcher-owned runtime is active.");
+
+        WaitForUi(
+            form,
+            () => GetPrivate<bool>(form, "_ready")
+                && GetButton(form, "Остановить").Enabled,
+            "Synthetic runtime did not reach Running after StartSelectedAsync.");
+        var stop = typeof(MainForm).GetMethod(
+                "StopLaunchedStack",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null)
+            ?? throw new InvalidOperationException("Setup lifecycle regression could not find launcher Stop.");
+        stop.Invoke(form, ["Synthetic setup lifecycle stopped the runtime."]);
+        var startedProcess = process ?? throw new InvalidOperationException("Synthetic process disappeared before Stop.");
+        Assert(startedProcess.WaitForExit(5_000), "Synthetic runtime did not stop after launcher-owned Stop.");
+        WaitForUi(
+            form,
+            () => GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску"
+                && GetButton(form, "Настроить…").Enabled,
+            "Setup was not restored after launcher-owned Stop returned to Ready.");
+        process = null;
+    }
+    finally
+    {
+        StopSyntheticProcess(process);
+        form?.Dispose();
+        Environment.SetEnvironmentVariable("PATH", originalPath);
         DeleteSyntheticTree(root);
     }
 }

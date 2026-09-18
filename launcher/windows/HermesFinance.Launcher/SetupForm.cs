@@ -9,6 +9,7 @@ namespace HermesFinance.Launcher;
 public sealed class SetupForm : Form
 {
     private readonly string _configPath;
+    private readonly Func<bool>? _runtimeActive;
     private readonly TextBox _stableCheckout = new() { Dock = DockStyle.Fill, ReadOnly = true };
     private readonly TextBox _stableData = new() { Dock = DockStyle.Fill, ReadOnly = true };
     private readonly TextBox _previewCheckout = new() { Dock = DockStyle.Fill, ReadOnly = true };
@@ -22,9 +23,10 @@ public sealed class SetupForm : Form
     private readonly Button _save = new() { Text = "Сохранить конфигурацию", Width = 200, Height = 36, DialogResult = DialogResult.None };
     private readonly Button _cancel = new() { Text = "Отмена", Width = 100, Height = 36, DialogResult = DialogResult.Cancel };
 
-    public SetupForm(string configPath)
+    public SetupForm(string configPath, Func<bool>? runtimeActive = null)
     {
         _configPath = configPath;
+        _runtimeActive = runtimeActive;
         Text = "Hermes Finance — первая настройка";
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(620, 380);
@@ -112,6 +114,12 @@ public sealed class SetupForm : Form
 
     private void Save()
     {
+        if (_runtimeActive?.Invoke() == true)
+        {
+            _status.Text = "Настройка недоступна, пока launcher-owned Hermes запускается или работает. Сначала остановите runtime.";
+            return;
+        }
+
         try
         {
             var config = LauncherSetup.BuildConfig(
