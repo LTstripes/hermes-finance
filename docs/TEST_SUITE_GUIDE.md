@@ -58,7 +58,7 @@ semantic marker.
 
 | Primary marker | CI lane | Ownership rule |
 | --- | --- | --- |
-| `ci_core` | Backend core | Domain, service, general API, and explicitly mapped flat financial tests |
+| `ci_core` | Backend core (two deterministic weighted shards) | Domain, service, general API, and explicitly mapped flat financial tests; `ci_core_a` and `ci_core_b` split the same ownership by a committed duration-weighted test-file assignment |
 | `ci_persistence` | Backend persistence | SQLite, persisted state, and migration tests |
 | `ci_integrations` | Backend integrations | Provider, reconciliation, and import/export boundaries |
 | `ci_runtime_release` | Backend runtime/release | Runtime, release, legacy, Windows, and CI-contract tests |
@@ -71,8 +71,10 @@ raises a collection error for an unclassified or conflicting node. The
 test file. A new flat test module therefore requires an explicit owner before
 any lane can pass; benchmark tests cannot silently join a correctness lane.
 
-CI runs the five lanes as independent matrix jobs with `--durations=40` and a
-10-minute job timeout.
+CI runs the five ownership surfaces as independent matrix jobs with the core
+surface split into two deterministic duration-weighted shards (`ci_core_a` and `ci_core_b`),
+`--durations=40`, and a 10-minute job timeout. The shard markers are additive
+to `ci_core`; both shards together are the complete Backend core lane.
 
 The dedicated Windows timezone job protects runtime `tzdata` availability,
 `Europe/Moscow` calendar behavior, and real Windows runtime exports. A Linux
@@ -138,6 +140,8 @@ suite once the affected layer is stable:
 
 ```powershell
 uv run --locked python -I -m pytest -q -m domain
+uv run --locked python -I -m pytest -q -m "ci_core and ci_core_a"
+uv run --locked python -I -m pytest -q -m "ci_core and ci_core_b"
 uv run --locked python -I -m pytest -q -m "migration or persistence"
 uv run --locked python -I -m pytest -q -m "integration and network_free"
 uv run --locked python -I -m pytest -q -m benchmark
