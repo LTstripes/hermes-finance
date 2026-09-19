@@ -271,10 +271,9 @@ An ordinary Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
 folder is not protected merely because it synchronizes. Hermes proves local
 publication and read-back, not cloud delivery.
 
-This contract is documented before production implementation. Until the
-publisher and recovery child tasks are accepted, there is no supported Owner
-command to run for this workflow. Do not improvise a raw database copy or
-archive operation.
+The managed publisher is an explicit Owner command; it does not perform cloud
+delivery, retention deletion, restore, or disaster-recovery rehearsal. Do not
+improvise a raw database copy or archive operation.
 
 ### Owner preconditions
 
@@ -302,8 +301,27 @@ recovery payloads must never enter Git, CI, logs, or Worker workspaces.
 
 ### Publication sequence
 
-When the managed publisher is available, use its documented explicit command
-from a trusted prepared checkout and follow this sequence:
+From a trusted prepared checkout, invoke the bounded publisher explicitly:
+
+```powershell
+uv run --project backend --locked hermes-finance-protected-backup `
+  --database <trusted-local-database> `
+  --destination <already-opened-protected-destination> `
+  --checkout <trusted-producing-checkout> `
+  --protection-state protected `
+  --protection-mode external_encrypted_destination_v1
+```
+
+The command emits only privacy-safe machine-readable `created`, `verified`,
+`published`, `read_back`, and `action_required` state plus destination alias,
+format/protection identity, artifact size, and creation time. A
+successful `published=true` result requires final read-back verification. The
+command does not accept caller-supplied producer SHA or Alembic revisions;
+those are derived from the executing Hermes checkout and consistent snapshot.
+The optional `--checkout` value is only an identity guard and must resolve to
+that same executing checkout; it cannot select a different producer identity.
+
+Follow this sequence:
 
 1. validate the already-mounted, readable/writable protected boundary and
    acquire its exclusive publication lock;
