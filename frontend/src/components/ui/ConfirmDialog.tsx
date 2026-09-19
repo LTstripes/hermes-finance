@@ -27,22 +27,89 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const busyRef = useRef(busy);
+  const onCancelRef = useRef(onCancel);
+
+  useEffect(() => {
+    busyRef.current = busy;
+    onCancelRef.current = onCancel;
+  }, [busy, onCancel]);
 
   useEffect(() => {
     if (!open) {
       return;
     }
-    cancelRef.current?.focus();
+
+    const dialog = dialogRef.current;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = [
+      "button:not([disabled])",
+      "[href]",
+      "input:not([disabled]):not([type=hidden])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+    const getFocusableElements = () =>
+      dialog
+        ? Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+            (element) => !element.hasAttribute("aria-hidden"),
+          )
+        : [];
+
+    const initialFocus =
+      cancelRef.current && !cancelRef.current.hasAttribute("disabled")
+        ? cancelRef.current
+        : getFocusableElements()[0];
+    if (initialFocus && !initialFocus.hasAttribute("disabled")) {
+      initialFocus.focus();
+    } else {
+      dialog?.focus();
+    }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) {
-        onCancel();
+      if (event.key === "Escape" && !busyRef.current) {
+        onCancelRef.current();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+      const activeIsFocusable = focusableElements.includes(activeElement as HTMLElement);
+
+      if (event.shiftKey) {
+        if (!activeIsFocusable || activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (!activeIsFocusable || activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     }
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, busy, onCancel]);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      if (previouslyFocused?.isConnected) {
+        previouslyFocused.focus();
+      }
+    };
+  }, [open]);
 
   if (!open) {
     return null;
@@ -55,7 +122,9 @@ export function ConfirmDialog({
         aria-labelledby={titleId}
         aria-modal="true"
         className="dialog"
+        ref={dialogRef}
         role="alertdialog"
+        tabIndex={-1}
       >
         <h2 className="dialog__title" id={titleId}>
           {title}
