@@ -11,6 +11,8 @@ const UiV2ClosePage = lazy(() => import("./UiV2ClosePage"));
 const UiV2DataSourcesPage = lazy(() => import("./UiV2DataSourcesPage"));
 const UiV2DataReconciliationPage = lazy(() => import("./UiV2DataReconciliationPage"));
 const UiV2DataCatalogsPage = lazy(() => import("./UiV2DataCatalogsPage"));
+const UiV2DataFilesPage = lazy(() => import("./UiV2DataFilesPage"));
+const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
 const UiV2DataPlaceholderPage = lazy(() => import("./UiV2DataPlaceholderPage"));
 const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
 
@@ -79,6 +81,22 @@ export function UiV2DataCatalogsEntry() {
   return (
     <SuspenseFrame>
       <UiV2DataCatalogsPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2DataFilesEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2DataFilesPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2DataAppEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2DataAppPage />
     </SuspenseFrame>
   );
 }
