@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
+import { UiV2BackToTop } from "./UiV2BackToTop";
 import styles from "./UiV2Page.module.css";
 
 export type UiV2Section = "home" | "capital" | "data" | "income";
@@ -92,6 +93,7 @@ export function UiV2Shell({
           <header className={styles.header}>{header}</header>
           {children}
         </main>
+        <UiV2BackToTop targetId="v2-main" />
       </div>
     </div>
   );

@@ -36,6 +36,7 @@ describe("AppLayout", () => {
 
     renderLayout();
 
+    expect(screen.queryByRole("button", { name: "Наверх" })).toBeNull();
     const nav = screen.getByRole("navigation", { name: "Основная навигация" });
     expect(within(nav).getByRole("link", { name: /Дашборд/i })).toBeInTheDocument();
     const analytics = within(nav).getByRole("link", { name: /Аналитика/i });
