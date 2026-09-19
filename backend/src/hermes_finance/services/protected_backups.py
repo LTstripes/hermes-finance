@@ -47,17 +47,6 @@ _SNAPSHOT_NAME = "snapshot.sqlite3"
 _MANIFEST_NAME = "manifest.json"
 _ZERO_DIGEST = "0" * 64
 _REPARSE_POINT = 0x400
-_FORBIDDEN_PATH_PARTS = frozenset(
-    {
-        "stable",
-        "preview",
-        "development",
-        "dev",
-        "owner-probes",
-        "hermes-finance-runtime",
-        "hermes-finance-preview-r07",
-    }
-)
 
 
 class ProtectedBackupError(RuntimeError):
@@ -148,12 +137,43 @@ def _path_is_within(child: Path, parent: Path) -> bool:
     return True
 
 
+def _entry_exists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise ProtectedBackupError("destination Git boundary cannot be inspected") from error
+    return True
+
+
+def _assert_outside_git_boundaries(path: Path) -> None:
+    """Reject a destination at or below any repository/worktree boundary."""
+    current = path
+    while True:
+        marker = current / ".git"
+        if _entry_exists(marker):
+            raise ProtectedBackupError(
+                "destination is inside a Git repository or worktree boundary"
+            )
+        if (
+            _entry_exists(current / "HEAD")
+            and _entry_exists(current / "objects")
+            and _entry_exists(current / "refs")
+        ):
+            raise ProtectedBackupError("destination is inside a Git repository boundary")
+        if current.parent == current:
+            break
+        current = current.parent
+
+
 def _validate_destination(destination: Path, database: Database, source_checkout: Path) -> Path:
     _assert_no_reparse_components(destination)
     resolved = destination.expanduser().resolve()
     if not resolved.exists() or not resolved.is_dir():
         raise ProtectedBackupError("destination is not an existing directory")
     _assert_no_reparse_components(resolved)
+    _assert_outside_git_boundaries(resolved)
 
     db_parent = database.database_path.expanduser().resolve().parent
     local_backup = backup_directory(database).expanduser().resolve()
@@ -169,9 +189,6 @@ def _validate_destination(destination: Path, database: Database, source_checkout
         or _path_is_within(checkout, resolved)
     ):
         raise ProtectedBackupError("destination is inside a runtime or source boundary")
-    if any(part.casefold() in _FORBIDDEN_PATH_PARTS for part in resolved.parts):
-        raise ProtectedBackupError("destination is inside a protected runtime boundary")
-
     probe = resolved / f".hermes-destination-probe-{uuid.uuid4().hex}"
     try:
         descriptor = os.open(probe, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
@@ -229,6 +246,26 @@ def _git_identity(checkout: Path) -> str:
     if re.fullmatch(r"[0-9a-f]{40}", head) is None:
         raise ProtectedBackupError("producer checkout identity is not a full Git SHA")
     return head
+
+
+def _executing_checkout() -> Path:
+    """Return the repository checkout containing the loaded publisher code."""
+    checkout = Path(__file__).resolve().parents[4]
+    if not (checkout / "backend" / "pyproject.toml").is_file():
+        raise ProtectedBackupError("executing publisher checkout is unavailable")
+    return checkout
+
+
+def _producer_checkout(explicit_checkout: Path | None) -> Path:
+    """Bind producer identity to executing code; an explicit path is only a guard."""
+    executing = _executing_checkout()
+    if explicit_checkout is not None:
+        supplied = explicit_checkout.expanduser().resolve()
+        if _path_key(supplied) != _path_key(executing):
+            raise ProtectedBackupError(
+                "explicit producer checkout does not match executing publisher checkout"
+            )
+    return executing
 
 
 def _script_directory(checkout: Path) -> ScriptDirectory:
@@ -512,9 +549,9 @@ def publish_recovery_point(
     """Publish one verified recovery point to an already-mounted destination."""
 
     created_at = _normalized_now(now)
-    checkout = (source_checkout or Path(__file__).resolve().parents[4]).expanduser().resolve()
     if protection_state != PROTECTION_STATE or protection_mode != PROTECTION_MODE:
         raise ProtectedBackupError("unsupported protection mode")
+    checkout = _producer_checkout(source_checkout)
     validated_destination = _validate_destination(destination, database, checkout)
     producer_sha = _git_identity(checkout)
 

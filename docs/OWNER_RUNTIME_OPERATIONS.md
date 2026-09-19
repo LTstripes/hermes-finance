@@ -317,7 +317,9 @@ The command emits only privacy-safe machine-readable `created`, `verified`,
 format/protection identity, artifact size, and creation time. A
 successful `published=true` result requires final read-back verification. The
 command does not accept caller-supplied producer SHA or Alembic revisions;
-those are derived from the trusted checkout and consistent snapshot.
+those are derived from the executing Hermes checkout and consistent snapshot.
+The optional `--checkout` value is only an identity guard and must resolve to
+that same executing checkout; it cannot select a different producer identity.
 
 Follow this sequence:
 

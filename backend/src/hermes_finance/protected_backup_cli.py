@@ -35,8 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkout",
         type=Path,
-        default=Path.cwd(),
-        help="Trusted producing checkout; defaults to the current checkout",
+        help="Optional guard that must resolve to the executing Hermes checkout",
     )
     parser.add_argument(
         "--protection-state",

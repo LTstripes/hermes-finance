@@ -59,6 +59,37 @@ def _publish(monkeypatch, database, destination: Path):
     )
 
 
+def _create_clean_git_checkout(path: Path) -> None:
+    path.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=path, check=True)
+    (path / "synthetic.txt").write_text("synthetic\n", encoding="utf-8")
+    subprocess.run(["git", "add", "synthetic.txt"], cwd=path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Hermes Synthetic",
+            "-c",
+            "user.email=synthetic",
+            "commit",
+            "--quiet",
+            "-m",
+            "synthetic checkout",
+        ],
+        cwd=path,
+        check=True,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert status.stdout == ""
+
+
 def test_publisher_creates_verified_single_artifact_with_deterministic_manifest(
     tmp_path: Path, synthetic_database, monkeypatch
 ) -> None:
@@ -89,6 +120,65 @@ def test_publisher_creates_verified_single_artifact_with_deterministic_manifest(
     assert manifest["artifact_size_bytes"] == artifact.stat().st_size
     assert not (destination / ".hermes_recovery.lock").exists()
     assert not list(destination.glob(".hermes_recovery_*.incomplete"))
+
+
+def test_supplied_clean_checkout_cannot_replace_executing_producer_identity(
+    tmp_path: Path, synthetic_database
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    other_checkout = tmp_path / "clean-checkout-b"
+    _create_clean_git_checkout(other_checkout)
+
+    with pytest.raises(ProtectedBackupError, match="does not match executing"):
+        publish_recovery_point(
+            synthetic_database,
+            destination,
+            protection_state=PROTECTION_STATE,
+            protection_mode=PROTECTION_MODE,
+            source_checkout=other_checkout,
+        )
+
+    assert not list(destination.iterdir())
+
+
+def test_destination_inside_differently_named_git_checkout_fails_closed(
+    tmp_path: Path, synthetic_database
+) -> None:
+    other_checkout = tmp_path / "encrypted-vault-7392"
+    _create_clean_git_checkout(other_checkout)
+    destination = other_checkout / "mounted-protected-destination"
+    destination.mkdir()
+
+    with pytest.raises(ProtectedBackupError, match="Git repository or worktree"):
+        publish_recovery_point(
+            synthetic_database,
+            destination,
+            protection_state=PROTECTION_STATE,
+            protection_mode=PROTECTION_MODE,
+            source_checkout=Path(__file__).resolve().parents[2],
+        )
+
+    assert not [path for path in destination.iterdir() if is_managed_recovery_name(path.name)]
+
+
+def test_destination_with_worktree_git_file_fails_closed(
+    tmp_path: Path, synthetic_database
+) -> None:
+    destination = tmp_path / "encrypted-vault-worktree-4815"
+    destination.mkdir()
+    (destination / ".git").write_text("gitdir: ../synthetic-gitdir\n", encoding="utf-8")
+
+    with pytest.raises(ProtectedBackupError, match="Git repository or worktree"):
+        publish_recovery_point(
+            synthetic_database,
+            destination,
+            protection_state=PROTECTION_STATE,
+            protection_mode=PROTECTION_MODE,
+            source_checkout=Path(__file__).resolve().parents[2],
+        )
+
+    assert not [path for path in destination.iterdir() if is_managed_recovery_name(path.name)]
 
 
 def test_missing_or_unknown_protection_attestation_fails_before_staging(
