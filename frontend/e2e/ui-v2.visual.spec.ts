@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, type Page, test, type TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
 import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 
@@ -223,6 +223,70 @@ test("ui-v2 Home interactions: history windows and v1 escape preserve semantics"
   await page.keyboard.press("Enter");
   await expect(page.locator("#v2-main")).toBeFocused();
   await expect(page.locator("#v2-main")).toHaveCSS("outline-style", "solid");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 back to top desktop: appears after meaningful scroll and restores main focus", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !["chromium", "1440x900"].includes(testInfo.project.name),
+    "Back-to-top browser evidence runs once per desktop harness",
+  );
+  const evidence = await installApi(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/v2");
+  await expect(page.getByRole("heading", { name: "Мои финансы" })).toBeVisible();
+
+  const backToTop = page.getByRole("button", { name: "Наверх" });
+  await expect(backToTop).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo({ top: 360, behavior: "auto" }));
+  await expect(backToTop).toBeVisible();
+  await expect(backToTop).toHaveAttribute("aria-controls", "v2-main");
+
+  await capture(page, testInfo, "ui-v2-back-to-top-desktop");
+  await backToTop.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#v2-main")).toBeFocused();
+  await expect
+    .poll(() => page.evaluate(() => Math.max(window.scrollY, document.documentElement.scrollTop)))
+    .toBeLessThan(320);
+
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 back to top narrow: remains inside the viewport and keyboard usable", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !["chromium", "1440x900"].includes(testInfo.project.name),
+    "Back-to-top browser evidence runs once per desktop harness",
+  );
+  const evidence = await installApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2");
+  await expect(page.getByRole("heading", { name: "Мои финансы" })).toBeVisible();
+
+  await page.evaluate(() => window.scrollTo({ top: 360, behavior: "auto" }));
+  const backToTop = page.getByRole("button", { name: "Наверх" });
+  await expect(backToTop).toBeVisible();
+  const box = await backToTop.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("Back-to-top button has no visible bounding box");
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await assertBounded(page);
+
+  await capture(page, testInfo, "ui-v2-back-to-top-narrow");
+  await backToTop.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#v2-main")).toBeFocused();
+  await expect
+    .poll(() => page.evaluate(() => Math.max(window.scrollY, document.documentElement.scrollTop)))
+    .toBeLessThan(320);
+
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
