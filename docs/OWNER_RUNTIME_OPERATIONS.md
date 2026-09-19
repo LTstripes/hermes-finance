@@ -260,6 +260,136 @@ Future launcher work is optional:
 - Stable update remains explicit, backup-first and immutable-release based.
 - Ordinary runtime remains loopback-only.
 
+## 13. Protected off-site recovery points and DR rehearsal
+
+The supported v1 mode is `external_encrypted_destination_v1`. The configured
+destination must be the writable view of an Owner-managed encrypted
+container/volume that the Owner has already successfully opened or mounted
+and that is readable and writable by the supported workflow. Its encrypted
+backing storage is synchronized off-device.
+An ordinary Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
+folder is not protected merely because it synchronizes. Hermes proves local
+publication and read-back, not cloud delivery.
+
+This contract is documented before production implementation. Until the
+publisher and recovery child tasks are accepted, there is no supported Owner
+command to run for this workflow. Do not improvise a raw database copy or
+archive operation.
+
+### Owner preconditions
+
+Before a real run, the Owner must attest outside Git that:
+
+1. the existing encrypted container/volume is already successfully
+   opened/mounted and is readable and writable;
+2. recovery material is available independently of the backed-up laptop; and
+3. the destination is not production data, a Stable/Preview/development
+   checkout, the normal local backup directory, or an ambiguous/reparse-linked
+   path.
+
+Hermes records only:
+
+```text
+protection_state=protected
+protection_mode=external_encrypted_destination_v1
+format_version=1
+```
+
+Hermes does not validate or authenticate the key or recovery material.
+Independent availability of recovery material remains an Owner-controlled UAT
+gate. Keys, credentials, full private paths, financial values, and raw
+recovery payloads must never enter Git, CI, logs, or Worker workspaces.
+
+### Publication sequence
+
+When the managed publisher is available, use its documented explicit command
+from a trusted prepared checkout and follow this sequence:
+
+1. validate the already-mounted, readable/writable protected boundary and
+   acquire its exclusive publication lock;
+2. create a consistent SQLite snapshot through the accepted online-backup
+   path;
+3. stage under the destination's unique incomplete name;
+4. validate manifest/hashes, SQLite integrity, foreign keys, and
+   schema/migration identity;
+5. atomically expose the exact managed final name on the same filesystem;
+6. read back and fully verify the final artifact;
+7. report `published`/`verified` only after read-back succeeds;
+8. retain the newest 12 verified managed recovery points, with no age-based
+   expiry/deletion in v1, only after that verified replacement exists.
+
+Interrupted, stale, corrupt, foreign, or unknown files are never recovery
+points and are never eligible for retention. A failed next run must preserve
+the newest verified point. Lock contention and ambiguous destination identity
+fail closed.
+
+### Isolated recovery rehearsal
+
+The supported rehearsal obtains the protected artifact and independently held
+recovery material after the encrypted container/volume has already been
+opened/mounted and is readable. The Owner explicitly selects one immutable
+full 40-character recovery Git SHA and an independent checkout pinned exactly
+to it; a branch/ref-only, ambiguous, dirty, or non-independent checkout is
+not eligible. The selected recovery SHA may differ from the producer SHA when
+the schema compatibility gate accepts a forward upgrade. Then:
+
+1. verifies the manifest, hashes, producer full SHA, exactly sorted source
+   Alembic revision set, protection state, container readability, SQLite
+   integrity, and foreign keys before any target mutation; Hermes does not
+   validate or authenticate the key or recovery material;
+2. loads the selected checkout's Alembic graph and supported head set and
+   accepts only `same_revision` (source set equals supported heads) or one
+   unambiguous supported `forward_upgrade` path from source set to those
+   heads;
+3. rejects unknown, ahead, divergent, downgrade-required, ambiguous, or
+   multiple unsupported schema paths before target mutation;
+4. restores only into a fresh isolated Finance checkout/profile/data/database
+   boundary;
+5. rejects Stable, Preview, development workspaces, source/local-backup
+   aliases, reparse/linked paths, non-empty targets, and conflicting targets;
+6. preserves the source recovery artifact unchanged;
+7. re-reads the selected checkout SHA and clean state immediately before the
+   restore write; if migration occurs, performs a new re-check immediately
+   before migration; and if Start occurs, performs another new re-check
+   immediately before Start. Any identity change fails closed before target
+   mutation where possible and never proceeds to migration/Start;
+8. validates broad non-private structural counts;
+9. composes ADR 0014 schema-preflight with the exact-checkout
+   Prepare/Validate and deterministic Start/readiness path; and
+10. confirms the restored application can read months and core financial
+   surfaces.
+
+Successful privacy-safe rehearsal evidence binds the managed artifact
+identity/hashes, producer SHA, sorted source revision set, selected recovery
+SHA, selected checkout head set, accepted relationship, and resulting
+readiness/schema/code identity. It contains no financial values, private
+paths, secrets, or recovery material.
+
+Never overwrite Stable, restore through an arbitrary code/schema path, or
+claim cloud delivery or Owner UAT from a local synthetic rehearsal.
+
+### Restore read-state requirement
+
+After a successful existing in-app restore, the month list must reload from
+the restored database. Keep the selected month only if its ID exists in the
+restored list; otherwise select the allowed restored fallback or clear the
+selection when the list is empty. A stale pre-restore month list or ID must
+not remain visible as current. The focused implementation is tracked by
+#462; this runbook does not add a second UI state system.
+
+### Owner completion gates
+
+Real use remains Owner-controlled and requires all of the following after
+synthetic implementation acceptance:
+
+- one protected, destination-read-back-verified recovery point in the
+  intended off-device workflow;
+- independently held recovery material; and
+- one clean isolated disaster-recovery rehearsal.
+
+Failure keeps the prior verified point and its evidence. Preserve the failure
+output and action required; do not bypass the protection or isolation guards.
+
 ## References
 
 - #313 — completed launcher/runtime redesign parent
@@ -276,3 +406,4 @@ Future launcher work is optional:
 - `scripts/start-local.ps1`
 - `scripts/prepare-preview.ps1`
 - `scripts/update-stable.ps1`
+- [`ADR 0017`](adr/0017-protected-offsite-backup-and-recovery.md) — protected off-site recovery-point and isolated-DR contract

@@ -60,6 +60,8 @@ markers = [
     "windows: Windows-specific path, timezone, and launcher behavior",
     "network_free: synthetic tests that assert or require offline behavior",
     "ci_core: exclusive normal CI lane for domain, service, and general API tests",
+    "ci_core_a: deterministic first shard of the exclusive backend core lane",
+    "ci_core_b: deterministic second shard of the exclusive backend core lane",
     "ci_persistence: exclusive normal CI lane for SQLite, persistence, and migration tests",
     "ci_integrations: exclusive normal CI lane for provider, reconciliation, and import/export tests",
     "ci_runtime_release: exclusive normal CI lane for runtime, release, legacy, and CI contract tests",
