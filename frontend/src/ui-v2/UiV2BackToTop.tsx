@@ -14,7 +14,9 @@ export function UiV2BackToTop({ targetId }: { targetId: string }) {
 
   useEffect(() => {
     const updateVisibility = () => {
-      setVisible(getScrollTop() >= MEANINGFUL_SCROLL_TOP && !document.querySelector(MODAL_SELECTOR));
+      setVisible(
+        getScrollTop() >= MEANINGFUL_SCROLL_TOP && !document.querySelector(MODAL_SELECTOR),
+      );
     };
 
     updateVisibility();
