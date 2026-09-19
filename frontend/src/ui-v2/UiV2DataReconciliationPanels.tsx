@@ -12,6 +12,7 @@ import {
   type MappingValues,
   type RowFilter,
   rowKey,
+  rowReasonLabel,
   rowStateLabel,
   rowStateTone,
 } from "./UiV2DataReconciliationParts";
@@ -50,7 +51,6 @@ export function MonthToolbar({
       <button className={dataStyles.primaryButton} disabled={running} onClick={onRun} type="button">
         {running ? "Получаем снимок…" : hasResult ? "Обновить сверку" : "Проверить снимок"}
       </button>
-      <p className={dataStyles.hint}>Только явное действие · без автозапроса при открытии</p>
     </div>
   );
 }
@@ -101,15 +101,15 @@ export function MappingPanel({
   if (accountRows.length === 0 && instrumentRows.length === 0) return null;
   return (
     <section className={dataStyles.resultPanel} data-testid="reconciliation-mapping">
-      <h2>Временное сопоставление</h2>
+      <h2>Уточнить сопоставление</h2>
       <p className={dataStyles.muted}>
-        Значения только для этого запроса. Сохранения здесь нет — постоянное сопоставление в
+        Этот вариант действует только для текущей проверки. Постоянное сопоставление настраивается в
         справочниках.
       </p>
       <div className={dataStyles.mappingGrid}>
         {accountRows.map((row, index) => (
           <div className={dataStyles.mappingField} key={row.provider_account_id}>
-            <label htmlFor={`v2-recon-account-${index}`}>Счёт · {row.provider_account_id}</label>
+            <label htmlFor={`v2-recon-account-${index}`}>Счёт брокера {index + 1}</label>
             <select
               id={`v2-recon-account-${index}`}
               value={accountMappingValue(row, accountValues)}
@@ -129,7 +129,9 @@ export function MappingPanel({
           return (
             <div className={dataStyles.mappingField} key={providerId}>
               <label htmlFor={`v2-recon-instrument-${index}`}>
-                Инструмент · {row.display_name ?? providerId}
+                {row.display_name
+                  ? `Инструмент · ${row.display_name}`
+                  : `Инструмент брокера ${index + 1}`}
               </label>
               <select
                 id={`v2-recon-instrument-${index}`}
@@ -166,7 +168,7 @@ export function RowsPanel({ result }: { result: BrokerReconciliationResponse }) 
 
   return (
     <section className={dataStyles.resultPanel} data-testid="reconciliation-rows">
-      <h2>Нормализованные строки</h2>
+      <h2>Сравнение позиций</h2>
       <div className={dataStyles.filterRow}>
         <label htmlFor="v2-recon-filter">
           Показывать
@@ -190,7 +192,7 @@ export function RowsPanel({ result }: { result: BrokerReconciliationResponse }) 
             <thead>
               <tr>
                 <th>Состояние</th>
-                <th>Идентичность</th>
+                <th>Позиция</th>
                 <th>Локально</th>
                 <th>У брокера</th>
                 <th>Разница</th>
@@ -213,10 +215,10 @@ export function RowsPanel({ result }: { result: BrokerReconciliationResponse }) 
                   <td>{formatQuantity(row.provider_quantity)}</td>
                   <td>{formatQuantity(row.quantity_difference)}</td>
                   <td>
-                    {row.reason ?? "—"}
+                    {rowReasonLabel(row.reason) ?? "—"}
                     {row.state === "unresolved" ? (
                       <div>
-                        <strong>Нельзя считать сопоставление безопасным</strong>
+                        <strong>Сверка остановлена: позиция не подтверждена.</strong>
                       </div>
                     ) : null}
                   </td>

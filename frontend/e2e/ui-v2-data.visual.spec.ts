@@ -261,12 +261,36 @@ test("ui-v2 Data reconciliation: no provider call on mount; preview only on clic
   const evidence = await installDataApi(page);
   await page.goto("/v2/data/reconciliation");
   await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
+    "Сверка только показывает различия и ничего не сохраняет",
+  );
   expect(evidence.posts).toEqual([]);
   await page.getByRole("button", { name: "Проверить снимок" }).click();
   await expect(page.getByTestId("reconciliation-result")).toBeVisible();
+  await expect(page.getByText("eligible_for_apply", { exact: false })).toHaveCount(0);
   expect(evidence.posts).toEqual(["POST /api/months/12/broker-reconciliation-preview"]);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-reconciliation-desktop");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Data reconciliation narrow: owner copy and action stay bounded", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installDataApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/data/reconciliation");
+  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
+    "Данные брокера запрашиваются только после нажатия",
+  );
+  expect(evidence.posts).toEqual([]);
+  await page.getByRole("button", { name: "Проверить снимок" }).click();
+  await expect(page.getByTestId("reconciliation-result")).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-reconciliation-narrow");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

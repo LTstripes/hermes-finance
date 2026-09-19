@@ -65,7 +65,7 @@ export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; mo
     <nav aria-label="Разделы данных и приложения" className={dataStyles.subnav}>
       <div className={dataStyles.modeGroup}>
         <p className={dataStyles.modeLabel}>
-          Проверить · только чтение <span className={dataStyles.modeBadge}>Только чтение</span>
+          Проверить <span className={dataStyles.modeBadge}>Только чтение</span>
         </p>
         <div className={dataStyles.chips}>
           {READ_SECTIONS.map((section) => (
