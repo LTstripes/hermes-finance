@@ -1201,11 +1201,20 @@ def test_retention_refuses_to_delete_pathname_replaced_after_handle_verification
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux unlinkat")
 def test_linux_handle_unlink_removes_open_inode(tmp_path: Path) -> None:
-    path = tmp_path / "handle-bound-object"
-    path.write_bytes(b"delete-via-fd")
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+    path = tmp_path / "hermes_recovery_20350101T000000000000Z-0123456789abcdef.hermes-recovery"
+    payload = b"delete-via-fd"
+    path.write_bytes(payload)
+    candidate = protected_backups._RetentionCandidate(
+        path=path,
+        created_at=datetime(2035, 1, 1, tzinfo=UTC),
+        artifact_hash=hashlib.sha256(payload).hexdigest(),
+        sequence=0,
+        name=path.name,
+        file_id=protected_backups._file_identity(path.lstat()),
+    )
+    target = protected_backups._open_deletion_target(candidate)
     try:
-        protected_backups._linux_unlinkat_empty(fd)
+        protected_backups._mark_deletion_target(target)
         assert not path.exists()
     finally:
-        os.close(fd)
+        protected_backups._close_deletion_target(target)

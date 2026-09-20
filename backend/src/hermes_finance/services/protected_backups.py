@@ -947,8 +947,9 @@ def _linux_unlinkat_empty(fd: int) -> None:
     """Unlink the inode referred to by fd, not a pathname."""
 
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    # ctypes.c_char_p converts empty bytes to NULL; pass a real "" buffer instead.
+    # ctypes.c_char_p converts empty bytes to NULL; pass the buffer address.
     empty_name = ctypes.create_string_buffer(1)
+    empty_ptr = ctypes.c_void_p(ctypes.addressof(empty_name))
     last_errno = 0
 
     def _try_call(func: object, *args: object) -> bool:
@@ -961,15 +962,20 @@ def _linux_unlinkat_empty(fd: int) -> None:
     unlinkat = libc.unlinkat
     unlinkat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
     unlinkat.restype = ctypes.c_int
-    if _try_call(unlinkat, int(fd), empty_name, _AT_EMPTY_PATH):
+    if _try_call(unlinkat, int(fd), empty_ptr, _AT_EMPTY_PATH):
         return
 
     syscall_number = _SYS_UNLINKAT.get(os.uname().machine)
     syscall = libc.syscall
     syscall.restype = ctypes.c_long
-    syscall.argtypes = None
+    syscall.argtypes = [
+        ctypes.c_long,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_int,
+    ]
     if syscall_number is not None and _try_call(
-        syscall, syscall_number, int(fd), empty_name, _AT_EMPTY_PATH
+        syscall, syscall_number, int(fd), empty_ptr, _AT_EMPTY_PATH
     ):
         return
 
@@ -980,10 +986,10 @@ def _linux_unlinkat_empty(fd: int) -> None:
             path_flags | getattr(os, "O_CLOEXEC", 0),
         )
         try:
-            if _try_call(unlinkat, int(path_fd), empty_name, _AT_EMPTY_PATH):
+            if _try_call(unlinkat, int(path_fd), empty_ptr, _AT_EMPTY_PATH):
                 return
             if syscall_number is not None and _try_call(
-                syscall, syscall_number, int(path_fd), empty_name, _AT_EMPTY_PATH
+                syscall, syscall_number, int(path_fd), empty_ptr, _AT_EMPTY_PATH
             ):
                 return
         finally:
@@ -1004,7 +1010,17 @@ def _mark_deletion_target(target: _DeletionTarget) -> None:
         ):
             _win_raise("SetFileInformationByHandle")
         return
-    _linux_unlinkat_empty(int(target.handle))
+    try:
+        _linux_unlinkat_empty(int(target.handle))
+        return
+    except OSError:
+        pass
+    # Some libc/kernel combinations reject AT_EMPTY_PATH. Unlink the pathname
+    # only while the open handle still identifies that same object.
+    _revalidate_deletion_target(target)
+    os.unlink(target.candidate.path)
+    if os.fstat(target.handle).st_nlink != 0:
+        raise ProtectedBackupError("retention identity is not proven")
 
 
 def _close_deletion_target(target: _DeletionTarget) -> None:
