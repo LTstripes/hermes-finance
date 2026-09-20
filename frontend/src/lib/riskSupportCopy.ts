@@ -22,7 +22,7 @@ export const REASON_LABELS: Record<string, string> = {
   bank_identity_not_persisted: "банк не указан для этих данных",
   broker_identity_not_persisted: "брокер не указан для этих данных",
   cash_not_account_linked: "наличные не связаны со счётом",
-  currency_conversion_not_supported: "не удалось привести валюту к единому виду",
+  currency_conversion_not_supported: "пересчёт валюты для этого среза не поддерживается",
   currency_not_persisted: "валюта не указана",
   deposit_forecast_not_concentratable: "по оценке депозита нет датированного события",
   instrument_not_persisted: "инструмент не указан для события",
