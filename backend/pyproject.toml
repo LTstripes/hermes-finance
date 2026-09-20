@@ -25,6 +25,7 @@ hermes-finance-legacy-mapping = "hermes_finance.legacy_month_mapping_cli:main"
 hermes-finance-legacy-extract = "hermes_finance.legacy_excel_cli:main"
 hermes-finance-legacy-preview = "hermes_finance.legacy_migration_preview_cli:main"
 hermes-finance-legacy-migrate = "hermes_finance.legacy_migration_cli:main"
+hermes-finance-protected-backup = "hermes_finance.protected_backup_cli:main"
 
 [dependency-groups]
 dev = [

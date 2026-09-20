@@ -114,27 +114,15 @@ def _metadata_for_path(database: Database, path: Path, *, created_at: datetime) 
     )
 
 
-def _create_backup(database: Database, *, now: datetime | None = None) -> BackupMetadata:
-    """Create an atomic snapshot using SQLite's online backup API."""
-    directory = _usable_backup_directory(database, create=True)
-    created_at = _normalized_now(now)
-    destination = _reserve_destination(created_at, directory)
-    temporary: Path | None = None
+def _create_online_snapshot(database: Database, destination: Path) -> None:
+    """Copy one consistent SQLite snapshot to an already-created path."""
     source_connection = None
     destination_connection: sqlite3.Connection | None = None
     try:
-        temporary_descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{destination.stem}.", suffix=".tmp", dir=directory
-        )
-        os.close(temporary_descriptor)
-        temporary = Path(temporary_name)
         source_connection = database.engine.raw_connection()
-        destination_connection = sqlite3.connect(temporary)
+        destination_connection = sqlite3.connect(destination)
         source_connection.driver_connection.backup(destination_connection)
         destination_connection.commit()
-        destination_connection.close()
-        destination_connection = None
-        os.replace(temporary, destination)
     except (OSError, sqlite3.Error) as error:
         raise BackupStorageError("Could not create database backup") from error
     finally:
@@ -142,6 +130,25 @@ def _create_backup(database: Database, *, now: datetime | None = None) -> Backup
             destination_connection.close()
         if source_connection is not None:
             source_connection.close()
+
+
+def _create_backup(database: Database, *, now: datetime | None = None) -> BackupMetadata:
+    """Create an atomic snapshot using SQLite's online backup API."""
+    directory = _usable_backup_directory(database, create=True)
+    created_at = _normalized_now(now)
+    destination = _reserve_destination(created_at, directory)
+    temporary: Path | None = None
+    try:
+        temporary_descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.stem}.", suffix=".tmp", dir=directory
+        )
+        os.close(temporary_descriptor)
+        temporary = Path(temporary_name)
+        _create_online_snapshot(database, temporary)
+        os.replace(temporary, destination)
+    except (OSError, sqlite3.Error) as error:
+        raise BackupStorageError("Could not create database backup") from error
+    finally:
         if temporary is not None and temporary.exists():
             temporary.unlink()
         if destination.exists() and destination.stat().st_size == 0:
