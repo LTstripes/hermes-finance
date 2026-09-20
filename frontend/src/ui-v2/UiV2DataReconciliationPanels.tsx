@@ -152,7 +152,7 @@ export function MappingPanel({
       </div>
       <p className={dataStyles.familyActions}>
         <Link to="/v2/data/catalogs">Сохранить сопоставление в справочниках →</Link>
-        <Link to="/settings">В текущем интерфейсе · настройки ↗</Link>
+        <Link to="/settings">В предыдущем интерфейсе · настройки ↗</Link>
       </p>
     </section>
   );

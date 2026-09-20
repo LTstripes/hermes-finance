@@ -452,7 +452,9 @@ it("preserves a valid legacy month and step only in the labelled v1 escape", asy
   mount();
 
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
+  expect(
+    screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).toHaveAttribute(
     "href",
     `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`,
   );
@@ -570,7 +572,7 @@ it("adds the contextual archive link without changing the labelled v1 handoff", 
   expect(screen.getByRole("link", { name: "Все отчёты →" })).toHaveAttribute("href", "/v2/reports");
   expect(
     within(screen.getByTestId("v2-report-context")).getByRole("link", {
-      name: "Отчёт месяца в текущем интерфейсе →",
+      name: "Отчёт месяца в предыдущем интерфейсе →",
     }),
   ).toHaveAttribute("href", `/months/${uiV2CapitalMonthId}`);
 });
@@ -589,7 +591,9 @@ describe("UI v2 Capital isolation", () => {
         </UiV2ErrorBoundary>
       </MemoryRouter>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Новый интерфейс не загрузился");
-    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
   });
 });

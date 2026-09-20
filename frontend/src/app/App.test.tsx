@@ -194,8 +194,10 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByText("Загружаем новый интерфейс…")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
+    expect(screen.getByText("Загружаем основной интерфейс…")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
   });
 
   it("renders the dashboard in the application layout", () => {
@@ -209,6 +211,9 @@ describe("App", () => {
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Перейти в основной интерфейс v2 →" }),
+    ).toHaveAttribute("href", "/v2");
     // E18: skip-link to main content
     expect(screen.getByRole("link", { name: "К содержанию" })).toHaveAttribute("href", "#main");
     expect(document.getElementById("main")).not.toBeNull();

@@ -98,7 +98,7 @@ export function AppLayout() {
       <div className="workspace">
         <header className="topbar">
           <span>Финансовая панель</span>
-          <Link to="/v2">Попробовать UI v2 →</Link>
+          <Link to="/v2">Перейти в основной интерфейс v2 →</Link>
         </header>
         <RuntimeStatusBanner />
         <main className="content" id="main">

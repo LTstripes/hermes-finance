@@ -191,7 +191,7 @@ export default function UiV2ReportsPage() {
           ))}
         </div>
         <p className={reportStyles.archiveNote}>
-          <Link to="/months">Месяцы в текущем интерфейсе →</Link>
+          <Link to="/months">Месяцы в предыдущем интерфейсе →</Link>
         </p>
       </>
     );

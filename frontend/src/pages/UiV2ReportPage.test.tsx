@@ -266,15 +266,17 @@ describe("UI v2 historical report", () => {
 
     const handoff = await screen.findByTestId("report-v1-handoff");
     expect(
-      within(handoff).getByRole("link", { name: "Отчёт месяца в текущем интерфейсе →" }),
+      within(handoff).getByRole("link", { name: "Отчёт месяца в предыдущем интерфейсе →" }),
     ).toHaveAttribute("href", `/months/${historicalId}`);
     expect(
-      within(handoff).getByRole("link", { name: "Все расчёты в текущем интерфейсе →" }),
+      within(handoff).getByRole("link", { name: "Все расчёты в предыдущем интерфейсе →" }),
     ).toHaveAttribute("href", "/analytics");
     expect(
-      within(handoff).getByRole("link", { name: "Месяцы в текущем интерфейсе →" }),
+      within(handoff).getByRole("link", { name: "Месяцы в предыдущем интерфейсе →" }),
     ).toHaveAttribute("href", "/months");
-    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
+    expect(
+      screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+    ).toHaveAttribute(
       "href",
       `/months/${historicalId}`,
     );

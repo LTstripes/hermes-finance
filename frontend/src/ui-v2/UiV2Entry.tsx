@@ -27,9 +27,9 @@ export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { fail
     if (this.state.failed) {
       return (
         <section className="state-block" role="alert">
-          <h1>Новый интерфейс не загрузился</h1>
-          <p>Текущий интерфейс остаётся доступным. Сохранённые данные не изменены.</p>
-          <Link to="/v1">Перейти в UI v1</Link>
+          <h1>Основной интерфейс не загрузился</h1>
+          <p>Предыдущий интерфейс остаётся доступным. Сохранённые данные не изменены.</p>
+          <Link to="/v1">Перейти в предыдущий интерфейс (UI v1)</Link>
         </section>
       );
     }
@@ -40,8 +40,8 @@ export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { fail
 export function UiV2LoadingFallback() {
   return (
     <section className="state-block" role="status">
-      <p>Загружаем новый интерфейс…</p>
-      <Link to="/v1">Перейти в UI v1</Link>
+      <p>Загружаем основной интерфейс…</p>
+      <Link to="/v1">Перейти в предыдущий интерфейс (UI v1)</Link>
     </section>
   );
 }

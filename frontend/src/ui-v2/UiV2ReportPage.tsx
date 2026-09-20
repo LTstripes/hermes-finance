@@ -663,26 +663,26 @@ export default function UiV2ReportPage() {
             risk={riskReady ? riskQuery.data : undefined}
           />
           <Panel
-            eyebrow="Ниже в текущем интерфейсе"
+            eyebrow="Ниже в предыдущем интерфейсе"
             id="report-handoff-title"
-            title="Дальше в текущем интерфейсе"
+            title="Дальше в предыдущем интерфейсе"
             wide
           >
             <ul className={reportStyles.handoffList} data-testid="report-v1-handoff">
               <li>
                 <Link to={`/months/${position.point.reporting_month_id}`}>
-                  Отчёт месяца в текущем интерфейсе →
+                  Отчёт месяца в предыдущем интерфейсе →
                 </Link>
               </li>
               <li>
-                <Link to="/analytics">Все расчёты в текущем интерфейсе →</Link>
+                <Link to="/analytics">Все расчёты в предыдущем интерфейсе →</Link>
               </li>
               <li>
-                <Link to="/months">Месяцы в текущем интерфейсе →</Link>
+                <Link to="/months">Месяцы в предыдущем интерфейсе →</Link>
               </li>
             </ul>
             <p className={styles.panelFootnote}>
-              Текущий интерфейс сохраняет свои правила выбора месяца и свой месяц-базис. Это
+              Предыдущий интерфейс сохраняет свои правила выбора месяца и свой месяц-базис. Это
               отдельный переход, а не встроенная возможность v2.
             </p>
           </Panel>

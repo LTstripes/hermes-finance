@@ -196,18 +196,22 @@
   text-decoration: none;
 }
 
+.topbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 14px;
+}
+
 .v1Link {
   font-weight: 700;
   white-space: nowrap;
 }
 
-.previewBadge {
-  display: inline-block;
-  margin-left: 7px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #e7edf4;
-  font-size: 10px;
+.contextualV1Link {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .main {

@@ -27,9 +27,11 @@ test("switches between v2 default and explicit v1 without passive writes", async
   await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByRole("link", { name: /UI v1/ }).first()).toBeVisible();
+  const permanentRollback = page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" });
+  await expect(permanentRollback).toBeVisible();
+  await expect(permanentRollback).toHaveAttribute("href", "/v1");
 
-  await page.getByRole("link", { name: /UI v1/ }).first().click();
+  await permanentRollback.click();
   await expect(page).toHaveURL(/\/v1$/);
   await page.reload();
   await expect(page).toHaveURL(/\/v1$/);
@@ -57,7 +59,7 @@ test("retains v2 deep-link query and fragment on hard reload", async ({ page }) 
 
   await page.goto(deepLink);
   await expect(page).toHaveURL(`http://127.0.0.1:5173${deepLink}`);
-  await expect(page.getByRole("link", { name: /UI v1/ }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toBeVisible();
   await page.reload();
   await expect(page).toHaveURL(`http://127.0.0.1:5173${deepLink}`);
 });
@@ -67,9 +69,12 @@ test("failed v2 lazy load still exposes a working v1 escape", async ({ page }) =
   await page.route("**/src/ui-v2/UiV2Page.tsx*", (route) => route.abort());
   await page.goto("/v2");
 
-  await expect(page.getByRole("alert")).toContainText("Новый интерфейс не загрузился");
-  await expect(page.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
-  await page.getByRole("link", { name: "Перейти в UI v1" }).click();
+  await expect(page.getByRole("alert")).toContainText("Основной интерфейс не загрузился");
+  await expect(page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" })).toHaveAttribute(
+    "href",
+    "/v1",
+  );
+  await page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }).click();
   await expect(page).toHaveURL(/\/v1$/);
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
 });
@@ -79,8 +84,9 @@ test("keeps the UI v1 rollback visible and keyboard-operable at narrow width", a
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const rollback = page.getByRole("link", { name: /UI v1/ }).first();
+  const rollback = page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" });
   await expect(rollback).toBeVisible();
+  await expect(rollback).toHaveAttribute("href", "/v1");
   await rollback.focus();
   await expect(rollback).toBeFocused();
   await rollback.press("Enter");

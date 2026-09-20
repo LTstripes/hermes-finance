@@ -151,7 +151,10 @@ it("shows no financial snapshot when there is no closed report yet", async () =>
   expect(screen.queryByTestId("v2-capital")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   expect(await screen.findByTestId("v2-draft-action")).toBeVisible();
-  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/v1");
+  expect(screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toHaveAttribute(
+    "href",
+    "/v1",
+  );
 });
 
 it("distinguishes an unavailable previous CLOSED base from a genuine zero", async () => {
@@ -340,7 +343,9 @@ it("preserves a valid legacy month/step only in the explicit v1 escape", async (
   const { mount } = setup("/v2?month=12&step=actual_payouts");
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
+  expect(
+    screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).toHaveAttribute(
     "href",
     "/months/12/close#actual_payouts",
   );
@@ -353,7 +358,9 @@ it.each(["/v2?month=012&step=actual_payouts", "/v2?month=12&month=91&step=actual
     const { mount } = setup(path);
     mount();
     await screen.findByTestId("v2-capital");
-    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/months/91");
+    expect(
+      screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+    ).toHaveAttribute("href", "/months/91");
   },
 );
 
@@ -361,7 +368,9 @@ it("rejects duplicate step context without discarding the valid month", async ()
   const { mount } = setup("/v2?month=12&step=actual_payouts&step=review");
   mount();
   await screen.findByTestId("v2-capital");
-  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/months/12");
+  expect(
+    screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).toHaveAttribute("href", "/months/12");
 });
 
 it("recovers the root report list without querying a guessed report", async () => {
@@ -401,8 +410,11 @@ describe("UI v2 isolation", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Загружаем новый интерфейс");
-    expect(screen.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
+    expect(screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" })).toHaveAttribute(
+      "href",
+      "/v1",
+    );
   });
 
   it("keeps the v1 rollback path when the lazy Home crashes", () => {
@@ -417,7 +429,9 @@ describe("UI v2 isolation", () => {
         </UiV2ErrorBoundary>
       </MemoryRouter>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Новый интерфейс не загрузился");
-    expect(screen.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
   });
 });

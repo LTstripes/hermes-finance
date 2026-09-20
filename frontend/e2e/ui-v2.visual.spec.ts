@@ -213,7 +213,9 @@ test("ui-v2 Home interactions: history windows and v1 escape preserve semantics"
   await expect(page.getByTestId("v2-capital")).toBeVisible();
   await page.getByRole("button", { name: "3 месяца" }).click();
   await expect(page.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
-  await expect(page.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
+  await expect(
+    page.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).toHaveAttribute(
     "href",
     "/months/12/close#actual_payouts",
   );
@@ -689,7 +691,9 @@ test("ui-v2 Capital interactions: filters, windows and the v1 escape preserve se
   await page.getByRole("button", { name: "Сбросить" }).click();
   await page.getByTestId("capital-bucket-account:1").click();
   await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
-  await expect(page.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
+  await expect(
+    page.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).toHaveAttribute(
     "href",
     `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`,
   );
@@ -821,7 +825,7 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
   await expect(page.getByTestId("reports-row-12")).toHaveCount(0);
   await expect(page.getByTestId("reports-draft-note")).toContainText("Август 2031 ещё не закрыт");
   await expect(page.getByTestId("reports-year-2030")).toContainText("Ноябрь 2030");
-  await expect(page.getByRole("link", { name: "Месяцы в текущем интерфейсе →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Месяцы в предыдущем интерфейсе →" })).toBeVisible();
   const archiveLayout = await page.getByTestId("reports-row-91").evaluate((row) => {
     const cells = Array.from(row.children).map((cell) => cell.getBoundingClientRect());
     const action = row.querySelector("td:last-child a")?.getBoundingClientRect();
