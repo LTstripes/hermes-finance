@@ -14,7 +14,13 @@ def pytest_collection_modifyitems(items) -> None:
     """Apply additive markers and fail closed on ambiguous CI ownership."""
 
     import pytest
-    from _test_taxonomy import CI_LANE_MARKERS, ci_lane_for_test_path, semantic_markers_for
+    from _test_taxonomy import (
+        CI_CORE_SHARD_MARKERS,
+        CI_LANE_MARKERS,
+        ci_core_shard_for_test_path,
+        ci_lane_for_test_path,
+        semantic_markers_for,
+    )
 
     ownership_errors: list[str] = []
     for item in items:
@@ -34,6 +40,14 @@ def pytest_collection_modifyitems(items) -> None:
             )
         else:
             item.add_marker(lane)
+            if lane == "ci_core":
+                shard = ci_core_shard_for_test_path(test_path)
+                if shard not in CI_CORE_SHARD_MARKERS:
+                    ownership_errors.append(
+                        f"unsharded core test: {item.nodeid} has no valid core shard"
+                    )
+                else:
+                    item.add_marker(shard)
 
     if ownership_errors:
         details = "\n".join(sorted(ownership_errors))

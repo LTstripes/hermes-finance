@@ -30,6 +30,96 @@ CI_LANE_MARKERS = (
     "ci_benchmark",
 )
 
+CI_CORE_SHARD_MARKERS = (
+    "ci_core_a",
+    "ci_core_b",
+)
+
+# Measured with `pytest -m ci_core --durations=0` on the refreshed canonical
+# main candidate. Values are summed test/setup/teardown seconds per file; the
+# assignment below is recomputed deterministically by weighted bin-packing.
+CI_CORE_SHARD_WEIGHTS = {
+    "domain/test_cash_balance.py": 0.03,
+    "domain/test_coverage_goals.py": 0.05,
+    "domain/test_forecast_passive_income.py": 0.05,
+    "domain/test_iis_result.py": 0.05,
+    "domain/test_liquid_capital.py": 0.05,
+    "domain/test_monthly_summary.py": 0.05,
+    "domain/test_normalized_bonus.py": 0.05,
+    "domain/test_passive_income_average.py": 0.03,
+    "domain/test_passive_income.py": 0.05,
+    "domain/test_salary_tax.py": 0.05,
+    "domain/test_tax_iis_planner_domain.py": 0.05,
+    "domain/test_values.py": 0.05,
+    "test_accounts.py": 5.03,
+    "test_accounts_api.py": 6.33,
+    "test_cash.py": 1.97,
+    "test_cash_api.py": 0.60,
+    "test_cash_balance_service.py": 7.12,
+    "test_cash_flow_ladder.py": 1.22,
+    "test_capital_composition_api.py": 4.85,
+    "test_close_readiness.py": 17.73,
+    "test_comments.py": 2.28,
+    "test_coverage_goals_service.py": 2.61,
+    "test_dashboard_api.py": 10.95,
+    "test_d06_events_api.py": 11.32,
+    "test_debts.py": 7.31,
+    "test_deposits.py": 2.26,
+    "test_deterministic_insights.py": 6.00,
+    "test_expenses.py": 1.82,
+    "test_expected_cash_flows.py": 3.28,
+    "test_financial_context_api.py": 2.32,
+    "test_forecast_passive_income_service.py": 5.15,
+    "test_goal_achievement.py": 2.22,
+    "test_goal_achievement_api.py": 1.14,
+    "test_goal_settings_sync.py": 2.40,
+    "test_goals.py": 2.70,
+    "test_goals_api.py": 1.61,
+    "test_iis.py": 1.90,
+    "test_iis_api.py": 9.38,
+    "test_iis_result_service.py": 2.46,
+    "test_incomes.py": 6.68,
+    "test_instruments.py": 3.56,
+    "test_instruments_api.py": 5.16,
+    "test_liquid_capital_service.py": 3.30,
+    "test_monthly_summary_service.py": 3.34,
+    "test_months_api.py": 3.25,
+    "test_normalized_bonus_service.py": 4.01,
+    "test_passive_income_api.py": 3.16,
+    "test_passive_income_average_service.py": 6.49,
+    "test_passive_income_read_model_service.py": 0.58,
+    "test_passive_income_service.py": 14.37,
+    "test_perf04a_attribution.py": 49.68,
+    "test_planned_budget_service.py": 3.67,
+    "test_portfolio_review_package.py": 24.54,
+    "test_portfolio_review_package_assistant_eval.py": 0.07,
+    "test_portfolio_review_package_contract.py": 0.13,
+    "test_properties.py": 10.62,
+    "test_r02_27_passive_goal_current_value.py": 0.41,
+    "test_r06_09_api.py": 6.95,
+    "test_r08_01c_performance_availability.py": 7.54,
+    "test_r08_02_portfolio_xirr.py": 11.39,
+    "test_r08_03_portfolio_twrr.py": 13.86,
+    "test_r08_03_twrr_contract_recon.py": 2.63,
+    "test_r08_03a_valuation_boundaries.py": 11.47,
+    "test_r08_h2a_scope_membership_changed.py": 19.84,
+    "test_r08_h2b_cash_boundary.py": 32.61,
+    "test_r08_h2c_transfer_transit.py": 12.03,
+    "test_r08_h2d_in_kind_coverage.py": 8.16,
+    "test_r08_h3_tax_direct_payout.py": 6.97,
+    "test_salary_cardinality.py": 5.03,
+    "test_salary_tax_opening.py": 3.61,
+    "test_salary_tax_opening_api.py": 2.99,
+    "test_salary_tax_service.py": 4.12,
+    "test_scenario_lab_api.py": 13.69,
+    "test_scenario_lab_deposit_rate.py": 17.31,
+    "test_scenario_lab_equity_drawdown.py": 46.03,
+    "test_scenario_lab_fx_translation_shock.py": 7.81,
+    "test_scenario_lab_inflation_real_value.py": 12.23,
+    "test_tax_brackets_api.py": 1.47,
+    "test_tax_iis_planner.py": 11.58,
+}
+
 _CI_LANE_OVERRIDES = {
     # Resolve legacy flat modules and ambiguous additive-marker combinations
     # explicitly. Keep this fail-closed so a new unclassified module cannot
@@ -262,6 +352,33 @@ def ci_lane_for_test_path(test_path: Path) -> str | None:
     if markers.intersection({"domain", "api", "service"}):
         return "ci_core"
     return None
+
+
+def ci_core_shard_for_test_path(test_path: Path) -> str | None:
+    """Return a deterministic duration-weighted shard for a core test file."""
+
+    if ci_lane_for_test_path(test_path) != "ci_core":
+        return None
+
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+
+    key = relative_path.as_posix()
+    if key not in CI_CORE_SHARD_WEIGHTS:
+        return None
+
+    assignments = {marker: set() for marker in CI_CORE_SHARD_MARKERS}
+    totals = {marker: 0.0 for marker in CI_CORE_SHARD_MARKERS}
+    for path, weight in sorted(CI_CORE_SHARD_WEIGHTS.items(), key=lambda item: (-item[1], item[0])):
+        marker = min(
+            CI_CORE_SHARD_MARKERS,
+            key=lambda candidate: (totals[candidate], candidate),
+        )
+        assignments[marker].add(path)
+        totals[marker] += weight
+
+    return next(marker for marker, paths in assignments.items() if key in paths)
 
 
 def iter_backend_test_files() -> tuple[Path, ...]:

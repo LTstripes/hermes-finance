@@ -64,8 +64,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - lane: core
-            marker: ci_core
+          - lane: core-a
+            marker: "ci_core and ci_core_a"
+          - lane: core-b
+            marker: "ci_core and ci_core_b"
           - lane: persistence
             marker: ci_persistence
           - lane: integrations
