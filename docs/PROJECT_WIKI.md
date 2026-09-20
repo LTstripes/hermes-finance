@@ -74,7 +74,7 @@ Exact-main CI #838 / run `35517935019`: **SUCCESS**.
 
 This commit is the merge of the final owner-UAT-PASS UI v2 completion aggregate. The immutable released code remains `c90a842...`; post-release `main` may advance without changing the published `v0.9.0` tag.
 
-## 4. Неподвижные продуктовые и privacy-инварианты## 4. Неподвижные продуктовые и privacy-инварианты
+## 4. Неподвижные продуктовые и privacy-инварианты
 
 - Windows-first, single-user, local-only.
 - Production слушает только `127.0.0.1:8000`.
@@ -383,7 +383,7 @@ The milestone reinforced the staged-integration rule now recorded in `AGENTS.md`
 
 Closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
 
-## 11. Что идёт дальше## 11. Что идёт дальше
+## 11. Что идёт дальше
 
 ### UI / product
 
@@ -453,7 +453,7 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 #313, #410 and #429 are completed.
 
-## 14. Canonical reference documents## 14. Canonical reference documents
+## 14. Canonical reference documents
 
 - `AGENTS.md`
 - `docs/MASTER_SPEC.md`
