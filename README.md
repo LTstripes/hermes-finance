@@ -284,7 +284,7 @@ For Performance, exact instrument/asset-class attribution still requires a separ
 
 `1.0.0` remains a reasonable future milestone only after the controlled UI v2 default switch is accepted and the proven production lifecycle remains intact.
 
-## Health## Health
+## Health
 
 After a successful local start:
 
@@ -325,6 +325,7 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — durable current project context;
 - [`docs/OWNER_RUNTIME_OPERATIONS.md`](docs/OWNER_RUNTIME_OPERATIONS.md) — launcher/runtime owner operations;
 - [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) — proven runtime/release closeout;
+- [`docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md) — UI v2 completion/UAT closeout;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — durable execution journal;
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;
