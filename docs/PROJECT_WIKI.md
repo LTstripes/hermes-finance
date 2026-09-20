@@ -68,11 +68,11 @@ Known non-blocking metadata follow-up: #410 corrects the GitHub Release descript
 
 Current canonical development `main`:
 
-`424ba7bf018c8e4ac01cfda825af7394a3068267`
+`49144da863c93e5afc505e16be6817c55ff2b50d`
 
-Exact-main CI #838 / run `35517935019`: **SUCCESS**.
+Exact-main CI #839 / run `35518134142`: **SUCCESS**.
 
-This commit is the merge of the final owner-UAT-PASS UI v2 completion aggregate. The immutable released code remains `c90a842...`; post-release `main` may advance without changing the published `v0.9.0` tag.
+UI v2 completion entered `main` one parent earlier at `424ba7bf018c8e4ac01cfda825af7394a3068267` (CI #838 / `35517935019`: SUCCESS). Current `main` additionally includes the accepted #459 protected recovery-point publisher. The immutable released code remains `c90a842...`; post-release development does not change the published `v0.9.0` tag.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -383,6 +383,19 @@ The milestone reinforced the staged-integration rule now recorded in `AGENTS.md`
 
 Closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
 
+### Protected recovery-point publisher
+
+#459 / PR #466 is accepted and canonical:
+
+- accepted candidate `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
+- current main `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- independent security/recovery review: ACCEPT;
+- exact-main CI #839 / `35518134142`: SUCCESS.
+
+The publisher supports only an explicitly attested `external_encrypted_destination_v1` filesystem destination. It proves staged artifact integrity/schema identity before final exposure and re-verifies destination bytes after publication. It does not prove cloud delivery or validate encryption keys, and it adds no cloud API/OAuth/custom cryptography.
+
+#460 retention, #461 isolated DR rehearsal and #462 focused post-restore state reload remain open. Real Owner backup/recovery use remains a later Owner-controlled gate.
+
 ## 11. Что идёт дальше
 
 ### UI / product
@@ -401,16 +414,16 @@ The switch must preserve v1 as an obvious rollback/legacy route. V1 retirement r
 
 `1.0.0` is reasonable only after this controlled default switch is accepted and the proven production lifecycle remains intact.
 
-### Runtime
+### Runtime / durability
 
-#313 завершён.
+#313 завершён. #459 protected recovery-point publisher также завершён и интегрирован.
 
-Следующие runtime-задачи открывать только по реальной owner pain/value:
+Под #417 остаются:
+- #460 retention;
+- #461 isolated DR rehearsal;
+- #462 post-restore month-state reload.
 
-- bounded diagnosis/recovery operations;
-- optional thin launcher wrappers over accepted primitives.
-
-Не возрождать monolithic launcher updater.
+Real protected off-device backup/recovery rehearsal остаются Owner-controlled. Не возрождать monolithic launcher updater.
 
 ### Performance
 
@@ -449,9 +462,10 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #387 — UI v2 roadmap; implementation is complete, only #430 controlled default-switch gate remains open.
+- #387 — UI v2 roadmap; implementation is complete, only #430 controlled default-switch gate remains open;
+- #417 — durability umbrella; #459 complete, #460–#462 open.
 
-#313, #410 and #429 are completed.
+#313, #410, #429 and #459 are completed.
 
 ## 14. Canonical reference documents
 
