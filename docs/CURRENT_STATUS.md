@@ -11,8 +11,9 @@
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
-- Current canonical development `main`: `49144da863c93e5afc505e16be6817c55ff2b50d`.
-- Exact-main CI on current `main`: **#839 / run `35518134142` — SUCCESS**.
+- Latest product/runtime integration checkpoint before this documentation sync: `49144da863c93e5afc505e16be6817c55ff2b50d` (#459).
+- Exact-main CI for that checkpoint: **#839 / run `35518134142` — SUCCESS**.
+- GitHub `main` is authoritative for the live development SHA; documentation-only synchronization commits may advance it without changing the product/runtime checkpoint they describe.
 - UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`; exact-main CI #838 / run `35517935019` — SUCCESS.
 - Final UI v2 completion aggregate: PR #455 / exact Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — **PASS**.
 - Canonical UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`.
@@ -187,7 +188,7 @@ Release publication and local Stable installation are separate operations:
 #459 / PR #466 is complete on canonical `main`.
 
 - accepted candidate: `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
-- canonical merge/current main: `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- canonical merge: `49144da863c93e5afc505e16be6817c55ff2b50d`;
 - independent security/recovery review: **ACCEPT**;
 - exact-head CI #837 / run `35516975089`: SUCCESS;
 - exact-main CI #839 / run `35518134142`: SUCCESS.

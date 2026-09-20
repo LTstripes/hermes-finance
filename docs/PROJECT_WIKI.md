@@ -64,15 +64,15 @@ Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
 Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording plus remaining changelog/history lifecycle metadata. Tag/code/release identity is correct.
 
-### Canonical development main
+### Canonical development checkpoints
 
-Current canonical development `main`:
+Latest product/runtime integration checkpoint before the documentation sync:
 
-`49144da863c93e5afc505e16be6817c55ff2b50d`
+`49144da863c93e5afc505e16be6817c55ff2b50d` — #459 protected recovery-point publisher, exact-main CI #839 / run `35518134142`: **SUCCESS**.
 
-Exact-main CI #839 / run `35518134142`: **SUCCESS**.
+UI v2 completion entered `main` one parent earlier at `424ba7bf018c8e4ac01cfda825af7394a3068267` (CI #838 / `35517935019`: SUCCESS).
 
-UI v2 completion entered `main` one parent earlier at `424ba7bf018c8e4ac01cfda825af7394a3068267` (CI #838 / `35517935019`: SUCCESS). Current `main` additionally includes the accepted #459 protected recovery-point publisher. The immutable released code remains `c90a842...`; post-release development does not change the published `v0.9.0` tag.
+The live development SHA is always the current GitHub `main`; documentation-only synchronization commits may advance it. The immutable released code remains `c90a842...`; post-release development does not change the published `v0.9.0` tag.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -388,7 +388,7 @@ Closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
 #459 / PR #466 is accepted and canonical:
 
 - accepted candidate `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
-- current main `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- canonical merge `49144da863c93e5afc505e16be6817c55ff2b50d`;
 - independent security/recovery review: ACCEPT;
 - exact-main CI #839 / `35518134142`: SUCCESS.
 
