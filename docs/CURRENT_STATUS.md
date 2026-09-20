@@ -2,7 +2,7 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-18**.
+> Last synchronized: **2026-09-20**.
 
 ## Canonical identity
 
@@ -11,14 +11,16 @@
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
-- Latest accepted UI v2 milestone integration: PR #441 / `3bd0cd742672955538a70d895ddba3ff654f9434`.
+- Current canonical development `main`: `424ba7bf018c8e4ac01cfda825af7394a3068267`.
+- Exact-main CI after the UI v2 completion merge: **#838 / run `35517935019` — SUCCESS**.
+- Final UI v2 completion aggregate: PR #455 / exact Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — **PASS**.
+- Canonical UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`.
 - Staged-integration process rules: PR #443 / `34ae76f0cbb6bc31c333e30e3feef83b746ba2ca`.
-- Canonical `main` may advance with documentation-only closeout commits; GitHub `main` is authoritative for the live SHA.
 - PR #409 / issue #408 prepared the `0.9.0` candidate; the release was published only after owner OPS03 PASS.
 - `main` remains the only canonical source and release source. Post-release docs/product commits do not change the immutable `v0.9.0` tag identity.
-- Known non-blocking release-metadata follow-up: #410 corrects stale pre-publication wording in the GitHub Release description and remaining changelog/history lifecycle metadata. Tag/code identity is correct.
+- R09 metadata follow-up #410 is closed completed; the released tag/code/Stable identity remains unchanged.
 
-## Product/runtime invariants
+## Product/runtime invariants## Product/runtime invariants
 
 Hermes Finance remains a local single-user Windows-first application:
 
@@ -181,47 +183,44 @@ Release publication and local Stable installation are separate operations:
 
 ## Active roadmap / what comes next
 
-### UI v2 — owner-UAT milestone integrated
+### UI v2 — complete opt-in product integrated; default switch remains
 
-UI v2 remains the main active product stream under #387. The first cohesive owner-facing milestone has now passed combined owner UAT on real-data Preview and is integrated into canonical `main`.
+UI v2 remains the main active product stream under #387, but the implementation/completion milestone is now finished.
 
-Owner-UAT aggregate:
+Final aggregate evidence:
 
-- exact candidate: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
-- aggregate PR: #441;
+- exact Owner-UAT candidate: `edd6a32d94ba322badaea1cab804c4e5cc13574d`;
+- aggregate PR: #455;
 - owner verdict: **PASS**;
-- canonical integration commit: `3bd0cd742672955538a70d895ddba3ff654f9434`.
+- canonical integration commit: `424ba7bf018c8e4ac01cfda825af7394a3068267`;
+- exact-main CI #838 / run `35517935019`: **SUCCESS**.
 
-Canonical opt-in UI v2 now includes:
+Completed and closed:
 
-- Home «Мои финансы»;
-- Capital;
-- Income & Plans;
-- contextual Reports/history;
-- native Monthly Close over authoritative `monthly_close_workflow_v1`;
-- Data/App shell with freshness/provenance and explicit read-only reconciliation.
+- S13 umbrella #429;
+- #432 catalogs + persistent mappings;
+- #433 exports + safety-gated local backup/restore after independent safety review;
+- #434 application settings + tax brackets + runtime diagnostics;
+- #444 global «Наверх»;
+- #445 owner-facing Russian terminology/copy audit;
+- #446 Expected payouts hierarchy/alignment/page order;
+- #447 Reports archive spacing;
+- #448 Reconciliation copy deduplication/owner-facing labels.
 
-v1 remains the default/rollback path. History and Monthly Close remain contextual rather than permanent sidebar destinations.
+Canonical opt-in UI v2 now includes Home, Capital, Income & Plans, contextual Reports/history, native Monthly Close and the complete Data/App area.
 
-The remaining functional Data/App work is:
+v1 remains the default/rollback path today.
 
-1. #432 — catalogs and persistent mappings;
-2. #433 — exports and safety-gated local backup/restore;
-3. #434 — application settings, tax brackets and runtime diagnostics.
+The **only remaining core UI v2 gate is #430**:
 
-Owner-UAT polish backlog is non-blocking:
+1. comparative read-only v1/v2 audit and owner checklist;
+2. one bounded default-switch candidate if no blocker remains;
+3. exact-SHA Owner Preview/UAT;
+4. controlled merge only after explicit Owner PASS.
 
-- #444 — global «Наверх» affordance for long pages;
-- #445 — Russian terminology/copy consistency audit;
-- #446 — Expected payouts hierarchy/alignment/page order;
-- #447 — Reports archive desktop spacing;
-- #448 — Reconciliation copy deduplication and owner-facing labels.
+V1 retirement is explicitly out of scope for #430 and remains a separate later decision.
 
-Process lesson from this milestone is now durable in `AGENTS.md`: for parallel slices that share application spine files, create the milestone `integration/*` staging line early, integrate accepted heads incrementally, keep shared spine reconciliation Integrator-owned, and run owner UAT on one exact aggregate SHA rather than reconstructing a different tree afterward.
-
-The controlled v2 default switch and any v1 retirement remain later decisions after the remaining Data/App slices and final comparative acceptance.
-
-`1.0.0` remains a reasonable future milestone only after the new primary owner UX is cohesive and the proven production lifecycle remains intact.
+Detailed closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
 
 ### Runtime
 
@@ -237,18 +236,17 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 
 ### Release metadata
 
-#410 remains a non-blocking metadata/history follow-up. It tracks the stale candidate wording in the published `v0.9.0` GitHub Release body, `CHANGELOG.md` publication-state sync, final `EXECUTION_HISTORY` release closeout entry and future release-note lifecycle hardening. None of these items change the already-proven tag/code/Stable identity.
+R09 metadata follow-up #410 is closed completed. Published Stable remains immutable `v0.9.0`; post-release development work is not part of that published release until a future guarded release.
 
 ## Open umbrella/control issues
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #387 and children — UI v2; core owner-UAT milestone is integrated, with #432–#434 plus polish #444–#448 still open;
-- #410 — non-blocking `v0.9.0` release-metadata/history cleanup.
+- #387 — UI v2 roadmap; implementation is complete, with only #430 comparative UAT / controlled default-switch gate remaining open.
 
-#313 is closed completed after the real `v0.8.2 -> v0.9.0` owner UAT.
+#313, #410 and #429 are closed completed.
 
-## Canonical references
+## Canonical references## Canonical references
 
 - `AGENTS.md`
 - `docs/MASTER_SPEC.md`
@@ -261,4 +259,4 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #313, #380, #386, #387, #404, #408, #410, #432–#434, #444–#448
+- #124, #127, #387, #430; completed #313, #410, #429, #432–#434, #444–#448
