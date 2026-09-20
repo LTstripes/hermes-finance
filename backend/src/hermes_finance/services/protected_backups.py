@@ -48,6 +48,7 @@ _MANAGED_FILENAME_RE = re.compile(
 _INCOMPLETE_PREFIX = ".hermes_recovery_"
 _INCOMPLETE_SUFFIX = ".incomplete"
 _LOCK_NAME = ".hermes_recovery.lock"
+_FILENAME_CREATED_AT_FORMAT = "%Y%m%dT%H%M%S%fZ"
 _SNAPSHOT_NAME = "snapshot.sqlite3"
 _MANIFEST_NAME = "manifest.json"
 _ZERO_DIGEST = "0" * 64
@@ -414,6 +415,41 @@ def _verify_snapshot_bytes(snapshot_bytes: bytes) -> tuple[str, ...]:
         connection.close()
 
 
+def _verify_payload(
+    artifact_bytes: bytes, *, expected_hash: str | None = None
+) -> tuple[dict[str, Any], str, int]:
+    actual = hashlib.sha256(artifact_bytes).hexdigest()
+    if expected_hash is not None and actual != expected_hash:
+        raise ProtectedBackupError("managed artifact full hash does not verify")
+    size_bytes = len(artifact_bytes)
+    with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
+        if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
+            raise ProtectedBackupError("managed artifact members are invalid")
+        manifest = json.loads(archive.read(_MANIFEST_NAME))
+        if not isinstance(manifest, dict):
+            raise ProtectedBackupError("managed artifact manifest is invalid")
+        _validate_manifest_shape(manifest)
+        snapshot_bytes = archive.read(_SNAPSHOT_NAME)
+        snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
+        if manifest.get("snapshot_sha256") != snapshot_digest:
+            raise ProtectedBackupError("managed artifact snapshot hash is invalid")
+        if manifest.get("snapshot_size_bytes") != len(snapshot_bytes):
+            raise ProtectedBackupError("managed artifact snapshot size is invalid")
+        snapshot_revisions = _verify_snapshot_bytes(snapshot_bytes)
+        if manifest.get("source_alembic_revisions") != list(snapshot_revisions):
+            raise ProtectedBackupError("managed artifact Alembic revision identity does not verify")
+    normalized = dict(manifest)
+    expected = normalized.get("artifact_identity_sha256")
+    normalized["artifact_identity_sha256"] = _ZERO_DIGEST
+    if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ProtectedBackupError("managed artifact canonical identity is invalid")
+    if hashlib.sha256(_zip_bytes_from_bytes(snapshot_bytes, normalized)).hexdigest() != expected:
+        raise ProtectedBackupError("managed artifact canonical identity does not verify")
+    if manifest.get("artifact_size_bytes") != size_bytes:
+        raise ProtectedBackupError("managed artifact size does not verify")
+    return manifest, actual, size_bytes
+
+
 def _verify_artifact_content(
     path: Path, *, expected_hash: str | None = None
 ) -> tuple[dict[str, Any], str, int]:
@@ -421,42 +457,7 @@ def _verify_artifact_content(
         _assert_no_reparse_components(path)
         if not path.is_file() or path.is_symlink():
             raise ProtectedBackupError("managed artifact is not a regular file")
-        artifact_bytes = path.read_bytes()
-        actual = hashlib.sha256(artifact_bytes).hexdigest()
-        if expected_hash is not None and actual != expected_hash:
-            raise ProtectedBackupError("managed artifact full hash does not verify")
-        size_bytes = len(artifact_bytes)
-        with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
-            if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
-                raise ProtectedBackupError("managed artifact members are invalid")
-            manifest = json.loads(archive.read(_MANIFEST_NAME))
-            if not isinstance(manifest, dict):
-                raise ProtectedBackupError("managed artifact manifest is invalid")
-            _validate_manifest_shape(manifest)
-            snapshot_bytes = archive.read(_SNAPSHOT_NAME)
-            snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
-            if manifest.get("snapshot_sha256") != snapshot_digest:
-                raise ProtectedBackupError("managed artifact snapshot hash is invalid")
-            if manifest.get("snapshot_size_bytes") != len(snapshot_bytes):
-                raise ProtectedBackupError("managed artifact snapshot size is invalid")
-            snapshot_revisions = _verify_snapshot_bytes(snapshot_bytes)
-            if manifest.get("source_alembic_revisions") != list(snapshot_revisions):
-                raise ProtectedBackupError(
-                    "managed artifact Alembic revision identity does not verify"
-                )
-        normalized = dict(manifest)
-        expected = normalized.get("artifact_identity_sha256")
-        normalized["artifact_identity_sha256"] = _ZERO_DIGEST
-        if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
-            raise ProtectedBackupError("managed artifact canonical identity is invalid")
-        if (
-            hashlib.sha256(_zip_bytes_from_bytes(snapshot_bytes, normalized)).hexdigest()
-            != expected
-        ):
-            raise ProtectedBackupError("managed artifact canonical identity does not verify")
-        if manifest.get("artifact_size_bytes") != size_bytes:
-            raise ProtectedBackupError("managed artifact size does not verify")
-        return manifest, actual, size_bytes
+        return _verify_payload(path.read_bytes(), expected_hash=expected_hash)
     except (OSError, KeyError, json.JSONDecodeError, sqlite3.Error, zipfile.BadZipFile) as error:
         raise ProtectedBackupError("managed artifact read-back verification failed") from error
 
@@ -554,21 +555,6 @@ def is_managed_recovery_name(name: str) -> bool:
     return _MANAGED_FILENAME_RE.fullmatch(name) is not None
 
 
-def _managed_recency_key(name: str) -> tuple[str, int, str, str] | None:
-    """Return a deterministic newest-last sort key for an exact managed name."""
-
-    match = _MANAGED_FILENAME_RE.fullmatch(name)
-    if match is None:
-        return None
-    sequence = match.group("sequence")
-    return (
-        match.group("timestamp"),
-        int(sequence) if sequence is not None else 0,
-        match.group("digest"),
-        name,
-    )
-
-
 def _destination_listing(destination: Path) -> list[str]:
     try:
         names = os.listdir(destination)
@@ -589,58 +575,222 @@ def _is_regular_managed_file(path: Path) -> bool:
     return True
 
 
-def _verified_managed_recovery_points(destination: Path) -> list[Path]:
-    """Return verified managed artifacts only, oldest first."""
-
-    verified: list[tuple[tuple[str, int, str, str], Path]] = []
-    for name in _destination_listing(destination):
-        path = destination / name
-        key = _managed_recency_key(name)
-        if key is None or not _is_regular_managed_file(path):
-            continue
-        try:
-            _verify_artifact(path)
-        except (OSError, ProtectedBackupError):
-            continue
-        verified.append((key, path))
-    verified.sort(key=lambda item: item[0])
-    return [path for _key, path in verified]
+def _regular_file_open_flags() -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    return flags
 
 
-def _unlink_verified_recovery_point(path: Path) -> None:
-    """Delete one already-eligible managed recovery point only."""
+def _file_identity(stat_result: os.stat_result) -> tuple[int, int] | None:
+    inode = int(getattr(stat_result, "st_ino", 0) or 0)
+    device = int(getattr(stat_result, "st_dev", 0) or 0)
+    if inode == 0:
+        return None
+    return (device, inode)
 
-    if not is_managed_recovery_name(path.name):
-        raise ProtectedBackupError("retention refused a non-managed name")
+
+def _read_fd(fd: int) -> bytes:
+    chunks: list[bytes] = []
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _parse_filename_created_at(timestamp: str) -> datetime | None:
     try:
-        _verify_artifact(path)
-    except (OSError, ProtectedBackupError) as error:
-        raise ProtectedBackupError("retention refused an unverified artifact") from error
-    path.unlink()
+        parsed = datetime.strptime(timestamp, _FILENAME_CREATED_AT_FORMAT)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC)
+
+
+def _parse_manifest_created_at(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC)
+
+
+def _bound_retention_created_at(name: str, manifest: dict[str, Any]) -> datetime | None:
+    """Bind filename timestamp to verified manifest created_at, or reject."""
+
+    match = _MANAGED_FILENAME_RE.fullmatch(name)
+    if match is None:
+        return None
+    from_name = _parse_filename_created_at(match.group("timestamp"))
+    from_manifest = _parse_manifest_created_at(manifest.get("created_at"))
+    if from_name is None or from_manifest is None or from_name != from_manifest:
+        return None
+    return from_manifest
+
+
+def _managed_sequence(name: str) -> int:
+    match = _MANAGED_FILENAME_RE.fullmatch(name)
+    if match is None or match.group("sequence") is None:
+        return 0
+    return int(match.group("sequence"))
+
+
+@dataclass(frozen=True, slots=True)
+class _RetentionCandidate:
+    path: Path
+    created_at: datetime
+    artifact_hash: str
+    sequence: int
+    name: str
+    file_id: tuple[int, int]
+
+    def recency_key(self) -> tuple[datetime, str, int, str]:
+        """Oldest-first verified identity.
+
+        Newest-first is the reverse of this tuple. After created_at, ties break
+        by full artifact SHA-256, then managed sequence (absent = 0), then name.
+        """
+
+        return (self.created_at, self.artifact_hash, self.sequence, self.name)
+
+
+def _inspect_retention_candidate(path: Path) -> _RetentionCandidate | None:
+    if not _is_regular_managed_file(path):
+        return None
+    match = _MANAGED_FILENAME_RE.fullmatch(path.name)
+    if match is None:
+        return None
+    try:
+        link_stat = path.lstat()
+        file_id = _file_identity(link_stat)
+        if file_id is None:
+            return None
+        fd = os.open(path, _regular_file_open_flags())
+    except (OSError, ProtectedBackupError):
+        return None
+    try:
+        opened_id = _file_identity(os.fstat(fd))
+        if opened_id != file_id:
+            return None
+        payload = _read_fd(fd)
+        manifest, artifact_hash, _size = _verify_payload(payload)
+    except (
+        OSError,
+        ProtectedBackupError,
+        KeyError,
+        json.JSONDecodeError,
+        sqlite3.Error,
+        zipfile.BadZipFile,
+    ):
+        return None
+    finally:
+        os.close(fd)
+    if match.group("digest") != artifact_hash[:16]:
+        return None
+    created_at = _bound_retention_created_at(path.name, manifest)
+    if created_at is None:
+        return None
+    return _RetentionCandidate(
+        path=path,
+        created_at=created_at,
+        artifact_hash=artifact_hash,
+        sequence=_managed_sequence(path.name),
+        name=path.name,
+        file_id=file_id,
+    )
+
+
+def _list_retention_candidates(destination: Path) -> list[_RetentionCandidate]:
+    """Return deletion-eligible verified points, oldest first."""
+
+    candidates = [
+        candidate
+        for name in _destination_listing(destination)
+        if (candidate := _inspect_retention_candidate(destination / name)) is not None
+    ]
+    candidates.sort(key=lambda item: item.recency_key())
+    return candidates
+
+
+def _verified_managed_recovery_points(destination: Path) -> list[Path]:
+    """Return retention-eligible verified artifacts only, oldest first."""
+
+    return [candidate.path for candidate in _list_retention_candidates(destination)]
+
+
+def _assert_same_verified_object(candidate: _RetentionCandidate) -> None:
+    """Prove the path still names the filesystem object that was verified."""
+
+    if not is_managed_recovery_name(candidate.path.name) or candidate.path.name != candidate.name:
+        raise ProtectedBackupError("retention identity is not proven")
+    try:
+        current = _file_identity(candidate.path.lstat())
+        if current is None or current != candidate.file_id:
+            raise ProtectedBackupError("retention identity is not proven")
+        fd = os.open(candidate.path, _regular_file_open_flags())
+    except OSError as error:
+        raise ProtectedBackupError("retention identity is not proven") from error
+    try:
+        opened = _file_identity(os.fstat(fd))
+        if opened != candidate.file_id:
+            raise ProtectedBackupError("retention identity is not proven")
+        digest = hashlib.sha256(_read_fd(fd)).hexdigest()
+    except OSError as error:
+        raise ProtectedBackupError("retention identity is not proven") from error
+    finally:
+        os.close(fd)
+    if digest != candidate.artifact_hash:
+        raise ProtectedBackupError("retention identity is not proven")
+
+
+def _commit_retention_deletions(candidates: list[_RetentionCandidate]) -> None:
+    """Delete only proven verified objects, or delete nothing."""
+
+    if not candidates:
+        return
+    for candidate in candidates:
+        _assert_same_verified_object(candidate)
+    for candidate in candidates:
+        _assert_same_verified_object(candidate)
+        try:
+            candidate.path.unlink()
+        except OSError as error:
+            raise ProtectedBackupError("retention deletion failed") from error
+
+
+def _select_retention_deletions(
+    candidates: list[_RetentionCandidate], *, preserve: Path
+) -> list[_RetentionCandidate]:
+    """Keep preserve plus the newest others, for an exact verified set of 12."""
+
+    preserve_key = _path_key(preserve)
+    matched = [item for item in candidates if _path_key(item.path) == preserve_key]
+    if len(matched) != 1:
+        raise ProtectedBackupError("required replacement is not retention-eligible")
+    others = [item for item in candidates if _path_key(item.path) != preserve_key]
+    others.sort(key=lambda item: item.recency_key(), reverse=True)
+    return others[VERIFIED_RETENTION_LIMIT - 1 :]
 
 
 def _retain_verified_recovery_points(
     destination: Path, *, preserve: Path
 ) -> tuple[str, str | None]:
-    """Keep the newest 12 verified managed points; never invalidate `preserve`."""
+    """Keep exactly 12 verified managed points, including the replacement."""
 
     try:
-        preserve_key = _path_key(preserve)
-        verified = _verified_managed_recovery_points(destination)
-        newest_first = list(reversed(verified))
-        keep_keys = {_path_key(path) for path in newest_first[:VERIFIED_RETENTION_LIMIT]}
-        keep_keys.add(preserve_key)
-        failures = False
-        for path in verified:
-            if _path_key(path) in keep_keys:
-                continue
-            try:
-                _unlink_verified_recovery_point(path)
-            except ProtectedBackupError:
-                continue
-            except OSError:
-                failures = True
-        if failures:
+        candidates = _list_retention_candidates(destination)
+        to_delete = _select_retention_deletions(candidates, preserve=preserve)
+        _commit_retention_deletions(to_delete)
+        remaining = _list_retention_candidates(destination)
+        if len(remaining) > VERIFIED_RETENTION_LIMIT:
             return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
         return RETENTION_COMPLETED, None
     except Exception:

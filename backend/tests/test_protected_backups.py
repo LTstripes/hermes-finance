@@ -77,6 +77,10 @@ def _managed_names(destination: Path) -> set[str]:
     return {path.name for path in destination.iterdir() if is_managed_recovery_name(path.name)}
 
 
+def _eligible_names(destination: Path) -> set[str]:
+    return {path.name for path in protected_backups._verified_managed_recovery_points(destination)}
+
+
 def _create_clean_git_checkout(path: Path) -> None:
     path.mkdir()
     subprocess.run(["git", "init", "--quiet"], cwd=path, check=True)
@@ -763,16 +767,70 @@ def _publish_series(monkeypatch, database, destination: Path, count: int, *, now
     return created, results
 
 
-def test_managed_recency_key_is_deterministic() -> None:
-    base = "hermes_recovery_20350102T030405678000Z-abcdef0123456789.hermes-recovery"
-    sequenced = "hermes_recovery_20350102T030405678000Z-abcdef0123456789-1.hermes-recovery"
-    later = "hermes_recovery_20350102T030405678001Z-0000000000000000.hermes-recovery"
-    assert protected_backups._managed_recency_key(base) < protected_backups._managed_recency_key(
-        sequenced
+def test_verified_recency_orders_created_at_then_hash_then_sequence() -> None:
+    older = datetime(2035, 1, 1, 8, 0, 0, tzinfo=UTC)
+    newer = datetime(2035, 1, 2, 8, 0, 0, tzinfo=UTC)
+    low = "0" * 64
+    high = "f" * 64
+    left = protected_backups._RetentionCandidate(
+        path=Path("left"),
+        created_at=older,
+        artifact_hash=high,
+        sequence=9,
+        name="left",
+        file_id=(1, 1),
     )
-    assert protected_backups._managed_recency_key(
-        sequenced
-    ) < protected_backups._managed_recency_key(later)
+    right = protected_backups._RetentionCandidate(
+        path=Path("right"),
+        created_at=newer,
+        artifact_hash=low,
+        sequence=0,
+        name="right",
+        file_id=(1, 2),
+    )
+    assert left.recency_key() < right.recency_key()
+    same_time_low = protected_backups._RetentionCandidate(
+        path=Path("a"),
+        created_at=newer,
+        artifact_hash=low,
+        sequence=0,
+        name="hermes_recovery_20350102T080000000000Z-0000000000000000.hermes-recovery",
+        file_id=(1, 3),
+    )
+    same_time_high = protected_backups._RetentionCandidate(
+        path=Path("b"),
+        created_at=newer,
+        artifact_hash=high,
+        sequence=0,
+        name="hermes_recovery_20350102T080000000000Z-ffffffffffffffff.hermes-recovery",
+        file_id=(1, 4),
+    )
+    assert same_time_low.recency_key() < same_time_high.recency_key()
+    sequenced = protected_backups._RetentionCandidate(
+        path=Path("c"),
+        created_at=newer,
+        artifact_hash=high,
+        sequence=1,
+        name="hermes_recovery_20350102T080000000000Z-ffffffffffffffff-1.hermes-recovery",
+        file_id=(1, 5),
+    )
+    assert same_time_high.recency_key() < sequenced.recency_key()
+
+
+def test_bound_created_at_rejects_missing_and_mismatched_identity() -> None:
+    name = "hermes_recovery_20350102T030405678000Z-abcdef0123456789.hermes-recovery"
+    bound = protected_backups._bound_retention_created_at(
+        name, {"created_at": "2035-01-02T03:04:05.678000Z"}
+    )
+    assert bound == datetime(2035, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
+    assert protected_backups._bound_retention_created_at(name, {}) is None
+    assert protected_backups._bound_retention_created_at(name, {"created_at": None}) is None
+    assert (
+        protected_backups._bound_retention_created_at(
+            name, {"created_at": "1999-01-01T00:00:00.000000Z"}
+        )
+        is None
+    )
 
 
 def test_retention_keeps_newest_twelve_verified_points(
@@ -786,7 +844,7 @@ def test_retention_keeps_newest_twelve_verified_points(
 
     assert all(result.published is True for result in results)
     assert all(result.retention == RETENTION_COMPLETED for result in results)
-    remaining = _managed_names(destination)
+    remaining = _eligible_names(destination)
     assert len(remaining) == VERIFIED_RETENTION_LIMIT
     assert created[0] not in remaining
     assert set(created[1:]) == remaining
@@ -911,10 +969,10 @@ def test_retention_cleanup_failure_does_not_invalidate_new_backup(
         monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
     )
 
-    def fail_unlink(_path: Path) -> None:
+    def fail_commit(_candidates) -> None:
         raise OSError("synthetic retention unlink failure")
 
-    monkeypatch.setattr(protected_backups, "_unlink_verified_recovery_point", fail_unlink)
+    monkeypatch.setattr(protected_backups, "_commit_retention_deletions", fail_commit)
     result = _publish(
         monkeypatch,
         synthetic_database,
@@ -969,25 +1027,167 @@ def test_retention_ordering_is_independent_of_directory_listing(
     assert remaining == expected
 
 
-def test_same_timestamp_retention_uses_sequence_then_digest(
+def test_same_timestamp_retention_uses_verified_hash_then_sequence(
     tmp_path: Path, synthetic_database, monkeypatch
 ) -> None:
     destination = tmp_path / "mounted-protected-destination"
     destination.mkdir()
     now = datetime(2035, 6, 7, 8, 9, 10, 123000, tzinfo=UTC)
-    created: list[str] = []
+    captured: list[protected_backups._RetentionCandidate] = []
     for _index in range(VERIFIED_RETENTION_LIMIT + 1):
         before = _managed_names(destination)
         _publish(monkeypatch, synthetic_database, destination, now=now)
         added = _managed_names(destination) - before
         assert len(added) == 1
-        created.append(next(iter(added)))
+        added_name = next(iter(added))
+        candidate = next(
+            item
+            for item in protected_backups._list_retention_candidates(destination)
+            if item.name == added_name
+        )
+        captured.append(candidate)
 
-    remaining = _managed_names(destination)
-    keys = [protected_backups._managed_recency_key(name) for name in created]
-    assert all(key is not None for key in keys)
-    expected = {
-        name for _key, name in sorted(zip(keys, created, strict=True))[-VERIFIED_RETENTION_LIMIT:]
-    }
+    preserve = captured[-1]
+    others = [item for item in captured if item.name != preserve.name]
+    others.sort(key=lambda item: item.recency_key(), reverse=True)
+    expected = {preserve.name} | {item.name for item in others[: VERIFIED_RETENTION_LIMIT - 1]}
+    remaining = _eligible_names(destination)
     assert remaining == expected
-    assert created[0] not in remaining or created[0] in expected
+    assert len(remaining) == VERIFIED_RETENTION_LIMIT
+    hashes = {item.artifact_hash for item in captured}
+    assert len(hashes) >= 1
+
+
+def test_clock_rollback_keeps_replacement_and_exact_twelve(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    created, _results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
+    )
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(2010, 1, 1, 8, 0, 0, tzinfo=UTC),
+    )
+    remaining = _eligible_names(destination)
+    added = remaining - set(created)
+
+    assert result.published is True
+    assert result.retention == RETENTION_COMPLETED
+    assert len(remaining) == VERIFIED_RETENTION_LIMIT
+    assert len(added) == 1
+    assert created[0] not in remaining
+    assert set(created[1:]) | added == remaining
+
+
+def test_preserve_outside_nominal_top_twelve_caps_verified_set(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    created, _results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
+    )
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(1999, 12, 31, 23, 59, 59, tzinfo=UTC),
+    )
+    remaining = _eligible_names(destination)
+    preserve = next(iter(remaining - set(created)))
+    nominal_newest = set(created)
+
+    assert result.published is True
+    assert result.retention == RETENTION_COMPLETED
+    assert preserve in remaining
+    assert preserve not in nominal_newest
+    assert len(remaining) == VERIFIED_RETENTION_LIMIT
+    assert created[0] not in remaining
+
+
+def test_missing_and_mismatched_created_at_are_not_deleted(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    scratch = tmp_path / "scratch-protected-destination"
+    scratch.mkdir()
+    _publish(monkeypatch, synthetic_database, scratch)
+    source = next(path for path in scratch.iterdir() if is_managed_recovery_name(path.name))
+    with zipfile.ZipFile(source) as archive:
+        snapshot_bytes = archive.read("snapshot.sqlite3")
+        manifest = json.loads(archive.read("manifest.json"))
+    snapshot_path = tmp_path / "synthetic-snapshot.sqlite3"
+    snapshot_path.write_bytes(snapshot_bytes)
+
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    missing_manifest = dict(manifest)
+    missing_manifest.pop("created_at", None)
+    missing_payload = protected_backups._artifact_bytes(snapshot_path, missing_manifest)
+    missing_digest = hashlib.sha256(missing_payload).hexdigest()
+    missing_time = datetime(2034, 5, 6, 7, 8, 9, tzinfo=UTC)
+    missing_path = destination / (
+        f"{protected_backups.MANAGED_FILENAME_PREFIX}"
+        f"{missing_time.strftime('%Y%m%dT%H%M%S%fZ')}-"
+        f"{missing_digest[:16]}{protected_backups.MANAGED_FILENAME_SUFFIX}"
+    )
+    missing_path.write_bytes(missing_payload)
+    protected_backups._verify_artifact(missing_path)
+
+    good_payload = source.read_bytes()
+    good_digest = hashlib.sha256(good_payload).hexdigest()[:16]
+    mismatched = (
+        destination / f"hermes_recovery_19990101T000000000000Z-{good_digest}.hermes-recovery"
+    )
+    mismatched.write_bytes(good_payload)
+    protected_backups._verify_artifact(mismatched)
+
+    created, results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT + 1
+    )
+
+    assert all(item.retention == RETENTION_COMPLETED for item in results)
+    remaining_eligible = _eligible_names(destination)
+    assert remaining_eligible == set(created[1:])
+    assert len(remaining_eligible) == VERIFIED_RETENTION_LIMIT
+    assert missing_path.read_bytes() == missing_payload
+    assert mismatched.read_bytes() == good_payload
+    assert missing_path.name not in remaining_eligible
+    assert mismatched.name not in remaining_eligible
+
+
+def test_retention_refuses_to_delete_replaced_filesystem_object(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    created, _results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
+    )
+    original_commit = protected_backups._commit_retention_deletions
+    replacement = b"replacement-after-verification"
+
+    def replace_then_commit(candidates: list[protected_backups._RetentionCandidate]) -> None:
+        assert candidates
+        candidates[0].path.write_bytes(replacement)
+        original_commit(candidates)
+
+    monkeypatch.setattr(protected_backups, "_commit_retention_deletions", replace_then_commit)
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(2035, 1, 20, 9, 0, 0, tzinfo=UTC),
+    )
+    target = destination / created[0]
+
+    assert result.published is True
+    assert result.verified is True
+    assert result.retention == RETENTION_FAILED
+    assert result.action_required == RETENTION_ACTION_REQUIRED
+    assert target.is_file()
+    assert target.read_bytes() == replacement
+    assert created[0] in _managed_names(destination)
