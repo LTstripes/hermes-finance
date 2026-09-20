@@ -34,6 +34,20 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-20 protected recovery-point publisher
+
+### #459 / PR #466 — managed protected-destination recovery-point publisher
+
+- **Status:** accepted, integrated and canonically verified.
+- **Accepted candidate:** `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`.
+- **Canonical merge/current main:** `49144da863c93e5afc505e16be6817c55ff2b50d`.
+- **Independent review:** separate Astra Pro security/recovery re-review — **INDEPENDENT ACCEPT** after B1–B5 remediation.
+- **Verification:** exact-head CI #837 / `35516975089` SUCCESS; exact-main push CI #839 / `35518134142` SUCCESS.
+- **Delivered:** provider-neutral `external_encrypted_destination_v1` publisher with explicit protected-boundary attestation, SQLite online snapshot reuse, producer SHA + sorted Alembic revision identity, incomplete staging, destination locking, full staged verification before final exposure, destination read-back against the expected artifact hash, in-memory SQLite verification and privacy-safe CLI failures.
+- **Boundaries:** no cloud API/OAuth, custom cryptography/key validation, retention deletion, DR rehearsal, UI work or Owner-live backup. Cloud delivery is not claimed.
+- **Next dependency:** #460 retention; #461/#462 remain later gated work under #417.
+- **References:** #417, #459, PR #466, ADR 0017, `docs/OWNER_RUNTIME_OPERATIONS.md`.
+
 # 2026-09-20 UI v2 Data/App completion + owner polish closeout
 
 ### UI v2 aggregate — complete opt-in product before default switch
