@@ -947,8 +947,8 @@ def _linux_unlinkat_empty(fd: int) -> None:
     """Unlink the inode referred to by fd, not a pathname."""
 
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    empty_name = ctypes.create_string_buffer(b"\0")
-    empty_ptr = ctypes.cast(empty_name, ctypes.c_char_p)
+    # ctypes.c_char_p converts empty bytes to NULL; pass a real "" buffer instead.
+    empty_name = ctypes.create_string_buffer(1)
     last_errno = 0
 
     def _try_call(func: object, *args: object) -> bool:
@@ -959,16 +959,17 @@ def _linux_unlinkat_empty(fd: int) -> None:
         return result == 0
 
     unlinkat = libc.unlinkat
-    unlinkat.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+    unlinkat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
     unlinkat.restype = ctypes.c_int
-    if _try_call(unlinkat, int(fd), empty_ptr, _AT_EMPTY_PATH):
+    if _try_call(unlinkat, int(fd), empty_name, _AT_EMPTY_PATH):
         return
 
     syscall_number = _SYS_UNLINKAT.get(os.uname().machine)
     syscall = libc.syscall
     syscall.restype = ctypes.c_long
+    syscall.argtypes = None
     if syscall_number is not None and _try_call(
-        syscall, syscall_number, int(fd), empty_ptr, _AT_EMPTY_PATH
+        syscall, syscall_number, int(fd), empty_name, _AT_EMPTY_PATH
     ):
         return
 
@@ -979,10 +980,10 @@ def _linux_unlinkat_empty(fd: int) -> None:
             path_flags | getattr(os, "O_CLOEXEC", 0),
         )
         try:
-            if _try_call(unlinkat, int(path_fd), empty_ptr, _AT_EMPTY_PATH):
+            if _try_call(unlinkat, int(path_fd), empty_name, _AT_EMPTY_PATH):
                 return
             if syscall_number is not None and _try_call(
-                syscall, syscall_number, int(path_fd), empty_ptr, _AT_EMPTY_PATH
+                syscall, syscall_number, int(path_fd), empty_name, _AT_EMPTY_PATH
             ):
                 return
         finally:
