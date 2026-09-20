@@ -34,23 +34,29 @@ Development `main` after the published Stable `v0.9.0`.
 
 ### Added
 
-- cohesive opt-in UI v2 owner experience: «Мои финансы», Capital, «Доход и планы», contextual Reports/history, native Monthly Close, and «Данные и приложение» shell with freshness/provenance and explicit read-only reconciliation (#387, #426–#439, aggregate #441);
+- complete opt-in UI v2 owner experience: «Мои финансы», Capital, «Доход и планы», contextual Reports/history, native Monthly Close and the full «Данные и приложение» area (#387, aggregate #441 + completion aggregate #455);
+- native Data/App catalogs and persistent mappings (#432);
+- native read-only exports plus safety-gated local backup/restore with explicit target confirmation, pre-restore evidence and fail-safe ambiguous-outcome handling (#433);
+- native application settings, tax brackets and runtime diagnostics (#434);
+- global UI v2 «Наверх» affordance (#444);
+- shared owner-facing UI v2 terminology/copy glossary and final cross-surface copy pass (#445);
 - bounded `income-plan-summary` read model so planning/forecast/coverage/cash context is independent from salary-tax/IIS availability (#439);
 - staged-integration process for parallel slices that share application-spine files (#443).
 
 ### Changed
 
-- Windows launcher simplified to a prepared-runtime owner shell; launcher-owned Stable self-update, Preview follow-main and dependency mutation were removed in favor of the already-proven external OPS01/OPS02/OPS03 operations (#412 / PR #421);
-- UI v2 parallel integration now validates one exact aggregate tree in owner UAT before canonical merge; the 2026-09-18 aggregate `fa8db7f0...` passed owner UAT and entered `main` through #441.
+- Windows launcher simplified to a prepared-runtime owner shell; launcher-owned Stable self-update, Preview follow-main and dependency mutation were removed in favor of the proven external OPS01/OPS02/OPS03 operations (#412 / PR #421);
+- Expected payouts hierarchy/alignment/order, Reports archive spacing and Reconciliation owner-facing copy were polished without changing financial/provider semantics (#446–#448);
+- UI v2 completion was accepted on exact aggregate `edd6a32d94ba322badaea1cab804c4e5cc13574d`, Owner UAT PASS, then integrated through PR #455 to canonical `main` `424ba7bf018c8e4ac01cfda825af7394a3068267`;
+- exact-main CI #838 / run `35517935019` succeeded after the aggregate merge.
 
 ### Still pending
 
-- native Data/App completion #432–#434;
-- UI v2 owner-UAT polish #444–#448;
-- final comparative UAT / controlled default-switch candidate #430;
-- v1 remains the default/rollback path until that later gate.
+- #430 final comparative v1/v2 audit, exact-SHA owner UAT and controlled default-switch candidate;
+- v1 remains the default/rollback path until that gate passes;
+- v1 retirement is a separate later decision.
 
-## [0.8.2] — 2026-09-05
+## [0.8.2]## [0.8.2] — 2026-09-05
 
 Published maintenance release after Stable `v0.8.1`. This entry documents
 already integrated changes and does not add product behavior, financial
