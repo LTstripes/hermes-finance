@@ -361,10 +361,7 @@ it("rejects duplicate step context without discarding the valid month", async ()
   const { mount } = setup("/v2?month=12&step=actual_payouts&step=review");
   mount();
   await screen.findByTestId("v2-capital");
-  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
-    "href",
-    "/months/12",
-  );
+  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/months/12");
 });
 
 it("recovers the root report list without querying a guessed report", async () => {
