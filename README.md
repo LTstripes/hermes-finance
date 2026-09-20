@@ -12,8 +12,9 @@ Published Stable: **v0.9.0** (2026-09-17).
 - annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
 - guarded Release #253 / run `35235369797`: SUCCESS;
 - exact-main release-gate CI #700 / run `35207551120`: SUCCESS;
-- canonical development `main` at the current UI v2 closeout: `424ba7bf018c8e4ac01cfda825af7394a3068267`;
-- exact-main CI #838 / run `35517935019`: SUCCESS;
+- current canonical development `main`: `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- exact-main CI #839 / run `35518134142`: SUCCESS;
+- UI v2 completion merge remains `424ba7bf018c8e4ac01cfda825af7394a3068267` with exact-main CI #838 / run `35517935019`: SUCCESS;
 - current development truth: canonical GitHub `main` + [CURRENT_STATUS](docs/CURRENT_STATUS.md);
 - complete opt-in UI v2 product: owner-UAT PASS and integrated through aggregate PR #455 (details below).
 
@@ -95,6 +96,19 @@ Important boundaries:
 Contract: [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
 
 This slice is currently backend-only; API/UI exposure is a separate future decision.
+
+### Protected recovery-point publisher
+
+#459 / PR #466 is accepted and integrated on canonical `main`.
+
+- accepted candidate: `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
+- canonical merge/current main: `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- independent security/recovery review: ACCEPT;
+- exact-main CI #839 / run `35518134142`: SUCCESS;
+- supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
+- no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
+
+The durability queue continues with #460 retention, #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
 
 ## Requirements
 
