@@ -70,10 +70,9 @@ test("failed v2 lazy load still exposes a working v1 escape", async ({ page }) =
   await page.goto("/v2");
 
   await expect(page.getByRole("alert")).toContainText("Основной интерфейс не загрузился");
-  await expect(page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" })).toHaveAttribute(
-    "href",
-    "/v1",
-  );
+  await expect(
+    page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+  ).toHaveAttribute("href", "/v1");
   await page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }).click();
   await expect(page).toHaveURL(/\/v1$/);
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();

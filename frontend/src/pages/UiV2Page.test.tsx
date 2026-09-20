@@ -345,10 +345,7 @@ it("preserves a valid legacy month/step only in the explicit v1 escape", async (
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
   expect(
     screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute(
-    "href",
-    "/months/12/close#actual_payouts",
-  );
+  ).toHaveAttribute("href", "/months/12/close#actual_payouts");
   expect(screen.getByTestId("test-location")).toHaveTextContent("/v2?month=12&step=actual_payouts");
 });
 
@@ -411,10 +408,9 @@ describe("UI v2 isolation", () => {
     );
 
     expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
-    expect(screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" })).toHaveAttribute(
-      "href",
-      "/v1",
-    );
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
   });
 
   it("keeps the v1 rollback path when the lazy Home crashes", () => {

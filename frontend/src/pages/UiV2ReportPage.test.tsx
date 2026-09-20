@@ -276,10 +276,7 @@ describe("UI v2 historical report", () => {
     ).toHaveAttribute("href", "/months");
     expect(
       screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).toHaveAttribute(
-      "href",
-      `/months/${historicalId}`,
-    );
+    ).toHaveAttribute("href", `/months/${historicalId}`);
     expect(
       within(screen.getByTestId("v2-report-context")).getByRole("link", { name: "Капитал" }),
     ).not.toHaveAttribute("aria-current");

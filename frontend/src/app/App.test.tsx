@@ -211,9 +211,10 @@ describe("App", () => {
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Перейти в основной интерфейс v2 →" }),
-    ).toHaveAttribute("href", "/v2");
+    expect(screen.getByRole("link", { name: "Перейти в основной интерфейс v2 →" })).toHaveAttribute(
+      "href",
+      "/v2",
+    );
     // E18: skip-link to main content
     expect(screen.getByRole("link", { name: "К содержанию" })).toHaveAttribute("href", "#main");
     expect(document.getElementById("main")).not.toBeNull();

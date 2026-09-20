@@ -454,10 +454,7 @@ it("preserves a valid legacy month and step only in the labelled v1 escape", asy
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(
     screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute(
-    "href",
-    `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`,
-  );
+  ).toHaveAttribute("href", `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`);
   expect(screen.getByRole("link", { name: /← Мои финансы/ })).toHaveAttribute("href", "/v2");
   expect(screen.getByRole("link", { name: "Капитал" })).toHaveAttribute("aria-current", "page");
 });
