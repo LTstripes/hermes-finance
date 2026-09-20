@@ -125,7 +125,7 @@ export function InstrumentMappingDialog({
           !moexDraft.boardid.trim() ||
           !moexDraft.secid.trim()
         ) {
-          setLocalError("Заполни провайдер, движок, рынок, режим торгов и код бумаги.");
+          setLocalError("Заполни источник, площадку, рынок, режим торгов и код бумаги.");
           return;
         }
         payload = moexDraftToIdentity(moexDraft);
