@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import io
 import json
@@ -9,9 +10,11 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import uuid
 import zipfile
+from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -589,6 +592,8 @@ def _file_identity(stat_result: os.stat_result) -> tuple[int, int] | None:
     device = int(getattr(stat_result, "st_dev", 0) or 0)
     if inode == 0:
         return None
+    if sys.platform == "win32":
+        device &= 0xFFFFFFFF
     return (device, inode)
 
 
@@ -726,44 +731,269 @@ def _verified_managed_recovery_points(destination: Path) -> list[Path]:
     return [candidate.path for candidate in _list_retention_candidates(destination)]
 
 
-def _assert_same_verified_object(candidate: _RetentionCandidate) -> None:
-    """Prove the path still names the filesystem object that was verified."""
+_GENERIC_READ = 0x80000000
+_DELETE_ACCESS = 0x00010000
+_FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
+_FILE_SHARE_DELETE = 0x00000004
+_OPEN_EXISTING = 3
+_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_FILE_BEGIN = 0
+_FILE_DISPOSITION_INFO = 4
+_AT_EMPTY_PATH = 0x1000
+_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+_KERNEL32: ctypes.WinDLL | None = None
 
-    if not is_managed_recovery_name(candidate.path.name) or candidate.path.name != candidate.name:
-        raise ProtectedBackupError("retention identity is not proven")
+
+class _BY_HANDLE_FILE_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("dwFileAttributes", wintypes.DWORD),
+        ("ftCreationTime", wintypes.FILETIME),
+        ("ftLastAccessTime", wintypes.FILETIME),
+        ("ftLastWriteTime", wintypes.FILETIME),
+        ("dwVolumeSerialNumber", wintypes.DWORD),
+        ("nFileSizeHigh", wintypes.DWORD),
+        ("nFileSizeLow", wintypes.DWORD),
+        ("nNumberOfLinks", wintypes.DWORD),
+        ("nFileIndexHigh", wintypes.DWORD),
+        ("nFileIndexLow", wintypes.DWORD),
+    ]
+
+
+class _FILE_DISPOSITION_INFO_STRUCT(ctypes.Structure):
+    _fields_ = [("DeleteFile", wintypes.BOOLEAN)]
+
+
+@dataclass(slots=True)
+class _DeletionTarget:
+    candidate: _RetentionCandidate
+    handle: int
+    kind: str
+    closed: bool = False
+
+
+def _object_bound_deletion_supported() -> bool:
+    return sys.platform == "win32" or sys.platform.startswith("linux")
+
+
+def _windows_kernel32() -> ctypes.WinDLL:
+    global _KERNEL32
+    if _KERNEL32 is not None:
+        return _KERNEL32
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.GetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_BY_HANDLE_FILE_INFORMATION),
+    ]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.SetFilePointerEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_longlong,
+        ctypes.POINTER(ctypes.c_longlong),
+        wintypes.DWORD,
+    ]
+    kernel32.SetFilePointerEx.restype = wintypes.BOOL
+    kernel32.ReadFile.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
+    ]
+    kernel32.ReadFile.restype = wintypes.BOOL
+    kernel32.SetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    ]
+    kernel32.SetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    _KERNEL32 = kernel32
+    return kernel32
+
+
+def _win_raise(action: str) -> None:
+    raise OSError(None, action, None, ctypes.get_last_error())
+
+
+def _win_handle_identity(handle: int) -> tuple[int, int] | None:
+    info = _BY_HANDLE_FILE_INFORMATION()
+    if not _windows_kernel32().GetFileInformationByHandle(handle, ctypes.byref(info)):
+        return None
+    file_index = (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow)
+    if file_index == 0:
+        return None
+    return (int(info.dwVolumeSerialNumber), file_index)
+
+
+def _win_read_handle(handle: int) -> bytes:
+    kernel32 = _windows_kernel32()
+    new_position = ctypes.c_longlong(0)
+    if not kernel32.SetFilePointerEx(handle, 0, ctypes.byref(new_position), _FILE_BEGIN):
+        _win_raise("SetFilePointerEx")
+    chunks: list[bytes] = []
+    buffer = ctypes.create_string_buffer(1024 * 1024)
+    read = wintypes.DWORD(0)
+    while True:
+        if not kernel32.ReadFile(handle, buffer, len(buffer), ctypes.byref(read), None):
+            _win_raise("ReadFile")
+        if read.value == 0:
+            break
+        chunks.append(buffer.raw[: read.value])
+    return b"".join(chunks)
+
+
+def _open_windows_deletion_target(candidate: _RetentionCandidate) -> _DeletionTarget:
+    kernel32 = _windows_kernel32()
+    handle = kernel32.CreateFileW(
+        os.fspath(candidate.path),
+        _GENERIC_READ | _DELETE_ACCESS,
+        _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+        None,
+        _OPEN_EXISTING,
+        _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if ctypes.c_void_p(handle).value in {None, _INVALID_HANDLE_VALUE}:
+        _win_raise("CreateFileW")
     try:
-        current = _file_identity(candidate.path.lstat())
-        if current is None or current != candidate.file_id:
+        file_id = _win_handle_identity(handle)
+        if file_id is None or file_id != candidate.file_id:
             raise ProtectedBackupError("retention identity is not proven")
-        fd = os.open(candidate.path, _regular_file_open_flags())
-    except OSError as error:
-        raise ProtectedBackupError("retention identity is not proven") from error
+        digest = hashlib.sha256(_win_read_handle(handle)).hexdigest()
+        if digest != candidate.artifact_hash:
+            raise ProtectedBackupError("retention identity is not proven")
+        return _DeletionTarget(candidate=candidate, handle=int(handle), kind="windows")
+    except Exception:
+        kernel32.CloseHandle(handle)
+        raise
+
+
+def _open_posix_deletion_target(candidate: _RetentionCandidate) -> _DeletionTarget:
+    fd = os.open(candidate.path, _regular_file_open_flags())
     try:
-        opened = _file_identity(os.fstat(fd))
-        if opened != candidate.file_id:
+        file_id = _file_identity(os.fstat(fd))
+        if file_id is None or file_id != candidate.file_id:
             raise ProtectedBackupError("retention identity is not proven")
         digest = hashlib.sha256(_read_fd(fd)).hexdigest()
+        if digest != candidate.artifact_hash:
+            raise ProtectedBackupError("retention identity is not proven")
+        return _DeletionTarget(candidate=candidate, handle=fd, kind="posix")
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _open_deletion_target(candidate: _RetentionCandidate) -> _DeletionTarget:
+    if not is_managed_recovery_name(candidate.path.name) or candidate.path.name != candidate.name:
+        raise ProtectedBackupError("retention identity is not proven")
+    if sys.platform == "win32":
+        return _open_windows_deletion_target(candidate)
+    if sys.platform.startswith("linux"):
+        return _open_posix_deletion_target(candidate)
+    raise ProtectedBackupError("retention identity is not proven")
+
+
+def _deletion_target_identity(target: _DeletionTarget) -> tuple[int, int] | None:
+    if target.kind == "windows":
+        return _win_handle_identity(target.handle)
+    return _file_identity(os.fstat(target.handle))
+
+
+def _deletion_target_hash(target: _DeletionTarget) -> str:
+    if target.kind == "windows":
+        return hashlib.sha256(_win_read_handle(target.handle)).hexdigest()
+    os.lseek(target.handle, 0, os.SEEK_SET)
+    return hashlib.sha256(_read_fd(target.handle)).hexdigest()
+
+
+def _revalidate_deletion_target(target: _DeletionTarget) -> None:
+    """Prove the open handle is still the verified object before destruction."""
+
+    handle_id = _deletion_target_identity(target)
+    if handle_id is None or handle_id != target.candidate.file_id:
+        raise ProtectedBackupError("retention identity is not proven")
+    try:
+        path_id = _file_identity(target.candidate.path.lstat())
     except OSError as error:
         raise ProtectedBackupError("retention identity is not proven") from error
-    finally:
-        os.close(fd)
-    if digest != candidate.artifact_hash:
+    if path_id != handle_id:
         raise ProtectedBackupError("retention identity is not proven")
+    if _deletion_target_hash(target) != target.candidate.artifact_hash:
+        raise ProtectedBackupError("retention identity is not proven")
+
+
+def _mark_deletion_target(target: _DeletionTarget) -> None:
+    """Delete the object named by the verified handle, not by pathname."""
+
+    if target.kind == "windows":
+        info = _FILE_DISPOSITION_INFO_STRUCT(True)
+        if not _windows_kernel32().SetFileInformationByHandle(
+            target.handle,
+            _FILE_DISPOSITION_INFO,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        ):
+            _win_raise("SetFileInformationByHandle")
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.unlinkat.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+    libc.unlinkat.restype = ctypes.c_int
+    if libc.unlinkat(target.handle, b"", _AT_EMPTY_PATH) != 0:
+        raise OSError(ctypes.get_errno(), "unlinkat")
+
+
+def _close_deletion_target(target: _DeletionTarget) -> None:
+    if target.closed:
+        return
+    target.closed = True
+    if target.kind == "windows":
+        _windows_kernel32().CloseHandle(target.handle)
+        return
+    os.close(target.handle)
+
+
+def _retention_before_destroy(_targets: list[_DeletionTarget]) -> None:
+    """Test hook after handle verification and before handle-bound destruction."""
+
+    return
 
 
 def _commit_retention_deletions(candidates: list[_RetentionCandidate]) -> None:
-    """Delete only proven verified objects, or delete nothing."""
+    """Delete verified objects through the same handle that proved them."""
 
     if not candidates:
         return
-    for candidate in candidates:
-        _assert_same_verified_object(candidate)
-    for candidate in candidates:
-        _assert_same_verified_object(candidate)
-        try:
-            candidate.path.unlink()
-        except OSError as error:
-            raise ProtectedBackupError("retention deletion failed") from error
+    if not _object_bound_deletion_supported():
+        raise ProtectedBackupError("retention identity is not proven")
+    targets: list[_DeletionTarget] = []
+    try:
+        for candidate in candidates:
+            targets.append(_open_deletion_target(candidate))
+        _retention_before_destroy(targets)
+        for target in targets:
+            _revalidate_deletion_target(target)
+        for target in targets:
+            _mark_deletion_target(target)
+    finally:
+        for target in targets:
+            try:
+                _close_deletion_target(target)
+            except OSError:
+                pass
 
 
 def _select_retention_deletions(

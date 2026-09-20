@@ -1159,7 +1159,7 @@ def test_missing_and_mismatched_created_at_are_not_deleted(
     assert mismatched.name not in remaining_eligible
 
 
-def test_retention_refuses_to_delete_replaced_filesystem_object(
+def test_retention_refuses_to_delete_pathname_replaced_after_handle_verification(
     tmp_path: Path, synthetic_database, monkeypatch
 ) -> None:
     destination = tmp_path / "mounted-protected-destination"
@@ -1167,15 +1167,19 @@ def test_retention_refuses_to_delete_replaced_filesystem_object(
     created, _results = _publish_series(
         monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
     )
-    original_commit = protected_backups._commit_retention_deletions
     replacement = b"replacement-after-verification"
 
-    def replace_then_commit(candidates: list[protected_backups._RetentionCandidate]) -> None:
-        assert candidates
-        candidates[0].path.write_bytes(replacement)
-        original_commit(candidates)
+    def replace_after_handle_verification(
+        targets: list[protected_backups._DeletionTarget],
+    ) -> None:
+        assert targets
+        path = targets[0].candidate.path
+        os.unlink(path)
+        path.write_bytes(replacement)
 
-    monkeypatch.setattr(protected_backups, "_commit_retention_deletions", replace_then_commit)
+    monkeypatch.setattr(
+        protected_backups, "_retention_before_destroy", replace_after_handle_verification
+    )
     result = _publish(
         monkeypatch,
         synthetic_database,
@@ -1186,6 +1190,7 @@ def test_retention_refuses_to_delete_replaced_filesystem_object(
 
     assert result.published is True
     assert result.verified is True
+    assert result.retention != RETENTION_COMPLETED
     assert result.retention == RETENTION_FAILED
     assert result.action_required == RETENTION_ACTION_REQUIRED
     assert target.is_file()
