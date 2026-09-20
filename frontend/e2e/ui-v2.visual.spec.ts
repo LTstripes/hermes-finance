@@ -689,9 +689,10 @@ test("ui-v2 Capital interactions: filters, windows and the v1 escape preserve se
   await page.getByRole("button", { name: "Сбросить" }).click();
   await page.getByTestId("capital-bucket-account:1").click();
   await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /UI v1/ }),
-  ).toHaveAttribute("href", `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`);
+  await expect(page.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
+    "href",
+    `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`,
+  );
   await expect(page.getByRole("link", { name: "Мои финансы", exact: true })).toHaveAttribute(
     "href",
     "/v2",
