@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from hermes_finance.database import Database, DatabaseMaintenanceError, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services import backups as backups_service
 from hermes_finance.services.backups import backup_directory, create_backup, restore_backup
 from hermes_finance.services.settings import update_settings
 
@@ -125,6 +126,29 @@ def test_restore_rejects_corrupt_sqlite_and_keeps_live_database_intact(
     }
     assert _settings_locale(client) == "still-live"
     assert len(list(backup_directory(database).glob("*.sqlite3"))) == 1
+
+
+def test_restore_reports_ambiguous_outcome_after_live_database_replacement(
+    app_context: tuple[TestClient, Database], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, database = app_context
+    _set_locale(database, "before-restore")
+    candidate_path = _make_candidate_backup(database, tmp_path, locale="after-restore")
+
+    def fail_after_replacement(*args: Any, **kwargs: Any) -> datetime:
+        raise OSError("synthetic metadata read failure")
+
+    monkeypatch.setattr(backups_service, "_created_at_from_path", fail_after_replacement)
+
+    response = client.post(
+        f"/api/backups/{candidate_path.stem}/restore",
+        json={"confirm": True},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "restore_outcome_ambiguous"
+    assert _settings_locale(client) == "after-restore"
+    assert len(list(backup_directory(database).glob("*.sqlite3"))) == 2
 
 
 def test_restore_rejects_incompatible_sqlite_schema_before_pre_restore_backup(
