@@ -12,8 +12,11 @@ Published Stable: **v0.9.0** (2026-09-17).
 - annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
 - guarded Release #253 / run `35235369797`: SUCCESS;
 - exact-main release-gate CI #700 / run `35207551120`: SUCCESS;
+- current canonical development `main`: `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- exact-main CI #839 / run `35518134142`: SUCCESS;
+- UI v2 completion merge remains `424ba7bf018c8e4ac01cfda825af7394a3068267` with exact-main CI #838 / run `35517935019`: SUCCESS;
 - current development truth: canonical GitHub `main` + [CURRENT_STATUS](docs/CURRENT_STATUS.md);
-- latest cohesive UI v2 owner-UAT milestone: PASS and integrated (details below).
+- complete opt-in UI v2 product: owner-UAT PASS and integrated through aggregate PR #455 (details below).
 
 Owner release acceptance is complete:
 
@@ -93,6 +96,19 @@ Important boundaries:
 Contract: [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
 
 This slice is currently backend-only; API/UI exposure is a separate future decision.
+
+### Protected recovery-point publisher
+
+#459 / PR #466 is accepted and integrated on canonical `main`.
+
+- accepted candidate: `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
+- canonical merge/current main: `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- independent security/recovery review: ACCEPT;
+- exact-main CI #839 / run `35518134142`: SUCCESS;
+- supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
+- no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
+
+The durability queue continues with #460 retention, #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
 
 ## Requirements
 
@@ -233,15 +249,16 @@ The proven sequence is now:
 
 Published `v0.9.0` remains the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release work.
 
-UI v2 is **not part of the published v0.9.0 release**, but its first cohesive owner-facing milestone is now canonical on development `main` and remains opt-in.
+UI v2 is **not part of the published v0.9.0 release**, but the complete opt-in owner-facing UI v2 product is now canonical on development `main`.
 
-Owner-UAT milestone:
+Final completion evidence:
 
-- exact aggregate tested: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
-- aggregate PR: #441;
+- exact aggregate tested: `edd6a32d94ba322badaea1cab804c4e5cc13574d`;
+- aggregate PR: #455;
 - owner verdict: **PASS** on isolated Preview/UAT with an owner-data copy;
-- canonical integration: `3bd0cd742672955538a70d895ddba3ff654f9434`;
-- v1 remains the default/rollback path.
+- canonical integration: `424ba7bf018c8e4ac01cfda825af7394a3068267`;
+- exact-main CI #838 / run `35517935019`: SUCCESS;
+- v1 remains the default/rollback path pending #430.
 
 Native opt-in UI v2 now includes:
 
@@ -250,27 +267,36 @@ Native opt-in UI v2 now includes:
 - «Доход и планы»;
 - contextual Reports/history;
 - native Monthly Close over the authoritative server workflow;
-- «Данные и приложение» shell with freshness/provenance and explicit read-only reconciliation.
+- full «Данные и приложение»:
+  - sources/freshness/provenance;
+  - explicit read-only reconciliation;
+  - catalogs + persistent mappings;
+  - exports + safety-gated local backup/restore;
+  - application settings + tax brackets + runtime diagnostics;
+- global «Наверх» behavior for long v2 pages;
+- final owner-facing Russian terminology/copy cleanup;
+- accepted Expected payouts hierarchy/alignment, Reports spacing and Reconciliation copy polish.
+
+Closeout: [`docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md).
 
 ## What comes next
 
-The next functional UI v2 milestone is the remaining native «Данные и приложение» completion:
+The only remaining core UI v2 gate is **#430**:
 
-1. #432 — catalogs + persistent mappings;
-2. #433 — exports + safety-gated local backup/restore;
-3. #434 — application settings + tax brackets + runtime diagnostics.
+1. read-only comparative v1/v2 audit on current canonical `main`;
+2. bounded default-switch candidate only if the audit finds no blocker;
+3. exact-SHA owner Preview/UAT;
+4. controlled merge only after explicit Owner PASS.
 
-Owner-UAT polish is tracked separately in #444–#448 (scroll-to-top, Russian terminology cleanup, expected-payout hierarchy/alignment, Reports spacing, Reconciliation copy deduplication).
+The switch must preserve v1 as an obvious rollback/legacy route. V1 retirement remains a separate later decision.
 
-After those slices: #430 final comparative owner UAT and a controlled default-switch candidate. v1 retirement remains a separate later decision.
-
-Parallel UI work now follows the staged-integration rule in `AGENTS.md`: create the milestone `integration/*` line early, integrate ACCEPTed heads incrementally, keep shared App/Entry/Shell/navigation reconciliation Integrator-owned, and owner-UAT one exact aggregate tree.
+Parallel UI slices that share application-spine files continue to follow the staged-integration rule in `AGENTS.md`: integrate ACCEPTed heads incrementally, keep shared App/Entry/Shell/navigation reconciliation Integrator-owned, and owner-UAT one exact aggregate tree.
 
 The runtime redesign parent #313 is complete. The launcher is now only a prepared-runtime owner shell; release/update/Preview preparation remain separate accepted operations.
 
 For Performance, exact instrument/asset-class attribution still requires a separately accepted data/evidence foundation.
 
-`1.0.0` remains a reasonable future milestone only after the new primary owner UX is cohesive and the proven production lifecycle remains intact.
+`1.0.0` remains a reasonable future milestone only after the controlled UI v2 default switch is accepted and the proven production lifecycle remains intact.
 
 ## Health
 
@@ -313,6 +339,7 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — durable current project context;
 - [`docs/OWNER_RUNTIME_OPERATIONS.md`](docs/OWNER_RUNTIME_OPERATIONS.md) — launcher/runtime owner operations;
 - [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) — proven runtime/release closeout;
+- [`docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md) — UI v2 completion/UAT closeout;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — durable execution journal;
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;

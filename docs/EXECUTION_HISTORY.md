@@ -34,6 +34,36 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-20 protected recovery-point publisher
+
+### #459 / PR #466 — managed protected-destination recovery-point publisher
+
+- **Status:** accepted, integrated and canonically verified.
+- **Accepted candidate:** `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`.
+- **Canonical merge/current main:** `49144da863c93e5afc505e16be6817c55ff2b50d`.
+- **Independent review:** separate Astra Pro security/recovery re-review — **INDEPENDENT ACCEPT** after B1–B5 remediation.
+- **Verification:** exact-head CI #837 / `35516975089` SUCCESS; exact-main push CI #839 / `35518134142` SUCCESS.
+- **Delivered:** provider-neutral `external_encrypted_destination_v1` publisher with explicit protected-boundary attestation, SQLite online snapshot reuse, producer SHA + sorted Alembic revision identity, incomplete staging, destination locking, full staged verification before final exposure, destination read-back against the expected artifact hash, in-memory SQLite verification and privacy-safe CLI failures.
+- **Boundaries:** no cloud API/OAuth, custom cryptography/key validation, retention deletion, DR rehearsal, UI work or Owner-live backup. Cloud delivery is not claimed.
+- **Next dependency:** #460 retention; #461/#462 remain later gated work under #417.
+- **References:** #417, #459, PR #466, ADR 0017, `docs/OWNER_RUNTIME_OPERATIONS.md`.
+
+# 2026-09-20 UI v2 Data/App completion + owner polish closeout
+
+### UI v2 aggregate — complete opt-in product before default switch
+
+- **Owner acceptance:** PASS on one frozen exact Preview/UAT aggregate; production Stable data remained isolated.
+- **Exact Owner-UAT candidate:** `edd6a32d94ba322badaea1cab804c4e5cc13574d`.
+- **Aggregate PR / canonical integration:** #455 -> `main` merge `424ba7bf018c8e4ac01cfda825af7394a3068267`.
+- **Exact-main verification:** CI #838 / run `35517935019` — SUCCESS.
+- **Accepted functional heads:** #432 `c9abd561...` catalogs/mappings; #433 `270f70c1...` files/exports/backup/restore; #434 `d2d9983f...` app/settings/tax/runtime.
+- **Accepted polish heads:** #444 `8f010545...`; #445 `707325b2...`; #446 `9d4ad980...`; #447 `892456d5...`; #448 `9040c810...`.
+- **Independent safety review:** #433 restore flow reached final ACCEPT after transport/body ambiguity handling, evidence lifecycle, cache refresh and modal/concurrency blockers were resolved.
+- **Integrator reconciliation:** shared routing/visual registration was combined on the milestone staging line; an omitted accepted #433 ConfirmDialog focus-containment file was restored before final aggregate UAT; final owner-tested tree was not reconstructed after PASS.
+- **Documentation/process result:** #429 and #432–#434/#444–#448 closed completed; #387 stays open only for #430 comparative UAT / controlled default-switch gate.
+- **Boundaries:** v1 remains default/rollback; no v1 retirement, release publication, new financial semantics, provider automation, cloud/auth/telemetry or runtime-network boundary change.
+- **References:** #387, #429, #430, PR #455, `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
+
 # 2026-09-18 UI v2 owner-UAT milestone
 
 ### UI v2 aggregate — Home + Capital + Income + Reports + Monthly Close + Data/App shell
