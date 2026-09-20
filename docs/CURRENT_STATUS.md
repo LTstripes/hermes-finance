@@ -20,7 +20,7 @@
 - `main` remains the only canonical source and release source. Post-release docs/product commits do not change the immutable `v0.9.0` tag identity.
 - R09 metadata follow-up #410 is closed completed; the released tag/code/Stable identity remains unchanged.
 
-## Product/runtime invariants## Product/runtime invariants
+## Product/runtime invariants
 
 Hermes Finance remains a local single-user Windows-first application:
 
@@ -246,7 +246,7 @@ R09 metadata follow-up #410 is closed completed. Published Stable remains immuta
 
 #313, #410 and #429 are closed completed.
 
-## Canonical references## Canonical references
+## Canonical references
 
 - `AGENTS.md`
 - `docs/MASTER_SPEC.md`
