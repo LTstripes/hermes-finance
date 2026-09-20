@@ -2,6 +2,7 @@ import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Suspense } from "react";
 
 import { createQueryClient, queryKeys } from "../queryClient";
 import {
@@ -12,7 +13,7 @@ import {
   makeUiV2Workflow,
   uiV2Months,
 } from "../test/uiV2Fixtures";
-import { UiV2ErrorBoundary } from "../ui-v2/UiV2Entry";
+import { UiV2ErrorBoundary, UiV2LoadingFallback } from "../ui-v2/UiV2Entry";
 import UiV2Page from "../ui-v2/UiV2Page";
 
 function LocationProbe() {
@@ -150,6 +151,7 @@ it("shows no financial snapshot when there is no closed report yet", async () =>
   expect(screen.queryByTestId("v2-capital")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   expect(await screen.findByTestId("v2-draft-action")).toBeVisible();
+  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/v1");
 });
 
 it("distinguishes an unavailable previous CLOSED base from a genuine zero", async () => {
@@ -338,7 +340,7 @@ it("preserves a valid legacy month/step only in the explicit v1 escape", async (
   const { mount } = setup("/v2?month=12&step=actual_payouts");
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
     "href",
     "/months/12/close#actual_payouts",
   );
@@ -351,7 +353,7 @@ it.each(["/v2?month=012&step=actual_payouts", "/v2?month=12&month=91&step=actual
     const { mount } = setup(path);
     mount();
     await screen.findByTestId("v2-capital");
-    expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
       "href",
       "/months/91",
     );
@@ -362,7 +364,7 @@ it("rejects duplicate step context without discarding the valid month", async ()
   const { mount } = setup("/v2?month=12&step=actual_payouts&step=review");
   mount();
   await screen.findByTestId("v2-capital");
-  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
     "href",
     "/months/12",
   );
@@ -391,6 +393,24 @@ it("links the report-context line to the contextual archive", async () => {
 });
 
 describe("UI v2 isolation", () => {
+  it("keeps the v1 escape in the initial lazy-loading fallback", () => {
+    const pending = new Promise<never>(() => undefined);
+    function Pending(): never {
+      throw pending;
+    }
+
+    render(
+      <MemoryRouter>
+        <Suspense fallback={<UiV2LoadingFallback />}>
+          <Pending />
+        </Suspense>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Загружаем новый интерфейс");
+    expect(screen.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
+  });
+
   it("keeps the v1 rollback path when the lazy Home crashes", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     function Broken(): never {
@@ -404,6 +424,6 @@ describe("UI v2 isolation", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Новый интерфейс не загрузился");
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
   });
 });

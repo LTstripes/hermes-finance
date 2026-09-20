@@ -87,7 +87,9 @@ export function UiV2Shell({
           <span>
             Новый интерфейс <span className={styles.previewBadge}>Предварительная версия</span>
           </span>
-          <Link to={v1ReturnPath}>Вернуться к текущему интерфейсу →</Link>
+          <Link className={styles.v1Link} to={v1ReturnPath}>
+            UI v1: текущий интерфейс →
+          </Link>
         </div>
         <main aria-busy={busy} className={styles.main} id="v2-main" tabIndex={-1}>
           <header className={styles.header}>{header}</header>

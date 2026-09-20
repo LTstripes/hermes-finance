@@ -82,7 +82,7 @@ export default function UiV2ReportsPage() {
       }),
     [compositionQuery.data, moneyConfirmed, monthsQuery.data],
   );
-  const v1ReturnPath = latestClosed ? `/months/${latestClosed.id}` : "/";
+  const v1ReturnPath = latestClosed ? `/months/${latestClosed.id}` : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {

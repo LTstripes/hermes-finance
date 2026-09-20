@@ -196,6 +196,11 @@
   text-decoration: none;
 }
 
+.v1Link {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .previewBadge {
   display: inline-block;
   margin-left: 7px;

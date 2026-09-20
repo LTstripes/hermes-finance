@@ -45,6 +45,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<UiV2Entry />} />
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />
@@ -57,7 +58,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/data/app" element={<UiV2DataAppEntry />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
+            <Route path="v1" element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="analytics/risk-allocation" element={<RiskAllocationPage />} />
             <Route path="freshness" element={<FreshnessProvenancePage />} />

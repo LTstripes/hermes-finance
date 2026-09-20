@@ -452,7 +452,7 @@ it("preserves a valid legacy month and step only in the labelled v1 escape", asy
   mount();
 
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
     "href",
     `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`,
   );
@@ -590,6 +590,6 @@ describe("UI v2 Capital isolation", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Новый интерфейс не загрузился");
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/v1");
   });
 });

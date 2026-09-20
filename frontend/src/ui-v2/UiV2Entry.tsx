@@ -29,7 +29,7 @@ export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { fail
         <section className="state-block" role="alert">
           <h1>Новый интерфейс не загрузился</h1>
           <p>Текущий интерфейс остаётся доступным. Сохранённые данные не изменены.</p>
-          <Link to="/">Вернуться к текущему интерфейсу</Link>
+          <Link to="/v1">Перейти в UI v1</Link>
         </section>
       );
     }
@@ -37,10 +37,19 @@ export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { fail
   }
 }
 
+export function UiV2LoadingFallback() {
+  return (
+    <section className="state-block" role="status">
+      <p>Загружаем новый интерфейс…</p>
+      <Link to="/v1">Перейти в UI v1</Link>
+    </section>
+  );
+}
+
 function SuspenseFrame({ children }: { children: ReactNode }) {
   return (
     <UiV2ErrorBoundary>
-      <Suspense fallback={<p role="status">Загружаем новый интерфейс…</p>}>{children}</Suspense>
+      <Suspense fallback={<UiV2LoadingFallback />}>{children}</Suspense>
     </UiV2ErrorBoundary>
   );
 }

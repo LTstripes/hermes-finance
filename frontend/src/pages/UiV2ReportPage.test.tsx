@@ -274,7 +274,7 @@ describe("UI v2 historical report", () => {
     expect(
       within(handoff).getByRole("link", { name: "Месяцы в текущем интерфейсе →" }),
     ).toHaveAttribute("href", "/months");
-    expect(screen.getByRole("link", { name: "Вернуться к текущему интерфейсу →" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
       "href",
       `/months/${historicalId}`,
     );

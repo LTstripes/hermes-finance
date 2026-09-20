@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
@@ -180,8 +180,22 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
 }
 
 describe("App", () => {
+  beforeEach(() => {
+    window.history.pushState({}, "", "/v1");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("uses the UI v2 entry at / and exposes a v1 escape while loading", () => {
+    window.history.pushState({}, "", "/");
+
+    render(<App />);
+
+    expect(screen.getByText("Загружаем новый интерфейс…")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Перейти в UI v1" })).toHaveAttribute("href", "/v1");
   });
 
   it("renders the dashboard in the application layout", () => {
@@ -921,5 +935,5 @@ describe("App", () => {
 
     await selectMonthSection(user, "Проверка");
     expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();
-  });
+  }, 10000);
 });

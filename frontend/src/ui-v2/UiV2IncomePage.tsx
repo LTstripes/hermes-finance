@@ -900,7 +900,7 @@ export default function UiV2IncomePage() {
           step: requestedStep,
         })
       : `/months/${latestClosed.id}`
-    : "/";
+    : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {

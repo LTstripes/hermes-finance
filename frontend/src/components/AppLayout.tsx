@@ -18,7 +18,7 @@ const NAV: NavGroup[] = [
   {
     section: "Обзор",
     items: [
-      { to: "/", label: "Дашборд", icon: "◫", end: true },
+      { to: "/v1", label: "Дашборд", icon: "◫", end: true },
       { to: "/analytics", label: "Аналитика", icon: "⌁" },
       { to: "/analytics/risk-allocation", label: "Распределение и концентрация", icon: "◈" },
       { to: "/freshness", label: "Актуальность данных", icon: "◷" },

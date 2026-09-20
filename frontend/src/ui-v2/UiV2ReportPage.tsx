@@ -549,7 +549,7 @@ export default function UiV2ReportPage() {
     ? `/months/${targetMonth.id}`
     : latestClosed
       ? `/months/${latestClosed.id}`
-      : "/";
+      : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {

@@ -59,7 +59,7 @@ export default function UiV2DataPlaceholderPage({
       monthId={monthId}
       subtitle={copy.subtitle}
       title={copy.title}
-      v1ReturnPath={copy.escapes[0]?.to ?? "/"}
+      v1ReturnPath={copy.escapes[0]?.to ?? "/v1"}
     >
       {resolution.kind === "loading" ? (
         <UiV2Loading label="Проверяем доступные отчётные месяцы…" />

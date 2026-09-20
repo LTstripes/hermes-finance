@@ -1066,7 +1066,7 @@ export default function UiV2CapitalPage() {
         : `/months/${requestedMonth.month.id}`
       : latestClosed
         ? `/months/${latestClosed.id}`
-        : "/";
+        : "/v1";
 
   const pickClass = (assetClass: string) =>
     setFilter({ kind: "class", label: classMeta(assetClass).label, value: assetClass });
