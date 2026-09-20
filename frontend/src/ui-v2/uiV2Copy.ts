@@ -1,0 +1,25 @@
+/** Shared owner-facing wording for the native UI v2 surfaces. */
+
+export const PRINCIPAL_REPAYMENT_LABEL = "Возврат основной суммы";
+
+const EVENT_LABELS: Record<string, string> = {
+  coupon: "Купон",
+  dividend: "Дивиденд",
+  deposit_interest: "Проценты по депозиту",
+  other_capital_income: "Прочий доход от капитала",
+  redemption_principal: PRINCIPAL_REPAYMENT_LABEL,
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "введено вручную",
+  provider: "внешний источник",
+  deposit_forecast: "оценка по депозиту",
+};
+
+export function eventLabel(component: string): string {
+  return EVENT_LABELS[component] ?? "Событие";
+}
+
+export function sourceLabel(sourceKind: string): string {
+  return SOURCE_LABELS[sourceKind] ?? "внешний источник";
+}

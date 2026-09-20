@@ -439,7 +439,7 @@ function ChangeBlock({
           </div>
           <p className={styles.panelFootnote}>
             Та же пара закрытых отчётов, что на «Мои финансы». Перемещение между классами может
-            менять строки без роста капитала; рост обязательств уменьшает нетто.
+            менять строки без роста капитала; рост обязательств уменьшает чистый капитал.
           </p>
         </>
       )}
@@ -647,15 +647,15 @@ function LinkedPairsBlock({
                 </div>
                 <dl className={capitalStyles.pairValues}>
                   <div>
-                    <dt>Актив A</dt>
+                    <dt>Активы связанных пар</dt>
                     <dd>{fact.contextAvailable ? money(fact.accountBalance) : "—"}</dd>
                   </div>
                   <div>
-                    <dt>Долг D</dt>
+                    <dt>Обязательства связанных пар</dt>
                     <dd>{money(fact.debtBalance)}</dd>
                   </div>
                   <div>
-                    <dt>A − D</dt>
+                    <dt>Вклад связанных пар</dt>
                     <dd>{fact.contextAvailable ? money(fact.netContribution) : "—"}</dd>
                   </div>
                 </dl>
@@ -665,8 +665,8 @@ function LinkedPairsBlock({
           </ul>
           {current ? (
             <p className={styles.panelFootnote} data-testid="capital-pair-aggregate">
-              В текущем снимке: A {money(current.linked_pair_assets)} · D{" "}
-              {money(current.linked_pair_debts)} · A − D{" "}
+              В текущем снимке: активы связанных пар {money(current.linked_pair_assets)} ·
+              обязательства связанных пар {money(current.linked_pair_debts)} · вклад связанных пар{" "}
               {money(current.linked_pair_net_contribution)}. Эти суммы уже входят в ликвидные активы
               и включённые обязательства.
             </p>
@@ -774,7 +774,7 @@ function PerformanceBlock({
             />
             <PerformanceItem
               currency={xirrValue}
-              metricLabel="XIRR портфеля · годовая"
+              metricLabel="Годовая доходность (XIRR)"
               period={period}
               ready={xirrReady}
               reason={xirr ? portfolioXirrUnavailableMessage(xirr.reason_codes) : null}
@@ -783,7 +783,7 @@ function PerformanceBlock({
             />
             <PerformanceItem
               currency={twrrValue}
-              metricLabel="TWRR портфеля · за период"
+              metricLabel="Доходность за период (TWRR)"
               period={period}
               ready={twrrReady}
               reason={twrr ? portfolioTwrrUnavailableMessage(twrr.reason_codes) : null}

@@ -19,16 +19,16 @@ export const ASSET_CLASS_LABELS: Record<string, string> = {
 };
 
 export const REASON_LABELS: Record<string, string> = {
-  bank_identity_not_persisted: "банк не хранится в текущей схеме",
-  broker_identity_not_persisted: "брокер не хранится в текущей схеме",
+  bank_identity_not_persisted: "банк не указан для этих данных",
+  broker_identity_not_persisted: "брокер не указан для этих данных",
   cash_not_account_linked: "наличные не связаны со счётом",
-  currency_conversion_not_supported: "конвертация валюты не поддерживается",
-  currency_not_persisted: "валюта не сохранена",
-  deposit_forecast_not_concentratable: "оценка депозита не имеет датированного события",
-  instrument_not_persisted: "инструмент не сохранён для события",
+  currency_conversion_not_supported: "не удалось привести валюту к единому виду",
+  currency_not_persisted: "валюта не указана",
+  deposit_forecast_not_concentratable: "по оценке депозита нет датированного события",
+  instrument_not_persisted: "инструмент не указан для события",
   instrument_type_not_authoritative: "класс инструмента не подтверждён сохранёнными данными",
-  issuer_not_persisted: "эмитент не хранится в текущей схеме",
-  maturity_not_persisted: "срок погашения не хранится в текущей схеме",
+  issuer_not_persisted: "эмитент не указан",
+  maturity_not_persisted: "срок погашения не указан",
   no_dated_payouts: "датированных событий в окне нет",
   unsupported_position_valuation: "оценка позиции непригодна для расчёта",
 };
@@ -68,7 +68,7 @@ export function sourceKindLabel(value: string): string {
 }
 
 /**
- * One owner-facing sentence for a metric that the backend cannot support.
+ * One owner-facing sentence for a metric that the saved data cannot support.
  * Returns null when the metric is supported and only its rows matter.
  */
 export function unsupportedMetricReason(

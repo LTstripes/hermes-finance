@@ -301,9 +301,9 @@ function HistoryBlock({
 
 function LinkedPairsBlock({ point }: { point: CapitalCompositionPoint }) {
   const pairs = [
-    { amount: point.linked_pair_assets, label: "Активы связанных пар (A)" },
-    { amount: point.linked_pair_debts, label: "Обязательства связанных пар (D)" },
-    { amount: point.linked_pair_net_contribution, label: "Вклад связанных пар (A − D)" },
+    { amount: point.linked_pair_assets, label: "Активы связанных пар" },
+    { amount: point.linked_pair_debts, label: "Обязательства связанных пар" },
+    { amount: point.linked_pair_net_contribution, label: "Вклад связанных пар" },
   ];
   if (!pairs.some((pair) => !isZeroAmount(pair.amount.amount))) return null;
   return (
@@ -609,7 +609,7 @@ export default function UiV2ReportPage() {
         <UiV2ReportContext
           kind="historical"
           month={month}
-          source={SOURCE_LABELS[month.source] ?? month.source}
+          source={SOURCE_LABELS[month.source] ?? "Источник данных"}
           status="Закрыт · Утверждён"
         >
           <span className={styles.reportContextLinks}>

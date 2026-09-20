@@ -219,7 +219,7 @@ describe("UI v2 Data sources", () => {
     mount();
     const disclosure = await screen.findByTestId("provider-capabilities");
     expect(disclosure).not.toHaveAttribute("open");
-    await user.click(within(disclosure).getByText(/возможности источника/i));
+    await user.click(within(disclosure).getByText(/технические сведения об источнике/i));
     expect(disclosure).toHaveAttribute("open");
     expect(within(disclosure).getByText(/T-Invest/)).toBeTruthy();
   });

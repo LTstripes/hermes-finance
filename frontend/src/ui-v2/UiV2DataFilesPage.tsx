@@ -119,14 +119,14 @@ function RestoreEvidence({ backup }: { backup: BackupMetadata }) {
     >
       <div className={styles.evidenceHeader}>
         <div>
-          <p className={styles.kicker}>Pre-restore evidence</p>
+          <p className={styles.kicker}>Проверка перед восстановлением</p>
           <h3 id="pre-restore-evidence-title">Текущая база сохранена перед восстановлением</h3>
         </div>
-        <span className={styles.recommendationBadge}>Возвращено backend</span>
+        <span className={styles.recommendationBadge}>Подтверждено системой</span>
       </div>
       <p>
-        Это точная метаинформация о копии, которую backend создал до замены базы. Сохрани её как
-        ориентир для следующего безопасного шага.
+        Это точные сведения о копии, которую система создала до замены базы. Сохрани их как
+        подтверждение безопасного восстановления.
       </p>
       <p className={styles.backupName}>{backup.name}</p>
       <BackupMetadataList backup={backup} />
@@ -173,7 +173,7 @@ function MonthExportState({
   if (resolution.kind === "invalid") {
     return (
       <UiV2Notice title="Некорректный параметр месяца">
-        Явный <code>?month=</code> должен быть одним положительным целым ID. Числа не показаны — без
+        Выбор месяца должен содержать один положительный идентификатор. Числа не показаны — без
         тихой подмены.
       </UiV2Notice>
     );
@@ -230,7 +230,7 @@ function MonthExportState({
             ))}
           </select>
         </div>
-        <span className={styles.muted}>Только чтение · backend contract без изменений</span>
+        <span className={styles.muted}>Только чтение · существующие операции без изменений</span>
       </div>
       {downloadError ? (
         <div className={styles.error} role="alert">
@@ -509,8 +509,8 @@ export default function UiV2DataFilesPage() {
             <summary>Дополнительные / технические выгрузки</summary>
             <div className={styles.technicalContent}>
               <section className={styles.technicalCard}>
-                <p className={styles.kicker}>Secondary · technical</p>
-                <h3>AI Analysis Bundle</h3>
+                <p className={styles.kicker}>Дополнительный технический раздел</p>
+                <h3>Пакет для AI-анализа</h3>
                 <p>
                   Полная доступная история и коды причин для проверки AI-контракта. Это локальный
                   файл; перед ручной передачей проверь его состав.
@@ -524,7 +524,7 @@ export default function UiV2DataFilesPage() {
                   >
                     {downloadKind === "bundle-json"
                       ? "Готовим JSON…"
-                      : "Скачать AI Analysis Bundle (JSON)"}
+                      : "Скачать пакет анализа (JSON)"}
                   </button>
                   <button
                     className={styles.secondaryButton}
@@ -553,7 +553,8 @@ export default function UiV2DataFilesPage() {
               <p className={styles.kicker}>Изменить локальную базу</p>
               <h2 id="files-backups-title">Резервные копии и восстановление</h2>
               <p>
-                Создание копии и восстановление используют существующий backend backup contract.
+                Создание копии и восстановление используют существующие операции резервного
+                копирования.
               </p>
             </div>
             <div className={styles.backupHeaderAction}>
@@ -576,8 +577,8 @@ export default function UiV2DataFilesPage() {
             <div>
               <strong>Восстановление заменяет текущую локальную базу.</strong>
               <p>
-                Нажми «Восстановить» рядом с конкретным именем, затем подтверди точный target в
-                отдельном диалоге. Backend сохранит pre-restore копию и вернёт её evidence.
+                Нажми «Восстановить» рядом с выбранным именем, затем подтверди копию в отдельном
+                диалоге. Система сохранит копию текущей базы перед заменой и покажет подтверждение.
               </p>
             </div>
           </div>
@@ -618,7 +619,8 @@ export default function UiV2DataFilesPage() {
           ) : backupList.length === 0 ? (
             <div className={styles.empty} data-testid="files-no-backups">
               <strong>Резервных копий пока нет</strong>
-              Создай первую локальную копию кнопкой выше. Restore недоступен без конкретного файла.
+              Создай первую локальную копию кнопкой выше. Восстановление недоступно без конкретной
+              копии.
             </div>
           ) : (
             <div className={styles.backupList}>
@@ -663,7 +665,7 @@ export default function UiV2DataFilesPage() {
         description={
           restoreCandidate === null
             ? ""
-            : `Точный target: ${restoreCandidate.name}. Текущая локальная база будет заменена этой копией. Это необратимое действие; перед заменой backend сохранит pre-restore backup.`
+            : `Выбрана копия: ${restoreCandidate.name}. Текущая локальная база будет заменена этой копией. Это необратимое действие; перед заменой система сохранит копию текущей базы.`
         }
         onCancel={() => {
           if (restoringBackupId === null) setRestoreCandidate(null);

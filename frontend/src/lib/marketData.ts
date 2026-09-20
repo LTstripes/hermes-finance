@@ -172,7 +172,9 @@ export function formatDiscoverCandidateMeta(candidate: MarketDiscoverCandidate):
 
 export function formatDiscoverCandidateTrade(candidate: MarketDiscoverCandidate): string | null {
   if (candidate.api_trade_available == null) return null;
-  return candidate.api_trade_available ? "API-торговля доступна" : "API-торговля недоступна";
+  return candidate.api_trade_available
+    ? "Торговые операции доступны"
+    : "Торговые операции недоступны";
 }
 
 export function defaultMappingProvider(
@@ -206,21 +208,27 @@ export function identityToTInvestDraft(
 }
 
 export function formatMarketIdentity(identity: MarketIdentity): string {
+  const providerLabel =
+    identity.provider === MOEX_ISS_PROVIDER
+      ? "MOEX ISS"
+      : identity.provider === T_INVEST_PROVIDER
+        ? "T-Invest"
+        : "Внешний источник";
   if (identity.provider === T_INVEST_PROVIDER) {
     return `T-Invest · ${identity.provider_instrument_id}`;
   }
   if (identity.provider === MOEX_ISS_PROVIDER && identity.provider_venue_id) {
     try {
       const venue = decodeMoexVenue(identity.provider_venue_id);
-      return `${identity.provider} · ${venue.engine}/${venue.market} · ${venue.boardid} · ${identity.provider_instrument_id}`;
+      return `${providerLabel} · ${venue.engine}/${venue.market} · ${venue.boardid} · ${identity.provider_instrument_id}`;
     } catch {
       // Fall through to the generic formatter.
     }
   }
   if (identity.provider_venue_id) {
-    return `${identity.provider} · ${identity.provider_venue_id} · ${identity.provider_instrument_id}`;
+    return `${providerLabel} · ${identity.provider_venue_id} · ${identity.provider_instrument_id}`;
   }
-  return `${identity.provider} · ${identity.provider_instrument_id}`;
+  return `${providerLabel} · ${identity.provider_instrument_id}`;
 }
 
 /** Display-only comparison of two backend money values. Never send this back. */

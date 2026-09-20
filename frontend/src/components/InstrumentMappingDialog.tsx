@@ -207,7 +207,7 @@ export function InstrumentMappingDialog({
           ) : null}
           {mapping?.legacy_moex_secid ? (
             <p className="muted tiny" data-testid="legacy-moex-hint">
-              Старый код MOEX SECID: {mapping.legacy_moex_secid} — это не принятый источник.
+              Старый код MOEX: {mapping.legacy_moex_secid} — это не принятый источник.
             </p>
           ) : null}
         </div>
@@ -236,8 +236,8 @@ export function InstrumentMappingDialog({
             {providerMode === T_INVEST_PROVIDER ? (
               <>
                 <p className="muted tiny">
-                  Production-источник 0.4. Режим торгов не нужен: канонический ключ —
-                  instrument_uid.
+                  Для этого источника достаточно идентификатора инструмента; режим торгов указывать
+                  не нужно.
                 </p>
                 {onDiscover ? (
                   <>
@@ -296,9 +296,6 @@ export function InstrumentMappingDialog({
                             <p className="muted tiny">
                               {candidate.isin ? `${candidate.isin} · ` : ""}
                               {candidate.provider_instrument_id}
-                              {candidate.position_uid
-                                ? ` · position ${candidate.position_uid}`
-                                : ""}
                             </p>
                             {trade ? <p className="muted tiny">{trade}</p> : null}
                           </div>
@@ -319,12 +316,12 @@ export function InstrumentMappingDialog({
             ) : (
               <>
                 <p className="muted tiny" data-testid="moex-production-disabled-note">
-                  Прямой MOEX ISS в production отключён. Сохранённое сопоставление можно править
-                  вручную, но котировки по нему не запрашиваются, пока источник не сменят на
+                  Прямое обращение к MOEX ISS сейчас отключено. Сохранённое сопоставление можно
+                  править вручную, но котировки по нему не запрашиваются, пока источник не сменят на
                   T-Invest.
                 </p>
                 <div className="form-row-2">
-                  <Field htmlFor="mapping-provider" label="Провайдер">
+                  <Field htmlFor="mapping-provider" label="Источник">
                     <Input
                       id="mapping-provider"
                       onChange={(event) =>
@@ -333,7 +330,7 @@ export function InstrumentMappingDialog({
                       value={moexDraft.provider}
                     />
                   </Field>
-                  <Field htmlFor="mapping-engine" label="Движок">
+                  <Field htmlFor="mapping-engine" label="Площадка">
                     <Input
                       id="mapping-engine"
                       onChange={(event) =>
@@ -353,7 +350,7 @@ export function InstrumentMappingDialog({
                       value={moexDraft.market}
                     />
                   </Field>
-                  <Field htmlFor="mapping-boardid" label="Режим торгов (boardid)">
+                  <Field htmlFor="mapping-boardid" label="Режим торгов">
                     <Input
                       id="mapping-boardid"
                       onChange={(event) =>
@@ -363,7 +360,7 @@ export function InstrumentMappingDialog({
                     />
                   </Field>
                 </div>
-                <Field htmlFor="mapping-secid" label="Код бумаги (secid)">
+                <Field htmlFor="mapping-secid" label="Код бумаги">
                   <Input
                     id="mapping-secid"
                     onChange={(event) =>

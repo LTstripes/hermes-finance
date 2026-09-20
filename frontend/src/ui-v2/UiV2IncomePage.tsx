@@ -27,6 +27,11 @@ import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/f
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
 import {
+  eventLabel as ownerEventLabel,
+  PRINCIPAL_REPAYMENT_LABEL,
+  sourceLabel as ownerSourceLabel,
+} from "./uiV2Copy";
+import {
   isQueryReady,
   UiV2Loading,
   UiV2Notice,
@@ -51,20 +56,6 @@ const PASSIVE_SOURCE_META = [
   ["dividends", "Дивиденды"],
   ["other_capital_income", "Прочий доход от капитала"],
 ] as const;
-
-const EVENT_LABELS: Record<string, string> = {
-  coupon: "Купон",
-  dividend: "Дивиденд",
-  deposit_interest: "Проценты по депозиту",
-  other_capital_income: "Прочий доход от капитала",
-  redemption_principal: "Возврат principal",
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  manual: "введено вручную",
-  provider: "провайдер",
-  deposit_forecast: "оценка по депозиту",
-};
 
 function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
   return month.year * 12 + month.month;
@@ -213,7 +204,10 @@ function Headlines({
               {money(upcoming.passive_income)}
             </p>
             <p className={incomeStyles.metricDetail}>
-              <strong>Возврат principal: {money(upcoming.redemption_principal)}</strong> · не доход
+              <strong>
+                {PRINCIPAL_REPAYMENT_LABEL}: {money(upcoming.redemption_principal)}
+              </strong>{" "}
+              · не доход
               <br />
               Всего поступлений: {money(upcoming.total_cash_flow)}
             </p>
@@ -262,7 +256,7 @@ function FactHistoryBlock({
           </select>
         </label>
       }
-      eyebrow="История CLOSED-отчётов"
+      eyebrow="История закрытых отчётов"
       id="income-history-title"
       testId="income-history-panel"
       title="Получено фактически"
@@ -329,8 +323,8 @@ function FactHistoryBlock({
               </li>
             </ul>
             <p className={sharedStyles.panelFootnote}>
-              Только фактический доход от капитала. Зарплата, бонус, cashback и возврат principal
-              сюда не входят.
+              Только фактический доход от капитала. Зарплата, бонусы, вознаграждения за покупки и
+              возврат основной суммы сюда не входят.
             </p>
           </div>
         </div>
@@ -374,7 +368,7 @@ function ForecastBlock({
               className={incomeStyles.qualityBadge}
               data-quality={forecast.is_approximate ? "approximate" : "exact"}
             >
-              {forecast.is_approximate ? "Оценка" : "Backend-расчёт"}
+              {forecast.is_approximate ? "Оценка" : "Расчёт"}
             </span>
           </div>
           <ul className={incomeStyles.valueList}>
@@ -383,7 +377,7 @@ function ForecastBlock({
               <strong>{money(forecast.breakdown.expected_deposit_interest)}</strong>
             </li>
             <li>
-              <span>Купоны net</span>
+              <span>Купоны после удержаний</span>
               <strong>{money(forecast.breakdown.expected_coupon_net)}</strong>
             </li>
             <li>
@@ -402,7 +396,7 @@ function ForecastBlock({
               ))}
             </ul>
           ) : (
-            <p className={sharedStyles.panelFootnote}>Предупреждений backend нет.</p>
+            <p className={sharedStyles.panelFootnote}>Предупреждений нет.</p>
           )}
         </>
       )}
@@ -411,11 +405,11 @@ function ForecastBlock({
 }
 
 function eventLabel(event: CashFlowLadderEvent): string {
-  return EVENT_LABELS[event.component] ?? event.component;
+  return ownerEventLabel(event.component);
 }
 
 function eventSourceLabel(event: CashFlowLadderEvent): string {
-  return SOURCE_LABELS[event.source_kind] ?? event.source_kind;
+  return ownerSourceLabel(event.source_kind);
 }
 
 function EventList({ events }: { events: CashFlowLadderEvent[] }) {
@@ -456,7 +450,9 @@ function LadderMonth({ month }: { month: CashFlowLadderMonth }) {
       <summary>
         <span>{formatMonth(month.year, month.month)}</span>
         <span>{money(month.passive_income)} пассивно</span>
-        <span>principal {money(month.redemption_principal)}</span>
+        <span>
+          {PRINCIPAL_REPAYMENT_LABEL} {money(month.redemption_principal)}
+        </span>
         <span>{month.is_approximate ? "оценка" : ""}</span>
       </summary>
       <dl className={incomeStyles.ladderFacts}>
@@ -465,7 +461,7 @@ function LadderMonth({ month }: { month: CashFlowLadderMonth }) {
           <dd>{money(month.passive_income)}</dd>
         </div>
         <div>
-          <dt>Возврат principal · не доход</dt>
+          <dt>{PRINCIPAL_REPAYMENT_LABEL} · не доход</dt>
           <dd>{money(month.redemption_principal)}</dd>
         </div>
         <div>
@@ -523,8 +519,8 @@ function LadderBlock({
           <div id="income-ladder-content">
             {window === 12 ? (
               <p className={sharedStyles.panelFootnote}>
-                12 месяцев от даты снимка. Principal всегда показан отдельно и не входит в пассивный
-                доход.
+                12 месяцев от даты снимка. Возврат основной суммы всегда показан отдельно и не
+                входит в пассивный доход.
               </p>
             ) : selectedWindow ? (
               <div className={incomeStyles.windowSummary} data-testid={`income-window-${window}`}>
@@ -536,7 +532,7 @@ function LadderBlock({
                   <strong>{money(selectedWindow.passive_income)} пассивно</strong>
                 </div>
                 <div>
-                  <span>Возврат principal</span>
+                  <span>{PRINCIPAL_REPAYMENT_LABEL}</span>
                   <strong>{money(selectedWindow.redemption_principal)} · не доход</strong>
                 </div>
                 <div>
@@ -589,7 +585,7 @@ function GoalsBlock({
           Все цели →
         </Link>
       }
-      eyebrow="Только backend-supported"
+      eyebrow="Цели с доступным прогрессом"
       id="income-goals-title"
       testId="income-goals-panel"
       title="Цели"
@@ -663,7 +659,7 @@ function CoveragePlanBlock({
           Открыть месяц →
         </Link>
       }
-      eyebrow="Latest CLOSED context"
+      eyebrow="Последний закрытый отчёт"
       id="income-plan-title"
       testId="income-plan-panel"
       title="Покрытие расходов и план"
@@ -703,14 +699,14 @@ function CoveragePlanBlock({
                     : "Недоступно"}
                 </strong>
                 <small>
-                  Сумма пришла из income-plan-summary; строки ниже не пересчитываются в React.
+                  Сумма взята из сохранённого плана доходов; строки ниже приводятся без пересчёта.
                 </small>
               </div>
             </div>
           )}
           <div className={incomeStyles.planGrid}>
             <div>
-              <h3>План расходов vs факт</h3>
+              <h3>План и факт расходов</h3>
               {!budgetReady ? (
                 <UiV2WidgetState retry={retryBudget} />
               ) : budget.length === 0 ? (
@@ -755,24 +751,24 @@ function CoveragePlanBlock({
 function Handoffs({ narrow }: { narrow: boolean }) {
   return (
     <Panel
-      eyebrow="v1 handoffs"
+      eyebrow="Дополнительные разделы"
       id="income-handoffs-title"
       testId="income-handoffs-panel"
       title="Налоги, ИИС и сценарии"
     >
       <details className={incomeStyles.collapsible} open={!narrow}>
-        <summary>Показать handoffs</summary>
+        <summary>Показать разделы</summary>
         <div className={incomeStyles.collapsibleBody}>
           <div className={incomeStyles.handoffGrid}>
             <div>
               <h3>Налоги и ИИС</h3>
-              <p>Полная работа остаётся в текущем интерфейсе.</p>
+              <p>Подробная работа остаётся в текущем интерфейсе.</p>
               <Link to="/tax-iis-planner">Открыть Налоги и ИИС →</Link>
             </div>
             <div>
-              <h3>Scenario Lab</h3>
-              <p>Сценарий — отдельный v1-инструмент, без действий на этой странице.</p>
-              <Link to="/scenario-lab">Проверить сценарий →</Link>
+              <h3>Сценарии</h3>
+              <p>Сценарии открываются в отдельном разделе; действий на этой странице нет.</p>
+              <Link to="/scenario-lab">Открыть сценарии →</Link>
             </div>
           </div>
         </div>
@@ -918,8 +914,8 @@ export default function UiV2IncomePage() {
   } else if (!latestClosed) {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
-        «Доход и планы» строится только по CLOSED-данным. Черновик не выдаётся за подтверждённую
-        картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+        «Доход и планы» строится только по данным закрытых отчётов. Черновик не выдаётся за
+        подтверждённую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
       </UiV2Notice>
     );
   } else {
@@ -932,7 +928,7 @@ export default function UiV2IncomePage() {
         {newerDraft ? (
           <p className={incomeStyles.draftNote} data-testid="income-draft-note">
             {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт — плановый контекст
-            остаётся по последнему CLOSED-отчёту.
+            остаётся по последнему закрытому отчёту.
           </p>
         ) : null}
         <Headlines

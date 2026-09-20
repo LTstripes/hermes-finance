@@ -638,7 +638,9 @@ export default function UiV2DataCatalogsPage() {
         <div className={styles.panelHeader}>
           <div>
             <h2>Счета</h2>
-            <p>Счета, которые участвуют в финансовой картине и постоянных broker-сопоставлениях.</p>
+            <p>
+              Счета, которые участвуют в финансовой картине и постоянных сопоставлениях с брокером.
+            </p>
           </div>
           <Button onClick={() => void loadAccounts()} disabled={accountsLoading} size="sm">
             Обновить
@@ -684,7 +686,8 @@ export default function UiV2DataCatalogsPage() {
           <div>
             <h2>Инструменты</h2>
             <p>
-              Локальный справочник бумаг. Внешний источник и его identity задаются отдельно и явно.
+              Локальный справочник бумаг. Внешний источник и его идентификатор задаются отдельно и
+              явно.
             </p>
           </div>
           <Button onClick={() => void loadInstruments()} disabled={instrumentsLoading} size="sm">
@@ -728,9 +731,9 @@ export default function UiV2DataCatalogsPage() {
     return (
       <div className={styles.brokerWrap} data-testid="catalog-mappings">
         <div className={styles.brokerIntro}>
-          Здесь сохраняются только явные подтверждения identity. Просмотр не обращается к внешнему
-          брокеру, а переназначение и отзыв требуют отдельного подтверждения. Сопоставление market
-          identity инструмента настраивается на вкладке «Инструменты».
+          Здесь сохраняются только явные подтверждения источника. Просмотр не обращается к внешнему
+          брокеру, а переназначение и отзыв требуют отдельного подтверждения. Сопоставление
+          инструмента с источником настраивается на вкладке «Инструменты».
         </div>
         <BrokerIdentityMappingsPanel />
       </div>
@@ -753,7 +756,7 @@ export default function UiV2DataCatalogsPage() {
         : instrumentCleanupError
           ? `Не удалось проверить возможность удаления «${deleteName}». ${instrumentCleanupError}`
           : (pendingInstrumentCleanup?.message ??
-            "Инструмент нельзя удалить, пока правила cleanup не подтверждены.");
+            "Инструмент нельзя удалить, пока проверка связанных данных не подтверждена.");
 
   let monthContent: ReactNode;
   if (monthsQuery.isError) {
@@ -802,8 +805,9 @@ export default function UiV2DataCatalogsPage() {
         <div className={dataStyles.semanticNote}>
           <strong>Изменяет данные</strong>
           <span>
-            Создание, редактирование, статус, cleanup и сопоставления выполняются только по явному
-            действию. Поиск инструмента у провайдера запускается только кнопкой.
+            Создание, редактирование, статус, проверка связанных данных и сопоставления выполняются
+            только по явному действию. Поиск инструмента во внешнем источнике запускается только
+            кнопкой.
           </span>
         </div>
         <div aria-label="Каталоги" className={styles.catalogTabs} role="tablist">

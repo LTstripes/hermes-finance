@@ -156,9 +156,9 @@ describe("InstrumentMappingDialog", () => {
     renderDialog(moexMapped);
     expect(screen.getByText("Подключён")).toBeInTheDocument();
     expect(screen.getByTestId("accepted-mapping-identity")).toHaveTextContent(
-      "moex_iss · stock/shares · TQBR · SBER",
+      "MOEX ISS · stock/shares · TQBR · SBER",
     );
-    expect(screen.getByLabelText("Код бумаги (secid)")).toHaveValue("SBER");
+    expect(screen.getByLabelText("Код бумаги")).toHaveValue("SBER");
     expect(screen.getByTestId("moex-production-disabled-note")).toBeInTheDocument();
   });
 
@@ -187,7 +187,9 @@ describe("InstrumentMappingDialog", () => {
     expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent(
       "SBER · TQBR · stock · MOEX",
     );
-    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent("API-торговля доступна");
+    expect(screen.getByTestId("t-invest-candidates")).toHaveTextContent(
+      "Торговые операции доступны",
+    );
     await user.click(screen.getByRole("button", { name: new RegExp(`Выбрать ${tInvestUid}`) }));
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Идентификатор инструмента T-Invest")).toHaveValue(tInvestUid);
@@ -212,7 +214,7 @@ describe("InstrumentMappingDialog", () => {
     expect(list).toHaveTextContent("Синтетическая ОФЗ контур 1");
     expect(list).toHaveTextContent("SU26240 · TQOB · bond · MOEX");
     expect(list).toHaveTextContent("Синтетическая ОФЗ контур 7");
-    expect(list).toHaveTextContent("API-торговля недоступна");
+    expect(list).toHaveTextContent("Торговые операции недоступны");
     expect(screen.getByLabelText("Идентификатор инструмента T-Invest")).toHaveValue("");
     expect(onSave).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
@@ -256,9 +258,9 @@ describe("InstrumentMappingDialog", () => {
     const user = userEvent.setup();
     const { onSave } = renderDialog(unmapped);
     await user.click(screen.getByRole("button", { name: "MOEX ISS" }));
-    await user.clear(screen.getByLabelText("Режим торгов (boardid)"));
-    await user.type(screen.getByLabelText("Режим торгов (boardid)"), "TQBR");
-    await user.type(screen.getByLabelText("Код бумаги (secid)"), "SBER");
+    await user.clear(screen.getByLabelText("Режим торгов"));
+    await user.type(screen.getByLabelText("Режим торгов"), "TQBR");
+    await user.type(screen.getByLabelText("Код бумаги"), "SBER");
     await user.click(screen.getByRole("button", { name: "Сохранить источник" }));
     expect(onSave).toHaveBeenCalledWith({
       provider: "moex_iss",

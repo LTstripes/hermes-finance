@@ -440,9 +440,7 @@ describe("MonthlyCloseWorkflowPage", () => {
       "/months?from=monthly-close&step=next_month_outlook&monthId=8",
     );
     expect(screen.getByText("Пассивный доход").parentElement).toHaveTextContent(/1.234,56/);
-    expect(screen.getByText("Погашение · возврат капитала").parentElement).toHaveTextContent(
-      /5.000/,
-    );
+    expect(screen.getByText("Возврат основной суммы").parentElement).toHaveTextContent(/5.000/);
     expect(screen.getByText("outlook-test-v1")).toBeInTheDocument();
   });
 

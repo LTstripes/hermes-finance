@@ -175,7 +175,7 @@ export default function UiV2ClosePage() {
         title="Не удалось загрузить отчётные месяцы"
         retry={() => void monthsQuery.refetch()}
       >
-        Закрытие скрыто, пока список месяцев не подтверждён сервером.
+        Закрытие скрыто, пока список месяцев не подтверждён.
       </UiV2Notice>
     );
   } else if (!monthsReady) {
@@ -209,7 +209,7 @@ export default function UiV2ClosePage() {
         retry={() => void workflowQuery.refetch()}
       >
         {missing
-          ? "Сервер больше не подтверждает этот месяц. Другой месяц автоматически не выбран."
+          ? "Этот месяц больше не подтверждён. Другой месяц автоматически не выбран."
           : formatApiError(workflowQuery.error)}
       </UiV2Notice>
     );
@@ -221,8 +221,8 @@ export default function UiV2ClosePage() {
         title="Состояние месяца не подтверждено"
         retry={() => void workflowQuery.refetch()}
       >
-        Финансовые значения скрыты: ответ workflow не совпал с выбранным месяцем или шаги
-        отсутствуют.
+        Финансовые значения скрыты: полученное состояние закрытия не совпало с выбранным месяцем или
+        шаги отсутствуют.
       </UiV2Notice>
     );
   } else {
@@ -253,10 +253,10 @@ export default function UiV2ClosePage() {
 
         {statementOutcome ? (
           <section className={styles.closeOutcome} role="status">
-            <strong>Результат проверки PDF Alfa</strong>
+            <strong>Результат проверки выписки Alfa</strong>
             <p>
               {statementOutcome.kind === "applied"
-                ? `Применено выбранных строк: ${statementOutcome.selectedCount}. Workflow перечитан по сохранённым данным.`
+                ? `Применено выбранных строк: ${statementOutcome.selectedCount}. Состояние закрытия обновлено по сохранённым данным.`
                 : "Подходящих выплат не найдено. Предпросмотр не сохранён и не засчитан как прогресс."}
             </p>
           </section>
@@ -356,7 +356,7 @@ export default function UiV2ClosePage() {
               <p className={styles.eyebrow}>Итоги месяца</p>
               <h2>Финальная проверка</h2>
               <p>
-                Полная сводка откроется на финальном шаге. Значения не пересчитываются в браузере.
+                Полная сводка откроется на финальном шаге. Итоги приведены по сохранённым данным.
               </p>
             </div>
             <Link
@@ -422,7 +422,7 @@ export default function UiV2ClosePage() {
               : "Закрытие месяца"}
           </h1>
           <p className={styles.subtitle}>
-            Сервер определяет порядок, состояние, готовность и следующее действие.
+            Порядок, состояние, готовность и следующее действие определяются правилами закрытия.
           </p>
         </>
       }
@@ -436,7 +436,7 @@ export default function UiV2ClosePage() {
         danger={pendingLifecycle === "close"}
         description={
           pendingLifecycle === "close"
-            ? "Закрыть месяц? Перед сохранением workflow будет перечитан ещё раз."
+            ? "Закрыть месяц? Перед сохранением состояние месяца будет проверено ещё раз."
             : "Открыть месяц заново? Данные снова станут редактируемыми."
         }
         onCancel={cancelLifecycle}

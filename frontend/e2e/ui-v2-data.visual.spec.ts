@@ -345,7 +345,7 @@ test("ui-v2 Files desktop: exports and irreversible restore remain separated", a
     .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
     .click();
   await expect(page.getByRole("alertdialog")).toContainText(
-    `Точный target: ${evidence.backup.name}`,
+    `Выбрана копия: ${evidence.backup.name}`,
   );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-desktop");

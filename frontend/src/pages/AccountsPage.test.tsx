@@ -400,8 +400,8 @@ describe("AccountsPage", () => {
     await user.click(await screen.findByRole("button", { name: "Настроить источник" }));
     expect(discoverInstrumentMappingMock).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "MOEX ISS" }));
-    await user.type(screen.getByLabelText("Режим торгов (boardid)"), "TQOB");
-    await user.type(screen.getByLabelText("Код бумаги (secid)"), "SU26248");
+    await user.type(screen.getByLabelText("Режим торгов"), "TQOB");
+    await user.type(screen.getByLabelText("Код бумаги"), "SU26248");
     await user.click(screen.getByRole("button", { name: "Сохранить источник" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Проверь введённые данные.");

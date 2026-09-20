@@ -269,7 +269,7 @@ describe("native Monthly Close work mode", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("изменение для другого месяца");
+    expect(await screen.findByRole("alert")).toHaveTextContent("подтверждено для другого месяца");
     expect(state.writes).toEqual(["close"]);
   });
 

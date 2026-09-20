@@ -529,7 +529,7 @@ it("fails the account slice closed when its support status is not supported", as
 
   await screen.findByTestId("capital-net");
   expect(
-    await screen.findByText("Этот срез нельзя построить: банк не хранится в текущей схеме."),
+    await screen.findByText("Этот срез нельзя построить: банк не указан для этих данных."),
   ).toBeVisible();
   expect(screen.queryByTestId("capital-bucket-account:1")).toBeNull();
   expect(screen.queryByTestId("capital-bucket-unassigned_cash")).toBeNull();

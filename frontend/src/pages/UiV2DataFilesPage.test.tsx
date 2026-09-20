@@ -217,7 +217,7 @@ describe("UI v2 Data files", () => {
       await screen.findByRole("button", { name: `Восстановить резервную копию ${target.name}` }),
     );
     const dialog = await screen.findByRole("alertdialog");
-    expect(dialog).toHaveTextContent(`Точный target: ${target.name}`);
+    expect(dialog).toHaveTextContent(`Выбрана копия: ${target.name}`);
     expect(calls.filter(({ method }) => method === "POST")).toHaveLength(0);
 
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
