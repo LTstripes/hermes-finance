@@ -17,9 +17,9 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function eventLabel(component: string): string {
-  return EVENT_LABELS[component] ?? "Событие";
+  return EVENT_LABELS[component] ?? "Тип события не распознан";
 }
 
 export function sourceLabel(sourceKind: string): string {
-  return SOURCE_LABELS[sourceKind] ?? "внешний источник";
+  return SOURCE_LABELS[sourceKind] ?? "Источник не распознан";
 }
