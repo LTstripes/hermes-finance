@@ -11,8 +11,9 @@
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
-- Current canonical development `main`: `424ba7bf018c8e4ac01cfda825af7394a3068267`.
-- Exact-main CI after the UI v2 completion merge: **#838 / run `35517935019` — SUCCESS**.
+- Current canonical development `main`: `49144da863c93e5afc505e16be6817c55ff2b50d`.
+- Exact-main CI on current `main`: **#839 / run `35518134142` — SUCCESS**.
+- UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`; exact-main CI #838 / run `35517935019` — SUCCESS.
 - Final UI v2 completion aggregate: PR #455 / exact Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — **PASS**.
 - Canonical UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`.
 - Staged-integration process rules: PR #443 / `34ae76f0cbb6bc31c333e30e3feef83b746ba2ca`.
@@ -181,6 +182,20 @@ Release publication and local Stable installation are separate operations:
 
 `v0.9.0` is the first release to complete this full chain successfully.
 
+## Protected recovery-point publisher — implementation accepted
+
+#459 / PR #466 is complete on canonical `main`.
+
+- accepted candidate: `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
+- canonical merge/current main: `49144da863c93e5afc505e16be6817c55ff2b50d`;
+- independent security/recovery review: **ACCEPT**;
+- exact-head CI #837 / run `35516975089`: SUCCESS;
+- exact-main CI #839 / run `35518134142`: SUCCESS.
+
+Delivered: provider-neutral managed protected-destination publisher for explicitly attested `external_encrypted_destination_v1`, including staged verification before final exposure, destination read-back, producer/schema identity, privacy-safe CLI failure handling and no plaintext verification scratch in default temp storage.
+
+Not yet done: retention deletion (#460), clean isolated DR rehearsal (#461), focused legacy Export/Backup restore-state reload (#462), or any real Owner Drive/off-device backup run. No Google API/OAuth/key-management/cloud architecture was introduced.
+
 ## Active roadmap / what comes next
 
 ### UI v2 — complete opt-in product integrated; default switch remains
@@ -222,13 +237,16 @@ V1 retirement is explicitly out of scope for #430 and remains a separate later d
 
 Detailed closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
 
-### Runtime
+### Runtime / durability
 
-The redesign parent #313 is complete. Future runtime work should be evidence-driven and bounded:
+The redesign parent #313 is complete. #459 protected recovery-point publisher is also complete and canonical.
 
-- diagnosis/recovery operations only if owner value justifies them;
-- optional thin launcher wrappers over accepted primitives;
-- no revival of the old launcher updater state machine.
+Active durability sequence under #417:
+- #460 — bounded verified retention;
+- #461 — isolated disaster-recovery rehearsal;
+- #462 — focused post-restore month-state reload.
+
+Real protected off-device backup and recovery rehearsal remain Owner-controlled gates. Future launcher/runtime work should stay bounded and must not revive the old launcher updater state machine.
 
 ### Performance
 
@@ -242,9 +260,10 @@ R09 metadata follow-up #410 is closed completed. Published Stable remains immuta
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #387 — UI v2 roadmap; implementation is complete, with only #430 comparative UAT / controlled default-switch gate remaining open.
+- #387 — UI v2 roadmap; implementation is complete, with only #430 comparative UAT / controlled default-switch gate remaining open;
+- #417 — owner durability umbrella; #459 complete, #460–#462 remain.
 
-#313, #410 and #429 are closed completed.
+#313, #410, #429 and #459 are closed completed.
 
 ## Canonical references
 
@@ -259,4 +278,4 @@ R09 metadata follow-up #410 is closed completed. Published Stable remains immuta
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #387, #430; completed #313, #410, #429, #432–#434, #444–#448
+- #124, #127, #387, #417, #430, #460–#462; completed #313, #410, #429, #432–#434, #444–#448, #459
