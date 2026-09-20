@@ -392,13 +392,32 @@ def _snapshot_revision_set(connection: sqlite3.Connection) -> tuple[str, ...]:
     return revisions
 
 
-def _verify_artifact(path: Path) -> tuple[dict[str, Any], str, int]:
+def _verify_snapshot_bytes(snapshot_bytes: bytes) -> tuple[str, ...]:
+    """Verify a snapshot without materializing plaintext outside the artifact."""
+
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.deserialize(snapshot_bytes)
+        if connection.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+            raise ProtectedBackupError("managed artifact SQLite integrity is invalid")
+        if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise ProtectedBackupError("managed artifact SQLite foreign keys are invalid")
+        return _snapshot_revision_set(connection)
+    finally:
+        connection.close()
+
+
+def _verify_artifact_content(
+    path: Path, *, expected_hash: str | None = None
+) -> tuple[dict[str, Any], str, int]:
     try:
         _assert_no_reparse_components(path)
         if not path.is_file() or path.is_symlink():
             raise ProtectedBackupError("managed artifact is not a regular file")
         artifact_bytes = path.read_bytes()
         actual = hashlib.sha256(artifact_bytes).hexdigest()
+        if expected_hash is not None and actual != expected_hash:
+            raise ProtectedBackupError("managed artifact full hash does not verify")
         size_bytes = len(artifact_bytes)
         with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
             if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
@@ -408,28 +427,12 @@ def _verify_artifact(path: Path) -> tuple[dict[str, Any], str, int]:
                 raise ProtectedBackupError("managed artifact manifest is invalid")
             _validate_manifest_shape(manifest)
             snapshot_bytes = archive.read(_SNAPSHOT_NAME)
-            with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as stream:
-                stream.write(snapshot_bytes)
-                snapshot_path = Path(stream.name)
-            try:
-                snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
-                if manifest.get("snapshot_sha256") != snapshot_digest:
-                    raise ProtectedBackupError("managed artifact snapshot hash is invalid")
-                if manifest.get("snapshot_size_bytes") != len(snapshot_bytes):
-                    raise ProtectedBackupError("managed artifact snapshot size is invalid")
-                connection = sqlite3.connect(snapshot_path)
-                try:
-                    if connection.execute("PRAGMA integrity_check").fetchone() != ("ok",):
-                        raise ProtectedBackupError("managed artifact SQLite integrity is invalid")
-                    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
-                        raise ProtectedBackupError(
-                            "managed artifact SQLite foreign keys are invalid"
-                        )
-                    snapshot_revisions = _snapshot_revision_set(connection)
-                finally:
-                    connection.close()
-            finally:
-                snapshot_path.unlink(missing_ok=True)
+            snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
+            if manifest.get("snapshot_sha256") != snapshot_digest:
+                raise ProtectedBackupError("managed artifact snapshot hash is invalid")
+            if manifest.get("snapshot_size_bytes") != len(snapshot_bytes):
+                raise ProtectedBackupError("managed artifact snapshot size is invalid")
+            snapshot_revisions = _verify_snapshot_bytes(snapshot_bytes)
             if manifest.get("source_alembic_revisions") != list(snapshot_revisions):
                 raise ProtectedBackupError(
                     "managed artifact Alembic revision identity does not verify"
@@ -446,12 +449,19 @@ def _verify_artifact(path: Path) -> tuple[dict[str, Any], str, int]:
             raise ProtectedBackupError("managed artifact canonical identity does not verify")
         if manifest.get("artifact_size_bytes") != size_bytes:
             raise ProtectedBackupError("managed artifact size does not verify")
-        name_match = _MANAGED_FILENAME_RE.fullmatch(path.name)
-        if name_match is None or name_match.group("digest") != actual[:16]:
-            raise ProtectedBackupError("managed artifact name identity does not verify")
         return manifest, actual, size_bytes
     except (OSError, KeyError, json.JSONDecodeError, sqlite3.Error, zipfile.BadZipFile) as error:
         raise ProtectedBackupError("managed artifact read-back verification failed") from error
+
+
+def _verify_artifact(
+    path: Path, *, expected_hash: str | None = None
+) -> tuple[dict[str, Any], str, int]:
+    manifest, actual, size_bytes = _verify_artifact_content(path, expected_hash=expected_hash)
+    name_match = _MANAGED_FILENAME_RE.fullmatch(path.name)
+    if name_match is None or name_match.group("digest") != actual[:16]:
+        raise ProtectedBackupError("managed artifact name identity does not verify")
+    return manifest, actual, size_bytes
 
 
 def _zip_bytes_from_bytes(snapshot_bytes: bytes, manifest: dict[str, Any]) -> bytes:
@@ -574,6 +584,7 @@ def publish_recovery_point(
                     "source_alembic_revisions": list(revisions),
                 }
                 artifact_bytes = _artifact_bytes(snapshot, manifest)
+                expected_artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
                 staged = validated_destination / (
                     f"{_INCOMPLETE_PREFIX}{uuid.uuid4().hex}{_INCOMPLETE_SUFFIX}"
                 )
@@ -581,12 +592,27 @@ def publish_recovery_point(
                     stream.write(artifact_bytes)
                     stream.flush()
                     os.fsync(stream.fileno())
-                with staged.open("rb") as stream:
-                    final_digest = hashlib.sha256(stream.read()).hexdigest()
-                final = _expose_final_without_overwrite(
-                    staged, created_at, final_digest, validated_destination
+                staged_manifest, staged_hash, staged_size = _verify_artifact_content(
+                    staged, expected_hash=expected_artifact_hash
                 )
-                read_manifest, _, size_bytes = _verify_artifact(final)
+                if staged_hash != expected_artifact_hash:
+                    raise ProtectedBackupError("staged artifact full hash changed")
+                for key, value in manifest.items():
+                    if (
+                        key not in {"artifact_identity_sha256", "artifact_size_bytes"}
+                        and staged_manifest.get(key) != value
+                    ):
+                        raise ProtectedBackupError("staged artifact manifest changed")
+                if staged_manifest.get("artifact_size_bytes") != staged_size:
+                    raise ProtectedBackupError("staged artifact size changed")
+                final = _expose_final_without_overwrite(
+                    staged, created_at, expected_artifact_hash, validated_destination
+                )
+                read_manifest, read_hash, size_bytes = _verify_artifact(
+                    final, expected_hash=expected_artifact_hash
+                )
+                if read_hash != expected_artifact_hash:
+                    raise ProtectedBackupError("managed artifact full hash changed on read-back")
                 for key, value in manifest.items():
                     if (
                         key not in {"artifact_identity_sha256", "artifact_size_bytes"}

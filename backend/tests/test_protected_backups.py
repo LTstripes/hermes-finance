@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import subprocess
+import tempfile
 import threading
 import zipfile
 from datetime import UTC, datetime
@@ -291,6 +293,88 @@ def test_readback_binds_one_immutable_artifact_byte_sequence(
     assert artifact.read_bytes() == b"replacement-after-read"
 
 
+def test_verification_never_uses_redirected_default_temp_storage(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    redirected_temp = tmp_path / "redirected-system-temp"
+    redirected_temp.mkdir()
+    monkeypatch.setenv("TMP", str(redirected_temp))
+    monkeypatch.setenv("TEMP", str(redirected_temp))
+    monkeypatch.setenv("TMPDIR", str(redirected_temp))
+    monkeypatch.setattr(tempfile, "tempdir", str(redirected_temp))
+
+    protected_backups._verify_artifact(artifact)
+
+    assert not list(redirected_temp.iterdir())
+
+
+def test_in_memory_verification_write_failure_leaves_no_plaintext_temp_residue(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    redirected_temp = tmp_path / "redirected-system-temp"
+    redirected_temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(redirected_temp))
+
+    class FailingWriteConnection:
+        closed = False
+
+        def deserialize(self, _payload: bytes) -> None:
+            raise sqlite3.OperationalError("synthetic in-memory write failure")
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FailingWriteConnection()
+    monkeypatch.setattr(protected_backups.sqlite3, "connect", lambda _target: connection)
+
+    with pytest.raises(ProtectedBackupError, match="read-back verification"):
+        protected_backups._verify_artifact(artifact)
+
+    assert connection.closed is True
+    assert not list(redirected_temp.iterdir())
+
+
+def test_in_memory_verification_close_failure_leaves_no_plaintext_temp_residue(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    _publish(monkeypatch, synthetic_database, destination)
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    redirected_temp = tmp_path / "redirected-system-temp"
+    redirected_temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(redirected_temp))
+    real_connect = protected_backups.sqlite3.connect
+
+    class FailingCloseConnection:
+        def __init__(self) -> None:
+            self._connection = real_connect(":memory:")
+
+        def __getattr__(self, name: str):
+            return getattr(self._connection, name)
+
+        def close(self) -> None:
+            self._connection.close()
+            raise sqlite3.OperationalError("synthetic in-memory close failure")
+
+    monkeypatch.setattr(
+        protected_backups.sqlite3, "connect", lambda _target: FailingCloseConnection()
+    )
+
+    with pytest.raises(ProtectedBackupError, match="read-back verification"):
+        protected_backups._verify_artifact(artifact)
+
+    assert not list(redirected_temp.iterdir())
+
+
 def test_readback_binds_manifest_revisions_to_snapshot(
     tmp_path: Path, synthetic_database, monkeypatch
 ) -> None:
@@ -361,6 +445,41 @@ def test_interrupted_publication_leaves_only_unrecognized_incomplete_name(
     assert list(destination.glob(".hermes_recovery_*.incomplete"))
 
 
+def test_staged_corruption_never_reaches_final_exposure(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    monkeypatch.setattr(protected_backups, "_git_identity", lambda _checkout: "9" * 40)
+    original_verify_content = protected_backups._verify_artifact_content
+    exposure_reached = False
+
+    def corrupt_staging(path: Path, **kwargs):
+        if path.name.endswith(".incomplete"):
+            path.write_bytes(b"synthetic staged corruption")
+        return original_verify_content(path, **kwargs)
+
+    def record_exposure(*_args, **_kwargs):
+        nonlocal exposure_reached
+        exposure_reached = True
+        raise AssertionError("final exposure must not be reached")
+
+    monkeypatch.setattr(protected_backups, "_verify_artifact_content", corrupt_staging)
+    monkeypatch.setattr(protected_backups, "_expose_final_without_overwrite", record_exposure)
+
+    with pytest.raises(ProtectedBackupError, match="publication failed"):
+        publish_recovery_point(
+            synthetic_database,
+            destination,
+            protection_state=PROTECTION_STATE,
+            protection_mode=PROTECTION_MODE,
+            source_checkout=Path(__file__).resolve().parents[2],
+        )
+
+    assert exposure_reached is False
+    assert not [path for path in destination.iterdir() if is_managed_recovery_name(path.name)]
+
+
 def test_readback_corruption_during_publish_removes_new_final_name(
     tmp_path: Path, synthetic_database, monkeypatch
 ) -> None:
@@ -370,7 +489,9 @@ def test_readback_corruption_during_publish_removes_new_final_name(
     monkeypatch.setattr(
         protected_backups,
         "_verify_artifact",
-        lambda _path: (_ for _ in ()).throw(ProtectedBackupError("synthetic corruption")),
+        lambda _path, **_kwargs: (_ for _ in ()).throw(
+            ProtectedBackupError("synthetic corruption")
+        ),
     )
     with pytest.raises(ProtectedBackupError, match="publication failed"):
         publish_recovery_point(
@@ -560,3 +681,42 @@ def test_explicit_cli_failure_is_privacy_safe(tmp_path: Path, capsys) -> None:
     assert payload["created_at"] is None
     assert "name" not in payload
     assert "artifact_sha256" not in payload
+
+
+@pytest.mark.parametrize(
+    "private_args",
+    [
+        ["--protection-mode", r"C:\synthetic-private\owner\finance.db"],
+        [
+            "--protection-mode",
+            PROTECTION_MODE,
+            "--synthetic-private-argument",
+            r"C:\synthetic-private\owner\finance.db",
+        ],
+    ],
+)
+def test_cli_parser_failure_does_not_echo_private_argv(
+    private_args: list[str], tmp_path: Path, capsys
+) -> None:
+    private_value = r"C:\synthetic-private\owner\finance.db"
+    exit_code = protected_backup_main(
+        [
+            "--destination",
+            str(tmp_path / "mounted-protected-destination"),
+            "--protection-state",
+            PROTECTION_STATE,
+            *private_args,
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert private_value not in captured.out
+    assert private_value not in captured.err
+    assert captured.err == ""
+    payload = json.loads(captured.out)
+    assert payload["status"] == "action_required"
+    assert payload["created"] is False
+    assert payload["verified"] is False
+    assert payload["published"] is False
+    assert payload["action_required"] == ("protected recovery-point publication was not completed")

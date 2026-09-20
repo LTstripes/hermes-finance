@@ -17,8 +17,14 @@ from hermes_finance.services.protected_backups import (
 from hermes_finance.settings import Settings
 
 
+class _PrivacySafeArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        del message
+        raise ProtectedBackupError("protected recovery-point arguments are invalid")
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _PrivacySafeArgumentParser(
         description="Publish one verified recovery point to an already-mounted protected destination."
     )
     parser.add_argument(
@@ -64,9 +70,9 @@ def _require_regular_database(path: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
     database = None
     try:
+        args = _build_parser().parse_args(argv)
         settings = Settings()
         database_path = _require_regular_database(
             args.database if args.database else settings.database_path
