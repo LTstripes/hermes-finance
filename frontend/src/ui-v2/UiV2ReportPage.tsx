@@ -44,6 +44,7 @@ import {
 } from "./UiV2StateBlocks";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
+import { UNKNOWN_SOURCE_LABEL } from "./uiV2Copy";
 import styles from "./UiV2Page.module.css";
 import reportStyles from "./UiV2Reports.module.css";
 import { moneyText as money } from "./valueFormat";
@@ -609,7 +610,7 @@ export default function UiV2ReportPage() {
         <UiV2ReportContext
           kind="historical"
           month={month}
-          source={SOURCE_LABELS[month.source] ?? "Источник данных"}
+          source={SOURCE_LABELS[month.source] ?? UNKNOWN_SOURCE_LABEL}
           status="Закрыт · Утверждён"
         >
           <span className={styles.reportContextLinks}>
