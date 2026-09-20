@@ -50,7 +50,7 @@ describe("marketData helpers", () => {
         provider_instrument_id: "SBER",
         provider_venue_id: "stock/shares/TQBR",
       }),
-    ).toBe("moex_iss · stock/shares · TQBR · SBER");
+    ).toBe("MOEX ISS · stock/shares · TQBR · SBER");
   });
 
   it("formats T-Invest candidate disambiguation without inventing missing fields", () => {
@@ -84,7 +84,7 @@ describe("marketData helpers", () => {
         isin: null,
         api_trade_available: false,
       }),
-    ).toBe("API-торговля недоступна");
+    ).toBe("Торговые операции недоступны");
     expect(
       formatDiscoverCandidateTrade({
         provider: "t_invest",
@@ -137,7 +137,7 @@ describe("marketData helpers", () => {
         provider_instrument_id: "opaque-security-id",
         provider_venue_id: null,
       }),
-    ).toBe("synthetic_provider · opaque-security-id");
+    ).toBe("Другой источник (synthetic_provider) · opaque-security-id");
   });
 
   it("converts the MOEX form draft through one helper before save", () => {

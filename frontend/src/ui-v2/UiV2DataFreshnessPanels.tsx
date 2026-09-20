@@ -19,6 +19,7 @@ import {
   SOURCE_TIMESTAMP_KIND_LABELS,
 } from "../lib/labels";
 import dataStyles from "./UiV2Data.module.css";
+import { UNKNOWN_SOURCE_LABEL } from "./uiV2Copy";
 
 const FAMILY_CLOSE_STEP: Record<string, GuidedCloseStepId | null> = {
   market_quotes: "market_quotes",
@@ -38,7 +39,7 @@ function statusTone(status: FreshnessStatus): string {
 }
 
 function sourceLabel(value: string): string {
-  return labelOf(SOURCE_LABELS, value);
+  return SOURCE_LABELS[value] ?? UNKNOWN_SOURCE_LABEL;
 }
 
 function clockValue(item: FreshnessItem): string {
@@ -70,12 +71,12 @@ export function FreshnessBody({
         <div className={dataStyles.clock}>
           <dt>Дата снимка месяца</dt>
           <dd>{formatDate(summary.reporting_month.snapshot_date)}</dd>
-          <span className={dataStyles.meta}>snapshot_date</span>
+          <span className={dataStyles.meta}>дата снимка</span>
         </div>
         <div className={dataStyles.clock}>
           <dt>Дата оценки котировок</dt>
           <dd>{formatDate(summary.quote_valuation_target_date)}</dd>
-          <span className={dataStyles.meta}>min(снимок, сегодня)</span>
+          <span className={dataStyles.meta}>ближайшая дата: снимок или сегодня</span>
         </div>
         <div className={dataStyles.clock}>
           <dt>Сегодня для оценки</dt>
@@ -147,7 +148,7 @@ export function CapabilitiesDisclosure({
 }) {
   return (
     <details className={dataStyles.disclosure} data-testid="provider-capabilities">
-      <summary>Технически: возможности источника</summary>
+      <summary>Технические сведения об источнике</summary>
       {!ready ? (
         failed ? (
           <p className={dataStyles.muted}>
@@ -213,7 +214,7 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
         {family.coverage.current_count ? ` · актуальных: ${family.coverage.current_count}` : ""}
         {family.coverage.stale_count ? ` · устаревших: ${family.coverage.stale_count}` : ""}
         {family.coverage.manual_count ? ` · ручных: ${family.coverage.manual_count}` : ""}
-        {family.coverage.missing_count ? ` · без apply: ${family.coverage.missing_count}` : ""}
+        {family.coverage.missing_count ? ` · без применения: ${family.coverage.missing_count}` : ""}
       </p>
       {family.reasons.length > 0 ? (
         <ul className={dataStyles.reasonList}>
@@ -234,7 +235,7 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
                   <th>Источник</th>
                   <th>Наблюдение</th>
                   <th>Запрос</th>
-                  <th>Apply</th>
+                  <th>Применение</th>
                   <th>Правка</th>
                 </tr>
               </thead>

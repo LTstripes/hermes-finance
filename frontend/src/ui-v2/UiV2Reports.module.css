@@ -35,6 +35,62 @@
   font-size: 1.05rem;
 }
 
+/* Keep the archive scannable on desktop: the action column must not borrow
+   the space that makes the liability value readable. The narrow breakpoint
+   below intentionally replaces this table with the existing card layout. */
+.archiveTable {
+  table-layout: fixed;
+}
+
+.archiveTable th,
+.archiveTable td {
+  padding-inline: 10px;
+}
+
+.archiveTable th:nth-child(1),
+.archiveTable td:nth-child(1) {
+  width: 12%;
+  padding-left: 0;
+}
+
+.archiveTable th:nth-child(2),
+.archiveTable td:nth-child(2) {
+  width: 13%;
+}
+
+.archiveTable th:nth-child(3),
+.archiveTable td:nth-child(3) {
+  width: 12%;
+}
+
+.archiveTable th:nth-child(4),
+.archiveTable td:nth-child(4) {
+  width: 16%;
+}
+
+.archiveTable th:nth-child(5),
+.archiveTable td:nth-child(5) {
+  width: 13%;
+}
+
+.archiveTable th:nth-child(6),
+.archiveTable td:nth-child(6) {
+  width: 14%;
+}
+
+.archiveTable th:last-child,
+.archiveTable td:last-child {
+  width: 20%;
+  padding-right: 0;
+  padding-left: 16px;
+}
+
+.archiveTable td:last-child a {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .gapRow td,
 .gapPeriod {
   color: var(--muted);
@@ -288,6 +344,14 @@
     padding: 4px 0 !important;
     border-bottom: 0 !important;
     overflow-wrap: anywhere;
+  }
+
+  .archiveTable th,
+  .archiveTable td,
+  .archiveTable th:last-child,
+  .archiveTable td:last-child {
+    width: 100% !important;
+    padding-inline: 0 !important;
   }
 
   .archiveTable td::before {

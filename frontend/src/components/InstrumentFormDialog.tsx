@@ -98,7 +98,7 @@ export function InstrumentFormDialog({
       return;
     }
     if (isin.length > 12 || ticker.length > 32 || moexSecid.length > 32 || notes.length > 2000) {
-      setLocalError("Проверь длину ISIN, тикера, MOEX SECID и заметки.");
+      setLocalError("Проверь длину ISIN, тикера, кода MOEX и заметки.");
       return;
     }
 
@@ -214,7 +214,7 @@ export function InstrumentFormDialog({
             </Field>
           </div>
           <div className="form-row-2">
-            <Field htmlFor="instrument-moex" label="MOEX SECID">
+            <Field htmlFor="instrument-moex" label="Код бумаги MOEX">
               <Input
                 id="instrument-moex"
                 maxLength={32}

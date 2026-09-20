@@ -128,8 +128,8 @@ export function PortfolioReviewPackagePanel() {
               }}
               value={profile}
             >
-              <option value="concise">Concise — основные ответы</option>
-              <option value="full">Full — расширенный контекст</option>
+              <option value="concise">Краткий — основные ответы</option>
+              <option value="full">Полный — расширенный контекст</option>
             </Select>
           </Field>
           <Button
@@ -162,7 +162,7 @@ export function PortfolioReviewPackagePanel() {
             className="portfolio-review-package__preview"
           >
             <div className="portfolio-review-package__summary">
-              <strong>{packageData.profile === "full" ? "Full" : "Concise"}</strong>
+              <strong>{packageData.profile === "full" ? "Полный" : "Краткий"}</strong>
               {packageSummary(packageData).map((item) => (
                 <span key={item}>{item}</span>
               ))}

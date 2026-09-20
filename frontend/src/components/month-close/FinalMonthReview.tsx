@@ -13,6 +13,7 @@ import type {
   UpcomingEventsWindow,
 } from "../../api/types";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../../lib/format";
+import { eventLabel as ownerEventLabel, PRINCIPAL_REPAYMENT_LABEL } from "../../ui-v2/uiV2Copy";
 import { Badge, DataValue, Panel } from "../ui";
 import { type MonthlyCloseOrigin, withMonthlyCloseReturn } from "./navigation";
 
@@ -173,7 +174,10 @@ function cardSummary(card: ManualReviewCard) {
             label="Пассивный доход"
             value={summaryMoney(summary, "passive_income_actual")}
           />
-          <DataValue label="Зарплата net" value={summaryMoney(summary, "salary_actual_net")} />
+          <DataValue
+            label="Зарплата после удержаний"
+            value={summaryMoney(summary, "salary_actual_net")}
+          />
           <DataValue
             label="Обязательные расходы"
             value={summaryMoney(summary, "mandatory_expenses")}
@@ -200,14 +204,7 @@ function cardSummary(card: ManualReviewCard) {
 }
 
 function eventLabel(event: CashFlowLadderEvent): string {
-  const componentLabels: Record<string, string> = {
-    coupon: "Купон",
-    dividend: "Дивиденд",
-    deposit_interest: "Проценты по вкладу",
-    other_capital_income: "Прочий доход",
-    redemption_principal: "Погашение",
-  };
-  return `${formatDate(event.expected_date)} · ${componentLabels[event.component] ?? event.component} · ${event.instrument_name ?? event.account_name}`;
+  return `${formatDate(event.expected_date)} · ${ownerEventLabel(event.component)} · ${event.instrument_name ?? event.account_name}`;
 }
 
 function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
@@ -219,7 +216,7 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
       </div>
       <p className="muted tiny">
         {formatDate(window.from_date)} — до {formatDate(window.to_date)} · пассивный доход{" "}
-        {money(window.passive_income)} · погашение {money(window.redemption_principal)}
+        {money(window.passive_income)} · возврат основной суммы {money(window.redemption_principal)}
       </p>
       {window.items.length > 0 ? (
         <ul className="final-review__event-list">
@@ -378,7 +375,7 @@ function FutureEvents({ review }: { review: FinalMonthReviewModel }) {
           value={money(future.next_month?.passive_income)}
         />
         <DataValue
-          label="Следующий месяц · погашение"
+          label={<>Следующий месяц · {PRINCIPAL_REPAYMENT_LABEL.toLowerCase()}</>}
           value={money(future.next_month?.redemption_principal)}
         />
         <DataValue
@@ -515,8 +512,8 @@ export function FinalMonthReview({
         </Badge>
       </header>
       <p className="final-review__lead">
-        Здесь собраны значения месяца из системы и оставшиеся ручные проверки. Ничего не
-        пересчитывается в браузере.
+        Здесь собраны значения месяца из системы и оставшиеся ручные проверки. Итоги приведены по
+        сохранённым данным и не пересчитываются здесь.
       </p>
 
       <Panel label="Сводка" title="Основные показатели">

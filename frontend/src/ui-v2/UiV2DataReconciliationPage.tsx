@@ -11,7 +11,6 @@ import { formatApiError } from "../api/client";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
-import { labelOf } from "../lib/labels";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
 import dataStyles from "./UiV2Data.module.css";
@@ -27,7 +26,7 @@ import {
   type MappingValues,
   mappingFromValues,
   nonApplicableReason,
-  RECONCILIATION_STATUS_LABELS,
+  reconciliationStatusLabel,
   resultStatusTone,
 } from "./UiV2DataReconciliationParts";
 import { DataMonthContext, resolveDataMonth, UiV2DataFrame } from "./UiV2DataShell";
@@ -133,7 +132,7 @@ export default function UiV2DataReconciliationPage() {
   } else if (resolution.kind === "invalid") {
     content = (
       <UiV2Notice title="Некорректный параметр месяца">
-        Явный <code>?month=</code> должен быть одним положительным целым ID. Сверка не запускается и
+        Выбор месяца должен содержать один положительный идентификатор. Сверка не запускается и
         числа не подставляются.
       </UiV2Notice>
     );
@@ -160,12 +159,10 @@ export default function UiV2DataReconciliationPage() {
         <DataMonthContext automatic={resolution.automatic} month={month}>
           <Link to="/reconciliation">В текущем интерфейсе ↗</Link>
         </DataMonthContext>
-        <div className={dataStyles.badgeRow}>
-          <span className={dataStyles.readOnlyBadge}>Только чтение</span>
-          <span className={dataStyles.muted}>
-            Результат не сохраняется · eligible_for_apply всегда false
-          </span>
-        </div>
+        <p className={dataStyles.noticeInline} data-testid="reconciliation-safety-note">
+          Сверка только показывает различия и ничего не сохраняет. Данные брокера запрашиваются
+          только после нажатия «Проверить снимок».
+        </p>
         <MonthToolbar
           hasResult={displayResult !== null}
           months={months}
@@ -182,10 +179,7 @@ export default function UiV2DataReconciliationPage() {
         {!displayResult ? (
           <section className={dataStyles.idlePanel} data-testid="reconciliation-idle">
             <h2>Сверка ещё не запрашивалась</h2>
-            <p>
-              Открытие страницы не обращается к брокеру. Нажми «Проверить снимок», чтобы получить
-              нормализованное сравнение только для чтения.
-            </p>
+            <p>Выберите месяц и нажмите «Проверить снимок», чтобы получить сравнение позиций.</p>
             <p className={dataStyles.familyActions}>
               <Link
                 to={monthlyCloseReturnPath({
@@ -202,19 +196,15 @@ export default function UiV2DataReconciliationPage() {
           <>
             <section className={dataStyles.resultPanel} data-testid="reconciliation-result">
               <div className={dataStyles.familyHeader}>
-                <h2>Сверка без изменений данных</h2>
+                <h2>Результат сверки</h2>
                 <span
                   className={dataStyles.statusBadge}
                   data-tone={resultStatusTone(displayResult.status)}
                 >
-                  {labelOf(RECONCILIATION_STATUS_LABELS, displayResult.status)}
+                  {reconciliationStatusLabel(displayResult.status)}
                 </span>
               </div>
               <ResultSummary result={displayResult} />
-              <p className={dataStyles.muted}>
-                <strong>Только чтение.</strong> Цена брокера, учётная цена, оценка, НКД и P&amp;L —
-                наблюдения только для сравнения.
-              </p>
               {unavailableMessage ? (
                 <div className={dataStyles.gate} role="status" data-testid="reconciliation-gate">
                   <span className={dataStyles.statusBadge} data-tone="stale">
@@ -274,7 +264,7 @@ export default function UiV2DataReconciliationPage() {
       active="reconciliation"
       busy={!monthsReady}
       monthId={monthId ?? undefined}
-      subtitle="Явное сравнение локального среза с наблюдением брокера. Без изменений данных."
+      subtitle="Сравнение позиций Hermes с данными брокера за выбранный месяц."
       title="Сверка портфеля"
       v1ReturnPath={v1ReturnPath}
     >

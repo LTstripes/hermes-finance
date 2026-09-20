@@ -44,6 +44,7 @@ import {
 } from "./UiV2StateBlocks";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
+import { UNKNOWN_SOURCE_LABEL } from "./uiV2Copy";
 import styles from "./UiV2Page.module.css";
 import reportStyles from "./UiV2Reports.module.css";
 import { moneyText as money } from "./valueFormat";
@@ -301,9 +302,9 @@ function HistoryBlock({
 
 function LinkedPairsBlock({ point }: { point: CapitalCompositionPoint }) {
   const pairs = [
-    { amount: point.linked_pair_assets, label: "Активы связанных пар (A)" },
-    { amount: point.linked_pair_debts, label: "Обязательства связанных пар (D)" },
-    { amount: point.linked_pair_net_contribution, label: "Вклад связанных пар (A − D)" },
+    { amount: point.linked_pair_assets, label: "Активы связанных пар" },
+    { amount: point.linked_pair_debts, label: "Обязательства связанных пар" },
+    { amount: point.linked_pair_net_contribution, label: "Вклад связанных пар" },
   ];
   if (!pairs.some((pair) => !isZeroAmount(pair.amount.amount))) return null;
   return (
@@ -609,7 +610,7 @@ export default function UiV2ReportPage() {
         <UiV2ReportContext
           kind="historical"
           month={month}
-          source={SOURCE_LABELS[month.source] ?? month.source}
+          source={SOURCE_LABELS[month.source] ?? UNKNOWN_SOURCE_LABEL}
           status="Закрыт · Утверждён"
         >
           <span className={styles.reportContextLinks}>

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, type Page, test, type TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
 import { makeUiV2Freshness, makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
 import { uiV2Accounts, uiV2Instruments, uiV2Months } from "../src/test/uiV2Fixtures";
@@ -63,6 +63,41 @@ async function installDataApi(page: Page) {
       json = makeUiV2Freshness(uiV2Months[0]);
     } else if (url.pathname === "/api/market-data/providers/capabilities") {
       json = makeUiV2ProviderCapabilities();
+    } else if (/^\/api\/instruments\/\d+\/market-mapping$/.test(url.pathname)) {
+      const instrumentId = Number(url.pathname.split("/")[3]);
+      json = {
+        instrument_id: instrumentId,
+        state: instrumentId === 10 ? "mapped" : "unmapped",
+        identity:
+          instrumentId === 10
+            ? {
+                provider: "t_invest",
+                provider_instrument_id: "SYNTHETIC-UID-001",
+                provider_venue_id: null,
+              }
+            : null,
+        instrument_isin: null,
+        legacy_moex_secid: null,
+      };
+    } else if (url.pathname === "/api/broker-identity-mappings") {
+      json = [
+        {
+          mapping_id: 20,
+          provider: "alfa_pro",
+          subject_kind: "account",
+          provider_identity: "SYNTHETIC-ACCOUNT-001",
+          hermes_target_id: 1,
+          status: "effective",
+          observed_isin: null,
+          confirmed_at: "2031-08-31T12:00:00Z",
+          source_as_of: null,
+          captured_at: null,
+          predecessor_mapping_id: null,
+          successor_mapping_id: null,
+          revoked_at: null,
+          revoke_reason: null,
+        },
+      ];
     } else if (url.pathname === "/api/accounts") {
       json = uiV2Accounts;
     } else if (url.pathname === "/api/instruments") {
@@ -141,6 +176,50 @@ async function installDataApi(page: Page) {
   return { errors, posts, reads, unexpected };
 }
 
+async function installFilesApi(page: Page) {
+  const unexpected: string[] = [];
+  const posts: string[] = [];
+  const errors: string[] = [];
+  const backup = {
+    id: "synthetic-backup-2031-12-28",
+    name: "synthetic-finance-visual-audit.db",
+    created_at: "2031-12-28T12:00:00+00:00",
+    size_bytes: 987654321,
+    source_database: { name: "synthetic-finance.db", size_bytes: 987654321 },
+  };
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
+      unexpected.push(`external: ${url.origin}`);
+    }
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith("/api/")) {
+      await route.continue();
+      return;
+    }
+    const line = `${request.method()} ${url.pathname}`;
+    if (request.method() === "POST") posts.push(line);
+    if (request.method() === "GET" && url.pathname === "/api/months") {
+      await route.fulfill({ status: 200, json: uiV2Months });
+      return;
+    }
+    if (request.method() === "GET" && url.pathname === "/api/backups") {
+      await route.fulfill({ status: 200, json: [backup] });
+      return;
+    }
+    unexpected.push(line);
+    await route.fulfill({
+      status: 404,
+      json: { error: { code: "synthetic_missing", message: "Missing fixture", details: [] } },
+    });
+  });
+  return { errors, posts, unexpected, backup };
+}
+
 test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", async ({
   page,
 }, testInfo) => {
@@ -182,12 +261,114 @@ test("ui-v2 Data reconciliation: no provider call on mount; preview only on clic
   const evidence = await installDataApi(page);
   await page.goto("/v2/data/reconciliation");
   await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
+    "Сверка только показывает различия и ничего не сохраняет",
+  );
   expect(evidence.posts).toEqual([]);
   await page.getByRole("button", { name: "Проверить снимок" }).click();
   await expect(page.getByTestId("reconciliation-result")).toBeVisible();
+  await expect(page.getByText("eligible_for_apply", { exact: false })).toHaveCount(0);
   expect(evidence.posts).toEqual(["POST /api/months/12/broker-reconciliation-preview"]);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-reconciliation-desktop");
   expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Data reconciliation narrow: owner copy and action stay bounded", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installDataApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/data/reconciliation");
+  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
+    "Данные брокера запрашиваются только после нажатия",
+  );
+  expect(evidence.posts).toEqual([]);
+  await page.getByRole("button", { name: "Проверить снимок" }).click();
+  await expect(page.getByTestId("reconciliation-result")).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-reconciliation-narrow");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Catalogs desktop: accounts, instruments and mappings stay bounded", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installDataApi(page);
+  await page.goto("/v2/data/catalogs");
+  await expect(page.getByRole("heading", { name: "Справочники и сопоставления" })).toBeVisible();
+  await expect(page.getByTestId("catalog-accounts")).toBeVisible();
+  await expect(page.getByText("Синтетический брокерский счёт", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /Инструменты/ }).click();
+  await expect(page.getByText("Синтетическая акция", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("catalog-mapping-identity-10")).toContainText("SYNTHETIC-UID-001");
+  await page.getByRole("tab", { name: /Постоянные сопоставления/ }).click();
+  await expect(page.getByText("SYNTHETIC-ACCOUNT-001", { exact: true })).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-catalogs-desktop");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Catalogs narrow: catalog controls remain operable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installDataApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/data/catalogs");
+  await expect(page.getByTestId("catalog-accounts")).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-catalogs-narrow");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Files desktop: exports and irreversible restore remain separated", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installFilesApi(page);
+  await page.goto("/v2/data/files");
+  await expect(page.getByRole("heading", { name: "Файлы" })).toBeVisible();
+  await expect(page.getByTestId("files-exports")).toBeVisible();
+  await expect(page.getByTestId("files-backups")).toBeVisible();
+  await expect(page.getByText("Необратимо")).toBeVisible();
+  await expect(page.getByText(evidence.backup.name)).toBeVisible();
+  await expect(
+    page.getByText("Дополнительные / технические выгрузки").locator(".."),
+  ).not.toHaveAttribute("open");
+
+  await page
+    .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
+    .click();
+  await expect(page.getByRole("alertdialog")).toContainText(
+    `Выбрана копия: ${evidence.backup.name}`,
+  );
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-desktop");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Files narrow: mutation gate and backup cards stay operable", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  const evidence = await installFilesApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/data/files");
+  await expect(page.getByTestId("files-exports")).toBeVisible();
+  await expect(page.getByTestId("files-backups")).toBeVisible();
+  await page
+    .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
+    .click();
+  await expect(page.getByRole("alertdialog")).toContainText("Это необратимое действие");
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-narrow");
+  expect(evidence.posts).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

@@ -184,9 +184,9 @@ describe("FinalMonthReview", () => {
     expect(screen.getByText("Следующий месяц · доход").parentElement).toHaveTextContent(
       /5\s000\s₽/,
     );
-    expect(screen.getByText("Следующий месяц · погашение").parentElement).toHaveTextContent(
-      /20\s000\s₽/,
-    );
+    expect(
+      screen.getByText("Следующий месяц · возврат основной суммы").parentElement,
+    ).toHaveTextContent(/20\s000\s₽/);
     expect(screen.getAllByText("Не заполнено · не блокирует закрытие").length).toBeGreaterThan(0);
   });
 

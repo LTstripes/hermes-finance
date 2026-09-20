@@ -161,6 +161,9 @@ describe("UI v2 Data reconciliation", () => {
     const { mount, posts } = setup();
     mount();
     expect(await screen.findByTestId("reconciliation-idle")).toBeTruthy();
+    expect(screen.getByTestId("reconciliation-safety-note")).toHaveTextContent(
+      "Сверка только показывает различия и ничего не сохраняет",
+    );
     expect(screen.getByRole("heading", { name: /Сверка ещё не запрашивалась/ })).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByTestId("data-month-context")).toHaveTextContent("Август"),
@@ -176,8 +179,26 @@ describe("UI v2 Data reconciliation", () => {
     await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
     expect(await screen.findByTestId("reconciliation-result")).toBeTruthy();
     expect(posts).toEqual(["POST /api/months/12/broker-reconciliation-preview"]);
-    expect(screen.getAllByText(/Только чтение/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("reconciliation-safety-note")).toHaveTextContent(
+      "Данные брокера запрашиваются только после нажатия",
+    );
+    expect(screen.queryByText(/eligible_for_apply|read_only|comparison_only_fields/i)).toBeNull();
+    expect(screen.getByTestId("reconciliation-rows")).toHaveTextContent("Сравнение позиций");
     expect(screen.getByTestId("reconciliation-rows")).toHaveTextContent("Совпадает");
+  });
+
+  it("translates reconciliation reasons for the owner view", async () => {
+    const user = userEvent.setup();
+    const { mount, state } = setup();
+    state.preview = result({
+      rows: [row("unresolved", { reason: "mapping_unresolved" })],
+    });
+    mount();
+    await user.click(await screen.findByRole("button", { name: "Проверить снимок" }));
+    const rows = await screen.findByTestId("reconciliation-rows");
+    expect(rows).toHaveTextContent("Сопоставление не подтверждено.");
+    expect(rows).toHaveTextContent("Сверка остановлена: позиция не подтверждена.");
+    expect(rows).not.toHaveTextContent("mapping_unresolved");
   });
 
   it("fail-closes on invalid month and does not POST", async () => {
@@ -237,7 +258,9 @@ describe("UI v2 Data reconciliation", () => {
   it("ignores stale in-flight completion after the selected month changes", async () => {
     const user = userEvent.setup();
     const client = createQueryClient();
-    let releasePreview: ((value: Response) => void) | null = null;
+    let releasePreview: (value: Response) => void = () => {
+      throw new Error("Preview gate was not initialized");
+    };
     const previewGate = new Promise<Response>((resolve) => {
       releasePreview = resolve;
     });
@@ -296,7 +319,7 @@ describe("UI v2 Data reconciliation", () => {
     await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "91");
     await waitFor(() => expect(screen.getByTestId("data-month-context")).toHaveTextContent("Июль"));
     expect(screen.getByTestId("reconciliation-idle")).toBeTruthy();
-    releasePreview!(
+    releasePreview(
       new Response(JSON.stringify(result({ reporting_month_id: 12 })), {
         status: 200,
         headers: { "Content-Type": "application/json" },

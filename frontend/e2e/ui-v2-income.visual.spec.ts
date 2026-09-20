@@ -269,11 +269,33 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect(page.getByTestId("income-forecast")).toContainText("21 000 ₽");
   await expect(page.getByTestId("income-upcoming-passive")).toHaveText("8 500 ₽");
   await expect(
-    page.getByText("Возврат principal: 100 000 ₽", { exact: false }).first(),
+    page.getByText("Возврат основной суммы: 100 000 ₽", { exact: false }).first(),
   ).toBeVisible();
   await expect(page.getByTestId("income-history-panel")).toContainText("Купоны");
   await expect(page.getByTestId("income-goals-panel")).toContainText("Нет прогноза срока");
   await expect(page.getByTestId("income-plan-panel")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toHaveAttribute(
+    "aria-controls",
+    "income-ladder-content",
+  );
+  await expect(
+    page
+      .getByTestId("income-window-30")
+      .getByTestId("income-event-provider-701")
+      .locator(":scope > *"),
+  ).toHaveCount(3);
+  expect(
+    await page
+      .locator('[data-testid$="-panel"]')
+      .evaluateAll((panels) => panels.map((panel) => panel.getAttribute("data-testid"))),
+  ).toEqual([
+    "income-history-panel",
+    "income-forecast-panel",
+    "income-goals-panel",
+    "income-plan-panel",
+    "income-ladder-panel",
+    "income-handoffs-panel",
+  ]);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-income-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
@@ -295,6 +317,10 @@ test("ui-v2 Income and plans narrow: secondary plan handoffs collapse and no pag
   await expect(page.getByTestId("income-plan-panel").locator("details")).not.toHaveAttribute(
     "open",
   );
+  await expect(
+    page.getByTestId("income-window-30").getByTestId("income-event-provider-701"),
+  ).toBeVisible();
+  await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toBeVisible();
   await expect(page.getByTestId("income-handoffs-panel").locator("details")).not.toHaveAttribute(
     "open",
   );
