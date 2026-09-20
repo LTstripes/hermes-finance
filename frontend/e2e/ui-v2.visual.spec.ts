@@ -214,7 +214,7 @@ test("ui-v2 Home interactions: history windows and v1 escape preserve semantics"
   await page.getByRole("button", { name: "3 месяца" }).click();
   await expect(page.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Вернуться к текущему интерфейсу →" }),
+    page.getByRole("link", { name: /UI v1/ }),
   ).toHaveAttribute("href", "/months/12/close#actual_payouts");
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
@@ -689,7 +689,7 @@ test("ui-v2 Capital interactions: filters, windows and the v1 escape preserve se
   await page.getByTestId("capital-bucket-account:1").click();
   await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Вернуться к текущему интерфейсу →" }),
+    page.getByRole("link", { name: /UI v1/ }),
   ).toHaveAttribute("href", `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`);
   await expect(page.getByRole("link", { name: "Мои финансы", exact: true })).toHaveAttribute(
     "href",

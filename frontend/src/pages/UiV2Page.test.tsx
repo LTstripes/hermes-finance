@@ -340,10 +340,7 @@ it("preserves a valid legacy month/step only in the explicit v1 escape", async (
   const { mount } = setup("/v2?month=12&step=actual_payouts");
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
-    "href",
-    "/months/12/close#actual_payouts",
-  );
+  expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/months/12/close#actual_payouts");
   expect(screen.getByTestId("test-location")).toHaveTextContent("/v2?month=12&step=actual_payouts");
 });
 
