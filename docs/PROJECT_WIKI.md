@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-18**.
+> Last synchronized: **2026-09-20**.
 
 ## 1. Что мы строим
 
@@ -66,15 +66,15 @@ Known non-blocking metadata follow-up: #410 corrects the GitHub Release descript
 
 ### Canonical development main
 
-Current canonical development `main` after the post-release closeout is:
+Current canonical development `main`:
 
-`814650806be5cb64aefffee15fccf7d5e1d364ec`
+`424ba7bf018c8e4ac01cfda825af7394a3068267`
 
-Exact-main CI #702 / run `35238258485`: **SUCCESS** (attempt 2; attempt 1 failed only on hosted-runner `setup-uv` network timeout before tests).
+Exact-main CI #838 / run `35517935019`: **SUCCESS**.
 
-The immutable released code remains `c90a842...`; post-release `main` may advance without changing the published tag. Product/runtime changes after `v0.9.0` require normal task/review/CI gates and do not retroactively alter the release.
+This commit is the merge of the final owner-UAT-PASS UI v2 completion aggregate. The immutable released code remains `c90a842...`; post-release `main` may advance without changing the published `v0.9.0` tag.
 
-## 4. Неподвижные продуктовые и privacy-инварианты
+## 4. Неподвижные продуктовые и privacy-инварианты## 4. Неподвижные продуктовые и privacy-инварианты
 
 - Windows-first, single-user, local-only.
 - Production слушает только `127.0.0.1:8000`.
@@ -344,51 +344,62 @@ Permanent control endpoint: #124.
 
 Publication не равна Stable installation/update: release создаёт immutable published tag/release; local Stable меняется только отдельным OPS02 owner action.
 
-## 10. UI v2 — owner-UAT milestone integrated
+## 10. UI v2 — complete opt-in product integrated
 
-UI v2 tracked через #387 и children. Первый цельный owner-facing milestone теперь принят не по отдельным synthetic страницам, а одним общим exact-SHA UAT на изолированном Preview с копией реальных owner data.
+UI v2 is tracked through #387. The full opt-in owner-facing product is now accepted as one exact aggregate, not merely as a collection of synthetic pages.
 
-Owner-UAT aggregate:
+Final completion evidence:
 
-- exact candidate: `fa8db7f0b22857499a6b05432caa1cd0a24131ef`;
-- PR #441;
+- exact Owner-UAT candidate: `edd6a32d94ba322badaea1cab804c4e5cc13574d`;
+- aggregate PR: #455;
 - owner verdict: **PASS**;
-- canonical integration commit: `3bd0cd742672955538a70d895ddba3ff654f9434`.
+- canonical integration: `424ba7bf018c8e4ac01cfda825af7394a3068267`;
+- exact-main CI #838 / run `35517935019`: **SUCCESS**.
 
-В canonical opt-in UI v2 теперь вместе работают:
+Completed native surface:
 
 - Home = «Мои финансы»;
 - Capital;
 - «Доход и планы»;
 - contextual Reports/history;
-- native Monthly Close поверх server-owned workflow;
-- «Данные и приложение» shell с freshness/provenance и explicit read-only reconciliation.
+- native Monthly Close over the server-owned workflow;
+- complete «Данные и приложение»:
+  - sources/freshness/provenance;
+  - explicit read-only reconciliation;
+  - catalogs/mappings;
+  - exports and local backup/restore;
+  - settings, tax brackets and runtime diagnostics;
+- global «Наверх» for long v2 pages;
+- final owner-facing Russian copy/terminology pass;
+- accepted Expected payouts hierarchy, Reports archive spacing and Reconciliation copy polish.
 
-History/Reports и Monthly Close не становятся постоянными sidebar-разделами. v1 остаётся default/rollback path до отдельного controlled cutover.
+S13 umbrella #429 and children #432–#434 are closed. Owner-UAT polish #444–#448 is closed.
 
-Во время общего UAT выявлены только non-blocking polish items (#444–#448): кнопка «Наверх», языковая/терминологическая чистка, hierarchy/alignment Expected payouts, spacing Reports archive и упрощение copy в Reconciliation.
+Backup/restore #433 received an independent safety review before acceptance. The accepted contract includes exact-target confirmation, success-only pre-restore evidence, safe QueryClient refresh after successful or ambiguous restore outcomes, fail-safe ambiguous transport/body handling, focus containment and mutual mutation guards.
 
-Интеграционный урок этого milestone закреплён в `AGENTS.md` через PR #443: parallel slices с общим application spine должны собираться в milestone staging branch постепенно после каждого ACCEPT, а owner UAT должен проверять один exact aggregate tree.
+History/Reports and Monthly Close remain contextual. v1 remains the default/rollback surface until #430.
 
-## 11. Что идёт дальше
+The milestone reinforced the staged-integration rule now recorded in `AGENTS.md`: accepted sibling heads are integrated incrementally into one milestone staging line, shared App/Entry/Shell/navigation reconciliation is Integrator-owned, and Owner UAT validates one exact aggregate tree that is not reconstructed afterward.
+
+Closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
+
+## 11. Что идёт дальше## 11. Что идёт дальше
 
 ### UI / product
 
-Главный активный product stream — UI v2 (#387 и children).
+UI v2 implementation/completion is finished on canonical `main`.
 
-Ближайший функциональный порядок:
+The next and only remaining core gate is #430:
 
-1. #432 — native catalogs + persistent mappings;
-2. #433 — exports + safety-gated local backup/restore;
-3. #434 — app settings + tax brackets + runtime diagnostics;
-4. #444–#448 — owner-UAT polish backlog, можно выполнять параллельно там, где scopes независимы;
-5. final comparative owner UAT;
-6. controlled v2 default switch;
-7. retirement v1 — только отдельное решение после cutover.
+1. comparative read-only v1/v2 audit;
+2. owner checklist and blocker-only findings;
+3. bounded root/default-switch candidate if the audit is clean;
+4. exact-SHA Owner Preview/UAT;
+5. controlled merge only after explicit Owner PASS.
 
-Для следующей parallel серии использовать ранний `integration/*` staging branch и Integrator-owned reconciliation общих `App/Entry/Shell/navigation` spine-файлов, а не откладывать все sibling conflicts на финальный aggregate.
+The switch must preserve v1 as an obvious rollback/legacy route. V1 retirement remains a separate decision after cutover.
 
-`1.0.0` разумно рассматривать как будущую большую отсечку только когда новый primary owner UX станет цельным и production lifecycle останется доказанным.
+`1.0.0` is reasonable only after this controlled default switch is accepted and the proven production lifecycle remains intact.
 
 ### Runtime
 
@@ -438,12 +449,11 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #387 and children — UI v2; core owner-UAT milestone integrated, #432–#434 and polish #444–#448 remain open;
-- #410 — non-blocking v0.9.0 Release-description / changelog / execution-history cleanup.
+- #387 — UI v2 roadmap; implementation is complete, only #430 controlled default-switch gate remains open.
 
-#313 is completed after real owner OPS03 + OPS02 + production Start acceptance.
+#313, #410 and #429 are completed.
 
-## 14. Canonical reference documents
+## 14. Canonical reference documents## 14. Canonical reference documents
 
 - `AGENTS.md`
 - `docs/MASTER_SPEC.md`
