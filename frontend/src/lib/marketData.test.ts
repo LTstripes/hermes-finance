@@ -137,7 +137,7 @@ describe("marketData helpers", () => {
         provider_instrument_id: "opaque-security-id",
         provider_venue_id: null,
       }),
-    ).toBe("Внешний источник · opaque-security-id");
+    ).toBe("Другой источник (synthetic_provider) · opaque-security-id");
   });
 
   it("converts the MOEX form draft through one helper before save", () => {
