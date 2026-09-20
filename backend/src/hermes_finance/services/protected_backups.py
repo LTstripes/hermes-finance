@@ -949,10 +949,12 @@ def _mark_deletion_target(target: _DeletionTarget) -> None:
         ):
             _win_raise("SetFileInformationByHandle")
         return
-    libc = ctypes.CDLL(None, use_errno=True)
-    libc.unlinkat.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    libc.unlinkat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
     libc.unlinkat.restype = ctypes.c_int
-    if libc.unlinkat(target.handle, b"", _AT_EMPTY_PATH) != 0:
+    empty_name = ctypes.create_string_buffer(b"")
+    ctypes.set_errno(0)
+    if libc.unlinkat(int(target.handle), ctypes.addressof(empty_name), _AT_EMPTY_PATH) != 0:
         raise OSError(ctypes.get_errno(), "unlinkat")
 
 
