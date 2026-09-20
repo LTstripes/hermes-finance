@@ -34,6 +34,11 @@ FORMAT_VERSION = 1
 DESTINATION_ALIAS = "protected-destination"
 MANAGED_FILENAME_PREFIX = "hermes_recovery_"
 MANAGED_FILENAME_SUFFIX = ".hermes-recovery"
+VERIFIED_RETENTION_LIMIT = 12
+RETENTION_COMPLETED = "completed"
+RETENTION_FAILED = "failed"
+RETENTION_NOT_RUN = "not_run"
+RETENTION_ACTION_REQUIRED = "protected recovery-point retention was not completed"
 _MANAGED_FILENAME_RE = re.compile(
     rf"^{re.escape(MANAGED_FILENAME_PREFIX)}"
     rf"(?P<timestamp>\d{{8}}T\d{{12}}Z)"
@@ -66,6 +71,7 @@ class ProtectedBackupResult:
     created_at: datetime | None
     size_bytes: int | None
     read_back: str
+    retention: str
     action_required: str | None
 
     def as_dict(self) -> dict[str, Any]:
@@ -85,6 +91,7 @@ class ProtectedBackupResult:
             ),
             "size_bytes": self.size_bytes,
             "read_back": self.read_back,
+            "retention": self.retention,
             "action_required": self.action_required,
         }
 
@@ -547,6 +554,100 @@ def is_managed_recovery_name(name: str) -> bool:
     return _MANAGED_FILENAME_RE.fullmatch(name) is not None
 
 
+def _managed_recency_key(name: str) -> tuple[str, int, str, str] | None:
+    """Return a deterministic newest-last sort key for an exact managed name."""
+
+    match = _MANAGED_FILENAME_RE.fullmatch(name)
+    if match is None:
+        return None
+    sequence = match.group("sequence")
+    return (
+        match.group("timestamp"),
+        int(sequence) if sequence is not None else 0,
+        match.group("digest"),
+        name,
+    )
+
+
+def _destination_listing(destination: Path) -> list[str]:
+    try:
+        names = os.listdir(destination)
+    except OSError as error:
+        raise ProtectedBackupError("destination listing is unavailable") from error
+    names.sort()
+    return names
+
+
+def _is_regular_managed_file(path: Path) -> bool:
+    if not is_managed_recovery_name(path.name):
+        return False
+    try:
+        if _is_reparse(path) or path.is_symlink() or not path.is_file():
+            return False
+    except (OSError, ProtectedBackupError):
+        return False
+    return True
+
+
+def _verified_managed_recovery_points(destination: Path) -> list[Path]:
+    """Return verified managed artifacts only, oldest first."""
+
+    verified: list[tuple[tuple[str, int, str, str], Path]] = []
+    for name in _destination_listing(destination):
+        path = destination / name
+        key = _managed_recency_key(name)
+        if key is None or not _is_regular_managed_file(path):
+            continue
+        try:
+            _verify_artifact(path)
+        except (OSError, ProtectedBackupError):
+            continue
+        verified.append((key, path))
+    verified.sort(key=lambda item: item[0])
+    return [path for _key, path in verified]
+
+
+def _unlink_verified_recovery_point(path: Path) -> None:
+    """Delete one already-eligible managed recovery point only."""
+
+    if not is_managed_recovery_name(path.name):
+        raise ProtectedBackupError("retention refused a non-managed name")
+    try:
+        _verify_artifact(path)
+    except (OSError, ProtectedBackupError) as error:
+        raise ProtectedBackupError("retention refused an unverified artifact") from error
+    path.unlink()
+
+
+def _retain_verified_recovery_points(
+    destination: Path, *, preserve: Path
+) -> tuple[str, str | None]:
+    """Keep the newest 12 verified managed points; never invalidate `preserve`."""
+
+    try:
+        preserve_key = _path_key(preserve)
+        verified = _verified_managed_recovery_points(destination)
+        newest_first = list(reversed(verified))
+        keep_keys = {_path_key(path) for path in newest_first[:VERIFIED_RETENTION_LIMIT]}
+        keep_keys.add(preserve_key)
+        failures = False
+        for path in verified:
+            if _path_key(path) in keep_keys:
+                continue
+            try:
+                _unlink_verified_recovery_point(path)
+            except ProtectedBackupError:
+                continue
+            except OSError:
+                failures = True
+        if failures:
+            return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
+        return RETENTION_COMPLETED, None
+    except Exception:
+        # A verified replacement must stay valid even if cleanup cannot finish.
+        return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
+
+
 def publish_recovery_point(
     database: Database,
     destination: Path,
@@ -568,6 +669,8 @@ def publish_recovery_point(
     with database.maintenance.operation():
         with _DestinationLock(validated_destination):
             snapshot = _snapshot(database, validated_destination)
+            final: Path | None = None
+            size_bytes: int | None = None
             try:
                 revisions = _source_revisions(snapshot, checkout)
                 snapshot_hash, snapshot_size = _snapshot_identity(snapshot)
@@ -621,23 +724,30 @@ def publish_recovery_point(
                         raise ProtectedBackupError("managed artifact manifest changed on read-back")
                 if read_manifest.get("artifact_size_bytes") != size_bytes:
                     raise ProtectedBackupError("managed artifact size changed on read-back")
-                return ProtectedBackupResult(
-                    status="published",
-                    created=True,
-                    verified=True,
-                    published=True,
-                    destination_alias=DESTINATION_ALIAS,
-                    protection_state=PROTECTION_STATE,
-                    protection_mode=PROTECTION_MODE,
-                    format_version=FORMAT_VERSION,
-                    created_at=created_at,
-                    size_bytes=size_bytes,
-                    read_back="verified",
-                    action_required=None,
-                )
             except (OSError, ProtectedBackupError) as error:
-                if "final" in locals() and final.exists():
+                if final is not None and final.exists():
                     final.unlink(missing_ok=True)
                 raise ProtectedBackupError("recovery-point publication failed") from error
             finally:
                 snapshot.unlink(missing_ok=True)
+
+            if final is None or size_bytes is None:
+                raise ProtectedBackupError("recovery-point publication failed")
+            retention, retention_action = _retain_verified_recovery_points(
+                validated_destination, preserve=final
+            )
+            return ProtectedBackupResult(
+                status="published",
+                created=True,
+                verified=True,
+                published=True,
+                destination_alias=DESTINATION_ALIAS,
+                protection_state=PROTECTION_STATE,
+                protection_mode=PROTECTION_MODE,
+                format_version=FORMAT_VERSION,
+                created_at=created_at,
+                size_bytes=size_bytes,
+                read_back="verified",
+                retention=retention,
+                action_required=retention_action,
+            )

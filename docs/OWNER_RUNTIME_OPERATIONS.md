@@ -272,8 +272,12 @@ folder is not protected merely because it synchronizes. Hermes proves local
 publication and read-back, not cloud delivery.
 
 The managed publisher is an explicit Owner command; it does not perform cloud
-delivery, retention deletion, restore, or disaster-recovery rehearsal. Do not
-improvise a raw database copy or archive operation.
+delivery, restore, or disaster-recovery rehearsal. After a replacement is
+fully published and destination-read-back verified, it retains the newest 12
+verified managed recovery points and never deletes unknown, partial, corrupt,
+or foreign files. A retention failure is reported separately and does not
+invalidate the newly verified point. Do not improvise a raw database copy or
+archive operation.
 
 ### Owner preconditions
 
@@ -313,10 +317,11 @@ uv run --project backend --locked hermes-finance-protected-backup `
 ```
 
 The command emits only privacy-safe machine-readable `created`, `verified`,
-`published`, `read_back`, and `action_required` state plus destination alias,
-format/protection identity, artifact size, and creation time. A
-successful `published=true` result requires final read-back verification. The
-command does not accept caller-supplied producer SHA or Alembic revisions;
+`published`, `read_back`, `retention`, and `action_required` state plus
+destination alias, format/protection identity, artifact size, and creation
+time. A successful `published=true` result requires final read-back
+verification. Retention runs only after that verified replacement exists.
+The command does not accept caller-supplied producer SHA or Alembic revisions;
 those are derived from the executing Hermes checkout and consistent snapshot.
 The optional `--checkout` value is only an identity guard and must resolve to
 that same executing checkout; it cannot select a different producer identity.
