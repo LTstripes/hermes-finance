@@ -1,6 +1,7 @@
 /** Shared owner-facing wording for the native UI v2 surfaces. */
 
 export const PRINCIPAL_REPAYMENT_LABEL = "Возврат основной суммы";
+export const UNKNOWN_SOURCE_LABEL = "Источник не распознан";
 
 const EVENT_LABELS: Record<string, string> = {
   coupon: "Купон",
@@ -21,5 +22,5 @@ export function eventLabel(component: string): string {
 }
 
 export function sourceLabel(sourceKind: string): string {
-  return SOURCE_LABELS[sourceKind] ?? "Источник не распознан";
+  return SOURCE_LABELS[sourceKind] ?? UNKNOWN_SOURCE_LABEL;
 }
