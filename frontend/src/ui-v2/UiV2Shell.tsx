@@ -56,7 +56,7 @@ export function UiV2Shell({
             Hermes Finance<small>Личные финансы</small>
           </span>
         </Link>
-        <nav aria-label="Навигация UI v2" className={styles.navigation}>
+        <nav aria-label="Основная навигация" className={styles.navigation}>
           {NATIVE_SECTIONS.map((section) => (
             <Link
               aria-current={active === section.id ? "page" : undefined}
@@ -85,7 +85,7 @@ export function UiV2Shell({
       <div className={styles.workspace}>
         <div className={styles.topbar}>
           <span>
-            UI v2 <span className={styles.previewBadge}>Предварительная версия</span>
+            Новый интерфейс <span className={styles.previewBadge}>Предварительная версия</span>
           </span>
           <Link to={v1ReturnPath}>Вернуться к текущему интерфейсу →</Link>
         </div>

@@ -262,8 +262,8 @@ export function MonthlyCloseStepSummary({
         </Badge>
         <span>
           Выплат сохранено: {selectedCount} · совпадают: {matchingCount} · требуют внимания:{" "}
-          {staleCount} · отменены: {retractedCount}. Это выборочные данные PDF, не полный охват
-          провайдера.
+          {staleCount} · отменены: {retractedCount}. Это выборочные строки из выписки, а не все
+          данные внешнего источника.
         </span>
       </div>
     );
@@ -293,7 +293,7 @@ export function MonthlyCloseStepSummary({
       </Badge>
       <span>
         Выбранных позиций: {selectedCount} · совпадают: {matchingCount} · требуют внимания:{" "}
-        {staleCount}. Это не полное покрытие провайдера.
+        {staleCount}. Показана не вся информация из внешнего источника.
       </span>
     </div>
   );

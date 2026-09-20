@@ -265,7 +265,7 @@ function SettingsPanel() {
 
           <div className={styles.actions}>
             <p className={styles.note}>
-              Без cloud, auth и telemetry. Сохраняются только изменённые поля.
+              Без облака, авторизации и телеметрии. Сохраняются только изменённые поля.
             </p>
             <button className={styles.primaryButton} disabled={!dirty || saving} type="submit">
               {saving ? "Сохраняем…" : "Сохранить настройки"}
@@ -293,7 +293,7 @@ export default function UiV2DataAppPage() {
             <span className={`${dataStyles.modeBadge} ${dataStyles.modeBadgeMutate}`}>
               Изменяет данные
             </span>
-            <span className={styles.note}>Полная шкала сохраняется одной атомарной операцией.</span>
+            <span className={styles.note}>Вся шкала сохраняется одной операцией.</span>
           </div>
           <TaxBracketsPanel />
         </div>

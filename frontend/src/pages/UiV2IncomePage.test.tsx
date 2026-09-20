@@ -291,9 +291,9 @@ describe("UI v2 Income and plans", () => {
     expect(screen.getByTestId("income-forecast")).toHaveTextContent("21 000 ₽");
     expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("8 500 ₽");
     expect(screen.getByTestId("income-upcoming-passive").parentElement).toHaveTextContent(
-      "Возврат principal: 100 000 ₽ · не доход",
+      "Возврат основной суммы: 100 000 ₽ · не доход",
     );
-    expect(screen.getByText("Купоны net")).toBeVisible();
+    expect(screen.getByText("Купоны после удержаний")).toBeVisible();
     expect(screen.getAllByText("Нет прогноза срока")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Доход и планы" })).toHaveAttribute(
       "aria-current",
@@ -328,11 +328,11 @@ describe("UI v2 Income and plans", () => {
     expect(coupon.children).toHaveLength(3);
     expect(coupon.children[0]).toHaveTextContent("Купон");
     expect(coupon.children[1]).toHaveTextContent("Синтетическая облигация");
-    expect(coupon.children[1]).toHaveTextContent("провайдер");
+    expect(coupon.children[1]).toHaveTextContent("внешний источник");
     expect(coupon.children[2]).toHaveTextContent("8 500 ₽");
 
     const principal = within(selectedWindow).getByTestId("income-event-provider-702");
-    expect(principal).toHaveTextContent("Возврат principal");
+    expect(principal).toHaveTextContent("Возврат основной суммы");
     expect(principal.children[2]).toHaveTextContent("100 000 ₽ · не доход");
   });
 

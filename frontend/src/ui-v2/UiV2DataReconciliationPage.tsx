@@ -132,7 +132,7 @@ export default function UiV2DataReconciliationPage() {
   } else if (resolution.kind === "invalid") {
     content = (
       <UiV2Notice title="Некорректный параметр месяца">
-        Явный <code>?month=</code> должен быть одним положительным целым ID. Сверка не запускается и
+        Выбор месяца должен содержать один положительный идентификатор. Сверка не запускается и
         числа не подставляются.
       </UiV2Notice>
     );

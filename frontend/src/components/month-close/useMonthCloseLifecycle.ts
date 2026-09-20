@@ -15,10 +15,10 @@ function assertLifecycleWorkflowIdentity(
   expectedMonthId: number,
 ): MonthCloseWorkflow {
   if (workflow.contract_version !== WORKFLOW_CONTRACT_VERSION) {
-    throw new Error("Сервер вернул несовместимую версию Monthly Close. Действие отменено.");
+    throw new Error("Состояние закрытия имеет неподдерживаемую версию. Действие отменено.");
   }
   if (workflow.month.id !== expectedMonthId) {
-    throw new Error("Сервер вернул состояние другого месяца. Действие отменено.");
+    throw new Error("Получено состояние другого месяца. Действие отменено.");
   }
   return workflow;
 }
@@ -29,10 +29,10 @@ function assertPersistedMonthIdentity(
   expectedStatus: ReportingMonthStatus,
 ) {
   if (persisted.id !== expectedMonthId) {
-    throw new Error("Сервер подтвердил изменение для другого месяца. Новое состояние не доказано.");
+    throw new Error("Изменение подтверждено для другого месяца. Новое состояние не доказано.");
   }
   if (persisted.status !== expectedStatus) {
-    throw new Error("Сервер не подтвердил новое состояние месяца.");
+    throw new Error("Новое состояние месяца не подтверждено.");
   }
 }
 
@@ -132,7 +132,7 @@ export function useMonthCloseLifecycle(monthId: number | null) {
       });
       const refreshed = await refetchAuthoritativeWorkflow();
       if (refreshed.month.status !== expectedStatus) {
-        throw new Error("Актуальное состояние месяца не совпало с ответом сервера.");
+        throw new Error("Актуальное состояние месяца не совпало с полученными данными.");
       }
       setPendingLifecycle(null);
     } catch (error) {

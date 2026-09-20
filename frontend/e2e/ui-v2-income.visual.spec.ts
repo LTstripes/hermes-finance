@@ -269,7 +269,7 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect(page.getByTestId("income-forecast")).toContainText("21 000 ₽");
   await expect(page.getByTestId("income-upcoming-passive")).toHaveText("8 500 ₽");
   await expect(
-    page.getByText("Возврат principal: 100 000 ₽", { exact: false }).first(),
+    page.getByText("Возврат основной суммы: 100 000 ₽", { exact: false }).first(),
   ).toBeVisible();
   await expect(page.getByTestId("income-history-panel")).toContainText("Купоны");
   await expect(page.getByTestId("income-goals-panel")).toContainText("Нет прогноза срока");

@@ -42,7 +42,7 @@ describe("MonthlyCloseStepSummary actual payouts", () => {
       screen.getByText(/Выплат сохранено: 3 · совпадают: 2 · требуют внимания: 1 · отменены: 0/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/выборочные данные PDF, не полный охват провайдера/),
+      screen.getByText(/выборочные строки из выписки, а не все данные внешнего источника/),
     ).toBeInTheDocument();
   });
 

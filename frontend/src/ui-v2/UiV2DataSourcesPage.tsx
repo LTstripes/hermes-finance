@@ -79,7 +79,7 @@ export default function UiV2DataSourcesPage() {
   } else if (resolution.kind === "invalid") {
     content = (
       <UiV2Notice title="Некорректный параметр месяца">
-        Явный <code>?month=</code> должен быть одним положительным целым ID. Числа не показаны — без
+        Выбор месяца должен содержать один положительный идентификатор. Числа не показаны — без
         тихой подмены.
       </UiV2Notice>
     );
@@ -107,7 +107,7 @@ export default function UiV2DataSourcesPage() {
         <div className={dataStyles.badgeRow}>
           <span className={dataStyles.readOnlyBadge}>Только чтение</span>
           <span className={dataStyles.muted}>
-            Без запроса к провайдеру · без универсальной оценки актуальности
+            Без обращения к внешнему источнику · без универсальной оценки актуальности
           </span>
         </div>
         <MonthToolbar months={months} onSelect={selectMonth} selected={month} />
@@ -117,11 +117,12 @@ export default function UiV2DataSourcesPage() {
               title="Не удалось загрузить актуальность"
               retry={() => void freshnessQuery.refetch()}
             >
-              Семьи источников скрыты, пока DTO не подтверждён для выбранного месяца.
+              Группы источников скрыты, пока данные выбранного месяца не подтверждены.
             </UiV2Notice>
           ) : isQueryReady(freshnessQuery) && freshnessQuery.data != null && !summaryIdentityOk ? (
             <UiV2Notice title="Ответ не соответствует выбранному месяцу">
-              Показатели скрыты: DTO относится к другому отчётному месяцу. Без тихой подмены.
+              Показатели скрыты: полученные данные относятся к другому отчётному месяцу. Без тихой
+              подмены.
             </UiV2Notice>
           ) : (
             <UiV2Loading label="Читаем сохранённую актуальность и происхождение…" />
@@ -138,7 +139,8 @@ export default function UiV2DataSourcesPage() {
           retry={() => void capabilitiesQuery.refetch()}
         />
         <p className={dataStyles.muted} style={{ marginTop: 14 }}>
-          Импорт и apply выполняются только в закрытии месяца. Здесь — состояние и handoff.{" "}
+          Импорт и применение выполняются только при закрытии месяца. Здесь показано состояние
+          данных; изменения выполняются в закрытии.{" "}
           <Link
             to={monthlyCloseReturnPath({
               monthId: month.id,

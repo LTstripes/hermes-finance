@@ -1,15 +1,8 @@
 import type { NextMonthOutlook as NextMonthOutlookModel } from "../../api/monthCloseWorkflow";
 import type { CashFlowLadderEvent, MoneyValue, UpcomingEventsWindow } from "../../api/types";
 import { formatDate, formatMoney, formatMonth } from "../../lib/format";
+import { eventLabel as ownerEventLabel, PRINCIPAL_REPAYMENT_LABEL } from "../../ui-v2/uiV2Copy";
 import { DataValue, Panel } from "../ui";
-
-const COMPONENT_LABELS: Record<string, string> = {
-  coupon: "Купон",
-  dividend: "Дивиденд",
-  deposit_interest: "Проценты по вкладу",
-  other_capital_income: "Прочий доход",
-  redemption_principal: "Погашение",
-};
 
 function money(value: MoneyValue | null | undefined, fallback = "Недоступно"): string {
   if (!value) return fallback;
@@ -17,7 +10,19 @@ function money(value: MoneyValue | null | undefined, fallback = "Недосту�
 }
 
 function eventLabel(event: CashFlowLadderEvent): string {
-  return `${formatDate(event.expected_date)} · ${COMPONENT_LABELS[event.component] ?? event.component} · ${event.instrument_name ?? event.account_name}`;
+  return `${formatDate(event.expected_date)} · ${ownerEventLabel(event.component)} · ${event.instrument_name ?? event.account_name}`;
+}
+
+const OUTLOOK_UNAVAILABLE_LABELS: Record<string, string> = {
+  outlook_not_available_until_closed:
+    "Данные следующего месяца появятся после закрытия текущего отчёта.",
+  outlook_section_unavailable:
+    "Для следующего месяца пока недостаточно подтверждённых датированных данных.",
+};
+
+function unavailableReason(reasonCode: string | null): string {
+  if (!reasonCode) return "Причина недоступности не указана.";
+  return OUTLOOK_UNAVAILABLE_LABELS[reasonCode] ?? "Причина недоступности не распознана.";
 }
 
 function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
@@ -30,7 +35,7 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
       </div>
       <p className="muted tiny">
         {formatDate(window.from_date)} — до {formatDate(window.to_date)} · пассивный доход{" "}
-        {hasKnownEvents ? money(window.passive_income) : "неизвестен"} · погашение{" "}
+        {hasKnownEvents ? money(window.passive_income) : "неизвестен"} · возврат основной суммы{" "}
         {hasKnownEvents ? money(window.redemption_principal) : "неизвестно"}
       </p>
       {hasKnownEvents ? (
@@ -55,9 +60,7 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
   if (!outlook.available) {
     return (
       <Panel label="После закрытия" title="Следующий месяц">
-        <p className="muted">
-          Данные пока недоступны: {outlook.reason_code ?? "причина не указана"}.
-        </p>
+        <p className="muted">{unavailableReason(outlook.reason_code)}</p>
       </Panel>
     );
   }
@@ -86,7 +89,7 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
           value={hasKnownNextMonthEvents ? money(nextMonth?.passive_income) : noKnownEvents}
         />
         <DataValue
-          label="Погашение · возврат капитала"
+          label={PRINCIPAL_REPAYMENT_LABEL}
           value={hasKnownNextMonthEvents ? money(nextMonth?.redemption_principal) : noKnownEvents}
         />
         <DataValue
@@ -115,8 +118,8 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
         <p className="muted">В следующем месяце нет известных событий.</p>
       )}
       <p className="muted final-review__disclosure">
-        Погашение — возврат капитала, а не пассивный доход. Нулевое значение не подменяет отсутствие
-        известных событий.
+        Возврат основной суммы — это возврат капитала, а не пассивный доход. Нулевое значение не
+        подменяет отсутствие известных событий.
       </p>
       <details className="field-details">
         <summary>Показать ближайшие окна</summary>
