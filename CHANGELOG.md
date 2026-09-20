@@ -42,6 +42,7 @@ Development `main` after the published Stable `v0.9.0`.
 - shared owner-facing UI v2 terminology/copy glossary and final cross-surface copy pass (#445);
 - bounded `income-plan-summary` read model so planning/forecast/coverage/cash context is independent from salary-tax/IIS availability (#439);
 - staged-integration process for parallel slices that share application-spine files (#443).
+- #459 protected recovery-point publisher for an explicitly attested `external_encrypted_destination_v1` filesystem destination, with staged verification before final exposure, destination read-back, producer/schema identity and privacy-safe CLI failures; no cloud API/OAuth/key validation/Owner-live run.
 
 ### Changed
 
@@ -54,7 +55,8 @@ Development `main` after the published Stable `v0.9.0`.
 
 - #430 final comparative v1/v2 audit, exact-SHA owner UAT and controlled default-switch candidate;
 - v1 remains the default/rollback path until that gate passes;
-- v1 retirement is a separate later decision.
+- v1 retirement is a separate later decision;
+- durability follow-ups #460 retention, #461 isolated DR rehearsal and #462 post-restore month-state reload remain open; real protected off-device use is Owner-controlled.
 
 ## [0.8.2] — 2026-09-05
 
