@@ -56,7 +56,7 @@ Development `main` after the published Stable `v0.9.0`.
 - v1 remains the default/rollback path until that gate passes;
 - v1 retirement is a separate later decision.
 
-## [0.8.2]## [0.8.2] — 2026-09-05
+## [0.8.2] — 2026-09-05
 
 Published maintenance release after Stable `v0.8.1`. This entry documents
 already integrated changes and does not add product behavior, financial
