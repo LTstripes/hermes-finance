@@ -31,6 +31,8 @@ test("switches between v2 default and explicit v1 without passive writes", async
 
   await page.getByRole("link", { name: /UI v1/ }).first().click();
   await expect(page).toHaveURL(/\/v1$/);
+  await page.reload();
+  await expect(page).toHaveURL(/\/v1$/);
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Дашборд", exact: true })).toHaveAttribute(
     "href",
