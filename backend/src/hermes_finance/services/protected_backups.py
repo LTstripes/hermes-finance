@@ -947,29 +947,30 @@ def _linux_unlinkat_empty(fd: int) -> None:
     """Unlink the inode referred to by fd, not a pathname."""
 
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    empty_name = ctypes.create_string_buffer(1)
-    path_ptr = ctypes.addressof(empty_name)
+    empty_name = ctypes.create_string_buffer(b"\0")
+    empty_ptr = ctypes.cast(empty_name, ctypes.c_char_p)
+    last_errno = 0
 
-    def _zero_errno_call(func: object, *args: object) -> bool:
+    def _try_call(func: object, *args: object) -> bool:
+        nonlocal last_errno
         ctypes.set_errno(0)
-        return int(func(*args)) == 0
+        result = int(func(*args))
+        last_errno = ctypes.get_errno()
+        return result == 0
 
-    libc.unlinkat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
-    libc.unlinkat.restype = ctypes.c_int
-    if _zero_errno_call(libc.unlinkat, int(fd), path_ptr, _AT_EMPTY_PATH):
+    unlinkat = libc.unlinkat
+    unlinkat.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+    unlinkat.restype = ctypes.c_int
+    if _try_call(unlinkat, int(fd), empty_ptr, _AT_EMPTY_PATH):
         return
 
     syscall_number = _SYS_UNLINKAT.get(os.uname().machine)
-    if syscall_number is not None:
-        libc.syscall.restype = ctypes.c_long
-        libc.syscall.argtypes = [
-            ctypes.c_long,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_int,
-        ]
-        if _zero_errno_call(libc.syscall, syscall_number, int(fd), path_ptr, _AT_EMPTY_PATH):
-            return
+    syscall = libc.syscall
+    syscall.restype = ctypes.c_long
+    if syscall_number is not None and _try_call(
+        syscall, syscall_number, int(fd), empty_ptr, _AT_EMPTY_PATH
+    ):
+        return
 
     path_flags = getattr(os, "O_PATH", 0)
     if path_flags:
@@ -978,15 +979,15 @@ def _linux_unlinkat_empty(fd: int) -> None:
             path_flags | getattr(os, "O_CLOEXEC", 0),
         )
         try:
-            if _zero_errno_call(libc.unlinkat, int(path_fd), path_ptr, _AT_EMPTY_PATH):
+            if _try_call(unlinkat, int(path_fd), empty_ptr, _AT_EMPTY_PATH):
                 return
-            if syscall_number is not None and _zero_errno_call(
-                libc.syscall, syscall_number, int(path_fd), path_ptr, _AT_EMPTY_PATH
+            if syscall_number is not None and _try_call(
+                syscall, syscall_number, int(path_fd), empty_ptr, _AT_EMPTY_PATH
             ):
                 return
         finally:
             os.close(path_fd)
-    raise OSError(ctypes.get_errno() or 22, "unlinkat")
+    raise OSError(last_errno or 22, "unlinkat")
 
 
 def _mark_deletion_target(target: _DeletionTarget) -> None:

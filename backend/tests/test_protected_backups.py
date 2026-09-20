@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 import zipfile
@@ -1196,3 +1197,15 @@ def test_retention_refuses_to_delete_pathname_replaced_after_handle_verification
     assert target.is_file()
     assert target.read_bytes() == replacement
     assert created[0] in _managed_names(destination)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux unlinkat")
+def test_linux_handle_unlink_removes_open_inode(tmp_path: Path) -> None:
+    path = tmp_path / "handle-bound-object"
+    path.write_bytes(b"delete-via-fd")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+    try:
+        protected_backups._linux_unlinkat_empty(fd)
+        assert not path.exists()
+    finally:
+        os.close(fd)
