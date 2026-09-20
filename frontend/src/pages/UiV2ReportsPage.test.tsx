@@ -256,9 +256,6 @@ describe("UI v2 reports archive", () => {
     await screen.findByTestId("reports-archive");
     expect(screen.getByRole("link", { name: "Мои финансы" })).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("link", { name: "Капитал" })).not.toHaveAttribute("aria-current");
-    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
-      "href",
-      "/months/91",
-    );
+    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/months/91");
   });
 });

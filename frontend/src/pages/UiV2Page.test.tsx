@@ -353,10 +353,7 @@ it.each(["/v2?month=012&step=actual_payouts", "/v2?month=12&month=91&step=actual
     const { mount } = setup(path);
     mount();
     await screen.findByTestId("v2-capital");
-    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute(
-      "href",
-      "/months/91",
-    );
+    expect(screen.getByRole("link", { name: /UI v1/ })).toHaveAttribute("href", "/months/91");
   },
 );
 
