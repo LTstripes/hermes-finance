@@ -19,6 +19,7 @@ import {
   SOURCE_TIMESTAMP_KIND_LABELS,
 } from "../lib/labels";
 import dataStyles from "./UiV2Data.module.css";
+import { UNKNOWN_SOURCE_LABEL } from "./uiV2Copy";
 
 const FAMILY_CLOSE_STEP: Record<string, GuidedCloseStepId | null> = {
   market_quotes: "market_quotes",
@@ -38,7 +39,7 @@ function statusTone(status: FreshnessStatus): string {
 }
 
 function sourceLabel(value: string): string {
-  return SOURCE_LABELS[value] ?? "внешний источник";
+  return SOURCE_LABELS[value] ?? UNKNOWN_SOURCE_LABEL;
 }
 
 function clockValue(item: FreshnessItem): string {
