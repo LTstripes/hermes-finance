@@ -213,7 +213,7 @@ export function formatMarketIdentity(identity: MarketIdentity): string {
       ? "MOEX ISS"
       : identity.provider === T_INVEST_PROVIDER
         ? "T-Invest"
-        : "Внешний источник";
+        : `Другой источник (${identity.provider})`;
   if (identity.provider === T_INVEST_PROVIDER) {
     return `T-Invest · ${identity.provider_instrument_id}`;
   }
