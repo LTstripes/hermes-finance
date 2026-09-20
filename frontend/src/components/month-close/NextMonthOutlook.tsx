@@ -13,6 +13,18 @@ function eventLabel(event: CashFlowLadderEvent): string {
   return `${formatDate(event.expected_date)} · ${ownerEventLabel(event.component)} · ${event.instrument_name ?? event.account_name}`;
 }
 
+const OUTLOOK_UNAVAILABLE_LABELS: Record<string, string> = {
+  outlook_not_available_until_closed:
+    "Данные следующего месяца появятся после закрытия текущего отчёта.",
+  outlook_section_unavailable:
+    "Для следующего месяца пока недостаточно подтверждённых датированных данных.",
+};
+
+function unavailableReason(reasonCode: string | null): string {
+  if (!reasonCode) return "Причина недоступности не указана.";
+  return OUTLOOK_UNAVAILABLE_LABELS[reasonCode] ?? "Причина недоступности не распознана.";
+}
+
 function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
   const hasKnownEvents = window.items.length > 0;
   return (
@@ -48,7 +60,7 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
   if (!outlook.available) {
     return (
       <Panel label="После закрытия" title="Следующий месяц">
-        <p className="muted">Данные пока недоступны. Причина пока не подтверждена.</p>
+        <p className="muted">{unavailableReason(outlook.reason_code)}</p>
       </Panel>
     );
   }
