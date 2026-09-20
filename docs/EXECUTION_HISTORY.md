@@ -40,7 +40,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 - **Status:** accepted, integrated and canonically verified.
 - **Accepted candidate:** `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`.
-- **Canonical merge/current main:** `49144da863c93e5afc505e16be6817c55ff2b50d`.
+- **Canonical merge:** `49144da863c93e5afc505e16be6817c55ff2b50d`.
 - **Independent review:** separate Astra Pro security/recovery re-review — **INDEPENDENT ACCEPT** after B1–B5 remediation.
 - **Verification:** exact-head CI #837 / `35516975089` SUCCESS; exact-main push CI #839 / `35518134142` SUCCESS.
 - **Delivered:** provider-neutral `external_encrypted_destination_v1` publisher with explicit protected-boundary attestation, SQLite online snapshot reuse, producer SHA + sorted Alembic revision identity, incomplete staging, destination locking, full staged verification before final exposure, destination read-back against the expected artifact hash, in-memory SQLite verification and privacy-safe CLI failures.
