@@ -28,6 +28,10 @@ class BackupStorageError(RuntimeError):
     """The configured local backup directory cannot be used."""
 
 
+class RestoreOutcomeAmbiguousError(RuntimeError):
+    """The live database may have changed, but restore completion is unproven."""
+
+
 @dataclass(frozen=True, slots=True)
 class BackupSourceMetadata:
     name: str
@@ -264,6 +268,7 @@ def _restore_backup(database: Database, backup_id: str) -> RestoreResult:
     _validate_sqlite_backup(candidate, database)
 
     temporary: Path | None = None
+    live_database_may_have_been_replaced = False
     try:
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{database.database_path.name}.restore.",
@@ -277,19 +282,32 @@ def _restore_backup(database: Database, backup_id: str) -> RestoreResult:
 
         pre_restore_backup = _create_backup(database)
         database.engine.dispose()
+        # From this point on, a raised error cannot prove that the original
+        # live database is still in place. Keep the outcome fail-closed.
+        live_database_may_have_been_replaced = True
         os.replace(temporary, database.database_path)
         temporary = None
-    except (OSError, sqlite3.Error) as error:
-        raise BackupStorageError("Could not restore database backup") from error
+        restored_created_at = _created_at_from_path(candidate)
+        return RestoreResult(
+            restored_backup=_metadata_for_path(database, candidate, created_at=restored_created_at),
+            pre_restore_backup=pre_restore_backup,
+        )
+    except Exception as error:
+        if live_database_may_have_been_replaced:
+            raise RestoreOutcomeAmbiguousError(
+                "Restore outcome is ambiguous; database state must be checked manually"
+            ) from error
+        if isinstance(error, (OSError, sqlite3.Error)):
+            raise BackupStorageError("Could not restore database backup") from error
+        raise
     finally:
-        if temporary is not None and temporary.exists():
-            temporary.unlink()
-
-    restored_created_at = _created_at_from_path(candidate)
-    return RestoreResult(
-        restored_backup=_metadata_for_path(database, candidate, created_at=restored_created_at),
-        pre_restore_backup=pre_restore_backup,
-    )
+        if temporary is not None:
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except Exception:
+                # Cleanup is best effort and must not replace the classified outcome.
+                pass
 
 
 def restore_backup(database: Database, backup_id: str) -> RestoreResult:

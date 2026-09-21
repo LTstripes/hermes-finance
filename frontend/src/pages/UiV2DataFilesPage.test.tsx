@@ -59,6 +59,7 @@ function setup({
   listedBackups = backups,
   restoreStatus = 200,
   restoreStatuses,
+  restoreErrorCode = "unprocessable",
   restoreNetworkError = false,
   restoreBodyReadError = false,
   restorePayload,
@@ -68,6 +69,7 @@ function setup({
   listedBackups?: BackupMetadata[];
   restoreStatus?: number;
   restoreStatuses?: number[];
+  restoreErrorCode?: string;
   restoreNetworkError?: boolean;
   restoreBodyReadError?: boolean;
   restorePayload?: unknown;
@@ -101,7 +103,7 @@ function setup({
       }
       if (currentRestoreStatus !== 200) {
         return jsonResponse(
-          { error: { code: "unprocessable", message: "Backup is corrupt", details: [] } },
+          { error: { code: restoreErrorCode, message: "Backup is corrupt", details: [] } },
           currentRestoreStatus,
         );
       }
@@ -319,6 +321,43 @@ describe("UI v2 Data files", () => {
     );
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/результат восстановления не подтверждён/i);
+    expect(alert).not.toHaveTextContent(/восстановление не выполнено/i);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pre-restore-evidence")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      calls.filter(({ method, path }) => method === "POST" && path.endsWith("/restore")),
+    ).toHaveLength(1);
+    await waitFor(() => {
+      expect(
+        calls.filter(({ method, path }) => method === "GET" && path === "/api/months"),
+      ).toHaveLength(2);
+    });
+    expect(client.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+  });
+
+  it("treats the machine-readable ambiguous backend result as unknown even on HTTP 5xx", async () => {
+    const user = userEvent.setup();
+    const { calls, client, mount } = setup({
+      restoreStatus: 500,
+      restoreErrorCode: "restore_outcome_ambiguous",
+    });
+    client.setQueryData(queryKeys.accounts, { source: "current" });
+    mount();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Восстановить резервную копию ${backups[0].name}`,
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/результат восстановления не подтверждён/i);

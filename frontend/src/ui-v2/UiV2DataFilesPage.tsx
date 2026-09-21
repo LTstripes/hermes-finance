@@ -35,6 +35,12 @@ type DownloadKind =
   | "bundle-markdown"
   | "bundle-json";
 type RestoreErrorKind = "confirmed" | "unknown";
+const CONFIRMED_RESTORE_FAILURE_CODES = new Set([
+  "bad_request",
+  "conflict",
+  "not_found",
+  "unprocessable",
+]);
 
 function triggerDownload(file: ApiDownload) {
   const url = URL.createObjectURL(file.blob);
@@ -81,12 +87,7 @@ function isRestoreResponse(value: unknown): value is RestoreResponse {
 }
 
 function isConfirmedRestoreFailure(error: unknown): error is ApiClientError {
-  return (
-    error instanceof ApiClientError &&
-    Number.isInteger(error.status) &&
-    error.status >= 300 &&
-    error.status <= 599
-  );
+  return error instanceof ApiClientError && CONFIRMED_RESTORE_FAILURE_CODES.has(error.code);
 }
 
 function BackupMetadataList({ backup }: { backup: BackupMetadata }) {
