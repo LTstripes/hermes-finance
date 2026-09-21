@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
+from hermes_finance.services.backups import RestoreOutcomeAmbiguousError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.debts import DebtAccountLinkConflictError
 from hermes_finance.services.instruments import InstrumentDeletionBlockedError
@@ -251,6 +252,17 @@ def register_error_handlers(application: FastAPI) -> None:
             request.url.path,
         )
         return _error_response(409, "conflict", str(exc))
+
+    @application.exception_handler(RestoreOutcomeAmbiguousError)
+    async def _restore_outcome_ambiguous_handler(
+        request: Request, exc: RestoreOutcomeAmbiguousError
+    ) -> JSONResponse:
+        logger.info(
+            "%s path=%s status=500 code=restore_outcome_ambiguous",
+            exc.__class__.__name__,
+            request.url.path,
+        )
+        return _error_response(500, "restore_outcome_ambiguous", str(exc))
 
     @application.exception_handler(SalaryTaxHistoryIncompleteError)
     async def _salary_tax_history_incomplete_handler(

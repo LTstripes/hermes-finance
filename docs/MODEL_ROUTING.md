@@ -51,13 +51,15 @@ A justified risk discovered during execution may raise the review requirement wi
 
 Repository policy specifies required capability and review level, not permanent local Codex model IDs.
 
-Local Codex configuration may use a strong root Execution Orchestrator with a cheaper scoped Worker and a separate read-only Reviewer. The project cares about role separation and effective evidence, not the current model names.
+Default bounded execution is one Worker owning investigation, implementation, verification and the authorized candidate. Independent review follows the risk classes above without requiring an Execution Orchestrator; confirmed blockers return to the same Worker.
+
+Orchestration is experimental and explicit opt-in only. Local Codex configuration may provide an Orchestrator for an expressly requested coordinated run or experiment under the activation gate in `AGENT_ORCHESTRATION.md`. Task importance, high risk, frontend plus tests, or a need for review never activates it automatically. The project cares about role separation and effective evidence, not the current model names.
 
 `INTERNAL_ACCEPT` from local orchestration is execution evidence only. Final project acceptance remains with the Integrator.
 
 ## Manual execution remains supported
 
-Grok, Hermes, manual Codex and other clients may act as Workers under the same project roles. Client-specific routing is chosen per task. Codex orchestration is an explicit exception to the normal single-Worker interpretation when the Owner/Integrator requests `$delivery-loop` or a Codex orchestrated route.
+Grok, Hermes, Codex and other clients act as single Workers by default under the same project roles. Client-specific routing is chosen per task. A request to run `$delivery-loop` or an explicit request for orchestrated execution is the exception; mentioning, reviewing or editing orchestration is not a request to run it.
 
 ## Benchmark / A-B mode
 
