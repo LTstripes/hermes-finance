@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import io
 import json
@@ -9,9 +10,11 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import uuid
 import zipfile
+from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +37,11 @@ FORMAT_VERSION = 1
 DESTINATION_ALIAS = "protected-destination"
 MANAGED_FILENAME_PREFIX = "hermes_recovery_"
 MANAGED_FILENAME_SUFFIX = ".hermes-recovery"
+VERIFIED_RETENTION_LIMIT = 12
+RETENTION_COMPLETED = "completed"
+RETENTION_FAILED = "failed"
+RETENTION_NOT_RUN = "not_run"
+RETENTION_ACTION_REQUIRED = "protected recovery-point retention was not completed"
 _MANAGED_FILENAME_RE = re.compile(
     rf"^{re.escape(MANAGED_FILENAME_PREFIX)}"
     rf"(?P<timestamp>\d{{8}}T\d{{12}}Z)"
@@ -43,6 +51,7 @@ _MANAGED_FILENAME_RE = re.compile(
 _INCOMPLETE_PREFIX = ".hermes_recovery_"
 _INCOMPLETE_SUFFIX = ".incomplete"
 _LOCK_NAME = ".hermes_recovery.lock"
+_FILENAME_CREATED_AT_FORMAT = "%Y%m%dT%H%M%S%fZ"
 _SNAPSHOT_NAME = "snapshot.sqlite3"
 _MANIFEST_NAME = "manifest.json"
 _ZERO_DIGEST = "0" * 64
@@ -66,6 +75,7 @@ class ProtectedBackupResult:
     created_at: datetime | None
     size_bytes: int | None
     read_back: str
+    retention: str
     action_required: str | None
 
     def as_dict(self) -> dict[str, Any]:
@@ -85,6 +95,7 @@ class ProtectedBackupResult:
             ),
             "size_bytes": self.size_bytes,
             "read_back": self.read_back,
+            "retention": self.retention,
             "action_required": self.action_required,
         }
 
@@ -407,6 +418,41 @@ def _verify_snapshot_bytes(snapshot_bytes: bytes) -> tuple[str, ...]:
         connection.close()
 
 
+def _verify_payload(
+    artifact_bytes: bytes, *, expected_hash: str | None = None
+) -> tuple[dict[str, Any], str, int]:
+    actual = hashlib.sha256(artifact_bytes).hexdigest()
+    if expected_hash is not None and actual != expected_hash:
+        raise ProtectedBackupError("managed artifact full hash does not verify")
+    size_bytes = len(artifact_bytes)
+    with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
+        if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
+            raise ProtectedBackupError("managed artifact members are invalid")
+        manifest = json.loads(archive.read(_MANIFEST_NAME))
+        if not isinstance(manifest, dict):
+            raise ProtectedBackupError("managed artifact manifest is invalid")
+        _validate_manifest_shape(manifest)
+        snapshot_bytes = archive.read(_SNAPSHOT_NAME)
+        snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
+        if manifest.get("snapshot_sha256") != snapshot_digest:
+            raise ProtectedBackupError("managed artifact snapshot hash is invalid")
+        if manifest.get("snapshot_size_bytes") != len(snapshot_bytes):
+            raise ProtectedBackupError("managed artifact snapshot size is invalid")
+        snapshot_revisions = _verify_snapshot_bytes(snapshot_bytes)
+        if manifest.get("source_alembic_revisions") != list(snapshot_revisions):
+            raise ProtectedBackupError("managed artifact Alembic revision identity does not verify")
+    normalized = dict(manifest)
+    expected = normalized.get("artifact_identity_sha256")
+    normalized["artifact_identity_sha256"] = _ZERO_DIGEST
+    if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ProtectedBackupError("managed artifact canonical identity is invalid")
+    if hashlib.sha256(_zip_bytes_from_bytes(snapshot_bytes, normalized)).hexdigest() != expected:
+        raise ProtectedBackupError("managed artifact canonical identity does not verify")
+    if manifest.get("artifact_size_bytes") != size_bytes:
+        raise ProtectedBackupError("managed artifact size does not verify")
+    return manifest, actual, size_bytes
+
+
 def _verify_artifact_content(
     path: Path, *, expected_hash: str | None = None
 ) -> tuple[dict[str, Any], str, int]:
@@ -414,42 +460,7 @@ def _verify_artifact_content(
         _assert_no_reparse_components(path)
         if not path.is_file() or path.is_symlink():
             raise ProtectedBackupError("managed artifact is not a regular file")
-        artifact_bytes = path.read_bytes()
-        actual = hashlib.sha256(artifact_bytes).hexdigest()
-        if expected_hash is not None and actual != expected_hash:
-            raise ProtectedBackupError("managed artifact full hash does not verify")
-        size_bytes = len(artifact_bytes)
-        with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
-            if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
-                raise ProtectedBackupError("managed artifact members are invalid")
-            manifest = json.loads(archive.read(_MANIFEST_NAME))
-            if not isinstance(manifest, dict):
-                raise ProtectedBackupError("managed artifact manifest is invalid")
-            _validate_manifest_shape(manifest)
-            snapshot_bytes = archive.read(_SNAPSHOT_NAME)
-            snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
-            if manifest.get("snapshot_sha256") != snapshot_digest:
-                raise ProtectedBackupError("managed artifact snapshot hash is invalid")
-            if manifest.get("snapshot_size_bytes") != len(snapshot_bytes):
-                raise ProtectedBackupError("managed artifact snapshot size is invalid")
-            snapshot_revisions = _verify_snapshot_bytes(snapshot_bytes)
-            if manifest.get("source_alembic_revisions") != list(snapshot_revisions):
-                raise ProtectedBackupError(
-                    "managed artifact Alembic revision identity does not verify"
-                )
-        normalized = dict(manifest)
-        expected = normalized.get("artifact_identity_sha256")
-        normalized["artifact_identity_sha256"] = _ZERO_DIGEST
-        if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
-            raise ProtectedBackupError("managed artifact canonical identity is invalid")
-        if (
-            hashlib.sha256(_zip_bytes_from_bytes(snapshot_bytes, normalized)).hexdigest()
-            != expected
-        ):
-            raise ProtectedBackupError("managed artifact canonical identity does not verify")
-        if manifest.get("artifact_size_bytes") != size_bytes:
-            raise ProtectedBackupError("managed artifact size does not verify")
-        return manifest, actual, size_bytes
+        return _verify_payload(path.read_bytes(), expected_hash=expected_hash)
     except (OSError, KeyError, json.JSONDecodeError, sqlite3.Error, zipfile.BadZipFile) as error:
         raise ProtectedBackupError("managed artifact read-back verification failed") from error
 
@@ -547,6 +558,541 @@ def is_managed_recovery_name(name: str) -> bool:
     return _MANAGED_FILENAME_RE.fullmatch(name) is not None
 
 
+def _destination_listing(destination: Path) -> list[str]:
+    try:
+        names = os.listdir(destination)
+    except OSError as error:
+        raise ProtectedBackupError("destination listing is unavailable") from error
+    names.sort()
+    return names
+
+
+def _is_regular_managed_file(path: Path) -> bool:
+    if not is_managed_recovery_name(path.name):
+        return False
+    try:
+        if _is_reparse(path) or path.is_symlink() or not path.is_file():
+            return False
+    except (OSError, ProtectedBackupError):
+        return False
+    return True
+
+
+def _regular_file_open_flags() -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    return flags
+
+
+def _file_identity(stat_result: os.stat_result) -> tuple[int, int] | None:
+    inode = int(getattr(stat_result, "st_ino", 0) or 0)
+    device = int(getattr(stat_result, "st_dev", 0) or 0)
+    if inode == 0:
+        return None
+    if sys.platform == "win32":
+        device &= 0xFFFFFFFF
+    return (device, inode)
+
+
+def _read_fd(fd: int) -> bytes:
+    chunks: list[bytes] = []
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _parse_filename_created_at(timestamp: str) -> datetime | None:
+    try:
+        parsed = datetime.strptime(timestamp, _FILENAME_CREATED_AT_FORMAT)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC)
+
+
+def _parse_manifest_created_at(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC)
+
+
+def _bound_retention_created_at(name: str, manifest: dict[str, Any]) -> datetime | None:
+    """Bind filename timestamp to verified manifest created_at, or reject."""
+
+    match = _MANAGED_FILENAME_RE.fullmatch(name)
+    if match is None:
+        return None
+    from_name = _parse_filename_created_at(match.group("timestamp"))
+    from_manifest = _parse_manifest_created_at(manifest.get("created_at"))
+    if from_name is None or from_manifest is None or from_name != from_manifest:
+        return None
+    return from_manifest
+
+
+def _managed_sequence(name: str) -> int:
+    match = _MANAGED_FILENAME_RE.fullmatch(name)
+    if match is None or match.group("sequence") is None:
+        return 0
+    return int(match.group("sequence"))
+
+
+@dataclass(frozen=True, slots=True)
+class _RetentionCandidate:
+    path: Path
+    created_at: datetime
+    artifact_hash: str
+    sequence: int
+    name: str
+    file_id: tuple[int, int]
+
+    def recency_key(self) -> tuple[datetime, str, int, str]:
+        """Oldest-first verified identity.
+
+        Newest-first is the reverse of this tuple. After created_at, ties break
+        by full artifact SHA-256, then managed sequence (absent = 0), then name.
+        """
+
+        return (self.created_at, self.artifact_hash, self.sequence, self.name)
+
+
+def _inspect_retention_candidate(path: Path) -> _RetentionCandidate | None:
+    if not _is_regular_managed_file(path):
+        return None
+    match = _MANAGED_FILENAME_RE.fullmatch(path.name)
+    if match is None:
+        return None
+    try:
+        link_stat = path.lstat()
+        file_id = _file_identity(link_stat)
+        if file_id is None:
+            return None
+        fd = os.open(path, _regular_file_open_flags())
+    except (OSError, ProtectedBackupError):
+        return None
+    try:
+        opened_id = _file_identity(os.fstat(fd))
+        if opened_id != file_id:
+            return None
+        payload = _read_fd(fd)
+        manifest, artifact_hash, _size = _verify_payload(payload)
+    except (
+        OSError,
+        ProtectedBackupError,
+        KeyError,
+        json.JSONDecodeError,
+        sqlite3.Error,
+        zipfile.BadZipFile,
+    ):
+        return None
+    finally:
+        os.close(fd)
+    if match.group("digest") != artifact_hash[:16]:
+        return None
+    created_at = _bound_retention_created_at(path.name, manifest)
+    if created_at is None:
+        return None
+    return _RetentionCandidate(
+        path=path,
+        created_at=created_at,
+        artifact_hash=artifact_hash,
+        sequence=_managed_sequence(path.name),
+        name=path.name,
+        file_id=file_id,
+    )
+
+
+def _list_retention_candidates(destination: Path) -> list[_RetentionCandidate]:
+    """Return deletion-eligible verified points, oldest first."""
+
+    candidates = [
+        candidate
+        for name in _destination_listing(destination)
+        if (candidate := _inspect_retention_candidate(destination / name)) is not None
+    ]
+    candidates.sort(key=lambda item: item.recency_key())
+    return candidates
+
+
+def _verified_managed_recovery_points(destination: Path) -> list[Path]:
+    """Return retention-eligible verified artifacts only, oldest first."""
+
+    return [candidate.path for candidate in _list_retention_candidates(destination)]
+
+
+_GENERIC_READ = 0x80000000
+_DELETE_ACCESS = 0x00010000
+_FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
+_FILE_SHARE_DELETE = 0x00000004
+_OPEN_EXISTING = 3
+_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_FILE_BEGIN = 0
+_FILE_DISPOSITION_INFO = 4
+_AT_EMPTY_PATH = 0x1000
+_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+_KERNEL32: ctypes.WinDLL | None = None
+
+
+class _BY_HANDLE_FILE_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("dwFileAttributes", wintypes.DWORD),
+        ("ftCreationTime", wintypes.FILETIME),
+        ("ftLastAccessTime", wintypes.FILETIME),
+        ("ftLastWriteTime", wintypes.FILETIME),
+        ("dwVolumeSerialNumber", wintypes.DWORD),
+        ("nFileSizeHigh", wintypes.DWORD),
+        ("nFileSizeLow", wintypes.DWORD),
+        ("nNumberOfLinks", wintypes.DWORD),
+        ("nFileIndexHigh", wintypes.DWORD),
+        ("nFileIndexLow", wintypes.DWORD),
+    ]
+
+
+class _FILE_DISPOSITION_INFO_STRUCT(ctypes.Structure):
+    _fields_ = [("DeleteFile", wintypes.BOOLEAN)]
+
+
+@dataclass(slots=True)
+class _DeletionTarget:
+    candidate: _RetentionCandidate
+    handle: int
+    kind: str
+    closed: bool = False
+
+
+def _object_bound_deletion_supported() -> bool:
+    return sys.platform == "win32" or sys.platform.startswith("linux")
+
+
+def _windows_kernel32() -> ctypes.WinDLL:
+    global _KERNEL32
+    if _KERNEL32 is not None:
+        return _KERNEL32
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.GetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_BY_HANDLE_FILE_INFORMATION),
+    ]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.SetFilePointerEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_longlong,
+        ctypes.POINTER(ctypes.c_longlong),
+        wintypes.DWORD,
+    ]
+    kernel32.SetFilePointerEx.restype = wintypes.BOOL
+    kernel32.ReadFile.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
+    ]
+    kernel32.ReadFile.restype = wintypes.BOOL
+    kernel32.SetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    ]
+    kernel32.SetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    _KERNEL32 = kernel32
+    return kernel32
+
+
+def _win_raise(action: str) -> None:
+    raise OSError(None, action, None, ctypes.get_last_error())
+
+
+def _win_handle_identity(handle: int) -> tuple[int, int] | None:
+    info = _BY_HANDLE_FILE_INFORMATION()
+    if not _windows_kernel32().GetFileInformationByHandle(handle, ctypes.byref(info)):
+        return None
+    file_index = (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow)
+    if file_index == 0:
+        return None
+    return (int(info.dwVolumeSerialNumber), file_index)
+
+
+def _win_read_handle(handle: int) -> bytes:
+    kernel32 = _windows_kernel32()
+    new_position = ctypes.c_longlong(0)
+    if not kernel32.SetFilePointerEx(handle, 0, ctypes.byref(new_position), _FILE_BEGIN):
+        _win_raise("SetFilePointerEx")
+    chunks: list[bytes] = []
+    buffer = ctypes.create_string_buffer(1024 * 1024)
+    read = wintypes.DWORD(0)
+    while True:
+        if not kernel32.ReadFile(handle, buffer, len(buffer), ctypes.byref(read), None):
+            _win_raise("ReadFile")
+        if read.value == 0:
+            break
+        chunks.append(buffer.raw[: read.value])
+    return b"".join(chunks)
+
+
+def _open_windows_deletion_target(candidate: _RetentionCandidate) -> _DeletionTarget:
+    kernel32 = _windows_kernel32()
+    handle = kernel32.CreateFileW(
+        os.fspath(candidate.path),
+        _GENERIC_READ | _DELETE_ACCESS,
+        _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+        None,
+        _OPEN_EXISTING,
+        _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if ctypes.c_void_p(handle).value in {None, _INVALID_HANDLE_VALUE}:
+        _win_raise("CreateFileW")
+    try:
+        file_id = _win_handle_identity(handle)
+        if file_id is None or file_id != candidate.file_id:
+            raise ProtectedBackupError("retention identity is not proven")
+        digest = hashlib.sha256(_win_read_handle(handle)).hexdigest()
+        if digest != candidate.artifact_hash:
+            raise ProtectedBackupError("retention identity is not proven")
+        return _DeletionTarget(candidate=candidate, handle=int(handle), kind="windows")
+    except Exception:
+        kernel32.CloseHandle(handle)
+        raise
+
+
+def _open_posix_deletion_target(candidate: _RetentionCandidate) -> _DeletionTarget:
+    fd = os.open(candidate.path, _regular_file_open_flags())
+    try:
+        file_id = _file_identity(os.fstat(fd))
+        if file_id is None or file_id != candidate.file_id:
+            raise ProtectedBackupError("retention identity is not proven")
+        digest = hashlib.sha256(_read_fd(fd)).hexdigest()
+        if digest != candidate.artifact_hash:
+            raise ProtectedBackupError("retention identity is not proven")
+        return _DeletionTarget(candidate=candidate, handle=fd, kind="posix")
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _open_deletion_target(candidate: _RetentionCandidate) -> _DeletionTarget:
+    if not is_managed_recovery_name(candidate.path.name) or candidate.path.name != candidate.name:
+        raise ProtectedBackupError("retention identity is not proven")
+    if sys.platform == "win32":
+        return _open_windows_deletion_target(candidate)
+    if sys.platform.startswith("linux"):
+        return _open_posix_deletion_target(candidate)
+    raise ProtectedBackupError("retention identity is not proven")
+
+
+def _deletion_target_identity(target: _DeletionTarget) -> tuple[int, int] | None:
+    if target.kind == "windows":
+        return _win_handle_identity(target.handle)
+    return _file_identity(os.fstat(target.handle))
+
+
+def _deletion_target_hash(target: _DeletionTarget) -> str:
+    if target.kind == "windows":
+        return hashlib.sha256(_win_read_handle(target.handle)).hexdigest()
+    os.lseek(target.handle, 0, os.SEEK_SET)
+    return hashlib.sha256(_read_fd(target.handle)).hexdigest()
+
+
+def _assert_handle_still_verified(target: _DeletionTarget) -> None:
+    """Prove the open handle still names the verified object."""
+
+    handle_id = _deletion_target_identity(target)
+    if handle_id is None or handle_id != target.candidate.file_id:
+        raise ProtectedBackupError("retention identity is not proven")
+    if _deletion_target_hash(target) != target.candidate.artifact_hash:
+        raise ProtectedBackupError("retention identity is not proven")
+
+
+def _linux_unlinkat_empty(fd: int) -> None:
+    """Delete the inode referred to by fd, never a directory leaf name.
+
+    Linux unlinkat(2) only accepts AT_REMOVEDIR. AT_EMPTY_PATH is still EINVAL
+    on current kernels, so this either proves object-bound deletion or raises.
+    Callers must fail closed; they must not fall back to unlink(path) or
+    unlinkat(dirfd, name, 0).
+    """
+
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    unlinkat = libc.unlinkat
+    unlinkat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+    unlinkat.restype = ctypes.c_int
+    # c_char_p(b"") becomes NULL; a one-byte zero buffer keeps a real pointer.
+    empty_name = (ctypes.c_ubyte * 1)()
+    empty_ptr = ctypes.c_void_p(ctypes.addressof(empty_name))
+    ctypes.set_errno(0)
+    result = int(unlinkat(int(fd), empty_ptr, _AT_EMPTY_PATH))
+    if result == 0:
+        return
+    raise OSError(ctypes.get_errno() or 22, "unlinkat")
+
+
+def _preflight_object_bound_deletion(destination: Path) -> None:
+    """Prove this filesystem can delete by verified object identity."""
+
+    probe = destination / f".hermes_retention_probe_{uuid.uuid4().hex}"
+    probe.write_bytes(b"probe")
+    try:
+        if sys.platform == "win32":
+            kernel32 = _windows_kernel32()
+            handle = kernel32.CreateFileW(
+                os.fspath(probe),
+                _GENERIC_READ | _DELETE_ACCESS,
+                _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+                None,
+                _OPEN_EXISTING,
+                _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+            if ctypes.c_void_p(handle).value in {None, _INVALID_HANDLE_VALUE}:
+                _win_raise("CreateFileW")
+            try:
+                info = _FILE_DISPOSITION_INFO_STRUCT(True)
+                if not kernel32.SetFileInformationByHandle(
+                    handle,
+                    _FILE_DISPOSITION_INFO,
+                    ctypes.byref(info),
+                    ctypes.sizeof(info),
+                ):
+                    _win_raise("SetFileInformationByHandle")
+            finally:
+                kernel32.CloseHandle(handle)
+        elif sys.platform.startswith("linux"):
+            fd = os.open(probe, _regular_file_open_flags())
+            try:
+                _linux_unlinkat_empty(fd)
+            finally:
+                os.close(fd)
+        else:
+            raise ProtectedBackupError("retention identity is not proven")
+        if probe.exists():
+            raise ProtectedBackupError("retention identity is not proven")
+    except OSError as error:
+        raise ProtectedBackupError("retention identity is not proven") from error
+    finally:
+        if probe.exists():
+            probe.unlink(missing_ok=True)
+
+
+def _mark_deletion_target(target: _DeletionTarget) -> None:
+    """Delete the object named by the verified handle, not by pathname."""
+
+    if target.kind == "windows":
+        info = _FILE_DISPOSITION_INFO_STRUCT(True)
+        if not _windows_kernel32().SetFileInformationByHandle(
+            target.handle,
+            _FILE_DISPOSITION_INFO,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        ):
+            _win_raise("SetFileInformationByHandle")
+        return
+    _linux_unlinkat_empty(int(target.handle))
+
+
+def _close_deletion_target(target: _DeletionTarget) -> None:
+    if target.closed:
+        return
+    target.closed = True
+    if target.kind == "windows":
+        _windows_kernel32().CloseHandle(target.handle)
+        return
+    os.close(target.handle)
+
+
+def _retention_before_destroy(_targets: list[_DeletionTarget]) -> None:
+    """Test hook after handle verification and before handle-bound destruction."""
+
+    return
+
+
+def _commit_retention_deletions(candidates: list[_RetentionCandidate]) -> None:
+    """Delete verified objects through the same handle that proved them."""
+
+    if not candidates:
+        return
+    if not _object_bound_deletion_supported():
+        raise ProtectedBackupError("retention identity is not proven")
+    _preflight_object_bound_deletion(candidates[0].path.parent)
+    targets: list[_DeletionTarget] = []
+    marked = False
+    try:
+        for candidate in candidates:
+            targets.append(_open_deletion_target(candidate))
+        for target in targets:
+            _assert_handle_still_verified(target)
+        _retention_before_destroy(targets)
+        for target in targets:
+            _mark_deletion_target(target)
+        marked = True
+    finally:
+        for target in targets:
+            try:
+                _close_deletion_target(target)
+            except OSError:
+                pass
+    if marked and any(target.candidate.path.exists() for target in targets):
+        raise ProtectedBackupError("retention identity is not proven")
+
+
+def _select_retention_deletions(
+    candidates: list[_RetentionCandidate], *, preserve: Path
+) -> list[_RetentionCandidate]:
+    """Keep preserve plus the newest others, for an exact verified set of 12."""
+
+    preserve_key = _path_key(preserve)
+    matched = [item for item in candidates if _path_key(item.path) == preserve_key]
+    if len(matched) != 1:
+        raise ProtectedBackupError("required replacement is not retention-eligible")
+    others = [item for item in candidates if _path_key(item.path) != preserve_key]
+    others.sort(key=lambda item: item.recency_key(), reverse=True)
+    return others[VERIFIED_RETENTION_LIMIT - 1 :]
+
+
+def _retain_verified_recovery_points(
+    destination: Path, *, preserve: Path
+) -> tuple[str, str | None]:
+    """Keep exactly 12 verified managed points, including the replacement."""
+
+    try:
+        candidates = _list_retention_candidates(destination)
+        to_delete = _select_retention_deletions(candidates, preserve=preserve)
+        _commit_retention_deletions(to_delete)
+        remaining = _list_retention_candidates(destination)
+        if len(remaining) > VERIFIED_RETENTION_LIMIT:
+            return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
+        return RETENTION_COMPLETED, None
+    except Exception:
+        # A verified replacement must stay valid even if cleanup cannot finish.
+        return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
+
+
 def publish_recovery_point(
     database: Database,
     destination: Path,
@@ -568,6 +1114,8 @@ def publish_recovery_point(
     with database.maintenance.operation():
         with _DestinationLock(validated_destination):
             snapshot = _snapshot(database, validated_destination)
+            final: Path | None = None
+            size_bytes: int | None = None
             try:
                 revisions = _source_revisions(snapshot, checkout)
                 snapshot_hash, snapshot_size = _snapshot_identity(snapshot)
@@ -621,23 +1169,30 @@ def publish_recovery_point(
                         raise ProtectedBackupError("managed artifact manifest changed on read-back")
                 if read_manifest.get("artifact_size_bytes") != size_bytes:
                     raise ProtectedBackupError("managed artifact size changed on read-back")
-                return ProtectedBackupResult(
-                    status="published",
-                    created=True,
-                    verified=True,
-                    published=True,
-                    destination_alias=DESTINATION_ALIAS,
-                    protection_state=PROTECTION_STATE,
-                    protection_mode=PROTECTION_MODE,
-                    format_version=FORMAT_VERSION,
-                    created_at=created_at,
-                    size_bytes=size_bytes,
-                    read_back="verified",
-                    action_required=None,
-                )
             except (OSError, ProtectedBackupError) as error:
-                if "final" in locals() and final.exists():
+                if final is not None and final.exists():
                     final.unlink(missing_ok=True)
                 raise ProtectedBackupError("recovery-point publication failed") from error
             finally:
                 snapshot.unlink(missing_ok=True)
+
+            if final is None or size_bytes is None:
+                raise ProtectedBackupError("recovery-point publication failed")
+            retention, retention_action = _retain_verified_recovery_points(
+                validated_destination, preserve=final
+            )
+            return ProtectedBackupResult(
+                status="published",
+                created=True,
+                verified=True,
+                published=True,
+                destination_alias=DESTINATION_ALIAS,
+                protection_state=PROTECTION_STATE,
+                protection_mode=PROTECTION_MODE,
+                format_version=FORMAT_VERSION,
+                created_at=created_at,
+                size_bytes=size_bytes,
+                read_back="verified",
+                retention=retention,
+                action_required=retention_action,
+            )

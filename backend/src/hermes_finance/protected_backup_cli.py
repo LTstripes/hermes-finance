@@ -11,6 +11,7 @@ from hermes_finance.database import create_database
 from hermes_finance.services.protected_backups import (
     PROTECTION_MODE,
     PROTECTION_STATE,
+    RETENTION_NOT_RUN,
     ProtectedBackupError,
     publish_recovery_point,
 )
@@ -101,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
                     "format_version": 1,
                     "created_at": None,
                     "read_back": "not_verified",
+                    "retention": RETENTION_NOT_RUN,
                     "size_bytes": None,
                     "action_required": "protected recovery-point publication was not completed",
                 },
