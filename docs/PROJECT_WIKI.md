@@ -418,7 +418,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 retention, #461 isolated DR rehearsal and #462 focused post-restore state reload remain open. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention is now integrated on current `main`. #461 isolated DR rehearsal and #462 focused post-restore state reload remain. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
@@ -433,16 +433,16 @@ There is no remaining cutover gate. Separate future work:
 - #389 — future configurable dashboards, separate from the completed core roadmap;
 - v1 retirement — only as a later explicit task if real use shows rollback/legacy paths are no longer needed.
 
-`1.0.0` remains a future release/product milestone, not implied by development-main cutover.
+`1.0.0` is now the prepared release candidate under #480; it remains UAT-PENDING until exact-SHA Owner OPS03 PASS.
 
 ### Runtime / durability
 
 #313 завершён. #459 protected recovery-point publisher и #475 restore outcome semantics также завершены и интегрированы.
 
-Под #417 остаются:
-- #460 retention;
-- #461 isolated DR rehearsal;
-- #462 post-restore month-state reload.
+Под #417:
+- #460 / PR #473 retention implementation уже интегрирован;
+- #461 isolated DR rehearsal остаётся;
+- #462 post-restore month-state reload остаётся.
 
 Real protected off-device backup/recovery rehearsal остаются Owner-controlled. Не возрождать monolithic launcher updater.
 
@@ -485,13 +485,13 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; #459 and #475 complete, #460–#462 open.
+- #417 — durability umbrella; #459/#475 complete, #460 implementation integrated via PR #473, #461–#462 remain.
 - #480 — v1.0.0 release preparation / Owner UAT gate.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #459 and #475.
+Completed: #313, #387, #410, #429, #430, #459 and #475. #460 code is integrated; its issue closeout remains separate.
 
 ## 14. Canonical reference documents
 

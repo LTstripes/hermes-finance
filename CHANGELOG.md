@@ -17,6 +17,7 @@ This entry packages already accepted canonical development work and synchronizes
 - complete UI v2 owner experience: «Мои финансы», Capital, «Доход и планы», contextual Reports/history, native Monthly Close and full «Данные и приложение»;
 - native Data/App catalogs/mappings, exports, safety-gated local backup/restore, settings, tax brackets and runtime diagnostics;
 - protected recovery-point publisher for an explicitly attested `external_encrypted_destination_v1` filesystem destination;
+- bounded verified retention for Hermes-managed recovery points (#460 / PR #473), preserving unknown/foreign/corrupt artifacts and deterministic verified-point limits;
 - durable `/v1` previous-interface rollback alongside the primary v2 route.
 
 ### Changed
@@ -35,7 +36,7 @@ This entry packages already accepted canonical development work and synchronizes
 
 - release preparation itself changes version/release identity and documentation only;
 - v1 retirement remains a separate later decision;
-- #460 retention, #461 isolated DR rehearsal, #462 legacy post-restore month-state reload and #476 real-backend G04 CI gate remain outside this candidate;
+- #461 isolated DR rehearsal, #462 legacy post-restore month-state reload and #476 real-backend G04 CI gate remain outside this candidate;
 - local single-user loopback-only/privacy boundaries remain unchanged;
 - published Stable remains `v0.9.0` until Owner UAT PASS, guarded publication and explicit backup-first OPS02 transition.
 

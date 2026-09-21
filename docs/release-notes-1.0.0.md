@@ -21,7 +21,8 @@ The default switch passed comparative review and exact-SHA Owner Preview/UAT bef
 - `restore_outcome_ambiguous` is machine-readable;
 - ambiguous restore UI never falsely claims success or failure and never blind-retries;
 - cleanup cannot overwrite an already-classified ambiguous result;
-- protected recovery-point publication supports an explicitly attested `external_encrypted_destination_v1` mounted filesystem destination with staged verification and destination read-back.
+- protected recovery-point publication supports an explicitly attested `external_encrypted_destination_v1` mounted filesystem destination with staged verification and destination read-back;
+- bounded verified retention keeps the newest verified Hermes-managed recovery points while failing closed around unknown, foreign, partial or corrupt artifacts.
 
 ### Proven local runtime lifecycle
 
@@ -41,7 +42,6 @@ This version packages accepted work already integrated on canonical development 
 
 Not included in this release:
 
-- #460 bounded protected-backup retention;
 - #461 isolated disaster-recovery rehearsal;
 - #462 legacy Export/Backup post-restore month-state reload;
 - #476 real-backend G04 browser CI gate;

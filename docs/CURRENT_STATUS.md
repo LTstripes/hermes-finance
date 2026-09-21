@@ -195,7 +195,7 @@ Release publication and local Stable installation are separate operations:
 
 Delivered: provider-neutral managed protected-destination publisher for explicitly attested `external_encrypted_destination_v1`, including staged verification before final exposure, destination read-back, producer/schema identity, privacy-safe CLI failure handling and no plaintext verification scratch in default temp storage.
 
-Not yet done: retention deletion (#460), clean isolated DR rehearsal (#461), focused legacy Export/Backup restore-state reload (#462), or any real Owner Drive/off-device backup run. No Google API/OAuth/key-management/cloud architecture was introduced.
+Bounded verified retention (#460 / PR #473) is now integrated on current `main`. Still not done: clean isolated DR rehearsal (#461), focused legacy Export/Backup restore-state reload (#462), or any real Owner Drive/off-device backup run. No Google API/OAuth/key-management/cloud architecture was introduced.
 
 ## Active roadmap / what comes next
 
@@ -237,10 +237,10 @@ The runtime redesign parent #313 is complete. #459 protected recovery-point publ
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review: ACCEPT.
 
-Active durability sequence under #417:
-- #460 — bounded verified retention;
-- #461 — isolated disaster-recovery rehearsal;
-- #462 — focused legacy Export/Backup post-restore month-state reload.
+Durability state under #417:
+- #460 / PR #473 — bounded verified retention implementation integrated;
+- #461 — isolated disaster-recovery rehearsal remains;
+- #462 — focused legacy Export/Backup post-restore month-state reload remains.
 
 Real protected off-device backup and recovery rehearsal remain Owner-controlled gates.
 
@@ -260,11 +260,8 @@ Published Stable remains immutable `v0.9.0`; development-main acceptance is not 
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #38## Open umbrella/control issues
-
-- #124 — permanent Release Control; intentionally stays open;
-- #127 — product/technical roadmap umbrella;
-- #417 — owner durability umbrella; #459 and #475 complete, #460–#462 remain.
+- #417 — owner durability umbrella; #459/#475 complete, #460 implementation integrated via PR #473, #461–#462 remain;
+- #460 — retention implementation is canonical; issue closeout remains operationally separate;
 - #480 — v1.0.0 release preparation / exact-SHA Owner UAT gate.
 
 Separate follow-up:
@@ -287,4 +284,4 @@ Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459 and #475
 - `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #417, #460–#462, #476; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #475
+- #124, #127, #417, #460–#462, #476, #480; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #475

@@ -116,7 +116,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 - supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
 - no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
 
-The durability queue continues with #460 retention, #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
+Bounded verified retention (#460 / PR #473) is now integrated on current `main`. The remaining durability queue is #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
 
 ## Requirements
 
@@ -301,7 +301,7 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 Separate future work:
 
 - #476 — one real-backend synthetic G04 browser regression gate; this is regression infrastructure, not a blocker to the accepted cutover;
-- #460/#461/#462 — remaining durability/DR/legacy restore-state work under #417;
+- #461/#462 — remaining durability/DR/legacy restore-state work under #417; #460 bounded verified retention is already integrated;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
