@@ -920,15 +920,21 @@ def _run_runtime_script(
     timeout: int,
 ) -> None:
     script = checkout.checkout / "scripts" / script_name
+    powershell = _powershell()
     environment = os.environ.copy()
     environment["HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN"] = ""
     environment["PYTHONPATH"] = ""
+    # A pwsh parent can prepend PowerShell 7 modules to PSModulePath. Windows
+    # PowerShell then discovers those incompatible modules before its own and
+    # loses built-ins such as Get-FileHash. The Owner runtime scripts only use
+    # inbox modules, so bind the child to the selected executable's module set.
+    environment["PSModulePath"] = str(Path(powershell).resolve().parent / "Modules")
     if database is not None:
         environment["HERMES_FINANCE_DATABASE_PATH"] = str(database)
     try:
         completed = subprocess.run(
             [
-                _powershell(),
+                powershell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",

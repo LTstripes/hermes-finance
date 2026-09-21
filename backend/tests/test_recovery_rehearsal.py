@@ -570,3 +570,32 @@ def test_bounded_start_reuses_existing_readiness_and_adds_recovery_surfaces() ->
     assert "http://127.0.0.1:8000/api/accounts" in source
     assert '"http://127.0.0.1:8000/api/months/{0}/dashboard"' in source
     assert "-RequireRecoverySurfaces ([bool]$RecoveryReadiness)" in source
+
+
+def test_runtime_script_uses_windows_powershell_inbox_modules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    powershell = tmp_path / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    captured: dict[str, object] = {}
+
+    def run_stub(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv("PSModulePath", str(tmp_path / "PowerShell" / "Modules"))
+    monkeypatch.setattr(recovery_rehearsal, "_powershell", lambda: str(powershell))
+    monkeypatch.setattr(recovery_rehearsal.subprocess, "run", run_stub)
+
+    recovery_rehearsal._run_runtime_script(
+        _proof(),
+        script_name="prepare-runtime.ps1",
+        arguments=["-Prepare"],
+        stage="runtime-prepare",
+        timeout=1,
+    )
+
+    environment = captured["kwargs"]["env"]
+    assert environment["PSModulePath"] == str(powershell.parent.resolve() / "Modules")
+    assert environment["PYTHONPATH"] == ""
+    assert environment["HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN"] == ""
