@@ -282,6 +282,16 @@ jobs:
               exit $LASTEXITCODE
           }
 
+          $recoveryBaseTemp = Join-Path $env:RUNNER_TEMP "hermes-recovery-pytest"
+          Push-Location backend
+          uv run --locked python -I -m pytest -q `
+            tests/test_recovery_rehearsal.py --basetemp $recoveryBaseTemp
+          $recoveryExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($recoveryExitCode -ne 0) {
+              exit $recoveryExitCode
+          }
+
   windows-production-smoke:
     name: Windows production smoke
     runs-on: windows-latest

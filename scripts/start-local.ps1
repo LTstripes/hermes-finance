@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$ExitAfterReady
+    [switch]$ExitAfterReady,
+    [switch]$RecoveryReadiness
 )
 
 Set-StrictMode -Version 2.0
@@ -98,7 +99,9 @@ function Invoke-PreparedRuntimeValidation {
 function Wait-ForProductionStack {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Diagnostics.Process]$Backend
+        [System.Diagnostics.Process]$Backend,
+        [Parameter(Mandatory = $true)]
+        [bool]$RequireRecoverySurfaces
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
@@ -118,12 +121,35 @@ function Wait-ForProductionStack {
                 -Uri "http://127.0.0.1:8000/" `
                 -UseBasicParsing `
                 -TimeoutSec 2
-            if (
+            $baseReady = (
                 $health.StatusCode -eq 200 -and
                 $months.StatusCode -eq 200 -and
                 $frontend.StatusCode -eq 200 -and
                 $frontend.Content -match "Hermes Finance"
-            ) {
+            )
+            if ($baseReady -and -not $RequireRecoverySurfaces) {
+                return
+            }
+            if ($baseReady) {
+                $accounts = Invoke-WebRequest `
+                    -Uri "http://127.0.0.1:8000/api/accounts" `
+                    -UseBasicParsing `
+                    -TimeoutSec 2
+                if ($accounts.StatusCode -ne 200) {
+                    continue
+                }
+
+                $restoredMonths = @($months.Content | ConvertFrom-Json)
+                if ($restoredMonths.Count -gt 0) {
+                    $monthId = [int64]$restoredMonths[0].id
+                    $dashboard = Invoke-WebRequest `
+                        -Uri ("http://127.0.0.1:8000/api/months/{0}/dashboard" -f $monthId) `
+                        -UseBasicParsing `
+                        -TimeoutSec 2
+                    if ($dashboard.StatusCode -ne 200) {
+                        continue
+                    }
+                }
                 return
             }
         }
@@ -166,6 +192,9 @@ function Stop-ProcessTree {
 }
 
 try {
+    if ($RecoveryReadiness -and -not $ExitAfterReady) {
+        throw "Recovery readiness is a bounded smoke and requires -ExitAfterReady."
+    }
     $uv = Get-RequiredCommand -Name "uv" -InstallHint "Install uv from https://docs.astral.sh/uv/."
     $powershell = Get-RequiredCommand -Name "powershell.exe" -InstallHint "Windows PowerShell is required to validate the prepared runtime."
 
@@ -220,7 +249,9 @@ try {
         }
     }
 
-    Wait-ForProductionStack -Backend $backendProcess
+    Wait-ForProductionStack `
+        -Backend $backendProcess `
+        -RequireRecoverySurfaces ([bool]$RecoveryReadiness)
     Write-Host "Hermes Finance is ready: http://127.0.0.1:8000" -ForegroundColor Green
     if ($ExitAfterReady) {
         Write-Host "Production readiness smoke test passed." -ForegroundColor Green

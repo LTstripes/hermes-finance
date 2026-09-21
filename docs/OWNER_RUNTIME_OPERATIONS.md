@@ -405,6 +405,60 @@ paths, secrets, or recovery material.
 Never overwrite Stable, restore through an arbitrary code/schema path, or
 claim cloud delivery or Owner UAT from a local synthetic rehearsal.
 
+After this workflow has passed independent security/recovery review and has
+been integrated, use this exact sequence for one Owner-controlled rehearsal.
+The example values are placeholders; do not put the machine's real paths into
+Git, an issue, or a support transcript.
+
+```powershell
+$recoverySha = "<full-40-character-recovery-sha>"
+$recoveryCheckout = "<new-independent-recovery-checkout>"
+$controlCheckout = "<trusted-control-checkout>"
+$runtimeConfig = "<existing-launcher-runtime-config>"
+$recoveryPoint = "<managed-protected-recovery-point>"
+$targetParent = "<existing-empty-recovery-parent>"
+$targetProfile = Join-Path $targetParent "isolated-recovery"
+$targetData = Join-Path $targetProfile "data"
+$targetDatabase = Join-Path $targetData "finance.db"
+
+git clone --no-checkout <canonical-hermes-repository-url> $recoveryCheckout
+git -C $recoveryCheckout switch --detach $recoverySha
+
+uv run --project (Join-Path $recoveryCheckout "backend") --locked `
+  hermes-finance-recovery-rehearsal `
+  --recovery-point $recoveryPoint `
+  --recovery-sha $recoverySha `
+  --recovery-checkout $recoveryCheckout `
+  --control-checkout $controlCheckout `
+  --runtime-config $runtimeConfig `
+  --target-profile $targetProfile `
+  --target-data $targetData `
+  --target-database $targetDatabase `
+  --protection-state protected `
+  --protection-mode external_encrypted_destination_v1
+```
+
+The recovery checkout must be a clean detached independent clone at the exact
+selected SHA. It must not contain `.env`, private data, or prior runtime data.
+The launcher runtime config is read only to exclude canonical Stable and every
+configured Preview/experiment boundary; the trusted control checkout supplies
+the development-worktree inventory. The target profile, its `data` directory,
+and its database must not already exist. Do not pre-create or reuse them.
+
+Before creating the target profile, the command verifies the managed name,
+manifest, full artifact and snapshot hashes, protected-container state,
+producer identity, SQLite integrity/foreign keys, source Alembic revisions,
+the selected checkout identity, and an exact `same_revision` or unambiguous
+linear `forward_upgrade` relationship. It then restores the already-verified
+snapshot, runs that checkout's existing Prepare and Validate operations, and
+uses its existing bounded Start/readiness smoke. The source recovery point is
+re-read and identity-checked throughout and is never opened for writing.
+
+Success emits one privacy-safe JSON result that binds artifact/code/schema
+identity and broad structural counts. Failure emits only a bounded stage and
+action required; use another new target after diagnosing a failed mutated
+target. Do not treat a synthetic or Worker-run result as Owner UAT.
+
 ### Restore read-state requirement
 
 After a successful existing in-app restore, the month list must reload from
