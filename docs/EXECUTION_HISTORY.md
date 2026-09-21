@@ -34,6 +34,37 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-21 UI v2 controlled default switch
+
+### #430 / PR #474 — comparative audit, frozen Owner UAT and default cutover
+
+- **Status:** COMPLETE / Owner UAT PASS / integrated.
+- **Gate A:** independent read-only comparative v1/v2 audit — ACCEPT; no product-gap project required before cutover.
+- **Frozen Owner-UAT candidate:** `09649bb1d71d6bdff636bb6becbf16d9f0cd5083`.
+- **Owner verdict:** **PASS** in isolated Preview/UAT.
+- **Canonical merge:** `583f9167ae14509202ef47978e7b9f20180e188d`.
+- **Exact-main verification:** CI #872 / `35573224359` — SUCCESS.
+- **Candidate evidence:** CI `35572421231` SUCCESS; UI comparison evidence `35572421160` SUCCESS.
+- **Delivered routing contract:** `/` -> primary UI v2; `/v1` -> previous UI Dashboard; retained `/v2` and legacy deep links/editors; permanent version rollback separated from contextual month/editor returns.
+- **Browser evidence:** default-switch Playwright spec was explicitly wired into canonical UI evidence CI, made grep-compatible and baseURL/port-safe before final freeze.
+- **Safety sequencing:** final switch SHA was frozen only after #475 restore-outcome ambiguity safety reached independent ACCEPT and canonical integration; the one overlapping UI file was reconciled so both contracts survived in the final tree.
+- **Roadmap result:** #430 and parent core UI v2 roadmap #387 closed completed. V1 retirement remains a separate future decision.
+- **References:** #387, #430, PR #474, `docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`.
+
+# 2026-09-21 restore outcome-semantics safety
+
+### #475 / PR #477 — truthful ambiguous restore result contract
+
+- **Status:** accepted, independently safety-reviewed, integrated and canonically verified.
+- **Accepted candidate:** `676b330b59deb4abea89f7807af8b382a1ac4c87`.
+- **Canonical merge:** `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba`.
+- **Exact-main verification:** CI #869 / `35571951532` — SUCCESS.
+- **Problem:** a restore could replace the live DB and then fail while constructing response metadata; HTTP 5xx therefore could not safely be treated as proof that no mutation occurred.
+- **Delivered contract:** confirmed negative outcomes remain distinct; possibly-mutated outcomes surface machine-readable `restore_outcome_ambiguous`; UI claims neither success nor failure, shows no pre-restore success evidence, refreshes shared reads and never blind-retries.
+- **Independent blocker/remediation:** initial candidate `55dbd1f9...` allowed cleanup in `finally` to overwrite the ambiguity classification. Remediation made cleanup best-effort and added regressions for both `exists()` and `unlink()` failures after failed `os.replace()`; focused independent re-review returned ACCEPT.
+- **Boundaries:** #460 retention, #461 DR rehearsal and #462 legacy Export state reload stayed separate; no Owner-live restore or private DB was used.
+- **References:** #417, #475, PR #477.
+
 # 2026-09-20 protected recovery-point publisher
 
 ### #459 / PR #466 — managed protected-destination recovery-point publisher
