@@ -24,11 +24,13 @@ When the Owner explicitly chooses an execution surface, honor that route:
 - `дай задачу для Grok` -> prepare a manual Grok Worker launch;
 - `дай задачу для Hermes` -> prepare a manual Hermes Worker launch;
 - `дай задачу для <model/client>` -> prepare a manual single-Worker launch unless orchestration is explicitly requested;
-- `дай задачу для Codex` -> prepare a Codex `$delivery-loop` single-task launch by default;
-- `дай серию задач для Codex` -> prepare an explicitly bounded Codex `$delivery-loop` queue;
+- `дай задачу для Codex` -> prepare a single-Worker Codex launch;
+- `дай серию задач для Codex` -> prepare separate bounded task launches; do not infer an orchestrated or unattended queue;
 - `Codex без оркестрации` -> prepare a manual Codex Worker launch.
 
 Direct GitHub capability is not a reason to override explicit Owner routing.
+
+Independent review may be added under the project risk policy without adding an Orchestrator. Do not insert `$delivery-loop` into an ordinary task prompt. Its use requires an explicit request to run orchestration; mentioning, auditing or editing it is not activation.
 
 ## GitHub-native Integrator behavior
 
@@ -51,9 +53,9 @@ A normal Grok/Hermes/manual-Codex launch is a short locator/execution prompt con
 
 The Worker returns a completion report. ChatGPT/Lera then reviews the **actual** GitHub candidate and decides `ACCEPT / FIXES REQUIRED / REJECT`.
 
-## Codex `$delivery-loop` launch
+## Experimental Codex `$delivery-loop` launch
 
-For `дай задачу для Codex`, prepare a single-task orchestrated launch using the project contract in [`docs/AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md).
+Only for an explicit request to run `$delivery-loop` or orchestrated execution, prepare a launch using the activation gate and overhead budget in [`docs/AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md). Record the coordination benefit or explicit experiment purpose; ordinary Codex tasks retain the single-Worker route.
 
 The launch packet must identify:
 
@@ -63,9 +65,10 @@ The launch packet must identify:
 - physical workspace;
 - `single` queue mode;
 - review requirement;
+- explicit opt-in, coordination reason and agent/remediation budget;
 - explicit `$delivery-loop`.
 
-For `дай серию задач для Codex`, first inspect current GitHub state and choose only a bounded compatible task set. For every task assign the exact baseline, branch/workspace and dependency status. Do not put tasks into an unattended queue when their dependency strategy is unresolved.
+For an explicitly requested orchestrated queue, first inspect current GitHub state and include only the authorized compatible task set. For every task assign the exact baseline, branch/workspace and dependency status. A generic request for a series of tasks does not authorize this mode. Do not put tasks into an unattended queue when their dependency strategy is unresolved.
 
 The queue launch must make clear that:
 
@@ -73,7 +76,7 @@ The queue launch must make clear that:
 - implementation belongs to the locally configured Worker;
 - `INTERNAL_ACCEPT` is not project `ACCEPT`;
 - independent review is triggered by project routing, explicit request or justified risk;
-- remediation is bounded to two automatic cycles;
+- remediation defaults to one cycle; a second needs explicit authorization and the cap is two;
 - an integration block stops only the affected dependency chain; unrelated eligible queue items may continue;
 - canonical/integration merge is not implied.
 

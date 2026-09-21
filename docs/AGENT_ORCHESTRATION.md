@@ -2,7 +2,7 @@
 
 > **Status:** project-facing execution contract. Local client configuration implements this contract but does not override repository policy.
 
-This project supports two execution modes. The authoritative task specification remains the active GitHub issue, accepted ADR/contract and explicit Integrator notes under the precedence in `AGENTS.md`.
+This project defaults to a single Worker, with independent review added when required. Full orchestration remains an experimental, explicit opt-in capability. The authoritative task specification remains the active GitHub issue, accepted ADR/contract and explicit Integrator notes under the precedence in `AGENTS.md`.
 
 ## Roles
 
@@ -15,7 +15,7 @@ This project supports two execution modes. The authoritative task specification 
 
 Root/Orchestrator review is useful but is not called **independent review**. Independent review means a separate review context/runtime with no implementation ownership of the candidate under review.
 
-## Mode A — manual / brokered execution
+## Mode A — single Worker (default)
 
 Normal flow:
 
@@ -26,17 +26,26 @@ Examples:
 - `дай задачу для Grok` -> manual Grok Worker prompt;
 - `дай задачу для Hermes` -> manual Hermes Worker prompt;
 - `дай задачу для <model/client>` -> manual single-Worker prompt unless the owner explicitly asks for orchestration;
+- `дай задачу для Codex` -> one Codex Worker;
+- `дай серию задач для Codex` -> prepare separate bounded task launches; this alone does not authorize an orchestrated or unattended queue;
 - `Codex без оркестрации` -> Codex acts as a normal single Worker.
 
 The launch prompt is locator/execution context, not a second specification.
 
-## Mode B — Codex `$delivery-loop`
+The Worker owns investigation -> implementation -> verification -> authorized PR-ready candidate. The current coding session can own this work directly. When independent review is required, add one separate Reviewer against the frozen candidate and return confirmed blockers to the same Worker. This does not require an Execution Orchestrator.
 
-Owner intent:
+## Mode B — experimental Codex `$delivery-loop` (explicit opt-in)
 
-- `дай задачу для Codex` -> orchestrated single-task route by default;
-- `дай серию задач для Codex` -> explicitly bounded queue route;
-- `Codex без оркестрации` -> Mode A.
+Activate only when the Owner/Integrator asks to **run** `$delivery-loop` or explicitly requests orchestrated execution for the current task/queue. A mention in quoted evidence, an audit, a skill edit, a request for autonomous implementation, or a request for independent review is not activation. Do not add `$delivery-loop` to an ordinary launch prompt automatically.
+
+Before delegation, record the explicit opt-in and at least one concrete coordination reason:
+
+- two or more independent implementation workstreams with clear ownership;
+- multiple repositories or PRs that require coordinated integration;
+- a dependency graph or large scope with concrete handoff/context boundaries;
+- an explicitly requested orchestration experiment, including a single-task benchmark.
+
+These reasons justify a proposed mode; they never authorize automatic activation. Importance, high risk, frontend plus tests and a need for independent review are insufficient on their own. Without a coordination reason, retain Mode A; an explicit experimental run may still use one Worker.
 
 The launch packet must identify the repo, issue/task list, exact baseline for every task, target/integration context, task branch, physical workspace, queue mode and review requirement.
 
@@ -49,11 +58,19 @@ In orchestrated mode:
 5. the root reviews the actual diff/check evidence;
 6. a separate independent Reviewer is used when `MODEL_ROUTING.md`, an explicit Integrator/owner request, or a justified risk discovered during execution requires one;
 7. justified risk may increase the review bar inside the existing task, but scope/contract expansion still requires STOP + Integrator re-scope;
-8. remediation is bounded to at most two automatic cycles;
+8. remediation defaults to one cycle; a second requires explicit launch or subsequent Owner/Integrator authorization and the absolute cap remains two;
 9. internal verdicts are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED`, or `BLOCKED_FOR_INTEGRATION`;
 10. `INTERNAL_ACCEPT` is execution evidence only and never equals project `ACCEPT`.
 
 Canonical/integration merge remains Integrator-controlled unless the launch packet explicitly delegates that operation.
+
+### Overhead budget
+
+Start with one Worker and at most one independent Reviewer role, one candidate review and one remediation cycle with a focused re-review when required. Reuse the same Worker. Additional writers, roles or replacement sessions require a recorded coordination benefit and explicit authorization in the launch or a subsequent instruction; parallel writers also require the existing compatibility/ownership checks.
+
+Do not add readiness-only model turns, nested delegation, speculative explorers or reviewers of reviewers by default. Use cheap environment checks, reuse unchanged readiness evidence, and make the first review inference assess the actual candidate. Separate runtime/release gates remain appropriate where write boundaries are uncertain or explicitly required. Never waive required isolation, review or verification to meet a budget.
+
+Preserve passing checks for an unchanged candidate. Count model sessions (including re-reviews, failed and abandoned starts), handoffs, candidate cycles and wall time. The [2026-09-21 benchmark](experiments/ORCHESTRATION_BENCHMARK_2026-09-21.md) records the evidence and limits behind this routing change.
 
 ## Integrator-owned repository mechanics
 
@@ -131,7 +148,7 @@ The final queue report is not a batch project acceptance.
 
 Local Codex may provide `$delivery-loop` and a thin `hermes-finance` helper skill. Their filesystem paths, model assignments and runtime mechanics are machine-local and are not tracked here.
 
-- `$delivery-loop` owns generic orchestration mechanics.
+- `$delivery-loop` owns experimental orchestration mechanics and must disable implicit invocation locally while remaining available for explicit use.
 - `hermes-finance`, when present, may help select Finance-specific verification procedures.
 - Neither skill overrides `AGENTS.md`, `MASTER_SPEC`, ADRs, the active issue, `VERIFICATION_POLICY.md` or `MODEL_ROUTING.md`.
 - Permanent financial semantics belong in repository sources of truth, not in local skills.
