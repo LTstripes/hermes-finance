@@ -138,7 +138,7 @@ static void PresentsBrandedOwnerSurface()
     Assert(buttons.Any(button => button.Text == "Диагностика и логи"), "Raw diagnostics must have a dedicated details action.");
     Assert(labels.Any(label => label.Text == "STABLE  ·  PRODUCTION"), "The Stable owner badge is missing.");
     Assert(labels.Any(label => label.Text == "PREVIEW  ·  ISOLATED"), "The Preview owner badge is missing.");
-    Assert(labels.Any(label => label.Text.Contains("Release v0.9.0", StringComparison.Ordinal) || label.Text.Contains("UNRELEASED", StringComparison.Ordinal)), "Profile cards must show Stable pinned release or Preview UNRELEASED badge.");
+    Assert(labels.Any(label => label.Text.Contains("Release v1.0.0", StringComparison.Ordinal) || label.Text.Contains("UNRELEASED", StringComparison.Ordinal)), "Profile cards must show Stable pinned release or Preview UNRELEASED badge.");
 
     var status = controls.OfType<TextBox>().Single();
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
@@ -1316,14 +1316,14 @@ static void ShowsStablePinnedIdentity()
         DisplayName = "Hermes Finance — Stable",
         Type = "stable",
         Checkout = "C:\\synthetic\\stable",
-        ExpectedRef = "refs/tags/v0.9.0",
+        ExpectedRef = "refs/tags/v1.0.0",
         DataDir = "C:\\synthetic\\stable\\data",
         Database = "C:\\synthetic\\stable\\data\\finance.db",
         OpenBrowser = false,
     };
     // Stable must show pinned release tag/SHA + production data identity without manual JSON
     var label = LauncherUi.StableIdentityLabel(stable, "d04f46696a991ea59066b59d4870980ac4b69089");
-    Assert(label.Contains("v0.9.0", StringComparison.Ordinal), "Stable identity must show pinned release version/tag.");
+    Assert(label.Contains("v1.0.0", StringComparison.Ordinal), "Stable identity must show pinned release version/tag.");
     Assert(label.Contains("d04f466", StringComparison.Ordinal), "Stable identity must show short SHA.");
     Assert(label.Contains("production", StringComparison.OrdinalIgnoreCase), "Stable identity must show production data identity.");
     Assert(!label.Contains("UNRELEASED", StringComparison.OrdinalIgnoreCase), "Stable must not be marked unreleased.");
@@ -1357,7 +1357,7 @@ static void ShowsPreviewUnreleasedIdentity()
 static void OffersActionableMismatch()
 {
     var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
-    var stable = new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = "C:\\s", ExpectedRef = "refs/tags/v0.9.0", DataDir = "C:\\s\\data", Database = "C:\\s\\data\\finance.db", OpenBrowser = false };
+    var stable = new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = "C:\\s", ExpectedRef = "refs/tags/v1.0.0", DataDir = "C:\\s\\data", Database = "C:\\s\\data\\finance.db", OpenBrowser = false };
 
     var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
     var planPreview = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Blocked, null, preview, mismatch);
@@ -1373,7 +1373,7 @@ static void OffersActionableMismatch()
 
 static void ExposesSinglePrimaryCta()
 {
-    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.9.0");
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v1.0.0");
     var config = new LauncherConfig
     {
         Version = 1,
@@ -1415,7 +1415,7 @@ static void ExposesSinglePrimaryCta()
 static void SummarizesChecksPlainLanguage()
 {
     // Human checks must be plain language, raw diagnostics secondary
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.9.0");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v1.0.0");
     var config = new LauncherConfig
     {
         Version = 1,
@@ -1480,7 +1480,7 @@ static void StripsRealUnknownFieldsOrFailsClosed()
             CanonicalProduction = new CanonicalProduction { Checkout = checkout, DataDir = dataDir, Database = database },
             Profiles =
             [
-                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v0.9.0", DataDir = dataDir, Database = database, OpenBrowser = false },
+                new LauncherProfile { Id = "stable", DisplayName = "Stable", Type = "stable", Checkout = checkout, ExpectedRef = "refs/tags/v1.0.0", DataDir = dataDir, Database = database, OpenBrowser = false },
             ],
         };
         var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(valid)) as System.Text.Json.Nodes.JsonObject
@@ -1491,7 +1491,7 @@ static void StripsRealUnknownFieldsOrFailsClosed()
         File.WriteAllText(configPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
         var stripped = LauncherConfig.LoadOrCreate(configPath, out var diag);
-        Assert(stripped.Profiles.Count == 1 && stripped.Profiles[0].ExpectedRef == "refs/tags/v0.9.0", "Stripped config must keep known fields intact.");
+        Assert(stripped.Profiles.Count == 1 && stripped.Profiles[0].ExpectedRef == "refs/tags/v1.0.0", "Stripped config must keep known fields intact.");
         Assert(diag.Contains("removed", StringComparison.OrdinalIgnoreCase) || diag.Contains("unknown", StringComparison.OrdinalIgnoreCase), "Unknown-field strip must be diagnosable.");
         var rewritten = File.ReadAllText(configPath);
         Assert(!rewritten.Contains("token", StringComparison.Ordinal), "Rewritten config must not keep the top-level unknown field.");
@@ -1514,7 +1514,7 @@ static void StripsRealUnknownFieldsOrFailsClosed()
 
 static void PortCollisionOffersRefreshNotStop()
 {
-    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.9.0");
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v1.0.0");
     var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
     var portEx = new LauncherValidationException("Another Hermes instance is running; v1 is single-instance on port 8000.");
 
@@ -1549,7 +1549,7 @@ static void PortCollisionOffersRefreshNotStop()
 
 static void StableMismatchIsRecoveryOnly()
 {
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.9.0");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v1.0.0");
     var preview = new LauncherProfile { Id = "preview", DisplayName = "Preview", Type = "preview", Checkout = "C:\\p", ExpectedRef = "HEAD", DataDir = "C:\\p\\data", Database = "C:\\p\\data\\finance.db", OpenBrowser = false };
     var mismatch = new LauncherValidationException("Checkout identity does not match this profile.");
 
@@ -1629,7 +1629,7 @@ static void ApplyValidatedOn(MainForm form, ValidatedProfile validated)
 
 static void StableReadyStartsPrimary()
 {
-    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v0.9.0");
+    var stable = StableProfile("C:\\synthetic\\stable", "C:\\synthetic\\stable\\data", "C:\\synthetic\\stable\\data\\finance.db", "refs/tags/v1.0.0");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
@@ -1644,7 +1644,7 @@ static void StableReadyStartsPrimary()
     Assert(primaries.Count == 1 && primaries[0] == "Запустить", $"Stable Ready must have exactly one primary CTA 'Запустить', found [{string.Join(",", primaries)}].");
 }
 
-// #302: a validated v0.9.0 Stable must never be called "Stable 0.8.0".
+// #302: a validated v1.0.0 Stable must never be called "Stable 0.8.0".
 // Older installs may carry the stale version inside display_name; the
 // owner title is derived from the profile without that stale token while
 // the version itself comes only from validated release identity.
@@ -1656,7 +1656,7 @@ static void OwnerTitleDerivesFromValidatedIdentity()
         DisplayName = "Hermes Finance — Stable 0.8.0",
         Type = "stable",
         Checkout = "C:\\synthetic\\stable",
-        ExpectedRef = "refs/tags/v0.9.0",
+        ExpectedRef = "refs/tags/v1.0.0",
         DataDir = "C:\\synthetic\\stable\\data",
         Database = "C:\\synthetic\\stable\\data\\finance.db",
         OpenBrowser = false,
@@ -1696,9 +1696,9 @@ static void OwnerTitleDerivesFromValidatedIdentity()
     ForceLayout(form, new Size(960, 820));
     var afterLabels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
     Assert(!afterLabels.Any(text => text.Contains("0.8.0", StringComparison.Ordinal)),
-        "A validated v0.9.0 Stable must never show Stable 0.8.0 anywhere.");
-    Assert(afterLabels.Any(text => text.Contains("v0.9.0", StringComparison.Ordinal)),
-        "The validated Stable identity must show the proven v0.9.0 release.");
+        "A validated v1.0.0 Stable must never show Stable 0.8.0 anywhere.");
+    Assert(afterLabels.Any(text => text.Contains("v1.0.0", StringComparison.Ordinal)),
+        "The validated Stable identity must show the proven v1.0.0 release.");
     var selectedName = (Label)typeof(MainForm)
         .GetField("_selectedName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .GetValue(form)!;
@@ -1718,7 +1718,7 @@ static void LastRunFooterDerivesFromValidatedIdentity()
         DisplayName = "Hermes Finance — Stable 0.8.0",
         Type = "stable",
         Checkout = "C:\\synthetic\\stable",
-        ExpectedRef = "refs/tags/v0.9.0",
+        ExpectedRef = "refs/tags/v1.0.0",
         DataDir = "C:\\synthetic\\stable\\data",
         Database = "C:\\synthetic\\stable\\data\\finance.db",
         OpenBrowser = false,
@@ -1764,7 +1764,7 @@ static void LastRunFooterDerivesFromValidatedIdentity()
         "production", new DependencyStatus(true, true, "ready", "ready"));
     var completeReady = typeof(MainForm).GetMethod("CompleteReady", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
         ?? throw new InvalidOperationException("Could not find CompleteReady for last-run footer.");
-    completeReady.Invoke(form, [validated, "v0.9.0"]);
+    completeReady.Invoke(form, [validated, "v1.0.0"]);
     var lastLaunch = GetPrivate<Label>(form, "_lastLaunch").Text;
     Assert(lastLaunch.Contains("Hermes Finance — Stable", StringComparison.Ordinal),
         $"Ready footer must show the normalized owner title, found '{lastLaunch}'.");
@@ -1929,7 +1929,7 @@ static void ShowsShaPinnedStableVersionAndIdentity()
     {
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(Path.Combine(stableCheckout, "backend", "src", "hermes_finance"));
-        File.WriteAllText(Path.Combine(stableCheckout, "backend", "src", "hermes_finance", "__init__.py"), "__version__ = '0.9.0'\n");
+        File.WriteAllText(Path.Combine(stableCheckout, "backend", "src", "hermes_finance", "__init__.py"), "__version__ = '1.0.0'\n");
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic SHA-pinned Stable");
         CreateRuntimeLayout(previewCheckout);
@@ -1947,7 +1947,7 @@ static void ShowsShaPinnedStableVersionAndIdentity()
             stable.ExpectedRef,
             "production",
             new DependencyStatus(true, true, "ready", "ready"),
-            "0.9.0");
+            "1.0.0");
         using var form = new MainForm(config);
         var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Could not find ApplyValidated for Stable identity presentation.");
@@ -1955,7 +1955,7 @@ static void ShowsShaPinnedStableVersionAndIdentity()
         var summary = (Label)typeof(MainForm)
             .GetField("_shaSummary", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .GetValue(form)!;
-        Assert(summary.Text.Contains("Version 0.9.0", StringComparison.Ordinal), "SHA-pinned Stable presentation must retain the validated application version.");
+        Assert(summary.Text.Contains("Version 1.0.0", StringComparison.Ordinal), "SHA-pinned Stable presentation must retain the validated application version.");
         Assert(summary.Text.Contains($"SHA {stable.ExpectedRef[..7]}", StringComparison.Ordinal), "SHA-pinned Stable presentation must show the exact SHA.");
     }
     finally
@@ -1985,7 +1985,7 @@ static void SetupRejectsPreviewSharingStableGitDir()
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
+        RunGit(stableCheckout, "tag", "v1.0.0");
         RunGit(stableCheckout, "branch", "-M", "main");
         RunGit(stableCheckout, "update-ref", "refs/remotes/origin/main", "HEAD");
         // Linked worktree: same git-common-dir as Stable, HEAD at origin/main.
@@ -2020,7 +2020,7 @@ static void PreparedSetupPassesPreflightIdentity()
         CreateRuntimeLayout(stableCheckout);
         Directory.CreateDirectory(stableData);
         InitSyntheticRepo(stableCheckout, "synthetic stable at release");
-        RunGit(stableCheckout, "tag", "v0.9.0");
+        RunGit(stableCheckout, "tag", "v1.0.0");
         CreateRuntimeLayout(previewCheckout);
         Directory.CreateDirectory(previewData);
         InitSyntheticRepo(previewCheckout, "synthetic preview at origin/main");
@@ -2047,7 +2047,7 @@ static void PreparedSetupPassesPreflightIdentity()
 
 static void ConfigFailureOffersSetupAction()
 {
-    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v0.9.0");
+    var stable = StableProfile("C:\\s", "C:\\s\\data", "C:\\s\\data\\finance.db", "refs/tags/v1.0.0");
     using var form = new MainForm(new LauncherConfig
     {
         Version = 1,
