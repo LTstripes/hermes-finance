@@ -920,17 +920,11 @@ def _deletion_target_hash(target: _DeletionTarget) -> str:
     return hashlib.sha256(_read_fd(target.handle)).hexdigest()
 
 
-def _revalidate_deletion_target(target: _DeletionTarget) -> None:
-    """Prove the open handle is still the verified object before destruction."""
+def _assert_handle_still_verified(target: _DeletionTarget) -> None:
+    """Prove the open handle still names the verified object."""
 
     handle_id = _deletion_target_identity(target)
     if handle_id is None or handle_id != target.candidate.file_id:
-        raise ProtectedBackupError("retention identity is not proven")
-    try:
-        path_id = _file_identity(target.candidate.path.lstat())
-    except OSError as error:
-        raise ProtectedBackupError("retention identity is not proven") from error
-    if path_id != handle_id:
         raise ProtectedBackupError("retention identity is not proven")
     if _deletion_target_hash(target) != target.candidate.artifact_hash:
         raise ProtectedBackupError("retention identity is not proven")
@@ -947,8 +941,8 @@ def _linux_unlinkat_empty(fd: int) -> None:
     """Unlink the inode referred to by fd, not a pathname."""
 
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    # ctypes.c_char_p converts empty bytes to NULL; pass the buffer address.
-    empty_name = ctypes.create_string_buffer(1)
+    # c_char arrays are treated as C strings; empty c_char* becomes NULL.
+    empty_name = (ctypes.c_ubyte * 1)()
     empty_ptr = ctypes.c_void_p(ctypes.addressof(empty_name))
     last_errno = 0
 
@@ -997,6 +991,53 @@ def _linux_unlinkat_empty(fd: int) -> None:
     raise OSError(last_errno or 22, "unlinkat")
 
 
+def _preflight_object_bound_deletion(destination: Path) -> None:
+    """Prove this filesystem can delete by verified object identity."""
+
+    probe = destination / f".hermes_retention_probe_{uuid.uuid4().hex}"
+    probe.write_bytes(b"probe")
+    try:
+        if sys.platform == "win32":
+            kernel32 = _windows_kernel32()
+            handle = kernel32.CreateFileW(
+                os.fspath(probe),
+                _GENERIC_READ | _DELETE_ACCESS,
+                _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+                None,
+                _OPEN_EXISTING,
+                _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+            if ctypes.c_void_p(handle).value in {None, _INVALID_HANDLE_VALUE}:
+                _win_raise("CreateFileW")
+            try:
+                info = _FILE_DISPOSITION_INFO_STRUCT(True)
+                if not kernel32.SetFileInformationByHandle(
+                    handle,
+                    _FILE_DISPOSITION_INFO,
+                    ctypes.byref(info),
+                    ctypes.sizeof(info),
+                ):
+                    _win_raise("SetFileInformationByHandle")
+            finally:
+                kernel32.CloseHandle(handle)
+        elif sys.platform.startswith("linux"):
+            fd = os.open(probe, _regular_file_open_flags())
+            try:
+                _linux_unlinkat_empty(fd)
+            finally:
+                os.close(fd)
+        else:
+            raise ProtectedBackupError("retention identity is not proven")
+        if probe.exists():
+            raise ProtectedBackupError("retention identity is not proven")
+    except OSError as error:
+        raise ProtectedBackupError("retention identity is not proven") from error
+    finally:
+        if probe.exists():
+            probe.unlink(missing_ok=True)
+
+
 def _mark_deletion_target(target: _DeletionTarget) -> None:
     """Delete the object named by the verified handle, not by pathname."""
 
@@ -1010,17 +1051,7 @@ def _mark_deletion_target(target: _DeletionTarget) -> None:
         ):
             _win_raise("SetFileInformationByHandle")
         return
-    try:
-        _linux_unlinkat_empty(int(target.handle))
-        return
-    except OSError:
-        pass
-    # Some libc/kernel combinations reject AT_EMPTY_PATH. Unlink the pathname
-    # only while the open handle still identifies that same object.
-    _revalidate_deletion_target(target)
-    os.unlink(target.candidate.path)
-    if os.fstat(target.handle).st_nlink != 0:
-        raise ProtectedBackupError("retention identity is not proven")
+    _linux_unlinkat_empty(int(target.handle))
 
 
 def _close_deletion_target(target: _DeletionTarget) -> None:
@@ -1046,21 +1077,26 @@ def _commit_retention_deletions(candidates: list[_RetentionCandidate]) -> None:
         return
     if not _object_bound_deletion_supported():
         raise ProtectedBackupError("retention identity is not proven")
+    _preflight_object_bound_deletion(candidates[0].path.parent)
     targets: list[_DeletionTarget] = []
+    marked = False
     try:
         for candidate in candidates:
             targets.append(_open_deletion_target(candidate))
+        for target in targets:
+            _assert_handle_still_verified(target)
         _retention_before_destroy(targets)
         for target in targets:
-            _revalidate_deletion_target(target)
-        for target in targets:
             _mark_deletion_target(target)
+        marked = True
     finally:
         for target in targets:
             try:
                 _close_deletion_target(target)
             except OSError:
                 pass
+    if marked and any(target.candidate.path.exists() for target in targets):
+        raise ProtectedBackupError("retention identity is not proven")
 
 
 def _select_retention_deletions(

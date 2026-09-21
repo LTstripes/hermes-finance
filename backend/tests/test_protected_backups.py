@@ -1199,6 +1199,114 @@ def test_retention_refuses_to_delete_pathname_replaced_after_handle_verification
     assert created[0] in _managed_names(destination)
 
 
+def test_retention_survives_rename_aside_and_replacement_before_destroy(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    created, _results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
+    )
+    replacement = b"replacement-after-rename-aside"
+
+    def rename_aside_then_replace(targets: list[protected_backups._DeletionTarget]) -> None:
+        assert targets
+        path = targets[0].candidate.path
+        aside = path.parent / f"aside-{path.name}"
+        os.rename(path, aside)
+        path.write_bytes(replacement)
+
+    monkeypatch.setattr(protected_backups, "_retention_before_destroy", rename_aside_then_replace)
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(2035, 1, 20, 9, 0, 0, tzinfo=UTC),
+    )
+    target = destination / created[0]
+
+    assert result.published is True
+    assert result.verified is True
+    assert result.retention == RETENTION_FAILED
+    assert target.is_file()
+    assert target.read_bytes() == replacement
+
+
+def test_preflight_failure_deletes_no_retention_candidates(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    created, _results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT
+    )
+    noop_retain = protected_backups._retain_verified_recovery_points
+
+    monkeypatch.setattr(
+        protected_backups,
+        "_retain_verified_recovery_points",
+        lambda *_args, **_kwargs: (RETENTION_COMPLETED, None),
+    )
+    _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(2035, 1, 13, 8, 0, 0, tzinfo=UTC),
+    )
+    monkeypatch.setattr(protected_backups, "_retain_verified_recovery_points", noop_retain)
+
+    def fail_preflight(_destination: Path) -> None:
+        raise ProtectedBackupError("retention identity is not proven")
+
+    monkeypatch.setattr(protected_backups, "_preflight_object_bound_deletion", fail_preflight)
+    before = _managed_names(destination)
+    assert len(before) == VERIFIED_RETENTION_LIMIT + 1
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(2035, 1, 20, 9, 0, 0, tzinfo=UTC),
+    )
+
+    assert result.published is True
+    assert result.retention == RETENTION_FAILED
+    remaining = _managed_names(destination)
+    assert before.issubset(remaining)
+    assert len(remaining) == VERIFIED_RETENTION_LIMIT + 2
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows handle deletion")
+def test_windows_same_handle_deletion_without_replacement_hook(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    disposition_calls = {"count": 0}
+    real_mark = protected_backups._mark_deletion_target
+    unlinked_names: list[str] = []
+    real_unlink = os.unlink
+
+    def counting_mark(target: protected_backups._DeletionTarget) -> None:
+        assert target.kind == "windows"
+        disposition_calls["count"] += 1
+        real_mark(target)
+
+    def spy_unlink(path, *args, **kwargs):
+        unlinked_names.append(Path(path).name)
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(protected_backups, "_mark_deletion_target", counting_mark)
+    monkeypatch.setattr(os, "unlink", spy_unlink)
+    created, results = _publish_series(
+        monkeypatch, synthetic_database, destination, VERIFIED_RETENTION_LIMIT + 1
+    )
+
+    assert results[-1].retention == RETENTION_COMPLETED
+    assert created[0] not in _eligible_names(destination)
+    assert disposition_calls["count"] >= 1
+    assert not any(is_managed_recovery_name(name) for name in unlinked_names)
+
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux unlinkat")
 def test_linux_handle_unlink_removes_open_inode(tmp_path: Path) -> None:
     path = tmp_path / "hermes_recovery_20350101T000000000000Z-0123456789abcdef.hermes-recovery"
