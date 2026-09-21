@@ -866,8 +866,10 @@ def _assert_prepare_output_boundary(path: Path, *, directory: bool) -> None:
             for name in directories:
                 candidate = Path(root) / name
                 child = candidate.lstat()
-                if candidate.is_symlink() or bool(
-                    getattr(child, "st_file_attributes", 0) & _REPARSE_POINT
+                linked = candidate.is_symlink()
+                if bool(getattr(child, "st_file_attributes", 0) & _REPARSE_POINT) or (
+                    linked
+                    and not _safe_posix_prepare_link(candidate, boundary=path, directory=True)
                 ):
                     raise RecoveryRehearsalError(
                         "runtime-prepare-boundary",
@@ -876,11 +878,17 @@ def _assert_prepare_output_boundary(path: Path, *, directory: bool) -> None:
             for name in files:
                 candidate = Path(root) / name
                 child = candidate.lstat()
+                linked = candidate.is_symlink()
                 if (
-                    candidate.is_symlink()
-                    or bool(getattr(child, "st_file_attributes", 0) & _REPARSE_POINT)
-                    or not stat.S_ISREG(child.st_mode)
-                    or _file_identity(child) is None
+                    bool(getattr(child, "st_file_attributes", 0) & _REPARSE_POINT)
+                    or (
+                        linked
+                        and not _safe_posix_prepare_link(candidate, boundary=path, directory=False)
+                    )
+                    or (
+                        not linked
+                        and (not stat.S_ISREG(child.st_mode) or _file_identity(child) is None)
+                    )
                 ):
                     raise RecoveryRehearsalError(
                         "runtime-prepare-boundary",
@@ -895,6 +903,33 @@ def _assert_prepare_output_boundary(path: Path, *, directory: bool) -> None:
         raise RecoveryRehearsalError(
             "runtime-prepare-boundary", "prepared output file identity is invalid"
         )
+
+
+def _safe_posix_prepare_link(candidate: Path, *, boundary: Path, directory: bool) -> bool:
+    """Accept only standard, non-mutating POSIX venv links or boundary-local aliases."""
+
+    if sys.platform == "win32":
+        return False
+    try:
+        resolved = candidate.resolve(strict=True)
+        inspected = resolved.stat()
+        relative = candidate.relative_to(boundary)
+        base_interpreter = Path(getattr(sys, "_base_executable", sys.executable)).resolve(
+            strict=True
+        )
+    except (OSError, RuntimeError, ValueError):
+        return False
+    if _path_is_within(resolved, boundary):
+        return stat.S_ISDIR(inspected.st_mode) if directory else stat.S_ISREG(inspected.st_mode)
+    return bool(
+        not directory
+        and boundary.name == ".venv"
+        and relative.parent == Path("bin")
+        and re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", relative.name)
+        and _path_key(resolved) == _path_key(base_interpreter)
+        and stat.S_ISREG(inspected.st_mode)
+        and os.access(resolved, os.X_OK)
+    )
 
 
 def _validate_prepare_boundaries(checkout: CheckoutProof) -> None:

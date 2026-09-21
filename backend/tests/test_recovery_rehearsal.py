@@ -1015,6 +1015,30 @@ def test_bootstrap_rejects_mutable_output_junction_without_touching_external_tre
     assert marker.read_text(encoding="utf-8") == "preserve"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX venv link contract")
+def test_prepare_boundary_accepts_only_safe_posix_venv_links(tmp_path: Path) -> None:
+    boundary = tmp_path / ".venv"
+    library = boundary / "lib"
+    binaries = boundary / "bin"
+    library.mkdir(parents=True)
+    binaries.mkdir()
+    (library / "module.py").write_text("synthetic\n", encoding="utf-8")
+    (boundary / "lib64").symlink_to(library, target_is_directory=True)
+    interpreter = Path(getattr(sys, "_base_executable", sys.executable)).resolve()
+    (binaries / "python3").symlink_to(interpreter)
+
+    recovery_rehearsal._assert_prepare_output_boundary(boundary, directory=True)
+
+    external = tmp_path / "external-package-tree"
+    external.mkdir()
+    (external / "unchanged.txt").write_text("preserve", encoding="utf-8")
+    (library / "external-alias").symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(RecoveryRehearsalError, match="linked directory"):
+        recovery_rehearsal._assert_prepare_output_boundary(boundary, directory=True)
+    assert (external / "unchanged.txt").read_text(encoding="utf-8") == "preserve"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows listener ownership contract")
 def test_port_race_rejects_unrelated_listener_and_accepts_owned_descendant(
     tmp_path: Path,
