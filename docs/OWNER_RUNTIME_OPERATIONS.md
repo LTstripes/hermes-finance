@@ -424,22 +424,25 @@ $targetDatabase = Join-Path $targetData "finance.db"
 git clone --no-checkout <canonical-hermes-repository-url> $recoveryCheckout
 git -C $recoveryCheckout switch --detach $recoverySha
 
-uv run --project (Join-Path $recoveryCheckout "backend") --locked `
-  hermes-finance-recovery-rehearsal `
-  --recovery-point $recoveryPoint `
-  --recovery-sha $recoverySha `
-  --recovery-checkout $recoveryCheckout `
-  --control-checkout $controlCheckout `
-  --runtime-config $runtimeConfig `
-  --target-profile $targetProfile `
-  --target-data $targetData `
-  --target-database $targetDatabase `
-  --protection-state protected `
-  --protection-mode external_encrypted_destination_v1
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File (Join-Path $recoveryCheckout "scripts\recovery-rehearsal.ps1") `
+  -RecoveryCheckout $recoveryCheckout `
+  -RecoveryPoint $recoveryPoint `
+  -RecoverySha $recoverySha `
+  -ControlCheckout $controlCheckout `
+  -RuntimeConfig $runtimeConfig `
+  -TargetProfile $targetProfile `
+  -TargetData $targetData `
+  -TargetDatabase $targetDatabase `
+  -ProtectionState protected `
+  -ProtectionMode external_encrypted_destination_v1
 ```
 
 The recovery checkout must be a clean detached independent clone at the exact
 selected SHA. It must not contain `.env`, private data, or prior runtime data.
+The repository-owned wrapper establishes the checkout-local `.venv` before
+the first `uv run`; do not replace it with a direct inherited-environment
+`uv run` command.
 The launcher runtime config is read only to exclude canonical Stable and every
 configured Preview/experiment boundary; the trusted control checkout supplies
 the development-worktree inventory. The target profile, its `data` directory,

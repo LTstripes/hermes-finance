@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -12,7 +13,11 @@ from pathlib import Path
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from fastapi.testclient import TestClient
 
+from hermes_finance.database import create_database
+from hermes_finance.main import create_app
+from hermes_finance.persistence import Base
 from hermes_finance.recovery_rehearsal_cli import main as recovery_rehearsal_main
 from hermes_finance.services import protected_backups, recovery_rehearsal
 from hermes_finance.services.protected_backups import PROTECTION_MODE, PROTECTION_STATE
@@ -187,6 +192,29 @@ def _run_isolated(
         target_data=data or default_data,
         target_database=database or default_database,
     )
+
+
+def _validated_target_plan(
+    artifact: Path,
+    tmp_path: Path,
+    *,
+    database_name: str = "finance.db",
+) -> tuple[recovery_rehearsal.VerifiedSource, recovery_rehearsal.TargetPlan]:
+    source = recovery_rehearsal._verify_source(
+        artifact,
+        protection_state=PROTECTION_STATE,
+        protection_mode=PROTECTION_MODE,
+    )
+    profile, data, _database = _target_paths(tmp_path)
+    target = recovery_rehearsal._validate_fresh_target(
+        target_profile=profile,
+        target_data=data,
+        target_database=data / database_name,
+        source=source,
+        checkout=_proof(),
+        forbidden=(),
+    )
+    return source, target
 
 
 def test_isolated_restore_composes_prepare_validate_and_bounded_readiness(
@@ -370,6 +398,79 @@ def test_non_empty_or_conflicting_target_is_rejected_without_changes(
     assert marker.read_text(encoding="utf-8") == "preserve"
 
 
+@pytest.mark.parametrize(
+    "database_name",
+    [
+        "finance#archive.db",
+        "finance%archive.db",
+        "finance%23encoded-looking.db",
+        "finance records.db",
+        "финансы.db",
+    ],
+)
+def test_read_only_sqlite_uri_preserves_literal_supported_database_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    database_name: str,
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    _install_isolated_harness(monkeypatch, tmp_path)
+    profile, data, _database = _target_paths(tmp_path)
+    database = data / database_name
+
+    result = _run_isolated(
+        artifact,
+        tmp_path,
+        profile=profile,
+        data=data,
+        database=database,
+    )
+
+    assert result.status == "rehearsed"
+    assert database.is_file()
+    identity = recovery_rehearsal._file_identity(database.stat())
+    assert identity is not None
+    with recovery_rehearsal._open_database_read_only(
+        database,
+        expected_identity=identity,
+        stage="test-read-only",
+    ) as connection:
+        with pytest.raises(sqlite3.OperationalError):
+            connection.execute("CREATE TABLE must_not_exist (id INTEGER)")
+    assert {path.name for path in data.iterdir()} == {
+        database_name,
+        ".hermes-data-identity.json",
+    }
+
+
+@pytest.mark.parametrize(
+    "database_name",
+    [".hermes-data-identity.json", ".finance.db.recovery.incomplete"],
+)
+def test_reserved_generated_database_name_fails_before_target_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    database_name: str,
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source_before = artifact.read_bytes()
+    _install_isolated_harness(monkeypatch, tmp_path)
+    profile, data, _database = _target_paths(tmp_path)
+
+    with pytest.raises(RecoveryRehearsalError) as captured:
+        _run_isolated(
+            artifact,
+            tmp_path,
+            profile=profile,
+            data=data,
+            database=data / database_name,
+        )
+
+    assert captured.value.stage == "target-boundary"
+    assert not profile.exists()
+    assert artifact.read_bytes() == source_before
+
+
 def _make_directory_link(link: Path, target: Path) -> bool:
     if sys.platform == "win32":
         completed = subprocess.run(
@@ -411,6 +512,108 @@ def test_reparse_linked_target_is_rejected_before_mutation(
 
     assert captured.value.stage == "target-boundary"
     assert not (real_parent / "isolated-recovery").exists()
+
+
+def test_bound_parent_prevents_ancestor_replacement_from_redirecting_creation(
+    tmp_path: Path,
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source, target = _validated_target_plan(artifact, tmp_path)
+    moved_parent = target.profile.parent.with_name("validated-parent-moved")
+    replacement_created = False
+    try:
+        try:
+            target.profile.parent.rename(moved_parent)
+        except OSError:
+            assert sys.platform == "win32"
+            assert target.profile.parent.is_dir()
+        else:
+            target.profile.parent.mkdir()
+            replacement_created = True
+            with pytest.raises(RecoveryRehearsalError) as captured:
+                recovery_rehearsal._create_target_directories(target)
+            assert captured.value.stage == "restore-write"
+            assert not target.profile.exists()
+            assert not (moved_parent / target.profile.name).exists()
+    finally:
+        target.close()
+        source.close()
+    if not replacement_created:
+        assert not target.profile.exists()
+
+
+def test_database_publication_does_not_overwrite_late_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source, target = _validated_target_plan(artifact, tmp_path)
+    recovery_rehearsal._create_target_directories(target)
+    foreign = b"late foreign database"
+    original_publish = recovery_rehearsal._DirectoryGuard.publish_no_overwrite
+
+    def publish_with_conflict(
+        guard: recovery_rehearsal._DirectoryGuard, staging_name: str, final_name: str
+    ) -> None:
+        (guard.path / final_name).write_bytes(foreign)
+        original_publish(guard, staging_name, final_name)
+
+    monkeypatch.setattr(
+        recovery_rehearsal._DirectoryGuard,
+        "publish_no_overwrite",
+        publish_with_conflict,
+    )
+    try:
+        with pytest.raises(RecoveryRehearsalError) as captured:
+            recovery_rehearsal._restore_snapshot(source.snapshot_bytes, target)
+        assert captured.value.stage == "restore-write"
+        assert target.database.read_bytes() == foreign
+    finally:
+        target.close()
+        source.close()
+
+
+@pytest.mark.parametrize("alias_kind", ["foreign", "source"])
+def test_sidecar_exclusive_creation_does_not_follow_late_alias(
+    tmp_path: Path,
+    alias_kind: str,
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source_before = artifact.read_bytes()
+    source, target = _validated_target_plan(artifact, tmp_path)
+    compatibility = recovery_rehearsal._compatibility(
+        REPOSITORY_ROOT,
+        tuple(source.manifest["source_alembic_revisions"]),
+        str(source.manifest["producer_git_sha"]),
+    )
+    recovery_rehearsal._create_target_directories(target)
+    recovery_rehearsal._restore_snapshot(source.snapshot_bytes, target)
+    alias_target = artifact
+    foreign = tmp_path / "foreign-sidecar-target"
+    if alias_kind == "foreign":
+        foreign.write_bytes(b"preserve foreign bytes")
+        alias_target = foreign
+    sidecar = target.data / ".hermes-data-identity.json"
+    try:
+        os.link(alias_target, sidecar)
+    except OSError:
+        target.close()
+        source.close()
+        pytest.skip("hard-link creation is unavailable")
+    try:
+        with pytest.raises(RecoveryRehearsalError) as captured:
+            recovery_rehearsal._write_sidecar(
+                target,
+                source=source,
+                checkout=_proof(),
+                compatibility=compatibility,
+            )
+        assert captured.value.stage == "restore-write"
+        assert alias_target.read_bytes() == (
+            source_before if alias_kind == "source" else b"preserve foreign bytes"
+        )
+    finally:
+        target.close()
+        source.close()
 
 
 def test_hardlinked_source_is_rejected_before_target_mutation(
@@ -578,14 +781,27 @@ def test_runtime_script_uses_windows_powershell_inbox_modules(
     powershell = tmp_path / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     captured: dict[str, object] = {}
 
-    def run_stub(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        captured["args"] = args
-        captured["kwargs"] = kwargs
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    def run_stub(
+        command: list[str],
+        *,
+        cwd: Path,
+        environment: dict[str, str],
+        ownership_token: str,
+        timeout: int | float,
+    ) -> subprocess.CompletedProcess[str]:
+        captured.update(
+            command=command,
+            cwd=cwd,
+            environment=environment,
+            ownership_token=ownership_token,
+            timeout=timeout,
+        )
+        return subprocess.CompletedProcess(command, returncode=0, stdout="", stderr="")
 
     monkeypatch.setenv("PSModulePath", str(tmp_path / "PowerShell" / "Modules"))
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(tmp_path / "external-stable-env"))
     monkeypatch.setattr(recovery_rehearsal, "_powershell", lambda: str(powershell))
-    monkeypatch.setattr(recovery_rehearsal.subprocess, "run", run_stub)
+    monkeypatch.setattr(recovery_rehearsal, "run_owned_process", run_stub)
 
     recovery_rehearsal._run_runtime_script(
         _proof(),
@@ -595,7 +811,258 @@ def test_runtime_script_uses_windows_powershell_inbox_modules(
         timeout=1,
     )
 
-    environment = captured["kwargs"]["env"]
+    environment = captured["environment"]
     assert environment["PSModulePath"] == str(powershell.parent.resolve() / "Modules")
     assert environment["PYTHONPATH"] == ""
     assert environment["HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN"] == ""
+    assert environment["UV_PROJECT_ENVIRONMENT"] == str(REPOSITORY_ROOT / "backend" / ".venv")
+    assert environment["UV_LINK_MODE"] == "copy"
+    assert captured["command"][5] == str(
+        REPOSITORY_ROOT / "scripts" / "recovery-runtime-boundary.ps1"
+    )
+
+
+def test_recovery_identity_headers_bind_every_readiness_response(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "readiness.db")
+    Base.metadata.create_all(database.engine)
+    application = create_app(database)
+    expected = {
+        "X-Hermes-Recovery-Token": "a" * 64,
+        "X-Hermes-Recovery-Database-Identity": "b" * 64,
+        "X-Hermes-Recovery-Checkout-SHA": "c" * 40,
+    }
+    application.state.recovery_readiness = {
+        "token": expected["X-Hermes-Recovery-Token"],
+        "database_identity": expected["X-Hermes-Recovery-Database-Identity"],
+        "checkout_sha": expected["X-Hermes-Recovery-Checkout-SHA"],
+    }
+    try:
+        with TestClient(application) as client:
+            month = client.post(
+                "/api/months",
+                json={"year": 2035, "month": 1, "snapshot_date": "2035-01-31"},
+            )
+            assert month.status_code == 201
+            responses = (
+                client.get("/api/health"),
+                client.get("/api/months"),
+                client.get("/api/accounts"),
+                client.get(f"/api/months/{month.json()['id']}/dashboard"),
+            )
+            for response in responses:
+                assert response.status_code == 200, response.text
+                for header, value in expected.items():
+                    assert response.headers[header] == value
+    finally:
+        database.engine.dispose()
+
+
+def _synthetic_bootstrap_checkout(tmp_path: Path) -> Path:
+    checkout = tmp_path / "synthetic recovery checkout"
+    scripts = checkout / "scripts"
+    backend = checkout / "backend"
+    frontend = checkout / "frontend"
+    scripts.mkdir(parents=True)
+    backend.mkdir()
+    frontend.mkdir()
+    shutil.copy2(REPOSITORY_ROOT / "scripts" / "recovery-rehearsal.ps1", scripts)
+    for path in (
+        backend / "pyproject.toml",
+        backend / "uv.lock",
+        frontend / "package.json",
+        frontend / "package-lock.json",
+    ):
+        path.write_text("synthetic\n", encoding="utf-8")
+    return checkout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap contract")
+def test_bootstrap_neutralizes_external_uv_project_environment_before_first_uv_run(
+    tmp_path: Path,
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout = _synthetic_bootstrap_checkout(tmp_path)
+    external_environment = tmp_path / "stable-external-env"
+    external_environment.mkdir()
+    marker = external_environment / "unchanged.txt"
+    marker.write_text("preserve", encoding="utf-8")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    capture = tmp_path / "captured-environment.txt"
+    (fake_bin / "uv.cmd").write_text(
+        "@echo off\n"
+        '> "%HERMES_TEST_CAPTURE%" echo %UV_PROJECT_ENVIRONMENT%\n'
+        '>> "%HERMES_TEST_CAPTURE%" echo %UV_LINK_MODE%\n'
+        ">&2 echo synthetic uv bootstrap diagnostic\n"
+        'echo {"status":"synthetic"}\n'
+        "exit /b 0\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_CAPTURE"] = str(capture)
+    environment["UV_PROJECT_ENVIRONMENT"] = str(external_environment)
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(checkout / "scripts" / "recovery-rehearsal.ps1"),
+            "-RecoveryCheckout",
+            str(checkout),
+            "-RecoveryPoint",
+            str(tmp_path / "point.hermes-recovery"),
+            "-RecoverySha",
+            "d" * 40,
+            "-ControlCheckout",
+            str(tmp_path / "control"),
+            "-RuntimeConfig",
+            str(tmp_path / "runtime.json"),
+            "-TargetProfile",
+            str(tmp_path / "target"),
+            "-TargetData",
+            str(tmp_path / "target" / "data"),
+            "-TargetDatabase",
+            str(tmp_path / "target" / "data" / "finance.db"),
+            "-ProtectionState",
+            PROTECTION_STATE,
+            "-ProtectionMode",
+            PROTECTION_MODE,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    captured = capture.read_text(encoding="utf-8").splitlines()
+    assert Path(captured[0]) == checkout / "backend" / ".venv"
+    assert captured[1] == "copy"
+    assert marker.read_text(encoding="utf-8") == "preserve"
+    assert "synthetic uv bootstrap diagnostic" not in completed.stdout
+    assert "synthetic uv bootstrap diagnostic" not in completed.stderr
+
+    (fake_bin / "uv.cmd").write_text(
+        "@echo off\n>&2 echo owner-private-bootstrap-path\nexit /b 7\n",
+        encoding="utf-8",
+    )
+    failed = subprocess.run(
+        completed.args,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+    assert failed.returncode == 2
+    assert json.loads(failed.stdout)["failure_stage"] == "bootstrap"
+    assert "owner-private-bootstrap-path" not in failed.stdout
+    assert "owner-private-bootstrap-path" not in failed.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junction contract")
+@pytest.mark.parametrize(
+    "relative_boundary",
+    [Path("backend/.venv"), Path("frontend/node_modules"), Path("frontend/dist")],
+)
+def test_bootstrap_rejects_mutable_output_junction_without_touching_external_tree(
+    tmp_path: Path,
+    relative_boundary: Path,
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout = _synthetic_bootstrap_checkout(tmp_path)
+    external = tmp_path / (relative_boundary.name + "-external")
+    external.mkdir()
+    marker = external / "unchanged.txt"
+    marker.write_text("preserve", encoding="utf-8")
+    linked = checkout / relative_boundary
+    if not _make_directory_link(linked, external):
+        pytest.skip("directory junction creation is unavailable")
+
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(checkout / "scripts" / "recovery-rehearsal.ps1"),
+            "-RecoveryCheckout",
+            str(checkout),
+            "-BootstrapOnly",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    payload = json.loads(completed.stdout.strip())
+    assert payload["status"] == "action_required"
+    assert payload["failure_stage"] == "bootstrap"
+    assert marker.read_text(encoding="utf-8") == "preserve"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows listener ownership contract")
+def test_port_race_rejects_unrelated_listener_and_accepts_owned_descendant(
+    tmp_path: Path,
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    helper = str(REPOSITORY_ROOT / "scripts" / "recovery-runtime-safety.ps1").replace("'", "''")
+    probe = tmp_path / "listener-ownership-probe.ps1"
+    probe.write_text(
+        f". '{helper}'\n"
+        "$rows = @(\n"
+        "  [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1 },\n"
+        "  [pscustomobject]@{ ProcessId = 101; ParentProcessId = 100 },\n"
+        "  [pscustomobject]@{ ProcessId = 900; ParentProcessId = 1 }\n"
+        ")\n"
+        "$foreign = @([pscustomobject]@{ State = 'Listen'; LocalPort = 8000; "
+        "LocalAddress = '127.0.0.1'; OwningProcess = 900 })\n"
+        "$owned = @([pscustomobject]@{ State = 'Listen'; LocalPort = 8000; "
+        "LocalAddress = '127.0.0.1'; OwningProcess = 101 })\n"
+        "$result = [ordered]@{\n"
+        "  foreign = Test-HermesLoopbackListenerOwnership -RootProcessId 100 "
+        "-Listeners $foreign -ProcessRows $rows\n"
+        "  owned = Test-HermesLoopbackListenerOwnership -RootProcessId 100 "
+        "-Listeners $owned -ProcessRows $rows\n"
+        "}\n"
+        "$result | ConvertTo-Json -Compress\n",
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(probe),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+
+    result = json.loads(completed.stdout)
+    assert result == {"foreign": False, "owned": True}
+    start_source = (REPOSITORY_ROOT / "scripts" / "start-local.ps1").read_text(encoding="utf-8-sig")
+    assert '"/PID", $Process.Id' in start_source
+    assert '"/PID", $listeners' not in start_source
