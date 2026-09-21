@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-20**.
+> Last synchronized: **2026-09-21**.
 
 ## 1. Что мы строим
 
@@ -66,11 +66,13 @@ Known non-blocking metadata follow-up: #410 corrects the GitHub Release descript
 
 ### Canonical development checkpoints
 
-Latest product/runtime integration checkpoint before the documentation sync:
+Latest product/runtime integration checkpoint before this documentation sync:
 
-`49144da863c93e5afc505e16be6817c55ff2b50d` — #459 protected recovery-point publisher, exact-main CI #839 / run `35518134142`: **SUCCESS**.
+`583f9167ae14509202ef47978e7b9f20180e188d` — controlled UI v2 default switch, exact-main CI #872 / run `35573224359`: **SUCCESS**.
 
-UI v2 completion entered `main` one parent earlier at `424ba7bf018c8e4ac01cfda825af7394a3068267` (CI #838 / `35517935019`: SUCCESS).
+Immediately before cutover, #475 restore-outcome safety entered `main` at `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba` (CI #869 / `35571951532`: SUCCESS) after independent safety re-review.
+
+The frozen switch candidate `09649bb1d71d6bdff636bb6becbf16d9f0cd5083` passed Owner UAT before canonical merge.
 
 The live development SHA is always the current GitHub `main`; documentation-only synchronization commits may advance it. The immutable released code remains `c90a842...`; post-release development does not change the published `v0.9.0` tag.
 
@@ -344,79 +346,87 @@ Permanent control endpoint: #124.
 
 Publication не равна Stable installation/update: release создаёт immutable published tag/release; local Stable меняется только отдельным OPS02 owner action.
 
-## 10. UI v2 — complete opt-in product integrated
+## 10. UI v2 — core roadmap complete / primary interface
 
-UI v2 is tracked through #387. The full opt-in owner-facing product is now accepted as one exact aggregate, not merely as a collection of synthetic pages.
+UI v2 is now the primary owner interface on development `main`.
 
-Final completion evidence:
+Implementation/completion milestone evidence:
+- exact aggregate Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — PASS;
+- aggregate PR #455;
+- canonical completion merge `424ba7bf018c8e4ac01cfda825af7394a3068267`;
+- exact-main CI #838 / `35517935019`: SUCCESS.
 
-- exact Owner-UAT candidate: `edd6a32d94ba322badaea1cab804c4e5cc13574d`;
-- aggregate PR: #455;
-- owner verdict: **PASS**;
-- canonical integration: `424ba7bf018c8e4ac01cfda825af7394a3068267`;
-- exact-main CI #838 / run `35517935019`: **SUCCESS**.
+Final controlled cutover evidence:
+- Gate A comparative read-only review: ACCEPT;
+- frozen switch candidate `09649bb1d71d6bdff636bb6becbf16d9f0cd5083`;
+- Owner UAT: **PASS**;
+- PR #474;
+- canonical merge `583f9167ae14509202ef47978e7b9f20180e188d`;
+- exact-main CI #872 / `35573224359`: SUCCESS.
+
+Current route contract:
+- `/` -> primary UI v2 Home;
+- `/v1` -> previous UI Dashboard / durable rollback home;
+- `/v2` and all existing v2 deep links remain valid;
+- legacy editors/routes keep their historical URLs;
+- permanent version rollback is separate from contextual month/editor handoffs.
+
+The final candidate was produced only after #475 restore-outcome ambiguity safety was independently accepted and integrated. Thus the cutover tree preserves both truthful restore-result semantics and the default-switch routing/copy contract.
 
 Completed native surface:
-
-- Home = «Мои финансы»;
+- «Мои финансы» Home;
 - Capital;
 - «Доход и планы»;
 - contextual Reports/history;
-- native Monthly Close over the server-owned workflow;
-- complete «Данные и приложение»:
-  - sources/freshness/provenance;
-  - explicit read-only reconciliation;
-  - catalogs/mappings;
-  - exports and local backup/restore;
-  - settings, tax brackets and runtime diagnostics;
-- global «Наверх» for long v2 pages;
-- final owner-facing Russian copy/terminology pass;
-- accepted Expected payouts hierarchy, Reports archive spacing and Reconciliation copy polish.
+- native Monthly Close;
+- complete «Данные и приложение»;
+- owner-facing copy/terminology polish;
+- back-to-top support;
+- controlled default switch with tested rollback.
 
-S13 umbrella #429 and children #432–#434 are closed. Owner-UAT polish #444–#448 is closed.
+V1 is **not retired**. Its Dashboard remains at `/v1`, and retained legacy editors/routes remain available. Any future retirement requires a separate explicit decision based on real-use evidence.
 
-Backup/restore #433 received an independent safety review before acceptance. The accepted contract includes exact-target confirmation, success-only pre-restore evidence, safe QueryClient refresh after successful or ambiguous restore outcomes, fail-safe ambiguous transport/body handling, focus containment and mutual mutation guards.
+Closeouts:
+- `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`;
+- `docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`.
 
-History/Reports and Monthly Close remain contextual. v1 remains the default/rollback surface until #430.
-
-The milestone reinforced the staged-integration rule now recorded in `AGENTS.md`: accepted sibling heads are integrated incrementally into one milestone staging line, shared App/Entry/Shell/navigation reconciliation is Integrator-owned, and Owner UAT validates one exact aggregate tree that is not reconstructed afterward.
-
-Closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
-
-### Protected recovery-point publisher
+### Protected recovery-point publisher and restore-result safety
 
 #459 / PR #466 is accepted and canonical:
+- managed provider-neutral protected destination;
+- explicit attestation boundary;
+- staged verification before exposure;
+- destination read-back;
+- independent security/recovery review ACCEPT.
 
-- accepted candidate `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
-- canonical merge `49144da863c93e5afc505e16be6817c55ff2b50d`;
-- independent security/recovery review: ACCEPT;
-- exact-main CI #839 / `35518134142`: SUCCESS.
+#475 / PR #477 is also complete:
+- confirmed negative restore outcomes remain distinct from ambiguous possibly-mutated outcomes;
+- machine-readable `restore_outcome_ambiguous`;
+- ambiguous UI state never claims success/failure and never blind-retries;
+- shared reads refresh after ambiguity;
+- cleanup cannot overwrite the ambiguity classification;
+- independent safety re-review ACCEPT.
 
-The publisher supports only an explicitly attested `external_encrypted_destination_v1` filesystem destination. It proves staged artifact integrity/schema identity before final exposure and re-verifies destination bytes after publication. It does not prove cloud delivery or validate encryption keys, and it adds no cloud API/OAuth/custom cryptography.
-
-#460 retention, #461 isolated DR rehearsal and #462 focused post-restore state reload remain open. Real Owner backup/recovery use remains a later Owner-controlled gate.
+#460 retention, #461 isolated DR rehearsal and #462 focused post-restore state reload remain open. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
 ### UI / product
 
-UI v2 implementation/completion is finished on canonical `main`.
+The core UI v2 roadmap (#387) is complete.
 
-The next and only remaining core gate is #430:
+UI v2 is primary at `/`; v1 remains available at `/v1` plus retained legacy routes/editors.
 
-1. comparative read-only v1/v2 audit;
-2. owner checklist and blocker-only findings;
-3. bounded root/default-switch candidate if the audit is clean;
-4. exact-SHA Owner Preview/UAT;
-5. controlled merge only after explicit Owner PASS.
+There is no remaining cutover gate. Separate future work:
+- #476 — one real-backend synthetic G04 browser regression gate;
+- #389 — future configurable dashboards, separate from the completed core roadmap;
+- v1 retirement — only as a later explicit task if real use shows rollback/legacy paths are no longer needed.
 
-The switch must preserve v1 as an obvious rollback/legacy route. V1 retirement remains a separate decision after cutover.
-
-`1.0.0` is reasonable only after this controlled default switch is accepted and the proven production lifecycle remains intact.
+`1.0.0` remains a future release/product milestone, not implied by development-main cutover.
 
 ### Runtime / durability
 
-#313 завершён. #459 protected recovery-point publisher также завершён и интегрирован.
+#313 завершён. #459 protected recovery-point publisher и #475 restore outcome semantics также завершены и интегрированы.
 
 Под #417 остаются:
 - #460 retention;
@@ -433,7 +443,7 @@ Account + internal-transfer decomposition backend завершён.
 
 ### Release metadata
 
-#410 — non-blocking metadata/history follow-up. Это не влияет на уже доказанные release/tag/Stable identities.
+#410 закрыт completed. Published Stable `v0.9.0` остаётся immutable; development-main cutover UI v2 сам по себе не публикует новый release.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -462,10 +472,12 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #387 — UI v2 roadmap; implementation is complete, only #430 controlled default-switch gate remains open;
-- #417 — durability umbrella; #459 complete, #460–#462 open.
+- #417 — durability umbrella; #459 and #475 complete, #460–#462 open.
 
-#313, #410, #429 and #459 are completed.
+Separate follow-up:
+- #476 — real-backend synthetic G04 browser regression gate.
+
+Completed: #313, #387, #410, #429, #430, #459 and #475.
 
 ## 14. Canonical reference documents
 
