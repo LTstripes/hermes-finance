@@ -2,7 +2,7 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-20**.
+> Last synchronized: **2026-09-21**.
 
 ## Canonical identity
 
@@ -11,16 +11,14 @@
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
-- Latest product/runtime integration checkpoint before this documentation sync: `49144da863c93e5afc505e16be6817c55ff2b50d` (#459).
-- Exact-main CI for that checkpoint: **#839 / run `35518134142` — SUCCESS**.
-- GitHub `main` is authoritative for the live development SHA; documentation-only synchronization commits may advance it without changing the product/runtime checkpoint they describe.
-- UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`; exact-main CI #838 / run `35517935019` — SUCCESS.
-- Final UI v2 completion aggregate: PR #455 / exact Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — **PASS**.
-- Canonical UI v2 completion merge: `424ba7bf018c8e4ac01cfda825af7394a3068267`.
+- Latest product/runtime integration checkpoint before this documentation sync: `583f9167ae14509202ef47978e7b9f20180e188d` — controlled UI v2 default switch.
+- Exact-main CI for that checkpoint: **#872 / run `35573224359` — SUCCESS**.
+- Frozen Owner-UAT switch candidate: PR #474 / `09649bb1d71d6bdff636bb6becbf16d9f0cd5083` — **PASS**.
+- Restore outcome-semantics safety #475 / PR #477: accepted candidate `676b330b59deb4abea89f7807af8b382a1ac4c87`, canonical merge `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba`, exact-main CI #869 / `35571951532` — SUCCESS.
+- GitHub `main` is authoritative for the live development SHA; documentation-only synchronization commits may advance it without changing the product/runtime checkpoints they describe.
+- UI v2 implementation/completion aggregate: PR #455 / Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — PASS; canonical merge `424ba7bf018c8e4ac01cfda825af7394a3068267`.
 - Staged-integration process rules: PR #443 / `34ae76f0cbb6bc31c333e30e3feef83b746ba2ca`.
-- PR #409 / issue #408 prepared the `0.9.0` candidate; the release was published only after owner OPS03 PASS.
-- `main` remains the only canonical source and release source. Post-release docs/product commits do not change the immutable `v0.9.0` tag identity.
-- R09 metadata follow-up #410 is closed completed; the released tag/code/Stable identity remains unchanged.
+- `main` remains the only canonical source and release source. Post-release development work does not change the immutable `v0.9.0` tag identity.
 
 ## Product/runtime invariants
 
@@ -199,72 +197,75 @@ Not yet done: retention deletion (#460), clean isolated DR rehearsal (#461), foc
 
 ## Active roadmap / what comes next
 
-### UI v2 — complete opt-in product integrated; default switch remains
+### UI v2 — core roadmap complete / primary interface
 
-UI v2 remains the main active product stream under #387, but the implementation/completion milestone is now finished.
+The core UI v2 roadmap (#387) is complete.
 
-Final aggregate evidence:
+Final controlled cutover:
+- comparative Gate A review: ACCEPT;
+- frozen Owner-UAT candidate: `09649bb1d71d6bdff636bb6becbf16d9f0cd5083`;
+- Owner verdict: **PASS**;
+- PR #474;
+- canonical merge: `583f9167ae14509202ef47978e7b9f20180e188d`;
+- exact-main CI #872 / `35573224359`: SUCCESS.
 
-- exact Owner-UAT candidate: `edd6a32d94ba322badaea1cab804c4e5cc13574d`;
-- aggregate PR: #455;
-- owner verdict: **PASS**;
-- canonical integration commit: `424ba7bf018c8e4ac01cfda825af7394a3068267`;
-- exact-main CI #838 / run `35517935019`: **SUCCESS**.
+Current route contract:
+- `/` -> primary UI v2;
+- `/v1` -> previous UI Dashboard / durable rollback home;
+- `/v2` and existing `/v2/...` routes remain valid;
+- legacy deep links/editors remain available at their historical URLs;
+- contextual handoffs preserve month/step/query/fragment context.
 
-Completed and closed:
+V1 retirement is **not** implied by this completion. If later desired, it requires a separate explicit task after real-use evidence.
 
-- S13 umbrella #429;
-- #432 catalogs + persistent mappings;
-- #433 exports + safety-gated local backup/restore after independent safety review;
-- #434 application settings + tax brackets + runtime diagnostics;
-- #444 global «Наверх»;
-- #445 owner-facing Russian terminology/copy audit;
-- #446 Expected payouts hierarchy/alignment/page order;
-- #447 Reports archive spacing;
-- #448 Reconciliation copy deduplication/owner-facing labels.
+#476 remains a separate browser-regression-infrastructure follow-up and is not a cutover blocker.
 
-Canonical opt-in UI v2 now includes Home, Capital, Income & Plans, contextual Reports/history, native Monthly Close and the complete Data/App area.
-
-v1 remains the default/rollback path today.
-
-The **only remaining core UI v2 gate is #430**:
-
-1. comparative read-only v1/v2 audit and owner checklist;
-2. one bounded default-switch candidate if no blocker remains;
-3. exact-SHA Owner Preview/UAT;
-4. controlled merge only after explicit Owner PASS.
-
-V1 retirement is explicitly out of scope for #430 and remains a separate later decision.
-
-Detailed closeout: `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`.
+Detailed closeouts:
+- `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`;
+- `docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`.
 
 ### Runtime / durability
 
-The redesign parent #313 is complete. #459 protected recovery-point publisher is also complete and canonical.
+The runtime redesign parent #313 is complete. #459 protected recovery-point publisher is canonical.
+
+#475 restore outcome semantics is also complete:
+- post-/possibly-mutated failure uses machine-readable `restore_outcome_ambiguous`;
+- confirmed negative outcomes remain distinct;
+- ambiguous UI state does not claim success/failure, refreshes shared reads and does not blindly retry;
+- cleanup cannot overwrite the ambiguity classification;
+- independent safety re-review: ACCEPT.
 
 Active durability sequence under #417:
 - #460 — bounded verified retention;
 - #461 — isolated disaster-recovery rehearsal;
-- #462 — focused post-restore month-state reload.
+- #462 — focused legacy Export/Backup post-restore month-state reload.
 
-Real protected off-device backup and recovery rehearsal remain Owner-controlled gates. Future launcher/runtime work should stay bounded and must not revive the old launcher updater state machine.
+Real protected off-device backup and recovery rehearsal remain Owner-controlled gates.
 
 ### Performance
 
 Account + internal-transfer decomposition backend support is complete. Exact instrument/asset-class attribution still requires a separately accepted data/evidence foundation.
 
-### Release metadata
+### Release / regression infrastructure
 
-R09 metadata follow-up #410 is closed completed. Published Stable remains immutable `v0.9.0`; post-release development work is not part of that published release until a future guarded release.
+Published Stable remains immutable `v0.9.0`; development-main acceptance is not a release publication.
+
+#476 tracks one deterministic real-backend synthetic G04 browser journey and an explicit CI gate without expanding into a broad E2E redesign.
 
 ## Open umbrella/control issues
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #387 — UI v2 roadmap; implementation is complete, with only #430 comparative UAT / controlled default-switch gate remaining open;
-- #417 — owner durability umbrella; #459 complete, #460–#462 remain.
+- #38## Open umbrella/control issues
 
-#313, #410, #429 and #459 are closed completed.
+- #124 — permanent Release Control; intentionally stays open;
+- #127 — product/technical roadmap umbrella;
+- #417 — owner durability umbrella; #459 and #475 complete, #460–#462 remain.
+
+Separate follow-up:
+- #476 — real-backend synthetic G04 browser regression gate.
+
+Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459 and #475.
 
 ## Canonical references
 
@@ -279,4 +280,4 @@ R09 metadata follow-up #410 is closed completed. Published Stable remains immuta
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #387, #417, #430, #460–#462; completed #313, #410, #429, #432–#434, #444–#448, #459
+- #124, #127, #417, #460–#462, #476; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #475
