@@ -44,6 +44,14 @@ For a manual multi-agent comparison, give each candidate its own separate prompt
 
 Root/Orchestrator self-review is not called independent review. See `docs/MODEL_ROUTING.md` and `docs/AGENT_ORCHESTRATION.md`.
 
+## Default execution mode
+
+Bounded implementation defaults to one Worker owning investigation, implementation, verification and the authorized PR-ready candidate. The current coding session can be that Worker; this does not require a parent Orchestrator or a spawned implementation agent.
+
+Independent review is added separately when risk policy or an explicit request requires it. Confirmed blockers return to the same Worker. A review requirement does not activate orchestration.
+
+`$delivery-loop` is experimental and explicit opt-in only. Generic requests to use Codex, implement autonomously, review carefully or prepare a series of tasks do not activate it. Multiple workstreams or high risk do not activate it automatically either. See the activation gate in `docs/AGENT_ORCHESTRATION.md`.
+
 ## Preferred owner/integrator execution route
 
 When the active Integrator surface has direct GitHub read/write access and can inspect GitHub Actions, it should complete **Integrator-owned repository mechanics** itself instead of using the Owner as a human courier to GitHub, PowerShell or another client.

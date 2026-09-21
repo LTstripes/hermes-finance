@@ -6,9 +6,9 @@ Repository policy defines project constraints and acceptance. Local Codex config
 
 See [`docs/AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md).
 
-## Mode A — manual Worker
+## Mode A — single Worker (default)
 
-When the launch explicitly requests `Codex без оркестрации` or otherwise assigns Codex as a single Worker:
+For an ordinary Codex task, including `дай задачу для Codex`, the current session acts as the single Worker without a parent Orchestrator:
 
 - Codex acts as the **Worker**;
 - read `AGENTS.md`, the issue and relevant accepted contract/spec;
@@ -20,9 +20,11 @@ When the launch explicitly requests `Codex без оркестрации` or oth
 - do not merge canonical/integration branches unless explicitly delegated;
 - return the project completion evidence.
 
-## Mode B — `$delivery-loop` Execution Orchestrator
+Add a separate independent Reviewer when project risk policy or an explicit request requires one. Review the frozen candidate, return confirmed blockers to the same Worker, and preserve the normal Integrator acceptance gate. Review alone does not activate `$delivery-loop`.
 
-When the launch explicitly invokes `$delivery-loop` or requests the default orchestrated Codex route, the root session acts as **Execution Orchestrator**.
+## Mode B — experimental `$delivery-loop` Execution Orchestrator
+
+Only a request to run `$delivery-loop` or an explicit request for orchestrated execution activates this mode, subject to the activation gate and overhead budget in `AGENT_ORCHESTRATION.md`. Generic task/series requests and mentions, audits or edits of the loop do not activate it. After that explicit activation, the root session acts as **Execution Orchestrator**.
 
 The root must:
 
@@ -33,7 +35,7 @@ The root must:
 - wait for the Worker and inspect the actual candidate/diff/check evidence;
 - invoke a separate read-only independent Reviewer when project routing requires it, when the Owner/Integrator requests it, or when justified execution risk raises the review requirement;
 - stop for Integrator re-scope if that risk implies architecture, contract or financial-meaning expansion;
-- use at most two automatic remediation cycles;
+- default to one remediation cycle; a second requires explicit authorization, with an absolute cap of two;
 - return only internal verdicts such as `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED`, or `BLOCKED_FOR_INTEGRATION`;
 - never equate `INTERNAL_ACCEPT` with project `ACCEPT`;
 - never acquire implicit merge authority.
@@ -58,7 +60,7 @@ Return both per-task evidence and one final queue summary.
 
 The local Codex environment may expose:
 
-- `$delivery-loop` for generic orchestration;
+- `$delivery-loop` for experimental orchestration with implicit invocation disabled;
 - a thin `hermes-finance` helper for Finance-specific verification guidance.
 
 These are execution helpers only. They must not duplicate or override repository sources of truth. Local filesystem paths, current model IDs and reasoning settings must not be hardcoded into this repository.
