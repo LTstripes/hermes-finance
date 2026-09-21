@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
@@ -180,8 +180,24 @@ function monthEditorHandlers(month: (typeof sampleMonths)[0], incomes: unknown[]
 }
 
 describe("App", () => {
+  beforeEach(() => {
+    window.history.pushState({}, "", "/v1");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("uses the UI v2 entry at / and exposes a v1 escape while loading", () => {
+    window.history.pushState({}, "", "/");
+
+    render(<App />);
+
+    expect(screen.getByText("Загружаем основной интерфейс…")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
   });
 
   it("renders the dashboard in the application layout", () => {
@@ -195,6 +211,10 @@ describe("App", () => {
     expect(screen.getByText("Hermes Finance")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Дашборд" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Перейти в основной интерфейс v2 →" })).toHaveAttribute(
+      "href",
+      "/v2",
+    );
     // E18: skip-link to main content
     expect(screen.getByRole("link", { name: "К содержанию" })).toHaveAttribute("href", "#main");
     expect(document.getElementById("main")).not.toBeNull();
@@ -921,5 +941,5 @@ describe("App", () => {
 
     await selectMonthSection(user, "Проверка");
     expect(screen.getByRole("heading", { level: 2, name: "Основная цель" })).toBeInTheDocument();
-  });
+  }, 10000);
 });

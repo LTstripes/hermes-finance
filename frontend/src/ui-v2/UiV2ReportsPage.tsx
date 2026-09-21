@@ -82,7 +82,7 @@ export default function UiV2ReportsPage() {
       }),
     [compositionQuery.data, moneyConfirmed, monthsQuery.data],
   );
-  const v1ReturnPath = latestClosed ? `/months/${latestClosed.id}` : "/";
+  const v1ReturnPath = latestClosed ? `/months/${latestClosed.id}` : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {
@@ -191,7 +191,7 @@ export default function UiV2ReportsPage() {
           ))}
         </div>
         <p className={reportStyles.archiveNote}>
-          <Link to="/months">Месяцы в текущем интерфейсе →</Link>
+          <Link to="/months">Месяцы в предыдущем интерфейсе →</Link>
         </p>
       </>
     );

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("G04 critical monthly workflow", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/v1");
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
 
   await page.getByRole("link", { exact: true, name: "Месяцы" }).click();

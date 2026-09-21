@@ -184,7 +184,7 @@ export default function UiV2ClosePage() {
     content = (
       <UiV2Notice title="Некорректный месяц">
         Адрес должен содержать один положительный идентификатор месяца. Выбери месяц заново в{" "}
-        <Link to="/monthly-close">текущем интерфейсе →</Link>
+        <Link to="/monthly-close">предыдущем интерфейсе →</Link>
       </UiV2Notice>
     );
   } else if (selection.kind === "missing") {

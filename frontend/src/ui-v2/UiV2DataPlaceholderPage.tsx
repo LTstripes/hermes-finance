@@ -19,20 +19,20 @@ const COPY: Record<
     subtitle:
       "Счета, инструменты и постоянные сопоставления. Этот блок появится в следующем срезе.",
     escapes: [
-      { label: "Счета и инструменты в текущем интерфейсе ↗", to: "/accounts" },
+      { label: "Счета и инструменты в предыдущем интерфейсе ↗", to: "/accounts" },
       { label: "Сопоставления счетов брокера в настройках ↗", to: "/settings" },
     ],
   },
   files: {
     title: "Файлы",
     subtitle: "Экспорт и локальные копии базы. Этот блок появится в следующем срезе.",
-    escapes: [{ label: "Экспорт и резервные копии в текущем интерфейсе ↗", to: "/export" }],
+    escapes: [{ label: "Экспорт и резервные копии в предыдущем интерфейсе ↗", to: "/export" }],
   },
   app: {
     title: "Приложение",
     subtitle:
       "Настройки, налоговые шкалы и диагностика среды. Этот блок появится в следующем срезе.",
-    escapes: [{ label: "Настройки в текущем интерфейсе ↗", to: "/settings" }],
+    escapes: [{ label: "Настройки в предыдущем интерфейсе ↗", to: "/settings" }],
   },
 };
 
@@ -59,7 +59,7 @@ export default function UiV2DataPlaceholderPage({
       monthId={monthId}
       subtitle={copy.subtitle}
       title={copy.title}
-      v1ReturnPath={copy.escapes[0]?.to ?? "/"}
+      v1ReturnPath={copy.escapes[0]?.to ?? "/v1"}
     >
       {resolution.kind === "loading" ? (
         <UiV2Loading label="Проверяем доступные отчётные месяцы…" />

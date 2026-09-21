@@ -779,14 +779,14 @@ export default function UiV2DataCatalogsPage() {
   } else if (resolution.kind === "empty") {
     monthContent = (
       <UiV2Notice title="Нет отчётных месяцев">
-        Каталоги не требуют отчётного месяца. Создать или открыть его можно в текущем интерфейсе:{" "}
+        Каталоги не требуют отчётного месяца. Создать или открыть его можно в предыдущем интерфейсе:{" "}
         <Link to="/months">Открыть месяцы ↗</Link>
       </UiV2Notice>
     );
   } else {
     monthContent = (
       <DataMonthContext automatic={resolution.automatic} month={resolution.month}>
-        <Link to="/accounts">В текущем интерфейсе ↗</Link>
+        <Link to="/accounts">В предыдущем интерфейсе ↗</Link>
       </DataMonthContext>
     );
   }

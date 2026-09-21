@@ -18,7 +18,7 @@ const NAV: NavGroup[] = [
   {
     section: "Обзор",
     items: [
-      { to: "/", label: "Дашборд", icon: "◫", end: true },
+      { to: "/v1", label: "Дашборд", icon: "◫", end: true },
       { to: "/analytics", label: "Аналитика", icon: "⌁" },
       { to: "/analytics/risk-allocation", label: "Распределение и концентрация", icon: "◈" },
       { to: "/freshness", label: "Актуальность данных", icon: "◷" },
@@ -98,7 +98,7 @@ export function AppLayout() {
       <div className="workspace">
         <header className="topbar">
           <span>Финансовая панель</span>
-          <Link to="/v2">Попробовать UI v2 →</Link>
+          <Link to="/v2">Перейти в основной интерфейс v2 →</Link>
         </header>
         <RuntimeStatusBanner />
         <main className="content" id="main">

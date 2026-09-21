@@ -762,7 +762,7 @@ function Handoffs({ narrow }: { narrow: boolean }) {
           <div className={incomeStyles.handoffGrid}>
             <div>
               <h3>Налоги и ИИС</h3>
-              <p>Подробная работа остаётся в текущем интерфейсе.</p>
+              <p>Подробная работа остаётся в предыдущем интерфейсе.</p>
               <Link to="/tax-iis-planner">Открыть Налоги и ИИС →</Link>
             </div>
             <div>
@@ -900,7 +900,7 @@ export default function UiV2IncomePage() {
           step: requestedStep,
         })
       : `/months/${latestClosed.id}`
-    : "/";
+    : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {
@@ -923,7 +923,7 @@ export default function UiV2IncomePage() {
     content = (
       <>
         <UiV2ReportContext month={latestClosed}>
-          <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в текущем интерфейсе →</Link>
+          <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
         </UiV2ReportContext>
         {newerDraft ? (
           <p className={incomeStyles.draftNote} data-testid="income-draft-note">

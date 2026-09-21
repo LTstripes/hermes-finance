@@ -94,7 +94,7 @@ export default function UiV2DataSourcesPage() {
     content = (
       <UiV2Notice title="Нет отчётных месяцев">
         Нечего диагностировать, пока не создан хотя бы один месяц.{" "}
-        <Link to="/months">Открыть месяцы в текущем интерфейсе ↗</Link>
+        <Link to="/months">Открыть месяцы в предыдущем интерфейсе ↗</Link>
       </UiV2Notice>
     );
   } else {
@@ -102,7 +102,7 @@ export default function UiV2DataSourcesPage() {
     content = (
       <>
         <DataMonthContext automatic={resolution.automatic} month={month}>
-          <Link to="/freshness">В текущем интерфейсе ↗</Link>
+          <Link to="/freshness">В предыдущем интерфейсе ↗</Link>
         </DataMonthContext>
         <div className={dataStyles.badgeRow}>
           <span className={dataStyles.readOnlyBadge}>Только чтение</span>

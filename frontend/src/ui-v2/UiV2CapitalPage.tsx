@@ -592,7 +592,7 @@ function HoldingsBlock({
       })}
       <p className={styles.panelFootnote}>
         Строки показаны как есть в закрытом отчёте. Итоги берутся из подтверждённой сводки, а не из
-        суммы строк. <Link to={`/months/${monthId}`}>Отчёт месяца в текущем интерфейсе →</Link>
+        суммы строк. <Link to={`/months/${monthId}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
       </p>
     </Panel>
   );
@@ -796,7 +796,7 @@ function PerformanceBlock({
       <p className={styles.panelFootnote}>
         Расчёты доступны только для того же интервала между двумя закрытыми отчётами.{" "}
         <Link className={styles.contextLink} to="/analytics">
-          Все расчёты в текущем интерфейсе →
+          Все расчёты в предыдущем интерфейсе →
         </Link>
       </p>
     </Panel>
@@ -1066,7 +1066,7 @@ export default function UiV2CapitalPage() {
         : `/months/${requestedMonth.month.id}`
       : latestClosed
         ? `/months/${latestClosed.id}`
-        : "/";
+        : "/v1";
 
   const pickClass = (assetClass: string) =>
     setFilter({ kind: "class", label: classMeta(assetClass).label, value: assetClass });
@@ -1105,7 +1105,7 @@ export default function UiV2CapitalPage() {
         <UiV2ReportContext month={latestClosed}>
           <span className={styles.reportContextLinks}>
             <Link to="/v2/reports">Все отчёты →</Link>
-            <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в текущем интерфейсе →</Link>
+            <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
           </span>
         </UiV2ReportContext>
         {newerDraft ? (

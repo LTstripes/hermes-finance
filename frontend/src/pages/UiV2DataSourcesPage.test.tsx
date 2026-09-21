@@ -241,7 +241,7 @@ describe("UI v2 Data sources", () => {
       "href",
       "/v2/data/reconciliation?month=12",
     );
-    expect(screen.getByRole("link", { name: /В текущем интерфейсе/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /В предыдущем интерфейсе/ })).toHaveAttribute(
       "href",
       "/freshness",
     );

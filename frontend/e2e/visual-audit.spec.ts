@@ -12,7 +12,7 @@ type AuditRoute = {
 };
 
 const routes: AuditRoute[] = [
-  { slug: "dashboard", path: "/" },
+  { slug: "dashboard", path: "/v1" },
   { slug: "analytics", path: "/analytics" },
   { slug: "risk-allocation", path: "/analytics/risk-allocation" },
   { slug: "freshness", path: "/freshness" },

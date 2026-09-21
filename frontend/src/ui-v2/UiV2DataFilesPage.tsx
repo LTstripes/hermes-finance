@@ -196,7 +196,7 @@ function MonthExportState({
         остаются отдельными операциями.
         <div className={styles.buttonRow}>
           <Link className={styles.secondaryButton} to="/months">
-            Открыть месяцы в текущем интерфейсе ↗
+            Открыть месяцы в предыдущем интерфейсе ↗
           </Link>
         </div>
       </div>

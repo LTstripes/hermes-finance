@@ -146,7 +146,7 @@ export default function UiV2DataReconciliationPage() {
     content = (
       <UiV2Notice title="Нет отчётных месяцев">
         Нечего сверять, пока не создан хотя бы один месяц.{" "}
-        <Link to="/months">Открыть месяцы в текущем интерфейсе ↗</Link>
+        <Link to="/months">Открыть месяцы в предыдущем интерфейсе ↗</Link>
       </UiV2Notice>
     );
   } else {
@@ -157,7 +157,7 @@ export default function UiV2DataReconciliationPage() {
     content = (
       <>
         <DataMonthContext automatic={resolution.automatic} month={month}>
-          <Link to="/reconciliation">В текущем интерфейсе ↗</Link>
+          <Link to="/reconciliation">В предыдущем интерфейсе ↗</Link>
         </DataMonthContext>
         <p className={dataStyles.noticeInline} data-testid="reconciliation-safety-note">
           Сверка только показывает различия и ничего не сохраняет. Данные брокера запрашиваются
