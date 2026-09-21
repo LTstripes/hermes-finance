@@ -53,6 +53,28 @@ V1 remains intentionally available as a rollback/legacy layer.
 
 ## Owner acceptance and installation
 
-The release candidate must first pass OPS03 on one exact canonical SHA with isolated UAT data. After Owner PASS, the same exact SHA is eligible for guarded publication as `v1.0.0`.
+### Owner OPS03 Preview/UAT — PASS
 
-Production Stable is updated only afterward through the backup-first OPS02 transition `v0.9.0 -> v1.0.0`, followed by an explicit Stable Start and owner data-continuity check.
+Exact tested code:
+
+`caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`
+
+Owner verified the candidate in isolated Preview/UAT with isolated copied owner data before publication.
+
+### Guarded publication — PASS
+
+- `v1.0.0` published 2026-09-21;
+- annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`;
+- tag peels exactly to `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- Guarded Release run `35580890145`: SUCCESS;
+- GitHub Release is published, non-draft and non-prerelease.
+
+### Production Stable transition — PASS
+
+Owner completed the real backup-first OPS02 transition:
+
+`v0.9.0 -> v1.0.0`
+
+After explicit Stable Start on the production database, owner returned **PASS Stable** and confirmed real working data continuity.
+
+Detailed lifecycle evidence: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.

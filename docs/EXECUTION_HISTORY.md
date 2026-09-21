@@ -50,6 +50,21 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Boundaries:** #461/#462/#476 and v1 retirement remain separate; no private runtime data, tag, GitHub Release or production operation belongs to preparation.
 - **References:** #480, #124, `docs/releases/1.0.0.md`, `docs/release-notes-1.0.0.md`.
 
+# 2026-09-21 v1.0.0 publication + Stable acceptance
+
+### R10-REL01-POST — publish v1.0.0 and complete real Stable transition
+
+- **Published:** 2026-09-21 as GitHub Release `Hermes Finance 1.0.0`, `draft=false`, `prerelease=false`.
+- **Released identity:** annotated tag `v1.0.0`, tag object `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`, peeled commit `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
+- **Publication evidence:** Guarded Release run `35580890145` — SUCCESS; canonical `main` remained the exact Owner-tested SHA through publication.
+- **Owner OPS03 Preview/UAT:** PASS on exact `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e` with isolated copied owner data; UI v2/default route and retained v1 rollback were exercised before publication.
+- **Owner OPS02 Stable transition:** PASS for real backup-first `v0.9.0 -> v1.0.0`.
+- **Production acceptance:** explicit Stable Start on the real production database and owner data continuity — **PASS**.
+- **Release scope:** cohesive UI v2/default switch, restore-outcome ambiguity safety, protected recovery-point publisher and bounded verified retention; #461/#462/#476 and v1 retirement remain separate.
+- **Metadata note:** the GitHub Release body was generated from the pre-publication notes and retains future-tense candidate/OPS03 wording in its final section. This is metadata-only; tag/released code identity is correct. Canonical repository release notes/record are synchronized by the post-release docs closeout.
+- **Privacy:** no production DB, backup ID, credentials or financial values are stored in repository evidence.
+- **References:** #480, #124, PR #481, `docs/releases/1.0.0.md`, `docs/release-notes-1.0.0.md`, `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
+
 # 2026-09-21 UI v2 controlled default switch
 
 ### #430 / PR #474 — comparative audit, frozen Owner UAT and default cutover

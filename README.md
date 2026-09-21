@@ -6,36 +6,22 @@ Hermes Finance — локальное однопользовательское W
 
 ## Current status
 
-Published Stable: **v0.9.0** (2026-09-17).
+Published Stable: **v1.0.0** (2026-09-21).
 
-- released/UAT code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
-- annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
-- guarded Release #253 / run `35235369797`: SUCCESS;
-- exact-main release-gate CI #700 / run `35207551120`: SUCCESS;
-- latest product/runtime integration checkpoint before this documentation sync: `583f9167ae14509202ef47978e7b9f20180e188d` — controlled UI v2 default switch;
-- exact-main CI for that checkpoint: #872 / run `35573224359`: SUCCESS;
-- live development SHA is always the current GitHub `main`; docs-only synchronization commits may advance it;
-- restore-outcome safety #475 merged immediately before cutover at `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba`, exact-main CI #869 / `35571951532`: SUCCESS;
-- current development truth: canonical GitHub `main` + [CURRENT_STATUS](docs/CURRENT_STATUS.md);
-- UI v2 is now the primary/default owner interface; v1 remains available at `/v1` as an explicit rollback/legacy home.
+- released / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`;
+- tag peels exactly to `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- Guarded Release run `35580890145`: SUCCESS;
+- exact-main release-candidate CI #880 / run `35579583692`: SUCCESS;
+- Owner OPS03 Preview/UAT on exact `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`: **PASS**;
+- real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**;
+- production Stable Start / owner data continuity: **PASS**;
+- UI v2 is the primary/default interface at `/`; previous UI remains available at `/v1`.
 
-Owner release acceptance is complete:
+The immutable published `v0.9.0` history remains valid as the predecessor release.
 
-- OPS03 exact-SHA Preview/UAT on `c90a842...`: **PASS**;
-- real OPS02 Stable transition `v0.8.2 -> v0.9.0`: **PASS**;
-- production v0.9.0 readiness smoke: **PASS**;
-- `/api/health`: `0.9.0`;
-- owner data continuity: **PASS**.
-
-Detailed checkpoint: [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
-Runtime/release closeout: [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
-
-Prepared release candidate: **v1.0.0** — `PREPARED / UAT-PENDING` under #480.
-
-- published Stable remains `v0.9.0`;
-- no `v1.0.0` tag or GitHub Release exists yet;
-- the candidate packages the accepted UI v2 default switch, restore-outcome safety and other accepted post-v0.9.0 work already on canonical development `main`;
-- next gate after release-prep integration is one exact-SHA OPS03 Preview/UAT; only Owner PASS permits guarded publication and the real backup-first Stable transition `v0.9.0 -> v1.0.0`.
+Canonical status: [CURRENT_STATUS](docs/CURRENT_STATUS.md).
+Release closeout: [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md).
 
 ## Product/runtime invariants
 
@@ -305,7 +291,7 @@ Separate future work:
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
-Release publication/runtime promotion remains separate from development-main acceptance. The prepared `v1.0.0` candidate is tracked in #480; after exact-SHA OPS03 Owner PASS it may be published through #124 and then installed into real Stable through backup-first OPS02.
+Release publication/runtime promotion for v1.0.0 is complete. Stable now runs the published v1.0.0 on the owner production database. Future releases continue to use the same exact-SHA OPS03 -> guarded publication -> backup-first OPS02 sequence.
 
 ## Health
 
@@ -316,15 +302,6 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
 Current Stable should include:
-
-```json
-{
-  "status": "ok",
-  "version": "0.9.0"
-}
-```
-
-The prepared `v1.0.0` candidate, when run in isolated OPS03 Preview/UAT, must instead report:
 
 ```json
 {
@@ -363,8 +340,9 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;
 - [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md) — guarded release publication;
-- [`docs/release-notes-1.0.0.md`](docs/release-notes-1.0.0.md) — prepared v1.0.0 public release notes;
-- [`docs/releases/1.0.0.md`](docs/releases/1.0.0.md) — prepared/UAT-pending v1.0.0 release record;
+- [`docs/release-notes-1.0.0.md`](docs/release-notes-1.0.0.md) — final v1.0.0 release notes;
+- [`docs/releases/1.0.0.md`](docs/releases/1.0.0.md) — published v1.0.0 release record;
+- [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md) — v1.0.0 publication/Stable closeout;
 - [`docs/release-notes-0.9.0.md`](docs/release-notes-0.9.0.md) — final v0.9.0 notes;
 - [`docs/releases/0.9.0.md`](docs/releases/0.9.0.md) — published v0.9.0 release record.
 
