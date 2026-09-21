@@ -4,7 +4,7 @@
 
 **COMPLETE / OWNER UAT PASS / INTEGRATED**
 
-This document closes the opt-in UI v2 implementation/completion milestone before the separate controlled default-switch gate.
+This document closes the opt-in UI v2 implementation/completion milestone. The later controlled default-switch gate completed on 2026-09-21; see `docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`.
 
 ## Canonical evidence
 
@@ -80,17 +80,25 @@ UAT covered the complete v2 surface including Home, Capital, Income & Plans, Rep
 
 No post-UAT code changes were made before canonical integration.
 
-## What remains
+## Final cutover follow-up
 
-The core implementation is complete. The only remaining UI v2 roadmap gate is #430:
+The separate controlled default-switch gate is now complete.
 
-1. comparative read-only v1/v2 audit;
-2. blocker-only cleanup if truly required;
-3. bounded default/root routing switch while preserving v1 rollback;
-4. exact-SHA Owner UAT;
-5. merge only after explicit Owner PASS.
+Final cutover evidence:
+- Gate A comparative audit: ACCEPT;
+- frozen Owner-UAT switch SHA: `09649bb1d71d6bdff636bb6becbf16d9f0cd5083`;
+- Owner UAT: **PASS**;
+- PR #474;
+- canonical switch merge: `583f9167ae14509202ef47978e7b9f20180e188d`;
+- exact-main CI #872 / `35573224359`: SUCCESS.
 
-This is **not** v1 retirement. Release publication/runtime promotion is also separate.
+Immediately before cutover, #475 restore-outcome ambiguity safety was independently accepted and integrated so the frozen switch candidate included the truthful restore-result contract.
+
+The core UI v2 roadmap #387 and final switch issue #430 are closed completed.
+
+Detailed final cutover record: `docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`.
+
+Separate remaining work includes durability #460–#462, browser-regression infrastructure #476, future configurable dashboards #389 and any later explicit v1-retirement decision.
 
 ## Permanent boundaries
 
