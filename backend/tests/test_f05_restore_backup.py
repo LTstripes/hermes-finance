@@ -151,6 +151,63 @@ def test_restore_reports_ambiguous_outcome_after_live_database_replacement(
     assert len(list(backup_directory(database).glob("*.sqlite3"))) == 2
 
 
+@pytest.mark.parametrize("cleanup_failure", ["exists", "unlink"])
+def test_restore_preserves_ambiguous_api_outcome_when_replace_and_cleanup_fail(
+    app_context: tuple[TestClient, Database],
+    tmp_path: Path,
+    cleanup_failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, database = app_context
+    _set_locale(database, "before-restore")
+    candidate_path = _make_candidate_backup(database, tmp_path, locale="after-restore")
+
+    original_replace = backups_service.os.replace
+    replace_calls = 0
+
+    def fail_live_database_replace(source: Any, destination: Any) -> None:
+        nonlocal replace_calls
+        if Path(destination) == database.database_path:
+            replace_calls += 1
+            raise OSError("synthetic live database replacement failure")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(backups_service.os, "replace", fail_live_database_replace)
+
+    def is_restore_temporary(path: Path) -> bool:
+        return ".restore." in path.name and path.suffix == ".tmp"
+
+    if cleanup_failure == "exists":
+        original_exists = Path.exists
+
+        def fail_cleanup_exists(path: Path) -> bool:
+            if is_restore_temporary(path):
+                raise OSError("synthetic temporary existence cleanup failure")
+            return original_exists(path)
+
+        monkeypatch.setattr(Path, "exists", fail_cleanup_exists)
+    else:
+        original_unlink = Path.unlink
+
+        def fail_cleanup_unlink(path: Path, missing_ok: bool = False) -> None:
+            if is_restore_temporary(path):
+                raise OSError("synthetic temporary removal cleanup failure")
+            original_unlink(path, missing_ok=missing_ok)
+
+        monkeypatch.setattr(Path, "unlink", fail_cleanup_unlink)
+
+    response = client.post(
+        f"/api/backups/{candidate_path.stem}/restore",
+        json={"confirm": True},
+    )
+
+    assert replace_calls == 1
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "restore_outcome_ambiguous"
+    assert _settings_locale(client) == "before-restore"
+    assert len(list(backup_directory(database).glob("*.sqlite3"))) == 2
+
+
 def test_restore_rejects_incompatible_sqlite_schema_before_pre_restore_backup(
     app_context: tuple[TestClient, Database],
 ) -> None:

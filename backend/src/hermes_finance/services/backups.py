@@ -301,8 +301,13 @@ def _restore_backup(database: Database, backup_id: str) -> RestoreResult:
             raise BackupStorageError("Could not restore database backup") from error
         raise
     finally:
-        if temporary is not None and temporary.exists():
-            temporary.unlink()
+        if temporary is not None:
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except Exception:
+                # Cleanup is best effort and must not replace the classified outcome.
+                pass
 
 
 def restore_backup(database: Database, backup_id: str) -> RestoreResult:
