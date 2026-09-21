@@ -21,28 +21,28 @@ This full chain was owner-proven on the real `v0.8.2 -> v0.9.0` transition on 20
 
 ## 2. Current published Stable
 
-Current published Stable is **v0.9.0**.
+Current published and owner-accepted Stable is **v1.0.0**.
 
 Release/source code identity:
 
-`c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`
+`caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`
 
 Annotated tag object:
 
-`07c06d44f8b780e721be346a21909ca02585d57d`
+`f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`
 
 The tag peels exactly to the release/source SHA above.
 
 Owner acceptance:
 
-- OPS03 exact-SHA Preview/UAT: PASS;
-- guarded publication: PASS;
-- OPS02 Stable update `v0.8.2 -> v0.9.0`: PASS;
-- production readiness smoke: PASS;
-- `/api/health` version `0.9.0`: PASS;
-- owner data continuity: PASS.
+- OPS03 exact-SHA Preview/UAT: **PASS**;
+- guarded publication: **PASS**;
+- real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**;
+- production Stable Start: **PASS**;
+- owner production-data continuity: **PASS**;
+- expected `/api/health` version: `1.0.0`.
 
-Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
+Detailed evidence: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
 
 ## 3. Windows launcher
 
@@ -211,6 +211,20 @@ Then owner explicitly ran deterministic Start:
 - owner data continuity: PASS.
 
 This is the canonical evidence that the release-transition flow works on a real owner Stable runtime.
+
+## 8A. Second real owner transition — v1.0.0
+
+The same accepted lifecycle has now also passed a second real production transition:
+
+`v0.9.0 -> v1.0.0`
+
+- exact Owner-tested release SHA: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- guarded `v1.0.0` publication: PASS;
+- backup-first OPS02 Stable transition: PASS;
+- explicit production Start: PASS;
+- owner data continuity: PASS.
+
+No private backup identifier or financial values are recorded here.
 
 ## 9. Normal future release sequence
 
@@ -420,9 +434,11 @@ output and action required; do not bypass the protection or isolation guards.
 - #386 / PR #393 — OPS02 explicit Stable update
 - #404 / PR #407 — OPS03 exact-SHA Preview/UAT
 - #408 / PR #409 — v0.9.0 release preparation
+- #480 / PR #481 — v1.0.0 release preparation
 - #124 — permanent guarded Release Control
 - #410 — non-blocking v0.9.0 Release-description cleanup
 - `docs/CURRENT_STATUS.md`
+- `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`
 - `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
 - `docs/RELEASE_AUTOMATION.md`
 - `scripts/prepare-runtime.ps1`

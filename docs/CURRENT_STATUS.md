@@ -6,21 +6,17 @@
 
 ## Canonical identity
 
-- Published Stable release: **v0.9.0**.
-- Published release/source code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
-- Prepared release candidate: **v1.0.0** under #480 — PREPARED / UAT-PENDING; no tag/GitHub Release yet and Stable remains v0.9.0.
-- Release-prep baseline: canonical `main @ ab002c2215bc35c62b95c00452b9541e077b78c2`, exact-main CI #874 / `35574331652` — SUCCESS.
-- Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
-- Guarded Release: **#253 / run `35235369797` — SUCCESS**.
-- Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
-- Latest product/runtime integration checkpoint before this documentation sync: `583f9167ae14509202ef47978e7b9f20180e188d` — controlled UI v2 default switch.
-- Exact-main CI for that checkpoint: **#872 / run `35573224359` — SUCCESS**.
-- Frozen Owner-UAT switch candidate: PR #474 / `09649bb1d71d6bdff636bb6becbf16d9f0cd5083` — **PASS**.
-- Restore outcome-semantics safety #475 / PR #477: accepted candidate `676b330b59deb4abea89f7807af8b382a1ac4c87`, canonical merge `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba`, exact-main CI #869 / `35571951532` — SUCCESS.
-- GitHub `main` is authoritative for the live development SHA; documentation-only synchronization commits may advance it without changing the product/runtime checkpoints they describe.
-- UI v2 implementation/completion aggregate: PR #455 / Owner-UAT SHA `edd6a32d94ba322badaea1cab804c4e5cc13574d` — PASS; canonical merge `424ba7bf018c8e4ac01cfda825af7394a3068267`.
-- Staged-integration process rules: PR #443 / `34ae76f0cbb6bc31c333e30e3feef83b746ba2ca`.
-- `main` remains the only canonical source and release source. Post-release development work does not change the immutable `v0.9.0` tag identity.
+- Published Stable release: **v1.0.0**.
+- Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
+- Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
+- Guarded Release run `35580890145`: **SUCCESS**.
+- Exact-main release-candidate CI: **#880 / run `35579583692` — SUCCESS**.
+- Owner OPS03 exact-SHA Preview/UAT: **PASS**.
+- Real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**.
+- Production Stable Start / owner data continuity: **PASS**.
+- UI v2 is primary at `/`; previous UI remains available at `/v1`.
+- Published predecessor `v0.9.0` remains immutable historical evidence.
+- GitHub `main` is authoritative for live development; documentation-only closeout commits may advance it beyond the released code without changing the immutable `v1.0.0` tag identity.
 
 ## Product/runtime invariants
 
@@ -155,6 +151,24 @@ This completes the real-world acceptance boundary that intentionally remained op
 
 Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
+### Production Stable v1.0.0 transition — PASS
+
+After exact-SHA OPS03 PASS and guarded publication of `v1.0.0`, the owner completed the real backup-first OPS02 transition:
+
+`v0.9.0 -> v1.0.0`
+
+Accepted owner result:
+
+- published annotated `v1.0.0` peeled to `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- OPS02 Stable transition: **PASS**;
+- explicit Stable Start on the production database: **PASS**;
+- owner data continuity / real working data present: **PASS**;
+- `/api/health` expected application version: `1.0.0`.
+
+No private database, backup identifier or financial values are recorded in repository documentation.
+
+Detailed closeout: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
+
 ## Why the launcher looks similar — and why quality changed
 
 The redesign was intentionally not a visual launcher rewrite.
@@ -250,9 +264,7 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 
 ### Release / regression infrastructure
 
-Published Stable remains immutable `v0.9.0`; development-main acceptance is not a release publication.
-
-#480 prepares `v1.0.0` from the accepted development-main state. The candidate is UAT-PENDING: next gate is exact-SHA OPS03 Owner UAT, then guarded #124 publication, then backup-first OPS02 Stable update.
+Published Stable is `v1.0.0`. #480 release preparation, exact-SHA OPS03 Owner UAT, guarded #124 publication and backup-first OPS02 Stable transition are complete.
 
 #476 tracks one deterministic real-backend synthetic G04 browser journey and an explicit CI gate without expanding into a broad E2E redesign.
 
@@ -260,14 +272,12 @@ Published Stable remains immutable `v0.9.0`; development-main acceptance is not 
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #417 — owner durability umbrella; #459/#475 complete, #460 implementation integrated via PR #473, #461–#462 remain;
-- #460 — retention implementation is canonical; issue closeout remains operationally separate;
-- #480 — v1.0.0 release preparation / exact-SHA Owner UAT gate.
+- #417 — owner durability umbrella; #459/#460/#475 complete, #461–#462 remain.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459 and #475.
+Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #475 and #480.
 
 ## Canonical references
 
@@ -276,6 +286,7 @@ Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459 and #475
 - `docs/VERIFICATION_POLICY.md`
 - `docs/PROJECT_WIKI.md`
 - `docs/EXECUTION_HISTORY.md`
+- `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`
 - `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
 - `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
@@ -284,4 +295,4 @@ Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459 and #475
 - `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #417, #460–#462, #476, #480; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #475
+- #124, #127, #417, #461–#462, #476; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #475, #480

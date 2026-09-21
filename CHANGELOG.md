@@ -4,13 +4,11 @@
 
 ## [Unreleased]
 
-No additional post-candidate product changes are recorded after the prepared `v1.0.0` release boundary.
+Development `main` after the published Stable `v1.0.0`. No additional post-release product changes are recorded by this closeout.
 
-## [1.0.0] — PREPARED / UAT-PENDING
+## [1.0.0] — 2026-09-21
 
-Release candidate preparation on top of published Stable `v0.9.0`.
-
-This entry packages already accepted canonical development work and synchronizes the application identity to `1.0.0`. It does **not** publish a tag/GitHub Release or mutate production Stable. Owner OPS03 Preview/UAT on one exact canonical SHA is still required.
+Published owner-accepted release after Stable `v0.9.0`. The annotated `v1.0.0` tag peels exactly to Owner-tested code `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`. Owner OPS03 Preview/UAT, guarded publication, the real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`, and production Start/data continuity all passed.
 
 ### Added
 
@@ -34,11 +32,10 @@ This entry packages already accepted canonical development work and synchronizes
 
 ### Release boundary
 
-- release preparation itself changes version/release identity and documentation only;
 - v1 retirement remains a separate later decision;
-- #461 isolated DR rehearsal, #462 legacy post-restore month-state reload and #476 real-backend G04 CI gate remain outside this candidate;
+- #461 isolated DR rehearsal, #462 legacy post-restore month-state reload and #476 real-backend G04 CI gate remain outside this release;
 - local single-user loopback-only/privacy boundaries remain unchanged;
-- published Stable remains `v0.9.0` until Owner UAT PASS, guarded publication and explicit backup-first OPS02 transition.
+- published Stable is now `v1.0.0`; the predecessor `v0.9.0` remains immutable history.
 
 ## [0.9.0] — 2026-09-17
 

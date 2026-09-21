@@ -43,49 +43,28 @@ Hermes Finance не является торговой, банковской, б�
 
 ### Published Stable
 
-Текущая опубликованная Stable-версия — **v0.9.0**.
+Текущая опубликованная и реально owner-tested Stable-версия — **v1.0.0**.
 
-- published: 2026-09-17;
-- release/source code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
-- annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`;
-- tag peels exactly to the release/source SHA above;
-- Guarded Release #253 / run `35235369797`: SUCCESS;
-- exact-main release-gate CI #700 / run `35207551120`: SUCCESS.
+- published: 2026-09-21;
+- release/source/Owner-OPS03 SHA: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`;
+- tag peels exactly to the released SHA;
+- Guarded Release run `35580890145`: SUCCESS;
+- exact-main release-candidate CI #880 / `35579583692`: SUCCESS;
+- Owner OPS03 exact-SHA Preview/UAT: **PASS**;
+- real backup-first OPS02 `v0.9.0 -> v1.0.0`: **PASS**;
+- production Stable Start + owner data continuity: **PASS**;
+- UI v2 is primary at `/`; previous UI stays at `/v1`.
 
-Owner acceptance for this exact code identity is complete:
+Detailed evidence: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
 
-- OPS03 exact-SHA Preview/UAT: **PASS**;
-- real OPS02 Stable transition `v0.8.2 -> v0.9.0`: **PASS**;
-- production readiness smoke: **PASS**;
-- `/api/health`: `0.9.0`;
-- owner data continuity: **PASS**.
-
-Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
-
-### Prepared release candidate
-
-Hermes Finance **v1.0.0** is being prepared under #480 from the accepted development-main state.
-
-- status: **PREPARED / UAT-PENDING**;
-- baseline: `ab002c2215bc35c62b95c00452b9541e077b78c2`, exact-main CI #874 / `35574331652` SUCCESS;
-- published/installed Stable remains `v0.9.0`;
-- no `v1.0.0` tag or GitHub Release exists yet;
-- next gate after release-prep integration is OPS03 Owner UAT pinned to one exact canonical SHA;
-- PASS permits guarded publication and then backup-first OPS02 `v0.9.0 -> v1.0.0`.
-
-Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording plus remaining changelog/history lifecycle metadata. Tag/code/release identity is correct.
+The predecessor `v0.9.0` remains immutable release history.
 
 ### Canonical development checkpoints
 
-Latest product/runtime integration checkpoint before this documentation sync:
+The `v1.0.0` release source is `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 
-`583f9167ae14509202ef47978e7b9f20180e188d` — controlled UI v2 default switch, exact-main CI #872 / run `35573224359`: **SUCCESS**.
-
-Immediately before cutover, #475 restore-outcome safety entered `main` at `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba` (CI #869 / `35571951532`: SUCCESS) after independent safety re-review.
-
-The frozen switch candidate `09649bb1d71d6bdff636bb6becbf16d9f0cd5083` passed Owner UAT before canonical merge.
-
-The live development SHA is always the current GitHub `main`; documentation-only synchronization commits may advance it. The immutable released code remains `c90a842...`; post-release development does not change the published `v0.9.0` tag.
+The live development SHA is always current GitHub `main`; documentation-only synchronization commits may advance it after publication without changing the immutable `v1.0.0` tag identity.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -456,7 +435,7 @@ Account + internal-transfer decomposition backend завершён.
 
 #410 закрыт completed. Published Stable `v0.9.0` остаётся immutable.
 
-#480 prepares `v1.0.0` as the cohesive UI v2 + proven production-lifecycle release candidate. Release preparation does not publish or mutate Stable; exact-SHA Owner OPS03 PASS remains required before #124 publication.
+`v1.0.0` is now published and installed as real Stable after exact-SHA Owner OPS03 PASS, guarded #124 publication and backup-first OPS02 transition.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -485,13 +464,12 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; #459/#475 complete, #460 implementation integrated via PR #473, #461–#462 remain.
-- #480 — v1.0.0 release preparation / Owner UAT gate.
+- #417 — durability umbrella; #459/#460/#475 complete, #461–#462 remain.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #459 and #475. #460 code is integrated; its issue closeout remains separate.
+Completed: #313, #387, #410, #429, #430, #459, #460, #475 and #480.
 
 ## 14. Canonical reference documents
 
