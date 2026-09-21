@@ -930,65 +930,27 @@ def _assert_handle_still_verified(target: _DeletionTarget) -> None:
         raise ProtectedBackupError("retention identity is not proven")
 
 
-_SYS_UNLINKAT = {
-    "x86_64": 263,
-    "aarch64": 35,
-    "arm64": 35,
-}
-
-
 def _linux_unlinkat_empty(fd: int) -> None:
-    """Unlink the inode referred to by fd, not a pathname."""
+    """Delete the inode referred to by fd, never a directory leaf name.
+
+    Linux unlinkat(2) only accepts AT_REMOVEDIR. AT_EMPTY_PATH is still EINVAL
+    on current kernels, so this either proves object-bound deletion or raises.
+    Callers must fail closed; they must not fall back to unlink(path) or
+    unlinkat(dirfd, name, 0).
+    """
 
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    # c_char arrays are treated as C strings; empty c_char* becomes NULL.
-    empty_name = (ctypes.c_ubyte * 1)()
-    empty_ptr = ctypes.c_void_p(ctypes.addressof(empty_name))
-    last_errno = 0
-
-    def _try_call(func: object, *args: object) -> bool:
-        nonlocal last_errno
-        ctypes.set_errno(0)
-        result = int(func(*args))
-        last_errno = ctypes.get_errno()
-        return result == 0
-
     unlinkat = libc.unlinkat
     unlinkat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
     unlinkat.restype = ctypes.c_int
-    if _try_call(unlinkat, int(fd), empty_ptr, _AT_EMPTY_PATH):
+    # c_char_p(b"") becomes NULL; a one-byte zero buffer keeps a real pointer.
+    empty_name = (ctypes.c_ubyte * 1)()
+    empty_ptr = ctypes.c_void_p(ctypes.addressof(empty_name))
+    ctypes.set_errno(0)
+    result = int(unlinkat(int(fd), empty_ptr, _AT_EMPTY_PATH))
+    if result == 0:
         return
-
-    syscall_number = _SYS_UNLINKAT.get(os.uname().machine)
-    syscall = libc.syscall
-    syscall.restype = ctypes.c_long
-    syscall.argtypes = [
-        ctypes.c_long,
-        ctypes.c_int,
-        ctypes.c_void_p,
-        ctypes.c_int,
-    ]
-    if syscall_number is not None and _try_call(
-        syscall, syscall_number, int(fd), empty_ptr, _AT_EMPTY_PATH
-    ):
-        return
-
-    path_flags = getattr(os, "O_PATH", 0)
-    if path_flags:
-        path_fd = os.open(
-            f"/proc/self/fd/{int(fd)}",
-            path_flags | getattr(os, "O_CLOEXEC", 0),
-        )
-        try:
-            if _try_call(unlinkat, int(path_fd), empty_ptr, _AT_EMPTY_PATH):
-                return
-            if syscall_number is not None and _try_call(
-                syscall, syscall_number, int(path_fd), empty_ptr, _AT_EMPTY_PATH
-            ):
-                return
-        finally:
-            os.close(path_fd)
-    raise OSError(last_errno or 22, "unlinkat")
+    raise OSError(ctypes.get_errno() or 22, "unlinkat")
 
 
 def _preflight_object_bound_deletion(destination: Path) -> None:
