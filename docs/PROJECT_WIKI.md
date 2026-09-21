@@ -62,6 +62,17 @@ Owner acceptance for this exact code identity is complete:
 
 Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
+### Prepared release candidate
+
+Hermes Finance **v1.0.0** is being prepared under #480 from the accepted development-main state.
+
+- status: **PREPARED / UAT-PENDING**;
+- baseline: `ab002c2215bc35c62b95c00452b9541e077b78c2`, exact-main CI #874 / `35574331652` SUCCESS;
+- published/installed Stable remains `v0.9.0`;
+- no `v1.0.0` tag or GitHub Release exists yet;
+- next gate after release-prep integration is OPS03 Owner UAT pinned to one exact canonical SHA;
+- PASS permits guarded publication and then backup-first OPS02 `v0.9.0 -> v1.0.0`.
+
 Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording plus remaining changelog/history lifecycle metadata. Tag/code/release identity is correct.
 
 ### Canonical development checkpoints
@@ -443,7 +454,9 @@ Account + internal-transfer decomposition backend завершён.
 
 ### Release metadata
 
-#410 закрыт completed. Published Stable `v0.9.0` остаётся immutable; development-main cutover UI v2 сам по себе не публикует новый release.
+#410 закрыт completed. Published Stable `v0.9.0` остаётся immutable.
+
+#480 prepares `v1.0.0` as the cohesive UI v2 + proven production-lifecycle release candidate. Release preparation does not publish or mutate Stable; exact-SHA Owner OPS03 PASS remains required before #124 publication.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -473,6 +486,7 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
 - #417 — durability umbrella; #459 and #475 complete, #460–#462 open.
+- #480 — v1.0.0 release preparation / Owner UAT gate.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
@@ -494,6 +508,8 @@ Completed: #313, #387, #410, #429, #430, #459 and #475.
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
 - `docs/RELEASE_AUTOMATION.md`
+- `docs/releases/1.0.0.md`
+- `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
 - `docs/EXECUTION_HISTORY.md`

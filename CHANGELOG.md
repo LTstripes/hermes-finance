@@ -2,6 +2,43 @@
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
 
+## [Unreleased]
+
+No additional post-candidate product changes are recorded after the prepared `v1.0.0` release boundary.
+
+## [1.0.0] — PREPARED / UAT-PENDING
+
+Release candidate preparation on top of published Stable `v0.9.0`.
+
+This entry packages already accepted canonical development work and synchronizes the application identity to `1.0.0`. It does **not** publish a tag/GitHub Release or mutate production Stable. Owner OPS03 Preview/UAT on one exact canonical SHA is still required.
+
+### Added
+
+- complete UI v2 owner experience: «Мои финансы», Capital, «Доход и планы», contextual Reports/history, native Monthly Close and full «Данные и приложение»;
+- native Data/App catalogs/mappings, exports, safety-gated local backup/restore, settings, tax brackets and runtime diagnostics;
+- protected recovery-point publisher for an explicitly attested `external_encrypted_destination_v1` filesystem destination;
+- durable `/v1` previous-interface rollback alongside the primary v2 route.
+
+### Changed
+
+- `/` is now the accepted primary UI v2 entry; `/v2` remains valid and historical legacy routes/editors remain available;
+- UI v2 default switch passed comparative review and exact-SHA Owner UAT before canonical integration;
+- Windows launcher/runtime remains a prepared-runtime shell around the proven external OPS01/OPS02/OPS03 operations rather than a monolithic updater.
+
+### Fixed
+
+- restore results distinguish confirmed negative outcomes from possibly-mutated ambiguity via machine-readable `restore_outcome_ambiguous`;
+- ambiguous restore UI claims neither success nor failure, refreshes shared reads and never blind-retries;
+- cleanup cannot overwrite an already-classified ambiguous restore outcome.
+
+### Release boundary
+
+- release preparation itself changes version/release identity and documentation only;
+- v1 retirement remains a separate later decision;
+- #460 retention, #461 isolated DR rehearsal, #462 legacy post-restore month-state reload and #476 real-backend G04 CI gate remain outside this candidate;
+- local single-user loopback-only/privacy boundaries remain unchanged;
+- published Stable remains `v0.9.0` until Owner UAT PASS, guarded publication and explicit backup-first OPS02 transition.
+
 ## [0.9.0] — 2026-09-17
 
 Published owner-accepted release after Stable `v0.8.2`. The annotated `v0.9.0`
@@ -27,43 +64,6 @@ continuity all passed.
 - no cloud, auth, telemetry, trading, provider write, automatic upload or background provider refresh;
 - closed months remain immutable until explicit Reopen; unknown/unavailable evidence is not silently converted to zero;
 - private Stable/Preview/runtime data, `.env`, databases, backups, exports/PDFs and credentials remained outside release publication artifacts.
-
-## [Unreleased]
-
-Development `main` after the published Stable `v0.9.0`.
-
-### Added
-
-- complete UI v2 owner experience: «Мои финансы», Capital, «Доход и планы», contextual Reports/history, native Monthly Close and the full «Данные и приложение» area (#387, aggregate #441 + completion aggregate #455);
-- native Data/App catalogs and persistent mappings (#432);
-- native read-only exports plus safety-gated local backup/restore with explicit target confirmation, pre-restore evidence and fail-safe ambiguous-outcome handling (#433);
-- native application settings, tax brackets and runtime diagnostics (#434);
-- global UI v2 «Наверх» affordance (#444);
-- shared owner-facing UI v2 terminology/copy glossary and final cross-surface copy pass (#445);
-- bounded `income-plan-summary` read model so planning/forecast/coverage/cash context is independent from salary-tax/IIS availability (#439);
-- staged-integration process for parallel slices that share application-spine files (#443);
-- #459 protected recovery-point publisher for an explicitly attested `external_encrypted_destination_v1` filesystem destination, with staged verification before final exposure, destination read-back, producer/schema identity and privacy-safe CLI failures; no cloud API/OAuth/key validation/Owner-live run;
-- controlled UI v2 default-switch routing with durable `/v1` rollback, retained `/v2` compatibility, contextual legacy handoffs and browser regression coverage (#430 / PR #474).
-
-### Changed
-
-- Windows launcher simplified to a prepared-runtime owner shell; launcher-owned Stable self-update, Preview follow-main and dependency mutation were removed in favor of the proven external OPS01/OPS02/OPS03 operations (#412 / PR #421);
-- Expected payouts hierarchy/alignment/order, Reports archive spacing and Reconciliation owner-facing copy were polished without changing financial/provider semantics (#446–#448);
-- UI v2 completion was accepted on exact aggregate `edd6a32d94ba322badaea1cab804c4e5cc13574d`, Owner UAT PASS, then integrated through PR #455 to canonical `main` `424ba7bf018c8e4ac01cfda825af7394a3068267`;
-- UI v2 controlled default switch was accepted on exact Owner-UAT SHA `09649bb1d71d6bdff636bb6becbf16d9f0cd5083`, then integrated through PR #474 to `main` `583f9167ae14509202ef47978e7b9f20180e188d`; `/` now opens v2 and `/v1` remains the previous-interface rollback home;
-- exact-main CI #872 / run `35573224359` succeeded after the default-switch merge.
-
-### Fixed
-
-- #475 restore outcome semantics now distinguish confirmed negative outcomes from possibly-mutated ambiguity via machine-readable `restore_outcome_ambiguous`; ambiguous UI state claims neither success nor failure, refreshes shared reads, never blind-retries, and cleanup cannot overwrite the ambiguity classification;
-- #475 accepted candidate `676b330b59deb4abea89f7807af8b382a1ac4c87` passed independent safety re-review and entered `main` through `a11c1b3580ffa2dad0b6bd7f19fe6d2dae2e6fba`, exact-main CI #869 / `35571951532`.
-
-### Still pending
-
-- v1 retirement is a separate later decision; the previous UI remains intentionally available at `/v1` and through retained legacy routes/editors;
-- durability follow-ups #460 retention, #461 isolated DR rehearsal and #462 post-restore month-state reload remain open; real protected off-device use is Owner-controlled;
-- #476 tracks one real-backend synthetic G04 browser regression gate as separate regression infrastructure;
-- release publication / Stable promotion of post-v0.9.0 development work remains separate.
 
 ## [0.8.2] — 2026-09-05
 

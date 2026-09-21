@@ -8,6 +8,8 @@
 
 - Published Stable release: **v0.9.0**.
 - Published release/source code identity: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
+- Prepared release candidate: **v1.0.0** under #480 — PREPARED / UAT-PENDING; no tag/GitHub Release yet and Stable remains v0.9.0.
+- Release-prep baseline: canonical `main @ ab002c2215bc35c62b95c00452b9541e077b78c2`, exact-main CI #874 / `35574331652` — SUCCESS.
 - Annotated tag object: `07c06d44f8b780e721be346a21909ca02585d57d`.
 - Guarded Release: **#253 / run `35235369797` — SUCCESS**.
 - Exact-main CI at the release gate: **#700 / run `35207551120` — SUCCESS**.
@@ -250,6 +252,8 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 
 Published Stable remains immutable `v0.9.0`; development-main acceptance is not a release publication.
 
+#480 prepares `v1.0.0` from the accepted development-main state. The candidate is UAT-PENDING: next gate is exact-SHA OPS03 Owner UAT, then guarded #124 publication, then backup-first OPS02 Stable update.
+
 #476 tracks one deterministic real-backend synthetic G04 browser journey and an explicit CI gate without expanding into a broad E2E redesign.
 
 ## Open umbrella/control issues
@@ -261,6 +265,7 @@ Published Stable remains immutable `v0.9.0`; development-main acceptance is not 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
 - #417 — owner durability umbrella; #459 and #475 complete, #460–#462 remain.
+- #480 — v1.0.0 release preparation / exact-SHA Owner UAT gate.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
@@ -278,6 +283,8 @@ Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459 and #475
 - `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
 - `docs/RELEASE_AUTOMATION.md`
+- `docs/releases/1.0.0.md`
+- `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
 - #124, #127, #417, #460–#462, #476; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #475
