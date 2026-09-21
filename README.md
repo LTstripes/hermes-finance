@@ -30,6 +30,13 @@ Owner release acceptance is complete:
 Detailed checkpoint: [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 Runtime/release closeout: [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
 
+Prepared release candidate: **v1.0.0** — `PREPARED / UAT-PENDING` under #480.
+
+- published Stable remains `v0.9.0`;
+- no `v1.0.0` tag or GitHub Release exists yet;
+- the candidate packages the accepted UI v2 default switch, restore-outcome safety and other accepted post-v0.9.0 work already on canonical development `main`;
+- next gate after release-prep integration is one exact-SHA OPS03 Preview/UAT; only Owner PASS permits guarded publication and the real backup-first Stable transition `v0.9.0 -> v1.0.0`.
+
 ## Product/runtime invariants
 
 - Windows 10/11, single user, local-only.
@@ -109,7 +116,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 - supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
 - no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
 
-The durability queue continues with #460 retention, #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
+Bounded verified retention (#460 / PR #473) is now integrated on current `main`. The remaining durability queue is #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
 
 ## Requirements
 
@@ -294,11 +301,11 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 Separate future work:
 
 - #476 — one real-backend synthetic G04 browser regression gate; this is regression infrastructure, not a blocker to the accepted cutover;
-- #460/#461/#462 — remaining durability/DR/legacy restore-state work under #417;
+- #461/#462 — remaining durability/DR/legacy restore-state work under #417; #460 bounded verified retention is already integrated;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
-Release publication/runtime promotion remains separate from development-main acceptance.
+Release publication/runtime promotion remains separate from development-main acceptance. The prepared `v1.0.0` candidate is tracked in #480; after exact-SHA OPS03 Owner PASS it may be published through #124 and then installed into real Stable through backup-first OPS02.
 
 ## Health
 
@@ -314,6 +321,15 @@ Current Stable should include:
 {
   "status": "ok",
   "version": "0.9.0"
+}
+```
+
+The prepared `v1.0.0` candidate, when run in isolated OPS03 Preview/UAT, must instead report:
+
+```json
+{
+  "status": "ok",
+  "version": "1.0.0"
 }
 ```
 
@@ -347,6 +363,8 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;
 - [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md) — guarded release publication;
+- [`docs/release-notes-1.0.0.md`](docs/release-notes-1.0.0.md) — prepared v1.0.0 public release notes;
+- [`docs/releases/1.0.0.md`](docs/releases/1.0.0.md) — prepared/UAT-pending v1.0.0 release record;
 - [`docs/release-notes-0.9.0.md`](docs/release-notes-0.9.0.md) — final v0.9.0 notes;
 - [`docs/releases/0.9.0.md`](docs/releases/0.9.0.md) — published v0.9.0 release record.
 

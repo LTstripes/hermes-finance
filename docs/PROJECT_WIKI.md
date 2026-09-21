@@ -62,6 +62,17 @@ Owner acceptance for this exact code identity is complete:
 
 Detailed evidence: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
+### Prepared release candidate
+
+Hermes Finance **v1.0.0** is being prepared under #480 from the accepted development-main state.
+
+- status: **PREPARED / UAT-PENDING**;
+- baseline: `ab002c2215bc35c62b95c00452b9541e077b78c2`, exact-main CI #874 / `35574331652` SUCCESS;
+- published/installed Stable remains `v0.9.0`;
+- no `v1.0.0` tag or GitHub Release exists yet;
+- next gate after release-prep integration is OPS03 Owner UAT pinned to one exact canonical SHA;
+- PASS permits guarded publication and then backup-first OPS02 `v0.9.0 -> v1.0.0`.
+
 Known non-blocking metadata follow-up: #410 corrects the GitHub Release description that inherited pre-publication `UAT-PENDING` wording plus remaining changelog/history lifecycle metadata. Tag/code/release identity is correct.
 
 ### Canonical development checkpoints
@@ -407,7 +418,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 retention, #461 isolated DR rehearsal and #462 focused post-restore state reload remain open. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention is now integrated on current `main`. #461 isolated DR rehearsal and #462 focused post-restore state reload remain. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
@@ -422,16 +433,16 @@ There is no remaining cutover gate. Separate future work:
 - #389 — future configurable dashboards, separate from the completed core roadmap;
 - v1 retirement — only as a later explicit task if real use shows rollback/legacy paths are no longer needed.
 
-`1.0.0` remains a future release/product milestone, not implied by development-main cutover.
+`1.0.0` is now the prepared release candidate under #480; it remains UAT-PENDING until exact-SHA Owner OPS03 PASS.
 
 ### Runtime / durability
 
 #313 завершён. #459 protected recovery-point publisher и #475 restore outcome semantics также завершены и интегрированы.
 
-Под #417 остаются:
-- #460 retention;
-- #461 isolated DR rehearsal;
-- #462 post-restore month-state reload.
+Под #417:
+- #460 / PR #473 retention implementation уже интегрирован;
+- #461 isolated DR rehearsal остаётся;
+- #462 post-restore month-state reload остаётся.
 
 Real protected off-device backup/recovery rehearsal остаются Owner-controlled. Не возрождать monolithic launcher updater.
 
@@ -443,7 +454,9 @@ Account + internal-transfer decomposition backend завершён.
 
 ### Release metadata
 
-#410 закрыт completed. Published Stable `v0.9.0` остаётся immutable; development-main cutover UI v2 сам по себе не публикует новый release.
+#410 закрыт completed. Published Stable `v0.9.0` остаётся immutable.
+
+#480 prepares `v1.0.0` as the cohesive UI v2 + proven production-lifecycle release candidate. Release preparation does not publish or mutate Stable; exact-SHA Owner OPS03 PASS remains required before #124 publication.
 
 ## 12. CI/test execution optimization — closeout 2026-09-16
 
@@ -472,12 +485,13 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; #459 and #475 complete, #460–#462 open.
+- #417 — durability umbrella; #459/#475 complete, #460 implementation integrated via PR #473, #461–#462 remain.
+- #480 — v1.0.0 release preparation / Owner UAT gate.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #459 and #475.
+Completed: #313, #387, #410, #429, #430, #459 and #475. #460 code is integrated; its issue closeout remains separate.
 
 ## 14. Canonical reference documents
 
@@ -494,6 +508,8 @@ Completed: #313, #387, #410, #429, #430, #459 and #475.
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
 - `docs/RELEASE_AUTOMATION.md`
+- `docs/releases/1.0.0.md`
+- `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
 - `docs/EXECUTION_HISTORY.md`

@@ -34,6 +34,22 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-21 v1.0.0 release preparation
+
+### #480 — prepare cohesive UI v2 / production-lifecycle release candidate
+
+- **Status:** release preparation in progress; no publication or Stable mutation.
+- **Exact baseline main:** `ab002c2215bc35c62b95c00452b9541e077b78c2`.
+- **Baseline exact-main CI:** #874 / `35574331652` — SUCCESS.
+- **Task branch:** `release/1.0.0-candidate`.
+- **Published predecessor:** `v0.9.0`.
+- **Scope:** synchronize current application identity to `1.0.0`, add canonical public notes/release-candidate record and package the already accepted development-main state; no product/financial/schema/provider behavior is introduced by release preparation.
+- **Major included milestone:** cohesive UI v2 with `/` default and `/v1` rollback, restore-result ambiguity safety, protected recovery-point publisher, bounded verified retention (#460 / PR #473), and the proven OPS01/OPS02/OPS03/guarded-publication lifecycle already canonical.
+- **Owner gate:** after integration, freeze one exact canonical SHA for OPS03 Preview/UAT. Owner PASS permits guarded #124 publication from that exact identity; only then may OPS02 update real Stable `v0.9.0 -> v1.0.0`.
+- **Baseline refresh:** while PR #481 was running, #460 / PR #473 entered canonical `main` at `512cf84abfc0badaa271f47d45babb7fcd39dc3b`; release-prep had no file overlap and was explicitly re-synced so retention is part of the 1.0.0 candidate.
+- **Boundaries:** #461/#462/#476 and v1 retirement remain separate; no private runtime data, tag, GitHub Release or production operation belongs to preparation.
+- **References:** #480, #124, `docs/releases/1.0.0.md`, `docs/release-notes-1.0.0.md`.
+
 # 2026-09-21 UI v2 controlled default switch
 
 ### #430 / PR #474 — comparative audit, frozen Owner UAT and default cutover
