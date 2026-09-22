@@ -45,7 +45,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 - **Accepted #461 candidate:** `66e2fb3a15998f57870af8116ba2c1c37dfa8cf3`; PR #483 merged as `9fec46e8174fba8da72885c842266512ab0af0fe`.
 - **Post-merge finding:** exact-main Release safety reproduced a real Windows cleanup defect twice: Job Object accounting could report zero active processes while an owned process object remained unsignaled and its listener still accepted connections.
 - **Cleanup remediation:** PR #499 candidate `ca88155dd897eca30d56269f05d4d734263bff32` adds completion-port/lifetime-process evidence and waits for owned process-object signaling within the existing bounded deadline while preserving whole-tree ownership and unrelated-process safety.
-- **Final canonical main:** `16df86d5eb3923cbe106938d6e81ec360397d00d`.
+- **Final #461 code checkpoint:** `16df86d5eb3923cbe106938d6e81ec360397d00d`.
 - **Canonical verification:** exact-head #499 CI #893 / `35732632333` SUCCESS; exact-main CI #894 / `35734575867` SUCCESS. Attempt 1 had one unrelated backend-integrations lane hit its 10-minute timeout at 78% without a test failure; one bounded rerun on the unchanged SHA passed.
 - **Delivered:** privacy-safe verify/restore/rehearsal over a managed protected recovery point, fail-closed isolated target/schema/runtime boundaries, source immutability, bounded Prepare/Validate/Start readiness, Windows process ownership/disposition proof and adversarial path/process regressions.
 - **Still pending:** #462 post-restore month-state reload plus the real Owner protected recovery point, independently held recovery material and clean Owner-controlled DR rehearsal. Synthetic/canonical acceptance is not Owner-live UAT.
