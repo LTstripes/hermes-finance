@@ -142,10 +142,14 @@ def _wait_until_gone(process_id: int) -> None:
 
 def _marker_identity(marker: Path) -> tuple[int, int]:
     deadline = time.monotonic() + 5
-    while not marker.exists() and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        try:
+            process_id, port = marker.read_text(encoding="utf-8").split(":", 1)
+            return int(process_id), int(port)
+        except (FileNotFoundError, ValueError):
+            pass
         time.sleep(0.02)
-    process_id, port = marker.read_text(encoding="utf-8").split(":", 1)
-    return int(process_id), int(port)
+    pytest.fail("listener marker was not written completely")
 
 
 def _assert_listener_gone(port: int) -> None:

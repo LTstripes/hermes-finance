@@ -1107,10 +1107,14 @@ def _process_is_alive(process_id: int) -> bool:
 
 def _read_listener_marker(marker: Path) -> tuple[int, int]:
     deadline = time.monotonic() + 10
-    while not marker.exists() and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        try:
+            process_id, port = marker.read_text(encoding="utf-8").split(":", 1)
+            return int(process_id), int(port)
+        except (FileNotFoundError, ValueError):
+            pass
         time.sleep(0.05)
-    process_id, port = marker.read_text(encoding="utf-8").split(":", 1)
-    return int(process_id), int(port)
+    pytest.fail("listener marker was not written completely")
 
 
 def _wait_process_gone(process_id: int) -> None:
