@@ -397,7 +397,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 / PR #473 bounded verified retention and #461 / PR #483 isolated DR implementation are integrated. Post-merge exact-main verification found a real Windows process-disposition defect; PR #499 closed it, with final canonical `main` `16df86d5eb3923cbe106938d6e81ec360397d00d` and CI #894 / `35734575867` SUCCESS. #462 focused post-restore state reload remains. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention, #461 / PR #483 isolated DR implementation and #462 / PR #502 focused post-restore state reload are integrated. Post-merge exact-main verification after #461 found a real Windows process-disposition defect; PR #499 closed it. #462 then closed the stale legacy Export/Backup month-state lifecycle race, reaching canonical `main` `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` with CI #904 / `35771083594` SUCCESS. The planned #417 implementation queue is complete. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
@@ -420,7 +420,8 @@ There is no remaining cutover gate. Separate future work:
 
 Под #417:
 - #461 закрыт канонически после PR #483 и follow-up PR #499;
-- #462 post-restore month-state reload остаётся следующим implementation slice;
+- #462 / PR #502 post-restore month-state reload закрыт канонически;
+- planned implementation queue #458–#462 завершена;
 - реальный protected off-device recovery point, independently held recovery material и clean Owner DR rehearsal остаются Owner-controlled gates.
 
 Не возрождать monolithic launcher updater.
