@@ -780,3 +780,19 @@ Do not invent missing executor/model attribution during backfill. A later docume
 - **Explicitly deferred:** instrument/asset-class attribution, realised/unrealised P&L decomposition, trades/lots/cost basis, event-explanation attribution and component-attribution exports.
 - **Follow-up:** future Performance work starts from canonical `main`, not from `integration/performance-v1`; published Stable `0.8.2` remains unchanged until a separately guarded release.
 - **References:** #358, #360, PR #361, #127, `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`, `docs/PROJECT_WIKI.md` §25.
+
+
+# 2026-09-22 #462 restore-state closeout
+
+### #462 / PR #502 — legacy Export/Backup restored-month state reload
+
+- **Status:** accepted, merged and canonically green.
+- **Canonical baseline:** `559c48765576256eea51a20b28be3cd8afc2f384`.
+- **Final accepted candidate:** `7dc9a62fbd7557f59e6bfcac415c54b4d5e633c3`.
+- **Canonical merge/main:** `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`.
+- **Review:** independent narrow re-review returned **INDEPENDENT ACCEPT** after two B1 lifecycle findings were remediated.
+- **Key defects caught before merge:** an older pre-restore `/api/months` request could overwrite restored month state after the new reload; then a smaller pre-invalidation window remained where the old request could still publish state after restore success. Final code retires old request ownership immediately after confirmed restore success, before any further await.
+- **Delivered:** stale pre-restore months/selection are hidden immediately; restored months are reloaded authoritatively; exact selected ID is preserved only when present in the restored list, otherwise deterministic newest fallback or null; confirmed restore truth remains distinct from later month-read failure; confirmed-negative and legacy ambiguous restore behavior remains unchanged.
+- **Verification:** targeted ExportPage 28/28, full frontend 621/621, exact-head CI #902 / `35753762184` SUCCESS, UI comparison #94 / `35753762254` SUCCESS, exact-main CI #904 / `35771083594` SUCCESS.
+- **Scope:** only `frontend/src/pages/ExportPage.tsx` and focused tests; no backend restore, UI v2/#475 or #461 runtime/recovery changes.
+- **Parent effect:** all planned implementation children #458–#462 under #417 are now complete. Final Owner protected recovery point, independent recovery material and clean DR rehearsal remain pending.
