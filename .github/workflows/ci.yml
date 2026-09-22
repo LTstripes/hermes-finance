@@ -285,7 +285,9 @@ jobs:
           $recoveryBaseTemp = Join-Path $env:RUNNER_TEMP "hermes-recovery-pytest"
           Push-Location backend
           uv run --locked python -I -m pytest -q `
-            tests/test_recovery_rehearsal.py --basetemp $recoveryBaseTemp
+            tests/test_recovery_rehearsal.py `
+            tests/test_recovery_process.py `
+            --basetemp $recoveryBaseTemp
           $recoveryExitCode = $LASTEXITCODE
           Pop-Location
           if ($recoveryExitCode -ne 0) {

@@ -440,9 +440,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 The recovery checkout must be a clean detached independent clone at the exact
 selected SHA. It must not contain `.env`, private data, or prior runtime data.
-The repository-owned wrapper establishes the checkout-local `.venv` before
-the first `uv run`; do not replace it with a direct inherited-environment
-`uv run` command.
+Before the first `uv run`, the repository-owned wrapper proves that Git identity,
+clean/detached state, and the Stable/development/runtime exclusions are valid.
+It establishes the checkout-local `.venv`, holds the mutable Prepare output
+roots against replacement, and owns the entire bootstrap descendant tree under
+one deadline. Do not replace it with a direct inherited-environment `uv run`
+command.
 The launcher runtime config is read only to exclude canonical Stable and every
 configured Preview/experiment boundary; the trusted control checkout supplies
 the development-worktree inventory. The target profile, its `data` directory,
@@ -455,7 +458,9 @@ the selected checkout identity, and an exact `same_revision` or unambiguous
 linear `forward_upgrade` relationship. It then restores the already-verified
 snapshot, runs that checkout's existing Prepare and Validate operations, and
 uses its existing bounded Start/readiness smoke. The source recovery point is
-re-read and identity-checked throughout and is never opened for writing.
+re-read and identity-checked throughout and is never opened for writing. The
+restored database remains bound to the descriptor that wrote staging, and its
+snapshot hash is read back again immediately before Prepare and Start.
 
 Success emits one privacy-safe JSON result that binds artifact/code/schema
 identity and broad structural counts. Failure emits only a bounded stage and

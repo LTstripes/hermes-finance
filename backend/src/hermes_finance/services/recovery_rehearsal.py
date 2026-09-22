@@ -89,6 +89,7 @@ class _DirectoryGuard:
     identity: tuple[int, int]
     descriptor: int | None = None
     handle: int | None = None
+    containment_handle: int | None = None
     closed: bool = False
 
     def assert_path_identity(self) -> None:
@@ -135,12 +136,12 @@ class _DirectoryGuard:
         flags = (
             os.O_CREAT
             | os.O_EXCL
-            | os.O_WRONLY
+            | os.O_RDWR
             | getattr(os, "O_BINARY", 0)
             | getattr(os, "O_NOFOLLOW", 0)
         )
         if sys.platform == "win32":
-            descriptor = os.open(self.path / name, flags, 0o600)
+            descriptor = _create_windows_exclusive_leaf(self.path / name)
         else:
             if self.descriptor is None:
                 raise OSError("directory descriptor is unavailable")
@@ -170,6 +171,12 @@ class _DirectoryGuard:
             return
         if self.handle is not None:
             _close_windows_handle(self.handle)
+        if self.containment_handle is not None:
+            _close_windows_handle(self.containment_handle)
+            try:
+                os.unlink(str(self.path) + ":hermes-recovery-containment")
+            except FileNotFoundError:
+                pass
         if self.descriptor is not None:
             os.close(self.descriptor)
         self.closed = True
@@ -447,11 +454,76 @@ def _open_windows_path(
     return int(handle), identity, attributes, link_count
 
 
+def _create_windows_exclusive_leaf(path: Path) -> int:
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(
+        str(path),
+        0x80000000 | 0x40000000,
+        0x00000001 | 0x00000002 | 0x00000004,
+        None,
+        1,
+        0x00200000,
+        None,
+    )
+    if handle in (None, ctypes.c_void_p(-1).value):
+        raise OSError(ctypes.get_last_error(), "exclusive file could not be created")
+    try:
+        return msvcrt.open_osfhandle(int(handle), os.O_RDWR | getattr(os, "O_BINARY", 0))
+    except OSError:
+        kernel32.CloseHandle(handle)
+        raise
+
+
 def _open_windows_directory(path: Path, *, deny_delete: bool) -> tuple[int, tuple[int, int], int]:
     handle, identity, attributes, _link_count = _open_windows_path(
         path, directory=True, deny_delete=deny_delete
     )
     return handle, identity, attributes
+
+
+def _open_windows_containment_lock(path: Path) -> int:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(
+        str(path) + ":hermes-recovery-containment",
+        0x80000000 | 0x40000000,
+        0x00000001 | 0x00000002,
+        None,
+        4,
+        0,
+        None,
+    )
+    if handle in (None, ctypes.c_void_p(-1).value):
+        raise OSError(ctypes.get_last_error(), "directory containment could not be opened")
+    return int(handle)
 
 
 def _close_windows_handle(handle: int) -> None:
@@ -468,7 +540,17 @@ def _open_directory_guard(path: Path) -> _DirectoryGuard:
         if attributes & _REPARSE_POINT:
             _close_windows_handle(handle)
             raise OSError("directory is a reparse point")
-        return _DirectoryGuard(path=path, identity=identity, handle=handle)
+        try:
+            containment_handle = _open_windows_containment_lock(path)
+        except OSError:
+            _close_windows_handle(handle)
+            raise
+        return _DirectoryGuard(
+            path=path,
+            identity=identity,
+            handle=handle,
+            containment_handle=containment_handle,
+        )
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
     inspected = os.fstat(descriptor)
@@ -743,6 +825,8 @@ def _validate_recovery_checkout(
         recovery / "backend" / "alembic.ini",
         recovery / "scripts" / "prepare-runtime.ps1",
         recovery / "scripts" / "recovery-rehearsal.ps1",
+        recovery / "scripts" / "recovery-bootstrap-boundary.ps1",
+        recovery / "scripts" / "recovery-bootstrap-safety.ps1",
         recovery / "scripts" / "recovery-runtime-boundary.ps1",
         recovery / "scripts" / "recovery-runtime-safety.ps1",
         recovery / "scripts" / "start-local.ps1",
@@ -887,7 +971,11 @@ def _assert_prepare_output_boundary(path: Path, *, directory: bool) -> None:
                     )
                     or (
                         not linked
-                        and (not stat.S_ISREG(child.st_mode) or _file_identity(child) is None)
+                        and (
+                            not stat.S_ISREG(child.st_mode)
+                            or child.st_nlink != 1
+                            or _file_identity(child) is None
+                        )
                     )
                 ):
                     raise RecoveryRehearsalError(
@@ -938,6 +1026,7 @@ def _validate_prepare_boundaries(checkout: CheckoutProof) -> None:
         (root / "backend" / ".venv", True),
         (root / "frontend" / "node_modules", True),
         (root / "frontend" / "dist", True),
+        (root / ".tmp", True),
         (root / ".hermes-runtime-prepared.json", False),
     ):
         if not _path_is_within(path, root):
@@ -953,6 +1042,44 @@ def _validate_prepare_boundaries(checkout: CheckoutProof) -> None:
         _assert_prepare_output_boundary(path, directory=directory)
 
 
+@contextmanager
+def _hold_prepare_boundary_guards(checkout: CheckoutProof) -> Iterator[None]:
+    root = checkout.checkout
+    paths = (
+        root / "backend" / ".venv",
+        root / "frontend" / "node_modules",
+        root / "frontend" / "dist",
+        root / ".tmp",
+    )
+    guards: list[_DirectoryGuard] = []
+    try:
+        _validate_prepare_boundaries(checkout)
+        for path in paths:
+            try:
+                path.mkdir()
+            except FileExistsError:
+                pass
+            guards.append(_open_directory_guard(path))
+        for guard in guards:
+            guard.assert_path_identity()
+        _validate_prepare_boundaries(checkout)
+        yield
+        for guard in guards:
+            guard.assert_path_identity()
+        _validate_prepare_boundaries(checkout)
+    except RecoveryRehearsalError:
+        raise
+    except OSError as error:
+        raise RecoveryRehearsalError(
+            "runtime-prepare-boundary",
+            "prepared output containment could not be preserved",
+            target_mutated=True,
+        ) from error
+    finally:
+        for guard in reversed(guards):
+            guard.close()
+
+
 def _isolated_runtime_environment(
     checkout: CheckoutProof, *, database: Path | None = None
 ) -> dict[str, str]:
@@ -961,6 +1088,8 @@ def _isolated_runtime_environment(
         environment.pop(name, None)
     environment["UV_PROJECT_ENVIRONMENT"] = str(checkout.checkout / "backend" / ".venv")
     environment["UV_LINK_MODE"] = "copy"
+    environment["TEMP"] = str(checkout.checkout / ".tmp")
+    environment["TMP"] = str(checkout.checkout / ".tmp")
     environment["HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN"] = ""
     environment["PYTHONPATH"] = ""
     if database is not None:
@@ -1276,24 +1405,34 @@ def _create_target_directories(target: TargetPlan) -> None:
         ) from error
 
 
-def _write_exclusive_leaf(guard: _DirectoryGuard, name: str, payload: bytes) -> tuple[int, int]:
+def _write_exclusive_leaf(guard: _DirectoryGuard, name: str, payload: bytes) -> _RegularFileGuard:
     descriptor = guard.open_exclusive_leaf(name)
     try:
-        with os.fdopen(descriptor, "wb") as stream:
-            descriptor = -1
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-    finally:
+        view = memoryview(payload)
+        written = 0
+        while written < len(view):
+            count = os.write(descriptor, view[written:])
+            if count <= 0:
+                raise OSError("created file could not be written")
+            written += count
+        os.fsync(descriptor)
+        inspected = os.fstat(descriptor)
+        identity = _file_identity(inspected)
+        if identity is None or not stat.S_ISREG(inspected.st_mode) or inspected.st_nlink != 1:
+            raise OSError("created file identity is unavailable")
+        created = _RegularFileGuard(
+            path=guard.path / name,
+            identity=identity,
+            descriptor=descriptor,
+        )
+        descriptor = -1
+        guard.assert_path_identity()
+        created.assert_path_identity()
+        return created
+    except BaseException:
         if descriptor >= 0:
             os.close(descriptor)
-    guard.assert_path_identity()
-    inspected = (guard.path / name).lstat()
-    identity = _file_identity(inspected)
-    if identity is None:
-        raise OSError("created file identity is unavailable")
-    _assert_regular_leaf_identity(guard.path / name, identity)
-    return identity
+        raise
 
 
 def _restore_snapshot(snapshot_bytes: bytes, target: TargetPlan) -> None:
@@ -1301,21 +1440,58 @@ def _restore_snapshot(snapshot_bytes: bytes, target: TargetPlan) -> None:
         raise RecoveryRehearsalError(
             "restore-write", "isolated data boundary is unavailable", target_mutated=True
         )
+    staging_guard: _RegularFileGuard | None = None
+    database_guard: _RegularFileGuard | None = None
     try:
-        staging_identity = _write_exclusive_leaf(target.data_guard, _STAGING_NAME, snapshot_bytes)
+        staging_guard = _write_exclusive_leaf(target.data_guard, _STAGING_NAME, snapshot_bytes)
+        staging_identity = staging_guard.identity
+        staging_guard.assert_path_identity()
         target.data_guard.publish_no_overwrite(_STAGING_NAME, target.database.name)
-        _assert_regular_leaf_identity(target.database, staging_identity)
+        staging_guard.path = target.database
+        staging_guard.assert_path_identity()
         database_guard = _open_regular_file_guard(target.database)
         if database_guard.identity != staging_identity:
-            database_guard.close()
             raise OSError("published database identity changed")
+        staging_guard.assert_path_identity()
         target.database_identity = staging_identity
         target.database_guard = database_guard
+        database_guard = None
         target.assert_bound()
     except OSError as error:
         raise RecoveryRehearsalError(
             "restore-write", "isolated database restore failed", target_mutated=True
         ) from error
+    finally:
+        if database_guard is not None:
+            database_guard.close()
+        if staging_guard is not None:
+            staging_guard.close()
+
+
+def _assert_restored_snapshot_hash(target: TargetPlan, *, expected_sha256: str, stage: str) -> None:
+    if target.database_identity is None or target.database_guard is None:
+        raise RecoveryRehearsalError(
+            stage, "restored database identity is unavailable", target_mutated=True
+        )
+    descriptor = -1
+    try:
+        target.assert_bound()
+        descriptor = _open_regular_read_only(target.database)
+        inspected = os.fstat(descriptor)
+        if (
+            _file_identity(inspected) != target.database_identity
+            or inspected.st_nlink != 1
+            or _sha256_fd(descriptor) != expected_sha256
+        ):
+            raise OSError("restored snapshot bytes changed")
+        target.assert_bound()
+    except OSError as error:
+        raise RecoveryRehearsalError(
+            stage, "restored snapshot identity is invalid", target_mutated=True
+        ) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _quote_identifier(value: str) -> str:
@@ -1452,8 +1628,9 @@ def _write_sidecar(
         raise RecoveryRehearsalError(
             "restore-write", "isolated data boundary is unavailable", target_mutated=True
         )
+    sidecar_guard: _RegularFileGuard | None = None
     try:
-        _write_exclusive_leaf(
+        sidecar_guard = _write_exclusive_leaf(
             target.data_guard,
             _SIDECAR_NAME,
             (
@@ -1465,6 +1642,9 @@ def _write_sidecar(
         raise RecoveryRehearsalError(
             "restore-write", "recovery profile identity could not be written", target_mutated=True
         ) from error
+    finally:
+        if sidecar_guard is not None:
+            sidecar_guard.close()
 
 
 def _powershell() -> str:
@@ -1533,33 +1713,40 @@ def _run_runtime_script(
 
 
 def _prepare_and_validate(checkout: CheckoutProof) -> None:
-    _validate_prepare_boundaries(checkout)
-    _run_runtime_script(
-        checkout,
-        script_name="prepare-runtime.ps1",
-        arguments=["-Checkout", str(checkout.checkout), "-Prepare"],
-        stage="runtime-prepare",
-        timeout=1200,
-    )
-    _validate_prepare_boundaries(checkout)
-    _recheck_checkout(checkout, stage="runtime-prepare")
-    _run_runtime_script(
-        checkout,
-        script_name="prepare-runtime.ps1",
-        arguments=["-Checkout", str(checkout.checkout), "-Validate"],
-        stage="runtime-validate",
-        timeout=300,
-    )
-    _validate_prepare_boundaries(checkout)
-    _recheck_checkout(checkout, stage="runtime-validate")
+    with _hold_prepare_boundary_guards(checkout):
+        _run_runtime_script(
+            checkout,
+            script_name="prepare-runtime.ps1",
+            arguments=["-Checkout", str(checkout.checkout), "-Prepare"],
+            stage="runtime-prepare",
+            timeout=1200,
+        )
+        _validate_prepare_boundaries(checkout)
+        _recheck_checkout(checkout, stage="runtime-prepare")
+        _run_runtime_script(
+            checkout,
+            script_name="prepare-runtime.ps1",
+            arguments=["-Checkout", str(checkout.checkout), "-Validate"],
+            stage="runtime-validate",
+            timeout=300,
+        )
+        _validate_prepare_boundaries(checkout)
+        _recheck_checkout(checkout, stage="runtime-validate")
 
 
-def _start_and_probe(checkout: CheckoutProof, target: TargetPlan) -> None:
+def _start_and_probe(
+    checkout: CheckoutProof, target: TargetPlan, *, expected_snapshot_sha256: str
+) -> None:
     if target.database_identity is None:
         raise RecoveryRehearsalError(
             "runtime-start", "restored database identity is unavailable", target_mutated=True
         )
     target.assert_bound()
+    _assert_restored_snapshot_hash(
+        target,
+        expected_sha256=expected_snapshot_sha256,
+        stage="pre-start-restored-snapshot",
+    )
     _recheck_checkout(checkout, stage="runtime-start")
     readiness_token = secrets.token_hex(32)
     database_token = file_identity_token(target.database)
@@ -1641,11 +1828,21 @@ def rehearse_recovery(
             expected_revisions=compatibility.source_revisions,
             stage="restored-database-validation",
         )
+        expected_snapshot_sha256 = str(source.manifest["snapshot_sha256"])
+        _assert_restored_snapshot_hash(
+            target,
+            expected_sha256=expected_snapshot_sha256,
+            stage="pre-prepare-restored-snapshot",
+        )
         source.assert_unchanged()
 
         _prepare_and_validate(checkout)
         source.assert_unchanged()
-        _start_and_probe(checkout, target)
+        _start_and_probe(
+            checkout,
+            target,
+            expected_snapshot_sha256=expected_snapshot_sha256,
+        )
         resulting_revisions, structural_counts = _database_facts(
             target.database,
             expected_identity=target.database_identity,

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -166,7 +169,7 @@ def _install_isolated_harness(
     monkeypatch.setattr(
         recovery_rehearsal,
         "_start_and_probe",
-        lambda _checkout, _database: events.append("start-readiness"),
+        lambda _checkout, _database, **_kwargs: events.append("start-readiness"),
     )
     return proof
 
@@ -572,6 +575,69 @@ def test_database_publication_does_not_overwrite_late_conflict(
         source.close()
 
 
+def test_staging_replacement_after_writer_close_is_not_adopted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source_before = artifact.read_bytes()
+    events: list[str] = []
+    _install_isolated_harness(monkeypatch, tmp_path, events)
+    alternate = tmp_path / "alternate-valid.sqlite3"
+    _make_snapshot(alternate, revision=_git_head(), month_count=2)
+    alternate_bytes = alternate.read_bytes()
+    original_write = recovery_rehearsal._write_exclusive_leaf
+
+    def replace_after_close(
+        guard: recovery_rehearsal._DirectoryGuard, name: str, payload: bytes
+    ) -> recovery_rehearsal._RegularFileGuard:
+        created = original_write(guard, name, payload)
+        if name == recovery_rehearsal._STAGING_NAME:
+            created.close()
+            created.path.unlink()
+            created.path.write_bytes(alternate_bytes)
+        return created
+
+    monkeypatch.setattr(recovery_rehearsal, "_write_exclusive_leaf", replace_after_close)
+
+    with pytest.raises(RecoveryRehearsalError) as captured:
+        _run_isolated(artifact, tmp_path)
+
+    assert captured.value.stage == "restore-write"
+    assert events == []
+    assert artifact.read_bytes() == source_before
+
+
+def test_restored_snapshot_hash_is_rechecked_before_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source, target = _validated_target_plan(artifact, tmp_path)
+    recovery_rehearsal._create_target_directories(target)
+    recovery_rehearsal._restore_snapshot(source.snapshot_bytes, target)
+    alternate = tmp_path / "alternate-before-start.sqlite3"
+    _make_snapshot(alternate, revision=_git_head(), month_count=2)
+    target.database.write_bytes(alternate.read_bytes())
+    runtime_calls: list[str] = []
+    monkeypatch.setattr(recovery_rehearsal, "_recheck_checkout", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        recovery_rehearsal,
+        "_run_runtime_script",
+        lambda *_a, **_k: runtime_calls.append("start"),
+    )
+    try:
+        with pytest.raises(RecoveryRehearsalError) as captured:
+            recovery_rehearsal._start_and_probe(
+                _proof(),
+                target,
+                expected_snapshot_sha256=str(source.manifest["snapshot_sha256"]),
+            )
+        assert captured.value.stage == "pre-start-restored-snapshot"
+        assert runtime_calls == []
+    finally:
+        target.close()
+        source.close()
+
+
 @pytest.mark.parametrize("alias_kind", ["foreign", "source"])
 def test_sidecar_exclusive_creation_does_not_follow_late_alias(
     tmp_path: Path,
@@ -857,15 +923,34 @@ def test_recovery_identity_headers_bind_every_readiness_response(tmp_path: Path)
         database.engine.dispose()
 
 
-def _synthetic_bootstrap_checkout(tmp_path: Path) -> Path:
+def _run_git_at(path: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout.strip()
+
+
+def _synthetic_bootstrap_checkout(
+    tmp_path: Path, *, detached: bool = True
+) -> tuple[Path, Path, Path, str]:
     checkout = tmp_path / "synthetic recovery checkout"
+    control = tmp_path / "synthetic control checkout"
     scripts = checkout / "scripts"
     backend = checkout / "backend"
     frontend = checkout / "frontend"
     scripts.mkdir(parents=True)
     backend.mkdir()
     frontend.mkdir()
-    shutil.copy2(REPOSITORY_ROOT / "scripts" / "recovery-rehearsal.ps1", scripts)
+    for name in (
+        "recovery-rehearsal.ps1",
+        "recovery-bootstrap-boundary.ps1",
+        "recovery-bootstrap-safety.ps1",
+    ):
+        shutil.copy2(REPOSITORY_ROOT / "scripts" / name, scripts)
     for path in (
         backend / "pyproject.toml",
         backend / "uv.lock",
@@ -873,7 +958,172 @@ def _synthetic_bootstrap_checkout(tmp_path: Path) -> Path:
         frontend / "package-lock.json",
     ):
         path.write_text("synthetic\n", encoding="utf-8")
-    return checkout
+    (checkout / ".gitignore").write_text(
+        "backend/.venv/\nfrontend/node_modules/\nfrontend/dist/\n.tmp/\n"
+        ".hermes-runtime-prepared.json*\n",
+        encoding="utf-8",
+    )
+    _run_git_at(checkout, "init", "--quiet")
+    _run_git_at(checkout, "config", "user.name", "Hermes Recovery Test")
+    _run_git_at(checkout, "config", "user.email", "recovery-test.invalid")
+    _run_git_at(checkout, "remote", "add", "origin", "https://example.invalid/hermes-finance.git")
+    _run_git_at(checkout, "add", ".")
+    _run_git_at(checkout, "commit", "--quiet", "-m", "synthetic recovery checkout")
+    head = _run_git_at(checkout, "rev-parse", "HEAD")
+    if detached:
+        _run_git_at(checkout, "checkout", "--quiet", "--detach", head)
+
+    control.mkdir()
+    _run_git_at(control, "init", "--quiet")
+    _run_git_at(control, "config", "user.name", "Hermes Recovery Test")
+    _run_git_at(control, "config", "user.email", "recovery-test.invalid")
+    _run_git_at(control, "remote", "add", "origin", "https://example.invalid/hermes-finance.git")
+    (control / "README.md").write_text("synthetic control\n", encoding="utf-8")
+    _run_git_at(control, "add", ".")
+    _run_git_at(control, "commit", "--quiet", "-m", "synthetic control checkout")
+
+    stable = tmp_path / "synthetic stable runtime"
+    runtime_config = tmp_path / "runtime.json"
+    runtime_config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "canonical_production": {
+                    "checkout": str(stable),
+                    "data_dir": str(stable / "data"),
+                    "database": str(stable / "data" / "finance.db"),
+                },
+                "profiles": [
+                    {
+                        "id": "stable",
+                        "type": "stable",
+                        "checkout": str(stable),
+                        "data_dir": str(stable / "data"),
+                        "database": str(stable / "data" / "finance.db"),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return checkout, control, runtime_config, head
+
+
+def _bootstrap_command(
+    powershell: str,
+    checkout: Path,
+    control: Path,
+    runtime_config: Path,
+    head: str,
+    tmp_path: Path,
+    *extra: str,
+) -> list[str]:
+    return [
+        powershell,
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(checkout / "scripts" / "recovery-rehearsal.ps1"),
+        "-RecoveryCheckout",
+        str(checkout),
+        "-RecoveryPoint",
+        str(tmp_path / "point.hermes-recovery"),
+        "-RecoverySha",
+        head,
+        "-ControlCheckout",
+        str(control),
+        "-RuntimeConfig",
+        str(runtime_config),
+        "-TargetProfile",
+        str(tmp_path / "target"),
+        "-TargetData",
+        str(tmp_path / "target" / "data"),
+        "-TargetDatabase",
+        str(tmp_path / "target" / "data" / "finance.db"),
+        "-ProtectionState",
+        PROTECTION_STATE,
+        "-ProtectionMode",
+        PROTECTION_MODE,
+        *extra,
+    ]
+
+
+_BOOTSTRAP_LISTENER_CHILD = """
+import os
+import socket
+import sys
+import time
+from pathlib import Path
+
+listener = socket.socket()
+listener.bind(("127.0.0.1", 0))
+listener.listen(1)
+Path(sys.argv[1]).write_text(
+    f"{os.getpid()}:{listener.getsockname()[1]}", encoding="utf-8"
+)
+time.sleep(120)
+"""
+
+
+def _write_hanging_fake_uv(tmp_path: Path) -> tuple[Path, Path, Path]:
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    child_script = tmp_path / "bootstrap-listener-child.py"
+    child_script.write_text(_BOOTSTRAP_LISTENER_CHILD, encoding="utf-8")
+    marker = tmp_path / "owned-bootstrap-child.txt"
+    (fake_bin / "uv.cmd").write_text(
+        "@echo off\n"
+        'start "" /b "%HERMES_TEST_PYTHON%" '
+        '"%HERMES_TEST_CHILD_SCRIPT%" "%HERMES_TEST_CHILD_MARKER%"\n'
+        ":wait\n"
+        "ping -n 2 127.0.0.1 >nul\n"
+        "goto wait\n",
+        encoding="utf-8",
+    )
+    return fake_bin, child_script, marker
+
+
+def _process_is_alive(process_id: int) -> bool:
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, process_id)
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            return bool(
+                kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+                and int(exit_code.value) == 259
+            )
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(process_id, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _read_listener_marker(marker: Path) -> tuple[int, int]:
+    deadline = time.monotonic() + 10
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    process_id, port = marker.read_text(encoding="utf-8").split(":", 1)
+    return int(process_id), int(port)
+
+
+def _wait_process_gone(process_id: int) -> None:
+    deadline = time.monotonic() + 10
+    while _process_is_alive(process_id) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _process_is_alive(process_id)
+
+
+def _assert_listener_unavailable(port: int) -> None:
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        assert probe.connect_ex(("127.0.0.1", port)) != 0
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap contract")
@@ -883,7 +1133,7 @@ def test_bootstrap_neutralizes_external_uv_project_environment_before_first_uv_r
     powershell = shutil.which("powershell.exe")
     if powershell is None:
         pytest.skip("Windows PowerShell is unavailable")
-    checkout = _synthetic_bootstrap_checkout(tmp_path)
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
     external_environment = tmp_path / "stable-external-env"
     external_environment.mkdir()
     marker = external_environment / "unchanged.txt"
@@ -905,34 +1155,7 @@ def test_bootstrap_neutralizes_external_uv_project_environment_before_first_uv_r
     environment["HERMES_TEST_CAPTURE"] = str(capture)
     environment["UV_PROJECT_ENVIRONMENT"] = str(external_environment)
     completed = subprocess.run(
-        [
-            powershell,
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(checkout / "scripts" / "recovery-rehearsal.ps1"),
-            "-RecoveryCheckout",
-            str(checkout),
-            "-RecoveryPoint",
-            str(tmp_path / "point.hermes-recovery"),
-            "-RecoverySha",
-            "d" * 40,
-            "-ControlCheckout",
-            str(tmp_path / "control"),
-            "-RuntimeConfig",
-            str(tmp_path / "runtime.json"),
-            "-TargetProfile",
-            str(tmp_path / "target"),
-            "-TargetData",
-            str(tmp_path / "target" / "data"),
-            "-TargetDatabase",
-            str(tmp_path / "target" / "data" / "finance.db"),
-            "-ProtectionState",
-            PROTECTION_STATE,
-            "-ProtectionMode",
-            PROTECTION_MODE,
-        ],
+        _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
         check=False,
         capture_output=True,
         text=True,
@@ -968,6 +1191,338 @@ def test_bootstrap_neutralizes_external_uv_project_environment_before_first_uv_r
     assert "owner-private-bootstrap-path" not in failed.stderr
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap contract")
+def test_forbidden_development_checkout_is_rejected_before_uv(
+    tmp_path: Path,
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(
+        tmp_path, detached=False
+    )
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    invoked = tmp_path / "uv-invoked.txt"
+    (fake_bin / "uv.cmd").write_text(
+        '@echo off\n> "%HERMES_TEST_UV_INVOKED%" echo invoked\n'
+        'echo {"status":"unexpected"}\nexit /b 0\n',
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_UV_INVOKED"] = str(invoked)
+
+    completed = subprocess.run(
+        _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert json.loads(completed.stdout)["failure_stage"] == "bootstrap"
+    assert not invoked.exists()
+    assert not (checkout / "backend" / ".venv").exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap contract")
+def test_forbidden_stable_checkout_is_rejected_before_uv(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    document = json.loads(runtime_config.read_text(encoding="utf-8"))
+    stable_paths = {
+        "checkout": str(checkout),
+        "data_dir": str(checkout / "stable-data"),
+        "database": str(checkout / "stable-data" / "finance.db"),
+    }
+    document["canonical_production"].update(stable_paths)
+    document["profiles"][0].update(stable_paths)
+    runtime_config.write_text(json.dumps(document), encoding="utf-8")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    invoked = tmp_path / "uv-invoked.txt"
+    (fake_bin / "uv.cmd").write_text(
+        '@echo off\n> "%HERMES_TEST_UV_INVOKED%" echo invoked\n'
+        'echo {"status":"unexpected"}\nexit /b 0\n',
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_UV_INVOKED"] = str(invoked)
+
+    completed = subprocess.run(
+        _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert json.loads(completed.stdout)["failure_stage"] == "bootstrap"
+    assert not invoked.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap ownership contract")
+def test_direct_owned_bootstrap_with_forged_token_never_invokes_uv(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    invoked = tmp_path / "uv-invoked.txt"
+    (fake_bin / "uv.cmd").write_text(
+        '@echo off\n> "%HERMES_TEST_UV_INVOKED%" echo invoked\n'
+        'echo {"status":"unexpected"}\nexit /b 0\n',
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_UV_INVOKED"] = str(invoked)
+    environment["HERMES_RECOVERY_BOOTSTRAP_OWNERSHIP_TOKEN"] = "a" * 64
+    command = _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path)
+    command.append("-OwnedBootstrap")
+
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert json.loads(completed.stdout)["failure_stage"] == "bootstrap"
+    assert not invoked.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap contract")
+def test_bootstrap_rejects_hardlinked_output_before_uv(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    boundary = checkout / "backend" / ".venv"
+    boundary.mkdir()
+    external = tmp_path / "external-generated-output"
+    external.write_text("preserve", encoding="utf-8")
+    try:
+        os.link(external, boundary / "generated.py")
+    except OSError:
+        pytest.skip("hard-link creation is unavailable")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    invoked = tmp_path / "uv-invoked.txt"
+    (fake_bin / "uv.cmd").write_text(
+        '@echo off\n> "%HERMES_TEST_UV_INVOKED%" echo invoked\n'
+        'echo {"status":"unexpected"}\nexit /b 0\n',
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_UV_INVOKED"] = str(invoked)
+
+    completed = subprocess.run(
+        _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert json.loads(completed.stdout)["failure_stage"] == "bootstrap"
+    assert not invoked.exists()
+    assert external.read_text(encoding="utf-8") == "preserve"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap contract")
+def test_bootstrap_guard_blocks_junction_inserted_after_validation(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    external = tmp_path / "external-prepare-output"
+    external.mkdir()
+    marker = external / "unchanged.txt"
+    marker.write_text("preserve", encoding="utf-8")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    moved = tmp_path / "moved-venv"
+    (fake_bin / "uv.cmd").write_text(
+        "@echo off\n"
+        'move "%UV_PROJECT_ENVIRONMENT%" "%HERMES_TEST_MOVED_VENV%" >nul 2>&1\n'
+        "if errorlevel 1 goto safe\n"
+        'mklink /J "%UV_PROJECT_ENVIRONMENT%" "%HERMES_TEST_EXTERNAL%" >nul 2>&1\n'
+        '> "%UV_PROJECT_ENVIRONMENT%\\unexpected.txt" echo redirected\n'
+        ":safe\n"
+        'echo {"status":"synthetic"}\n'
+        "exit /b 0\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_MOVED_VENV"] = str(moved)
+    environment["HERMES_TEST_EXTERNAL"] = str(external)
+
+    completed = subprocess.run(
+        _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert marker.read_text(encoding="utf-8") == "preserve"
+    assert not (external / "unexpected.txt").exists()
+    assert (checkout / "backend" / ".venv").is_dir()
+    assert not moved.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap ownership contract")
+def test_outer_bootstrap_timeout_cleans_owned_tree_but_not_unrelated_listener(
+    tmp_path: Path,
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    fake_bin, child_script, owned_marker = _write_hanging_fake_uv(tmp_path)
+    unrelated_marker = tmp_path / "unrelated-listener.txt"
+    unrelated = subprocess.Popen(
+        [sys.executable, "-c", _BOOTSTRAP_LISTENER_CHILD, str(unrelated_marker)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    unrelated_id, unrelated_port = _read_listener_marker(unrelated_marker)
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_PYTHON"] = sys.executable
+    environment["HERMES_TEST_CHILD_SCRIPT"] = str(child_script)
+    environment["HERMES_TEST_CHILD_MARKER"] = str(owned_marker)
+    try:
+        completed = subprocess.run(
+            _bootstrap_command(
+                powershell,
+                checkout,
+                control,
+                runtime_config,
+                head,
+                tmp_path,
+                "-BootstrapTimeoutSeconds",
+                "12",
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            timeout=45,
+        )
+
+        assert completed.returncode == 2
+        assert json.loads(completed.stdout)["failure_stage"] == "bootstrap-timeout"
+        owned_id, owned_port = _read_listener_marker(owned_marker)
+        _wait_process_gone(owned_id)
+        _assert_listener_unavailable(owned_port)
+        assert unrelated.poll() is None
+        assert _process_is_alive(unrelated_id)
+        with socket.socket() as probe:
+            probe.settimeout(0.5)
+            assert probe.connect_ex(("127.0.0.1", unrelated_port)) == 0
+    finally:
+        unrelated.terminate()
+        unrelated.wait(timeout=10)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap ownership contract")
+def test_outer_bootstrap_wrapper_death_closes_owned_job(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    fake_bin, child_script, owned_marker = _write_hanging_fake_uv(tmp_path)
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["HERMES_TEST_PYTHON"] = sys.executable
+    environment["HERMES_TEST_CHILD_SCRIPT"] = str(child_script)
+    environment["HERMES_TEST_CHILD_MARKER"] = str(owned_marker)
+    wrapper = subprocess.Popen(
+        _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        owned_id, owned_port = _read_listener_marker(owned_marker)
+        wrapper.kill()
+        wrapper.communicate(timeout=15)
+        _wait_process_gone(owned_id)
+        _assert_listener_unavailable(owned_port)
+    finally:
+        if wrapper.poll() is None:
+            wrapper.kill()
+            wrapper.communicate(timeout=10)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows bootstrap ownership contract")
+def test_outer_bootstrap_cleanup_failure_is_explicit(tmp_path: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    (fake_bin / "uv.cmd").write_text(
+        '@echo off\necho {"status":"synthetic"}\nexit /b 0\n', encoding="utf-8"
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+
+    completed = subprocess.run(
+        _bootstrap_command(
+            powershell,
+            checkout,
+            control,
+            runtime_config,
+            head,
+            tmp_path,
+            "-TestForceBootstrapCleanupFailure",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert json.loads(completed.stdout)["failure_stage"] == "bootstrap-cleanup"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junction contract")
 @pytest.mark.parametrize(
     "relative_boundary",
@@ -980,7 +1535,7 @@ def test_bootstrap_rejects_mutable_output_junction_without_touching_external_tre
     powershell = shutil.which("powershell.exe")
     if powershell is None:
         pytest.skip("Windows PowerShell is unavailable")
-    checkout = _synthetic_bootstrap_checkout(tmp_path)
+    checkout, control, runtime_config, head = _synthetic_bootstrap_checkout(tmp_path)
     external = tmp_path / (relative_boundary.name + "-external")
     external.mkdir()
     marker = external / "unchanged.txt"
@@ -990,17 +1545,15 @@ def test_bootstrap_rejects_mutable_output_junction_without_touching_external_tre
         pytest.skip("directory junction creation is unavailable")
 
     completed = subprocess.run(
-        [
+        _bootstrap_command(
             powershell,
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(checkout / "scripts" / "recovery-rehearsal.ps1"),
-            "-RecoveryCheckout",
-            str(checkout),
+            checkout,
+            control,
+            runtime_config,
+            head,
+            tmp_path,
             "-BootstrapOnly",
-        ],
+        ),
         check=False,
         capture_output=True,
         text=True,
@@ -1037,6 +1590,60 @@ def test_prepare_boundary_accepts_only_safe_posix_venv_links(tmp_path: Path) -> 
     with pytest.raises(RecoveryRehearsalError, match="linked directory"):
         recovery_rehearsal._assert_prepare_output_boundary(boundary, directory=True)
     assert (external / "unchanged.txt").read_text(encoding="utf-8") == "preserve"
+
+
+def test_prepare_boundary_rejects_hardlinked_generated_output(tmp_path: Path) -> None:
+    boundary = tmp_path / "node_modules"
+    boundary.mkdir()
+    external = tmp_path / "external-generated-file"
+    external.write_text("preserve", encoding="utf-8")
+    linked = boundary / "generated.js"
+    try:
+        os.link(external, linked)
+    except OSError:
+        pytest.skip("hard-link creation is unavailable")
+
+    with pytest.raises(RecoveryRehearsalError, match="linked file"):
+        recovery_rehearsal._assert_prepare_output_boundary(boundary, directory=True)
+
+    assert external.read_text(encoding="utf-8") == "preserve"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows containment contract")
+def test_prepare_containment_blocks_late_output_junction_redirection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "recovery-checkout"
+    (checkout / "backend").mkdir(parents=True)
+    (checkout / "frontend").mkdir()
+    proof = CheckoutProof(
+        checkout=checkout,
+        selected_sha="a" * 40,
+        repository_key="synthetic",
+        git_directory=checkout / ".git",
+        common_directory=checkout / ".git",
+    )
+    external = tmp_path / "external-prepare-tree"
+    external.mkdir()
+    marker = external / "unchanged.txt"
+    marker.write_text("preserve", encoding="utf-8")
+    moved = checkout / "backend" / ".venv-moved"
+
+    def attempt_redirect(*_args: object, **_kwargs: object) -> None:
+        boundary = checkout / "backend" / ".venv"
+        boundary.rename(moved)
+        if _make_directory_link(boundary, external):
+            (boundary / "unexpected.txt").write_text("redirected", encoding="utf-8")
+
+    monkeypatch.setattr(recovery_rehearsal, "_run_runtime_script", attempt_redirect)
+    monkeypatch.setattr(recovery_rehearsal, "_recheck_checkout", lambda *_a, **_k: None)
+
+    with pytest.raises(RecoveryRehearsalError) as captured:
+        recovery_rehearsal._prepare_and_validate(proof)
+
+    assert captured.value.stage == "runtime-prepare-boundary"
+    assert marker.read_text(encoding="utf-8") == "preserve"
+    assert not (external / "unexpected.txt").exists()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows listener ownership contract")
