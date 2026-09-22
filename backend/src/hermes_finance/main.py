@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import FileResponse
 
@@ -75,6 +75,13 @@ class HealthResponse(BaseModel):
     version: str
 
 
+_RECOVERY_HEADER_NAMES = {
+    "token": "X-Hermes-Recovery-Token",
+    "database_identity": "X-Hermes-Recovery-Database-Identity",
+    "checkout_sha": "X-Hermes-Recovery-Checkout-SHA",
+}
+
+
 def _frontend_response(static_dir: Path, path: str) -> FileResponse:
     if path == "" or path.startswith("api/"):
         candidate = static_dir / "index.html"
@@ -105,6 +112,16 @@ def create_app(
         application.state.payout_provider = payout_provider
     if broker_snapshot_provider is not None:
         application.state.broker_snapshot_provider = broker_snapshot_provider
+
+    @application.middleware("http")
+    async def recovery_readiness_identity(request: Request, call_next):
+        response = await call_next(request)
+        recovery_readiness = getattr(application.state, "recovery_readiness", None)
+        if recovery_readiness is not None:
+            for name, header in _RECOVERY_HEADER_NAMES.items():
+                response.headers[header] = recovery_readiness[name]
+        return response
+
     register_error_handlers(application)
     application.include_router(settings_router)
     application.include_router(tax_brackets_router)

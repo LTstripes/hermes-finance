@@ -1,10 +1,13 @@
 [CmdletBinding()]
 param(
-    [switch]$ExitAfterReady
+    [switch]$ExitAfterReady,
+    [switch]$RecoveryReadiness
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "recovery-runtime-safety.ps1")
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $backendDir = Join-Path $repoRoot "backend"
@@ -59,6 +62,44 @@ function Assert-ProcessRunning {
     }
 }
 
+function Test-RecoveryListenerOwned {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Diagnostics.Process]$Backend
+    )
+
+    $listeners = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop)
+    $processRows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+    return Test-HermesLoopbackListenerOwnership `
+        -RootProcessId $Backend.Id `
+        -Listeners $listeners `
+        -ProcessRows $processRows
+}
+
+function Test-RecoveryResponseOwned {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Diagnostics.Process]$Backend,
+        [Parameter(Mandatory = $true)]
+        [object]$Response,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedRecoveryToken,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedDatabaseIdentity,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedCheckoutSha
+    )
+
+    return (
+        (Test-RecoveryListenerOwned -Backend $Backend) -and
+        (Test-HermesRecoveryHeaders `
+            -Response $Response `
+            -ExpectedToken $ExpectedRecoveryToken `
+            -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+            -ExpectedCheckoutSha $ExpectedCheckoutSha)
+    )
+}
+
 function Invoke-PreparedRuntimeValidation {
     param(
         [Parameter(Mandatory = $true)]
@@ -98,7 +139,12 @@ function Invoke-PreparedRuntimeValidation {
 function Wait-ForProductionStack {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Diagnostics.Process]$Backend
+        [System.Diagnostics.Process]$Backend,
+        [Parameter(Mandatory = $true)]
+        [bool]$RequireRecoverySurfaces,
+        [string]$ExpectedRecoveryToken,
+        [string]$ExpectedDatabaseIdentity,
+        [string]$ExpectedCheckoutSha
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
@@ -106,24 +152,100 @@ function Wait-ForProductionStack {
         Assert-ProcessRunning -Process $Backend -Name "Backend"
 
         try {
+            if ($RequireRecoverySurfaces -and -not (Test-RecoveryListenerOwned -Backend $Backend)) {
+                Start-Sleep -Milliseconds 250
+                continue
+            }
             $health = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/api/health" `
                 -UseBasicParsing `
                 -TimeoutSec 2
+            if (
+                $RequireRecoverySurfaces -and
+                -not (Test-RecoveryResponseOwned `
+                    -Backend $Backend `
+                    -Response $health `
+                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
+                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+                    -ExpectedCheckoutSha $ExpectedCheckoutSha)
+            ) {
+                continue
+            }
             $months = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/api/months" `
                 -UseBasicParsing `
                 -TimeoutSec 2
+            if (
+                $RequireRecoverySurfaces -and
+                -not (Test-RecoveryResponseOwned `
+                    -Backend $Backend `
+                    -Response $months `
+                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
+                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+                    -ExpectedCheckoutSha $ExpectedCheckoutSha)
+            ) {
+                continue
+            }
             $frontend = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/" `
                 -UseBasicParsing `
                 -TimeoutSec 2
             if (
+                $RequireRecoverySurfaces -and
+                -not (Test-RecoveryResponseOwned `
+                    -Backend $Backend `
+                    -Response $frontend `
+                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
+                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+                    -ExpectedCheckoutSha $ExpectedCheckoutSha)
+            ) {
+                continue
+            }
+            $baseReady = (
                 $health.StatusCode -eq 200 -and
                 $months.StatusCode -eq 200 -and
                 $frontend.StatusCode -eq 200 -and
                 $frontend.Content -match "Hermes Finance"
-            ) {
+            )
+            if ($baseReady -and -not $RequireRecoverySurfaces) {
+                return
+            }
+            if ($baseReady) {
+                $accounts = Invoke-WebRequest `
+                    -Uri "http://127.0.0.1:8000/api/accounts" `
+                    -UseBasicParsing `
+                    -TimeoutSec 2
+                if (
+                    $accounts.StatusCode -ne 200 -or
+                    -not (Test-RecoveryResponseOwned `
+                        -Backend $Backend `
+                        -Response $accounts `
+                        -ExpectedRecoveryToken $ExpectedRecoveryToken `
+                        -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+                        -ExpectedCheckoutSha $ExpectedCheckoutSha)
+                ) {
+                    continue
+                }
+
+                $restoredMonths = @($months.Content | ConvertFrom-Json)
+                if ($restoredMonths.Count -gt 0) {
+                    $monthId = [int64]$restoredMonths[0].id
+                    $dashboard = Invoke-WebRequest `
+                        -Uri ("http://127.0.0.1:8000/api/months/{0}/dashboard" -f $monthId) `
+                        -UseBasicParsing `
+                        -TimeoutSec 2
+                    if (
+                        $dashboard.StatusCode -ne 200 -or
+                        -not (Test-RecoveryResponseOwned `
+                            -Backend $Backend `
+                            -Response $dashboard `
+                            -ExpectedRecoveryToken $ExpectedRecoveryToken `
+                            -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+                            -ExpectedCheckoutSha $ExpectedCheckoutSha)
+                    ) {
+                        continue
+                    }
+                }
                 return
             }
         }
@@ -166,6 +288,32 @@ function Stop-ProcessTree {
 }
 
 try {
+    if ($RecoveryReadiness -and -not $ExitAfterReady) {
+        throw "Recovery readiness is a bounded smoke and requires -ExitAfterReady."
+    }
+    if ($RecoveryReadiness) {
+        foreach ($requiredCommand in @("Get-NetTCPConnection", "Get-CimInstance")) {
+            if ($null -eq (Get-Command $requiredCommand -ErrorAction SilentlyContinue)) {
+                throw "Recovery readiness process ownership checks are unavailable."
+            }
+        }
+        if (
+            $env:HERMES_FINANCE_RECOVERY_READINESS_TOKEN -notmatch "^[0-9a-f]{64}$" -or
+            $env:HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY -notmatch "^[0-9a-f]{64}$" -or
+            $env:HERMES_FINANCE_RECOVERY_CHECKOUT_SHA -notmatch "^[0-9a-f]{40}$"
+        ) {
+            throw "Recovery readiness identity is missing or invalid."
+        }
+        $expectedProjectEnvironment = [IO.Path]::GetFullPath((Join-Path $backendDir ".venv"))
+        $actualProjectEnvironment = [IO.Path]::GetFullPath($env:UV_PROJECT_ENVIRONMENT)
+        if (-not [string]::Equals(
+            $actualProjectEnvironment,
+            $expectedProjectEnvironment,
+            [StringComparison]::OrdinalIgnoreCase
+        )) {
+            throw "Recovery runtime environment is not isolated to the selected checkout."
+        }
+    }
     $uv = Get-RequiredCommand -Name "uv" -InstallHint "Install uv from https://docs.astral.sh/uv/."
     $powershell = Get-RequiredCommand -Name "powershell.exe" -InstallHint "Windows PowerShell is required to validate the prepared runtime."
 
@@ -187,6 +335,7 @@ try {
         "HERMES_FINANCE_RELOAD",
         "HERMES_FINANCE_FRONTEND_DIST",
         "UV_OFFLINE",
+        "UV_PROJECT_ENVIRONMENT",
         "PYTHONPATH"
     )) {
         $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
@@ -198,6 +347,7 @@ try {
         $env:HERMES_FINANCE_RELOAD = "false"
         $env:HERMES_FINANCE_FRONTEND_DIST = $frontendDist
         $env:UV_OFFLINE = "1"
+        $env:UV_PROJECT_ENVIRONMENT = [IO.Path]::GetFullPath((Join-Path $backendDir ".venv"))
         $env:PYTHONPATH = ""
 
         Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
@@ -220,7 +370,12 @@ try {
         }
     }
 
-    Wait-ForProductionStack -Backend $backendProcess
+    Wait-ForProductionStack `
+        -Backend $backendProcess `
+        -RequireRecoverySurfaces ([bool]$RecoveryReadiness) `
+        -ExpectedRecoveryToken $env:HERMES_FINANCE_RECOVERY_READINESS_TOKEN `
+        -ExpectedDatabaseIdentity $env:HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY `
+        -ExpectedCheckoutSha $env:HERMES_FINANCE_RECOVERY_CHECKOUT_SHA
     Write-Host "Hermes Finance is ready: http://127.0.0.1:8000" -ForegroundColor Green
     if ($ExitAfterReady) {
         Write-Host "Production readiness smoke test passed." -ForegroundColor Green

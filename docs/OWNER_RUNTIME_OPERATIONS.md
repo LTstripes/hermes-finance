@@ -405,6 +405,68 @@ paths, secrets, or recovery material.
 Never overwrite Stable, restore through an arbitrary code/schema path, or
 claim cloud delivery or Owner UAT from a local synthetic rehearsal.
 
+After this workflow has passed independent security/recovery review and has
+been integrated, use this exact sequence for one Owner-controlled rehearsal.
+The example values are placeholders; do not put the machine's real paths into
+Git, an issue, or a support transcript.
+
+```powershell
+$recoverySha = "<full-40-character-recovery-sha>"
+$recoveryCheckout = "<new-independent-recovery-checkout>"
+$controlCheckout = "<trusted-control-checkout>"
+$runtimeConfig = "<existing-launcher-runtime-config>"
+$recoveryPoint = "<managed-protected-recovery-point>"
+$targetParent = "<existing-empty-recovery-parent>"
+$targetProfile = Join-Path $targetParent "isolated-recovery"
+$targetData = Join-Path $targetProfile "data"
+$targetDatabase = Join-Path $targetData "finance.db"
+
+git clone --no-checkout <canonical-hermes-repository-url> $recoveryCheckout
+git -C $recoveryCheckout switch --detach $recoverySha
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File (Join-Path $recoveryCheckout "scripts\recovery-rehearsal.ps1") `
+  -RecoveryCheckout $recoveryCheckout `
+  -RecoveryPoint $recoveryPoint `
+  -RecoverySha $recoverySha `
+  -ControlCheckout $controlCheckout `
+  -RuntimeConfig $runtimeConfig `
+  -TargetProfile $targetProfile `
+  -TargetData $targetData `
+  -TargetDatabase $targetDatabase `
+  -ProtectionState protected `
+  -ProtectionMode external_encrypted_destination_v1
+```
+
+The recovery checkout must be a clean detached independent clone at the exact
+selected SHA. It must not contain `.env`, private data, or prior runtime data.
+Before the first `uv run`, the repository-owned wrapper proves that Git identity,
+clean/detached state, and the Stable/development/runtime exclusions are valid.
+It establishes the checkout-local `.venv`, holds the mutable Prepare output
+roots against replacement, and owns the entire bootstrap descendant tree under
+one deadline. Do not replace it with a direct inherited-environment `uv run`
+command.
+The launcher runtime config is read only to exclude canonical Stable and every
+configured Preview/experiment boundary; the trusted control checkout supplies
+the development-worktree inventory. The target profile, its `data` directory,
+and its database must not already exist. Do not pre-create or reuse them.
+
+Before creating the target profile, the command verifies the managed name,
+manifest, full artifact and snapshot hashes, protected-container state,
+producer identity, SQLite integrity/foreign keys, source Alembic revisions,
+the selected checkout identity, and an exact `same_revision` or unambiguous
+linear `forward_upgrade` relationship. It then restores the already-verified
+snapshot, runs that checkout's existing Prepare and Validate operations, and
+uses its existing bounded Start/readiness smoke. The source recovery point is
+re-read and identity-checked throughout and is never opened for writing. The
+restored database remains bound to the descriptor that wrote staging, and its
+snapshot hash is read back again immediately before Prepare and Start.
+
+Success emits one privacy-safe JSON result that binds artifact/code/schema
+identity and broad structural counts. Failure emits only a bounded stage and
+action required; use another new target after diagnosing a failed mutated
+target. Do not treat a synthetic or Worker-run result as Owner UAT.
+
 ### Restore read-state requirement
 
 After a successful existing in-app restore, the month list must reload from

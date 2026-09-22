@@ -188,6 +188,7 @@ _PERSISTENCE_FILES = frozenset(
         "test_applied_payouts.py",
         "test_backups_api.py",
         "test_protected_backups.py",
+        "test_recovery_rehearsal.py",
         "test_broker_baseline_apply.py",
         "test_broker_identity_mappings.py",
         "test_broker_snapshot_apply.py",
@@ -224,6 +225,8 @@ _RUNTIME_FILES = frozenset(
         "test_settings.py",
         "test_startup.py",
         "test_static_app.py",
+        "test_recovery_process.py",
+        "test_recovery_rehearsal.py",
     }
 )
 _RELEASE_FILES = frozenset(
@@ -232,6 +235,8 @@ _RELEASE_FILES = frozenset(
         "test_g02_workflow.py",
         "test_g08_mvp_control.py",
         "test_r04_08_windows_launcher_path.py",
+        "test_recovery_process.py",
+        "test_recovery_rehearsal.py",
     }
 )
 _BENCHMARK_FILES = frozenset(
@@ -245,6 +250,8 @@ _WINDOWS_FILES = frozenset(
         "test_launcher_schema_check.py",
         "test_moscow_tz.py",
         "test_r04_08_windows_launcher_path.py",
+        "test_recovery_process.py",
+        "test_recovery_rehearsal.py",
     }
 )
 _NETWORK_FREE_FILES = frozenset(
@@ -257,6 +264,8 @@ _NETWORK_FREE_FILES = frozenset(
         "test_r04_08_release_verification.py",
         "test_r05_11_release_verification.py",
         "test_r06_10_release_verification.py",
+        "test_recovery_process.py",
+        "test_recovery_rehearsal.py",
         "test_startup.py",
         "test_t_invest_probe.py",
         "test_t_invest_payout_probe.py",
