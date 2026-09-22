@@ -9,6 +9,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.persistence import (
     Account,
@@ -75,6 +76,7 @@ class MergedPayoutCalendarMonth:
     items: tuple[MergedPayoutCalendarItem, ...]
 
 
+@coherent_read_operation
 def merged_payout_calendar(
     session: Session,
     *,

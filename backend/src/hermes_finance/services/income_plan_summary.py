@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.cash_balance import CashBalanceResult
 from hermes_finance.domain.coverage_goals import CoverageGoalsResult
 from hermes_finance.domain.forecast_passive_income import ForecastPassiveIncomeResult
@@ -35,6 +36,7 @@ class IncomePlanSummaryResult:
     warnings: tuple[str, ...]
 
 
+@coherent_read_operation
 def income_plan_summary(
     session: Session,
     reporting_month_id: int,

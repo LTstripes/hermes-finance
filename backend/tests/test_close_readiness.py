@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from hermes_finance.api import month_close_workflow as workflow_api
 from hermes_finance.database import create_database
 from hermes_finance.domain import (
     AccountType,
@@ -50,6 +51,7 @@ from hermes_finance.services.applied_statement_events import (
     create_applied_statement_event,
 )
 from hermes_finance.services.backups import create_backup
+from hermes_finance.services.cash import create_cash_balance, update_cash_balance
 from hermes_finance.services.close_readiness import (
     CloseReadinessCode,
     CloseReadinessSeverity,
@@ -615,6 +617,46 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
 
     assert [older.status, requested.status] == before_month_statuses
     assert client.get("/api/months/999/close-workflow").status_code == 404
+
+
+def test_workflow_materialization_shares_snapshot_after_final_review(
+    tmp_path: Path, monkeypatch
+) -> None:
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2032, month=1, snapshot_date=date(2032, 1, 31))
+    cash = create_cash_balance(
+        session, reporting_month_id=month.id, name="Snapshot cash", amount="100.00"
+    )
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_final_review = workflow_api.build_final_month_review
+    writer_committed = False
+
+    def interleaved_final_review(*args, **kwargs):
+        nonlocal writer_committed
+        result = real_final_review(*args, **kwargs)
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                update_cash_balance(writer, cash.id, amount="200.00")
+        return result
+
+    monkeypatch.setattr(workflow_api, "build_final_month_review", interleaved_final_review)
+    with TestClient(create_app(database)) as client:
+        response = client.get(f"/api/months/{month.id}/close-workflow")
+        assert response.status_code == 200, response.text
+        assert writer_committed
+        assets = response.json()["final_review"]["assets_and_cash"]
+        assert assets["current_cash"] == {"amount": "100.00", "currency": "RUB"}
+        cards = response.json()["final_review"]["manual_review_cards"]
+        cash_card = next(card for card in cards if card["id"] == "cash")
+        assert cash_card["summary"]["cash_total"] == {"amount": "100.00", "currency": "RUB"}
+
+        fresh = client.get(f"/api/months/{month.id}/close-workflow")
+        assert fresh.status_code == 200, fresh.text
+        fresh_assets = fresh.json()["final_review"]["assets_and_cash"]
+        assert fresh_assets["current_cash"] == {"amount": "200.00", "currency": "RUB"}
 
 
 def test_workflow_keeps_salary_tax_history_warning_advisory(tmp_path: Path) -> None:
