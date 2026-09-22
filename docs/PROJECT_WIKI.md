@@ -397,7 +397,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 / PR #473 bounded verified retention and #461 / PR #483 isolated DR implementation are integrated. Post-merge exact-main verification found a real Windows process-disposition defect; PR #499 closed it, with final canonical `main` `16df86d5eb3923cbe106938d6e81ec360397d00d` and CI #894 / `35734575867` SUCCESS. #462 focused post-restore state reload remains. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention and #461 / PR #483 isolated DR implementation are integrated. Post-merge exact-main verification found a real Windows process-disposition defect; PR #499 closed it, with accepted #461 code checkpoint `16df86d5eb3923cbe106938d6e81ec360397d00d` and CI #894 / `35734575867` SUCCESS. #462 focused post-restore state reload remains. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
