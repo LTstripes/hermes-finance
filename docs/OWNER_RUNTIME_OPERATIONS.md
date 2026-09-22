@@ -475,8 +475,8 @@ After a successful existing in-app restore, the month list must reload from
 the restored database. Keep the selected month only if its ID exists in the
 restored list; otherwise select the allowed restored fallback or clear the
 selection when the list is empty. A stale pre-restore month list or ID must
-not remain visible as current. The focused implementation is tracked by
-#462; this runbook does not add a second UI state system.
+not remain visible as current. The focused implementation is integrated through
+#462 / PR #502; this runbook does not add a second UI state system.
 
 ### Owner completion gates
 
