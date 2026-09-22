@@ -47,12 +47,18 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-function deferredResponse() {
-  let resolve!: (response: Response) => void;
-  const promise = new Promise<Response>((promiseResolve) => {
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve;
+    reject = promiseReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
+}
+
+function deferredResponse() {
+  return deferred<Response>();
 }
 
 function renderExportPage() {
@@ -696,6 +702,180 @@ describe("ExportPage", () => {
     });
     expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("8");
+  });
+
+  it("retires the initial request before shared invalidation when it resolves", async () => {
+    const user = userEvent.setup();
+    const initialMonthsRequest = deferredResponse();
+    const restoredMonthsRequest = deferredResponse();
+    const invalidation = deferred<void>();
+    let monthRequestCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/months") {
+        monthRequestCount += 1;
+        return monthRequestCount === 1
+          ? initialMonthsRequest.promise
+          : restoredMonthsRequest.promise;
+      }
+      if (url === "/api/backups") {
+        return Promise.resolve(jsonResponse(backups));
+      }
+      if (url.endsWith("/restore")) {
+        return Promise.resolve(
+          jsonResponse({
+            restored_backup: backups[0],
+            pre_restore_backup: {
+              ...backups[0],
+              id: "finance_backup_pre_restore",
+              name: "finance_backup_pre_restore.sqlite3",
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { queryClient } = renderExportPage();
+    const invalidateQueries = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => invalidation.promise);
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      initialMonthsRequest.resolve(jsonResponse(months));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Загружаем месяцы…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Месяц отчёта")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Не удалось загрузить месяцы")).not.toBeInTheDocument();
+
+    await act(async () => {
+      invalidation.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(monthRequestCount).toBe(2));
+    restoredMonthsRequest.resolve(jsonResponse([]));
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+  });
+
+  it("retires the initial request before shared invalidation when it rejects", async () => {
+    const user = userEvent.setup();
+    const initialMonthsRequest = deferredResponse();
+    const restoredMonthsRequest = deferredResponse();
+    const invalidation = deferred<void>();
+    let monthRequestCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/months") {
+        monthRequestCount += 1;
+        return monthRequestCount === 1
+          ? initialMonthsRequest.promise
+          : restoredMonthsRequest.promise;
+      }
+      if (url === "/api/backups") {
+        return Promise.resolve(jsonResponse(backups));
+      }
+      if (url.endsWith("/restore")) {
+        return Promise.resolve(
+          jsonResponse({
+            restored_backup: backups[0],
+            pre_restore_backup: {
+              ...backups[0],
+              id: "finance_backup_pre_restore",
+              name: "finance_backup_pre_restore.sqlite3",
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { queryClient } = renderExportPage();
+    const invalidateQueries = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => invalidation.promise);
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      initialMonthsRequest.reject(new Error("stale request failed"));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Загружаем месяцы…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Месяц отчёта")).not.toBeInTheDocument();
+    expect(screen.queryByText("Не удалось загрузить месяцы")).not.toBeInTheDocument();
+
+    await act(async () => {
+      invalidation.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(monthRequestCount).toBe(2));
+    restoredMonthsRequest.resolve(jsonResponse([]));
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+  });
+
+  it("hides already-loaded months while shared invalidation is pending", async () => {
+    const user = userEvent.setup();
+    const invalidation = deferred<void>();
+    const restoredMonthsRequest = deferredResponse();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          restored_backup: backups[0],
+          pre_restore_backup: {
+            ...backups[0],
+            id: "finance_backup_pre_restore",
+            name: "finance_backup_pre_restore.sqlite3",
+          },
+        }),
+      )
+      .mockImplementationOnce(() => restoredMonthsRequest.promise);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { queryClient } = renderExportPage();
+    const invalidateQueries = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => invalidation.promise);
+    expect(await screen.findByLabelText("Месяц отчёта")).toHaveValue("2");
+
+    await user.click(screen.getByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByText("Загружаем месяцы…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Месяц отчёта")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июнь.*2026/ })).not.toBeInTheDocument();
+
+    await act(async () => {
+      invalidation.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    restoredMonthsRequest.resolve(jsonResponse([]));
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
   });
 
   it("keeps confirmed restore success separate from a failed month reload", async () => {
