@@ -464,6 +464,7 @@ try {
         (Join-Path $backend 'uv.lock'),
         (Join-Path $frontend 'package.json'),
         (Join-Path $frontend 'package-lock.json'),
+        (Join-Path $checkout 'scripts\prepare-runtime-dependencies.ps1'),
         (Join-Path $checkout 'scripts\recovery-bootstrap-boundary.ps1'),
         (Join-Path $checkout 'scripts\recovery-bootstrap-safety.ps1')
     )) {

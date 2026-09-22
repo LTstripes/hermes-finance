@@ -951,6 +951,7 @@ def _synthetic_bootstrap_checkout(
     backend.mkdir()
     frontend.mkdir()
     for name in (
+        "prepare-runtime-dependencies.ps1",
         "recovery-rehearsal.ps1",
         "recovery-bootstrap-boundary.ps1",
         "recovery-bootstrap-safety.ps1",
@@ -1675,6 +1676,91 @@ def test_nested_prepare_containment_guards_do_not_share_lock_stream(tmp_path: Pa
     finally:
         inner.close()
         outer.close()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows containment contract")
+def test_prepare_containment_blocks_nested_build_info_junction_redirection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "recovery-checkout"
+    (checkout / "backend").mkdir(parents=True)
+    frontend = checkout / "frontend"
+    nested_output = frontend / "node_modules" / ".tmp"
+    nested_output.mkdir(parents=True)
+    shutil.copy2(REPOSITORY_ROOT / "frontend" / "tsconfig.app.json", frontend)
+    configured = json.loads((frontend / "tsconfig.app.json").read_text(encoding="utf-8"))
+    configured_output = Path(configured["compilerOptions"]["tsBuildInfoFile"])
+    assert configured_output.as_posix() == "node_modules/.tmp/tsconfig.app.tsbuildinfo"
+    build_info = frontend / configured_output
+
+    proof = CheckoutProof(
+        checkout=checkout,
+        selected_sha="a" * 40,
+        repository_key="synthetic",
+        git_directory=checkout / ".git",
+        common_directory=checkout / ".git",
+    )
+    foreign = tmp_path / "foreign-build-output"
+    (foreign / "nested").mkdir(parents=True)
+    (foreign / "sentinel.bin").write_bytes(b"preserve-sentinel-bytes")
+    (foreign / "nested" / "unchanged.bin").write_bytes(b"preserve-tree-bytes")
+
+    probe_target = tmp_path / "junction-probe-target"
+    probe_target.mkdir()
+    probe_link = tmp_path / "junction-probe"
+    if not _make_directory_link(probe_link, probe_target):
+        pytest.skip("directory junction creation is unavailable")
+    probe_link.rmdir()
+
+    def tree_snapshot(root: Path) -> dict[str, bytes | None]:
+        return {
+            str(path.relative_to(root)): None if path.is_dir() else path.read_bytes()
+            for path in sorted(root.rglob("*"))
+        }
+
+    foreign_before = tree_snapshot(foreign)
+    moved = frontend / "node_modules" / ".tmp-moved"
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def run_prepare_phase(
+        _checkout: CheckoutProof,
+        *,
+        script_name: str,
+        arguments: list[str],
+        **_kwargs: object,
+    ) -> None:
+        calls.append((script_name, tuple(arguments)))
+        if script_name == "prepare-runtime-dependencies.ps1":
+            shutil.rmtree(nested_output)
+            nested_output.mkdir()
+            return
+        if arguments[-1] == "-Validate":
+            return
+
+        try:
+            nested_output.rename(moved)
+        except PermissionError:
+            pass
+        else:
+            assert _make_directory_link(nested_output, foreign)
+        build_info.write_bytes(b"configured-typescript-build-info")
+
+    monkeypatch.setattr(recovery_rehearsal, "_run_runtime_script", run_prepare_phase)
+    monkeypatch.setattr(recovery_rehearsal, "_recheck_checkout", lambda *_a, **_k: None)
+
+    recovery_rehearsal._prepare_and_validate(proof)
+
+    assert calls == [
+        (
+            "prepare-runtime-dependencies.ps1",
+            ("-Checkout", str(checkout), "-Prepare"),
+        ),
+        ("prepare-runtime.ps1", ("-Checkout", str(checkout), "-Prepare")),
+        ("prepare-runtime.ps1", ("-Checkout", str(checkout), "-Validate")),
+    ]
+    assert tree_snapshot(foreign) == foreign_before
+    assert build_info.read_bytes() == b"configured-typescript-build-info"
+    assert not moved.exists()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows listener ownership contract")

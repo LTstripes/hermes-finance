@@ -827,6 +827,7 @@ def _validate_recovery_checkout(
     required = (
         recovery / "backend" / "pyproject.toml",
         recovery / "backend" / "alembic.ini",
+        recovery / "scripts" / "prepare-runtime-dependencies.ps1",
         recovery / "scripts" / "prepare-runtime.ps1",
         recovery / "scripts" / "recovery-rehearsal.ps1",
         recovery / "scripts" / "recovery-bootstrap-boundary.ps1",
@@ -1029,6 +1030,7 @@ def _validate_prepare_boundaries(checkout: CheckoutProof) -> None:
     for path, directory in (
         (root / "backend" / ".venv", True),
         (root / "frontend" / "node_modules", True),
+        (root / "frontend" / "node_modules" / ".tmp", True),
         (root / "frontend" / "dist", True),
         (root / ".tmp", True),
         (root / ".hermes-runtime-prepared.json", False),
@@ -1077,6 +1079,40 @@ def _hold_prepare_boundary_guards(checkout: CheckoutProof) -> Iterator[None]:
         raise RecoveryRehearsalError(
             "runtime-prepare-boundary",
             "prepared output containment could not be preserved",
+            target_mutated=True,
+        ) from error
+    finally:
+        for guard in reversed(guards):
+            guard.close()
+
+
+@contextmanager
+def _hold_prepare_build_boundary_guards(checkout: CheckoutProof) -> Iterator[None]:
+    root = checkout.checkout
+    paths = (root / "frontend" / "node_modules" / ".tmp",)
+    guards: list[_DirectoryGuard] = []
+    try:
+        _validate_prepare_boundaries(checkout)
+        for path in paths:
+            try:
+                path.mkdir()
+            except FileExistsError:
+                pass
+            _assert_prepare_output_boundary(path, directory=True)
+            guards.append(_open_directory_guard(path))
+        for guard in guards:
+            guard.assert_path_identity()
+        _validate_prepare_boundaries(checkout)
+        yield
+        for guard in guards:
+            guard.assert_path_identity()
+        _validate_prepare_boundaries(checkout)
+    except RecoveryRehearsalError:
+        raise
+    except OSError as error:
+        raise RecoveryRehearsalError(
+            "runtime-prepare-boundary",
+            "prepared build output containment could not be preserved",
             target_mutated=True,
         ) from error
     finally:
@@ -1720,22 +1756,32 @@ def _prepare_and_validate(checkout: CheckoutProof) -> None:
     with _hold_prepare_boundary_guards(checkout):
         _run_runtime_script(
             checkout,
-            script_name="prepare-runtime.ps1",
+            script_name="prepare-runtime-dependencies.ps1",
             arguments=["-Checkout", str(checkout.checkout), "-Prepare"],
             stage="runtime-prepare",
             timeout=1200,
         )
         _validate_prepare_boundaries(checkout)
         _recheck_checkout(checkout, stage="runtime-prepare")
-        _run_runtime_script(
-            checkout,
-            script_name="prepare-runtime.ps1",
-            arguments=["-Checkout", str(checkout.checkout), "-Validate"],
-            stage="runtime-validate",
-            timeout=300,
-        )
-        _validate_prepare_boundaries(checkout)
-        _recheck_checkout(checkout, stage="runtime-validate")
+        with _hold_prepare_build_boundary_guards(checkout):
+            _run_runtime_script(
+                checkout,
+                script_name="prepare-runtime.ps1",
+                arguments=["-Checkout", str(checkout.checkout), "-Prepare"],
+                stage="runtime-prepare",
+                timeout=1200,
+            )
+            _validate_prepare_boundaries(checkout)
+            _recheck_checkout(checkout, stage="runtime-prepare")
+            _run_runtime_script(
+                checkout,
+                script_name="prepare-runtime.ps1",
+                arguments=["-Checkout", str(checkout.checkout), "-Validate"],
+                stage="runtime-validate",
+                timeout=300,
+            )
+            _validate_prepare_boundaries(checkout)
+            _recheck_checkout(checkout, stage="runtime-validate")
 
 
 def _start_and_probe(
