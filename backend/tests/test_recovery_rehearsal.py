@@ -1646,6 +1646,27 @@ def test_prepare_containment_blocks_late_output_junction_redirection(
     assert not (external / "unexpected.txt").exists()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows containment contract")
+def test_nested_prepare_containment_guards_do_not_share_lock_stream(tmp_path: Path) -> None:
+    boundary = tmp_path / "prepared-output"
+    boundary.mkdir()
+
+    outer = recovery_rehearsal._open_directory_guard(boundary)
+    inner = recovery_rehearsal._open_directory_guard(boundary)
+    try:
+        assert outer.containment_path != inner.containment_path
+        inner.close()
+        outer.assert_path_identity()
+        moved = tmp_path / "moved-output"
+        with pytest.raises(PermissionError):
+            boundary.rename(moved)
+        assert boundary.is_dir()
+        assert not moved.exists()
+    finally:
+        inner.close()
+        outer.close()
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows listener ownership contract")
 def test_port_race_rejects_unrelated_listener_and_accepts_owned_descendant(
     tmp_path: Path,

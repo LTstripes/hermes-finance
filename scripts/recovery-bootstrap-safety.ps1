@@ -151,6 +151,7 @@ public sealed class HermesRecoveryBootstrapNative : IDisposable
     private UInt32 volumeSerial;
     private UInt64 fileIndex;
     private string directoryPath;
+    private string containmentPath;
 
     public string Path { get { return directoryPath; } }
 
@@ -267,8 +268,10 @@ public sealed class HermesRecoveryBootstrapNative : IDisposable
             guard.volumeSerial = information.VolumeSerialNumber;
             guard.fileIndex = ((UInt64)information.FileIndexHigh << 32) | information.FileIndexLow;
             guard.directoryPath = path;
+            guard.containmentPath =
+                path + ":hermes-recovery-containment-" + Guid.NewGuid().ToString("N");
             guard.containmentHandle = CreateFile(
-                path + ":hermes-recovery-containment",
+                guard.containmentPath,
                 0x80000000 | 0x40000000,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 IntPtr.Zero,
@@ -398,8 +401,8 @@ public sealed class HermesRecoveryBootstrapNative : IDisposable
         {
             CloseHandle(containmentHandle);
             containmentHandle = IntPtr.Zero;
-            if (directoryPath != null)
-                DeleteFile(directoryPath + ":hermes-recovery-containment");
+            if (containmentPath != null)
+                DeleteFile(containmentPath);
         }
         if (directoryHandle != IntPtr.Zero)
         {

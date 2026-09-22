@@ -90,6 +90,7 @@ class _DirectoryGuard:
     descriptor: int | None = None
     handle: int | None = None
     containment_handle: int | None = None
+    containment_path: str | None = None
     closed: bool = False
 
     def assert_path_identity(self) -> None:
@@ -174,7 +175,8 @@ class _DirectoryGuard:
         if self.containment_handle is not None:
             _close_windows_handle(self.containment_handle)
             try:
-                os.unlink(str(self.path) + ":hermes-recovery-containment")
+                if self.containment_path is not None:
+                    os.unlink(self.containment_path)
             except FileNotFoundError:
                 pass
         if self.descriptor is not None:
@@ -496,7 +498,7 @@ def _open_windows_directory(path: Path, *, deny_delete: bool) -> tuple[int, tupl
     return handle, identity, attributes
 
 
-def _open_windows_containment_lock(path: Path) -> int:
+def _open_windows_containment_lock(path: Path) -> tuple[int, str]:
     import ctypes
     from ctypes import wintypes
 
@@ -512,8 +514,9 @@ def _open_windows_containment_lock(path: Path) -> int:
         wintypes.HANDLE,
     )
     create_file.restype = wintypes.HANDLE
+    containment_path = str(path) + ":hermes-recovery-containment-" + secrets.token_hex(16)
     handle = create_file(
-        str(path) + ":hermes-recovery-containment",
+        containment_path,
         0x80000000 | 0x40000000,
         0x00000001 | 0x00000002,
         None,
@@ -523,7 +526,7 @@ def _open_windows_containment_lock(path: Path) -> int:
     )
     if handle in (None, ctypes.c_void_p(-1).value):
         raise OSError(ctypes.get_last_error(), "directory containment could not be opened")
-    return int(handle)
+    return int(handle), containment_path
 
 
 def _close_windows_handle(handle: int) -> None:
@@ -541,7 +544,7 @@ def _open_directory_guard(path: Path) -> _DirectoryGuard:
             _close_windows_handle(handle)
             raise OSError("directory is a reparse point")
         try:
-            containment_handle = _open_windows_containment_lock(path)
+            containment_handle, containment_path = _open_windows_containment_lock(path)
         except OSError:
             _close_windows_handle(handle)
             raise
@@ -550,6 +553,7 @@ def _open_directory_guard(path: Path) -> _DirectoryGuard:
             identity=identity,
             handle=handle,
             containment_handle=containment_handle,
+            containment_path=containment_path,
         )
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
