@@ -462,12 +462,24 @@ function Invoke-HermesOwnedRecoveryBootstrap {
     $token = ([BitConverter]::ToString($tokenBytes)).Replace('-', '').ToLowerInvariant()
     $argumentsJson = ConvertTo-Json -InputObject $Arguments -Compress
     $owner = $null
+    $readyEvent = $null
     $process = $null
     $completed = $false
     $exitCode = 1
     $cleanupFailed = $false
     try {
         $owner = [HermesRecoveryBootstrapNative]::CreateJob($token)
+        $readyEventName = "Local\HermesRecoveryBootstrapReady-$token"
+        $createdNew = $false
+        $readyEvent = [Threading.EventWaitHandle]::new(
+            $false,
+            [Threading.EventResetMode]::ManualReset,
+            $readyEventName,
+            [ref]$createdNew
+        )
+        if (-not $createdNew) {
+            throw "bootstrap-ownership"
+        }
         $powerShell = Join-Path $PSHOME "powershell.exe"
         $startInfo = New-Object Diagnostics.ProcessStartInfo
         $startInfo.FileName = $powerShell
@@ -481,11 +493,11 @@ function Invoke-HermesOwnedRecoveryBootstrap {
         $startInfo.WorkingDirectory = [IO.Path]::GetDirectoryName($RecoveryScript)
         $startInfo.UseShellExecute = $false
         $startInfo.CreateNoWindow = $true
-        $startInfo.RedirectStandardInput = $true
         $startInfo.RedirectStandardOutput = $true
         $startInfo.RedirectStandardError = $true
         $startInfo.EnvironmentVariables['HERMES_RECOVERY_BOOTSTRAP_SCRIPT'] = $RecoveryScript
         $startInfo.EnvironmentVariables['HERMES_RECOVERY_BOOTSTRAP_ARGUMENTS_JSON'] = $argumentsJson
+        $startInfo.EnvironmentVariables['HERMES_RECOVERY_BOOTSTRAP_OWNERSHIP_TOKEN'] = $token
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $startInfo
         if (-not $process.Start()) {
@@ -500,10 +512,9 @@ function Invoke-HermesOwnedRecoveryBootstrap {
             try { $process.Kill() } catch {}
             throw "bootstrap-ownership"
         }
-        $ownershipBytes = [Text.Encoding]::ASCII.GetBytes($token + "`n")
-        $process.StandardInput.BaseStream.Write($ownershipBytes, 0, $ownershipBytes.Length)
-        $process.StandardInput.BaseStream.Flush()
-        $process.StandardInput.Close()
+        if (-not $readyEvent.Set()) {
+            throw "bootstrap-ownership"
+        }
         $completed = $process.WaitForExit($TimeoutSeconds * 1000)
         if ($completed) {
             $exitCode = $process.ExitCode
@@ -530,6 +541,9 @@ function Invoke-HermesOwnedRecoveryBootstrap {
         }
         if ($null -ne $owner) {
             $owner.Dispose()
+        }
+        if ($null -ne $readyEvent) {
+            $readyEvent.Dispose()
         }
     }
     if ($ForceCleanupFailure) {
