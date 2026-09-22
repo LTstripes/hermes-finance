@@ -163,6 +163,11 @@ def _install_isolated_harness(
     monkeypatch.setattr(recovery_rehearsal, "_recheck_checkout", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         recovery_rehearsal,
+        "_validate_prepare_boundaries",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        recovery_rehearsal,
         "_prepare_and_validate",
         lambda _checkout: events.extend(("prepare", "validate")),
     )
@@ -1158,6 +1163,7 @@ def test_bootstrap_neutralizes_external_uv_project_environment_before_first_uv_r
     environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
     environment["HERMES_TEST_CAPTURE"] = str(capture)
     environment["UV_PROJECT_ENVIRONMENT"] = str(external_environment)
+    environment["HERMES_RECOVERY_BOOTSTRAP_OWNERSHIP_TOKEN"] = "f" * 64
     completed = subprocess.run(
         _bootstrap_command(powershell, checkout, control, runtime_config, head, tmp_path),
         check=False,

@@ -486,7 +486,6 @@ function Invoke-HermesOwnedRecoveryBootstrap {
         $startInfo.RedirectStandardError = $true
         $startInfo.EnvironmentVariables['HERMES_RECOVERY_BOOTSTRAP_SCRIPT'] = $RecoveryScript
         $startInfo.EnvironmentVariables['HERMES_RECOVERY_BOOTSTRAP_ARGUMENTS_JSON'] = $argumentsJson
-        $startInfo.EnvironmentVariables['HERMES_RECOVERY_BOOTSTRAP_OWNERSHIP_TOKEN'] = $token
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $startInfo
         if (-not $process.Start()) {

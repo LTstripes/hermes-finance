@@ -12,20 +12,13 @@ $argumentsJson = [Environment]::GetEnvironmentVariable(
     "HERMES_RECOVERY_BOOTSTRAP_ARGUMENTS_JSON",
     "Process"
 )
-$ownershipToken = [Environment]::GetEnvironmentVariable(
-    "HERMES_RECOVERY_BOOTSTRAP_OWNERSHIP_TOKEN",
-    "Process"
-)
-
-$receivedToken = [Console]::In.ReadLine()
-if (
-    [string]::IsNullOrWhiteSpace($ownershipToken) -or
-    -not [string]::Equals($receivedToken, $ownershipToken, [StringComparison]::Ordinal)
-) {
+$ownershipToken = [Console]::In.ReadLine()
+if ($ownershipToken -notmatch '^[0-9a-f]{64}$') {
     exit 97
 }
 
 try {
+    $env:HERMES_RECOVERY_BOOTSTRAP_OWNERSHIP_TOKEN = $ownershipToken
     if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
         throw "Recovery bootstrap script is unavailable."
     }
