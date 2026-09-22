@@ -1,6 +1,6 @@
 # ADR 0017 — Protected off-site recovery points and isolated recovery
 
-- **Status:** Accepted contract; implementation through #461 integrated, #462 and Owner-live completion gates pending
+- **Status:** Accepted contract; implementation through #462 integrated, Owner-live completion gates pending
 - **Date:** 2026-09-18
 - **Source task:** #417-A / #458
 - **Parent contract:** #417 execution-contract freeze, `issuecomment-5731304512`
@@ -20,10 +20,11 @@ and read-back boundary.
 
 This ADR freezes the contract for the managed recovery-point publisher,
 retention, isolated disaster-recovery rehearsal, and post-restore read-state
-invalidation. As of 2026-09-22, #459 publisher, #460 retention and #461 isolated
-DR implementation are accepted and integrated; #462 restore read-state work
-and the real Owner-controlled live completion gates remain pending. Acceptance
-of implementation does not equal Owner-live UAT.
+invalidation. As of 2026-09-22, #459 publisher, #460 retention, #461 isolated
+DR implementation and #462 restore read-state work are accepted and integrated.
+The planned implementation queue is complete; the real Owner-controlled live
+completion gates remain pending. Acceptance of implementation does not equal
+Owner-live UAT.
 
 ## 2. At-rest protection contract
 
@@ -268,11 +269,10 @@ implement runtime behavior.
    is intentionally executed only after the backend chain stops or reaches its
    explicitly allowed gate.
 
-Implementation acceptance is complete through #461, including independent
-security/recovery review and canonical exact-main verification. #462 remains
-the final implementation child, while the protected off-device recovery point,
-independently held recovery material and clean Owner DR rehearsal remain final
-Owner-controlled completion gates for parent #417.
+Implementation acceptance is complete through #462, including independent
+review and canonical exact-main verification. The protected off-device recovery
+point, independently held recovery material and clean Owner DR rehearsal remain
+the final Owner-controlled completion gates for parent #417.
 
 ## References
 
