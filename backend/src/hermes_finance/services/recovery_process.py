@@ -93,15 +93,51 @@ if sys.platform == "win32":
             ("total_terminated_processes", wintypes.DWORD),
         ]
 
+    class _AssociateCompletionPort(ctypes.Structure):
+        _fields_ = [("key", ctypes.c_void_p), ("port", wintypes.HANDLE)]
+
+
+def _windows_kernel32():
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    signatures = {
+        "CloseHandle": ((wintypes.HANDLE,), wintypes.BOOL),
+        "CreateIoCompletionPort": (
+            (wintypes.HANDLE, wintypes.HANDLE, ctypes.c_size_t, wintypes.DWORD),
+            wintypes.HANDLE,
+        ),
+        "GetQueuedCompletionStatus": (
+            (
+                wintypes.HANDLE,
+                ctypes.POINTER(wintypes.DWORD),
+                ctypes.POINTER(ctypes.c_size_t),
+                ctypes.POINTER(ctypes.c_void_p),
+                wintypes.DWORD,
+            ),
+            wintypes.BOOL,
+        ),
+        "OpenProcess": ((wintypes.DWORD, wintypes.BOOL, wintypes.DWORD), wintypes.HANDLE),
+        "IsProcessInJob": (
+            (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)),
+            wintypes.BOOL,
+        ),
+        "WaitForSingleObject": ((wintypes.HANDLE, wintypes.DWORD), wintypes.DWORD),
+    }
+    for name, (arguments, result) in signatures.items():
+        function = getattr(kernel32, name)
+        function.argtypes = arguments
+        function.restype = result
+    return kernel32
+
 
 @dataclass(slots=True)
 class _WindowsJob:
     handle: int
+    completion_port: int = 0
     closed: bool = False
 
     @classmethod
     def create(cls) -> _WindowsJob:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = _windows_kernel32()
         create_job = kernel32.CreateJobObjectW
         create_job.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
         create_job.restype = wintypes.HANDLE
@@ -127,7 +163,16 @@ class _WindowsJob:
         ):
             kernel32.CloseHandle(handle)
             raise ProcessTreeError("ownership-unavailable")
-        return cls(handle=int(handle))
+        port = kernel32.CreateIoCompletionPort(wintypes.HANDLE(-1), None, 0, 1)
+        if not port:
+            kernel32.CloseHandle(handle)
+            raise ProcessTreeError("ownership-unavailable")
+        association = _AssociateCompletionPort(1, port)
+        if not set_information(handle, 7, ctypes.byref(association), ctypes.sizeof(association)):
+            kernel32.CloseHandle(port)
+            kernel32.CloseHandle(handle)
+            raise ProcessTreeError("ownership-unavailable")
+        return cls(handle=int(handle), completion_port=int(port))
 
     def assign(self, process: subprocess.Popen[str]) -> None:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -138,7 +183,7 @@ class _WindowsJob:
         if not assign(self.handle, process_handle):
             raise ProcessTreeError("ownership-unavailable")
 
-    def _active_processes(self) -> int:
+    def _accounting(self) -> _BasicAccountingInformation:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         query = kernel32.QueryInformationJobObject
         query.argtypes = (
@@ -159,31 +204,92 @@ class _WindowsJob:
             ctypes.byref(returned),
         ):
             raise ProcessTreeError("cleanup-unverified")
-        return int(information.active_processes)
+        return information
+
+    def _active_processes(self) -> int:
+        return int(self._accounting().active_processes)
+
+    def _wait_for_disposition(self, deadline: float) -> None:
+        # ActiveProcesses and the job PID list can become empty *before* a
+        # terminating process is signaled and releases its listener. The port
+        # was associated before assignment: NEW_PROCESS messages also retain
+        # identities of children that have already left those active lists.
+        # Notifications are not guaranteed, so reconcile against the lifetime
+        # process count and fail closed if evidence is missing by the deadline.
+        kernel32 = _windows_kernel32()
+        expected = int(self._accounting().total_processes)
+        observed = 0
+        while observed < expected:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ProcessTreeError("cleanup-unverified")
+            message = wintypes.DWORD()
+            key = ctypes.c_size_t()
+            process_id = ctypes.c_void_p()
+            if not kernel32.GetQueuedCompletionStatus(
+                self.completion_port,
+                ctypes.byref(message),
+                ctypes.byref(key),
+                ctypes.byref(process_id),
+                max(1, int(remaining * 1000)),
+            ):
+                raise ProcessTreeError("cleanup-unverified")
+            if key.value != 1:
+                raise ProcessTreeError("cleanup-unverified")
+            if message.value != 6:  # JOB_OBJECT_MSG_NEW_PROCESS
+                continue
+            observed += 1
+            if not process_id.value:
+                raise ProcessTreeError("cleanup-unverified")
+            handle = kernel32.OpenProcess(0x00100000 | 0x1000, False, process_id.value)
+            if not handle:
+                if ctypes.get_last_error() == 87:  # PID no longer exists.
+                    continue
+                raise ProcessTreeError("cleanup-unverified")
+            try:
+                belongs = wintypes.BOOL()
+                if not kernel32.IsProcessInJob(handle, self.handle, ctypes.byref(belongs)):
+                    raise ProcessTreeError("cleanup-unverified")
+                if not belongs.value:
+                    # Recycled PID: the original process object is already gone.
+                    # Never wait on or terminate an unrelated replacement.
+                    continue
+                remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+                if kernel32.WaitForSingleObject(handle, remaining_ms) != 0:
+                    raise ProcessTreeError("cleanup-unverified")
+            finally:
+                kernel32.CloseHandle(handle)
+        final = self._accounting()
+        if final.active_processes != 0 or final.total_processes != observed:
+            raise ProcessTreeError("cleanup-unverified")
 
     def cleanup(self) -> None:
         if self.closed:
             return
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = _windows_kernel32()
         terminate = kernel32.TerminateJobObject
         terminate.argtypes = (wintypes.HANDLE, wintypes.UINT)
         terminate.restype = wintypes.BOOL
+        deadline = time.monotonic() + 5.0
         try:
             if not terminate(self.handle, 1):
                 raise ProcessTreeError("cleanup-failed")
-            deadline = time.monotonic() + 5.0
             while self._active_processes() != 0:
                 if time.monotonic() >= deadline:
                     raise ProcessTreeError("cleanup-unverified")
                 time.sleep(0.05)
+            self._wait_for_disposition(deadline)
         finally:
             kernel32.CloseHandle(self.handle)
+            kernel32.CloseHandle(self.completion_port)
             self.closed = True
 
     def close_unassigned(self) -> None:
         if self.closed:
             return
-        ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(self.handle)
+        kernel32 = _windows_kernel32()
+        kernel32.CloseHandle(self.handle)
+        kernel32.CloseHandle(self.completion_port)
         self.closed = True
 
 

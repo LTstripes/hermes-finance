@@ -9,7 +9,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+from ctypes import wintypes
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +33,7 @@ import time
 from pathlib import Path
 
 listener = socket.socket()
-listener.bind(("127.0.0.1", 0))
+listener.bind(("127.0.0.1", int(sys.argv[2]) if len(sys.argv) > 2 else 0))
 listener.listen(1)
 Path(sys.argv[1]).write_text(
     f"{os.getpid()}:{listener.getsockname()[1]}",
@@ -113,15 +115,15 @@ def _command(marker: Path, mode: str) -> list[str]:
 
 def _process_exists(process_id: int) -> bool:
     if sys.platform == "win32":
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel32.OpenProcess(0x1000, False, process_id)
+        kernel32 = _windows_probe_api()
+        handle = kernel32.OpenProcess(0x100000, False, process_id)
         if not handle:
+            assert ctypes.get_last_error() == 87, "process state is unknown"
             return False
         try:
-            exit_code = ctypes.c_ulong()
-            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-                return False
-            return int(exit_code.value) == 259
+            state = kernel32.WaitForSingleObject(handle, 0)
+            assert state in (0, 258), "process state is unknown"
+            return state == 258
         finally:
             kernel32.CloseHandle(handle)
     try:
@@ -158,10 +160,106 @@ def _assert_listener_gone(port: int) -> None:
         assert probe.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _windows_probe_api():
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    for name, args, result in (
+        ("OpenProcess", (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD), wintypes.HANDLE),
+        ("CloseHandle", (wintypes.HANDLE,), wintypes.BOOL),
+        ("WaitForSingleObject", (wintypes.HANDLE, wintypes.DWORD), wintypes.DWORD),
+        (
+            "IsProcessInJob",
+            (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)),
+            wintypes.BOOL,
+        ),
+    ):
+        function = getattr(kernel32, name)
+        function.argtypes, function.restype = args, result
+    return kernel32
+
+
+def _windows_listener_owners(port: int) -> set[int]:
+    """Read IPv4 listener ownership, never infer identity from connect success."""
+    query = ctypes.WinDLL("iphlpapi").GetExtendedTcpTable
+    query.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.BOOL,
+        wintypes.ULONG,
+        ctypes.c_int,
+        wintypes.ULONG,
+    )
+    query.restype = wintypes.DWORD
+    size = wintypes.DWORD()
+    assert query(None, ctypes.byref(size), False, 2, 3, 0) == 122
+    for _ in range(5):  # Retry only an explicitly resized TCP table.
+        buffer = ctypes.create_string_buffer(size.value)
+        result = query(buffer, ctypes.byref(size), False, 2, 3, 0)
+        if result == 122:
+            continue
+        assert result == 0, "listener ownership is unknown"
+        count = wintypes.DWORD.from_buffer(buffer).value
+        rows = (wintypes.DWORD * (1 + 6 * count)).from_buffer(buffer)
+        return {
+            int(rows[1 + index * 6 + 5])
+            for index in range(count)
+            if socket.ntohs(rows[1 + index * 6 + 2] & 65535) == port
+        }
+    pytest.fail("listener ownership table kept changing size")
+
+
+def _assert_owned_listener_disposed(handle: int, process_id: int, port: int) -> None:
+    # A retained process handle pins identity across PID/port reuse. A signaled
+    # process has completed termination; checking exit code alone is too early.
+    assert _windows_probe_api().WaitForSingleObject(handle, 0) == 0, (
+        "owned process has not completed termination"
+    )
+    assert process_id not in _windows_listener_owners(port), "owned listener remains"
+
+
+@pytest.fixture
+def observe_owned_cleanup(monkeypatch: pytest.MonkeyPatch):
+    handles: list[int] = []
+
+    def observe(marker: Path):
+        evidence: list[dict[str, object]] = []
+        if sys.platform != "win32":
+            return evidence
+        original = recovery_process._WindowsJob.cleanup
+
+        def cleanup(job):
+            try:
+                process_id, port = _marker_identity(marker)
+                kernel32 = _windows_probe_api()
+                handle = kernel32.OpenProcess(0x100000 | 0x1000, False, process_id)
+                assert handle, "owned process identity could not be pinned"
+                handles.append(handle)
+                belongs = wintypes.BOOL()
+                assert kernel32.IsProcessInJob(handle, job.handle, ctypes.byref(belongs))
+                assert belongs.value, "listener process escaped the owned job"
+                assert process_id in _windows_listener_owners(port)
+                with pytest.raises(AssertionError, match="not completed termination"):
+                    _assert_owned_listener_disposed(handle, process_id, port)
+            finally:
+                # Diagnostic failures must not bypass real whole-tree cleanup.
+                original(job)
+            _assert_owned_listener_disposed(handle, process_id, port)
+            evidence.append({"handle": handle, "pid": process_id, "port": port})
+
+        monkeypatch.setattr(recovery_process._WindowsJob, "cleanup", cleanup)
+        return evidence
+
+    yield observe
+    if sys.platform == "win32":
+        for handle in handles:
+            assert _windows_probe_api().CloseHandle(handle)
+
+
 def test_timeout_after_child_start_cleans_owned_descendant_and_listener(
     tmp_path: Path,
+    observe_owned_cleanup,
 ) -> None:
     marker = tmp_path / "timeout-child.txt"
+    evidence = observe_owned_cleanup(marker)
 
     with pytest.raises(ProcessTreeError) as captured:
         run_owned_process(
@@ -174,14 +272,19 @@ def test_timeout_after_child_start_cleans_owned_descendant_and_listener(
 
     assert captured.value.reason == "timeout"
     child_id, port = _marker_identity(marker)
-    _wait_until_gone(child_id)
-    _assert_listener_gone(port)
+    if sys.platform == "win32":
+        assert len(evidence) == 1
+    else:
+        _wait_until_gone(child_id)
+        _assert_listener_gone(port)
 
 
 def test_wrapper_exit_with_pipe_inheriting_descendant_still_cleans_owned_tree(
     tmp_path: Path,
+    observe_owned_cleanup,
 ) -> None:
     marker = tmp_path / "wrapper-exit-child.txt"
+    evidence = observe_owned_cleanup(marker)
 
     completed = run_owned_process(
         _command(marker, "exit-inherit"),
@@ -193,8 +296,11 @@ def test_wrapper_exit_with_pipe_inheriting_descendant_still_cleans_owned_tree(
 
     assert completed.returncode == 0
     child_id, port = _marker_identity(marker)
-    _wait_until_gone(child_id)
-    _assert_listener_gone(port)
+    if sys.platform == "win32":
+        assert len(evidence) == 1
+    else:
+        _wait_until_gone(child_id)
+        _assert_listener_gone(port)
 
 
 def test_cleanup_failure_is_reported_instead_of_success(
@@ -275,7 +381,7 @@ def test_powershell_boundary_preserves_string_argument_vector(tmp_path: Path) ->
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows competing-runtime contract")
 def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminated(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, observe_owned_cleanup
 ) -> None:
     powershell = shutil.which("powershell.exe")
     if powershell is None:
@@ -293,7 +399,7 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
     foreign_marker = tmp_path / "foreign-runtime.txt"
     foreign = subprocess.Popen(
         [
-            sys.executable,
+            sys._base_executable,
             "-c",
             _FOREIGN_HEALTHY_SERVER,
             token,
@@ -326,6 +432,7 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
     owned_script = tmp_path / "owned-validation-child.py"
     owned_script.write_text(_CHILD_CODE, encoding="utf-8")
     owned_marker = tmp_path / "owned-validation-child.txt"
+    evidence = observe_owned_cleanup(owned_marker)
     (scripts / "prepare-runtime.ps1").write_text(
         "param([string]$Checkout, [switch]$Validate)\n"
         "if (-not $Validate) { exit 8 }\n"
@@ -380,11 +487,8 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
 
         assert captured.value.stage == "runtime-start"
         owned_id, owned_port = _marker_identity(owned_marker)
-        _wait_until_gone(owned_id)
-        # Port 8000 may be immediately reused by the deliberately preserved
-        # foreign runtime; the dead owned PID is the authoritative cleanup proof.
-        if owned_port != 8000:
-            _assert_listener_gone(owned_port)
+        assert len(evidence) == 1
+        _assert_owned_listener_disposed(evidence[0]["handle"], owned_id, owned_port)
         assert backend_invoked.exists()
         deadline = time.monotonic() + 10
         while not foreign_marker.exists() and time.monotonic() < deadline:
@@ -392,8 +496,100 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
                 pytest.fail("synthetic competing runtime exited before listening")
             time.sleep(0.05)
         assert foreign_marker.exists()
+        assert int(foreign_marker.read_text(encoding="utf-8")) == foreign.pid
         assert foreign.poll() is None
         urllib.request.urlopen("http://127.0.0.1:8000/api/health", timeout=2).close()
     finally:
         foreign.terminate()
         foreign.wait(timeout=10)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows listener identity")
+def test_unrelated_process_can_reuse_disposed_owned_listener_port(
+    tmp_path: Path, observe_owned_cleanup
+) -> None:
+    marker = tmp_path / "owned.txt"
+    evidence = observe_owned_cleanup(marker)
+    run_owned_process(
+        _command(marker, "exit-inherit"),
+        cwd=tmp_path,
+        environment=os.environ.copy(),
+        ownership_token="reuse-token",
+        timeout=10,
+    )
+    assert len(evidence) == 1
+    owned = evidence[0]
+    foreign_marker = tmp_path / "foreign.txt"
+    foreign = subprocess.Popen(
+        [sys._base_executable, "-c", _CHILD_CODE, str(foreign_marker), str(owned["port"])],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        foreign_id, port = _marker_identity(foreign_marker)
+        assert foreign_id == foreign.pid
+        assert _windows_listener_owners(port) == {foreign_id}
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            pass
+        _assert_owned_listener_disposed(owned["handle"], owned["pid"], port)
+        assert foreign.poll() is None
+    finally:
+        foreign.terminate()
+        foreign.wait(timeout=10)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows job disposition")
+@pytest.mark.parametrize(
+    "failure", [None, "missing-event", "wait-timeout", "query-failed", "reused-pid"]
+)
+def test_job_disposition_requires_process_signal_and_complete_birth_evidence(
+    monkeypatch: pytest.MonkeyPatch, failure: str | None
+) -> None:
+    calls: list[str] = []
+
+    class Kernel:
+        def GetQueuedCompletionStatus(self, port, message, key, process_id, timeout):
+            calls.append("event")
+            if failure == "missing-event":
+                return False
+            message._obj.value, key._obj.value, process_id._obj.value = 6, 1, 123
+            return True
+
+        def OpenProcess(self, *_args):
+            calls.append("open")
+            return 456
+
+        def IsProcessInJob(self, handle, job, belongs):
+            belongs._obj.value = failure != "reused-pid"
+            return failure != "query-failed"
+
+        def WaitForSingleObject(self, handle, timeout):
+            calls.append("wait")
+            assert 0 <= timeout <= 5000
+            return 258 if failure == "wait-timeout" else 0
+
+        def CloseHandle(self, handle):
+            calls.append("close")
+            return True
+
+    monkeypatch.setattr(recovery_process, "_windows_kernel32", Kernel)
+    monkeypatch.setattr(
+        recovery_process._WindowsJob,
+        "_accounting",
+        lambda _self: SimpleNamespace(total_processes=1, active_processes=0),
+    )
+    job = recovery_process._WindowsJob(10, completion_port=20)
+    if failure and failure != "reused-pid":
+        with pytest.raises(ProcessTreeError, match="cleanup-unverified"):
+            job._wait_for_disposition(time.monotonic() + 5)
+    else:
+        job._wait_for_disposition(time.monotonic() + 5)
+        assert calls == (
+            ["event", "open", "close"]
+            if failure == "reused-pid"
+            else ["event", "open", "wait", "close"]
+        )
+    if "open" in calls:
+        assert calls[-1] == "close"
