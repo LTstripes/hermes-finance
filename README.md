@@ -102,7 +102,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 - supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
 - no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
 
-Bounded verified retention (#460 / PR #473) is now integrated on current `main`. The remaining durability queue is #461 isolated DR rehearsal and #462 restore-state reload. Real protected off-device use remains Owner-controlled.
+#460 bounded verified retention and #461 isolated DR rehearsal are now integrated on canonical `main`. The #461 implementation required a post-merge Windows process-disposition fix in PR #499; final canonical checkpoint `16df86d5eb3923cbe106938d6e81ec360397d00d` passed exact-main CI #894 / `35734575867`. The remaining implementation slice under #417 is #462 restore-state reload. Real protected off-device publication, independently held recovery material and the first Owner-controlled DR rehearsal remain pending Owner gates.
 
 ## Requirements
 
@@ -241,9 +241,9 @@ The proven sequence is now:
 
 ## Current product surfaces
 
-Published `v0.9.0` remains the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release work.
+Published **v1.0.0** is the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release durability work.
 
-UI v2 is **not part of the published v0.9.0 release**, but it is now the primary/default owner interface on development `main`.
+UI v2 is part of the published v1.0.0 release and is the primary/default owner interface at `/`; the previous UI remains available at `/v1`.
 
 Final UI v2 cutover evidence:
 
@@ -287,7 +287,7 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 Separate future work:
 
 - #476 — one real-backend synthetic G04 browser regression gate; this is regression infrastructure, not a blocker to the accepted cutover;
-- #461/#462 — remaining durability/DR/legacy restore-state work under #417; #460 bounded verified retention is already integrated;
+- #462 — remaining focused post-restore month-state reload under #417; #461 isolated DR implementation is integrated and canonically verified;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 

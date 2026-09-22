@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-21**.
+> Last synchronized: **2026-09-22**.
 
 ## 1. Что мы строим
 
@@ -397,7 +397,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 / PR #473 bounded verified retention is now integrated on current `main`. #461 isolated DR rehearsal and #462 focused post-restore state reload remain. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention and #461 / PR #483 isolated DR implementation are integrated. Post-merge exact-main verification found a real Windows process-disposition defect; PR #499 closed it, with final canonical `main` `16df86d5eb3923cbe106938d6e81ec360397d00d` and CI #894 / `35734575867` SUCCESS. #462 focused post-restore state reload remains. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
@@ -412,18 +412,18 @@ There is no remaining cutover gate. Separate future work:
 - #389 — future configurable dashboards, separate from the completed core roadmap;
 - v1 retirement — only as a later explicit task if real use shows rollback/legacy paths are no longer needed.
 
-`1.0.0` is now the prepared release candidate under #480; it remains UAT-PENDING until exact-SHA Owner OPS03 PASS.
+`v1.0.0` is published and running as Stable after exact-SHA Owner OPS03 PASS, guarded publication, backup-first OPS02 transition and production data-continuity PASS.
 
 ### Runtime / durability
 
-#313 завершён. #459 protected recovery-point publisher и #475 restore outcome semantics также завершены и интегрированы.
+#313 завершён. #459 protected recovery-point publisher, #460 retention, #461 isolated DR implementation и #475 restore outcome semantics завершены и интегрированы.
 
 Под #417:
-- #460 / PR #473 retention implementation уже интегрирован;
-- #461 isolated DR rehearsal остаётся;
-- #462 post-restore month-state reload остаётся.
+- #461 закрыт канонически после PR #483 и follow-up PR #499;
+- #462 post-restore month-state reload остаётся следующим implementation slice;
+- реальный protected off-device recovery point, independently held recovery material и clean Owner DR rehearsal остаются Owner-controlled gates.
 
-Real protected off-device backup/recovery rehearsal остаются Owner-controlled. Не возрождать monolithic launcher updater.
+Не возрождать monolithic launcher updater.
 
 ### Performance
 
@@ -464,12 +464,12 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; #459/#460/#475 complete, #461–#462 remain.
+- #417 — durability umbrella; #459/#460/#461/#475 complete, #462 and Owner-live gates remain.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #459, #460, #475 and #480.
+Completed: #313, #387, #410, #429, #430, #459, #460, #461, #475 and #480.
 
 ## 14. Canonical reference documents
 

@@ -362,6 +362,8 @@ fail closed.
 
 ### Isolated recovery rehearsal
 
+Implementation checkpoint (2026-09-22): #461 / PR #483 and the bounded Windows cleanup follow-up PR #499 are integrated on canonical development `main` `16df86d5eb3923cbe106938d6e81ec360397d00d`; exact-main CI #894 / `35734575867` is SUCCESS. This is implementation acceptance only. The first real Owner-controlled protected recovery point and clean DR rehearsal remain pending and must follow the sequence below.
+
 The supported rehearsal obtains the protected artifact and independently held
 recovery material after the encrypted container/volume has already been
 opened/mounted and is readable. The Owner explicitly selects one immutable
