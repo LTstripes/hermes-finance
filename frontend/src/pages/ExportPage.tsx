@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { formatApiError } from "../api/client";
 import { createBackup, listBackups, restoreBackup } from "../api/backups";
 import {
@@ -29,6 +31,7 @@ import { formatDate, formatMonth } from "../lib/format";
 import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 
 export function ExportPage() {
+  const queryClient = useQueryClient();
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [selectedMonthId, setSelectedMonthId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -193,6 +196,8 @@ export function ExportPage() {
     setRestoreSuccess(null);
     try {
       const result = await restoreBackup(candidate.id);
+      await queryClient.invalidateQueries();
+      await loadMonths();
       setBackups((current) => [result.pre_restore_backup, ...current]);
       setRestoreCandidate(null);
       setRestoreSuccess(`База восстановлена из ${result.restored_backup.name}.`);

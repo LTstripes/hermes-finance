@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { QueryClientProvider } from "@tanstack/react-query";
+
+import { createQueryClient, queryKeys } from "../queryClient";
 import { ExportPage } from "./ExportPage";
 
 const months = [
@@ -44,6 +47,18 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function renderExportPage() {
+  const queryClient = createQueryClient();
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <ExportPage />
+      </QueryClientProvider>,
+    ),
+  };
+}
+
 describe("ExportPage", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -73,7 +88,7 @@ describe("ExportPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
 
-    render(<ExportPage />);
+    renderExportPage();
 
     expect(
       screen.getByText("Скачай отчёт в Markdown или JSON для выбранного отчётного месяца."),
@@ -110,7 +125,7 @@ describe("ExportPage", () => {
         .mockResolvedValueOnce(jsonResponse([])),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
 
     expect(screen.getByText("Загружаем месяцы…")).toBeInTheDocument();
     await act(async () => {
@@ -140,7 +155,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(await screen.findByRole("button", { name: "Скачать Markdown" }));
 
     const alert = await screen.findByRole("alert");
@@ -170,7 +185,7 @@ describe("ExportPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
 
-    render(<ExportPage />);
+    renderExportPage();
     const button = await screen.findByRole("button", { name: "Скачать JSON" });
     await user.selectOptions(screen.getByLabelText("Месяц отчёта"), "1");
     await user.click(button);
@@ -210,7 +225,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(await screen.findByRole("button", { name: "Скачать JSON" }));
 
     const alert = await screen.findByRole("alert");
@@ -244,7 +259,7 @@ describe("ExportPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
 
-    render(<ExportPage />);
+    renderExportPage();
 
     const button = await screen.findByRole("button", {
       name: "Скачать AI Analysis Bundle (JSON)",
@@ -293,7 +308,7 @@ describe("ExportPage", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(await screen.findByRole("button", { name: "Скачать Markdown-компаньон" }));
 
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
@@ -322,7 +337,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(
       await screen.findByRole("button", { name: "Скачать AI Analysis Bundle (JSON)" }),
     );
@@ -342,7 +357,7 @@ describe("ExportPage", () => {
       .mockRejectedValueOnce(new TypeError("Failed to fetch"));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(
       await screen.findByRole("button", { name: "Скачать AI Analysis Bundle (JSON)" }),
     );
@@ -364,7 +379,7 @@ describe("ExportPage", () => {
         .mockResolvedValueOnce(jsonResponse(backups)),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
 
     expect(await screen.findByRole("heading", { name: "Резервные копии" })).toBeInTheDocument();
     expect(await screen.findByText(backups[0].name)).toBeInTheDocument();
@@ -387,7 +402,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
 
     expect(screen.getByText("Загружаем список резервных копий…")).toBeInTheDocument();
     await act(async () => {
@@ -411,7 +426,7 @@ describe("ExportPage", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<ExportPage />);
+    renderExportPage();
     const createButton = await screen.findByRole("button", { name: "Создать резервную копию" });
     await user.click(createButton);
 
@@ -446,7 +461,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Внутренняя ошибка приложения. Попробуй обновить данные.");
@@ -457,6 +472,7 @@ describe("ExportPage", () => {
   it("requires explicit confirmation and shows restore loading and success states", async () => {
     const user = userEvent.setup();
     let resolveRestore!: (response: Response) => void;
+    let resolveMonthsReload!: (response: Response) => void;
     const restored = {
       ...backups[0],
       id: "finance_backup_20320731T123456789000Z",
@@ -476,10 +492,17 @@ describe("ExportPage", () => {
           new Promise<Response>((resolve) => {
             resolveRestore = resolve;
           }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveMonthsReload = resolve;
+          }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<ExportPage />);
+    const { queryClient } = renderExportPage();
+    queryClient.setQueryData(queryKeys.accounts, { source: "pre-restore" });
     const restoreButton = await screen.findByRole("button", { name: "Восстановить" });
     await user.click(restoreButton);
 
@@ -496,15 +519,119 @@ describe("ExportPage", () => {
 
     resolveRestore(jsonResponse({ restored_backup: restored, pre_restore_backup: preRestore }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/восстановлена/i);
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(await screen.findByText("Загружаем месяцы…")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+    resolveMonthsReload(
+      jsonResponse([
+        {
+          id: 7,
+          year: 2025,
+          month: 4,
+          status: "closed",
+          snapshot_date: "2025-04-30",
+          source: "restored",
+        },
+      ]),
+    );
+
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       `/api/backups/${restored.id}/restore`,
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ confirm: true }),
       }),
     );
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/months",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("7");
+    expect(screen.getByRole("option", { name: /Апрель.*2025/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июнь.*2026/ })).not.toBeInTheDocument();
     expect(screen.getByText(preRestore.name)).toBeInTheDocument();
+    expect(queryClient.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+  });
+
+  it("preserves the selected month only when it exists in the restored database", async () => {
+    const user = userEvent.setup();
+    const restoredMonths = [
+      {
+        id: 9,
+        year: 2027,
+        month: 1,
+        status: "draft" as const,
+        snapshot_date: "2027-01-31",
+        source: "restored",
+      },
+      months[1],
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          restored_backup: backups[0],
+          pre_restore_backup: {
+            ...backups[0],
+            id: "finance_backup_pre_restore",
+            name: "finance_backup_pre_restore.sqlite3",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(restoredMonths));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    const select = await screen.findByLabelText("Месяц отчёта");
+    await user.selectOptions(select, "1");
+    await user.click(screen.getByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("1");
+    expect(screen.getByRole("option", { name: /Июнь.*2026/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+  });
+
+  it("clears the selected month when the restored database has no months", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          restored_backup: backups[0],
+          pre_restore_backup: {
+            ...backups[0],
+            id: "finance_backup_pre_restore",
+            name: "finance_backup_pre_restore.sqlite3",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    expect(screen.getByText("Нет месяцев")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Месяц отчёта")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
   });
 
   it("shows a restore error without claiming success", async () => {
@@ -523,7 +650,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(await screen.findByRole("button", { name: "Восстановить" }));
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
@@ -532,6 +659,45 @@ describe("ExportPage", () => {
     expect(alert).toHaveTextContent("Проверь введённые данные.");
     expect(alert).not.toHaveTextContent("Backup is corrupt");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("2");
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not reload months or claim success for an ambiguous restore outcome", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: "restore_outcome_ambiguous",
+              message: "Restore outcome is ambiguous; inspect refreshed state before retrying",
+              details: [],
+            },
+          },
+          500,
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Restore outcome is ambiguous; inspect refreshed state before retrying",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("2");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("marks exactly one export as recommended and keeps old exports in the secondary area", async () => {
@@ -540,7 +706,7 @@ describe("ExportPage", () => {
       vi.fn().mockResolvedValueOnce(jsonResponse(months)).mockResolvedValueOnce(jsonResponse([])),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
 
     const recommendedHeading = await screen.findByRole("heading", {
       name: "Полный финансовый отчёт для AI",
@@ -617,7 +783,7 @@ describe("ExportPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
 
-    render(<ExportPage />);
+    renderExportPage();
 
     const button = await screen.findByRole("button", { name: "Выгрузить отчёт для AI" });
     expect(button.className).toMatch(/btn--primary/);
@@ -666,7 +832,7 @@ describe("ExportPage", () => {
         ),
     );
 
-    render(<ExportPage />);
+    renderExportPage();
     await user.click(await screen.findByRole("button", { name: "Выгрузить отчёт для AI" }));
 
     const alert = await screen.findByRole("alert");
