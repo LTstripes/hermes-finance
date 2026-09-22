@@ -803,11 +803,12 @@ def _portfolio_data(
         _mapping(value, label="bundle cash")
         for value in _list(bundle_portfolio.get("cash_balances"), label="bundle cash")
     ]
-    cash_ref_by_name: dict[str, object] = {}
+    cash_refs_by_name: dict[str, list[object]] = {}
     for item in bundle_cash_items:
         name = item.get("name")
-        if isinstance(name, str) and name not in cash_ref_by_name:
-            cash_ref_by_name[name] = item.get("account_ref")
+        account_ref = item.get("account_ref")
+        if isinstance(name, str) and account_ref is not None:
+            cash_refs_by_name.setdefault(name, []).append(account_ref)
     canonical_cash_ref = next(
         (
             item.get("account_ref")
@@ -817,6 +818,7 @@ def _portfolio_data(
         None,
     )
     cash_groups: dict[tuple[object, str], list[object]] = {}
+    real_account_refs = set(account_ref_by_id.values())
     for row in sorted(
         (
             item
@@ -825,7 +827,14 @@ def _portfolio_data(
         ),
         key=lambda item: (item.name, item.id),
     ):
-        cash_ref = cash_ref_by_name.get(row.name, canonical_cash_ref)
+        if row.account_id is not None:
+            cash_ref = account_ref_by_id.get(row.account_id)
+        else:
+            name_refs = cash_refs_by_name.get(row.name, [])
+            cash_ref = next(
+                (ref for ref in name_refs if ref not in real_account_refs),
+                name_refs[0] if len(name_refs) == 1 else canonical_cash_ref,
+            )
         if cash_ref is None:
             cash_ref = account_ref_by_id.get(row.account_id)
         cash_groups.setdefault((cash_ref, row.name), []).append(row)

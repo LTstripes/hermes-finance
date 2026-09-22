@@ -546,11 +546,7 @@ def assemble_ai_analysis_bundle(
     account_refs = {row.id: _slug("acct", row.name, used_refs) for row in account_rows}
     instrument_refs = {row.id: _slug("inst", row.name, used_refs) for row in instrument_rows}
 
-    cash_type_account = next((row for row in account_rows if row.account_type == "cash"), None)
-    if cash_type_account is None:
-        synthetic_cash_ref = _slug("acct", "cash-balances", used_refs)
-    else:
-        synthetic_cash_ref = account_refs[cash_type_account.id]
+    synthetic_cash_ref = _slug("acct", "cash-balances", used_refs)
 
     all_position_rows = list_position_snapshots(session)
     all_deposit_rows = list_deposit_snapshots(session)
@@ -1016,7 +1012,7 @@ def assemble_ai_analysis_bundle(
             return True
         if any(row.account_id == account.id for row in selected_cash):
             return True
-        return account.account_type == "cash" and has_unassigned_cash
+        return False
 
     missing_snapshot_accounts = [
         row
@@ -1077,7 +1073,7 @@ def assemble_ai_analysis_bundle(
         }
         for row in account_rows
     ]
-    if cash_type_account is None and selected_cash:
+    if has_unassigned_cash:
         accounts_out.append(
             {
                 "ref": synthetic_cash_ref,
@@ -1182,8 +1178,8 @@ def assemble_ai_analysis_bundle(
         cash_out.append(
             {
                 "account_ref": (
-                    account_refs[cash_type_account.id]
-                    if cash_type_account is not None
+                    account_refs[row.account_id]
+                    if row.account_id is not None
                     else synthetic_cash_ref
                 ),
                 "name": row.name,
