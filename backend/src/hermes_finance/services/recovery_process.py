@@ -9,6 +9,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 from ctypes import wintypes
 from dataclasses import dataclass
@@ -275,33 +276,45 @@ def run_owned_process(
     """Run a gated wrapper and prove its entire owned process tree is gone."""
 
     process, owner = _spawn_owned_process(command, cwd=cwd, environment=environment)
-    stdout = ""
-    stderr = ""
+    communication_result: tuple[str, str] | None = None
+    communication_error: BaseException | None = None
+
+    def communicate() -> None:
+        nonlocal communication_result, communication_error
+        try:
+            communication_result = process.communicate(input=ownership_token + "\n")
+        except BaseException as error:
+            communication_error = error
+
+    communicator = threading.Thread(target=communicate, daemon=True)
+    communicator.start()
     pending_error: BaseException | None = None
     try:
-        stdout, stderr = process.communicate(input=ownership_token + "\n", timeout=timeout)
-    except subprocess.TimeoutExpired as error:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
         pending_error = ProcessTreeError("timeout")
-        stdout = str(error.stdout or "")
-        stderr = str(error.stderr or "")
     except BaseException as error:
         pending_error = error
 
+    cleanup_error: ProcessTreeError | None = None
     try:
         owner.cleanup()
-    except ProcessTreeError as cleanup_error:
-        pending_error = cleanup_error
+    except ProcessTreeError as error:
+        cleanup_error = error
 
-    try:
-        remaining_stdout, remaining_stderr = process.communicate(timeout=5)
-        stdout += remaining_stdout or ""
-        stderr += remaining_stderr or ""
-    except (OSError, subprocess.TimeoutExpired) as error:
+    communicator.join(timeout=5)
+    if cleanup_error is not None:
+        pending_error = cleanup_error
+    elif communicator.is_alive():
         pending_error = ProcessTreeError("cleanup-unverified")
-        pending_error.__cause__ = error
+    elif communication_error is not None and pending_error is None:
+        pending_error = communication_error
 
     if pending_error is not None:
         if isinstance(pending_error, ProcessTreeError):
             raise pending_error
         raise pending_error
+    if communication_result is None:
+        raise ProcessTreeError("cleanup-unverified")
+    stdout, stderr = communication_result
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)

@@ -51,12 +51,16 @@ if not sys.stdin.readline().strip():
     raise SystemExit(97)
 marker = Path(sys.argv[1])
 mode = sys.argv[2]
-subprocess.Popen(
-    [sys.executable, "-c", sys.argv[3], str(marker)],
-    stdin=subprocess.DEVNULL,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-)
+child_arguments = [sys.executable, "-c", sys.argv[3], str(marker)]
+if mode == "exit-inherit":
+    subprocess.Popen(child_arguments, stdin=subprocess.DEVNULL)
+else:
+    subprocess.Popen(
+        child_arguments,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 deadline = time.monotonic() + 5
 while not marker.exists() and time.monotonic() < deadline:
     time.sleep(0.02)
@@ -170,11 +174,13 @@ def test_timeout_after_child_start_cleans_owned_descendant_and_listener(
     _assert_listener_gone(port)
 
 
-def test_wrapper_exit_with_live_descendant_still_cleans_owned_tree(tmp_path: Path) -> None:
+def test_wrapper_exit_with_pipe_inheriting_descendant_still_cleans_owned_tree(
+    tmp_path: Path,
+) -> None:
     marker = tmp_path / "wrapper-exit-child.txt"
 
     completed = run_owned_process(
-        _command(marker, "exit"),
+        _command(marker, "exit-inherit"),
         cwd=tmp_path,
         environment=os.environ.copy(),
         ownership_token="wrapper-exit-token",
@@ -192,6 +198,9 @@ def test_cleanup_failure_is_reported_instead_of_success(
 ) -> None:
     class FakeProcess:
         returncode = 0
+
+        def wait(self, timeout: int | float | None = None) -> int:
+            return self.returncode
 
         def communicate(
             self, input: str | None = None, timeout: int | float | None = None
