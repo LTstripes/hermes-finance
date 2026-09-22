@@ -8,10 +8,11 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from t_invest_mapping_fixtures import accept_t_invest_mapping
 
+from hermes_finance.api import payouts as payout_api
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, ExpectedCashFlowType, InstrumentType
 from hermes_finance.main import create_app
@@ -30,7 +31,11 @@ from hermes_finance.services.instrument_mappings import (
     set_accepted_mapping,
 )
 from hermes_finance.services.instruments import create_instrument
-from hermes_finance.services.positions import create_position_snapshot, update_position_snapshot
+from hermes_finance.services.positions import (
+    create_position_snapshot,
+    stage_update_position_snapshot,
+    update_position_snapshot,
+)
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 UID = "44444444-4444-4444-4444-444444444444"
@@ -168,6 +173,49 @@ def test_preview_uses_local_mapping_exact_horizon_and_reads_closed_month(tmp_pat
         assert row["selectable"] is True
         assert row["default_selected"] is True
         assert row["fingerprint"]
+    finally:
+        database.engine.dispose()
+
+
+def test_payout_preview_context_and_local_rows_share_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as session:
+            month_id, account_id, instrument_id, snapshot_id = build_environment(session)
+        with database.engine.connect() as connection:
+            assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+        real_fetch = payout_api._safe_fetch
+        writer_committed = False
+
+        def interleaved_fetch(*args, **kwargs):
+            nonlocal writer_committed
+            result = real_fetch(*args, **kwargs)
+            if not writer_committed:
+                writer_committed = True
+                with database.session_factory() as writer:
+                    update_position_snapshot(writer, snapshot_id, quantity="3")
+            return result
+
+        monkeypatch.setattr(payout_api, "_safe_fetch", interleaved_fetch)
+        with TestClient(create_app(database, payout_provider=provider)) as client:
+            response = client.post(
+                f"/api/months/{month_id}/payout-preview",
+                json=context_payload(account_id, instrument_id, snapshot_id),
+            )
+            assert response.status_code == 200, response.text
+            assert writer_committed
+            assert Decimal(response.json()["quantity"]) == Decimal("2")
+
+            fresh = client.post(
+                f"/api/months/{month_id}/payout-preview",
+                json=context_payload(account_id, instrument_id, snapshot_id),
+            )
+            assert fresh.status_code == 200, fresh.text
+            assert Decimal(fresh.json()["quantity"]) == Decimal("3")
     finally:
         database.engine.dispose()
 
@@ -327,6 +375,76 @@ def test_refresh_status_is_local_and_clears_after_explicit_apply(tmp_path: Path)
         assert Decimal(after.json()["items"][0]["current_quantity"]) == Decimal("3")
         assert Decimal(after.json()["items"][0]["frozen_quantity"]) == Decimal("2")
         assert len(provider.requests) == 2
+    finally:
+        database.engine.dispose()
+
+
+def test_payout_refresh_status_uses_one_snapshot_across_position_and_payout_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as session:
+            month_id, account_id, instrument_id, snapshot_id = build_environment(session)
+        with TestClient(create_app(database, payout_provider=provider)) as client:
+            preview = client.post(
+                f"/api/months/{month_id}/payout-preview",
+                json=context_payload(account_id, instrument_id, snapshot_id),
+            ).json()
+            row = preview["rows"][0]
+            applied = client.post(
+                f"/api/months/{month_id}/payout-apply",
+                json={
+                    **context_payload(account_id, instrument_id, snapshot_id),
+                    "rows": [
+                        {
+                            "provider": row["provider"],
+                            "instrument_uid": row["instrument_uid"],
+                            "event_kind": row["event_kind"],
+                            "identity_key": row["identity_key"],
+                            "fingerprint": row["fingerprint"],
+                        }
+                    ],
+                },
+            )
+            assert applied.status_code == 200, applied.text
+            with database.session_factory() as writer:
+                update_position_snapshot(writer, snapshot_id, quantity="3")
+            with database.engine.connect() as connection:
+                assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+            real_snapshots = payout_api._status_snapshots
+            writer_committed = False
+
+            def interleaved_snapshots(session_arg, reporting_month_id):
+                nonlocal writer_committed
+                rows = real_snapshots(session_arg, reporting_month_id)
+                if not writer_committed:
+                    writer_committed = True
+                    with database.session_factory() as writer:
+                        stage_update_position_snapshot(writer, snapshot_id, quantity="4")
+                        writer.execute(
+                            update(AppliedProviderPayout)
+                            .where(AppliedProviderPayout.reporting_month_id == month_id)
+                            .values(quantity="3")
+                        )
+                        writer.commit()
+                return rows
+
+            monkeypatch.setattr(payout_api, "_status_snapshots", interleaved_snapshots)
+            response = client.get(f"/api/months/{month_id}/payout-refresh-status")
+            assert response.status_code == 200, response.text
+            assert writer_committed
+            assert response.json()["positions_changed"] == 1
+            assert Decimal(response.json()["items"][0]["current_quantity"]) == Decimal("3")
+            assert Decimal(response.json()["items"][0]["frozen_quantity"]) == Decimal("2")
+
+            fresh = client.get(f"/api/months/{month_id}/payout-refresh-status")
+            assert fresh.status_code == 200, fresh.text
+            assert fresh.json()["positions_changed"] == 1
+            assert Decimal(fresh.json()["items"][0]["current_quantity"]) == Decimal("4")
+            assert Decimal(fresh.json()["items"][0]["frozen_quantity"]) == Decimal("3")
     finally:
         database.engine.dispose()
 

@@ -35,6 +35,7 @@ from hermes_finance.broker_data.reconciliation.dto import (
     NormalizedReconciliationRow,
     ReconciliationStatus,
 )
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.services.broker_identity_mappings import (
     classify_preview_identities,
     compose_owner_mapping,
@@ -43,6 +44,7 @@ from hermes_finance.services.broker_reconciliation import (
     build_normalized_reconciliation_for_snapshot,
     load_hermes_state_for_month,
 )
+from hermes_finance.services.reporting_months import get_reporting_month
 
 router = APIRouter(tags=["broker-reconciliation"])
 
@@ -327,33 +329,40 @@ def broker_reconciliation_preview_endpoint(
     request: Request,
     session: Session = Depends(session_for_request),
 ) -> BrokerReconciliationResponse:
-    hermes = load_hermes_state_for_month(session, month_id)
+    # Reject an invalid month before provider I/O; then refresh the Session
+    # and materialize every local fact under one post-fetch snapshot.
+    get_reporting_month(session, month_id)
     try:
         snapshot = _provider(request).fetch_snapshot()
     except Exception:
-        return _provider_failure_response(month_id=month_id, month_status=hermes.month_status)
-    if not isinstance(snapshot, BrokerSnapshot):
-        return _provider_failure_response(month_id=month_id, month_status=hermes.month_status)
+        snapshot = None
     try:
         expected_rows = _expected_rows(payload)
     except ValueError as error:
         # The request is invalid, but no provider or database state is changed.
         raise HTTPException(status_code=422, detail=str(error)) from error
     request_mapping = _mapping(payload)
-    mapping = compose_owner_mapping(session, provider=snapshot.provider, request=request_mapping)
-    result = build_normalized_reconciliation_for_snapshot(
-        session,
-        snapshot=snapshot,
-        hermes=hermes,
-        mapping=mapping,
-        expected_row_fingerprints=expected_rows,
-        expected_snapshot_fingerprint=payload.expected_snapshot_fingerprint,
-    )
-    identity_labels = classify_preview_identities(
-        snapshot=snapshot,
-        account_rows=result.accounts,
-        instrument_rows=result.instruments,
-        session=session,
-        request=request_mapping,
-    )
-    return _response(snapshot=snapshot, result=result, identity_labels=identity_labels)
+    session.expire_all()
+    with coherent_read_snapshot(session):
+        hermes = load_hermes_state_for_month(session, month_id)
+        if not isinstance(snapshot, BrokerSnapshot):
+            return _provider_failure_response(month_id=month_id, month_status=hermes.month_status)
+        mapping = compose_owner_mapping(
+            session, provider=snapshot.provider, request=request_mapping
+        )
+        result = build_normalized_reconciliation_for_snapshot(
+            session,
+            snapshot=snapshot,
+            hermes=hermes,
+            mapping=mapping,
+            expected_row_fingerprints=expected_rows,
+            expected_snapshot_fingerprint=payload.expected_snapshot_fingerprint,
+        )
+        identity_labels = classify_preview_identities(
+            snapshot=snapshot,
+            account_rows=result.accounts,
+            instrument_rows=result.instruments,
+            session=session,
+            request=request_mapping,
+        )
+        return _response(snapshot=snapshot, result=result, identity_labels=identity_labels)

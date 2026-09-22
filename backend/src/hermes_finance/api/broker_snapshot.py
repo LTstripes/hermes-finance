@@ -27,6 +27,7 @@ from hermes_finance.broker_data.reconciliation.dto import (
     OwnerMappingInput,
 )
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import PriceSource, RubleAmount
 from hermes_finance.persistence import PositionSnapshot
 from hermes_finance.services.broker_baseline_apply import apply_owner_approved_baseline
@@ -49,6 +50,7 @@ from hermes_finance.services.broker_snapshot_apply import (
     provider_positions_for_identity,
     row_is_money,
 )
+from hermes_finance.services.reporting_months import get_reporting_month
 
 router = APIRouter(tags=["broker-snapshot"])
 
@@ -614,58 +616,66 @@ def broker_snapshot_preview_endpoint(
     session: Session = Depends(session_for_request),
 ) -> BrokerSnapshotPreviewResponse:
     request_mapping = _mapping(payload)
-    hermes = load_hermes_state_for_month(session, month_id)
+    # Preserve the existing early invalid-month check without holding a read
+    # transaction across provider I/O. The response is rebuilt under the
+    # committed snapshot after the fetch.
+    get_reporting_month(session, month_id)
     try:
         snapshot = _provider(request).fetch_snapshot()
     except Exception:
-        diagnostics = diagnostic_for_failure(
-            api_doc_version=DEFAULT_API_DOC_VERSION,
-            failure_class=AlfaDiagnosticFailureClass.CONNECTION,
-            failure_code="provider_fetch_failed",
-            snapshot_status=SnapshotStatus.MALFORMED_RESPONSE.value,
+        snapshot = None
+    session.expire_all()
+    with coherent_read_snapshot(session):
+        hermes = load_hermes_state_for_month(session, month_id)
+        if snapshot is None:
+            diagnostics = diagnostic_for_failure(
+                api_doc_version=DEFAULT_API_DOC_VERSION,
+                failure_class=AlfaDiagnosticFailureClass.CONNECTION,
+                failure_code="provider_fetch_failed",
+                snapshot_status=SnapshotStatus.MALFORMED_RESPONSE.value,
+            )
+            return BrokerSnapshotPreviewResponse(
+                reporting_month_id=month_id,
+                provider="alfa_pro",
+                status="non_applicable",
+                eligible_for_apply=False,
+                snapshot_status=SnapshotStatus.MALFORMED_RESPONSE.value,
+                source_as_of=None,
+                captured_at=datetime.now().astimezone(),
+                month_status=hermes.month_status,
+                month_closed=hermes.month_status == "closed",
+                would_touch_closed_month=False,
+                conflict_count=0,
+                accounts=[],
+                instruments=[],
+                positions=[],
+                cash=[],
+                warnings=["broker snapshot refresh failed"],
+                diagnostics=BrokerSnapshotDiagnosticsOut(**diagnostics.to_dict()),
+                diagnostic_report=diagnostics.to_text(),
+                error_code="provider_error",
+                message="Broker snapshot refresh failed",
+            )
+        mapping = compose_owner_mapping(
+            session, provider=getattr(snapshot, "provider", ""), request=request_mapping
         )
-        return BrokerSnapshotPreviewResponse(
-            reporting_month_id=month_id,
-            provider="alfa_pro",
-            status="non_applicable",
-            eligible_for_apply=False,
-            snapshot_status=SnapshotStatus.MALFORMED_RESPONSE.value,
-            source_as_of=None,
-            captured_at=datetime.now().astimezone(),
-            month_status=hermes.month_status,
-            month_closed=hermes.month_status == "closed",
-            would_touch_closed_month=False,
-            conflict_count=0,
-            accounts=[],
-            instruments=[],
-            positions=[],
-            cash=[],
-            warnings=["broker snapshot refresh failed"],
-            diagnostics=BrokerSnapshotDiagnosticsOut(**diagnostics.to_dict()),
-            diagnostic_report=diagnostics.to_text(),
-            error_code="provider_error",
-            message="Broker snapshot refresh failed",
-        )
-    mapping = compose_owner_mapping(
-        session, provider=getattr(snapshot, "provider", ""), request=request_mapping
-    )
-    preview = build_reconciliation_preview(snapshot=snapshot, hermes=hermes, mapping=mapping)
-    identity_labels = None
-    if hasattr(snapshot, "provider") and hasattr(snapshot, "accounts"):
-        identity_labels = classify_preview_identities(
-            snapshot=snapshot,
-            account_rows=preview.accounts,
-            instrument_rows=preview.instruments,
+        preview = build_reconciliation_preview(snapshot=snapshot, hermes=hermes, mapping=mapping)
+        identity_labels = None
+        if hasattr(snapshot, "provider") and hasattr(snapshot, "accounts"):
+            identity_labels = classify_preview_identities(
+                snapshot=snapshot,
+                account_rows=preview.accounts,
+                instrument_rows=preview.instruments,
+                session=session,
+                request=request_mapping,
+            )
+        return _preview_response(
+            preview,
+            fingerprint_mapping=mapping,
             session=session,
-            request=request_mapping,
+            snapshot=snapshot,
+            identity_labels=identity_labels,
         )
-    return _preview_response(
-        preview,
-        fingerprint_mapping=mapping,
-        session=session,
-        snapshot=snapshot,
-        identity_labels=identity_labels,
-    )
 
 
 @router.post("/api/months/{month_id}/broker-snapshot-apply", response_model=BrokerApplyResponse)

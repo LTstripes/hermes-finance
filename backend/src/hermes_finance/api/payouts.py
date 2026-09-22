@@ -16,6 +16,7 @@ from hermes_finance.api.market_data import (
     resolve_payout_provider,
 )
 from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.database import coherent_read_operation, coherent_read_snapshot
 from hermes_finance.domain import MarketMappingState, RubleAmount
 from hermes_finance.market_data.dto import T_INVEST_PROVIDER
 from hermes_finance.market_data.payout import PayoutEventKind, PayoutEventStatus
@@ -419,6 +420,7 @@ def _batch_item_status(preview: PayoutPreviewResult) -> tuple[str, bool, bool, b
     return "previewed", True, False, False
 
 
+@coherent_read_operation
 def _refresh_status(
     session: Session,
     *,
@@ -428,15 +430,7 @@ def _refresh_status(
     if month is None:
         raise ReportingMonthNotFoundError(f"reporting month {reporting_month_id} was not found")
 
-    snapshots = list(
-        session.scalars(
-            select(PositionSnapshot)
-            .where(PositionSnapshot.reporting_month_id == reporting_month_id)
-            .order_by(
-                PositionSnapshot.account_id, PositionSnapshot.instrument_id, PositionSnapshot.id
-            )
-        )
-    )
+    snapshots = _status_snapshots(session, reporting_month_id)
     payouts = list(
         session.scalars(
             select(AppliedProviderPayout)
@@ -477,6 +471,18 @@ def _refresh_status(
         reporting_month_id=month.id,
         positions_changed=len(items),
         items=items,
+    )
+
+
+def _status_snapshots(session: Session, reporting_month_id: int) -> list[PositionSnapshot]:
+    return list(
+        session.scalars(
+            select(PositionSnapshot)
+            .where(PositionSnapshot.reporting_month_id == reporting_month_id)
+            .order_by(
+                PositionSnapshot.account_id, PositionSnapshot.instrument_id, PositionSnapshot.id
+            )
+        )
     )
 
 
@@ -541,6 +547,16 @@ def payout_preview_endpoint(
     request: Request,
     session: Session = Depends(session_for_request),
 ) -> PayoutPreviewResponse:
+    with coherent_read_snapshot(session):
+        return _payout_preview_in_snapshot(month_id, payload, request, session)
+
+
+def _payout_preview_in_snapshot(
+    month_id: int,
+    payload: PayoutContextRequest,
+    request: Request,
+    session: Session,
+) -> PayoutPreviewResponse:
     context = _resolve_context(
         session,
         reporting_month_id=month_id,
@@ -574,6 +590,16 @@ def payout_batch_preview_endpoint(
     payload: PayoutBatchPreviewRequest,
     request: Request,
     session: Session = Depends(session_for_request),
+) -> PayoutBatchPreviewResponse:
+    with coherent_read_snapshot(session):
+        return _payout_batch_preview_in_snapshot(month_id, payload, request, session)
+
+
+def _payout_batch_preview_in_snapshot(
+    month_id: int,
+    payload: PayoutBatchPreviewRequest,
+    request: Request,
+    session: Session,
 ) -> PayoutBatchPreviewResponse:
     month = session.get(ReportingMonth, month_id)
     if month is None:
