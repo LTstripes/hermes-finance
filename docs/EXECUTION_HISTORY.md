@@ -780,3 +780,20 @@ Do not invent missing executor/model attribution during backfill. A later docume
 - **Explicitly deferred:** instrument/asset-class attribution, realised/unrealised P&L decomposition, trades/lots/cost basis, event-explanation attribution and component-attribution exports.
 - **Follow-up:** future Performance work starts from canonical `main`, not from `integration/performance-v1`; published Stable `0.8.2` remains unchanged until a separately guarded release.
 - **References:** #358, #360, PR #361, #127, `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`, `docs/PROJECT_WIKI.md` §25.
+
+
+# 2026-09-22 durability restore-state completion
+
+### #462 / PR #502 — reload restored month state after confirmed restore
+
+- **Status:** accepted, integrated and canonically verified.
+- **Accepted candidate:** `7dc9a62fbd7557f59e6bfcac415c54b4d5e633c3`.
+- **Canonical merge:** `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`.
+- **Independent review:** **INDEPENDENT ACCEPT** after two bounded B1 stale-request lifecycle remediations.
+- **Canonical verification:** exact-head CI #902 / `35753762184` SUCCESS; UI comparison #94 / `35753762254` SUCCESS; exact-main CI #904 / `35771083594` SUCCESS.
+- **Delivered:** after confirmed restore, legacy Export/Backup immediately retires pre-restore month-request ownership, clears stale month state, invalidates shared reads, reloads months from the restored database, preserves selection only by exact restored-list membership and deterministically falls back to the newest restored month or null.
+- **Race hardening:** obsolete pre-restore month requests cannot republish months, selection, loading error or loading state before/during/after the authoritative restored-data reload.
+- **Truthfulness:** confirmed restore success remains separate from subsequent month-read failure; confirmed-negative and legacy ambiguous restore outcomes do not claim success or enter the success reload path.
+- **Scope:** only `frontend/src/pages/ExportPage.tsx` and focused tests; no backend restore, UI v2/#475 or #461 runtime/recovery changes.
+- **Parent state:** all planned #417 implementation children #458–#462 are complete. Final Owner-controlled live recovery gates remain pending.
+- **References:** #417, #462, PR #502, ADR 0017.
