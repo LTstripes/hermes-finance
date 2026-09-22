@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { useQueryClient } from "@tanstack/react-query";
 
 import { formatApiError } from "../api/client";
 import { createBackup, listBackups, restoreBackup } from "../api/backups";
@@ -29,6 +31,8 @@ import { formatDate, formatMonth } from "../lib/format";
 import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 
 export function ExportPage() {
+  const queryClient = useQueryClient();
+  const monthRequestGeneration = useRef(0);
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [selectedMonthId, setSelectedMonthId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,28 +52,34 @@ export function ExportPage() {
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
 
-  const loadMonths = useCallback(async (signal?: AbortSignal) => {
+  const loadMonths = useCallback(async (signal?: AbortSignal, preferredMonthId?: number | null) => {
+    const requestGeneration = ++monthRequestGeneration.current;
+    const isCurrentRequest = () =>
+      requestGeneration === monthRequestGeneration.current && !signal?.aborted;
     setLoading(true);
     setLoadingError(null);
     try {
       const data = await listMonths(signal);
-      if (signal?.aborted) {
+      if (!isCurrentRequest()) {
         return;
       }
       const ordered = [...data].sort((a, b) => b.year - a.year || b.month - a.month);
       setMonths(ordered);
-      setSelectedMonthId((current) =>
-        ordered.some((month) => month.id === current) ? current : (ordered[0]?.id ?? null),
-      );
+      setSelectedMonthId((current) => {
+        const candidate = preferredMonthId === undefined ? current : preferredMonthId;
+        return ordered.some((month) => month.id === candidate)
+          ? candidate
+          : (ordered[0]?.id ?? null);
+      });
     } catch (error) {
-      if (signal?.aborted) {
+      if (!isCurrentRequest()) {
         return;
       }
       setLoadingError(formatApiError(error));
       setMonths([]);
       setSelectedMonthId(null);
     } finally {
-      if (!signal?.aborted) {
+      if (isCurrentRequest()) {
         setLoading(false);
       }
     }
@@ -193,6 +203,14 @@ export function ExportPage() {
     setRestoreSuccess(null);
     try {
       const result = await restoreBackup(candidate.id);
+      const previousSelectedMonthId = selectedMonthId;
+      monthRequestGeneration.current += 1;
+      setMonths([]);
+      setSelectedMonthId(null);
+      setLoading(true);
+      setLoadingError(null);
+      await queryClient.invalidateQueries();
+      await loadMonths(undefined, previousSelectedMonthId);
       setBackups((current) => [result.pre_restore_backup, ...current]);
       setRestoreCandidate(null);
       setRestoreSuccess(`База восстановлена из ${result.restored_backup.name}.`);
