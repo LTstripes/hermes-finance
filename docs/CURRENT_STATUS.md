@@ -7,8 +7,8 @@
 ## Canonical identity
 
 - Published Stable release: **v1.0.0**.
-- Current development `main` checkpoint: `16df86d5eb3923cbe106938d6e81ec360397d00d`.
-- Current exact-main CI: **#894 / run `35734575867` — SUCCESS**.
+- Current development `main` checkpoint: `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`.
+- Current exact-main CI: **#904 / run `35771083594` — SUCCESS**.
 - Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 - Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
 - Guarded Release run `35580890145`: **SUCCESS**.
@@ -211,7 +211,7 @@ Release publication and local Stable installation are separate operations:
 
 Delivered: provider-neutral managed protected-destination publisher for explicitly attested `external_encrypted_destination_v1`, including staged verification before final exposure, destination read-back, producer/schema identity, privacy-safe CLI failure handling and no plaintext verification scratch in default temp storage.
 
-Bounded verified retention (#460 / PR #473) and isolated DR rehearsal implementation (#461 / PR #483) are integrated. Exact-main verification after #483 exposed a real Windows process-disposition defect; bounded fix PR #499 was independently accepted and integrated at `16df86d5eb3923cbe106938d6e81ec360397d00d`, with exact-main CI #894 / `35734575867` SUCCESS. Still not done: focused Export/Backup restore-state reload (#462) and the real Owner protected off-device backup/recovery rehearsal. No Google API/OAuth/key-management/cloud architecture was introduced.
+Bounded verified retention (#460 / PR #473), isolated DR rehearsal implementation (#461 / PR #483 + PR #499) and focused Export/Backup restore-state reload (#462 / PR #502) are integrated. #462 closed the stale pre-restore month-request lifecycle race and reached canonical `main` at `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`, with exact-main CI #904 / `35771083594` SUCCESS. All planned implementation children under #417 are complete. The real Owner protected off-device recovery point, independently held recovery material and clean Owner DR rehearsal remain pending. No Google API/OAuth/key-management/cloud architecture was introduced.
 
 ## Active roadmap / what comes next
 
@@ -257,7 +257,7 @@ Durability state under #417:
 - #459 / PR #466 — protected recovery-point publisher integrated;
 - #460 / PR #473 — bounded verified retention integrated;
 - #461 / PR #483 + PR #499 — isolated DR implementation and Windows cleanup/disposition hardening integrated and canonically green;
-- #462 — focused post-restore month-state reload remains.
+- #462 / PR #502 — focused post-restore month-state reload integrated and canonically green.
 
 Real protected off-device recovery point, independently held recovery material and one clean Owner-controlled DR rehearsal remain final Owner gates.
 
@@ -275,12 +275,12 @@ Published Stable is `v1.0.0`. #480 release preparation, exact-SHA OPS03 Owner UA
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #417 — owner durability umbrella; #459/#460/#461/#475 complete, #462 and Owner-live gates remain.
+- #417 — owner durability umbrella; implementation children #458–#462 plus #475 are complete, while final Owner-live gates remain.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #461, #475 and #480.
+Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475 and #480.
 
 ## Canonical references
 
