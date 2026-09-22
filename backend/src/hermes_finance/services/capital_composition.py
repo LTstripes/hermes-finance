@@ -13,6 +13,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import ReportingMonth
@@ -70,6 +71,7 @@ def _amount_delta(current: RubleAmount, previous: RubleAmount) -> RubleAmount:
     return RubleAmount(current.kopecks - previous.kopecks)
 
 
+@coherent_read_operation
 def closed_report_comparison(session: Session) -> ClosedReportComparison:
     """Return the latest closed report and its previous closed report.
 
@@ -127,6 +129,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
     )
 
 
+@coherent_read_operation
 def capital_composition_history(session: Session) -> CapitalCompositionHistory:
     """Return deterministic CLOSED-month capital composition in calendar order."""
     months = list(

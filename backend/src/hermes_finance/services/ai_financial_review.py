@@ -27,6 +27,7 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import PerformanceScope
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.values import PercentageRate, RubleAmount
@@ -1559,6 +1560,7 @@ def _remap_field_states(package_states: object) -> list[dict[str, object]]:
     return states
 
 
+@coherent_read_operation
 def assemble_ai_financial_review(
     session: Session,
     *,

@@ -1243,6 +1243,92 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert not any(isinstance(value, float) for value in _walk(payload))
 
 
+def test_ai_financial_review_uses_one_snapshot_when_price_changes_mid_read(
+    app_context: tuple[TestClient, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, database = app_context
+    ids = _seed_history(client)
+
+    baseline_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert baseline_response.status_code == 200, baseline_response.text
+    baseline = baseline_response.json()
+    baseline_capital = baseline["sections"]["current_capital"]["data"]["liquid_assets_total"][
+        "value"
+    ]["amount"]
+    baseline_position = baseline["sections"]["current_portfolio"]["data"]["positions"][0][
+        "market_value"
+    ]["value"]["amount"]
+
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_liquid_capital_for_month = bundle_service.liquid_capital_for_month
+    writer_committed = False
+
+    def interleaved_liquid_capital_for_month(*args, **kwargs):
+        nonlocal writer_committed
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                position = writer.scalar(
+                    select(PositionSnapshot).where(
+                        PositionSnapshot.reporting_month_id == ids["latest_closed"]
+                    )
+                )
+                assert position is not None
+                price_increment = position.market_price_per_unit_kopecks
+                value_increment = int(position.quantity * price_increment)
+                position.market_price_per_unit_kopecks += price_increment
+                position.market_value_kopecks += value_increment
+                position.unrealized_result_kopecks += value_increment
+                writer.commit()
+        return real_liquid_capital_for_month(*args, **kwargs)
+
+    monkeypatch.setattr(
+        bundle_service,
+        "liquid_capital_for_month",
+        interleaved_liquid_capital_for_month,
+    )
+
+    response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (
+        body["sections"]["current_capital"]["data"]["liquid_assets_total"]["value"]["amount"]
+        == baseline_capital
+    )
+    assert (
+        body["sections"]["current_portfolio"]["data"]["positions"][0]["market_value"]["value"][
+            "amount"
+        ]
+        == baseline_position
+    )
+
+    fresh_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert fresh_response.status_code == 200, fresh_response.text
+    fresh = fresh_response.json()
+    assert (
+        fresh["sections"]["current_capital"]["data"]["liquid_assets_total"]["value"]["amount"]
+        != baseline_capital
+    )
+    assert (
+        fresh["sections"]["current_portfolio"]["data"]["positions"][0]["market_value"]["value"][
+            "amount"
+        ]
+        != baseline_position
+    )
+
+
 def test_ai_financial_review_routes_disable_caching(
     app_context: tuple[TestClient, Database],
 ) -> None:

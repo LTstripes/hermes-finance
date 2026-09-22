@@ -123,6 +123,21 @@ def test_month_without_salary_returns_zeros(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
+def test_salary_tax_read_uses_default_brackets_without_persisting_them(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session, 2031, 1)
+        add_salary(session, month_id, "100000.00", "87000.00")
+
+        result = calculate_salary_tax(session, month_id)
+
+        assert result.tax_kopecks == 1_300_000
+        assert list_tax_brackets(session, 2031) == []
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 # --- legacy duplicate salary entries still sum safely on read ---
 
 
