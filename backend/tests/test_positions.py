@@ -1,15 +1,18 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import create_database
+from hermes_finance.database import Database, create_database
 from hermes_finance.domain import AccountType, InstrumentType, PriceSource
 from hermes_finance.persistence import Base, PositionQuoteProvenance
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import (
     PositionSnapshotNotFoundError,
@@ -25,7 +28,7 @@ from hermes_finance.services.positions import (
 from hermes_finance.services.reporting_months import create_reporting_month
 
 
-def session_for(tmp_path: Path) -> tuple[Session, object]:
+def session_for(tmp_path: Path) -> tuple[Session, Database]:
     database = create_database(tmp_path / "positions.db")
     Base.metadata.create_all(database.engine)
     return database.session_factory(), database
@@ -40,6 +43,40 @@ def build_environment(
         session, name="Synthetic Instrument", instrument_type=instrument_type
     )
     return month.id, account.id, instrument.id
+
+
+def _run_concurrent_position_updates(
+    database: Database,
+    snapshot_id: int,
+    expected_updated_at: datetime,
+    updates: tuple[dict[str, object], dict[str, object]],
+) -> list[str]:
+    ready = Barrier(3)
+
+    def run(update: dict[str, object]) -> str:
+        session = database.session_factory()
+        try:
+            snapshot = get_position_snapshot(session, snapshot_id)
+            assert snapshot.updated_at == expected_updated_at
+            ready.wait(timeout=5)
+            try:
+                update_position_snapshot(
+                    session,
+                    snapshot_id,
+                    expected_updated_at=expected_updated_at,
+                    **update,
+                )
+            except ConcurrencyError:
+                session.rollback()
+                return "conflict"
+            return "success"
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(run, update) for update in updates]
+        ready.wait(timeout=5)
+        return [future.result(timeout=10) for future in futures]
 
 
 def test_position_metrics_are_computed_and_recomputed_on_price_change(tmp_path: Path) -> None:
@@ -66,6 +103,101 @@ def test_position_metrics_are_computed_and_recomputed_on_price_change(tmp_path: 
         updated = update_position_snapshot(session, snapshot.id, market_price_per_unit="200.00")
         assert updated.market_value_kopecks == 200_000
         assert updated.unrealized_result_kopecks == 100_000
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_concurrent_quantity_and_price_updates_have_one_atomic_winner(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=10,
+            average_cost_per_unit="50.00",
+            market_price_per_unit="100.00",
+            price_date=date(2030, 5, 12),
+        )
+        snapshot_id = snapshot.id
+        expected_updated_at = snapshot.updated_at
+        session.close()
+
+        outcomes = _run_concurrent_position_updates(
+            database,
+            snapshot_id,
+            expected_updated_at,
+            (
+                {"quantity": 20},
+                {"market_price_per_unit": "300.00"},
+            ),
+        )
+
+        assert sorted(outcomes) == ["conflict", "success"]
+        verification_session = database.session_factory()
+        try:
+            stored = get_position_snapshot(verification_session, snapshot_id)
+            stored_state = (
+                Decimal(stored.quantity),
+                stored.market_price_per_unit_kopecks,
+                stored.market_value_kopecks,
+                stored.cost_basis_kopecks,
+                stored.unrealized_result_kopecks,
+            )
+            assert stored_state in {
+                (Decimal("20.000000"), 10_000, 200_000, 100_000, 100_000),
+                (Decimal("10.000000"), 30_000, 300_000, 50_000, 250_000),
+            }
+        finally:
+            verification_session.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_concurrent_same_field_position_updates_have_one_winner(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=10,
+            average_cost_per_unit="50.00",
+            market_price_per_unit="100.00",
+            price_date=date(2030, 5, 12),
+        )
+        snapshot_id = snapshot.id
+        expected_updated_at = snapshot.updated_at
+        session.close()
+
+        outcomes = _run_concurrent_position_updates(
+            database,
+            snapshot_id,
+            expected_updated_at,
+            ({"quantity": 20}, {"quantity": 30}),
+        )
+
+        assert sorted(outcomes) == ["conflict", "success"]
+        verification_session = database.session_factory()
+        try:
+            stored = get_position_snapshot(verification_session, snapshot_id)
+            assert (
+                Decimal(stored.quantity),
+                stored.market_value_kopecks,
+                stored.cost_basis_kopecks,
+                stored.unrealized_result_kopecks,
+            ) in {
+                (Decimal("20.000000"), 200_000, 100_000, 100_000),
+                (Decimal("30.000000"), 300_000, 150_000, 150_000),
+            }
+        finally:
+            verification_session.close()
     finally:
         session.close()
         database.engine.dispose()
