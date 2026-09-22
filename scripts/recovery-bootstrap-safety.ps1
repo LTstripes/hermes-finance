@@ -500,7 +500,9 @@ function Invoke-HermesOwnedRecoveryBootstrap {
             try { $process.Kill() } catch {}
             throw "bootstrap-ownership"
         }
-        $process.StandardInput.WriteLine($token)
+        $ownershipBytes = [Text.Encoding]::ASCII.GetBytes($token + "`n")
+        $process.StandardInput.BaseStream.Write($ownershipBytes, 0, $ownershipBytes.Length)
+        $process.StandardInput.BaseStream.Flush()
         $process.StandardInput.Close()
         $completed = $process.WaitForExit($TimeoutSeconds * 1000)
         if ($completed) {
