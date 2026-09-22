@@ -1,6 +1,6 @@
 # ADR 0017 — Protected off-site recovery points and isolated recovery
 
-- **Status:** Contract-frozen design candidate; pending independent security/recovery review and project acceptance
+- **Status:** Accepted contract; implementation through #461 integrated, #462 and Owner-live completion gates pending
 - **Date:** 2026-09-18
 - **Source task:** #417-A / #458
 - **Parent contract:** #417 execution-contract freeze, `issuecomment-5731304512`
@@ -20,8 +20,10 @@ and read-back boundary.
 
 This ADR freezes the contract for the managed recovery-point publisher,
 retention, isolated disaster-recovery rehearsal, and post-restore read-state
-invalidation. It does not implement those capabilities and is not Owner UAT
-or project acceptance.
+invalidation. As of 2026-09-22, #459 publisher, #460 retention and #461 isolated
+DR implementation are accepted and integrated; #462 restore read-state work
+and the real Owner-controlled live completion gates remain pending. Acceptance
+of implementation does not equal Owner-live UAT.
 
 ## 2. At-rest protection contract
 
@@ -266,9 +268,11 @@ implement runtime behavior.
    is intentionally executed only after the backend chain stops or reaches its
    explicitly allowed gate.
 
-Project acceptance still requires independent security/recovery review and
-the Owner-controlled live gates above. A Worker or internal execution verdict
-does not equal project acceptance.
+Implementation acceptance is complete through #461, including independent
+security/recovery review and canonical exact-main verification. #462 remains
+the final implementation child, while the protected off-device recovery point,
+independently held recovery material and clean Owner DR rehearsal remain final
+Owner-controlled completion gates for parent #417.
 
 ## References
 
