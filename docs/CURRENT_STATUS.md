@@ -7,8 +7,8 @@
 ## Canonical identity
 
 - Published Stable release: **v1.0.0**.
-- Current development `main` checkpoint: `16df86d5eb3923cbe106938d6e81ec360397d00d`.
-- Current exact-main CI: **#894 / run `35734575867` — SUCCESS**.
+- Latest accepted non-documentation code checkpoint: `16df86d5eb3923cbe106938d6e81ec360397d00d`.
+- Exact-main CI for that code checkpoint: **#894 / run `35734575867` — SUCCESS**.
 - Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 - Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
 - Guarded Release run `35580890145`: **SUCCESS**.
