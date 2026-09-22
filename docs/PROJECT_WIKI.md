@@ -397,7 +397,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 / PR #473 bounded verified retention and #461 / PR #483 isolated DR implementation are integrated. Post-merge exact-main verification found a real Windows process-disposition defect; PR #499 closed it, with final canonical `main` `16df86d5eb3923cbe106938d6e81ec360397d00d` and CI #894 / `35734575867` SUCCESS. #462 focused post-restore state reload remains. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention, #461 / PR #483 isolated DR implementation and #462 / PR #502 focused post-restore state reload are integrated. Post-merge verification of #461 found a real Windows process-disposition defect; PR #499 closed it. The final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed CI #904 / `35771083594` SUCCESS. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
 
 ## 11. Что идёт дальше
 
@@ -416,11 +416,11 @@ There is no remaining cutover gate. Separate future work:
 
 ### Runtime / durability
 
-#313 завершён. #459 protected recovery-point publisher, #460 retention, #461 isolated DR implementation и #475 restore outcome semantics завершены и интегрированы.
+#313 завершён. #459 protected recovery-point publisher, #460 retention, #461 isolated DR implementation, #462 post-restore month-state reload и #475 restore outcome semantics завершены и интегрированы.
 
-Под #417:
+Под #417 implementation queue complete:
 - #461 закрыт канонически после PR #483 и follow-up PR #499;
-- #462 post-restore month-state reload остаётся следующим implementation slice;
+- #462 / PR #502 закрыт канонически на `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`, exact-main CI #904 / `35771083594` SUCCESS;
 - реальный protected off-device recovery point, independently held recovery material и clean Owner DR rehearsal остаются Owner-controlled gates.
 
 Не возрождать monolithic launcher updater.
@@ -464,12 +464,12 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; #459/#460/#461/#475 complete, #462 and Owner-live gates remain.
+- #417 — durability umbrella; implementation children #458–#462 and #475 complete, Owner-live gates remain.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #459, #460, #461, #475 and #480.
+Completed: #313, #387, #410, #429, #430, #459, #460, #461, #462, #475 and #480.
 
 ## 14. Canonical reference documents
 
