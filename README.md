@@ -102,7 +102,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 - supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
 - no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
 
-#460 bounded verified retention and #461 isolated DR rehearsal are now integrated on canonical `main`. The #461 implementation required a post-merge Windows process-disposition fix in PR #499; final canonical checkpoint `16df86d5eb3923cbe106938d6e81ec360397d00d` passed exact-main CI #894 / `35734575867`. The remaining implementation slice under #417 is #462 restore-state reload. Real protected off-device publication, independently held recovery material and the first Owner-controlled DR rehearsal remain pending Owner gates.
+#460 bounded verified retention and #461 isolated DR rehearsal are now integrated on canonical `main`. The #461 implementation required a post-merge Windows process-disposition fix in PR #499; accepted #461 code checkpoint `16df86d5eb3923cbe106938d6e81ec360397d00d` passed exact-main CI #894 / `35734575867`. The remaining implementation slice under #417 is #462 restore-state reload. Real protected off-device publication, independently held recovery material and the first Owner-controlled DR rehearsal remain pending Owner gates.
 
 ## Requirements
 
