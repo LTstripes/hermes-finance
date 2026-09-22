@@ -47,6 +47,14 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
 function renderExportPage() {
   const queryClient = createQueryClient();
   return {
@@ -553,6 +561,242 @@ describe("ExportPage", () => {
     expect(screen.queryByRole("option", { name: /Июнь.*2026/ })).not.toBeInTheDocument();
     expect(screen.getByText(preRestore.name)).toBeInTheDocument();
     expect(queryClient.getQueryState(queryKeys.accounts)?.isInvalidated).toBe(true);
+  });
+
+  it("keeps restored months authoritative when the initial request resolves last", async () => {
+    const user = userEvent.setup();
+    const initialMonthsRequest = deferredResponse();
+    const restoredMonthsRequest = deferredResponse();
+    const restoredMonths = [
+      {
+        id: 7,
+        year: 2025,
+        month: 4,
+        status: "closed" as const,
+        snapshot_date: "2025-04-30",
+        source: "restored",
+      },
+    ];
+    let monthRequestCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/months") {
+        monthRequestCount += 1;
+        return monthRequestCount === 1
+          ? initialMonthsRequest.promise
+          : restoredMonthsRequest.promise;
+      }
+      if (url === "/api/backups") {
+        return Promise.resolve(jsonResponse(backups));
+      }
+      if (url.endsWith("/restore")) {
+        return Promise.resolve(
+          jsonResponse({
+            restored_backup: backups[0],
+            pre_restore_backup: {
+              ...backups[0],
+              id: "finance_backup_pre_restore",
+              name: "finance_backup_pre_restore.sqlite3",
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    await waitFor(() => expect(monthRequestCount).toBe(2));
+
+    await act(async () => {
+      restoredMonthsRequest.resolve(jsonResponse(restoredMonths));
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("7");
+
+    await act(async () => {
+      initialMonthsRequest.resolve(jsonResponse(months));
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("7");
+    expect(screen.getByRole("option", { name: /Апрель.*2025/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps loading authoritative when the initial request resolves before the restored request", async () => {
+    const user = userEvent.setup();
+    const initialMonthsRequest = deferredResponse();
+    const restoredMonthsRequest = deferredResponse();
+    let monthRequestCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/months") {
+        monthRequestCount += 1;
+        return monthRequestCount === 1
+          ? initialMonthsRequest.promise
+          : restoredMonthsRequest.promise;
+      }
+      if (url === "/api/backups") {
+        return Promise.resolve(jsonResponse(backups));
+      }
+      if (url.endsWith("/restore")) {
+        return Promise.resolve(
+          jsonResponse({
+            restored_backup: backups[0],
+            pre_restore_backup: {
+              ...backups[0],
+              id: "finance_backup_pre_restore",
+              name: "finance_backup_pre_restore.sqlite3",
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+    await waitFor(() => expect(monthRequestCount).toBe(2));
+
+    await act(async () => {
+      initialMonthsRequest.resolve(jsonResponse(months));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Загружаем месяцы…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Месяц отчёта")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+
+    await act(async () => {
+      restoredMonthsRequest.resolve(
+        jsonResponse([
+          {
+            id: 8,
+            year: 2025,
+            month: 5,
+            status: "draft",
+            snapshot_date: "2025-05-31",
+            source: "restored",
+          },
+        ]),
+      );
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Месяц отчёта")).toHaveValue("8");
+  });
+
+  it("keeps confirmed restore success separate from a failed month reload", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          restored_backup: backups[0],
+          pre_restore_backup: {
+            ...backups[0],
+            id: "finance_backup_pre_restore",
+            name: "finance_backup_pre_restore.sqlite3",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: { code: "internal_error", message: "Month read failed", details: [] } },
+          500,
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    expect(screen.getByText("Не удалось загрузить месяцы")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Месяц отчёта")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Июль.*2026/ })).not.toBeInTheDocument();
+  });
+
+  it("selects the newest restored month after sorting an out-of-order response", async () => {
+    const user = userEvent.setup();
+    const restoredMonths = [
+      {
+        id: 20,
+        year: 2024,
+        month: 12,
+        status: "closed" as const,
+        snapshot_date: "2024-12-31",
+        source: "restored",
+      },
+      {
+        id: 22,
+        year: 2025,
+        month: 11,
+        status: "draft" as const,
+        snapshot_date: "2025-11-30",
+        source: "restored",
+      },
+      {
+        id: 21,
+        year: 2026,
+        month: 1,
+        status: "closed" as const,
+        snapshot_date: "2026-01-31",
+        source: "restored",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(months))
+      .mockResolvedValueOnce(jsonResponse(backups))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          restored_backup: backups[0],
+          pre_restore_backup: {
+            ...backups[0],
+            id: "finance_backup_pre_restore",
+            name: "finance_backup_pre_restore.sqlite3",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(restoredMonths));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderExportPage();
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Восстановить",
+      }),
+    );
+
+    expect(await screen.findByText(/База восстановлена/i)).toBeInTheDocument();
+    const select = screen.getByLabelText("Месяц отчёта");
+    expect(select).toHaveValue("21");
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.getAttribute("value")),
+    ).toEqual(["21", "22", "20"]);
   });
 
   it("preserves the selected month only when it exists in the restored database", async () => {

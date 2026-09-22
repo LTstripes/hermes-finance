@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -32,6 +32,7 @@ import { MONTH_STATUS_LABELS, labelOf } from "../lib/labels";
 
 export function ExportPage() {
   const queryClient = useQueryClient();
+  const monthRequestGeneration = useRef(0);
   const [months, setMonths] = useState<ReportingMonth[]>([]);
   const [selectedMonthId, setSelectedMonthId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,11 +53,14 @@ export function ExportPage() {
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
 
   const loadMonths = useCallback(async (signal?: AbortSignal) => {
+    const requestGeneration = ++monthRequestGeneration.current;
+    const isCurrentRequest = () =>
+      requestGeneration === monthRequestGeneration.current && !signal?.aborted;
     setLoading(true);
     setLoadingError(null);
     try {
       const data = await listMonths(signal);
-      if (signal?.aborted) {
+      if (!isCurrentRequest()) {
         return;
       }
       const ordered = [...data].sort((a, b) => b.year - a.year || b.month - a.month);
@@ -65,14 +69,14 @@ export function ExportPage() {
         ordered.some((month) => month.id === current) ? current : (ordered[0]?.id ?? null),
       );
     } catch (error) {
-      if (signal?.aborted) {
+      if (!isCurrentRequest()) {
         return;
       }
       setLoadingError(formatApiError(error));
       setMonths([]);
       setSelectedMonthId(null);
     } finally {
-      if (!signal?.aborted) {
+      if (isCurrentRequest()) {
         setLoading(false);
       }
     }
