@@ -104,6 +104,7 @@ def move_monthly_comment(
     comments.pop(current_index)
     comments.insert(target_index, comment)
     _reposition(session, comments)
+    session.commit()
     session.refresh(comment)
     return comment
 
@@ -115,7 +116,6 @@ def _reposition(session: Session, comments: list[MonthlyComment]) -> None:
     session.flush()
     for index, item in enumerate(comments):
         item.position = index + 1
-    session.commit()
 
 
 def delete_monthly_comment(session: Session, comment_id: int) -> None:
@@ -123,7 +123,8 @@ def delete_monthly_comment(session: Session, comment_id: int) -> None:
     require_editable_child_month(session, comment)
     month_id = comment.reporting_month_id
     session.delete(comment)
-    session.commit()
+    session.flush()
     remaining = _comments_for_month(session, month_id)
     if remaining:
         _reposition(session, remaining)
+    session.commit()
