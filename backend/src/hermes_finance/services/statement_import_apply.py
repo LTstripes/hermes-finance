@@ -36,7 +36,11 @@ from hermes_finance.services.investment_cash_flows import (
     stage_create_investment_cash_flow,
     stage_update_investment_cash_flow,
 )
-from hermes_finance.services.reporting_months import get_reporting_month_by_period
+from hermes_finance.services.reporting_months import (
+    ClosedReportingMonthError,
+    ReportingMonthNotFoundError,
+    get_reporting_month_by_period,
+)
 from hermes_finance.services.statement_import_preparation import (
     find_conservative_cash_flow_candidates,
 )
@@ -267,6 +271,12 @@ def apply_income_report_preview(
 
     item_results: list[StatementApplyItemResult] = []
     try:
+        # The preview/plan reads do not reserve a SQLite writer. Protect the
+        # entire selected write set, including link-existing provenance rows.
+        for month_id in sorted(
+            {plan.reporting_month_id for plan in plans if plan.writes and plan.reporting_month_id}
+        ):
+            require_editable_reporting_month(session, month_id)
         wrote = False
         for plan in plans:
             item = _stage_plan(
@@ -280,6 +290,20 @@ def apply_income_report_preview(
                 wrote = True
         if wrote:
             session.commit()
+    except ClosedReportingMonthError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            StatementApplyFailureCode.CLOSED_MONTH,
+            "closed reporting month must be reopened before statement apply",
+        )
+    except ReportingMonthNotFoundError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            StatementApplyFailureCode.MISSING_REPORTING_MONTH,
+            "reporting month for the payment date does not exist",
+        )
     except Exception:
         session.rollback()
         return _failure(
