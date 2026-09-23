@@ -592,6 +592,30 @@ def test_comment_delete_keeps_reposition_inside_guarded_commit(
         database.engine.dispose()
 
 
+def test_noop_comment_move_releases_writer_for_close(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        first = create_monthly_comment(session, reporting_month_id=month.id, text="First")
+        create_monthly_comment(session, reporting_month_id=month.id, text="Second")
+
+        moved = move_monthly_comment(session, first.id, new_position=1)
+        assert moved.id == first.id
+        assert moved.position == 1
+
+        # Keep the original Session open. Close must be able to write at once,
+        # even if this successful move changed no comment positions.
+        with database.session_factory() as closer:
+            closer.execute(text("PRAGMA busy_timeout=0"))
+            close_reporting_month(closer, month.id)
+        assert not session.in_transaction()
+        session.expire_all()
+        assert session.get(type(month), month.id).status == "closed"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_closed_month_does_not_block_global_entities(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:

@@ -100,6 +100,8 @@ def move_monthly_comment(
     current_index = next(i for i, item in enumerate(comments) if item.id == comment_id)
     target_index = min(new_position - 1, len(comments) - 1)
     if target_index == current_index:
+        # A successful no-op must release the shared guard's SQLite writer reservation.
+        session.commit()
         return comment
     comments.pop(current_index)
     comments.insert(target_index, comment)
