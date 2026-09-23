@@ -1529,7 +1529,7 @@ def test_ai_financial_review_preserves_authoritative_context_and_zero_unknown_st
     assert _table_counts(database) == before
 
 
-def test_ai_financial_review_matches_duplicate_rows_fifo_and_synthetic_cash_ref(
+def test_ai_financial_review_matches_duplicate_rows_by_cash_identity_and_preserves_unassigned_ref(
     app_context: tuple[TestClient, Database],
 ) -> None:
     client, database = app_context
@@ -1600,9 +1600,125 @@ def test_ai_financial_review_matches_duplicate_rows_fifo_and_synthetic_cash_ref(
         "second deposit row",
     ]
     assert [item["notes"] for item in cash_rows] == ["first cash row", "second cash row"]
-    assert len({item["account_ref"] for item in cash_rows}) == 1
-    assert cash_rows[0]["account_ref"].startswith("acct-cash-balances")
+    account_refs = {item["name"]: item["ref"] for item in portfolio["accounts"]}
+    cash_refs_by_notes = {item["notes"]: item["account_ref"] for item in cash_rows}
+    assert cash_refs_by_notes["first cash row"].startswith("acct-cash-balances")
+    assert cash_refs_by_notes["second cash row"] == account_refs["Synthetic Brokerage"]
     assert _table_counts(database) == before
+
+
+def test_ai_cash_identity_survives_bundle_package_and_review_with_linked_pair(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    wallet = _ok(
+        client.post("/api/accounts", json={"name": "Synthetic Wallet", "account_type": "cash"})
+    )["id"]
+    savings = _ok(
+        client.post("/api/accounts", json={"name": "Synthetic Savings", "account_type": "cash"})
+    )["id"]
+    month_id = _create_month(client, 2038, 5)
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": wallet,
+                "name": "Wallet balance",
+                "amount": _money("10.00"),
+            },
+        )
+    )
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": savings,
+                "name": "Savings balance",
+                "amount": _money("100.00"),
+            },
+        )
+    )
+    debt_id = _ok(
+        client.post(
+            "/api/debts",
+            json={
+                "reporting_month_id": month_id,
+                "debt_type": "credit_card",
+                "name": "Synthetic linked debt",
+                "current_balance": _money("40.00"),
+            },
+        )
+    )["id"]
+    _ok(
+        client.put(f"/api/debts/{debt_id}/linked-account", json={"account_id": savings}), status=200
+    )
+    _close(client, month_id)
+
+    bundle_response = _export(client)
+    assert bundle_response.status_code == 200, bundle_response.text
+    bundle = bundle_response.json()
+    _validator().validate(bundle)
+    bundle_portfolio = bundle["current_portfolio"]
+    bundle_account_refs = {item["name"]: item["ref"] for item in bundle_portfolio["accounts"]}
+    expected_cash = {
+        "Wallet balance": ("Synthetic Wallet", "10.00"),
+        "Savings balance": ("Synthetic Savings", "100.00"),
+    }
+    bundle_cash = {item["name"]: item for item in bundle_portfolio["cash_balances"]}
+    assert {
+        name: (row["account_ref"], row["amount"]["value"]["amount"])
+        for name, row in bundle_cash.items()
+    } == {
+        name: (bundle_account_refs[account_name], amount)
+        for name, (account_name, amount) in expected_cash.items()
+    }
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    package_cash = package["sections"]["positions"]["data"]["cash_balances"]
+    assert {
+        item["name"]: (item["account_ref"], item["amount"]["value"]["amount"])
+        for item in package_cash
+    } == {
+        name: (bundle_account_refs[account_name], amount)
+        for name, (account_name, amount) in expected_cash.items()
+    }
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    _financial_review_validator().validate(review)
+    review_portfolio = review["sections"]["current_portfolio"]["data"]
+    review_cash = {
+        item["name"]: (item["account_ref"], item["amount"]["value"]["amount"])
+        for item in review_portfolio["cash_balances"]
+    }
+    assert review_cash == {
+        name: (bundle_account_refs[account_name], amount)
+        for name, (account_name, amount) in expected_cash.items()
+    }
+
+    linked_pair = review["sections"]["current_capital"]["data"]["linked_pairs"]
+    assert len(linked_pair) == 1
+    assert linked_pair[0]["account_ref"] == bundle_account_refs["Synthetic Savings"]
+    assert linked_pair[0]["gross_asset_balance"]["value"]["amount"] == "100.00"
+    assert linked_pair[0]["gross_linked_debt_balance"]["value"]["amount"] == "40.00"
+    assert linked_pair[0]["net_economic_contribution"]["value"]["amount"] == "60.00"
+
+    current_capital = review["sections"]["current_capital"]["data"]
+    assert current_capital["liquid_assets_total"]["value"]["amount"] == "110.00"
+    assert current_capital["included_debts"]["value"]["amount"] == "40.00"
+    assert current_capital["liquid_capital_net"]["value"]["amount"] == "70.00"
 
 
 def test_ai_financial_review_merges_freshness_summary_and_bundle_valuation_fields(
