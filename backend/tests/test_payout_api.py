@@ -177,8 +177,9 @@ def test_preview_uses_local_mapping_exact_horizon_and_reads_closed_month(tmp_pat
         database.engine.dispose()
 
 
+@pytest.mark.parametrize("batch", [False, True])
 def test_payout_preview_context_and_local_rows_share_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, batch: bool
 ) -> None:
     database = database_for(tmp_path)
     provider = RecordingPayoutProvider()
@@ -188,34 +189,155 @@ def test_payout_preview_context_and_local_rows_share_snapshot(
         with database.engine.connect() as connection:
             assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
 
-        real_fetch = payout_api._safe_fetch
+        real_resolve = payout_api._resolve_context
         writer_committed = False
 
-        def interleaved_fetch(*args, **kwargs):
+        def interleaved_resolve(*args, **kwargs):
             nonlocal writer_committed
-            result = real_fetch(*args, **kwargs)
-            if not writer_committed:
+            result = real_resolve(*args, **kwargs)
+            if (
+                not writer_committed
+                and args[0].connection().connection.driver_connection.in_transaction
+            ):
                 writer_committed = True
                 with database.session_factory() as writer:
                     update_position_snapshot(writer, snapshot_id, quantity="3")
             return result
 
-        monkeypatch.setattr(payout_api, "_safe_fetch", interleaved_fetch)
+        monkeypatch.setattr(payout_api, "_resolve_context", interleaved_resolve)
         with TestClient(create_app(database, payout_provider=provider)) as client:
-            response = client.post(
-                f"/api/months/{month_id}/payout-preview",
-                json=context_payload(account_id, instrument_id, snapshot_id),
-            )
+            if batch:
+                response = client.post(
+                    f"/api/months/{month_id}/payout-batch-preview",
+                    json={"forecast_version": "v1"},
+                )
+            else:
+                response = client.post(
+                    f"/api/months/{month_id}/payout-preview",
+                    json=context_payload(account_id, instrument_id, snapshot_id),
+                )
             assert response.status_code == 200, response.text
             assert writer_committed
-            assert Decimal(response.json()["quantity"]) == Decimal("2")
+            preview = response.json()["items"][0]["preview"] if batch else response.json()
+            assert Decimal(preview["quantity"]) == Decimal("2")
 
-            fresh = client.post(
-                f"/api/months/{month_id}/payout-preview",
-                json=context_payload(account_id, instrument_id, snapshot_id),
-            )
+            if batch:
+                fresh = client.post(
+                    f"/api/months/{month_id}/payout-batch-preview",
+                    json={"forecast_version": "v1"},
+                )
+            else:
+                fresh = client.post(
+                    f"/api/months/{month_id}/payout-preview",
+                    json=context_payload(account_id, instrument_id, snapshot_id),
+                )
             assert fresh.status_code == 200, fresh.text
-            assert Decimal(fresh.json()["quantity"]) == Decimal("3")
+            fresh_preview = fresh.json()["items"][0]["preview"] if batch else fresh.json()
+            assert Decimal(fresh_preview["quantity"]) == Decimal("3")
+    finally:
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_payout_provider_fetch_allows_normal_journal_writer_and_uses_fresh_local_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, batch: bool
+) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as setup:
+            month_id, account_id, instrument_id, snapshot_id = build_environment(setup)
+        with database.engine.connect() as connection:
+            assert connection.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "delete"
+
+        real_fetch = provider.fetch_payouts
+        with database.session_factory() as reader:
+            app = create_app(database, payout_provider=provider)
+            app.dependency_overrides[payout_api.session_for_request] = lambda: reader
+            manual_id = None
+
+            def fetch_with_writer(request: PayoutFetchRequest) -> PayoutFetchResult:
+                nonlocal manual_id
+                driver = reader.connection().connection.driver_connection
+                assert driver.in_transaction is False
+                assert driver.execute("PRAGMA query_only").fetchone() == (0,)
+                with database.session_factory() as writer:
+                    manual = create_expected_cash_flow(
+                        writer,
+                        reporting_month_id=month_id,
+                        account_id=account_id,
+                        instrument_id=instrument_id,
+                        flow_type=ExpectedCashFlowType.COUPON,
+                        expected_date=date(2030, 6, 15),
+                        gross_amount="100.00",
+                        expected_tax_amount=None,
+                        expected_net_amount=None,
+                        source="synthetic owner manual",
+                        source_as_of_date=date(2030, 5, 12),
+                        forecast_version="v1",
+                    )
+                    manual_id = manual.id
+                return real_fetch(request)
+
+            monkeypatch.setattr(provider, "fetch_payouts", fetch_with_writer)
+            with TestClient(app) as client:
+                if batch:
+                    response = client.post(
+                        f"/api/months/{month_id}/payout-batch-preview",
+                        json={"forecast_version": "v1"},
+                    )
+                else:
+                    response = client.post(
+                        f"/api/months/{month_id}/payout-preview",
+                        json=context_payload(account_id, instrument_id, snapshot_id),
+                    )
+            assert response.status_code == 200, response.text
+            preview = response.json()["items"][0]["preview"] if batch else response.json()
+            [row] = preview["rows"]
+            assert row["status"] == "possible_manual_duplicate"
+            assert row["manual_candidate_ids"] == [manual_id]
+    finally:
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("change", ["quantity", "mapping"])
+def test_payout_preview_rejects_material_context_change_during_provider_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, batch: bool, change: str
+) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as setup:
+            month_id, account_id, instrument_id, snapshot_id = build_environment(setup)
+        real_fetch = provider.fetch_payouts
+
+        def fetch_after_context_change(request: PayoutFetchRequest) -> PayoutFetchResult:
+            with database.session_factory() as writer:
+                if change == "quantity":
+                    update_position_snapshot(writer, snapshot_id, quantity="3")
+                else:
+                    accept_t_invest_mapping(
+                        writer, instrument_id, OTHER_UID, kind=InstrumentType.BOND
+                    )
+            return real_fetch(request)
+
+        monkeypatch.setattr(provider, "fetch_payouts", fetch_after_context_change)
+        with TestClient(create_app(database, payout_provider=provider)) as client:
+            if batch:
+                response = client.post(
+                    f"/api/months/{month_id}/payout-batch-preview",
+                    json={"forecast_version": "v1"},
+                )
+            else:
+                response = client.post(
+                    f"/api/months/{month_id}/payout-preview",
+                    json=context_payload(account_id, instrument_id, snapshot_id),
+                )
+        assert response.status_code == 409, response.text
+        assert "request a new preview" in response.text
+        assert len(provider.requests) == 1
+        assert provider.requests[0].instrument_uid == UID
     finally:
         database.engine.dispose()
 

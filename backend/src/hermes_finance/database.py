@@ -189,6 +189,11 @@ def coherent_read_snapshot(session: Session) -> Iterator[None]:
             "coherent read snapshot requires no pre-existing SQLite transaction"
         )
 
+    # A reused Session may hold rows materialized before this physical snapshot.
+    # Expire only at the outer boundary, after excluding pending/flushed writes,
+    # so ORM identity-map hits must reload from the newly pinned SQLite state.
+    session.expire_all()
+
     commit_guard_installed = False
     query_only_may_be_enabled = False
     depth_set = False

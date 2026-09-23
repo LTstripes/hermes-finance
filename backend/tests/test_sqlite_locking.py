@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import date
 from pathlib import Path
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.exc import OperationalError
 
 from hermes_finance import database as database_module
@@ -16,8 +18,36 @@ from hermes_finance.database import (
     coherent_read_snapshot,
     create_database,
 )
+from hermes_finance.persistence import Base, ReportingMonth
+from hermes_finance.services.reporting_months import create_reporting_month
 
 SQLITE_DEFAULT_BUSY_TIMEOUT_MS = 5_000
+
+
+def test_new_coherent_snapshot_expires_previously_loaded_orm_state(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "stale-identity-map.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with database.session_factory() as setup:
+            month_id = create_reporting_month(
+                setup, year=2030, month=5, snapshot_date=date(2030, 5, 12)
+            ).id
+        with database.session_factory() as reader:
+            cached = reader.get(ReportingMonth, month_id)
+            assert cached is not None and cached.status == "draft"
+            with database.session_factory() as writer:
+                writer.execute(
+                    update(ReportingMonth)
+                    .where(ReportingMonth.id == month_id)
+                    .values(status="closed")
+                )
+                writer.commit()
+
+            with coherent_read_snapshot(reader):
+                assert reader.get(ReportingMonth, month_id) is cached
+                assert cached.status == "closed"
+    finally:
+        database.engine.dispose()
 
 
 def _run_contended_write(
