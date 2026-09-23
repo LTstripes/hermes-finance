@@ -1,13 +1,16 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import create_database
+from hermes_finance.database import Database, create_database
 from hermes_finance.domain import AccountType, DepositType, PercentageRate
 from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.deposits import (
     DepositSnapshotNotFoundError,
     create_deposit_snapshot,
@@ -19,7 +22,7 @@ from hermes_finance.services.deposits import (
 from hermes_finance.services.reporting_months import create_reporting_month
 
 
-def session_for(tmp_path: Path) -> tuple[Session, object]:
+def session_for(tmp_path: Path) -> tuple[Session, Database]:
     database = create_database(tmp_path / "deposits.db")
     Base.metadata.create_all(database.engine)
     return database.session_factory(), database
@@ -91,6 +94,71 @@ def test_deposit_update_recomputes_expected_interest(tmp_path: Path) -> None:
         assert updated.balance_kopecks == 20_000_000
         assert updated.annual_rate_basis_points == 600
         assert updated.expected_monthly_interest_kopecks == 100_000
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_concurrent_balance_and_rate_updates_have_one_atomic_winner(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id = build_environment(session)
+        snapshot = create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Synthetic Deposit",
+            deposit_type=DepositType.DEPOSIT,
+            balance="100000.00",
+            annual_rate="12.00",
+        )
+        snapshot_id = snapshot.id
+        expected_updated_at = snapshot.updated_at
+        session.close()
+        ready = Barrier(3)
+
+        def run(update: dict[str, object]) -> str:
+            worker_session = database.session_factory()
+            try:
+                observed = get_deposit_snapshot(worker_session, snapshot_id)
+                assert observed.updated_at == expected_updated_at
+                ready.wait(timeout=5)
+                try:
+                    update_deposit_snapshot(
+                        worker_session,
+                        snapshot_id,
+                        expected_updated_at=expected_updated_at,
+                        **update,
+                    )
+                except ConcurrencyError:
+                    worker_session.rollback()
+                    return "conflict"
+                return "success"
+            finally:
+                worker_session.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(run, {"balance": "240000.00"}),
+                executor.submit(run, {"annual_rate": "6.00"}),
+            ]
+            ready.wait(timeout=5)
+            outcomes = [future.result(timeout=10) for future in futures]
+
+        assert sorted(outcomes) == ["conflict", "success"]
+        verification_session = database.session_factory()
+        try:
+            stored = get_deposit_snapshot(verification_session, snapshot_id)
+            assert (
+                stored.balance_kopecks,
+                stored.annual_rate_basis_points,
+                stored.expected_monthly_interest_kopecks,
+            ) in {
+                (24_000_000, 1_200, 240_000),
+                (10_000_000, 600, 50_000),
+            }
+        finally:
+            verification_session.close()
     finally:
         session.close()
         database.engine.dispose()
