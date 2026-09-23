@@ -29,6 +29,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.cash_flows import ExpectedCashFlowType
 from hermes_finance.domain.forecast_passive_income import (
     ExpectedFlow,
@@ -50,6 +51,7 @@ from hermes_finance.services.reporting_months import get_reporting_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 
+@coherent_read_operation
 def forecast_passive_income(
     session: Session,
     reporting_month_id: int,

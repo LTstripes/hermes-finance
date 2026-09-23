@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
 from hermes_finance.domain.values import FINANCIAL_ROUNDING, PercentageRate, RubleAmount
 from hermes_finance.persistence import (
@@ -514,6 +515,7 @@ def _settings(session: Session) -> AppSettings | None:
     return session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
 
 
+@coherent_read_operation
 def assemble_ai_analysis_bundle(
     session: Session,
     *,

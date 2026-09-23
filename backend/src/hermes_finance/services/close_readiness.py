@@ -14,6 +14,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.persistence import (
     Account,
     AppliedPayoutReconciliation,
@@ -403,6 +404,7 @@ def _closed_month_items(status: str) -> list[CloseReadinessItem]:
     ]
 
 
+@coherent_read_operation
 def build_close_readiness(
     session: Session,
     month_id: int,

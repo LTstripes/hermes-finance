@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,6 +11,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.dashboard import dashboard_to_out
 from hermes_finance.api.json_export import build_json_export, build_raw_source_data
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
@@ -28,7 +31,6 @@ from hermes_finance.services.goal_achievement import build_goal_achievement_summ
 from hermes_finance.services.goals import (
     DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
     MainGoalSelectionError,
-    list_goals,
 )
 from hermes_finance.services.incomes import list_income_entries
 from hermes_finance.services.investment_cash_flows import list_investment_cash_flows
@@ -43,13 +45,33 @@ from hermes_finance.services.markdown_export import (
 )
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
 from hermes_finance.services.reporting_months import get_reporting_month
-from hermes_finance.services.tax_brackets import get_or_create_default_tax_brackets
 
 router = APIRouter(prefix="/api/months", tags=["exports"])
 
 
-def _prepare_read_only_defaults(session: Session, year: int) -> None:
-    """Make lazy calculation defaults transient for this read-only request."""
+@dataclass(frozen=True, slots=True)
+class _ReadOnlyDefaults:
+    settings: AppSettings
+    goals: tuple[Goal, ...]
+
+
+def _copy_goal(goal: Goal, *, is_main: bool) -> Goal:
+    return Goal(
+        id=goal.id,
+        name=goal.name,
+        goal_type=goal.goal_type,
+        target_value_kopecks=goal.target_value_kopecks,
+        target_date=goal.target_date,
+        is_active=goal.is_active,
+        is_main=is_main,
+        calculation_mode=goal.calculation_mode,
+        notes=goal.notes,
+    )
+
+
+def _read_only_defaults(session: Session) -> _ReadOnlyDefaults:
+    """Resolve export defaults in memory without staging persistence writes."""
+
     settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
     if settings is None:
         settings = AppSettings(
@@ -60,18 +82,12 @@ def _prepare_read_only_defaults(session: Session, year: int) -> None:
             passive_income_goal_kopecks=DEFAULT_PASSIVE_INCOME_GOAL_KOPECKS,
             formula_version=DEFAULT_FORMULA_VERSION,
         )
-        session.add(settings)
-        session.flush()
 
-    main_goal = session.execute(select(Goal).where(Goal.is_main.is_(True))).scalar_one_or_none()
+    goals = tuple(session.scalars(select(Goal).order_by(Goal.id)))
+    main_goal = next((goal for goal in goals if goal.is_main), None)
     if main_goal is None:
-        candidates = list(
-            session.scalars(
-                select(Goal).where(
-                    Goal.goal_type == "passive_income",
-                    Goal.is_active.is_(True),
-                )
-            )
+        candidates = tuple(
+            goal for goal in goals if goal.goal_type == "passive_income" and goal.is_active
         )
         if len(candidates) > 1:
             raise MainGoalSelectionError(
@@ -80,10 +96,14 @@ def _prepare_read_only_defaults(session: Session, year: int) -> None:
             )
         if candidates:
             main_goal = candidates[0]
-            main_goal.is_main = True
+            goals = tuple(
+                _copy_goal(goal, is_main=True) if goal.id == main_goal.id else goal
+                for goal in goals
+            )
     if main_goal is None:
-        session.add(
+        goals += (
             Goal(
+                id=0,
                 name="Пассивный доход в месяц",
                 goal_type="passive_income",
                 target_value_kopecks=settings.passive_income_goal_kopecks,
@@ -92,11 +112,9 @@ def _prepare_read_only_defaults(session: Session, year: int) -> None:
                 is_main=True,
                 calculation_mode=DEFAULT_PASSIVE_INCOME_CALCULATION_MODE,
                 notes=None,
-            )
+            ),
         )
-        session.flush()
-
-    get_or_create_default_tax_brackets(session, year, commit=False)
+    return _ReadOnlyDefaults(settings=settings, goals=goals)
 
 
 def _report_for_month(
@@ -104,9 +122,9 @@ def _report_for_month(
     month_id: int,
     *,
     forecast_version: str,
+    defaults: _ReadOnlyDefaults | None = None,
 ) -> MarkdownReport:
-    month = get_reporting_month(session, month_id)
-    _prepare_read_only_defaults(session, month.year)
+    defaults = defaults or _read_only_defaults(session)
     dashboard = build_dashboard(session, month_id, forecast_version=forecast_version)
     goal_achievement_by_id = {
         item.goal.id: item.achievement_forecast
@@ -174,10 +192,15 @@ def _report_for_month(
                 if item.goal_type == "passive_income"
                 and item.is_main
                 and item.id in goal_achievement_by_id
-                else None
+                else (
+                    dashboard.summary.coverage.goal_progress_pct
+                    if item.goal_type == "passive_income" and item.is_main
+                    else None
+                )
             ),
         )
-        for item in list_goals(session)
+        for item in defaults.goals
+        if item.is_active
     )
     comments = tuple(item.text for item in list_monthly_comments(session, month_id))
     return MarkdownReport(
@@ -198,12 +221,13 @@ def export_markdown(
     session: Session = Depends(session_for_request),
 ) -> Response:
     try:
-        report = _report_for_month(session, month_id, forecast_version=forecast_version)
-        content = render_markdown_report(report)
-        filename = (
-            f"finance_report_{report.dashboard.month.year:04d}-"
-            f"{report.dashboard.month.month:02d}.md"
-        )
+        with coherent_read_snapshot(session):
+            report = _report_for_month(session, month_id, forecast_version=forecast_version)
+            content = render_markdown_report(report)
+            filename = (
+                f"finance_report_{report.dashboard.month.year:04d}-"
+                f"{report.dashboard.month.month:02d}.md"
+            )
         return Response(
             content=content,
             media_type="text/markdown",
@@ -220,18 +244,30 @@ def export_json(
     session: Session = Depends(session_for_request),
 ) -> Response:
     try:
-        month = get_reporting_month(session, month_id)
-        _prepare_read_only_defaults(session, month.year)
-        raw = build_raw_source_data(session, month)
-        report = _report_for_month(session, month_id, forecast_version=forecast_version)
-        payload = build_json_export(
-            raw=raw,
-            dashboard=dashboard_to_out(report.dashboard),
-            report=report,
-        )
-        filename = f"finance_data_{month.year:04d}-{month.month:02d}.json"
+        with coherent_read_snapshot(session):
+            month = get_reporting_month(session, month_id)
+            defaults = _read_only_defaults(session)
+            raw = build_raw_source_data(
+                session,
+                month,
+                settings=defaults.settings,
+                goals=defaults.goals,
+            )
+            report = _report_for_month(
+                session,
+                month_id,
+                forecast_version=forecast_version,
+                defaults=defaults,
+            )
+            payload = build_json_export(
+                raw=raw,
+                dashboard=dashboard_to_out(report.dashboard),
+                report=report,
+            )
+            content = payload.model_dump_json(indent=2)
+            filename = f"finance_data_{month.year:04d}-{month.month:02d}.json"
         return Response(
-            content=payload.model_dump_json(indent=2),
+            content=content,
             media_type="application/json",
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',

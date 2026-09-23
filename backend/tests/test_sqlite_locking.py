@@ -4,11 +4,50 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import date
 from pathlib import Path
 
-from hermes_finance.database import create_database
+import pytest
+from sqlalchemy import update
+from sqlalchemy.exc import OperationalError
+
+from hermes_finance import database as database_module
+from hermes_finance.database import (
+    ReadSnapshotCleanupError,
+    ReadSnapshotMutationError,
+    coherent_read_snapshot,
+    create_database,
+)
+from hermes_finance.persistence import Base, ReportingMonth
+from hermes_finance.services.reporting_months import create_reporting_month
 
 SQLITE_DEFAULT_BUSY_TIMEOUT_MS = 5_000
+
+
+def test_new_coherent_snapshot_expires_previously_loaded_orm_state(tmp_path: Path) -> None:
+    database = create_database(tmp_path / "stale-identity-map.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with database.session_factory() as setup:
+            month_id = create_reporting_month(
+                setup, year=2030, month=5, snapshot_date=date(2030, 5, 12)
+            ).id
+        with database.session_factory() as reader:
+            cached = reader.get(ReportingMonth, month_id)
+            assert cached is not None and cached.status == "draft"
+            with database.session_factory() as writer:
+                writer.execute(
+                    update(ReportingMonth)
+                    .where(ReportingMonth.id == month_id)
+                    .values(status="closed")
+                )
+                writer.commit()
+
+            with coherent_read_snapshot(reader):
+                assert reader.get(ReportingMonth, month_id) is cached
+                assert cached.status == "closed"
+    finally:
+        database.engine.dispose()
 
 
 def _run_contended_write(
@@ -107,3 +146,159 @@ def test_sqlite_lock_policy_keeps_rollback_journal_and_waits_for_short_contentio
     assert not Path(f"{database_path}-shm").exists()
     assert not (tmp_path / "read-write.db-wal").exists()
     assert not (tmp_path / "read-write.db-shm").exists()
+
+
+def test_coherent_read_snapshot_is_nested_read_only_and_releases_on_error(
+    tmp_path: Path,
+) -> None:
+    database = create_database(tmp_path / "read-snapshot.db")
+    try:
+        with database.engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE snapshot_probe (value INTEGER NOT NULL)")
+            connection.exec_driver_sql("INSERT INTO snapshot_probe (value) VALUES (1)")
+
+        with database.session_factory() as session:
+            with pytest.raises(RuntimeError, match="synthetic read failure"):
+                with coherent_read_snapshot(session):
+                    driver = session.connection().connection.driver_connection
+                    assert driver.in_transaction is True
+                    assert driver.execute("PRAGMA query_only").fetchone() == (1,)
+                    with coherent_read_snapshot(session):
+                        assert session.connection().connection.driver_connection is driver
+                        assert (
+                            session.connection()
+                            .exec_driver_sql("SELECT value FROM snapshot_probe")
+                            .scalar_one()
+                            == 1
+                        )
+                    raise RuntimeError("synthetic read failure")
+
+            driver = session.connection().connection.driver_connection
+            assert driver.in_transaction is False
+            assert driver.execute("PRAGMA query_only").fetchone() == (0,)
+
+            with pytest.raises(OperationalError, match="attempt to write a readonly database"):
+                with coherent_read_snapshot(session):
+                    session.connection().exec_driver_sql(
+                        "INSERT INTO snapshot_probe (value) VALUES (2)"
+                    )
+
+            assert driver.in_transaction is False
+            assert driver.execute("PRAGMA query_only").fetchone() == (0,)
+
+            with pytest.raises(
+                RuntimeError,
+                match="cannot be committed inside the protected operation",
+            ):
+                with coherent_read_snapshot(session):
+                    session.commit()
+
+            with coherent_read_snapshot(session):
+                assert (
+                    session.connection()
+                    .exec_driver_sql("SELECT value FROM snapshot_probe")
+                    .scalar_one()
+                    == 1
+                )
+            assert driver.in_transaction is False
+            assert driver.execute("PRAGMA query_only").fetchone() == (0,)
+
+            assert (
+                session.connection()
+                .exec_driver_sql("SELECT count(*) FROM snapshot_probe")
+                .scalar_one()
+                == 1
+            )
+    finally:
+        database.engine.dispose()
+
+
+def test_coherent_read_snapshot_rejects_a_preexisting_flushed_transaction(
+    tmp_path: Path,
+) -> None:
+    database = create_database(tmp_path / "preexisting-transaction.db")
+    try:
+        with database.engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE snapshot_probe (value INTEGER NOT NULL)")
+
+        with database.session_factory() as session:
+            session.connection().exec_driver_sql("INSERT INTO snapshot_probe (value) VALUES (1)")
+            driver = session.connection().connection.driver_connection
+            assert driver.in_transaction is True
+            assert not session.new and not session.dirty and not session.deleted
+
+            with pytest.raises(
+                ReadSnapshotMutationError,
+                match="requires no pre-existing SQLite transaction",
+            ):
+                with coherent_read_snapshot(session):
+                    pass
+
+            assert driver.in_transaction is True
+            session.rollback()
+
+        with database.engine.connect() as connection:
+            assert (
+                connection.exec_driver_sql("SELECT count(*) FROM snapshot_probe").scalar_one() == 0
+            )
+    finally:
+        database.engine.dispose()
+
+
+def test_coherent_read_snapshot_restores_query_only_when_begin_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = create_database(tmp_path / "begin-failure.db")
+    try:
+        with database.engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE snapshot_probe (value INTEGER NOT NULL)")
+
+        def fail_begin(_connection) -> None:
+            raise RuntimeError("synthetic begin failure")
+
+        monkeypatch.setattr(database_module, "_begin_sqlite_read_snapshot", fail_begin)
+        with database.session_factory() as session:
+            driver = session.connection().connection.driver_connection
+            with pytest.raises(RuntimeError, match="synthetic begin failure"):
+                with coherent_read_snapshot(session):
+                    pass
+            assert driver.in_transaction is False
+            assert driver.execute("PRAGMA query_only").fetchone() == (0,)
+
+        with database.engine.begin() as connection:
+            connection.exec_driver_sql("INSERT INTO snapshot_probe (value) VALUES (1)")
+    finally:
+        database.engine.dispose()
+
+
+def test_coherent_read_snapshot_invalidates_connection_when_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = create_database(tmp_path / "cleanup-failure.db")
+    try:
+        with database.engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE snapshot_probe (value INTEGER NOT NULL)")
+
+        real_set_query_only = database_module._set_sqlite_query_only
+
+        def fail_disable(connection, *, enabled: bool) -> None:
+            if not enabled:
+                raise RuntimeError("synthetic query-only cleanup failure")
+            real_set_query_only(connection, enabled=enabled)
+
+        monkeypatch.setattr(database_module, "_set_sqlite_query_only", fail_disable)
+        with database.session_factory() as session:
+            with pytest.raises(
+                ReadSnapshotCleanupError,
+                match="could not restore its SQLite connection",
+            ):
+                with coherent_read_snapshot(session):
+                    raise RuntimeError("synthetic read failure")
+
+        with database.engine.begin() as connection:
+            assert connection.exec_driver_sql("PRAGMA query_only").scalar_one() == 0
+            connection.exec_driver_sql("INSERT INTO snapshot_probe (value) VALUES (1)")
+    finally:
+        database.engine.dispose()

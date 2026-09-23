@@ -10,7 +10,8 @@ The materializer composes canonical read models exactly once:
 - actual dividend history over closed months (forecast dividend component);
 - the canonical R07-05 cash-flow ladder base.
 
-No writes, no network, no provider refresh, no transaction isolation changes.
+No writes, no network, no provider refresh; all dependent reads share one
+committed SQLite snapshot.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from dataclasses import replace
 
 from sqlalchemy import select
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import RubleAmount
 from hermes_finance.domain.cash_flows import ExpectedCashFlowType
 from hermes_finance.domain.reporting import ReportingMonthStatus
@@ -130,6 +132,7 @@ def _frozen_ladder(ladder) -> FrozenLadder:
     )
 
 
+@coherent_read_operation
 def materialize_frozen_base(
     session,
     reporting_month_id: int,
@@ -253,13 +256,9 @@ def materialize_frozen_base(
         ladder = _capture_stage_build_cash_flow_ladder(
             session, reporting_month_id=reporting_month_id, forecast_version=version
         )
-        # Keep the ladder on the SAME captured snapshot as the deposit rows:
-        # the ladder service re-reads DepositSnapshot internally, which could
-        # observe a later DB state than the already-frozen deposit facts.
-        # The captured monthly interest sum is authoritative here; replacing
-        # the flat deposit_interest component (and the derived passive/total
-        # sums) makes the frozen ladder internally consistent even if a
-        # concurrent commit lands between capture stages. The upcoming
+        # Retain the existing reconciliation of the ladder's flat deposit
+        # component with the captured rows. The ladder's internal re-read now
+        # shares this materializer's snapshot. The upcoming
         # windows never contain deposit rows (undated estimates), so they
         # stay untouched.
         if deposit_rows:

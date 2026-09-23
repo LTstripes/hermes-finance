@@ -19,6 +19,7 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
 from hermes_finance.domain.risk_allocation import RiskSupportStatus
 from hermes_finance.domain.values import RubleAmount
@@ -1560,6 +1561,7 @@ def _warnings(
     )
 
 
+@coherent_read_operation
 def assemble_portfolio_review_package(
     session: Session,
     *,

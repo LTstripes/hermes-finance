@@ -15,6 +15,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
@@ -356,6 +357,7 @@ def _expected_payments(
     )
 
 
+@coherent_read_operation
 def build_dashboard(
     session: Session,
     reporting_month_id: int,

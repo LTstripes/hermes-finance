@@ -18,6 +18,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.persistence import Account, DepositSnapshot, ReportingMonth
 from hermes_finance.services.payout_calendar import merged_payout_calendar
@@ -134,6 +135,7 @@ def _window(
     )
 
 
+@coherent_read_operation
 def build_cash_flow_ladder(
     session: Session,
     reporting_month_id: int,

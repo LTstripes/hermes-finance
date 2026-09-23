@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import (
     AvailabilityReasonCode,
     CoverageStatus,
@@ -1294,6 +1295,7 @@ def _metric(
     )
 
 
+@coherent_read_operation
 def performance_availability_for_interval(
     session: Session,
     *,

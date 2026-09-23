@@ -14,6 +14,7 @@ from enum import StrEnum
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import PriceSource
 from hermes_finance.market_data.dto import QuoteStatus
 from hermes_finance.market_data.normalize import (
@@ -890,6 +891,7 @@ def _build_deposit_cash(session: Session, *, month_id: int) -> FreshnessFamily:
     )
 
 
+@coherent_read_operation
 def build_freshness_provenance_summary(
     session: Session,
     month_id: int,

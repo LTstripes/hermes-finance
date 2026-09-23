@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -37,6 +38,7 @@ from hermes_finance.persistence import (
     TaxBracket,
 )
 from hermes_finance.services.markdown_export import MarkdownReport
+from hermes_finance.services.tax_brackets import official_default_tax_bracket_rules
 
 JSON_SCHEMA_VERSION: Literal["1.2"] = "1.2"
 
@@ -390,16 +392,58 @@ def _month_rows(session: Session, model: type[object], month_id: int) -> list[ob
     )
 
 
-def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceData:
+def build_raw_source_data(
+    session: Session,
+    month: ReportingMonth,
+    *,
+    settings: AppSettings | None = None,
+    goals: Sequence[Goal] | None = None,
+) -> RawSourceData:
     """Map persisted source rows without aggregating or changing the session."""
-    settings = session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
+    settings = settings or session.scalar(
+        select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID)
+    )
     if settings is None:
         raise RuntimeError("app settings must be prepared before building an export")
-    main_goal = session.execute(select(Goal).where(Goal.is_main.is_(True))).scalar_one_or_none()
+    export_goals = (
+        tuple(goals)
+        if goals is not None
+        else tuple(session.scalars(select(Goal).order_by(Goal.id)))
+    )
+    main_goal = next((goal for goal in export_goals if goal.is_main), None)
     if main_goal is None:
         raise RuntimeError("main goal must be selected before building an export")
     accounts = list(session.scalars(select(Account).order_by(Account.id)))
     instruments = list(session.scalars(select(Instrument).order_by(Instrument.id)))
+    persisted_brackets = list(
+        session.scalars(
+            select(TaxBracket)
+            .where(TaxBracket.year == month.year)
+            .order_by(TaxBracket.threshold_from_kopecks)
+        )
+    )
+    if persisted_brackets:
+        raw_tax_brackets = [
+            RawTaxBracket(
+                id=item.id,
+                year=item.year,
+                threshold_from=_required_money(item.threshold_from_kopecks, settings.base_currency),
+                threshold_to=_money(item.threshold_to_kopecks, settings.base_currency),
+                rate=_rate(item.rate_bps),
+            )
+            for item in persisted_brackets
+        ]
+    else:
+        raw_tax_brackets = [
+            RawTaxBracket(
+                id=index,
+                year=month.year,
+                threshold_from=_required_money(rule.from_kopecks, settings.base_currency),
+                threshold_to=_money(rule.to_kopecks, settings.base_currency),
+                rate=_rate(rule.rate_bps),
+            )
+            for index, rule in enumerate(official_default_tax_bracket_rules(), start=1)
+        ]
     return RawSourceData(
         app_settings=RawAppSettings(
             id=settings.id,
@@ -623,26 +667,13 @@ def build_raw_source_data(session: Session, month: ReportingMonth) -> RawSourceD
                 calculation_mode=item.calculation_mode,
                 notes=item.notes,
             )
-            for item in session.scalars(select(Goal).order_by(Goal.id))
+            for item in export_goals
         ],
         monthly_comments=[
             RawMonthlyComment.model_validate(item, from_attributes=True)
             for item in _month_rows(session, MonthlyComment, month.id)
         ],
-        tax_brackets=[
-            RawTaxBracket(
-                id=item.id,
-                year=item.year,
-                threshold_from=_required_money(item.threshold_from_kopecks, settings.base_currency),
-                threshold_to=_money(item.threshold_to_kopecks, settings.base_currency),
-                rate=_rate(item.rate_bps),
-            )
-            for item in session.scalars(
-                select(TaxBracket)
-                .where(TaxBracket.year == month.year)
-                .order_by(TaxBracket.threshold_from_kopecks)
-            )
-        ],
+        tax_brackets=raw_tax_brackets,
     )
 
 

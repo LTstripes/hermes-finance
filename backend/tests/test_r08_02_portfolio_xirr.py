@@ -27,6 +27,7 @@ from hermes_finance.persistence import (
     Base,
     InvestmentCashFlow,
 )
+from hermes_finance.services import performance_availability as availability_service
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.cash_boundary_coverage import (
@@ -51,6 +52,7 @@ from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
+    reopen_reporting_month,
 )
 
 START = date(2030, 1, 31)
@@ -175,6 +177,77 @@ def test_xirr_solver_matches_independent_positive_and_negative_vectors() -> None
         )
     )
     _assert_rate(negative, "-0.10")
+
+
+def test_xirr_uses_one_snapshot_when_new_flow_invalidates_coverage_mid_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, database, _opening_id, _closing_id, account_id = _history(
+        tmp_path,
+        opening="1000.00",
+        closing="1000.00",
+    )
+    middle = create_reporting_month(
+        session,
+        year=2031,
+        month=1,
+        snapshot_date=MID,
+    )
+    close_reporting_month(session, middle.id)
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+    real_cash_boundary_coverage = availability_service.cash_boundary_coverage_for_interval
+    writer_committed = False
+
+    def interleaved_cash_boundary_coverage(*args, **kwargs):
+        nonlocal writer_committed
+        result = real_cash_boundary_coverage(*args, **kwargs)
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                reopen_reporting_month(writer, middle.id)
+                create_external_flow(
+                    writer,
+                    reporting_month_id=middle.id,
+                    account_id=account_id,
+                    event_date=MID,
+                    boundary_amount="100.00",
+                    direction="contribution",
+                    kind="external_contribution",
+                    scope_membership="stable_in_scope",
+                )
+                close_reporting_month(writer, middle.id)
+        return result
+
+    monkeypatch.setattr(
+        availability_service,
+        "cash_boundary_coverage_for_interval",
+        interleaved_cash_boundary_coverage,
+    )
+
+    try:
+        interleaved = xirr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account_id,
+        )
+        _assert_rate(interleaved, "0")
+
+        fresh = xirr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account_id,
+        )
+        assert fresh.availability is XirrAvailabilityStatus.NOT_COMPUTABLE
+        assert "not_computable_external_flows_incomplete" in fresh.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
 
 
 def test_xirr_solver_handles_multiple_contributions_and_withdrawal() -> None:
