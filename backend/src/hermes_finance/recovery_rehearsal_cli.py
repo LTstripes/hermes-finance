@@ -15,6 +15,7 @@ from hermes_finance.services.protected_backups import (
 )
 from hermes_finance.services.recovery_rehearsal import (
     RECOVERY_ACTION_REQUIRED,
+    RECOVERY_READINESS_FAILURE_REASONS,
     RecoveryRehearsalError,
     rehearse_recovery,
 )
@@ -43,8 +44,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _failure_payload(stage: str) -> dict[str, object]:
-    return {
+def _failure_payload(stage: str, *, failure_reason: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
         "status": "action_required",
         "failure_stage": stage,
         "source_verified": False,
@@ -69,6 +70,9 @@ def _failure_payload(stage: str) -> dict[str, object]:
         "structural_counts": {},
         "action_required": RECOVERY_ACTION_REQUIRED,
     }
+    if failure_reason in RECOVERY_READINESS_FAILURE_REASONS:
+        payload["failure_reason"] = failure_reason
+    return payload
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,7 +93,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result.as_dict(), ensure_ascii=True, sort_keys=True))
         return 0
     except RecoveryRehearsalError as error:
-        print(json.dumps(_failure_payload(error.stage), ensure_ascii=True, sort_keys=True))
+        print(
+            json.dumps(
+                _failure_payload(error.stage, failure_reason=error.failure_reason),
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
         return 2
     except Exception:
         print(json.dumps(_failure_payload("unexpected"), ensure_ascii=True, sort_keys=True))

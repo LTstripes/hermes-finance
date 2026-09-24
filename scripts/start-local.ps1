@@ -8,6 +8,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "recovery-runtime-safety.ps1")
+. (Join-Path $PSScriptRoot "recovery-readiness.ps1")
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $backendDir = Join-Path $repoRoot "backend"
@@ -35,7 +36,8 @@ function Get-RequiredCommand {
 function Assert-PortAvailable {
     param(
         [Parameter(Mandatory = $true)]
-        [int]$Port
+        [int]$Port,
+        [bool]$RecoveryReadiness = $false
     )
 
     if ($null -eq (Get-Command "Get-NetTCPConnection" -ErrorAction SilentlyContinue)) {
@@ -44,6 +46,9 @@ function Assert-PortAvailable {
 
     $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     if ($null -ne $listener) {
+        if ($RecoveryReadiness) {
+            Throw-HermesRecoveryReadinessFailure -Classification "port_conflict"
+        }
         throw "Port $Port is already in use. Stop the existing process before starting Hermes Finance."
     }
 }
@@ -60,44 +65,6 @@ function Assert-ProcessRunning {
     if ($Process.HasExited) {
         throw "$Name stopped unexpectedly with exit code $($Process.ExitCode)."
     }
-}
-
-function Test-RecoveryListenerOwned {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Diagnostics.Process]$Backend
-    )
-
-    $listeners = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop)
-    $processRows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
-    return Test-HermesLoopbackListenerOwnership `
-        -RootProcessId $Backend.Id `
-        -Listeners $listeners `
-        -ProcessRows $processRows
-}
-
-function Test-RecoveryResponseOwned {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Diagnostics.Process]$Backend,
-        [Parameter(Mandatory = $true)]
-        [object]$Response,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedRecoveryToken,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedDatabaseIdentity,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedCheckoutSha
-    )
-
-    return (
-        (Test-RecoveryListenerOwned -Backend $Backend) -and
-        (Test-HermesRecoveryHeaders `
-            -Response $Response `
-            -ExpectedToken $ExpectedRecoveryToken `
-            -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
-            -ExpectedCheckoutSha $ExpectedCheckoutSha)
-    )
 }
 
 function Invoke-PreparedRuntimeValidation {
@@ -148,11 +115,21 @@ function Wait-ForProductionStack {
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    $lastFailureReason = $null
     while ([DateTime]::UtcNow -lt $deadline) {
-        Assert-ProcessRunning -Process $Backend -Name "Backend"
+        try {
+            Assert-ProcessRunning -Process $Backend -Name "Backend"
+        }
+        catch {
+            if ($RequireRecoverySurfaces) {
+                Throw-HermesRecoveryReadinessFailure -Classification "backend_exit"
+            }
+            throw
+        }
 
         try {
             if ($RequireRecoverySurfaces -and -not (Test-RecoveryListenerOwned -Backend $Backend)) {
+                $lastFailureReason = "listener_not_owned"
                 Start-Sleep -Milliseconds 250
                 continue
             }
@@ -169,7 +146,8 @@ function Wait-ForProductionStack {
                     -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
                     -ExpectedCheckoutSha $ExpectedCheckoutSha)
             ) {
-                continue
+                $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $health -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
             }
             $months = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/api/months" `
@@ -184,7 +162,8 @@ function Wait-ForProductionStack {
                     -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
                     -ExpectedCheckoutSha $ExpectedCheckoutSha)
             ) {
-                continue
+                $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $months -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
             }
             $frontend = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/" `
@@ -199,7 +178,8 @@ function Wait-ForProductionStack {
                     -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
                     -ExpectedCheckoutSha $ExpectedCheckoutSha)
             ) {
-                continue
+                $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $frontend -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
             }
             $baseReady = (
                 $health.StatusCode -eq 200 -and
@@ -207,6 +187,15 @@ function Wait-ForProductionStack {
                 $frontend.StatusCode -eq 200 -and
                 $frontend.Content -match "Hermes Finance"
             )
+            if (
+                $RequireRecoverySurfaces -and
+                ($health.StatusCode -ne 200 -or $months.StatusCode -ne 200 -or $frontend.StatusCode -ne 200)
+            ) {
+                Throw-HermesRecoveryReadinessFailure -Classification "api_http_status"
+            }
+            if ($RequireRecoverySurfaces -and $frontend.Content -notmatch "Hermes Finance") {
+                Throw-HermesRecoveryReadinessFailure -Classification "readiness_probe_defect"
+            }
             if ($baseReady -and -not $RequireRecoverySurfaces) {
                 return
             }
@@ -224,38 +213,52 @@ function Wait-ForProductionStack {
                         -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
                         -ExpectedCheckoutSha $ExpectedCheckoutSha)
                 ) {
-                    continue
-                }
-
-                $restoredMonths = @($months.Content | ConvertFrom-Json)
-                if ($restoredMonths.Count -gt 0) {
-                    $monthId = [int64]$restoredMonths[0].id
-                    $dashboard = Invoke-WebRequest `
-                        -Uri ("http://127.0.0.1:8000/api/months/{0}/dashboard" -f $monthId) `
-                        -UseBasicParsing `
-                        -TimeoutSec 2
-                    if (
-                        $dashboard.StatusCode -ne 200 -or
-                        -not (Test-RecoveryResponseOwned `
-                            -Backend $Backend `
-                            -Response $dashboard `
-                            -ExpectedRecoveryToken $ExpectedRecoveryToken `
-                            -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
-                            -ExpectedCheckoutSha $ExpectedCheckoutSha)
-                    ) {
-                        continue
+                    if ($accounts.StatusCode -ne 200) {
+                        Throw-HermesRecoveryReadinessFailure -Classification "api_http_status"
+                    }
+                    else {
+                        $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $accounts -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                        Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
                     }
                 }
+
+                $null = Invoke-HermesRecoveryDashboardProbe `
+                    -MonthsJson ([string]$months.Content) `
+                    -Backend $Backend `
+                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
+                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
+                    -ExpectedCheckoutSha $ExpectedCheckoutSha
                 return
             }
         }
         catch {
-            # The backend may still be starting; the process check above catches early exits.
+            if ($RequireRecoverySurfaces) {
+                $classification = Get-HermesRecoveryReadinessClassification -ErrorRecord $_
+                if ($null -ne $classification) {
+                    throw
+                }
+                if ($null -ne (Get-HermesRecoveryHttpStatusCode -Exception $_.Exception)) {
+                    Throw-HermesRecoveryReadinessFailure -Classification "api_http_status"
+                }
+                elseif (Test-HermesRecoveryTransientRequestFailure -Exception $_.Exception) {
+                    $lastFailureReason = "startup_http_unavailable"
+                }
+                else {
+                    Throw-HermesRecoveryReadinessFailure -Classification "readiness_probe_defect"
+                }
+            }
+            # In recovery mode only startup network failures and non-ready HTTP statuses retry.
         }
 
         Start-Sleep -Milliseconds 250
     }
 
+    if ($RequireRecoverySurfaces) {
+        if ([string]::IsNullOrWhiteSpace($lastFailureReason)) {
+            $lastFailureReason = "readiness_timeout"
+        }
+        Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
+    }
     throw "Production stack did not become ready within 45 seconds."
 }
 
@@ -326,7 +329,7 @@ try {
 
     Invoke-PreparedRuntimeValidation -PowerShell $powershell -Checkout $repoRoot
 
-    Assert-PortAvailable -Port 8000
+    Assert-PortAvailable -Port 8000 -RecoveryReadiness ([bool]$RecoveryReadiness)
 
     $savedEnvironment = @{}
     foreach ($name in @(
@@ -389,7 +392,17 @@ try {
     }
 }
 catch {
-    Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    if ($RecoveryReadiness) {
+        $classification = Get-HermesRecoveryReadinessClassification -ErrorRecord $_
+        if ([string]::IsNullOrWhiteSpace($classification)) {
+            $classification = "readiness_probe_defect"
+        }
+        Write-Output ("HERMES_RECOVERY_READINESS_FAILURE=" + $classification)
+        Write-Host "ERROR: Recovery readiness failed ($classification)." -ForegroundColor Red
+    }
+    else {
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    }
     $exitCode = 1
 }
 finally {

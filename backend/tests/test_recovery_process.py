@@ -425,6 +425,7 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
         "start-local.ps1",
         "recovery-runtime-boundary.ps1",
         "recovery-runtime-safety.ps1",
+        "recovery-readiness.ps1",
     ):
         shutil.copy2(REPOSITORY_ROOT / "scripts" / name, scripts)
     (backend / "pyproject.toml").write_text("synthetic\n", encoding="utf-8")
@@ -486,6 +487,7 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
             )
 
         assert captured.value.stage == "runtime-start"
+        assert captured.value.failure_reason == "backend_exit"
         owned_id, owned_port = _marker_identity(owned_marker)
         assert len(evidence) == 1
         _assert_owned_listener_disposed(evidence[0]["handle"], owned_id, owned_port)
