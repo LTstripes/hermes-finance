@@ -65,7 +65,10 @@ from hermes_finance.services.in_kind_boundary_coverage import (
 from hermes_finance.services.transfer_reconciliation import (
     iter_transfer_reconciliation_evidence,
 )
-from hermes_finance.services.valuation_boundaries import to_observed_valuation_evidence
+from hermes_finance.services.valuation_boundaries import (
+    to_observed_valuation_evidence,
+    validate_external_flow_boundary_group_members,
+)
 from hermes_finance.services.valuation_points import valuation_point_for_month
 
 _LEGACY_BOUNDARY_FLOW_TYPES = ("deposit", "withdrawal")
@@ -840,7 +843,7 @@ class _BoundaryTarget:
     flow_ids: tuple[int, ...]
     event_date: date
     explicit_group: bool
-    invalid_group_membership: bool = False
+    invalid_group_state: bool = False
 
 
 def _external_flow_boundary_targets(
@@ -889,6 +892,7 @@ def _external_flow_boundary_targets(
     for group, _member in group_rows:
         groups[group.id] = group
 
+    flow_by_id = {flow.id: flow for flow in external_flows}
     assigned_flow_ids: set[int] = set()
     targets: list[_BoundaryTarget] = []
     for group_id in sorted(
@@ -906,23 +910,27 @@ def _external_flow_boundary_targets(
         selected_member_ids = all_member_ids & external_flow_ids
         if not selected_member_ids:
             continue
-        invalid_membership = (
+        invalid_group_state = (
             group.scope != scope.value
             or group.account_id != (account_id if scope is PerformanceScope.ACCOUNT else None)
             or not all_member_ids.issubset(external_flow_ids)
         )
+        current_member_flows = [flow_by_id[flow_id] for flow_id in sorted(selected_member_ids)]
+        try:
+            validate_external_flow_boundary_group_members(group, current_member_flows)
+        except ValueError:
+            invalid_group_state = True
         targets.append(
             _BoundaryTarget(
                 boundary_group_id=group_id,
                 flow_ids=tuple(sorted(all_member_ids)),
                 event_date=group.boundary_date,
                 explicit_group=True,
-                invalid_group_membership=invalid_membership,
+                invalid_group_state=invalid_group_state,
             )
         )
         assigned_flow_ids.update(selected_member_ids)
 
-    flow_by_id = {flow.id: flow for flow in external_flows}
     for flow_id in sorted(external_flow_ids - assigned_flow_ids):
         flow = flow_by_id[flow_id]
         targets.append(
@@ -1017,7 +1025,7 @@ def _observed_boundary_for_target(
     elif post_ambiguous:
         reasons.add(_TWRR_ONLY_REASON)
 
-    if target.invalid_group_membership:
+    if target.invalid_group_state:
         reasons.add(_TWRR_ONLY_REASON)
 
     for evidence in (pre, post):

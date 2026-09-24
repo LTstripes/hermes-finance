@@ -31,6 +31,17 @@ Boundary groups and observed points are scope-specific. Availability considers
 only groups matching the requested scope and account; one external flow may
 therefore have separate valid account- and portfolio-scope groups and evidence.
 
+Group membership is immutable after creation. Both valuation capture and
+performance availability revalidate every current member against the group's
+reporting month, scope/account and boundary date. A group is unusable if a
+member changes date or leaves the selected scope; it cannot accept new observed
+points or make TWRR exact. To correct a stale date or membership, delete the
+group in its editable reporting month, then explicitly create a replacement
+with the chosen date and member IDs and capture fresh PRE/POST observations.
+Deleting a group also deletes its members and observed points. The service does
+not infer a replacement date or membership. Direct boundaries for flows that
+are not members of a group keep their existing lifecycle.
+
 ## Read-only availability
 
 `GET /api/performance/availability` exposes `external_flow_boundaries`. Each
