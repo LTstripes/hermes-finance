@@ -443,6 +443,78 @@ def test_explicit_revise_updates_statement_owned_flow_and_appends_revision(
         database.engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("losing_change", "winning_change"),
+    [
+        (
+            {"per_unit": "2,00", "gross": "20,00", "tax": "2,60", "net": "17,40"},
+            {"payment_date": "21.01.2026"},
+        ),
+        (
+            {"per_unit": "2,00", "gross": "20,00", "tax": "2,60", "net": "17,40"},
+            {"per_unit": "3,00", "gross": "30,00", "tax": "3,90", "net": "26,10"},
+        ),
+    ],
+)
+def test_overlapping_corrections_accept_only_one_prior_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    losing_change: dict[str, str],
+    winning_change: dict[str, str],
+) -> None:
+    from hermes_finance.services import statement_import_apply as module
+
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        original = build_income_report_pdf()
+        initial_row = preview(session, original, account_id).rows[0]
+        assert apply(session, original, account_id, (selection_from_row(initial_row),)).success
+        event_id = list_applied_statement_events(session)[0].id
+        losing_document = build_income_report_pdf([_row(**losing_change)])
+        winning_document = build_income_report_pdf([_row(**winning_change)])
+        losing_row = preview(session, losing_document, account_id).rows[0]
+        winning_row = preview(session, winning_document, account_id).rows[0]
+
+        original_plan = module._build_apply_plan
+
+        def interleave_after_plan(*args, **kwargs):
+            plan = original_plan(*args, **kwargs)
+            monkeypatch.setattr(module, "_build_apply_plan", original_plan)
+            with database.session_factory() as winner_session:
+                winner = apply(
+                    winner_session,
+                    winning_document,
+                    account_id,
+                    (selection_from_row(winning_row, action=StatementApplyAction.REVISE),),
+                )
+                assert winner.success is True
+            return plan
+
+        monkeypatch.setattr(module, "_build_apply_plan", interleave_after_plan)
+        loser = apply(
+            session,
+            losing_document,
+            account_id,
+            (selection_from_row(losing_row, action=StatementApplyAction.REVISE),),
+        )
+        assert loser.success is False
+        assert loser.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        session.expire_all()
+        revisions = list_applied_statement_event_revisions(session, event_id)
+        assert [revision.revision_kind for revision in revisions] == ["apply", "revise"]
+        flow = list_investment_cash_flows(session)[0]
+        accepted = revisions[-1]
+        assert accepted.material_fingerprint == winning_row.material_fingerprint
+        assert flow.event_date == accepted.event_date
+        assert flow.gross_amount_kopecks == accepted.gross_amount_kopecks
+        assert flow.net_amount_kopecks == accepted.net_amount_kopecks
+        assert counts(session) == (1, 2, 1)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_correction_of_linked_manual_flow_is_conflict(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:

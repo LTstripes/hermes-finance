@@ -24,6 +24,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.applied_statement_events import (
+    StatementEventStatus,
     StatementLinkMode,
     StatementRevisionKind,
     append_applied_statement_revision,
@@ -183,6 +184,7 @@ class _ApplyPlan:
     reporting_month_id: int | None
     writes: bool
     item_action: StatementApplyItemAction
+    expected_revision_id: int | None = None
 
 
 def apply_income_report_preview(
@@ -277,6 +279,15 @@ def apply_income_report_preview(
             {plan.reporting_month_id for plan in plans if plan.writes and plan.reporting_month_id}
         ):
             require_editable_reporting_month(session, month_id)
+        # Planning read the accepted state before reserving SQLite's writer.
+        # Recheck it under that reservation before mutating any selected row.
+        for plan in plans:
+            if (
+                plan.item_action is StatementApplyItemAction.REVISED
+                and not _revision_plan_is_current(session, plan)
+            ):
+                session.rollback()
+                return _preview_changed(selected_count)
         wrote = False
         for plan in plans:
             item = _stage_plan(
@@ -437,6 +448,24 @@ def _linked_flow_matches_accepted(
     if StatementLinkMode(event.link_mode) is StatementLinkMode.STATEMENT_CREATED:
         return flow.source == ALFA_DEPOSITORY_INCOME_PROVIDER
     return True
+
+
+def _revision_plan_is_current(session: Session, plan: _ApplyPlan) -> bool:
+    assert plan.existing_event_id is not None
+    assert plan.existing_cash_flow_id is not None
+    assert plan.expected_revision_id is not None
+    event = session.get(AppliedStatementEvent, plan.existing_event_id, populate_existing=True)
+    if (
+        event is None
+        or event.status != StatementEventStatus.ACTIVE.value
+        or event.investment_cash_flow_id != plan.existing_cash_flow_id
+    ):
+        return False
+    revisions = list_applied_statement_event_revisions(session, event.id)
+    if not revisions or revisions[-1].id != plan.expected_revision_id:
+        return False
+    flow = session.get(InvestmentCashFlow, plan.existing_cash_flow_id, populate_existing=True)
+    return _linked_flow_matches_accepted(session, event=event, flow=flow)
 
 
 def _financially_compatible(flow: InvestmentCashFlow, row: PreviewRow) -> bool:
@@ -619,6 +648,9 @@ def _build_apply_plan(
                     reporting_month_id=month.id,
                     writes=True,
                     item_action=StatementApplyItemAction.REVISED,
+                    expected_revision_id=list_applied_statement_event_revisions(
+                        session, existing.id
+                    )[-1].id,
                 )
             )
             continue
