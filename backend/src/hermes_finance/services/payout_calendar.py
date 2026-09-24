@@ -156,16 +156,71 @@ def merged_payout_calendar(
         if item.expected_cash_flow_id in manual_by_id
     }
 
-    suppressed_manual_ids = {
+    duplicate_pool_by_scope: dict[tuple[int, int], list[ExpectedCashFlow]] = {}
+    for flow in manual_duplicate_pool:
+        duplicate_pool_by_scope.setdefault((flow.account_id, flow.instrument_id), []).append(flow)
+
+    # Resolve each provider's full candidate set before deciding whether a
+    # linked manual row can be suppressed. A stored count_provider decision is
+    # only effective while its linked row remains the sole plausible manual
+    # candidate; new ambiguity falls back to the ADR's manual-only behavior.
+    provider_resolution_by_id: dict[
+        int,
+        tuple[AppliedPayoutReconciliation | None, tuple[int, ...], bool],
+    ] = {}
+    # Preserve the existing lifecycle behavior for reconciliations whose
+    # provider payout is inactive or outside this calendar window.
+    suppressed_manual_ids: set[int] = {
         item.expected_cash_flow_id
         for item in reconciliations
         if item.counting_decision == PayoutCountingDecision.COUNT_PROVIDER.value
         and item.expected_cash_flow_id in manual_by_id
     }
+    for payout, _, _ in provider_rows:
+        reconciliation = reconciliation_by_payout.get(payout.id)
+        effective_reconciliation = (
+            reconciliation
+            if reconciliation is not None
+            and reconciliation.expected_cash_flow_id in manual_version_by_id
+            else None
+        )
+        candidate_ids = _manual_candidates_for_applied(
+            payout,
+            duplicate_pool_by_scope.get((payout.account_id, payout.instrument_id), []),
+        )
+        linked_manual_id = (
+            effective_reconciliation.expected_cash_flow_id
+            if effective_reconciliation is not None
+            else None
+        )
+        has_new_ambiguity = any(candidate_id != linked_manual_id for candidate_id in candidate_ids)
+        provider_is_countable = (
+            not (
+                effective_reconciliation is not None
+                and effective_reconciliation.counting_decision
+                == PayoutCountingDecision.COUNT_MANUAL.value
+            )
+            and not has_new_ambiguity
+            and not (effective_reconciliation is None and candidate_ids)
+        )
 
-    duplicate_pool_by_scope: dict[tuple[int, int], list[ExpectedCashFlow]] = {}
-    for flow in manual_duplicate_pool:
-        duplicate_pool_by_scope.setdefault((flow.account_id, flow.instrument_id), []).append(flow)
+        provider_resolution_by_id[payout.id] = (
+            effective_reconciliation,
+            candidate_ids,
+            provider_is_countable,
+        )
+        if (
+            effective_reconciliation is not None
+            and effective_reconciliation.counting_decision
+            == PayoutCountingDecision.COUNT_PROVIDER.value
+        ):
+            if (
+                provider_is_countable
+                and effective_reconciliation.expected_cash_flow_id in manual_by_id
+            ):
+                suppressed_manual_ids.add(effective_reconciliation.expected_cash_flow_id)
+            elif not provider_is_countable:
+                suppressed_manual_ids.discard(effective_reconciliation.expected_cash_flow_id)
 
     items: list[MergedPayoutCalendarItem] = []
     for flow, account_name, instrument_name in manual_rows:
@@ -204,34 +259,16 @@ def merged_payout_calendar(
         )
 
     for payout, account_name, instrument_name in provider_rows:
-        reconciliation = reconciliation_by_payout.get(payout.id)
-        effective_reconciliation = (
-            reconciliation
-            if reconciliation is not None
-            and reconciliation.expected_cash_flow_id in manual_version_by_id
-            else None
-        )
-        if (
-            effective_reconciliation is not None
-            and effective_reconciliation.counting_decision
-            == PayoutCountingDecision.COUNT_MANUAL.value
-        ):
-            continue
-
-        candidate_ids = _manual_candidates_for_applied(
-            payout,
-            duplicate_pool_by_scope.get((payout.account_id, payout.instrument_id), []),
-        )
+        effective_reconciliation, candidate_ids, provider_is_countable = provider_resolution_by_id[
+            payout.id
+        ]
         resolved_manual_id = (
             effective_reconciliation.expected_cash_flow_id
             if effective_reconciliation is not None
             else None
         )
-        if any(candidate_id != resolved_manual_id for candidate_id in candidate_ids):
-            # A newly appearing extra candidate is unresolved. The ADR safe
-            # default is manual-only counting until the owner explicitly resolves it.
-            continue
-        if effective_reconciliation is None and candidate_ids:
+        if not provider_is_countable:
+            # An unresolved duplicate is manual-only until explicitly resolved.
             continue
 
         items.append(
