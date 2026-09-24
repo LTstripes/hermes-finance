@@ -13,7 +13,8 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -49,8 +50,10 @@ from hermes_finance.services.planned_budget import create_planned_budget_line
 from hermes_finance.services.positions import apply_snapshot_market_quote, create_position_snapshot
 from hermes_finance.services.properties import create_property_snapshot
 from hermes_finance.services.reporting_months import (
+    ReportingMonthNotFoundError,
     close_reporting_month,
     create_reporting_month,
+    delete_reporting_month,
     get_reporting_month_by_period,
     list_reporting_months,
 )
@@ -316,6 +319,223 @@ def test_clone_rolls_back_on_mid_flight_failure(tmp_path: Path) -> None:
             )
             or 0
         ) == 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "delete_source",
+    [True, False],
+    ids=["source-delete", "source-cash-mutation"],
+)
+def test_clone_protects_source_before_first_target_write(
+    tmp_path: Path, delete_source: bool
+) -> None:
+    session, database = _session(tmp_path)
+    try:
+        source_id = _seed_source(session)
+        original_lookup = get_reporting_month_by_period
+        attempted = False
+
+        def rival_write() -> None:
+            with database.session_factory() as rival:
+                rival.connection().exec_driver_sql("PRAGMA busy_timeout=0")
+                if delete_source:
+                    delete_reporting_month(rival, source_id)
+                else:
+                    rival.execute(
+                        update(CashBalance)
+                        .where(CashBalance.reporting_month_id == source_id)
+                        .values(amount_kopecks=99_000_00)
+                    )
+                    rival.commit()
+
+        def race_before_target_lookup(
+            lookup_session: Session, *, year: int, month: int
+        ) -> ReportingMonth | None:
+            nonlocal attempted
+            attempted = True
+            with pytest.raises(OperationalError, match="database is locked"):
+                rival_write()
+            return original_lookup(lookup_session, year=year, month=month)
+
+        with patch(
+            "hermes_finance.services.month_clone.get_reporting_month_by_period",
+            side_effect=race_before_target_lookup,
+        ):
+            target = clone_reporting_month(
+                session,
+                source_id,
+                target_year=2031,
+                target_month=2,
+                snapshot_date=date(2031, 2, 28),
+            )
+
+        assert attempted
+        assert (
+            session.scalar(
+                select(CashBalance.amount_kopecks).where(
+                    CashBalance.reporting_month_id == target.id
+                )
+            )
+            == 50_000_00
+        )
+        assert (
+            session.scalar(
+                select(DepositSnapshot.balance_kopecks).where(
+                    DepositSnapshot.reporting_month_id == target.id
+                )
+            )
+            == 1_000_000_00
+        )
+        assert _count(session, PositionSnapshot, target.id) == 1
+        assert _count(session, IncomeEntry, target.id) == 1
+
+        # Once the clone commits, the same rival write can proceed. The target
+        # keeps the protected pre-race financial state.
+        rival_write()
+        with database.session_factory() as check:
+            assert (
+                check.scalar(
+                    select(CashBalance.amount_kopecks).where(
+                        CashBalance.reporting_month_id == target.id
+                    )
+                )
+                == 50_000_00
+            )
+            assert (
+                check.scalar(
+                    select(DepositSnapshot.balance_kopecks).where(
+                        DepositSnapshot.reporting_month_id == target.id
+                    )
+                )
+                == 1_000_000_00
+            )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_clone_rechecks_cached_source_after_concurrent_delete(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        source_id = _seed_source(session)
+        assert session.get(ReportingMonth, source_id) is not None
+        with database.session_factory() as rival:
+            delete_reporting_month(rival, source_id)
+
+        with pytest.raises(ReportingMonthNotFoundError):
+            clone_reporting_month(
+                session,
+                source_id,
+                target_year=2031,
+                target_month=2,
+                snapshot_date=date(2031, 2, 28),
+            )
+        with database.session_factory() as check:
+            assert get_reporting_month_by_period(check, year=2031, month=2) is None
+            assert check.scalar(select(func.count()).select_from(CashBalance)) == 0
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_clone_uses_committed_source_rows_not_cached_values(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        source_id = _seed_source(session)
+        cached_cash = session.scalar(
+            select(CashBalance).where(CashBalance.reporting_month_id == source_id)
+        )
+        cached_deposit = session.scalar(
+            select(DepositSnapshot).where(DepositSnapshot.reporting_month_id == source_id)
+        )
+        assert cached_cash is not None and cached_cash.amount_kopecks == 50_000_00
+        assert cached_deposit is not None and cached_deposit.balance_kopecks == 1_000_000_00
+
+        with database.session_factory() as writer:
+            writer.execute(
+                update(CashBalance)
+                .where(CashBalance.reporting_month_id == source_id)
+                .values(amount_kopecks=60_000_00)
+            )
+            writer.execute(
+                update(DepositSnapshot)
+                .where(DepositSnapshot.reporting_month_id == source_id)
+                .values(balance_kopecks=1_200_000_00)
+            )
+            writer.commit()
+
+        target = clone_reporting_month(
+            session,
+            source_id,
+            target_year=2031,
+            target_month=2,
+            snapshot_date=date(2031, 2, 28),
+        )
+        assert (
+            session.scalar(
+                select(CashBalance.amount_kopecks).where(
+                    CashBalance.reporting_month_id == target.id
+                )
+            )
+            == 60_000_00
+        )
+        assert (
+            session.scalar(
+                select(DepositSnapshot.balance_kopecks).where(
+                    DepositSnapshot.reporting_month_id == target.id
+                )
+            )
+            == 1_200_000_00
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_clone_writer_contention_leaves_no_target(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        source_id = _seed_source(session)
+        session.connection().exec_driver_sql("PRAGMA busy_timeout=0")
+        with database.session_factory() as writer:
+            writer.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            writer.execute(
+                update(CashBalance)
+                .where(CashBalance.reporting_month_id == source_id)
+                .values(amount_kopecks=70_000_00)
+            )
+            with pytest.raises(OperationalError, match="database is locked"):
+                clone_reporting_month(
+                    session,
+                    source_id,
+                    target_year=2031,
+                    target_month=2,
+                    snapshot_date=date(2031, 2, 28),
+                )
+            writer.commit()
+
+        with database.session_factory() as check:
+            assert get_reporting_month_by_period(check, year=2031, month=2) is None
+            assert check.scalar(select(func.count()).select_from(CashBalance)) == 1
+
+        target = clone_reporting_month(
+            session,
+            source_id,
+            target_year=2031,
+            target_month=2,
+            snapshot_date=date(2031, 2, 28),
+        )
+        assert (
+            session.scalar(
+                select(CashBalance.amount_kopecks).where(
+                    CashBalance.reporting_month_id == target.id
+                )
+            )
+            == 70_000_00
+        )
     finally:
         session.close()
         database.engine.dispose()
