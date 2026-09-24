@@ -42,6 +42,21 @@ RELATIONSHIP_FORWARD_UPGRADE = "forward_upgrade"
 RECOVERY_ACTION_REQUIRED = (
     "isolated recovery rehearsal was not completed; use a new target after resolving the failure"
 )
+RECOVERY_READINESS_FAILURE_REASONS = frozenset(
+    {
+        "port_conflict",
+        "backend_exit",
+        "readiness_probe_defect",
+        "months_response_invalid",
+        "dashboard_http_status",
+        "listener_not_owned",
+        "recovery_identity_mismatch",
+        "api_http_status",
+        "startup_http_unavailable",
+        "readiness_timeout",
+    }
+)
+_RECOVERY_READINESS_FAILURE_PREFIX = "HERMES_RECOVERY_READINESS_FAILURE="
 _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 _REPARSE_POINT = 0x400
 _SIDECAR_NAME = ".hermes-data-identity.json"
@@ -61,10 +76,38 @@ _WINDOWS_RESERVED_LEAVES = {
 class RecoveryRehearsalError(RuntimeError):
     """A privacy-safe recovery stage failed closed."""
 
-    def __init__(self, stage: str, message: str, *, target_mutated: bool = False) -> None:
+    def __init__(
+        self,
+        stage: str,
+        message: str,
+        *,
+        target_mutated: bool = False,
+        failure_reason: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.stage = stage
         self.target_mutated = target_mutated
+        self.failure_reason = (
+            failure_reason if failure_reason in RECOVERY_READINESS_FAILURE_REASONS else None
+        )
+
+
+def _privacy_safe_readiness_failure_reason(
+    stdout: str | bytes | None, stderr: str | bytes | None
+) -> str | None:
+    for captured in (stdout, stderr):
+        if isinstance(captured, bytes):
+            text = captured.decode("utf-8", errors="replace")
+        elif isinstance(captured, str):
+            text = captured
+        else:
+            continue
+        for line in text.splitlines():
+            if line.startswith(_RECOVERY_READINESS_FAILURE_PREFIX):
+                candidate = line[len(_RECOVERY_READINESS_FAILURE_PREFIX) :].strip()
+                if candidate in RECOVERY_READINESS_FAILURE_REASONS:
+                    return candidate
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -834,6 +877,7 @@ def _validate_recovery_checkout(
         recovery / "scripts" / "recovery-bootstrap-safety.ps1",
         recovery / "scripts" / "recovery-runtime-boundary.ps1",
         recovery / "scripts" / "recovery-runtime-safety.ps1",
+        recovery / "scripts" / "recovery-readiness.ps1",
         recovery / "scripts" / "start-local.ps1",
     )
     if any(not item.is_file() for item in required):
@@ -1747,8 +1791,16 @@ def _run_runtime_script(
             target_mutated=True,
         ) from error
     if completed.returncode != 0:
+        failure_reason = None
+        if script_name == "start-local.ps1" and stage == "runtime-start":
+            failure_reason = _privacy_safe_readiness_failure_reason(
+                completed.stdout, completed.stderr
+            )
         raise RecoveryRehearsalError(
-            stage, "existing runtime operation failed", target_mutated=True
+            stage,
+            "existing runtime operation failed",
+            target_mutated=True,
+            failure_reason=failure_reason,
         )
 
 

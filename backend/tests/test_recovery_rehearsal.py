@@ -21,7 +21,12 @@ from fastapi.testclient import TestClient
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
-from hermes_finance.recovery_rehearsal_cli import main as recovery_rehearsal_main
+from hermes_finance.recovery_rehearsal_cli import (
+    _failure_payload,
+)
+from hermes_finance.recovery_rehearsal_cli import (
+    main as recovery_rehearsal_main,
+)
 from hermes_finance.services import protected_backups, recovery_rehearsal
 from hermes_finance.services.protected_backups import PROTECTION_MODE, PROTECTION_STATE
 from hermes_finance.services.recovery_rehearsal import (
@@ -836,14 +841,193 @@ def test_cli_argument_failure_is_json_and_does_not_echo_private_inputs(
 
 def test_bounded_start_reuses_existing_readiness_and_adds_recovery_surfaces() -> None:
     source = (REPOSITORY_ROOT / "scripts" / "start-local.ps1").read_text(encoding="utf-8-sig")
+    readiness = (REPOSITORY_ROOT / "scripts" / "recovery-readiness.ps1").read_text(
+        encoding="utf-8-sig"
+    )
 
     assert "[switch]$RecoveryReadiness" in source
     assert "$RecoveryReadiness -and -not $ExitAfterReady" in source
     assert "http://127.0.0.1:8000/api/health" in source
     assert "http://127.0.0.1:8000/api/months" in source
     assert "http://127.0.0.1:8000/api/accounts" in source
-    assert '"http://127.0.0.1:8000/api/months/{0}/dashboard"' in source
+    assert "Invoke-HermesRecoveryDashboardProbe" in source
     assert "-RequireRecoverySurfaces ([bool]$RecoveryReadiness)" in source
+    assert '"http://127.0.0.1:8000/api/months/{0}/dashboard"' in readiness
+
+
+def test_windows_recovery_readiness_month_handoff_and_dashboard_probe(
+    tmp_path: Path,
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+
+    safety = str(REPOSITORY_ROOT / "scripts" / "recovery-runtime-safety.ps1")
+    readiness = str(REPOSITORY_ROOT / "scripts" / "recovery-readiness.ps1")
+    probe = tmp_path / "recovery-readiness-probe.ps1"
+    probe.write_text(
+        r"""
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string]$SafetyScript,
+    [Parameter(Mandatory = $true)][string]$ReadinessScript
+)
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = "Stop"
+. $SafetyScript
+. $ReadinessScript
+
+$script:ExpectedToken = "0" * 64
+$script:ExpectedDatabaseIdentity = "1" * 64
+$script:ExpectedCheckoutSha = "2" * 40
+$script:RootProcessId = 100
+$script:Requests = @()
+$script:MockOwned = $true
+$script:MockStatusCode = 200
+$script:HeaderFailure = $null
+
+function Get-NetTCPConnection {
+    [CmdletBinding()]
+    param([int]$LocalPort, [string]$State)
+    $owner = if ($script:MockOwned) { $script:RootProcessId + 1 } else { 900 }
+    return [pscustomobject]@{
+        State = "Listen"
+        LocalPort = $LocalPort
+        LocalAddress = "127.0.0.1"
+        OwningProcess = $owner
+    }
+}
+
+function Get-CimInstance {
+    [CmdletBinding()]
+    param([string]$ClassName)
+    return @(
+        [pscustomobject]@{ ProcessId = $script:RootProcessId; ParentProcessId = 1 },
+        [pscustomobject]@{ ProcessId = $script:RootProcessId + 1; ParentProcessId = $script:RootProcessId },
+        [pscustomobject]@{ ProcessId = 900; ParentProcessId = 1 }
+    )
+}
+
+function Invoke-WebRequest {
+    [CmdletBinding()]
+    param([string]$Uri, [switch]$UseBasicParsing, [int]$TimeoutSec)
+    $script:Requests += $Uri
+    $headers = @{
+        "X-Hermes-Recovery-Token" = $script:ExpectedToken
+        "X-Hermes-Recovery-Database-Identity" = $script:ExpectedDatabaseIdentity
+        "X-Hermes-Recovery-Checkout-SHA" = $script:ExpectedCheckoutSha
+    }
+    if ($script:HeaderFailure -eq "token") { $headers["X-Hermes-Recovery-Token"] = "f" * 64 }
+    if ($script:HeaderFailure -eq "database") { $headers["X-Hermes-Recovery-Database-Identity"] = "e" * 64 }
+    if ($script:HeaderFailure -eq "checkout") { $headers["X-Hermes-Recovery-Checkout-SHA"] = "d" * 40 }
+    return [pscustomobject]@{ StatusCode = $script:MockStatusCode; Headers = $headers }
+}
+
+function Invoke-Case {
+    param(
+        [string]$Name,
+        [string]$MonthsJson,
+        [int]$StatusCode = 200,
+        [bool]$ListenerOwned = $true,
+        [string]$HeaderFailure = ""
+    )
+    $script:Requests = @()
+    $script:MockStatusCode = $StatusCode
+    $script:MockOwned = $ListenerOwned
+    $script:HeaderFailure = $HeaderFailure
+    $backend = [System.Diagnostics.Process]::GetCurrentProcess()
+    $script:RootProcessId = $backend.Id
+    try {
+        $result = Invoke-HermesRecoveryDashboardProbe __BT__
+            -MonthsJson $MonthsJson __BT__
+            -Backend $backend __BT__
+            -ExpectedRecoveryToken $script:ExpectedToken __BT__
+            -ExpectedDatabaseIdentity $script:ExpectedDatabaseIdentity __BT__
+            -ExpectedCheckoutSha $script:ExpectedCheckoutSha
+        return [pscustomobject]@{
+            Name = $Name
+            Status = $result.Status
+            Classification = $null
+            Requests = @($script:Requests)
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Name = $Name
+            Status = "failed"
+            Classification = Get-HermesRecoveryReadinessClassification -ErrorRecord $_
+            Requests = @($script:Requests)
+        }
+    }
+}
+
+$results = @(
+    (Invoke-Case -Name "single" -MonthsJson '[{"id":41}]')
+    (Invoke-Case -Name "zero" -MonthsJson '[]')
+    (Invoke-Case -Name "multiple" -MonthsJson '[{"id":23},{"id":7}]')
+    (Invoke-Case -Name "malformed_root" -MonthsJson '{"id":41}')
+    (Invoke-Case -Name "malformed_month" -MonthsJson '[{"year":2025}]')
+    (Invoke-Case -Name "dashboard_failure" -MonthsJson '[{"id":41}]' -StatusCode 503)
+    (Invoke-Case -Name "wrong_token" -MonthsJson '[{"id":41}]' -HeaderFailure "token")
+    (Invoke-Case -Name "wrong_database" -MonthsJson '[{"id":41}]' -HeaderFailure "database")
+    (Invoke-Case -Name "wrong_checkout" -MonthsJson '[{"id":41}]' -HeaderFailure "checkout")
+    (Invoke-Case -Name "foreign_listener" -MonthsJson '[{"id":41}]' -ListenerOwned $false)
+)
+$results | ConvertTo-Json -Compress -Depth 4
+""".replace("__BT__", chr(96)),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(probe),
+            safety,
+            readiness,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+
+    results = {item["Name"]: item for item in json.loads(completed.stdout)}
+    assert results["single"]["Status"] == "verified"
+    assert results["single"]["Requests"] == ["http://127.0.0.1:8000/api/months/41/dashboard"]
+    assert results["zero"]["Status"] == "skipped"
+    assert results["zero"]["Requests"] == []
+    assert results["multiple"]["Status"] == "verified"
+    assert results["multiple"]["Requests"] == ["http://127.0.0.1:8000/api/months/23/dashboard"]
+    assert results["malformed_root"]["Classification"] == "months_response_invalid"
+    assert results["malformed_month"]["Classification"] == "months_response_invalid"
+    assert results["malformed_month"]["Requests"] == []
+    assert results["dashboard_failure"]["Classification"] == "dashboard_http_status"
+    assert results["wrong_token"]["Classification"] == "recovery_identity_mismatch"
+    assert results["wrong_database"]["Classification"] == "recovery_identity_mismatch"
+    assert results["wrong_checkout"]["Classification"] == "recovery_identity_mismatch"
+    assert results["foreign_listener"]["Classification"] == "listener_not_owned"
+
+
+def test_recovery_readiness_failure_output_is_allowlisted_and_privacy_safe() -> None:
+    safe = recovery_rehearsal._privacy_safe_readiness_failure_reason(
+        "HERMES_RECOVERY_READINESS_FAILURE=months_response_invalid\n",
+        "",
+    )
+    unsafe = recovery_rehearsal._privacy_safe_readiness_failure_reason(
+        "HERMES_RECOVERY_READINESS_FAILURE=C:\\private\\finance.db\n",
+        "",
+    )
+
+    assert safe == "months_response_invalid"
+    assert unsafe is None
+    payload = _failure_payload("runtime-start", failure_reason=safe)
+    assert payload["failure_reason"] == "months_response_invalid"
+    assert "C:\\private\\finance.db" not in json.dumps(payload)
 
 
 def test_runtime_script_uses_windows_powershell_inbox_modules(
