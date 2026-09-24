@@ -49,36 +49,13 @@ The Owner may still copy one short launch prompt into the selected local executi
 
 ## Manual Worker launch
 
-A normal Grok/Hermes/manual-Codex launch is a short locator/execution prompt containing the task/issue, exact baseline/target, task branch/workspace, required source docs and delivery expectations. The GitHub issue/accepted contract remains authoritative.
+Use the [Owner task proposal](../MODEL_ROUTING.md#owner-task-proposal) format: plain Russian outcome, separate complexity/risk, a concrete available model/effort recommendation, necessary review/Owner action, then one short locator prompt. The issue/accepted contract is authoritative; do not copy a second specification into chat.
 
-The Worker returns a completion report. ChatGPT/Lera then reviews the **actual** GitHub candidate and decides `ACCEPT / FIXES REQUIRED / REJECT`.
+After the Worker returns, inspect the actual candidate and evidence before the Integrator verdict.
 
 ## Experimental Codex `$delivery-loop` launch
 
-Only for an explicit request to run `$delivery-loop` or orchestrated execution, prepare a launch using the activation gate and overhead budget in [`docs/AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md). Record the coordination benefit or explicit experiment purpose; ordinary Codex tasks retain the single-Worker route.
-
-The launch packet must identify:
-
-- repo and issue;
-- exact baseline/target context;
-- task branch;
-- physical workspace;
-- `single` queue mode;
-- review requirement;
-- explicit opt-in, coordination reason and agent/remediation budget;
-- explicit `$delivery-loop`.
-
-For an explicitly requested orchestrated queue, first inspect current GitHub state and include only the authorized compatible task set. For every task assign the exact baseline, branch/workspace and dependency status. A generic request for a series of tasks does not authorize this mode. Do not put tasks into an unattended queue when their dependency strategy is unresolved.
-
-The queue launch must make clear that:
-
-- root = Execution Orchestrator;
-- implementation belongs to the locally configured Worker;
-- `INTERNAL_ACCEPT` is not project `ACCEPT`;
-- independent review is triggered by project routing, explicit request or justified risk;
-- remediation defaults to one cycle; a second needs explicit authorization and the cap is two;
-- an integration block stops only the affected dependency chain; unrelated eligible queue items may continue;
-- canonical/integration merge is not implied.
+Only an explicit orchestration launch uses [`AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md) for packet fields, role separation, remediation/queue limits and reporting. Do not repeat that protocol in ordinary Worker prompts. `INTERNAL_ACCEPT` is not project `ACCEPT`; integration/merge requires the existing separate authority.
 
 ## Reviewing Codex results
 

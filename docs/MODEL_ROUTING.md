@@ -9,21 +9,9 @@ Client-specific notes: [`docs/agents/`](agents/). Execution-mode semantics: [`do
 
 ## Roles
 
-| Role | Owns |
-|---|---|
-| **Integrator** | Project-level task decomposition/routing, authoritative task notes, final project acceptance/rejection, GitHub integration and merge. |
-| **Execution Orchestrator** | Optional execution-local planning, delegation, internal review/remediation and explicitly authorized queue coordination. Does not own project acceptance. |
-| **Worker** | One accountable implementation candidate. Does not self-accept. |
-| **Delegate** | Optional bounded helper below an Orchestrator/Worker. Does not self-accept. |
-| **Reviewer** | Independently validates the result without silently modifying the candidate. |
+Role ownership and the prohibition on self-acceptance are defined in [`AGENTS.md`](../AGENTS.md#roles). This document owns capability, risk/review and escalation decisions; it does not redefine the roles.
 
-A named Owner start command assigns the requested execution route. It does not permanently lock a provider/model unless the Owner, Integrator, task document or local client configuration says so.
-
-Claim a provider/model identity only when it is runtime-confirmed. Worker summaries are context, not proof.
-
-Root/Orchestrator self-review is not independent review. Independent review means a separate review context/runtime without implementation ownership of the candidate under review.
-
-Observed routing note: fast/low-cost models can be appropriate for bounded UI, documentation and deterministic test work. That does not lower the review bar: financial contract semantics, migrations, reconciliation, tax/performance meaning, privacy and runtime boundaries require strong Integrator review and, when this policy requires it, independent review regardless of builder model.
+Model identity must be runtime-confirmed. Independent review requires a separate review context without implementation ownership. A fast implementation model never lowers the financial, migration, privacy or runtime review bar.
 
 ## Risk classes
 
@@ -94,3 +82,16 @@ This file is not:
 - a license for an Execution Orchestrator to self-integrate accepted work.
 
 Historical route tables remain historical only.
+
+## Owner task proposal
+
+Use this format when proposing a task to the Owner, in plain Russian:
+
+1. **Название.**
+2. **Что изменится и зачем:** one or two concrete sentences.
+3. **Сложность:** небольшая / средняя / сложная, with a short reason. Complexity describes implementation effort; state **Риск** separately using this project's risk/review policy.
+4. **Исполнитель:** a concrete currently available model and supported reasoning effort, selected at launch for the required capability. Label this a recommendation; report the actually used model only from runtime evidence.
+5. **Независимое ревью / действия владельца:** only the required review or private/manual gate, with its reason.
+6. One copyable start prompt, normally 5–8 lines and about 100 words or less: repo/issue and applicable note, Worker role, target and exact baseline, assigned branch/workspace, intended result and authorized delivery. Requirements and acceptance criteria remain in the authoritative issue/contract.
+
+Do not invent an available model, baseline, workspace or permission to make the card look complete. Resolve a missing safety-critical assignment or contract in the authoritative task before launch. A short prompt does not waive any required gate. An explicitly orchestrated launch additionally follows `AGENT_ORCHESTRATION.md`; this format does not activate it.

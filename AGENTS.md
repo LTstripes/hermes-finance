@@ -2,6 +2,18 @@
 
 Universal project constitution. Read this before every task. Client-specific adapters live in [`docs/agents/`](docs/agents/) and must not weaken these rules.
 
+## Read by task type
+
+Read this constitution and the current issue/applicable Integrator notes once at task start; refresh them when the assignment or authoritative facts change. Read detailed sources by need, not as a mandatory whole-repository tour:
+
+- Docs/process-only: affected documents and their referenced policy sections; no product-wide architecture/test inventory.
+- Implementation/bugfix: the relevant contract/architecture and affected source/tests, plus the verification policy below.
+- Financial/data semantics, restore, migration, privacy or runtime boundaries: the governing spec/ADRs and applicable review/UAT gates before changing that boundary.
+- Task routing/proposal: `docs/MODEL_ROUTING.md`; client mechanics: only the relevant `docs/agents/` adapter.
+- An explicitly requested orchestration/queue: the relevant `docs/AGENT_ORCHESTRATION.md` section; reading it does not activate the loop.
+
+Use already-read unchanged context. Historical task catalogs are not standing orders. Within the authorized task, perform routine reversible investigation, edits, synthetic checks and permitted delivery without repeated approval; scope/product/security/data decisions and canonical integration retain their existing owners.
+
 ## Sources of truth
 
 When documents disagree, use this order:
@@ -19,19 +31,11 @@ Do not treat old release-execution notes as current standing orders.
 
 ## Task prompt authority
 
-The active GitHub issue, accepted ADR/contract, and explicit Integrator note are the task specification. They contain scope, acceptance criteria and guardrails subject to the source-of-truth precedence above.
+The current GitHub issue, accepted contract and applicable Integrator notes define the task under the source precedence above. A launch prompt is a locator and execution assignment, not a second specification. Update the authoritative issue/note when requirements change.
 
-A launch prompt sent to a coding agent is **locator/execution context only**, not a second copy of the specification. By default it should contain only:
+Use the [Owner task proposal](docs/MODEL_ROUTING.md#owner-task-proposal) format when handing a task to the Owner. The launch identifies the issue/note, assigned branch and actual workspace, exact baseline/target, intended result and authorized delivery. Missing safety-critical information must be resolved before writes.
 
-- issue number/link;
-- assigned task branch and physical workspace;
-- exact baseline/current integration SHA when relevant;
-- instruction to read this `AGENTS.md`, the issue and any Integrator note/accepted contract;
-- instruction to run the required checks, commit/push only the task branch, and return the exact final SHA.
-
-Do not duplicate or rewrite the issue's requirements in the launch prompt. If requirements change, amend the authoritative issue/contract/Integrator note instead of changing them only in chat.
-
-For a manual multi-agent comparison, give each candidate its own separate prompt. For an explicitly authorized Codex `$delivery-loop` queue, one queue launch packet may list several tasks only under the isolation/dependency rules in `docs/AGENT_ORCHESTRATION.md`.
+One bounded task defaults to one Worker; independent review follows risk policy and does not activate orchestration. Only an explicit orchestration/queue request uses `docs/AGENT_ORCHESTRATION.md` and its listed eligible tasks.
 
 ## Roles
 
@@ -54,51 +58,17 @@ Independent review is added separately when risk policy or an explicit request r
 
 ## Preferred owner/integrator execution route
 
-When the active Integrator surface has direct GitHub read/write access and can inspect GitHub Actions, it should complete **Integrator-owned repository mechanics** itself instead of using the Owner as a human courier to GitHub, PowerShell or another client.
+An authorized Integrator with direct GitHub capability performs its repository mechanics instead of making the Owner relay commands. The normative guarded workflow and limits of standing authorization are in [`AGENT_ORCHESTRATION.md`](docs/AGENT_ORCHESTRATION.md#integrator-owned-repository-mechanics). Direct access does not grant merge/release authority or override an explicit Owner choice of implementation client.
 
-That includes issue/branch/PR/review/merge/history actions the Integrator can safely perform.
+Standing routine authority never includes semantic/product/financial changes, migrations/data reinterpretation, privacy/runtime boundary expansion, destructive Git operations, repository settings or missing review/UAT gates. Such decisions retain their explicit Owner/Integrator route. A Worker cannot adopt Integrator authority from this paragraph.
 
-When the Owner has granted the Integrator a standing authorization for the standard integration flow, the Integrator may complete routine GitHub mechanics without asking for repeated confirmation: create/update the task PR, inspect the exact diff and CI, make clearly mechanical non-semantic fixes inside the accepted task scope, rerun applicable checks, merge an accepted candidate with an exact-head guard, read back canonical `main`, and verify canonical `push` CI for that exact SHA. A clearly mechanical fix is limited to things such as formatting/lint-only corrections or repository/PR metadata that do not change product behavior or financial meaning.
-
-Standing authorization never covers semantic/product/financial changes, architecture, migrations/data reinterpretation, privacy or runtime/network boundaries, scope expansion, destructive Git operations, release publication, repository settings, or bypassing required independent review. If a supposedly mechanical fix would alter executable meaning or cross one of those boundaries, stop and route it as a normal implementation/review decision. Details are normative in `docs/AGENT_ORCHESTRATION.md`.
-
-This principle does **not** override an explicit Owner choice of implementation surface. If the Owner asks for Grok, Hermes, Codex, a specific model/client, or a Codex `$delivery-loop` queue, prepare that execution route and keep GitHub plumbing with the Integrator where possible.
-
-For a direct GitHub-native repository write explicitly assigned to the Integrator, prefer this guarded route:
-
-1. read canonical GitHub `main` and capture its exact SHA;
-2. create one isolated task branch from that exact baseline;
-3. edit only the task branch and keep scope narrow;
-4. open a PR and inspect the actual diff, scope and privacy boundary;
-5. require the applicable PR CI/checks to complete successfully;
-6. merge only when the Integrator is authorized and the candidate is accepted;
-7. read back canonical `main` after merge;
-8. require canonical `push` CI on the exact merged `main` SHA before reporting integration complete.
-
-Use a local development Worker when implementation benefits from local command execution, runtime/browser inspection, an explicitly requested external model/client, independent implementation/review, or other capability/direct routing the Integrator is not supposed to replace.
-
-If a nonessential cleanup action is unavailable through the current connector, report the residual cleanup instead of shifting routine GitHub busywork to the Owner. Never weaken safety or verification to avoid a hand-off.
-
-For release publication, use the guarded repository-owned route in [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md).
-
-Client-specific behavior for ChatGPT is documented in [`docs/agents/chatgpt.md`](docs/agents/chatgpt.md).
+Release publication uses [`RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md); ChatGPT mechanics are in [`docs/agents/chatgpt.md`](docs/agents/chatgpt.md).
 
 ## Sync before a new task
 
-In a **clean** development clone, before starting a new task:
+Fetch current canonical refs and pin the exact authorized baseline before creating an isolated task branch/worktree. A new write task starts from current `main` unless the task explicitly assigns another baseline. Verify the actual root and working-tree state; never switch/reset/pull over unfinished work or touch Owner runtime for setup.
 
-```powershell
-git fetch origin
-git switch main
-git pull --ff-only origin main
-git status --short
-```
-
-Do not switch, reset or pull over unfinished task work.
-
-A write task starts from current canonical `main` unless the task explicitly pins another baseline.
-
-For a GitHub-native Integrator without a local checkout, the equivalent requirement is to read canonical GitHub `main`, capture the exact baseline SHA, and create the isolated task branch from that SHA. Do not pretend a local sync command ran when no local checkout exists.
+A GitHub-native Integrator records the exact canonical SHA and creates the isolated task branch there; report this truthfully instead of claiming local sync commands ran. Keep the assigned baseline during implementation unless the project/task compatibility decision requires a refresh.
 
 ## One writer, isolated task branch
 
