@@ -692,6 +692,11 @@ class BrokerBaselineApplyItem(Base):
 class PositionSnapshot(Base):
     __tablename__ = "position_snapshots"
     __table_args__ = (
+        CheckConstraint(
+            "(reporting_month_id IS NULL AND archived_from_period IS NOT NULL) OR "
+            "(reporting_month_id IS NOT NULL AND archived_from_period IS NULL)",
+            name="ck_position_snapshots_archive_scope",
+        ),
         UniqueConstraint(
             "reporting_month_id",
             "account_id",
@@ -725,9 +730,10 @@ class PositionSnapshot(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    reporting_month_id: Mapped[int] = mapped_column(
-        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    reporting_month_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=True
     )
+    archived_from_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
     )
@@ -1315,6 +1321,11 @@ TransferLink = ExternalTransferLink
 class ExpectedCashFlow(Base):
     __tablename__ = "expected_cash_flows"
     __table_args__ = (
+        CheckConstraint(
+            "(reporting_month_id IS NULL AND archived_from_period IS NOT NULL) OR "
+            "(reporting_month_id IS NOT NULL AND archived_from_period IS NULL)",
+            name="ck_expected_cash_flows_archive_scope",
+        ),
         UniqueConstraint(
             "reporting_month_id",
             "account_id",
@@ -1341,9 +1352,10 @@ class ExpectedCashFlow(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    reporting_month_id: Mapped[int] = mapped_column(
-        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    reporting_month_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=True
     )
+    archived_from_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
     )
@@ -1375,6 +1387,11 @@ class AppliedProviderPayout(Base):
 
     __tablename__ = "applied_provider_payouts"
     __table_args__ = (
+        CheckConstraint(
+            "(reporting_month_id IS NULL AND archived_from_period IS NOT NULL) OR "
+            "(reporting_month_id IS NOT NULL AND archived_from_period IS NULL)",
+            name="ck_applied_provider_payouts_archive_scope",
+        ),
         UniqueConstraint(
             "reporting_month_id",
             "account_id",
@@ -1411,9 +1428,10 @@ class AppliedProviderPayout(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    reporting_month_id: Mapped[int] = mapped_column(
-        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    reporting_month_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=True
     )
+    archived_from_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
     )

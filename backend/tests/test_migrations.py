@@ -117,6 +117,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "manual_adjustment",
             "notes",
             "updated_at",
+            "archived_from_period",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(deposit_snapshots)")] == [
             "id",
@@ -268,6 +269,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_confirmed",
             "is_approximate",
             "notes",
+            "archived_from_period",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expense_entries)")] == [
             "id",
@@ -385,6 +387,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_approximate",
             "provider_status",
             "first_applied_at",
+            "archived_from_period",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(applied_payout_revisions)")
@@ -582,8 +585,8 @@ def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> N
 
     assert downgraded.returncode != 0
     assert "while boundary evidence exists" in downgraded.stderr
-    # 0035 can drop an empty mapping registry; 0034 must refuse while evidence exists.
-    assert revision_rows(database_path) == ["0034_observed_valuation_boundaries"]
+    # The failed downgrade rolls back every step, including earlier empty tables.
+    assert revision_rows(database_path) == [REVISION]
 
 
 def test_goal_main_selection_migration_backfills_legacy_settings_goal(tmp_path: Path) -> None:
@@ -1130,7 +1133,7 @@ def test_provider_neutral_downgrade_rejects_identity_without_venue(tmp_path: Pat
     downgraded = run_alembic(database_path, "downgrade", "0024_instrument_market_mappings")
     assert downgraded.returncode != 0
     assert "provider_venue_id" in downgraded.stderr
-    assert revision_rows(database_path) == ["0025_provider_neutral_market_identity"]
+    assert revision_rows(database_path) == [REVISION]
 
 
 def test_applied_payout_migration_is_additive_and_preserves_manual_rows(tmp_path: Path) -> None:
@@ -2104,10 +2107,10 @@ def test_debt_link_migration_is_additive_and_downgrade_is_fail_closed(
     finally:
         connection.close()
 
-    blocked = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
-    assert blocked.returncode != 0
-    assert "while debt-account links exist" in blocked.stderr
-    assert revision_rows(database_path) == [REVISION]
+        blocked = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
+        assert blocked.returncode != 0
+        assert "while debt-account links exist" in blocked.stderr
+        assert revision_rows(database_path) == [REVISION]
 
     connection = sqlite3.connect(database_path)
     try:
