@@ -1,15 +1,19 @@
 """M03-03 regression coverage for canonical monthly salary cardinality."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
+from threading import Event
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import create_database
-from hermes_finance.domain import IncomeType
+from hermes_finance.api.settings import session_for_request
+from hermes_finance.database import Database, create_database
+from hermes_finance.domain import IncomeType, RubleAmount
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base, IncomeEntry
 from hermes_finance.services.incomes import (
@@ -20,9 +24,10 @@ from hermes_finance.services.incomes import (
 )
 from hermes_finance.services.month_clone import clone_reporting_month
 from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.salary import actual_net_for_month, calculate_salary_tax
 
 
-def _session(tmp_path: Path) -> tuple[Session, object]:
+def _session(tmp_path: Path) -> tuple[Session, Database]:
     database = create_database(tmp_path / "salary-cardinality.db")
     Base.metadata.create_all(database.engine)
     return database.session_factory(), database
@@ -63,6 +68,274 @@ def _legacy_salary(
     session.commit()
     session.refresh(row)
     return row
+
+
+def _api_money(amount: str) -> dict[str, str]:
+    return {"amount": amount, "currency": "RUB"}
+
+
+def _salary_payload(gross: str, tax: str, net: str) -> dict[str, dict[str, str]]:
+    return {
+        "gross_amount": _api_money(gross),
+        "tax_amount": _api_money(tax),
+        "net_amount": _api_money(net),
+    }
+
+
+def _is_month_writer(statement: str) -> bool:
+    normalized = " ".join(statement.casefold().split())
+    return normalized.startswith("update reporting_months set status = status where id =")
+
+
+def _run_serialized_api_race(
+    database: Database,
+    *,
+    first: tuple[str, str, dict[str, object]],
+    second: tuple[str, str, dict[str, object]],
+) -> tuple[object, object]:
+    """Force the second request to reach the shared SQLite writer reservation."""
+    app = create_app(database)
+    first_reservation_reached = Event()
+    second_reservation_attempted = Event()
+
+    def tagged_session(request: Request):
+        with database.session_factory() as session:
+            session.info["salary_cardinality_race_writer"] = request.headers.get(
+                "X-Salary-Cardinality-Writer"
+            )
+            yield session
+
+    app.dependency_overrides[session_for_request] = tagged_session
+
+    def tag_connection(session: Session, transaction: object, connection: object) -> None:
+        del transaction
+        role = session.info.get("salary_cardinality_race_writer")
+        if role is None:
+            connection.info.pop("salary_cardinality_race_writer", None)
+        else:
+            connection.info["salary_cardinality_race_writer"] = role
+
+    def before_cursor_execute(
+        connection: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        del cursor, parameters, context, executemany
+        if connection.info.get("salary_cardinality_race_writer") == "second" and _is_month_writer(
+            statement
+        ):
+            second_reservation_attempted.set()
+
+    def after_cursor_execute(
+        connection: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        del cursor, parameters, context, executemany
+        if connection.info.get("salary_cardinality_race_writer") == "first" and _is_month_writer(
+            statement
+        ):
+            first_reservation_reached.set()
+            assert second_reservation_attempted.wait(10)
+
+    event.listen(Session, "after_begin", tag_connection)
+    event.listen(database.engine, "before_cursor_execute", before_cursor_execute)
+    event.listen(database.engine, "after_cursor_execute", after_cursor_execute)
+
+    def send(writer: str, request_data: tuple[str, str, dict[str, object]]):
+        method, path, payload = request_data
+        with TestClient(app) as client:
+            return client.request(
+                method,
+                path,
+                json=payload,
+                headers={"X-Salary-Cardinality-Writer": writer},
+            )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first_future = executor.submit(send, "first", first)
+            assert first_reservation_reached.wait(10)
+            second_future = executor.submit(send, "second", second)
+            first_response = first_future.result(timeout=10)
+            second_response = second_future.result(timeout=10)
+        return first_response, second_response
+    finally:
+        event.remove(database.engine, "after_cursor_execute", after_cursor_execute)
+        event.remove(database.engine, "before_cursor_execute", before_cursor_execute)
+        event.remove(Session, "after_begin", tag_connection)
+        app.dependency_overrides.pop(session_for_request, None)
+
+
+def _assert_winning_salary(
+    database: Database,
+    *,
+    month_id: int,
+    payload: dict[str, dict[str, str]],
+    expected_id: int | None = None,
+) -> int:
+    expected = {
+        field: RubleAmount.from_api(payload[field]["amount"]).kopecks
+        for field in ("gross_amount", "tax_amount", "net_amount")
+    }
+    with database.session_factory() as session:
+        rows = list(
+            session.scalars(
+                select(IncomeEntry)
+                .where(
+                    IncomeEntry.reporting_month_id == month_id,
+                    IncomeEntry.income_type == IncomeType.SALARY.value,
+                )
+                .order_by(IncomeEntry.id)
+            )
+        )
+        assert len(rows) == 1
+        winner = rows[0]
+        assert winner.gross_amount_kopecks == expected["gross_amount"]
+        assert winner.tax_amount_kopecks == expected["tax_amount"]
+        assert winner.net_amount_kopecks == expected["net_amount"]
+        if expected_id is not None:
+            assert winner.id == expected_id
+
+        tax = calculate_salary_tax(session, month_id)
+        assert sum(part.taxable_kopecks for part in tax.parts) == expected["gross_amount"]
+        assert tax.tax_kopecks == expected["tax_amount"]
+        assert actual_net_for_month(session, month_id) == RubleAmount(expected["net_amount"])
+        return winner.id
+
+
+@pytest.mark.parametrize(
+    ("second_payload", "winner_payload"),
+    [
+        pytest.param(
+            _salary_payload("100000.00", "13000.00", "87000.00"),
+            _salary_payload("100000.00", "13000.00", "87000.00"),
+            id="identical-saves",
+        ),
+        pytest.param(
+            _salary_payload("200000.00", "26000.00", "174000.00"),
+            _salary_payload("200000.00", "26000.00", "174000.00"),
+            id="different-saves",
+        ),
+    ],
+)
+def test_concurrent_salary_saves_into_empty_month_are_serialized(
+    tmp_path: Path,
+    second_payload: dict[str, dict[str, str]],
+    winner_payload: dict[str, dict[str, str]],
+) -> None:
+    session, database = _session(tmp_path)
+    try:
+        month_id = _month(session, year=2031, month=1)
+        session.close()
+
+        path = f"/api/incomes/salary/{month_id}"
+        first_response, second_response = _run_serialized_api_race(
+            database,
+            first=("PUT", path, _salary_payload("100000.00", "13000.00", "87000.00")),
+            second=("PUT", path, second_payload),
+        )
+
+        assert first_response.status_code == 200
+        assert second_response.status_code == 200
+        assert first_response.json()["id"] == second_response.json()["id"]
+        winner_id = _assert_winning_salary(database, month_id=month_id, payload=winner_payload)
+        assert winner_id == first_response.json()["id"]
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_concurrent_replacements_of_existing_salary_leave_one_winner(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        month_id = _month(session, year=2031, month=1)
+        original = replace_salary_entry(
+            session,
+            month_id,
+            gross_amount="50000.00",
+            tax_amount="6500.00",
+            net_amount="43500.00",
+        )
+        assert original is not None
+        session.close()
+
+        path = f"/api/incomes/salary/{month_id}"
+        first_payload = _salary_payload("100000.00", "13000.00", "87000.00")
+        winner_payload = _salary_payload("200000.00", "26000.00", "174000.00")
+        first_response, second_response = _run_serialized_api_race(
+            database,
+            first=("PUT", path, first_payload),
+            second=("PUT", path, winner_payload),
+        )
+
+        assert first_response.status_code == 200
+        assert second_response.status_code == 200
+        assert first_response.json()["id"] == original.id
+        assert second_response.json()["id"] == original.id
+        _assert_winning_salary(
+            database,
+            month_id=month_id,
+            payload=winner_payload,
+            expected_id=original.id,
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_generic_salary_create_and_conversion_cannot_race_to_two_rows(tmp_path: Path) -> None:
+    session, database = _session(tmp_path)
+    try:
+        month_id = _month(session, year=2031, month=1)
+        bonus = create_income_entry(
+            session,
+            reporting_month_id=month_id,
+            income_type=IncomeType.BONUS,
+            name="Synthetic bonus",
+            gross_amount="1000.00",
+            tax_amount="130.00",
+            net_amount="870.00",
+        )
+        session.close()
+
+        salary_payload = {
+            "reporting_month_id": month_id,
+            "income_type": IncomeType.SALARY.value,
+            "name": "Salary",
+            **_salary_payload("100000.00", "13000.00", "87000.00"),
+        }
+        first_response, second_response = _run_serialized_api_race(
+            database,
+            first=("POST", "/api/incomes", salary_payload),
+            second=("PATCH", f"/api/incomes/{bonus.id}", {"income_type": "salary"}),
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 422
+        error = second_response.json()["error"]
+        assert error["code"] == "unprocessable"
+        assert "already has a salary" in error["message"]
+        winner_id = _assert_winning_salary(
+            database,
+            month_id=month_id,
+            payload=_salary_payload("100000.00", "13000.00", "87000.00"),
+        )
+        assert winner_id == first_response.json()["id"]
+        with database.session_factory() as check_session:
+            unchanged_bonus = check_session.get(IncomeEntry, bonus.id)
+            assert unchanged_bonus is not None
+            assert unchanged_bonus.income_type == IncomeType.BONUS.value
+            assert unchanged_bonus.gross_amount_kopecks == 100_000
+    finally:
+        session.close()
+        database.engine.dispose()
 
 
 def test_generic_create_rejects_second_salary(tmp_path: Path) -> None:
