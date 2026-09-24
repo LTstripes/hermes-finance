@@ -154,6 +154,13 @@ The required sections are:
   a separate reference metric. `cash_flow_after_allocations` is a derived
   monthly surplus and is never labelled as physical cash; persisted cash is
   reported only under the portfolio cash balances.
+- An `available`/`exact` `liquid_capital_net` is the known subtotal of persisted
+  included rows. When an active capital-included account has no snapshot,
+  portfolio-source coverage is `partial` with `active_account_snapshot_missing`.
+  That reason travels with the capital metric, the history point, and the
+  capital and history coverage domains. It is independent of
+  `total_net_worth_unavailable` and of performance or cash-boundary coverage.
+  See [`financial-completeness-contract.md`](financial-completeness-contract.md).
 - Passive income keeps existing semantics: salary, cashback, contributions,
   withdrawals, redemption principal and unrealized price growth are excluded;
   persisted net amounts are not taxed or commissioned twice.

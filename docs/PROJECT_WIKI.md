@@ -485,6 +485,7 @@ Completed: #313, #387, #410, #429, #430, #459, #460, #461, #462, #475 and #480.
 - `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
+- `docs/financial-completeness-contract.md` — #498 known subtotal versus portfolio-source coverage. Contract only; implementation follow-ups stay closed until independent review.
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/1.0.0.md`
 - `docs/release-notes-1.0.0.md`
