@@ -6,14 +6,7 @@ This project defaults to a single Worker, with independent review added when req
 
 ## Roles
 
-- **Owner** — product direction and owner-only/private/live UAT decisions.
-- **Integrator** — normally ChatGPT/Lera. Owns project-level decomposition and routing, authoritative issue/notes, final `ACCEPT / FIXES REQUIRED / REJECT`, GitHub integration/merge, and durable history/docs.
-- **Execution Orchestrator** — optional execution-local coordinator. In Codex `$delivery-loop` mode this is the strong root session. It may plan, delegate, review, remediate and coordinate an explicitly authorized queue, but it does not own project acceptance or canonical integration.
-- **Worker** — one accountable implementation writer for one candidate. A Worker does not self-accept.
-- **Delegate** — bounded helper below an Orchestrator or Worker. It does not self-accept or acquire implicit canonical ownership.
-- **Reviewer** — independent validator when project routing, an explicit request, or justified in-task risk requires one. A Reviewer does not silently modify the candidate.
-
-Root/Orchestrator review is useful but is not called **independent review**. Independent review means a separate review context/runtime with no implementation ownership of the candidate under review.
+Use the role definitions in [`AGENTS.md`](../AGENTS.md#roles). Root/Worker self-review is not independent review; an Execution Orchestrator has no implicit project acceptance or canonical integration authority.
 
 ## Mode A — single Worker (default)
 
@@ -124,19 +117,13 @@ It must not invent stacked history, merge an integration branch, or pull new wor
 
 ## Review triggers
 
-Independent review is required when any of these applies:
-
-1. project risk/routing policy requires it;
-2. the Owner or Integrator explicitly requests it;
-3. execution reveals a justified risk that under project policy raises the review requirement.
-
-The third case does not authorize requirement invention. If the risk implies architecture, financial meaning or accepted-scope changes, STOP and return to the Integrator.
+[`MODEL_ROUTING.md`](MODEL_ROUTING.md) is the normative source for independent-review triggers and risk escalation. A review requirement does not activate orchestration or authorize scope/contract expansion.
 
 ## Reporting
 
 ### Per-task report
 
-Each Worker/internal task result must include exact task ID, baseline, branch/workspace, candidate SHA, changed areas, exact checks/outcomes, blockers/limitations and final working-tree state when local.
+Use the completion contract in [`AGENTS.md`](../AGENTS.md#completion-reporting). An orchestrated run additionally records mode/remediation rationale and a compact phase ledger with evidence references. Separate wall time from overlapping job durations; usage/cost remains unknown unless measured.
 
 ### Final queue report
 

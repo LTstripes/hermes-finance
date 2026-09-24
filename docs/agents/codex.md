@@ -1,77 +1,25 @@
 # Codex adapter
 
-This file is a Codex client adapter. It does not replace [`AGENTS.md`](../../AGENTS.md).
+[`AGENTS.md`](../../AGENTS.md) defines scope, roles, protected data/workspaces, delivery and completion. Local Codex configuration selects available models and mechanics; these rules apply across model families.
 
-Repository policy defines project constraints and acceptance. Local Codex configuration defines local models, subagents, skills and runtime mechanics.
+## Default Worker
 
-See [`docs/AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md).
+The current session performs one assigned task as one accountable Worker. Read the current issue/applicable notes, verify the assigned actual root, branch and exact baseline, and use only the relevant policy sections.
 
-## Mode A — single Worker (default)
+Use synthetic evidence. Owner canonical/Stable/Preview/UAT/private-runtime locations and other active workspaces are excluded regardless of machine paths. Concrete workstation assignments belong to local configuration and the explicit launch, not this adapter.
 
-For an ordinary Codex task, including `дай задачу для Codex`, the current session acts as the single Worker without a parent Orchestrator:
+Select checks under the [verification policy](../VERIFICATION_POLICY.md). Preserve evidence and use focused regressions during iteration. Finish formatting before final frozen-candidate checks; do not edit source while a full gate is running. Return the completion report from AGENTS.md; no implicit merge, release or project acceptance.
 
-- Codex acts as the **Worker**;
-- read `AGENTS.md`, the issue and relevant accepted contract/spec;
-- implement only the assigned task;
-- use the assigned task branch/workspace;
-- run required checks;
-- commit/push only the task branch when required;
-- do not self-accept;
-- do not merge canonical/integration branches unless explicitly delegated;
-- return the project completion evidence.
+## Independent review
 
-Add a separate independent Reviewer when project risk policy or an explicit request requires one. Review the frozen candidate, return confirmed blockers to the same Worker, and preserve the normal Integrator acceptance gate. Review alone does not activate `$delivery-loop`.
+Triggers and required capability are in [`MODEL_ROUTING.md`](../MODEL_ROUTING.md). Supply the separate reviewer with pinned base/candidate, the authoritative issue and applicable comment excerpts, prior findings and check evidence. A network-disabled reviewer must receive the literal relevant source material, not only inaccessible URLs. Validate packet completeness before starting the review inference.
 
-## Mode B — experimental `$delivery-loop` Execution Orchestrator
+Enforced read-only review requires a separate context/runtime with the intended permissions. A child inheriting writable rights is not proof of isolation. Required review can be run without enabling orchestration.
 
-Only a request to run `$delivery-loop` or an explicit request for orchestrated execution activates this mode, subject to the activation gate and overhead budget in `AGENT_ORCHESTRATION.md`. Generic task/series requests and mentions, audits or edits of the loop do not activate it. After that explicit activation, the root session acts as **Execution Orchestrator**.
+## Explicit orchestration only
 
-The root must:
+Only an explicit request to run orchestration activates [`AGENT_ORCHESTRATION.md`](../AGENT_ORCHESTRATION.md). That document alone owns packet/queue/remediation rules. A mention, audit, ordinary task or review request does not activate delivery-loop. `INTERNAL_ACCEPT` is execution evidence, never project `ACCEPT` or merge authority.
 
-- load project policy before local orchestration mechanics;
-- validate issue, exact baseline, branch/workspace, queue mode and review requirement;
-- delegate implementation to the locally configured Worker;
-- not duplicate delegated write work after delegation;
-- wait for the Worker and inspect the actual candidate/diff/check evidence;
-- invoke a separate read-only independent Reviewer when project routing requires it, when the Owner/Integrator requests it, or when justified execution risk raises the review requirement;
-- stop for Integrator re-scope if that risk implies architecture, contract or financial-meaning expansion;
-- default to one remediation cycle; a second requires explicit authorization, with an absolute cap of two;
-- return only internal verdicts such as `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED`, or `BLOCKED_FOR_INTEGRATION`;
-- never equate `INTERNAL_ACCEPT` with project `ACCEPT`;
-- never acquire implicit merge authority.
+## Local helpers
 
-A reviewer that inherits write capability from the parent runtime is not evidence of enforced independent read-only review. Use the owner's locally configured review mechanism that actually enforces the intended isolation.
-
-## Queue behavior
-
-The root may advance automatically only through an explicitly authorized queue.
-
-For independent tasks:
-
-- each task has its own branch/workspace/baseline;
-- each task reaches `INTERNAL_ACCEPT` before the next eligible task starts;
-- the previous candidate is not an implicit baseline for the next task.
-
-If a task requires prior integration and no explicit dependency strategy was provided, mark it `BLOCKED_FOR_INTEGRATION`. That blocks the affected dependency chain, not unrelated explicitly listed tasks.
-
-Return both per-task evidence and one final queue summary.
-
-## Local skills
-
-The local Codex environment may expose:
-
-- `$delivery-loop` for experimental orchestration with implicit invocation disabled;
-- a thin `hermes-finance` helper for Finance-specific verification guidance.
-
-These are execution helpers only. They must not duplicate or override repository sources of truth. Local filesystem paths, current model IDs and reasoning settings must not be hardcoded into this repository.
-
-## Repository policy still governs
-
-Regardless of local Codex settings, this repository controls:
-
-- scope and source-of-truth precedence;
-- workspace/branch isolation;
-- financial and privacy invariants;
-- verification;
-- STOP/re-scope conditions;
-- canonical integration authority.
+Skills are optional procedure helpers, not competing project policy. Load only a relevant procedure; keep implicit delivery-loop invocation disabled and do not duplicate active skills. Concrete model IDs, effort and local paths stay in launch/local configuration. Record actual runtime identity separately from the recommendation.
