@@ -13,7 +13,7 @@ from datetime import date
 from decimal import Decimal, DecimalException
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import (
@@ -199,8 +199,31 @@ def _transfer_legs(session: Session, link_id: int) -> list[ExternalFlow]:
             select(ExternalFlow)
             .where(ExternalFlow.transfer_link_id == link_id)
             .order_by(ExternalFlow.id)
+            .execution_options(populate_existing=True)
         )
     )
+
+
+def _reserve_transfer_write(
+    session: Session, *, flow_id: int | None = None, link_id: int | None = None
+) -> None:
+    """Reserve SQLite's writer slot before reading transfer ownership or evidence.
+
+    The no-op UPDATE shares #485's transaction-scoped writer reservation. Raw
+    SQL avoids changing the ORM updated_at value. Every transfer mutation must
+    read its affected rows again after this reservation, not trust objects
+    loaded before a competing writer committed.
+    """
+    if flow_id is not None:
+        session.execute(
+            text("UPDATE external_flows SET transfer_link_id = transfer_link_id WHERE id = :id"),
+            {"id": flow_id},
+        )
+    elif link_id is not None:
+        session.execute(
+            text("UPDATE external_transfer_links SET status = status WHERE id = :id"),
+            {"id": link_id},
+        )
 
 
 def _require_no_transfer_reconciliation_evidence(
@@ -366,7 +389,12 @@ def create_external_transfer_link(
     if len(ids) > 2:
         raise ValueError("an external transfer link may contain at most two legs")
 
-    flows = [_require_external_flow(session, flow_id) for flow_id in ids]
+    if ids:
+        _reserve_transfer_write(session, flow_id=ids[0])
+    flows = [session.get(ExternalFlow, flow_id, populate_existing=True) for flow_id in ids]
+    for flow_id, flow in zip(ids, flows, strict=True):
+        if flow is None:
+            raise ExternalFlowNotFoundError(f"external flow {flow_id} was not found")
     _require_editable_transfer_legs(session, flows)
     if any(flow.transfer_link_id is not None for flow in flows):
         raise ValueError("an external flow is already attached to a transfer link")
@@ -410,6 +438,7 @@ def update_external_transfer_link(
 
 
 def delete_external_transfer_link(session: Session, link_id: int) -> None:
+    _reserve_transfer_write(session, link_id=link_id)
     link = _require_transfer_link(session, link_id)
     if _transfer_legs(session, link.id):
         raise ValueError("transfer link must be empty before deletion")
@@ -442,6 +471,7 @@ def stage_create_external_flow(
 
     link = None
     if transfer_link_id is not None:
+        _reserve_transfer_write(session, link_id=transfer_link_id)
         link = _require_transfer_link(session, transfer_link_id)
         _validate_new_link_leg(
             session,
@@ -525,6 +555,19 @@ def stage_update_external_flow(
     notes: str | None = None,
 ) -> ExternalFlow:
     flow = _require_external_flow(session, flow_id)
+    prior_link_id = flow.transfer_link_id
+    prior_link = (
+        _require_transfer_link(session, prior_link_id) if prior_link_id is not None else None
+    )
+    prior_link_status = prior_link.status if prior_link is not None else None
+    _reserve_transfer_write(session, flow_id=flow_id)
+    session.refresh(flow)
+    if flow.transfer_link_id != prior_link_id:
+        raise ValueError("external flow transfer ownership changed during update")
+    if prior_link is not None:
+        session.refresh(prior_link)
+        if prior_link.status != prior_link_status:
+            raise ValueError("external transfer link status changed during update")
     require_editable_child_month(session, flow)
 
     new_account_id = flow.account_id if account_id is None else account_id
@@ -680,6 +723,19 @@ def update_external_flow(
 
 def delete_external_flow(session: Session, flow_id: int) -> None:
     flow = _require_external_flow(session, flow_id)
+    prior_link_id = flow.transfer_link_id
+    prior_link = (
+        _require_transfer_link(session, prior_link_id) if prior_link_id is not None else None
+    )
+    prior_link_status = prior_link.status if prior_link is not None else None
+    _reserve_transfer_write(session, flow_id=flow_id)
+    session.refresh(flow)
+    if flow.transfer_link_id != prior_link_id:
+        raise ValueError("external flow transfer ownership changed during deletion")
+    if prior_link is not None:
+        session.refresh(prior_link)
+        if prior_link.status != prior_link_status:
+            raise ValueError("external transfer link status changed during deletion")
     require_editable_child_month(session, flow)
     affected_account_id = flow.account_id
     affected_event_date = flow.event_date
