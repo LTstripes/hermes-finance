@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 
 import hermes_finance.services.external_flows as external_flows_service
 from hermes_finance.database import create_database
