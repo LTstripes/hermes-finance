@@ -171,11 +171,14 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         raise ClosedReportingMonthError("closed reporting month must be reopened before deletion")
 
     try:
+        from hermes_finance.services._guard import require_editable_reporting_month
         from hermes_finance.services.external_flows import (
             refresh_external_transfer_link_statuses,
             require_no_transfer_reconciliation_evidence_for_month_deletion,
         )
 
+        # The evidence check and bulk leg deletion must share one writer reservation.
+        require_editable_reporting_month(session, month_id)
         require_no_transfer_reconciliation_evidence_for_month_deletion(session, month_id)
         for table in _reporting_month_owned_tables():
             reporting_month_id = table.c.reporting_month_id

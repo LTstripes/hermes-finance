@@ -23,6 +23,7 @@ from hermes_finance.persistence import (
     ExternalTransferReconciliationEvidence,
 )
 from hermes_finance.services._guard import require_editable_child_month
+from hermes_finance.services.external_flows import _reserve_transfer_write
 
 
 class TransferReconciliationEvidenceNotFoundError(LookupError):
@@ -91,6 +92,7 @@ def _transfer_legs(session: Session, transfer_link_id: int) -> list[ExternalFlow
             select(ExternalFlow)
             .where(ExternalFlow.transfer_link_id == transfer_link_id)
             .order_by(ExternalFlow.id)
+            .execution_options(populate_existing=True)
         )
     )
 
@@ -128,6 +130,7 @@ def create_transfer_reconciliation_evidence(
 ) -> ExternalTransferReconciliationEvidence:
     """Attach one exact canonical evidence item to exactly one transfer link."""
 
+    _reserve_transfer_write(session, link_id=transfer_link_id)
     link = session.get(ExternalTransferLink, transfer_link_id)
     if link is None:
         raise ValueError(f"external transfer link {transfer_link_id} was not found")
@@ -158,6 +161,8 @@ def create_transfer_reconciliation_evidence(
 
 def delete_transfer_reconciliation_evidence(session: Session, evidence_id: int) -> None:
     evidence = _require_evidence(session, evidence_id)
+    _reserve_transfer_write(session, link_id=evidence.transfer_link_id)
+    session.refresh(evidence)
     legs = _transfer_legs(session, evidence.transfer_link_id)
     for leg in legs:
         require_editable_child_month(session, leg)
