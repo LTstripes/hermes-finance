@@ -56,7 +56,6 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.reporting_months import (
     ReportingMonthNotFoundError,
-    get_reporting_month,
     get_reporting_month_by_period,
 )
 
@@ -280,26 +279,40 @@ def clone_reporting_month(
     Source may be draft or closed. Target must not already exist. On any error
     the session is rolled back and no target month remains.
     """
-    source = get_reporting_month(session, source_month_id)
-    if get_reporting_month_by_period(session, year=target_year, month=target_month) is not None:
-        raise ValueError(f"reporting month {target_year:04d}-{target_month:02d} already exists")
-
-    period_start, period_end = _period_bounds(target_year, target_month)
-    if snapshot_date < period_start:
-        raise ValueError("snapshot_date cannot be before the reporting period")
-
-    target = ReportingMonth(
-        year=target_year,
-        month=target_month,
-        period_start=period_start,
-        period_end=period_end,
-        snapshot_date=snapshot_date,
-        status=ReportingMonthStatus.DRAFT.value,
-        source=source.source,
-    )
-    session.add(target)
-
     try:
+        if session.new or session.dirty or session.deleted:
+            raise RuntimeError("month clone requires a session without pending writes")
+
+        connection = session.connection()
+        driver_connection = connection.connection.driver_connection
+        if driver_connection.in_transaction:
+            raise RuntimeError("month clone requires no pre-existing SQLite transaction")
+        # pysqlite's implicit transaction starts only at the first write. Reserve
+        # the single SQLite writer slot before reading the source, so deletion or
+        # child-row changes cannot land between source reads and target creation.
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        session.expire_all()  # a reused Session may have pre-lock source rows cached
+
+        source = session.get(ReportingMonth, source_month_id, populate_existing=True)
+        if source is None:
+            raise ReportingMonthNotFoundError(f"reporting month {source_month_id} was not found")
+        if get_reporting_month_by_period(session, year=target_year, month=target_month) is not None:
+            raise ValueError(f"reporting month {target_year:04d}-{target_month:02d} already exists")
+
+        period_start, period_end = _period_bounds(target_year, target_month)
+        if snapshot_date < period_start:
+            raise ValueError("snapshot_date cannot be before the reporting period")
+
+        target = ReportingMonth(
+            year=target_year,
+            month=target_month,
+            period_start=period_start,
+            period_end=period_end,
+            snapshot_date=snapshot_date,
+            status=ReportingMonthStatus.DRAFT.value,
+            source=source.source,
+        )
+        session.add(target)
         session.flush()  # allocate target.id without committing
         target_id = target.id
         source_id = source.id
