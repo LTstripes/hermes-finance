@@ -99,7 +99,9 @@ def _compute_metrics(
 def list_position_snapshots(session: Session) -> list[PositionSnapshot]:
     return list(
         session.scalars(
-            select(PositionSnapshot).order_by(
+            select(PositionSnapshot)
+            .where(PositionSnapshot.reporting_month_id.is_not(None))
+            .order_by(
                 PositionSnapshot.reporting_month_id,
                 PositionSnapshot.account_id,
                 PositionSnapshot.instrument_id,
@@ -111,7 +113,7 @@ def list_position_snapshots(session: Session) -> list[PositionSnapshot]:
 
 def get_position_snapshot(session: Session, snapshot_id: int) -> PositionSnapshot:
     snapshot = session.get(PositionSnapshot, snapshot_id)
-    if snapshot is None:
+    if snapshot is None or snapshot.reporting_month_id is None:
         raise PositionSnapshotNotFoundError(f"position snapshot {snapshot_id} was not found")
     return snapshot
 
@@ -395,6 +397,21 @@ def apply_snapshot_market_quote(
 
 def delete_position_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_position_snapshot(session, snapshot_id)
-    require_editable_child_month(session, snapshot)
-    session.delete(snapshot)
-    session.commit()
+    try:
+        month = require_editable_child_month(session, snapshot)
+        from hermes_finance.services.payout_provenance_lifecycle import (
+            archive_position_payouts,
+            position_has_payout_history,
+        )
+
+        period = f"{month.year:04d}-{month.month:02d}"
+        if position_has_payout_history(session, snapshot_id):
+            archive_position_payouts(session, snapshot_id, period)
+            snapshot.reporting_month_id = None
+            snapshot.archived_from_period = period
+        else:
+            session.delete(snapshot)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise

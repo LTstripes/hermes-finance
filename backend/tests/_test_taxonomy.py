@@ -171,6 +171,7 @@ _CI_LANE_OVERRIDES = {
     "test_instrument_cleanup.py": "ci_persistence",
     "test_investment_cash_flows.py": "ci_persistence",
     "test_positions_deposits_api.py": "ci_persistence",
+    "test_payout_lifecycle_migration.py": "ci_persistence",
     "test_r08_01b_valuation_points.py": "ci_persistence",
     "test_instrument_mappings_api.py": "ci_integrations",
     "test_ci_lane_ownership.py": "ci_runtime_release",
@@ -179,6 +180,7 @@ _CI_LANE_OVERRIDES = {
 _MIGRATION_FILES = frozenset(
     {
         "test_migrations.py",
+        "test_payout_lifecycle_migration.py",
         "test_r04_08_release_verification.py",
         "test_r05_11_release_verification.py",
         "test_r06_10_release_verification.py",

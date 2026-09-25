@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services.applied_payouts import create_applied_payout
 
 POSITION_KEYS = {
     "id",
@@ -419,6 +420,51 @@ def test_position_delete(client: TestClient) -> None:
     listing = client.get(f"/api/positions?month_id={month_id}")
     assert listing.status_code == 200
     assert listing.json() == []
+
+
+def test_position_delete_with_payout_allows_corrected_draft_position(client: TestClient) -> None:
+    month_id = _create_month(client)
+    account = _create_account(client)
+    instrument = _create_instrument(client)
+    created = _create_position(
+        client,
+        month_id=month_id,
+        account_id=account["id"],
+        instrument_id=instrument["id"],
+    )
+    database = client.app.state.database
+    with database.session_factory() as session:
+        payout = create_applied_payout(
+            session,
+            reporting_month_id=month_id,
+            account_id=account["id"],
+            instrument_id=instrument["id"],
+            source_position_snapshot_id=created["id"],
+            provider="t_invest",
+            provider_instrument_uid="synthetic-instrument",
+            event_kind="coupon",
+            identity_key="n:1",
+            payment_date=datetime.fromisoformat("2031-02-15").date(),
+            per_unit_amount="10.00",
+            currency="RUB",
+            fetched_at=datetime.fromisoformat("2031-01-31T10:00:00+00:00"),
+        )
+        session.commit()
+        payout_id = payout.id
+
+    removed = client.delete(f"/api/positions/{created['id']}")
+    assert removed.status_code == 204
+    assert client.get(f"/api/positions?month_id={month_id}").json() == []
+    corrected = _create_position(
+        client,
+        month_id=month_id,
+        account_id=account["id"],
+        instrument_id=instrument["id"],
+        quantity="2",
+    )
+    assert corrected["id"] != created["id"]
+    with database.session_factory() as session:
+        assert session.get(type(payout), payout_id).source_position_snapshot_id == created["id"]
 
 
 def test_position_unknown_ids_are_404(client: TestClient) -> None:

@@ -302,7 +302,7 @@ def test_t_invest_downgrade_fails_closed_and_keeps_head(tmp_path: Path) -> None:
     downgraded = run_alembic(database_path, "downgrade", "0025_provider_neutral_market_identity")
     assert downgraded.returncode != 0
     assert "t_invest" in downgraded.stderr
-    assert revision_rows(database_path) == ["0026_t_invest_price_source_and_provenance"]
+    assert revision_rows(database_path) == [REVISION]
 
     connection = sqlite3.connect(database_path)
     try:
@@ -422,7 +422,7 @@ def test_manual_snapshot_with_existing_provenance_downgrade_fails_closed(
     downgraded = run_alembic(database_path, "downgrade", "0025_provider_neutral_market_identity")
     assert downgraded.returncode != 0
     assert "quote provenance" in downgraded.stderr.lower()
-    assert revision_rows(database_path) == ["0026_t_invest_price_source_and_provenance"]
+    assert revision_rows(database_path) == [REVISION]
 
     connection = sqlite3.connect(database_path)
     try:

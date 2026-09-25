@@ -74,7 +74,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0041_debt_linked_account",
+        "revision": "0043_active_payout_reconciliation_slot",
         "months_status": 200,
     }
 
@@ -104,7 +104,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0041_debt_linked_account"}
+    assert observed == {"revision": "0043_active_payout_reconciliation_slot"}
     assert starts == 2
 
 

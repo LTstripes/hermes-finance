@@ -203,6 +203,14 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
                 event_date=event_date,
             )
 
+        from hermes_finance.services.payout_provenance_lifecycle import (
+            archive_month_payout_history,
+        )
+
+        archive_month_payout_history(
+            session, month_id, f"{reporting_month.year:04d}-{reporting_month.month:02d}"
+        )
+
         for table in _reporting_month_owned_tables():
             reporting_month_id = table.c.reporting_month_id
             session.execute(delete(table).where(reporting_month_id == month_id))
