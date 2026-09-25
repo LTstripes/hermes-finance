@@ -2125,7 +2125,7 @@ def test_debt_link_migration_is_additive_and_downgrade_is_fail_closed(
     blocked = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
     assert blocked.returncode != 0
     assert "while debt-account links exist" in blocked.stderr
-    assert revision_rows(database_path) == ["0041_debt_linked_account"]
+    assert revision_rows(database_path) == [REVISION]
 
     connection = sqlite3.connect(database_path)
     try:
