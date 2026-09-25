@@ -33,17 +33,21 @@ from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
     create_external_transfer_link,
+    update_external_flow,
 )
 from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
 )
+from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.valuation_boundaries import (
     create_external_flow_boundary_group,
     create_observed_valuation_point,
+    delete_external_flow_boundary_group,
+    list_observed_valuation_points,
 )
 
 START = date(2030, 1, 31)
@@ -253,6 +257,308 @@ def test_same_day_group_is_deterministic_and_uses_group_observations(tmp_path: P
         database.engine.dispose()
 
 
+def test_group_member_date_change_invalidates_and_rejects_new_group_observations(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        second_flow = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="50.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            scope_membership="stable_in_scope",
+        )
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id, second_flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        for relation, value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1200.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_group_observation",
+                relation=relation,
+                boundary_group_id=group.id,
+            )
+
+        changed_date = date(2030, 2, 14)
+        update_external_flow(
+            session,
+            flow.id,
+            event_date=changed_date,
+            scope_membership="stable_in_scope",
+        )
+        update_external_flow(
+            session,
+            second_flow.id,
+            event_date=changed_date,
+            scope_membership="stable_in_scope",
+        )
+
+        assert list_observed_valuation_points(session, boundary_group_id=group.id) == []
+        with pytest.raises(
+            ValueError, match="all boundary-group flows must share the same event date"
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value="1150.00",
+                performance_currency="RUB",
+                provenance_kind="synthetic_stale_group_observation",
+                relation=ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
+                boundary_group_id=group.id,
+            )
+
+        with pytest.raises(ValueError, match="already belongs to a boundary group"):
+            create_external_flow_boundary_group(
+                session,
+                reporting_month_id=february_id,
+                boundary_date=changed_date,
+                flow_ids=[flow.id, second_flow.id],
+                scope="account",
+                account_id=account_id,
+            )
+        delete_external_flow_boundary_group(session, group.id)
+        replacement = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=changed_date,
+            flow_ids=[flow.id, second_flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        for relation, value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1150.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=changed_date,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_recreated_group_observation",
+                relation=relation,
+                boundary_group_id=replacement.id,
+            )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        assert result.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_availability_rejects_persisted_observations_for_stale_group(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        update_external_flow(
+            session,
+            flow.id,
+            event_date=date(2030, 2, 14),
+            scope_membership="stable_in_scope",
+        )
+        # Simulate stale persisted rows from an older writer or imported database.
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=110_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_legacy_stale_group",
+                    relation="pre_external_flow",
+                    boundary_group_id=group.id,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=120_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_legacy_stale_group",
+                    relation="post_external_flow",
+                    boundary_group_id=group.id,
+                ),
+            )
+        )
+        session.commit()
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+
+        availability = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        twrr = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert not availability.twrr.is_available
+        assert "not_computable_valuation_boundary_order_unknown" in availability.twrr.reason_codes
+        assert not twrr.is_available
+        assert "not_computable_valuation_boundary_order_unknown" in twrr.reason_codes
+        assert availability.external_flow_boundaries[0].reason_codes == (
+            "not_computable_valuation_boundary_order_unknown",
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_boundary_group_membership_change_requires_explicit_recreation(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        first = _flow(session, february_id, account_id)
+        second = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="50.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        third = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="25.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            scope_membership="stable_in_scope",
+        )
+        original = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[first.id, second.id],
+            scope="account",
+            account_id=account_id,
+        )
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=february_id,
+            scope="account",
+            account_id=account_id,
+            observed_date=FLOW_DATE,
+            total_value="1100.00",
+            performance_currency="RUB",
+            provenance_kind="synthetic_old_membership_observation",
+            relation=ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
+            boundary_group_id=original.id,
+        )
+
+        delete_external_flow_boundary_group(session, original.id)
+        assert list_observed_valuation_points(session, boundary_group_id=original.id) == []
+        replacement = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[third.id, first.id, second.id],
+            scope="account",
+            account_id=account_id,
+        )
+        for relation, value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1125.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_recreated_membership_observation",
+                relation=relation,
+                boundary_group_id=replacement.id,
+            )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert result.twrr.is_available
+        assert result.external_flow_boundaries[0].flow_ids == tuple(
+            sorted((first.id, second.id, third.id))
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def test_multiple_same_day_boundary_groups_are_order_unknown(tmp_path: Path) -> None:
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:
@@ -438,9 +744,8 @@ def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: P
             )
         )
         session.commit()
-        for relation, total_value in (
-            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
-            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1200.00"),
+        with pytest.raises(
+            ValueError, match="out-of-scope flows cannot create valuation boundaries"
         ):
             create_observed_valuation_point(
                 session,
@@ -448,12 +753,43 @@ def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: P
                 scope="account",
                 account_id=account_id,
                 observed_date=FLOW_DATE,
-                total_value=total_value,
+                total_value="1100.00",
                 performance_currency="RUB",
                 provenance_kind="synthetic_invalid_group_membership",
-                relation=relation,
+                relation=ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
                 boundary_group_id=group.id,
             )
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=110_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_persisted_invalid_membership",
+                    relation="pre_external_flow",
+                    boundary_group_id=group.id,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=120_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_persisted_invalid_membership",
+                    relation="post_external_flow",
+                    boundary_group_id=group.id,
+                ),
+            )
+        )
+        session.commit()
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
         )
