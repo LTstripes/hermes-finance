@@ -400,7 +400,7 @@ fail closed.
 
 ### Isolated recovery rehearsal
 
-Implementation checkpoint (2026-09-22): #461 / PR #483 and the bounded Windows cleanup follow-up PR #499 are integrated on canonical development `main` `16df86d5eb3923cbe106938d6e81ec360397d00d`; exact-main CI #894 / `35734575867` is SUCCESS. This is implementation acceptance only. The fresh plaintext recovery point and clean DR rehearsal remain pending and must follow the sequence below.
+Canonical durability checkpoint (2026-09-25): #527 / PR #542 is integrated on development `main` `744c613884d074e6f9d35d61523603f257371713`; exact-main CI #947 / `36139627216` is SUCCESS. Owner-live publication, off-device visibility and one clean isolated DR rehearsal have all passed. The procedure below remains the supported way to repeat a future rehearsal.
 
 The supported rehearsal reads one managed artifact whose recorded protection
 pair matches the requested pair. For the encrypted mode, the container or
@@ -525,22 +525,23 @@ selection when the list is empty. A stale pre-restore month list or ID must
 not remain visible as current. The focused implementation is integrated through
 #462 / PR #502; this runbook does not add a second UI state system.
 
-### Owner completion gates
+### Owner completion evidence
 
-Real use remains Owner-controlled and requires all of the following after
-synthetic implementation acceptance:
+The #417 Owner-live completion gates passed on 2026-09-25:
 
-- one fresh destination-read-back-verified recovery point in the ordinary
-  synced folder, explicitly marked `owner_accepted_plaintext`;
-- Owner confirmation that the synced artifact is visible off-device; and
-- one clean isolated disaster-recovery rehearsal from that plaintext point.
+- one fresh destination-read-back-verified recovery point in the ordinary synced folder, explicitly marked `owner_accepted_plaintext / synced_filesystem_destination_v1`: **PASS**;
+- Owner confirmation that the exact newly published artifact is visible off-device: **PASS**;
+- one clean isolated disaster-recovery rehearsal from that plaintext point: **PASS** — `status=rehearsed`, `source_verified=true`, `source_unchanged=true`, `restored=true`, `prepared=true`, `validated=true`, `readiness=verified`, `schema_relationship=same_revision`.
 
-The encrypted mode remains valid only for a genuinely encrypted destination.
-It is not required for the current Finance off-device workflow, and older
-encrypted attestations are not reclassified as plaintext.
+Privacy-safe broad restored structure was 8 reporting months, 43 user tables, 25 populated user tables, 25 user indexes and 0 user views. No financial values or private paths are recorded.
 
-Failure keeps the prior verified point and its evidence. Preserve the failure
-output and action required; do not bypass the protection or isolation guards.
+Parent #417 is closed completed. The encrypted mode remains valid only for a genuinely encrypted destination and is not required for the accepted current Finance workflow. Older encrypted attestations are not reclassified as plaintext.
+
+#543 tracks non-blocking post-closeout hardening only. It does not invalidate the proven recovery workflow or reopen #417.
+
+For future periodic confidence, repeat the same workflow with a fresh managed point and a completely fresh isolated target; never reuse a failed rehearsal target.
+
+Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 ## References
 
@@ -554,6 +555,7 @@ output and action required; do not bypass the protection or isolation guards.
 - #410 — non-blocking v0.9.0 Release-description cleanup
 - `docs/CURRENT_STATUS.md`
 - `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`
+- `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`
 - `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
 - `docs/RELEASE_AUTOMATION.md`
 - `scripts/prepare-runtime.ps1`

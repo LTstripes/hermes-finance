@@ -2,13 +2,13 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-22**.
+> Last synchronized: **2026-09-25**.
 
 ## Canonical identity
 
 - Published Stable release: **v1.0.0**.
-- Current accepted implementation checkpoint: `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`.
-- Exact-main CI for that checkpoint: **#904 / run `35771083594` — SUCCESS**.
+- Current accepted implementation checkpoint: `744c613884d074e6f9d35d61523603f257371713`.
+- Exact-main CI for that checkpoint: **#947 / run `36139627216` — SUCCESS**.
 - Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 - Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
 - Guarded Release run `35580890145`: **SUCCESS**.
@@ -16,6 +16,7 @@
 - Owner OPS03 exact-SHA Preview/UAT: **PASS**.
 - Real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**.
 - Production Stable Start / owner data continuity: **PASS**.
+- Owner durability #417: **PASS / completed** — fresh plaintext synced recovery point published + destination read-back verified, off-device visibility confirmed, clean isolated DR returned `readiness=verified` with source unchanged.
 - UI v2 is primary at `/`; previous UI remains available at `/v1`.
 - Published predecessor `v0.9.0` remains immutable historical evidence.
 - GitHub `main` is authoritative for live development; documentation-only closeout commits may advance it beyond the released code without changing the immutable `v1.0.0` tag identity.
@@ -199,21 +200,35 @@ Release publication and local Stable installation are separate operations:
 
 `v0.9.0` is the first release to complete this full chain successfully.
 
-## Protected recovery + isolated DR — implementation accepted
+## Owner durability + isolated DR — completed
 
-#459 / PR #466 is complete on canonical `main`.
+The durability line under #417 is complete.
 
-- accepted candidate: `8eb47bb1261861354bf1dbec1271cc538f4b1bc4`;
-- canonical merge: `49144da863c93e5afc505e16be6817c55ff2b50d`;
-- independent security/recovery review: **ACCEPT**;
-- exact-head CI #837 / run `35516975089`: SUCCESS;
-- exact-main CI #839 / run `35518134142`: SUCCESS.
+Implementation history:
+- #459 / PR #466 — managed recovery-point publisher;
+- #460 / PR #473 — bounded verified retention;
+- #461 / PR #483 + PR #499 — isolated DR implementation plus Windows process-disposition hardening;
+- #462 / PR #502 — focused post-restore month-state reload;
+- #475 / PR #477 — truthful ambiguous restore-outcome handling;
+- #511 / PR #518 — real Owner rehearsal fix for Windows PowerShell singleton-month JSON handling;
+- #524 / PR #525 — real Owner rehearsal fix for Windows readiness ownership/classification TOCTOU;
+- #527 / PR #542 — explicit Owner-accepted plaintext synced-filesystem mode with pair-bound manifest/read-back/retention/DR semantics.
 
-Delivered: provider-neutral managed protected-destination publisher for explicitly attested `external_encrypted_destination_v1`, including staged verification before final exposure, destination read-back, producer/schema identity, privacy-safe CLI failure handling and no plaintext verification scratch in default temp storage.
+Canonical durability checkpoint: `744c613884d074e6f9d35d61523603f257371713`.
+Exact-main CI #947 / `36139627216`: **SUCCESS**.
+Independent security/recovery re-review of #527: **ACCEPT**.
 
-Bounded verified retention (#460 / PR #473), isolated DR rehearsal (#461 / PR #483 + PR #499) and focused Export/Backup restore-state reload (#462 / PR #502) are integrated and independently accepted. The final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594` SUCCESS. The implementation queue under #417 through #462 is complete.
+Owner-live acceptance on 2026-09-25:
+- fresh `owner_accepted_plaintext / synced_filesystem_destination_v1` recovery point: **published / verified / read_back=verified / retention=completed**;
+- exact new artifact independently visible off-device: **PASS**;
+- clean isolated Owner DR from that artifact: **PASS** — `status=rehearsed`, `source_verified=true`, `source_unchanged=true`, `restored=true`, `prepared=true`, `validated=true`, `readiness=verified`, `schema_relationship=same_revision`;
+- broad privacy-safe restored structure: 8 reporting months, 43 user tables, 25 populated user tables, 25 user indexes, 0 user views.
 
-Owner decision on #417 (2026-09-25) accepts one additional truthful mode, `owner_accepted_plaintext` / `synced_filesystem_destination_v1`, for an ordinary synced filesystem folder. That mode is not protected-at-rest. The encrypted mode is unchanged and existing encrypted artifacts are not reclassified. #527 records that mode. Remaining Owner gates are a fresh read-back-verified plaintext recovery point, confirmation that it is visible off-device, and one clean isolated DR rehearsal from that point. No Google API/OAuth/key-management/cloud architecture is introduced, and Hermes does not claim cloud delivery.
+The Owner explicitly accepted plaintext-at-rest storage in the ordinary synced folder. Hermes does not claim cloud delivery and still has no Google API/OAuth/key-management/cloud architecture. The encrypted mode remains available only for genuinely encrypted destinations; older protected attestations are not reclassified.
+
+Parent #417 is **closed completed**. #543 is a separate non-blocking hardening follow-up (neutral parse-failure identity, explicit 12+12+1 mixed-retention regression, pair-scoped listing documentation).
+
+Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 ## Active roadmap / what comes next
 
@@ -246,22 +261,23 @@ Detailed closeouts:
 
 ### Runtime / durability
 
-The runtime redesign parent #313 is complete. #459 protected recovery-point publisher is canonical.
+The runtime redesign parent #313 is complete. Owner durability parent #417 is also complete.
 
-#475 restore outcome semantics is also complete:
-- post-/possibly-mutated failure uses machine-readable `restore_outcome_ambiguous`;
-- confirmed negative outcomes remain distinct;
-- ambiguous UI state does not claim success/failure, refreshes shared reads and does not blindly retry;
-- cleanup cannot overwrite the ambiguity classification;
-- independent safety re-review: ACCEPT.
+Accepted durability chain:
+- #459 publisher;
+- #460 pair-bound bounded retention;
+- #461 / PR #499 isolated DR + Windows cleanup hardening;
+- #462 post-restore read-state reload;
+- #475 ambiguous restore truthfulness;
+- real-rehearsal fixes #511 and #524;
+- #527 plaintext synced-filesystem mode.
 
-Durability state under #417:
-- #459 / PR #466 — protected recovery-point publisher integrated;
-- #460 / PR #473 — bounded verified retention integrated;
-- #461 / PR #483 + PR #499 — isolated DR implementation and Windows cleanup/disposition hardening integrated and canonically green;
-- #462 / PR #502 — focused post-restore month-state reload integrated and canonically green.
+The final Owner-live flow passed on canonical checkpoint `744c613884d074e6f9d35d61523603f257371713`:
+1. fresh plaintext recovery point published and destination-read-back verified;
+2. exact new artifact confirmed visible off-device;
+3. clean isolated DR restored and started successfully with `readiness=verified` and unchanged source artifact.
 
-Real protected off-device recovery point, independently held recovery material and one clean Owner-controlled DR rehearsal remain final Owner gates.
+#543 tracks non-blocking post-closeout hardening and does not reopen #417.
 
 ### Performance
 
@@ -277,12 +293,12 @@ Published Stable is `v1.0.0`. #480 release preparation, exact-SHA OPS03 Owner UA
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #417 — owner durability umbrella; implementation children #458–#462 and #475 are complete; Owner-live gates remain.
+- #543 — post-closeout recovery hardening; non-blocking and does not reopen completed #417;
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
 
-Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475 and #480.
+Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #480, #511, #524 and #527.
 
 ## Canonical references
 
@@ -300,4 +316,4 @@ Completed: #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #
 - `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #417, #462, #476; completed #313, #387, #410, #429, #430, #432–#434, #444–#448, #459, #460, #461, #475, #480
+- #124, #127, #476, #543; completed #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #480, #511, #524, #527.

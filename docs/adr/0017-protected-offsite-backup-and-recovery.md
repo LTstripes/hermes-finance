@@ -1,6 +1,6 @@
 # ADR 0017 — Protected off-site recovery points and isolated recovery
 
-- **Status:** Accepted contract; implementation through #462 integrated. #527 adds one Owner-accepted plaintext synced-filesystem mode. Owner-live completion gates remain pending.
+- **Status:** Accepted contract; implementation and Owner-live recovery acceptance complete on 2026-09-25. #543 is non-blocking post-closeout hardening.
 - **Date:** 2026-09-18
 - **Source task:** #417-A / #458
 - **Parent contract:** #417 execution-contract freeze, `issuecomment-5731304512`
@@ -33,10 +33,11 @@ destination be encrypted. Existing artifacts that already claim
 
 This ADR freezes the contract for the managed recovery-point publisher,
 retention, isolated disaster-recovery rehearsal, and post-restore read-state
-invalidation. As of 2026-09-22, #459 publisher, #460 retention, #461 isolated
-DR implementation and #462 restore read-state work are accepted and integrated.
-The real Owner-controlled live completion gates remain pending. Acceptance of
-implementation does not equal Owner-live UAT.
+invalidation. #459 publisher, #460 retention, #461 isolated DR, #462 restore
+read-state, the real-rehearsal fixes #511/#524, and #527 plaintext synced mode
+are accepted and integrated. On 2026-09-25 the Owner-live completion flow also
+passed: fresh plaintext publication/read-back, independent off-device visibility,
+and a clean isolated DR rehearsal with verified readiness and unchanged source.
 
 ## 2. At-rest protection contract
 
@@ -235,16 +236,17 @@ The focused implementation and frontend regression are integrated through
 #462 / PR #502. This ADR freezes the behavior without adding a new UI state
 system or a backup-publisher UI.
 
-## 7. Owner gates and boundaries
+## 7. Owner acceptance and boundaries
 
-After the plaintext mode is canonical, the remaining Owner-controlled gates
-are: one fresh destination-read-back-verified recovery point in the ordinary
-synced folder, explicitly marked `owner_accepted_plaintext`; Owner
-confirmation that the synced artifact is visible off-device; and one clean
-isolated disaster-recovery rehearsal from that point. The encrypted mode
-remains available only for a genuinely encrypted destination. Hermes does not
-prove Google cloud delivery, and no Worker may access Owner data, credentials,
-backups, or private artifacts.
+Owner-live acceptance completed on 2026-09-25 for the explicitly accepted plaintext synced-filesystem workflow:
+
+- fresh `owner_accepted_plaintext / synced_filesystem_destination_v1` recovery point published with destination read-back verified;
+- Owner independently confirmed that exact new artifact was visible off-device;
+- clean isolated DR rehearsal from that artifact returned `status=rehearsed`, `source_verified=true`, `source_unchanged=true`, `restored=true`, `prepared=true`, `validated=true`, `readiness=verified`, and `schema_relationship=same_revision`.
+
+Hermes does not prove Google cloud delivery; the off-device observation is Owner evidence. The encrypted mode remains available only for a genuinely encrypted destination. No Worker may access Owner data, credentials, backups, or private artifacts.
+
+#417 is closed completed. #543 is non-blocking post-closeout hardening and does not alter this accepted contract.
 
 The following remain outside this ADR:
 
@@ -260,8 +262,8 @@ The following remain outside this ADR:
 ## 8. Synthetic acceptance matrix
 
 Automated acceptance uses only temporary/synthetic databases and simulated
-mounted protected destinations. No row authorizes Owner data or a real cloud
-operation.
+filesystem destinations for the accepted protection pairs. No row authorizes
+Owner data or a real cloud operation.
 
 | ID | Boundary and adversarial case | Required evidence | Owning child |
 |---|---|---|---|
@@ -317,14 +319,14 @@ implement runtime behavior.
    unchanged and fail closed on mismatched state/mode pairs. Retention keeps
    12 verified points per accepted pair.
 
-Implementation acceptance is complete through #462, including independent
-review and canonical exact-main verification at `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` (CI #904 /
-`35771083594`). #527 adds the explicit plaintext synced-filesystem mode.
-Publication, read-back, and rehearsal checks stay pair-bound. Retention keeps
-the newest 12 verified points of the replacement's exact pair, including when
-both pairs share one directory. The fresh plaintext
-recovery point, off-device visibility confirmation, and clean Owner DR
-rehearsal remain the final Owner-controlled completion gates for parent #417.
+Implementation and Owner-live acceptance are complete. #527 / PR #542 exact
+candidate `720074dcc94954f7485b2e71762fff9cad5d9917` merged to canonical checkpoint
+`744c613884d074e6f9d35d61523603f257371713`; exact-main CI #947 /
+`36139627216` is SUCCESS. Publication, read-back and rehearsal checks stay
+pair-bound; retention keeps the newest 12 verified points of the replacement's
+exact pair even when both pairs share one directory. The fresh plaintext point,
+off-device visibility confirmation and clean Owner DR rehearsal all passed on
+2026-09-25, and parent #417 is closed completed.
 
 ## References
 
@@ -332,6 +334,8 @@ rehearsal remain the final Owner-controlled completion gates for parent #417.
 - #458 — freeze protected off-site backup and DR contract
 - #459, #460, #461, #462 — dependency-ordered implementation children
 - #527 — Owner-accepted plaintext synced-filesystem destination mode
+- #543 — non-blocking post-closeout recovery hardening
+- [`OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`](../OWNER_DURABILITY_CLOSEOUT_2026-09-25.md)
 - [`MASTER_SPEC.md`](../MASTER_SPEC.md)
 - [`OWNER_RUNTIME_OPERATIONS.md`](../OWNER_RUNTIME_OPERATIONS.md)
 - [ADR 0004](0004-localhost-request-security.md)
