@@ -1042,7 +1042,7 @@ def test_runtime_inventory_rejects_stable_that_differs_from_canonical_production
         recovery_rehearsal._runtime_inventory(config)
 
 
-def test_cli_argument_failure_is_json_and_does_not_echo_private_inputs(
+def test_cli_argument_failure_is_json_and_uses_neutral_identity(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     private_value = "owner-private-recovery-location"
@@ -1054,7 +1054,50 @@ def test_cli_argument_failure_is_json_and_does_not_echo_private_inputs(
     payload = json.loads(output)
     assert payload["status"] == "action_required"
     assert payload["failure_stage"] == "arguments"
+    assert payload["protection_state"] is None
+    assert payload["protection_mode"] is None
+    assert payload["destination_alias"] is None
     assert private_value not in output
+
+
+def test_cli_invalid_protection_choice_uses_neutral_identity(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = recovery_rehearsal_main(
+        [
+            "--recovery-point",
+            str(tmp_path / "synthetic-recovery"),
+            "--recovery-sha",
+            "a" * 40,
+            "--recovery-checkout",
+            str(tmp_path / "recovery-checkout"),
+            "--control-checkout",
+            str(tmp_path / "control-checkout"),
+            "--runtime-config",
+            str(tmp_path / "runtime-config.json"),
+            "--target-profile",
+            str(tmp_path / "target-profile"),
+            "--target-data",
+            str(tmp_path / "target-data"),
+            "--target-database",
+            str(tmp_path / "target-data" / "finance.db"),
+            "--protection-state",
+            PROTECTION_STATE,
+            "--protection-mode",
+            "invalid-private-mode",
+        ]
+    )
+
+    assert exit_code == 2
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["status"] == "action_required"
+    assert payload["failure_stage"] == "arguments"
+    assert payload["protection_state"] is None
+    assert payload["protection_mode"] is None
+    assert payload["destination_alias"] is None
+    assert "invalid-private-mode" not in output
 
 
 def test_bounded_start_reuses_existing_readiness_and_adds_recovery_surfaces() -> None:
