@@ -557,17 +557,24 @@ def stage_create_observed_valuation_point(
     )
     if material_signature is None or expected_material_signature != material_signature:
         raise ValueError("valuation capture target changed materially")
-    existing_points = session.scalars(
-        select(ObservedValuationPoint).where(
-            ObservedValuationPoint.reporting_month_id == month.id,
-            ObservedValuationPoint.scope == normalized_scope.value,
-            ObservedValuationPoint.account_id == normalized_account_id,
-            ObservedValuationPoint.external_flow_id == external_flow_id,
-            ObservedValuationPoint.boundary_group_id == boundary_group_id,
+    existing_points = list(
+        session.scalars(
+            select(ObservedValuationPoint).where(
+                ObservedValuationPoint.reporting_month_id == month.id,
+                ObservedValuationPoint.scope == normalized_scope.value,
+                ObservedValuationPoint.account_id == normalized_account_id,
+                ObservedValuationPoint.external_flow_id == external_flow_id,
+                ObservedValuationPoint.boundary_group_id == boundary_group_id,
+            )
         )
     )
-    if any(existing.material_signature != material_signature for existing in existing_points):
-        raise ValueError("PRE and POST must attest the same current material event state")
+    # A legacy/unbound or corrupted older side cannot attest this material
+    # event. Retire it in the same writer transaction before fresh recapture;
+    # the remaining PRE/POST sides then share one current signature.
+    for existing in existing_points:
+        if existing.material_signature != material_signature:
+            session.delete(existing)
+    session.flush()
 
     point = ObservedValuationPoint(
         reporting_month_id=month.id,

@@ -379,7 +379,7 @@ def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> N
         session.commit()
         current = material_signature_for_boundary(session, external_flow_id=flow.id)
         assert current is not None and current != old
-        with pytest.raises(ValueError, match="PRE and POST must attest"):
+        with pytest.raises(ValueError, match="changed materially"):
             _capture_side(
                 session,
                 february_id=february_id,
@@ -387,9 +387,22 @@ def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> N
                 flow_id=flow.id,
                 observed_date=FLOW_DATE,
                 relation="post_external_flow",
-                expected_material_signature=current,
+                expected_material_signature=old,
             )
         session.rollback()
+        assert list_observed_valuation_points(session, external_flow_id=flow.id)[0].id == pre.id
+        post = _capture_side(
+            session,
+            february_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            observed_date=FLOW_DATE,
+            relation="post_external_flow",
+            expected_material_signature=current,
+        )
+        assert post.material_signature == current
+        assert post.relation == "post_external_flow"
+        # The old PRE was retired; a fresh POST alone cannot complete a pair.
         assert len(list_observed_valuation_points(session, external_flow_id=flow.id)) == 1
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
@@ -400,6 +413,73 @@ def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> N
         )
         assert not result.twrr.is_available
         assert "not_computable_valuation_boundary_missing" in result.twrr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_unbound_legacy_direct_boundary_can_be_recaptured(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        legacy = [
+            ObservedValuationPoint(
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value_kopecks=110_000 if relation == "pre_external_flow" else 120_000,
+                performance_currency="RUB",
+                coverage_status="complete",
+                quality="exact",
+                provenance_kind="synthetic_legacy",
+                relation=relation,
+                external_flow_id=flow.id,
+                material_signature=None,
+            )
+            for relation in ("pre_external_flow", "post_external_flow")
+        ]
+        session.add_all(legacy)
+        session.commit()
+        legacy_ids = {point.id for point in legacy}
+        current = material_signature_for_boundary(session, external_flow_id=flow.id)
+        assert current is not None
+        with pytest.raises(ValueError, match="changed materially"):
+            _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation="pre_external_flow",
+                expected_material_signature="0" * 64,
+            )
+        session.rollback()
+        assert {
+            point.id for point in list_observed_valuation_points(session, external_flow_id=flow.id)
+        } == legacy_ids
+        for relation in ("pre_external_flow", "post_external_flow"):
+            _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation=relation,
+                expected_material_signature=current,
+            )
+        current_points = list_observed_valuation_points(session, external_flow_id=flow.id)
+        assert len(current_points) == 2
+        assert {point.provenance_kind for point in current_points} == {"synthetic_capture"}
+        assert {point.material_signature for point in current_points} == {current}
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert result.twrr.is_available
     finally:
         session.close()
         database.engine.dispose()

@@ -31,7 +31,10 @@ metadata and do not change the signature. Every capture passes the signature
 read when it began; persistence compares it with current state
 under a SQLite writer reservation. Both PRE and POST must bind the same current
 signature. Preexisting observations with no signature are unavailable until
-freshly captured; migration does not infer their original event state.
+freshly captured; migration does not infer their original event state. Once the
+capture-start signature matches the current target under the writer reservation,
+recapture retires older unbound or stale points for that same scope and boundary
+before saving new evidence. A partial fresh pair remains unavailable.
 
 The capture services accept only draft reporting months. Existing monthly
 snapshots, legacy investment cash flows, historical scope membership and
