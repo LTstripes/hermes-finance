@@ -1514,7 +1514,18 @@ def _remap_warnings(
     *,
     extra: list[dict[str, str]],
 ) -> list[dict[str, str]]:
-    collected: dict[tuple[str, str], dict[str, str]] = {}
+    collected: dict[str, dict[str, str]] = {}
+
+    def keep(warning: dict[str, str]) -> None:
+        code = warning["code"]
+        existing = collected.get(code)
+        if existing is None or (
+            -_SEVERITY_RANK[warning["severity"]],
+            warning["scope"],
+            warning["message"],
+        ) < (-_SEVERITY_RANK[existing["severity"]], existing["scope"], existing["message"]):
+            collected[code] = warning
+
     for value in _list(package_warnings, label="package warnings"):
         warning = _mapping(value, label="package warning")
         code = warning.get("code")
@@ -1530,14 +1541,17 @@ def _remap_warnings(
         message = warning.get("message")
         if not isinstance(message, str) or not message:
             message = "An accepted backend read model reported a limited value."
-        collected[(code, scope_text)] = {
-            "code": code,
-            "severity": severity,
-            "scope": scope_text,
-            "message": message[:500],
-        }
+        keep(
+            {
+                "code": code,
+                "severity": severity,
+                "scope": scope_text,
+                "message": message[:500],
+            }
+        )
+
     for warning in extra:
-        collected[(warning["code"], warning["scope"])] = warning
+        keep(warning)
     return sorted(
         collected.values(),
         key=lambda item: (

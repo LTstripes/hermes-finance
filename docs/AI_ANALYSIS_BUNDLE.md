@@ -2,7 +2,7 @@
 
 **Schema name:** `hermes.finance.ai_analysis_bundle`
 
-**Current schema version:** `1.3.0`
+**Current schema version:** `1.4.0`
 
 **Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
 
@@ -171,6 +171,12 @@ No later price, quantity, or balance may be backfilled into an earlier reporting
 - minor: backward-compatible optional fields, optional sections, or additive enum values;
 - major: removal/rename, changed requiredness, changed units, changed counting/source semantics,
   or another change that can alter an existing consumer's interpretation.
+
+`1.4.0` records the #498 completeness metadata for each history point. When a
+required active capital account lacks a snapshot, its known liquid-capital subtotals
+remain `available` / `exact`, while the point and capital domain become `partial`
+with `active_account_snapshot_missing`. A month without capital evidence remains
+`unavailable` / `null` with `portfolio_snapshot_missing`.
 
 `1.3.0` adds the IIS-account presence semantics for partially configured
 profiles and the directly analyzable `salary_tax_context.selected_month`

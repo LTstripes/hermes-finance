@@ -528,7 +528,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
         response = _export(client)
     assert response.status_code == 200, response.text
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.3.0.json"
+        "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.json"
         in response.headers["content-disposition"]
     )
     payload = json.loads(response.content.decode("utf-8"))
@@ -548,7 +548,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["current_portfolio"]["reporting_status"] == "closed"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["schema_name"] == "hermes.finance.ai_analysis_bundle"
-    assert payload["schema_version"] == "1.3.0"
+    assert payload["schema_version"] == "1.4.0"
 
     mixed_sources = {
         source for point in payload["reporting_history"] for source in point["provenance_sources"]
@@ -850,7 +850,9 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
         if point["period"] == {"year": 2026, "month": 4}
     )
     assert january["kpis"]["liquid_capital_net"]["value"] is None
+    assert january["kpis"]["liquid_capital_net"]["availability"] == "unavailable"
     assert "portfolio_snapshot_missing" in january["kpis"]["liquid_capital_net"]["reason_codes"]
+    assert "active_account_snapshot_missing" not in january["coverage"]["reason_codes"]
     assert april["kpis"]["liquid_capital_net"]["value"]["amount"] == "0.00"
 
     august = payload["reporting_history"][-1]
@@ -929,8 +931,10 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
     assert len(warning_codes) == len(set(warning_codes))
 
 
+@pytest.mark.parametrize("unassigned_cash", [False, True])
 def test_cash_snapshot_detection_is_account_specific(
     app_context: tuple[TestClient, Database],
+    unassigned_cash: bool,
 ) -> None:
     client, _database = app_context
     covered_account = _ok(
@@ -953,10 +957,21 @@ def test_cash_snapshot_detection_is_account_specific(
                 "reporting_month_id": month_id,
                 "account_id": covered_account,
                 "name": "Synthetic covered cash snapshot",
-                "amount": _money("125000.00"),
+                "amount": _money("100.00"),
             },
         )
     )
+    if unassigned_cash:
+        _ok(
+            client.post(
+                "/api/cash-balances",
+                json={
+                    "reporting_month_id": month_id,
+                    "name": "Synthetic unassigned cash",
+                    "amount": _money("10.00"),
+                },
+            )
+        )
     _close(client, month_id)
 
     response = _export(client)
@@ -971,9 +986,73 @@ def test_cash_snapshot_detection_is_account_specific(
         not in payload["current_portfolio"]["missing_snapshot_account_refs"]
     )
     assert payload["current_portfolio"]["missing_snapshot_account_refs"] == [missing_ref]
+    assert payload["current_portfolio"]["coverage"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
+    point = payload["reporting_history"][0]
+    assert point["coverage"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
+    for name, amount in (
+        ("liquid_assets_total", "110.00" if unassigned_cash else "100.00"),
+        ("included_debts", "0.00"),
+        ("liquid_capital_net", "110.00" if unassigned_cash else "100.00"),
+    ):
+        metric = point["kpis"][name]
+        assert metric["value"]["amount"] == amount
+        assert metric["availability"] == "available"
+        assert metric["precision"] == "exact"
+        assert metric["reason_codes"] == ["active_account_snapshot_missing"]
+    assert payload["coverage"]["domains"]["capital"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
     assert any(
         warning["code"] == "active_account_snapshot_missing" for warning in payload["warnings"]
     )
+
+
+def test_historical_missing_account_keeps_capital_domain_partial_after_current_is_complete(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    account_ids = [
+        _ok(
+            client.post(
+                "/api/accounts",
+                json={"name": name, "account_type": "cash"},
+            )
+        )["id"]
+        for name in ("Synthetic historical A", "Synthetic historical B")
+    ]
+    for month, represented_accounts in ((7, account_ids[:1]), (8, account_ids)):
+        month_id = _create_month(client, 2026, month)
+        for account_id in represented_accounts:
+            _ok(
+                client.post(
+                    "/api/cash-balances",
+                    json={
+                        "reporting_month_id": month_id,
+                        "account_id": account_id,
+                        "name": f"Synthetic account cash {account_id}",
+                        "amount": _money("100.00"),
+                    },
+                )
+            )
+        _close(client, month_id)
+
+    payload = _export(client).json()
+    _validator().validate(payload)
+    first, selected = payload["reporting_history"]
+    assert first["coverage"]["reason_codes"] == ["active_account_snapshot_missing"]
+    assert selected["coverage"] == {"status": "complete", "reason_codes": []}
+    assert payload["current_portfolio"]["coverage"] == selected["coverage"]
+    assert payload["coverage"]["domains"]["capital"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
 
 
 def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
@@ -989,15 +1068,15 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.3.0.md" in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.3.0")
+    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     alias = _export(client, path="/api/export/ai-analysis-bundle/markdown")
     assert alias.status_code == 200, alias.text
-    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.3.0")
+    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
     assert _table_counts(database) == before
 
 
@@ -1093,7 +1172,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert payload["metadata"]["source_contracts"] == [
         {
             "name": "hermes.finance.ai_analysis_bundle",
-            "version": "1.3.0",
+            "version": "1.4.0",
             "role": "financial_source",
         },
         {
