@@ -478,12 +478,12 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella: **completed 2026-09-25** after live plaintext publication, off-device confirmation and clean isolated DR; #543 is separate non-blocking hardening.
 
 Separate follow-up:
-- #476 — real-backend synthetic G04 browser regression gate.
+- #476 — real-backend synthetic G04 browser regression gate;
+- #543 — non-blocking post-closeout recovery hardening.
 
-Completed: #313, #387, #410, #429, #430, #459, #460, #461, #462, #475 and #480.
+Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #480, #511, #524 and #527.
 
 ## 14. Canonical reference documents
 
