@@ -662,7 +662,7 @@ liquid_capital_net = liquid_assets - credit_card_debt - other_included_debts
 
 Недвижимость и остаток ипотеки не входят в `liquid_capital_net`.
 
-Формула — известный итог по сохранённым включённым строкам. Отсутствующий snapshot обязательного счёта в эту сумму не подставляется нулём. Слова `available`, `exact`, `partial` и `complete` для этого итога, полнота источников портфеля и отдельная полнота cash-history/performance заданы в [`docs/financial-completeness-contract.md`](financial-completeness-contract.md).
+Формула — известный итог по сохранённым включённым строкам. Счёт без снимка остаётся в каталоге; в сумму не входит его отсутствующее значение, и нулём оно не подставляется. Строка `CashBalance` с `account_id = NULL` — непривязанный кэш и не закрывает снимок ни одного реального счёта. Слова `available`, `exact`, `partial` и `complete` для этого итога, полнота источников портфеля и отдельная полнота cash-history/performance заданы в [`docs/financial-completeness-contract.md`](financial-completeness-contract.md).
 
 ## 10.2. Чистая стоимость недвижимости
 

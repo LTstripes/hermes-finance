@@ -158,7 +158,10 @@ The required sections are:
   included rows. When an active capital-included account has no snapshot,
   portfolio-source coverage is `partial` with `active_account_snapshot_missing`.
   That reason travels with the capital metric, the history point, and the
-  capital and history coverage domains. It is independent of
+  capital and history coverage domains. The account stays in the catalog and
+  in missing-account metadata; only its snapshot value is absent from the
+  subtotal. `CashBalance.account_id = NULL` is synthetic/unassigned cash
+  (#497) and does not satisfy any real account. This is independent of
   `total_net_worth_unavailable` and of performance or cash-boundary coverage.
   See [`financial-completeness-contract.md`](financial-completeness-contract.md).
 - Passive income keeps existing semantics: salary, cashback, contributions,

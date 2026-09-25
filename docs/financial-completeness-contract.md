@@ -13,7 +13,7 @@ These words are separate. A single field must not collapse them.
 
 | Axis | Words | Meaning |
 |---|---|---|
-| Known subtotal | the canonical formula over persisted included rows that exist | Integer-kopeck sum. A missing required snapshot is omitted. It is never stored or displayed as `0.00` in place of the missing row. |
+| Known subtotal | the canonical formula over persisted included rows that exist | Integer-kopeck sum. A required account with no snapshot stays in the catalog. Its snapshot value is absent from this sum and is never stored or displayed as `0.00`. |
 | Availability | `available`, `unavailable` | `available` means the numeric claim is present. `unavailable` means the value is withheld (`null`), including when no capital evidence exists. |
 | Precision | `exact`, `approximate`, `unknown` | `exact` means the number is the exact minor-unit result of its declared formula over its declared inputs. |
 | Coverage | `complete`, `partial`, `unavailable` | Whether the named source set for that claim is fully represented. |
@@ -32,9 +32,9 @@ This claim answers one question: for this reporting month, does every account re
 
 - a position snapshot for the account;
 - a deposit snapshot for the account;
-- a cash-balance row with that `account_id`.
+- a cash-balance row whose `account_id` is that account.
 
-The existing cash exception stays: one cash-balance row with `account_id` null represents an active capital-included account of type `cash`. That row does not represent a brokerage, IIS, deposit, savings, or other account.
+`CashBalance.account_id = NULL` is synthetic/unassigned cash, the same identity as integrated #497. It does not satisfy the snapshot requirement of any real account, including an account with `account_type = cash`. When `include_in_capital` is true, that row's amount can still sit in the known subtotal as unassigned cash. It is not a catalog account.
 
 An explicit zero amount is a real snapshot. Frozen, closed, hidden, and `include_in_capital = false` accounts are outside this required set.
 
@@ -63,7 +63,7 @@ Canonical reading on every surface:
 | Precision of that subtotal | `exact` |
 | Portfolio-source coverage | `partial` |
 | Reason | `active_account_snapshot_missing` |
-| Account B | omitted, absent, never `0.00` |
+| Account B | stays in the account catalog and in missing-account metadata. Its snapshot value is absent from the subtotal and is never `0.00` |
 | Complete liquid capital / complete portfolio value | not established |
 
 Included debt or extra persisted rows stay inside the known subtotal. They do not cure account B.
@@ -100,7 +100,7 @@ The two-account case, same closed period.
 | v2 Capital: net, composition, allocation shares | known subtotal; shares are shares of that subtotal | same marker on the net and on allocation support | number and shares only | F3 |
 | v2 Reports / history archive | known subtotal of each closed point | per-point marker | amount only | F3 |
 | Closed-to-closed delta | exact difference of the two known subtotals | partial when either endpoint is partial | unmarked delta | F3 |
-| Month close readiness and deterministic insight | warning for the missing account | already `active_account_snapshot_missing`; close still allowed | aligned | none |
+| Month close readiness and deterministic insight | warning for the missing account | already `active_account_snapshot_missing`; close still allowed | two-account warning aligned. One `account_id` NULL cash row still treats every active capital-included cash account as represented | F4 |
 | AI bundle `reporting_history[]` KPI | known subtotal, `available` / `exact` | point `coverage` partial, and the same reason on `liquid_assets_total`, `included_debts`, `liquid_capital_net` | point `coverage` can be `complete`; KPI reason list can be empty; value is the subtotal | F1 |
 | AI bundle `coverage.domains.capital` | — | `partial` with the same reason | can be `complete` | F1 |
 | AI bundle `current_portfolio.coverage` and `coverage.domains.portfolio` | — | `partial` / `active_account_snapshot_missing` | already this | none |
@@ -129,7 +129,7 @@ Changing `status` or `include_in_capital` can change the coverage label of an al
 
 Performance quality `exact` means the accepted performance prerequisite set is satisfied. Capital precision `exact` means the known-subtotal arithmetic is exact. Those two uses of `exact` must not be copied onto each other.
 
-For a valuation point, each account selected by historical performance membership still needs positions, deposits, and performance cash, or the point stays non-exact with `not_computable_scope_coverage_incomplete`. A single position snapshot of `100.00` RUB does not satisfy that set. The capital rule "any one snapshot represents the account" applies only to portfolio-source coverage.
+For a valuation point, each account selected by historical performance membership still needs positions, deposits, and performance cash, or the point stays non-exact with `not_computable_scope_coverage_incomplete`. A single position snapshot of `100.00` RUB does not satisfy that set. Portfolio-source coverage is the only claim for which one position, deposit, or account-linked cash snapshot represents that real account.
 
 Cash-boundary coverage (`docs/r08-01c-performance-availability.md`) is an owner attestation that cash crossings are known. It stores no amount. Snapshot presence does not prove it. Its absence does not change the capital known subtotal and does not create `active_account_snapshot_missing`.
 
@@ -148,7 +148,7 @@ For each reporting-history point, when portfolio-source coverage is partial:
 - those three metrics include `active_account_snapshot_missing` in `reason_codes`;
 - `coverage.domains.capital` is `partial` with that reason when any point has it.
 
-Keep `portfolio_snapshot_missing` for a month with no capital evidence, value `null`. Keep the selected-portfolio block as it is. `test_cash_snapshot_detection_is_account_specific` is the closest fixture; extend it to the history point and the KPI reason list. Reason codes are already free-form strings in the bundle schema. Emitting a new status/reason combination changes instance meaning, so the follow-up records a bundle `schema_version` minor bump under `docs/AI_ANALYSIS_BUNDLE.md`.
+Keep `portfolio_snapshot_missing` for a month with no capital evidence, value `null`. Keep the selected-portfolio block as it is: the missing account stays in the account catalog and in `missing_snapshot_account_refs`. `test_cash_snapshot_detection_is_account_specific` is the closest fixture; extend it to the history point and the KPI reason list. Reason codes are already free-form strings in the bundle schema. Emitting a new status/reason combination changes instance meaning, so the follow-up records a bundle `schema_version` minor bump under `docs/AI_ANALYSIS_BUNDLE.md`.
 
 ### F2 — Review, goals, and allocation metadata
 
@@ -162,7 +162,13 @@ Keep `portfolio_snapshot_missing` for a month with no capital evidence, value `n
 
 ### F3 — Owner-facing marker
 
-Add portfolio-source coverage, computed with the section 2 rule, onto the read models that already emit the known subtotal: month dashboard liquid capital, closed-report comparison (including the delta), and capital composition. Render that marker beside the figure on v1 Dashboard, v1 month detail, v2 Home, v2 Capital, and v2 Reports/history. Do not reimplement the required-account rule in React. Do not hide or restate `100.00`.
+Add portfolio-source coverage, computed with the section 2 rule, onto the read models that already emit the known subtotal: month dashboard liquid capital, closed-report comparison (including the delta), and capital composition. Render that marker beside the figure on v1 Dashboard, v1 month detail, v2 Home, v2 Capital, and v2 Reports/history. Do not reimplement the required-account rule in React. Do not hide or restate `100.00`. The missing account stays visible in the account list.
+
+### F4 — Close-readiness cash identity
+
+`backend/src/hermes_finance/services/close_readiness.py`, and the deterministic insight that repeats its warning.
+
+A `CashBalance` row with `account_id = NULL` must not count as the snapshot of any real account. The AI bundle missing-snapshot check already requires a matching `account_id` (#497). Leave the known-subtotal formula unchanged. This docs change does not edit that detector.
 
 ## 9. Non-goals
 
@@ -173,3 +179,5 @@ Add portfolio-source coverage, computed with the section 2 rule, onto the read m
 - No use of cash-boundary coverage as a proxy for missing snapshots.
 - No freshness or property-identity redesign.
 - No second capital total that zero-fills account B.
+- No removal of a missing account from the catalog or from missing-account metadata.
+- No use of unassigned cash as the snapshot of a real account.
