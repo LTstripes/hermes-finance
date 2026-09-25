@@ -1287,6 +1287,7 @@ class ObservedValuationPoint(Base):
     boundary_group_id: Mapped[int | None] = mapped_column(
         ForeignKey("external_flow_boundary_groups.id", ondelete="RESTRICT"), nullable=True
     )
+    material_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)

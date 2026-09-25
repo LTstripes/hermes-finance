@@ -234,6 +234,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "notes",
             "created_at",
             "updated_at",
+            "material_signature",
         ]
         assert [
             row[1]
@@ -585,9 +586,16 @@ def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> N
     downgraded = run_alembic(database_path, "downgrade", "0033_account_scope_membership_history")
 
     assert downgraded.returncode != 0
-    assert "while boundary evidence exists" in downgraded.stderr
-    # The failed downgrade rolls back every step, including earlier empty tables.
-    assert revision_rows(database_path) == [REVISION]
+    assert "while evidence exists" in downgraded.stderr
+    # 0044 must retain binding before any older migration can drop the rows.
+    assert revision_rows(database_path) == ["0044_observed_valuation_material_signature"]
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute(
+            "SELECT material_signature FROM observed_valuation_points"
+        ).fetchone() == (None,)
+    finally:
+        connection.close()
 
 
 def test_goal_main_selection_migration_backfills_legacy_settings_goal(tmp_path: Path) -> None:
@@ -2114,10 +2122,10 @@ def test_debt_link_migration_is_additive_and_downgrade_is_fail_closed(
     finally:
         connection.close()
 
-        blocked = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
-        assert blocked.returncode != 0
-        assert "while debt-account links exist" in blocked.stderr
-        assert revision_rows(database_path) == [REVISION]
+    blocked = run_alembic(database_path, "downgrade", "0040_in_kind_boundary_coverage")
+    assert blocked.returncode != 0
+    assert "while debt-account links exist" in blocked.stderr
+    assert revision_rows(database_path) == [REVISION]
 
     connection = sqlite3.connect(database_path)
     try:

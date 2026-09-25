@@ -36,6 +36,7 @@ from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.external_flows import classify_external_flow
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
+from hermes_finance.services.valuation_material_signature import material_signature_for_boundary
 
 
 class ObservedValuationPointNotFoundError(LookupError):
@@ -454,10 +455,18 @@ def stage_create_observed_valuation_point(
     external_flow_id: int | None = None,
     boundary_group_id: int | None = None,
     notes: str | None = None,
+    expected_material_signature: str,
 ) -> ObservedValuationPoint:
-    """Stage an explicitly related observed valuation point."""
+    """Stage an observation against the current material boundary state.
+
+    The producer supplies the signature read when capture began. A synchronous
+    caller can read it immediately before this call.
+    """
 
     month = require_editable_reporting_month(session, reporting_month_id)
+    # The no-op month UPDATE holds SQLite's writer reservation through flush and
+    # commit. Refresh any identity-map state read before a concurrent correction.
+    session.expire_all()
     normalized_scope = _coerce_scope(scope)
     normalized_account_id = _scope_account_id(normalized_scope, account_id)
     normalized_observed_date = _coerce_date(observed_date, field="observed_date")
@@ -543,6 +552,30 @@ def stage_create_observed_valuation_point(
             f"{normalized_relation.value} observed_date must equal the flow boundary date"
         )
 
+    material_signature = material_signature_for_boundary(
+        session, external_flow_id=external_flow_id, boundary_group_id=boundary_group_id
+    )
+    if material_signature is None or expected_material_signature != material_signature:
+        raise ValueError("valuation capture target changed materially")
+    existing_points = list(
+        session.scalars(
+            select(ObservedValuationPoint).where(
+                ObservedValuationPoint.reporting_month_id == month.id,
+                ObservedValuationPoint.scope == normalized_scope.value,
+                ObservedValuationPoint.account_id == normalized_account_id,
+                ObservedValuationPoint.external_flow_id == external_flow_id,
+                ObservedValuationPoint.boundary_group_id == boundary_group_id,
+            )
+        )
+    )
+    # A legacy/unbound or corrupted older side cannot attest this material
+    # event. Retire it in the same writer transaction before fresh recapture;
+    # the remaining PRE/POST sides then share one current signature.
+    for existing in existing_points:
+        if existing.material_signature != material_signature:
+            session.delete(existing)
+    session.flush()
+
     point = ObservedValuationPoint(
         reporting_month_id=month.id,
         scope=normalized_scope.value,
@@ -557,6 +590,7 @@ def stage_create_observed_valuation_point(
         relation=normalized_relation.value,
         external_flow_id=external_flow_id,
         boundary_group_id=boundary_group_id,
+        material_signature=material_signature,
         notes=notes,
     )
     session.add(point)
