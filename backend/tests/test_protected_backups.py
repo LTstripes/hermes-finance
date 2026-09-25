@@ -18,6 +18,10 @@ from hermes_finance.database import create_database
 from hermes_finance.protected_backup_cli import main as protected_backup_main
 from hermes_finance.services import protected_backups
 from hermes_finance.services.protected_backups import (
+    PLAINTEXT_RETENTION_ACTION_REQUIRED,
+    PLAINTEXT_SYNCED_ALIAS,
+    PLAINTEXT_SYNCED_MODE,
+    PLAINTEXT_SYNCED_STATE,
     PROTECTION_MODE,
     PROTECTION_STATE,
     RETENTION_ACTION_REQUIRED,
@@ -58,6 +62,8 @@ def _publish(
     *,
     now: datetime | None = None,
     git_sha: str = "a" * 40,
+    protection_state: str = PROTECTION_STATE,
+    protection_mode: str = PROTECTION_MODE,
 ):
     monkeypatch.setattr(
         protected_backups,
@@ -67,8 +73,8 @@ def _publish(
     return publish_recovery_point(
         database,
         destination,
-        protection_state=PROTECTION_STATE,
-        protection_mode=PROTECTION_MODE,
+        protection_state=protection_state,
+        protection_mode=protection_mode,
         source_checkout=Path(__file__).resolve().parents[2],
         now=now or datetime(2035, 1, 2, 3, 4, 5, 678000, tzinfo=UTC),
     )
@@ -78,8 +84,20 @@ def _managed_names(destination: Path) -> set[str]:
     return {path.name for path in destination.iterdir() if is_managed_recovery_name(path.name)}
 
 
-def _eligible_names(destination: Path) -> set[str]:
-    return {path.name for path in protected_backups._verified_managed_recovery_points(destination)}
+def _eligible_names(
+    destination: Path,
+    *,
+    protection_state: str = PROTECTION_STATE,
+    protection_mode: str = PROTECTION_MODE,
+) -> set[str]:
+    return {
+        path.name
+        for path in protected_backups._verified_managed_recovery_points(
+            destination,
+            protection_state=protection_state,
+            protection_mode=protection_mode,
+        )
+    }
 
 
 def _object_bound_deletion_available(destination: Path) -> bool:
@@ -295,6 +313,272 @@ def test_publisher_fails_closed_for_boundary_and_lock(
             protection_mode=PROTECTION_MODE,
             source_checkout=Path(__file__).resolve().parents[2],
         )
+
+
+def _assert_no_provider_claim(payload: dict) -> None:
+    blob = json.dumps(payload, ensure_ascii=True).lower()
+    for token in ("google", "oauth", "googleapis", "cloud_delivered", "offsite_delivered"):
+        assert token not in blob
+
+
+def _manifest_of(path: Path) -> dict:
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    assert isinstance(manifest, dict)
+    return manifest
+
+
+@pytest.mark.parametrize(
+    ("protection_state", "protection_mode"),
+    [
+        (PROTECTION_STATE, PLAINTEXT_SYNCED_MODE),
+        (PLAINTEXT_SYNCED_STATE, PROTECTION_MODE),
+        (PLAINTEXT_SYNCED_STATE, "plaintext"),
+        ("unattested", PLAINTEXT_SYNCED_MODE),
+    ],
+)
+def test_mismatched_protection_pairs_fail_before_staging(
+    tmp_path: Path,
+    synthetic_database,
+    protection_state: str,
+    protection_mode: str,
+) -> None:
+    destination = tmp_path / "synced-filesystem-destination"
+    destination.mkdir()
+
+    with pytest.raises(ProtectedBackupError, match="unsupported protection mode"):
+        publish_recovery_point(
+            synthetic_database,
+            destination,
+            protection_state=protection_state,
+            protection_mode=protection_mode,
+            source_checkout=Path(__file__).resolve().parents[2],
+        )
+
+    assert list(destination.iterdir()) == []
+
+
+def test_plaintext_synced_mode_publishes_verifies_and_retains(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "synced-filesystem-destination"
+    destination.mkdir()
+    foreign = destination / "owner-notes.txt"
+    foreign.write_text("unrelated owner note", encoding="utf-8")
+    created, results = _publish_series(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        VERIFIED_RETENTION_LIMIT + 1,
+        protection_state=PLAINTEXT_SYNCED_STATE,
+        protection_mode=PLAINTEXT_SYNCED_MODE,
+    )
+
+    assert all(result.published and result.verified for result in results)
+    assert all(result.read_back == "verified" for result in results)
+    assert all(result.protection_state == PLAINTEXT_SYNCED_STATE for result in results)
+    assert all(result.protection_mode == PLAINTEXT_SYNCED_MODE for result in results)
+    assert all(result.destination_alias == PLAINTEXT_SYNCED_ALIAS for result in results)
+    assert all("protected" not in result.destination_alias for result in results)
+    assert all("encrypted" not in result.protection_mode for result in results)
+    for result in results:
+        _assert_no_provider_claim(result.as_dict())
+        assert str(destination) not in json.dumps(result.as_dict())
+        assert str(synthetic_database.database_path) not in json.dumps(result.as_dict())
+
+    can_delete = _object_bound_deletion_available(destination)
+    remaining = _eligible_names(
+        destination,
+        protection_state=PLAINTEXT_SYNCED_STATE,
+        protection_mode=PLAINTEXT_SYNCED_MODE,
+    )
+    if can_delete:
+        assert all(result.retention == RETENTION_COMPLETED for result in results)
+        assert remaining == set(created[1:])
+    else:
+        assert results[-1].retention == RETENTION_FAILED
+        assert remaining == set(created)
+    for name in remaining:
+        manifest = _manifest_of(destination / name)
+        assert manifest["protection_state"] == PLAINTEXT_SYNCED_STATE
+        assert manifest["protection_mode"] == PLAINTEXT_SYNCED_MODE
+        verified, digest, size = protected_backups._verify_artifact(destination / name)
+        assert verified["protection_state"] == PLAINTEXT_SYNCED_STATE
+        assert verified["protection_mode"] == PLAINTEXT_SYNCED_MODE
+        assert len(digest) == 64
+        assert size == (destination / name).stat().st_size
+    assert foreign.read_text(encoding="utf-8") == "unrelated owner note"
+
+
+def test_mismatched_manifest_is_not_retained(
+    tmp_path: Path, synthetic_database, monkeypatch
+) -> None:
+    destination = tmp_path / "synced-filesystem-destination"
+    destination.mkdir()
+    snapshot = tmp_path / "snapshot.bin"
+    snapshot.write_bytes(b"synthetic-snapshot")
+    crossed = {
+        "artifact_identity_sha256": "0" * 64,
+        "artifact_size_bytes": 0,
+        "created_at": "2035-01-01T00:00:00Z",
+        "format_version": 1,
+        "producer_git_sha": "b" * 40,
+        "protection_state": PROTECTION_STATE,
+        "protection_mode": PLAINTEXT_SYNCED_MODE,
+        "snapshot_sha256": hashlib.sha256(b"synthetic-snapshot").hexdigest(),
+        "snapshot_size_bytes": len(b"synthetic-snapshot"),
+        "source_alembic_revisions": ["0041_debt_linked_account"],
+    }
+    artifact_bytes = protected_backups._artifact_bytes(snapshot, crossed)
+    digest = hashlib.sha256(artifact_bytes).hexdigest()
+    mismatched = destination / (
+        f"hermes_recovery_20350101T000000000000Z-{digest[:16]}.hermes-recovery"
+    )
+    mismatched.write_bytes(artifact_bytes)
+    original = mismatched.read_bytes()
+
+    with pytest.raises(ProtectedBackupError, match="protection state is invalid"):
+        protected_backups._verify_payload(original)
+
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        protection_state=PLAINTEXT_SYNCED_STATE,
+        protection_mode=PLAINTEXT_SYNCED_MODE,
+    )
+
+    assert result.retention == RETENTION_COMPLETED
+    assert mismatched.read_bytes() == original
+    plaintext_names = _eligible_names(
+        destination,
+        protection_state=PLAINTEXT_SYNCED_STATE,
+        protection_mode=PLAINTEXT_SYNCED_MODE,
+    )
+    assert mismatched.name not in plaintext_names
+    assert _manifest_of(destination / next(iter(plaintext_names)))["protection_mode"] == (
+        PLAINTEXT_SYNCED_MODE
+    )
+
+
+def test_plaintext_cli_result_stays_truthful_and_privacy_safe(
+    tmp_path: Path, synthetic_database, monkeypatch, capsys
+) -> None:
+    destination = tmp_path / "synced-filesystem-destination"
+    destination.mkdir()
+    monkeypatch.setattr(protected_backups, "_git_identity", lambda _checkout: "c" * 40)
+
+    exit_code = protected_backup_main(
+        [
+            "--database",
+            str(synthetic_database.database_path),
+            "--destination",
+            str(destination),
+            "--checkout",
+            str(Path(__file__).resolve().parents[2]),
+            "--protection-state",
+            PLAINTEXT_SYNCED_STATE,
+            "--protection-mode",
+            PLAINTEXT_SYNCED_MODE,
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert str(synthetic_database.database_path) not in output
+    assert str(destination) not in output
+    payload = json.loads(output)
+    assert payload["status"] == "published"
+    assert payload["published"] is True
+    assert payload["verified"] is True
+    assert payload["read_back"] == "verified"
+    assert payload["protection_state"] == PLAINTEXT_SYNCED_STATE
+    assert payload["protection_mode"] == PLAINTEXT_SYNCED_MODE
+    assert payload["destination_alias"] == PLAINTEXT_SYNCED_ALIAS
+    assert payload["retention"] == RETENTION_COMPLETED
+    _assert_no_provider_claim(payload)
+
+
+def test_plaintext_cli_failure_does_not_claim_protected_mode(tmp_path: Path, capsys) -> None:
+    missing = tmp_path / "missing-private-finance.db"
+    destination = tmp_path / "synced-filesystem-destination"
+    destination.mkdir()
+
+    exit_code = protected_backup_main(
+        [
+            "--database",
+            str(missing),
+            "--destination",
+            str(destination),
+            "--protection-state",
+            PLAINTEXT_SYNCED_STATE,
+            "--protection-mode",
+            PLAINTEXT_SYNCED_MODE,
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert str(missing) not in output
+    assert str(destination) not in output
+    payload = json.loads(output)
+    assert payload["published"] is False
+    assert payload["protection_state"] == PLAINTEXT_SYNCED_STATE
+    assert payload["protection_mode"] == PLAINTEXT_SYNCED_MODE
+    assert payload["destination_alias"] == PLAINTEXT_SYNCED_ALIAS
+    assert "protected" not in payload["action_required"]
+    assert "encrypted" not in payload["action_required"]
+    _assert_no_provider_claim(payload)
+
+
+@pytest.mark.parametrize(
+    ("protection_state", "protection_mode"),
+    [
+        (PROTECTION_STATE, PLAINTEXT_SYNCED_MODE),
+        (PLAINTEXT_SYNCED_STATE, PROTECTION_MODE),
+    ],
+)
+def test_publisher_cli_crossed_pair_keeps_requested_identity(
+    tmp_path: Path,
+    synthetic_database,
+    capsys,
+    protection_state: str,
+    protection_mode: str,
+) -> None:
+    destination = tmp_path / "crossed-pair-destination"
+    destination.mkdir()
+
+    exit_code = protected_backup_main(
+        [
+            "--database",
+            str(synthetic_database.database_path),
+            "--destination",
+            str(destination),
+            "--checkout",
+            str(Path(__file__).resolve().parents[2]),
+            "--protection-state",
+            protection_state,
+            "--protection-mode",
+            protection_mode,
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert str(destination) not in output
+    assert str(synthetic_database.database_path) not in output
+    assert "protected-destination" not in output
+    payload = json.loads(output)
+    assert payload["published"] is False
+    assert payload["created"] is False
+    assert payload["verified"] is False
+    assert payload["retention"] == RETENTION_NOT_RUN
+    assert payload["protection_state"] == protection_state
+    assert payload["protection_mode"] == protection_mode
+    assert payload["destination_alias"] is None
+    assert "protected" not in payload["action_required"]
+    assert list(destination.iterdir()) == []
+    _assert_no_provider_claim(payload)
 
 
 def test_corrupt_readback_is_not_verified(tmp_path: Path, synthetic_database, monkeypatch) -> None:
@@ -766,7 +1050,16 @@ def test_cli_parser_failure_does_not_echo_private_argv(
     assert payload["action_required"] == ("protected recovery-point publication was not completed")
 
 
-def _publish_series(monkeypatch, database, destination: Path, count: int, *, now_day: int = 1):
+def _publish_series(
+    monkeypatch,
+    database,
+    destination: Path,
+    count: int,
+    *,
+    now_day: int = 1,
+    protection_state: str = PROTECTION_STATE,
+    protection_mode: str = PROTECTION_MODE,
+):
     created: list[str] = []
     results = []
     for offset in range(count):
@@ -776,6 +1069,8 @@ def _publish_series(monkeypatch, database, destination: Path, count: int, *, now
             database,
             destination,
             now=datetime(2035, 1, now_day + offset, 8, 0, 0, tzinfo=UTC),
+            protection_state=protection_state,
+            protection_mode=protection_mode,
         )
         after = _managed_names(destination)
         added = after - before
@@ -901,13 +1196,21 @@ def test_retention_keeps_newest_twelve_verified_points(
         assert len(remaining) == VERIFIED_RETENTION_LIMIT
         assert created[0] not in remaining
         assert set(created[1:]) == remaining
-        verified = protected_backups._verified_managed_recovery_points(destination)
+        verified = protected_backups._verified_managed_recovery_points(
+            destination,
+            protection_state=PROTECTION_STATE,
+            protection_mode=PROTECTION_MODE,
+        )
         assert [path.name for path in verified] == created[1:]
         return
     assert all(result.retention == RETENTION_COMPLETED for result in results[:-1])
     assert results[-1].retention == RETENTION_FAILED
     assert remaining == set(created)
-    candidates = protected_backups._list_retention_candidates(destination)
+    candidates = protected_backups._list_retention_candidates(
+        destination,
+        protection_state=PROTECTION_STATE,
+        protection_mode=PROTECTION_MODE,
+    )
     to_delete = protected_backups._select_retention_deletions(
         candidates, preserve=destination / created[-1]
     )
@@ -974,7 +1277,12 @@ def test_retention_preserves_unknown_partial_and_corrupt_files(
     )
 
     remaining_verified = {
-        path.name for path in protected_backups._verified_managed_recovery_points(destination)
+        path.name
+        for path in protected_backups._verified_managed_recovery_points(
+            destination,
+            protection_state=PROTECTION_STATE,
+            protection_mode=PROTECTION_MODE,
+        )
     }
     if can_delete:
         assert remaining_verified == set(created[1:])
@@ -1059,6 +1367,122 @@ def test_retention_cleanup_failure_does_not_invalidate_new_backup(
     assert str(destination) not in result.as_dict().values()
 
 
+@pytest.mark.parametrize(
+    ("protection_state", "protection_mode", "expected_action"),
+    [
+        (
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            PLAINTEXT_RETENTION_ACTION_REQUIRED,
+        ),
+        (PROTECTION_STATE, PROTECTION_MODE, RETENTION_ACTION_REQUIRED),
+    ],
+)
+def test_forced_retention_failure_action_matches_publication_mode(
+    tmp_path: Path,
+    synthetic_database,
+    monkeypatch,
+    protection_state: str,
+    protection_mode: str,
+    expected_action: str,
+) -> None:
+    destination = tmp_path / "retention-failure-destination"
+    destination.mkdir()
+
+    def fail_commit(_candidates) -> None:
+        raise OSError("synthetic retention unlink failure")
+
+    monkeypatch.setattr(protected_backups, "_commit_retention_deletions", fail_commit)
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        protection_state=protection_state,
+        protection_mode=protection_mode,
+    )
+
+    assert result.published is True
+    assert result.verified is True
+    assert result.read_back == "verified"
+    assert result.retention == RETENTION_FAILED
+    assert result.action_required == expected_action
+    assert result.protection_state == protection_state
+    assert result.protection_mode == protection_mode
+    if protection_mode == PLAINTEXT_SYNCED_MODE:
+        assert "protected" not in expected_action
+        assert result.action_required != RETENTION_ACTION_REQUIRED
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    manifest = _manifest_of(artifact)
+    assert manifest["protection_state"] == protection_state
+    assert manifest["protection_mode"] == protection_mode
+    verified, _digest, _size = protected_backups._verify_artifact(artifact)
+    assert verified["snapshot_sha256"] == manifest["snapshot_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("kept_state", "kept_mode", "new_state", "new_mode"),
+    [
+        (
+            PROTECTION_STATE,
+            PROTECTION_MODE,
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+        ),
+        (
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            PROTECTION_STATE,
+            PROTECTION_MODE,
+        ),
+    ],
+)
+def test_retention_keeps_the_other_protection_pair(
+    tmp_path: Path,
+    synthetic_database,
+    monkeypatch,
+    kept_state: str,
+    kept_mode: str,
+    new_state: str,
+    new_mode: str,
+) -> None:
+    destination = tmp_path / "mixed-protection-destination"
+    destination.mkdir()
+    created, _results = _publish_series(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        VERIFIED_RETENTION_LIMIT,
+        protection_state=kept_state,
+        protection_mode=kept_mode,
+    )
+    before = {name: (destination / name).read_bytes() for name in created}
+
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        now=datetime(2035, 2, 1, 8, 0, 0, tzinfo=UTC),
+        protection_state=new_state,
+        protection_mode=new_mode,
+    )
+
+    assert result.published is True
+    assert result.verified is True
+    assert result.read_back == "verified"
+    assert result.retention == RETENTION_COMPLETED
+    assert result.action_required is None
+    assert result.protection_state == new_state
+    assert result.protection_mode == new_mode
+    for name, payload in before.items():
+        assert (destination / name).read_bytes() == payload
+    assert _eligible_names(
+        destination, protection_state=kept_state, protection_mode=kept_mode
+    ) == set(created)
+    added = _eligible_names(destination, protection_state=new_state, protection_mode=new_mode)
+    assert len(added) == 1
+    assert added.isdisjoint(created)
+
+
 def test_retention_ordering_is_independent_of_directory_listing(
     tmp_path: Path, synthetic_database, monkeypatch
 ) -> None:
@@ -1098,7 +1522,11 @@ def test_retention_ordering_is_independent_of_directory_listing(
         return
     assert result.retention == RETENTION_FAILED
     assert remaining == set(created) | added
-    candidates = protected_backups._list_retention_candidates(destination)
+    candidates = protected_backups._list_retention_candidates(
+        destination,
+        protection_state=PROTECTION_STATE,
+        protection_mode=PROTECTION_MODE,
+    )
     to_delete = protected_backups._select_retention_deletions(
         candidates, preserve=destination / next(iter(added))
     )
@@ -1121,7 +1549,11 @@ def test_same_timestamp_retention_uses_verified_hash_then_sequence(
         added_name = next(iter(added))
         candidate = next(
             item
-            for item in protected_backups._list_retention_candidates(destination)
+            for item in protected_backups._list_retention_candidates(
+                destination,
+                protection_state=PROTECTION_STATE,
+                protection_mode=PROTECTION_MODE,
+            )
             if item.name == added_name
         )
         captured.append(candidate)
@@ -1171,7 +1603,11 @@ def test_clock_rollback_keeps_replacement_and_exact_twelve(
         return
     assert result.retention == RETENTION_FAILED
     assert remaining == set(created) | added
-    candidates = protected_backups._list_retention_candidates(destination)
+    candidates = protected_backups._list_retention_candidates(
+        destination,
+        protection_state=PROTECTION_STATE,
+        protection_mode=PROTECTION_MODE,
+    )
     to_delete = protected_backups._select_retention_deletions(
         candidates, preserve=destination / next(iter(added))
     )
@@ -1208,7 +1644,11 @@ def test_preserve_outside_nominal_top_twelve_caps_verified_set(
         return
     assert result.retention == RETENTION_FAILED
     assert remaining == set(created) | {preserve}
-    candidates = protected_backups._list_retention_candidates(destination)
+    candidates = protected_backups._list_retention_candidates(
+        destination,
+        protection_state=PROTECTION_STATE,
+        protection_mode=PROTECTION_MODE,
+    )
     to_delete = protected_backups._select_retention_deletions(
         candidates, preserve=destination / preserve
     )

@@ -24,11 +24,9 @@ from alembic.script import ScriptDirectory
 
 from hermes_finance.services import protected_backups
 from hermes_finance.services.protected_backups import (
-    DESTINATION_ALIAS,
     FORMAT_VERSION,
-    PROTECTION_MODE,
-    PROTECTION_STATE,
     ProtectedBackupError,
+    protection_destination_alias,
 )
 from hermes_finance.services.recovery_process import (
     ProcessTreeError,
@@ -718,10 +716,12 @@ def _paths_overlap(left: Path, right: Path) -> bool:
 
 
 def _verify_source(path: Path, *, protection_state: str, protection_mode: str) -> VerifiedSource:
-    if protection_state != PROTECTION_STATE or protection_mode != PROTECTION_MODE:
+    try:
+        protection_destination_alias(protection_state, protection_mode)
+    except ProtectedBackupError as error:
         raise RecoveryRehearsalError(
             "protection", "protected recovery boundary attestation is invalid"
-        )
+        ) from error
     source = _absolute_path(path, stage="source-verification")
     try:
         protected_backups._assert_no_reparse_components(source.parent)
@@ -749,6 +749,14 @@ def _verify_source(path: Path, *, protection_state: str, protection_mode: str) -
         if name_match is None or name_match.group("digest") != artifact_sha256[:16]:
             raise RecoveryRehearsalError(
                 "source-verification", "managed recovery point name identity is invalid"
+            )
+        if (
+            manifest.get("protection_state") != protection_state
+            or manifest.get("protection_mode") != protection_mode
+        ):
+            raise RecoveryRehearsalError(
+                "source-verification",
+                "managed recovery point protection identity does not match",
             )
         with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
             snapshot_bytes = archive.read(protected_backups._SNAPSHOT_NAME)
@@ -1953,6 +1961,7 @@ def rehearse_recovery(
         )
         source.assert_unchanged()
         _recheck_checkout(checkout, stage="result-validation")
+        destination_alias = protection_destination_alias(protection_state, protection_mode)
         return RecoveryRehearsalResult(
             status="rehearsed",
             source_verified=True,
@@ -1961,9 +1970,9 @@ def rehearse_recovery(
             prepared=True,
             validated=True,
             readiness="verified",
-            destination_alias=DESTINATION_ALIAS,
-            protection_state=PROTECTION_STATE,
-            protection_mode=PROTECTION_MODE,
+            destination_alias=destination_alias,
+            protection_state=protection_state,
+            protection_mode=protection_mode,
             format_version=FORMAT_VERSION,
             artifact_sha256=source.artifact_sha256,
             artifact_identity_sha256=str(source.manifest["artifact_identity_sha256"]),
