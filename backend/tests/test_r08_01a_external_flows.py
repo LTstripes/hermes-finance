@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Event, Thread, current_thread
 
 import pytest
-from _migration_helpers import run_alembic
+from _migration_helpers import REVISION, run_alembic
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -1059,7 +1059,7 @@ def test_scope_membership_migration_refuses_to_drop_owner_evidence(
     connection = sqlite3.connect(database_path)
     try:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0031_external_flow_scope_membership",
+            REVISION,
         )
         assert connection.execute("SELECT scope_membership FROM external_flows").fetchone() == (
             "stable_in_scope",

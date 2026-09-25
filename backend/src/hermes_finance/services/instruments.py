@@ -216,6 +216,27 @@ def _collect_instrument_references(
                         count=int(mapping["reference_count"]),
                         month_labels=(_month_label(int(mapping["year"]), int(mapping["month"])),),
                     )
+                if "archived_from_period" in table.c:
+                    archive_period = table.c.archived_from_period
+                    archived_rows = session.execute(
+                        select(archive_period, reference_count)
+                        .select_from(table)
+                        .where(column == instrument_id, month_id_column.is_(None))
+                        .group_by(archive_period)
+                    ).all()
+                    for period, count in archived_rows:
+                        label = str(period)
+                        if len(label) == 7 and label[4] == "-":
+                            try:
+                                label = _month_label(int(label[:4]), int(label[5:]))
+                            except ValueError:
+                                pass
+                        add_reference(
+                            kind=kind,
+                            lifecycle="historical",
+                            count=int(count),
+                            month_labels=(label,),
+                        )
                 continue
 
             count = session.scalar(

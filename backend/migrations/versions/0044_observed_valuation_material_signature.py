@@ -1,7 +1,7 @@
 """Bind observed valuations to the material state of their flow or group.
 
-Revision ID: 0042_observed_valuation_material_signature
-Revises: 0041_debt_linked_account
+Revision ID: 0044_observed_valuation_material_signature
+Revises: 0043_active_payout_reconciliation_slot
 
 Existing observations have no provable capture-time material identity. Leave
 them unbound so read-time availability fails closed until they are recaptured.
@@ -12,8 +12,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0042_observed_valuation_material_signature"
-down_revision = "0041_debt_linked_account"
+revision = "0044_observed_valuation_material_signature"
+down_revision = "0043_active_payout_reconciliation_slot"
 branch_labels = None
 depends_on = None
 

@@ -117,6 +117,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "manual_adjustment",
             "notes",
             "updated_at",
+            "archived_from_period",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(deposit_snapshots)")] == [
             "id",
@@ -269,6 +270,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_confirmed",
             "is_approximate",
             "notes",
+            "archived_from_period",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expense_entries)")] == [
             "id",
@@ -386,6 +388,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_approximate",
             "provider_status",
             "first_applied_at",
+            "archived_from_period",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(applied_payout_revisions)")
@@ -419,6 +422,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "expected_cash_flow_id",
             "counting_decision",
             "created_at",
+            "archived_from_period",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(applied_statement_events)")
@@ -583,8 +587,8 @@ def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> N
 
     assert downgraded.returncode != 0
     assert "while evidence exists" in downgraded.stderr
-    # 0042 must retain binding before any older migration can drop the rows.
-    assert revision_rows(database_path) == ["0042_observed_valuation_material_signature"]
+    # 0044 must retain binding before any older migration can drop the rows.
+    assert revision_rows(database_path) == ["0044_observed_valuation_material_signature"]
     connection = sqlite3.connect(database_path)
     try:
         assert connection.execute(
@@ -1138,7 +1142,7 @@ def test_provider_neutral_downgrade_rejects_identity_without_venue(tmp_path: Pat
     downgraded = run_alembic(database_path, "downgrade", "0024_instrument_market_mappings")
     assert downgraded.returncode != 0
     assert "provider_venue_id" in downgraded.stderr
-    assert revision_rows(database_path) == ["0025_provider_neutral_market_identity"]
+    assert revision_rows(database_path) == [REVISION]
 
 
 def test_applied_payout_migration_is_additive_and_preserves_manual_rows(tmp_path: Path) -> None:
@@ -1303,7 +1307,13 @@ def test_applied_payout_migration_is_additive_and_preserves_manual_rows(tmp_path
             row[3]: row[6]
             for row in connection.execute("PRAGMA foreign_key_list(applied_payout_reconciliations)")
         }
-        assert reconciliation_fk_actions["expected_cash_flow_id"] == "CASCADE"
+        assert reconciliation_fk_actions["expected_cash_flow_id"] == "RESTRICT"
+        active_link_index = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' "
+            "AND name = 'uq_applied_payout_reconciliations_active_manual_flow'"
+        ).fetchone()
+        assert active_link_index is not None
+        assert "WHERE archived_from_period IS NULL" in active_link_index[0]
     finally:
         connection.close()
 
