@@ -50,5 +50,6 @@ test("G04 critical monthly workflow", async ({ page }) => {
 
   await page.getByRole("link", { name: "Экспорт" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Экспорт" })).toBeVisible();
+  await page.getByText("Дополнительные / технические выгрузки", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Скачать Markdown" })).toBeEnabled();
 });
