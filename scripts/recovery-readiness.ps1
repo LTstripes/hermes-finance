@@ -132,29 +132,17 @@ function Test-RecoveryListenerOwned {
         [System.Diagnostics.Process]$Backend
     )
 
-    $listeners = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop)
+    try {
+        $listeners = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop)
+    }
+    catch {
+        if ($_.FullyQualifiedErrorId -like "CmdletizationQuery_NotFound,*") {
+            return $false
+        }
+        throw
+    }
     $processRows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
     return Test-HermesLoopbackListenerOwnership -RootProcessId $Backend.Id -Listeners $listeners -ProcessRows $processRows
-}
-
-function Test-RecoveryResponseOwned {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Diagnostics.Process]$Backend,
-        [Parameter(Mandatory = $true)]
-        [object]$Response,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedRecoveryToken,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedDatabaseIdentity,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedCheckoutSha
-    )
-
-    return (
-        (Test-RecoveryListenerOwned -Backend $Backend) -and
-        (Test-HermesRecoveryHeaders -Response $Response -ExpectedToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha)
-    )
 }
 
 function Get-HermesRecoveryResponseFailureClassification {

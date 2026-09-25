@@ -109,6 +109,44 @@ server.serve_forever()
 """
 
 
+_OWNED_HEALTHY_SERVER = """
+import ctypes
+import http.server
+import os
+import sys
+from ctypes import wintypes
+from pathlib import Path
+
+token, database, checkout, marker = sys.argv[1:]
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b'[{"id":1}]' if self.path == '/api/months' else b'Hermes Finance' if self.path == '/' else b'{}'
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8' if self.path == '/' else 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('X-Hermes-Recovery-Token', token)
+        self.send_header('X-Hermes-Recovery-Database-Identity', database)
+        self.send_header('X-Hermes-Recovery-Checkout-SHA', checkout)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        return
+
+server = http.server.ThreadingHTTPServer(('127.0.0.1', 8000), Handler)
+kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+kernel32.IsProcessInJob.argtypes = (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL))
+kernel32.IsProcessInJob.restype = wintypes.BOOL
+in_job = wintypes.BOOL()
+if not kernel32.IsProcessInJob(kernel32.GetCurrentProcess(), None, ctypes.byref(in_job)):
+    raise SystemExit(91)
+Path(marker).write_text(f'{os.getpid()}:8000:{int(in_job.value)}', encoding='utf-8')
+server.serve_forever()
+"""
+
+
 def _command(marker: Path, mode: str) -> list[str]:
     return [sys.executable, "-c", _WRAPPER_CODE, str(marker), mode, _CHILD_CODE]
 
@@ -504,6 +542,87 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
     finally:
         foreign.terminate()
         foreign.wait(timeout=10)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows owned recovery runtime")
+def test_real_owned_runtime_passes_recovery_readiness_through_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if shutil.which("powershell.exe") is None:
+        pytest.fail("Windows PowerShell is unavailable for the owned-runtime regression")
+    with socket.socket() as availability:
+        try:
+            availability.bind(("127.0.0.1", 8000))
+        except OSError:
+            pytest.fail("port 8000 is unavailable for the owned-runtime regression")
+
+    token, database_identity, checkout_sha = "a" * 64, "b" * 64, "c" * 40
+    checkout = tmp_path / "synthetic-recovery-checkout"
+    scripts, backend, frontend = (checkout / name for name in ("scripts", "backend", "frontend"))
+    for directory in (scripts, backend, frontend):
+        directory.mkdir(parents=True)
+    for name in (
+        "start-local.ps1",
+        "recovery-runtime-boundary.ps1",
+        "recovery-runtime-safety.ps1",
+        "recovery-readiness.ps1",
+    ):
+        shutil.copy2(REPOSITORY_ROOT / "scripts" / name, scripts)
+    (backend / "pyproject.toml").write_text("synthetic\n", encoding="utf-8")
+    (frontend / "package.json").write_text("{}\n", encoding="utf-8")
+    (scripts / "prepare-runtime.ps1").write_text(
+        "param([string]$Checkout, [switch]$Validate)\n"
+        "if (-not $Validate) { exit 8 }\n"
+        "Write-Output 'runtime=prepared'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    server = tmp_path / "owned-healthy-server.py"
+    server.write_text(_OWNED_HEALTHY_SERVER, encoding="utf-8")
+    marker = tmp_path / "owned-healthy-server.txt"
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    (fake_bin / "uv.cmd").write_text(
+        "@echo off\n"
+        '"%HERMES_TEST_PYTHON%" "%HERMES_TEST_SERVER%" '
+        '"%HERMES_FINANCE_RECOVERY_READINESS_TOKEN%" '
+        '"%HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY%" '
+        '"%HERMES_FINANCE_RECOVERY_CHECKOUT_SHA%" '
+        '"%HERMES_TEST_MARKER%"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ["PATH"])
+    proof = CheckoutProof(
+        checkout=checkout,
+        selected_sha=checkout_sha,
+        repository_key="synthetic",
+        git_directory=checkout / ".git",
+        common_directory=checkout / ".git",
+    )
+
+    _run_runtime_script(
+        proof,
+        script_name="start-local.ps1",
+        arguments=["-ExitAfterReady", "-RecoveryReadiness"],
+        stage="runtime-start",
+        environment_overrides={
+            "HERMES_FINANCE_RECOVERY_READINESS_TOKEN": token,
+            "HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY": database_identity,
+            "HERMES_FINANCE_RECOVERY_CHECKOUT_SHA": checkout_sha,
+            "HERMES_TEST_PYTHON": sys.executable,
+            "HERMES_TEST_SERVER": str(server),
+            "HERMES_TEST_MARKER": str(marker),
+        },
+        timeout=60,
+    )
+
+    process_id, port, in_job = (
+        int(value) for value in marker.read_text(encoding="utf-8").split(":")
+    )
+    assert port == 8000
+    assert in_job == 1
+    _wait_until_gone(process_id)
+    _assert_listener_gone(port)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows listener identity")
