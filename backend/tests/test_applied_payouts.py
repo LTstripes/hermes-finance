@@ -53,6 +53,7 @@ from hermes_finance.services.instruments import (
     get_instrument_cleanup,
 )
 from hermes_finance.services.liquid_capital import liquid_capital_for_month
+from hermes_finance.services.payout_calendar import merged_payout_calendar
 from hermes_finance.services.positions import (
     create_position_snapshot,
     delete_position_snapshot,
@@ -181,6 +182,114 @@ def test_remove_draft_position_archives_payout_without_active_capital(tmp_path: 
         database.engine.dispose()
 
 
+def test_corrected_position_reuses_manual_flow_without_losing_reconciliation_history(
+    tmp_path: Path,
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, _, instrument_id, snapshot_id = build_environment(session)
+        original = create_payout(session, month_id, account_id, instrument_id, snapshot_id)
+        manual = create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2030, 6, 14),
+            gross_amount="1100.00",
+            expected_tax_amount="130.00",
+            expected_net_amount="970.00",
+            source="synthetic calendar",
+            source_as_of_date=date(2030, 5, 12),
+            forecast_version="v1",
+        )
+        old_link = set_applied_payout_reconciliation(
+            session,
+            original.id,
+            expected_cash_flow_id=manual.id,
+            counting_decision=PayoutCountingDecision.COUNT_MANUAL,
+        )
+        session.commit()
+        old_id, old_link_id, manual_id = original.id, old_link.id, manual.id
+        old_revisions = [row.id for row in list_applied_payout_revisions(session, old_id)]
+
+        delete_position_snapshot(session, snapshot_id)
+        corrected = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity="2.000000",
+            average_cost_per_unit="100.00",
+            market_price_per_unit="101.00",
+            price_date=date(2030, 5, 12),
+        )
+        current = create_payout(session, month_id, account_id, instrument_id, corrected.id)
+        new_link = set_applied_payout_reconciliation(
+            session,
+            current.id,
+            expected_cash_flow_id=manual_id,
+            counting_decision=PayoutCountingDecision.COUNT_MANUAL,
+        )
+        session.commit()
+
+        assert current.id != old_id
+        assert (
+            get_applied_payout_by_identity(
+                session,
+                reporting_month_id=month_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+                provider="t_invest",
+                provider_instrument_uid=BOND_UID,
+                event_kind=PayoutEventKind.COUPON,
+                identity_key="n:11",
+            ).id
+            == current.id
+        )
+        assert session.get(AppliedProviderPayout, old_id).archived_from_period == "2030-05"
+        assert session.get(PositionSnapshot, snapshot_id).archived_from_period == "2030-05"
+        assert [row.id for row in list_applied_payout_revisions(session, old_id)] == old_revisions
+        assert old_link.id == old_link_id
+        assert old_link.expected_cash_flow_id == manual_id
+        assert old_link.counting_decision == "count_manual"
+        assert old_link.archived_from_period == "2030-05"
+        assert new_link.id != old_link_id
+        assert new_link.expected_cash_flow_id == manual_id
+        assert new_link.archived_from_period is None
+        calendar = merged_payout_calendar(
+            session, reporting_month_id=month_id, forecast_version="v1"
+        )
+        items = [item for month in calendar for item in month.items]
+        assert any(
+            item.linked_provider_payout_id == current.id and item.reconciliation_id == new_link.id
+            for item in items
+        )
+        assert all(
+            item.source_id != old_id for item in items if item.source_kind.value == "provider"
+        )
+        competing = create_payout(
+            session, month_id, account_id, instrument_id, corrected.id, identity_key="n:12"
+        )
+        with pytest.raises(IntegrityError):
+            set_applied_payout_reconciliation(
+                session,
+                competing.id,
+                expected_cash_flow_id=manual_id,
+                counting_decision=PayoutCountingDecision.COUNT_PROVIDER,
+            )
+        session.rollback()
+        assert get_applied_payout_reconciliation(session, current.id).id == new_link.id
+        with pytest.raises(ValueError, match="historical payout reconciliation"):
+            delete_expected_cash_flow(session, manual_id)
+        assert session.get(ExpectedCashFlow, manual_id) is not None
+        assert session.get(AppliedPayoutReconciliation, old_link_id) is not None
+        _assert_valid_fks(database)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 @pytest.mark.parametrize("remove_position_first", [False, True])
 def test_delete_draft_month_retains_payout_revision_and_reconciliation(
     tmp_path: Path, remove_position_first: bool
@@ -221,6 +330,7 @@ def test_delete_draft_month_retains_payout_revision_and_reconciliation(
         assert session.get(AppliedProviderPayout, payout_id).archived_from_period == "2030-05"
         assert [row.id for row in list_applied_payout_revisions(session, payout_id)] == revision_ids
         assert session.get(AppliedPayoutReconciliation, link.id).expected_cash_flow_id == manual.id
+        assert session.get(AppliedPayoutReconciliation, link.id).archived_from_period == "2030-05"
         assert session.get(ExpectedCashFlow, manual.id).archived_from_period == "2030-05"
         assert session.get(PositionSnapshot, snapshot_id).archived_from_period == "2030-05"
         assert session.get(PositionSnapshot, snapshot_id).account_id == account_id
@@ -269,6 +379,26 @@ def test_draft_position_archive_failure_rolls_back_payout_and_capital(
     try:
         month_id, account_id, _, instrument_id, snapshot_id = build_environment(session)
         payout = create_payout(session, month_id, account_id, instrument_id, snapshot_id)
+        manual = create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2030, 6, 14),
+            gross_amount="1100.00",
+            expected_tax_amount="130.00",
+            expected_net_amount="970.00",
+            source="synthetic calendar",
+            source_as_of_date=date(2030, 5, 12),
+            forecast_version="v1",
+        )
+        link = set_applied_payout_reconciliation(
+            session,
+            payout.id,
+            expected_cash_flow_id=manual.id,
+            counting_decision=PayoutCountingDecision.COUNT_MANUAL,
+        )
         session.commit()
         before_capital = liquid_capital_for_month(session, month_id).breakdown.securities.kopecks
         from hermes_finance.services import payout_provenance_lifecycle
@@ -288,6 +418,7 @@ def test_draft_position_archive_failure_rolls_back_payout_and_capital(
         session.expire_all()
         assert session.get(PositionSnapshot, snapshot_id).reporting_month_id == month_id
         assert session.get(AppliedProviderPayout, payout.id).reporting_month_id == month_id
+        assert session.get(AppliedPayoutReconciliation, link.id).archived_from_period is None
         assert liquid_capital_for_month(session, month_id).breakdown.securities.kopecks == (
             before_capital
         )

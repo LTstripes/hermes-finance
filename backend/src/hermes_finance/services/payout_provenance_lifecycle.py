@@ -18,6 +18,13 @@ from hermes_finance.persistence import (
 
 
 def archive_payout(session: Session, payout: AppliedProviderPayout, period: str) -> None:
+    reconciliation = session.scalar(
+        select(AppliedPayoutReconciliation).where(
+            AppliedPayoutReconciliation.applied_payout_id == payout.id
+        )
+    )
+    if reconciliation is not None:
+        reconciliation.archived_from_period = period
     payout.reporting_month_id = None
     payout.archived_from_period = period
 

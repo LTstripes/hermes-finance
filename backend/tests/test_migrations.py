@@ -421,6 +421,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "expected_cash_flow_id",
             "counting_decision",
             "created_at",
+            "archived_from_period",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(applied_statement_events)")
@@ -1298,7 +1299,13 @@ def test_applied_payout_migration_is_additive_and_preserves_manual_rows(tmp_path
             row[3]: row[6]
             for row in connection.execute("PRAGMA foreign_key_list(applied_payout_reconciliations)")
         }
-        assert reconciliation_fk_actions["expected_cash_flow_id"] == "CASCADE"
+        assert reconciliation_fk_actions["expected_cash_flow_id"] == "RESTRICT"
+        active_link_index = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' "
+            "AND name = 'uq_applied_payout_reconciliations_active_manual_flow'"
+        ).fetchone()
+        assert active_link_index is not None
+        assert "WHERE archived_from_period IS NULL" in active_link_index[0]
     finally:
         connection.close()
 

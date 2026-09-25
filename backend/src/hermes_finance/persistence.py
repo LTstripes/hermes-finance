@@ -1528,7 +1528,7 @@ class AppliedPayoutRevision(Base):
 
 
 class AppliedPayoutReconciliation(Base):
-    """Explicit 1:1 link from an applied provider payout to one manual expected flow."""
+    """One link per payout; historical links do not occupy the active flow slot."""
 
     __tablename__ = "applied_payout_reconciliations"
     __table_args__ = (
@@ -1536,9 +1536,11 @@ class AppliedPayoutReconciliation(Base):
             "applied_payout_id",
             name="uq_applied_payout_reconciliations_payout",
         ),
-        UniqueConstraint(
+        Index(
+            "uq_applied_payout_reconciliations_active_manual_flow",
             "expected_cash_flow_id",
-            name="uq_applied_payout_reconciliations_manual_flow",
+            unique=True,
+            sqlite_where=text("archived_from_period IS NULL"),
         ),
         CheckConstraint(
             "counting_decision IN ('keep_both', 'count_manual', 'count_provider')",
@@ -1551,9 +1553,10 @@ class AppliedPayoutReconciliation(Base):
         ForeignKey("applied_provider_payouts.id", ondelete="CASCADE"), nullable=False
     )
     expected_cash_flow_id: Mapped[int] = mapped_column(
-        ForeignKey("expected_cash_flows.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("expected_cash_flows.id", ondelete="RESTRICT"), nullable=False
     )
     counting_decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    archived_from_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
