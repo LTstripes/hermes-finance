@@ -21,6 +21,17 @@ date; it never groups flows from a date implicitly.
 - required provenance kind and optional provenance reference;
 - an explicit `pre_external_flow` or `post_external_flow` relation;
 - exactly one target: `external_flow_id` or `boundary_group_id`.
+- a material signature of that flow, or of the group and every current member.
+
+The signature uses the flow ID, reporting month, account, event date, exact
+minor-unit amount, direction, kind, currency, scope membership and transfer
+link. Group signatures also bind the group ID, month, scope, account, boundary
+date and sorted member identities/signatures. Source, notes and timestamps are
+metadata and do not change the signature. Every capture passes the signature
+read when it began; persistence compares it with current state
+under a SQLite writer reservation. Both PRE and POST must bind the same current
+signature. Preexisting observations with no signature are unavailable until
+freshly captured; migration does not infer their original event state.
 
 The capture services accept only draft reporting months. Existing monthly
 snapshots, legacy investment cash flows, historical scope membership and

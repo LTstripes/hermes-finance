@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _valuation_capture import create_observed_valuation_point
 from fastapi.testclient import TestClient
 
 import hermes_finance.services.external_flows as external_flows_service
@@ -40,7 +41,6 @@ from hermes_finance.services.reporting_months import (
     delete_reporting_month,
     reopen_reporting_month,
 )
-from hermes_finance.services.valuation_boundaries import create_observed_valuation_point
 
 START = date(2030, 1, 31)
 MID = date(2030, 2, 14)

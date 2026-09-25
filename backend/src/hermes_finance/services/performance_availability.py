@@ -69,6 +69,7 @@ from hermes_finance.services.valuation_boundaries import (
     to_observed_valuation_evidence,
     validate_external_flow_boundary_group_members,
 )
+from hermes_finance.services.valuation_material_signature import material_signature_for_boundary
 from hermes_finance.services.valuation_points import valuation_point_for_month
 
 _LEGACY_BOUNDARY_FLOW_TYPES = ("deposit", "withdrawal")
@@ -1005,6 +1006,16 @@ def _observed_boundary_for_target(
         account_id=account_id,
     )
     reasons: set[str] = set()
+    current_signature = material_signature_for_boundary(
+        session,
+        external_flow_id=target.flow_ids[0] if target.boundary_group_id is None else None,
+        boundary_group_id=target.boundary_group_id,
+    )
+    if not target.invalid_group_state and (
+        current_signature is None
+        or any(row.material_signature != current_signature for row in rows)
+    ):
+        reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_MISSING.value)
     pre_rows = [
         row for row in rows if row.relation == ValuationBoundaryRelation.PRE_EXTERNAL_FLOW.value
     ]
