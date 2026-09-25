@@ -205,7 +205,7 @@ jobs:
 
       - name: Run G04 synthetic real-backend journey
         working-directory: frontend
-        run: npm run test:e2e -- g04-smoke.spec.ts --project=chromium
+        run: npm run test:e2e -- g04-smoke.spec.ts --project=chromium --retries=0
 
   visual-audit-paths:
     name: Visual audit path filter
