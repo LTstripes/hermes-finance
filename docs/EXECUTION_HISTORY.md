@@ -34,6 +34,21 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-25 owner durability closeout — #417 / #527 / PR #542
+
+- **Owner policy:** the Owner explicitly accepted ordinary synced-folder plaintext-at-rest storage for the Finance off-device recovery workflow. The truthful pair is `owner_accepted_plaintext / synced_filesystem_destination_v1`; Hermes still makes no cloud-delivery claim and adds no Google API/OAuth/cloud-account integration.
+- **Accepted implementation:** #527 / PR #542 exact candidate `720074dcc94954f7485b2e71762fff9cad5d9917`; canonical merge/main `744c613884d074e6f9d35d61523603f257371713`; exact-head CI #946 / `36127808612` SUCCESS; exact-main CI #947 / `36139627216` SUCCESS; independent security/recovery re-review: **ACCEPT**.
+- **Contract result:** plaintext and protected modes remain distinct; crossed pairs fail before mutation; manifest/read-back/DR stay exact-pair-bound; retention keeps 12 verified managed points per accepted pair in mixed directories; no protected-at-rest or cloud-delivery claim is made for plaintext.
+- **Owner-live publication:** fresh plaintext managed recovery point returned `published=true`, `verified=true`, `read_back=verified`, `retention=completed`, `action_required=null`.
+- **Off-device evidence:** Owner independently confirmed the exact newly published artifact was visible through Google Drive on another device.
+- **Final clean DR:** **PASS** — `status=rehearsed`, source verified and unchanged, restore/Prepare/Validate successful, `readiness=verified`, producer/recovery SHA both `744c613884d074e6f9d35d61523603f257371713`, schema relationship `same_revision`, source/result head `0041_debt_linked_account`. Privacy-safe broad counts: 8 reporting months, 43 user tables, 25 populated user tables, 25 user indexes, 0 user views.
+- **Real defects found by Owner rehearsal:** #511 / PR #518 fixed Windows PowerShell singleton-month JSON normalization before dashboard probing; #524 / PR #525 fixed startup ownership/classification TOCTOU and absent-listener handling. Both were independently reviewed and canonically green before the final rehearsal.
+- **Closeout:** parent #417 closed `completed`. #543 keeps three non-blocking hardening observations separate and does not reopen durability acceptance.
+- **References:** #417, #511, #524, #527, #543, PR #518, PR #525, PR #542, ADR 0017, `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
+
+---
+
+
 # 2026-09-22 isolated DR implementation + Windows cleanup closeout
 
 ### #461 / PR #483 + PR #499 — isolated disaster-recovery rehearsal
