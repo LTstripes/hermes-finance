@@ -204,7 +204,7 @@ The required sections are:
 
 `metadata.source_contracts` pins the source schemas used by the adapter:
 
-- `hermes.finance.ai_analysis_bundle` `1.3.0`;
+- `hermes.finance.ai_analysis_bundle` `1.4.0`;
 - `hermes.finance.portfolio_review_package` `1.1.0`.
 
 The performance section records the accepted builder identities as method
