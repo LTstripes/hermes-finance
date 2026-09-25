@@ -1533,6 +1533,17 @@ def test_mixed_mode_retention_thirteenth_deletes_only_same_pair_oldest(
         protection_state=other_state,
         protection_mode=other_mode,
     )
+    assert _eligible_names(
+        destination,
+        protection_state=target_state,
+        protection_mode=target_mode,
+    ) == set(target_created)
+    assert _eligible_names(
+        destination,
+        protection_state=other_state,
+        protection_mode=other_mode,
+    ) == set(other_created)
+    assert len(_managed_names(destination)) == VERIFIED_RETENTION_LIMIT * 2
     target_before = {name: (destination / name).read_bytes() for name in target_created}
     other_before = {name: (destination / name).read_bytes() for name in other_created}
 
