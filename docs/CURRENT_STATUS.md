@@ -211,7 +211,9 @@ Release publication and local Stable installation are separate operations:
 
 Delivered: provider-neutral managed protected-destination publisher for explicitly attested `external_encrypted_destination_v1`, including staged verification before final exposure, destination read-back, producer/schema identity, privacy-safe CLI failure handling and no plaintext verification scratch in default temp storage.
 
-Bounded verified retention (#460 / PR #473), isolated DR rehearsal (#461 / PR #483 + PR #499) and focused Export/Backup restore-state reload (#462 / PR #502) are integrated and independently accepted. The final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594` SUCCESS. The implementation queue under #417 is complete. Still pending are the real Owner protected off-device recovery point, independently held recovery material and clean Owner-controlled DR rehearsal. No Google API/OAuth/key-management/cloud architecture was introduced.
+Bounded verified retention (#460 / PR #473), isolated DR rehearsal (#461 / PR #483 + PR #499) and focused Export/Backup restore-state reload (#462 / PR #502) are integrated and independently accepted. The final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594` SUCCESS. The implementation queue under #417 through #462 is complete.
+
+Owner decision on #417 (2026-09-25) accepts one additional truthful mode, `owner_accepted_plaintext` / `synced_filesystem_destination_v1`, for an ordinary synced filesystem folder. That mode is not protected-at-rest. The encrypted mode is unchanged and existing encrypted artifacts are not reclassified. #527 records that mode. Remaining Owner gates are a fresh read-back-verified plaintext recovery point, confirmation that it is visible off-device, and one clean isolated DR rehearsal from that point. No Google API/OAuth/key-management/cloud architecture is introduced, and Hermes does not claim cloud delivery.
 
 ## Active roadmap / what comes next
 

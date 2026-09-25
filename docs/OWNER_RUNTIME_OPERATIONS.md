@@ -276,14 +276,21 @@ Future launcher work is optional:
 
 ## 13. Protected off-site recovery points and DR rehearsal
 
-The supported v1 mode is `external_encrypted_destination_v1`. The configured
-destination must be the writable view of an Owner-managed encrypted
-container/volume that the Owner has already successfully opened or mounted
-and that is readable and writable by the supported workflow. Its encrypted
-backing storage is synchronized off-device.
+Two explicit modes are supported. `external_encrypted_destination_v1` remains
+the protected mode. Its configured destination must be the writable view of an
+Owner-managed encrypted container/volume that the Owner has already
+successfully opened or mounted and that is readable and writable by the
+supported workflow. Its encrypted backing storage is synchronized off-device.
 An ordinary Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
-folder is not protected merely because it synchronizes. Hermes proves local
-publication and read-back, not cloud delivery.
+folder is not protected merely because it synchronizes.
+
+`owner_accepted_plaintext` / `synced_filesystem_destination_v1` is the separate
+Owner-accepted plaintext synced-filesystem mode. Use it for an ordinary synced
+folder, including the Owner's Google Drive for desktop folder. Do not describe
+or attest that destination as encrypted or protected-at-rest. Hermes proves
+local publication and read-back for either mode. It does not claim cloud
+delivery; the Owner confirms off-device visibility separately. Existing
+artifacts that claim `external_encrypted_destination_v1` are not reclassified.
 
 The managed publisher is an explicit Owner command; it does not perform cloud
 delivery, restore, or disaster-recovery rehearsal. After a replacement is
@@ -295,7 +302,7 @@ archive operation.
 
 ### Owner preconditions
 
-Before a real run, the Owner must attest outside Git that:
+Before a real encrypted-mode run, the Owner must attest outside Git that:
 
 1. the existing encrypted container/volume is already successfully
    opened/mounted and is readable and writable;
@@ -304,13 +311,28 @@ Before a real run, the Owner must attest outside Git that:
    checkout, the normal local backup directory, or an ambiguous/reparse-linked
    path.
 
-Hermes records only:
+Before a real plaintext-mode run, the Owner must explicitly select the
+plaintext pair and accept that the destination is an ordinary synced folder.
+The same destination exclusions apply. No encrypted-container attestation is
+required, and the result must not be described as protected.
+
+Hermes records only the selected exact pair:
 
 ```text
 protection_state=protected
 protection_mode=external_encrypted_destination_v1
 format_version=1
 ```
+
+```text
+protection_state=owner_accepted_plaintext
+protection_mode=synced_filesystem_destination_v1
+format_version=1
+```
+
+Any other state/mode combination fails closed. The plaintext alias is
+`synced-filesystem-destination`. The protected alias remains
+`protected-destination`.
 
 Hermes does not validate or authenticate the key or recovery material.
 Independent availability of recovery material remains an Owner-controlled UAT
@@ -330,11 +352,23 @@ uv run --project backend --locked hermes-finance-protected-backup `
   --protection-mode external_encrypted_destination_v1
 ```
 
+For the Owner-accepted ordinary synced folder, use the plaintext pair instead:
+
+```powershell
+uv run --project backend --locked hermes-finance-protected-backup `
+  --database <trusted-local-database> `
+  --destination <ordinary-synced-filesystem-folder> `
+  --checkout <trusted-producing-checkout> `
+  --protection-state owner_accepted_plaintext `
+  --protection-mode synced_filesystem_destination_v1
+```
+
 The command emits only privacy-safe machine-readable `created`, `verified`,
 `published`, `read_back`, `retention`, and `action_required` state plus
 destination alias, format/protection identity, artifact size, and creation
 time. A successful `published=true` result requires final read-back
 verification. Retention runs only after that verified replacement exists.
+Neither command claims that a cloud provider has delivered the file.
 The command does not accept caller-supplied producer SHA or Alembic revisions;
 those are derived from the executing Hermes checkout and consistent snapshot.
 The optional `--checkout` value is only an identity guard and must resolve to
@@ -342,8 +376,8 @@ that same executing checkout; it cannot select a different producer identity.
 
 Follow this sequence:
 
-1. validate the already-mounted, readable/writable protected boundary and
-   acquire its exclusive publication lock;
+1. validate the readable/writable destination boundary for the selected mode
+   and acquire its exclusive publication lock;
 2. create a consistent SQLite snapshot through the accepted online-backup
    path;
 3. stage under the destination's unique incomplete name;
@@ -362,11 +396,15 @@ fail closed.
 
 ### Isolated recovery rehearsal
 
-Implementation checkpoint (2026-09-22): #461 / PR #483 and the bounded Windows cleanup follow-up PR #499 are integrated on canonical development `main` `16df86d5eb3923cbe106938d6e81ec360397d00d`; exact-main CI #894 / `35734575867` is SUCCESS. This is implementation acceptance only. The first real Owner-controlled protected recovery point and clean DR rehearsal remain pending and must follow the sequence below.
+Implementation checkpoint (2026-09-22): #461 / PR #483 and the bounded Windows cleanup follow-up PR #499 are integrated on canonical development `main` `16df86d5eb3923cbe106938d6e81ec360397d00d`; exact-main CI #894 / `35734575867` is SUCCESS. This is implementation acceptance only. The fresh plaintext recovery point and clean DR rehearsal remain pending and must follow the sequence below.
 
-The supported rehearsal obtains the protected artifact and independently held
-recovery material after the encrypted container/volume has already been
-opened/mounted and is readable. The Owner explicitly selects one immutable
+The supported rehearsal reads one managed artifact whose recorded protection
+pair matches the requested pair. For the encrypted mode, the container or
+volume must already be opened or mounted and readable, and recovery material
+stays independently available. For the plaintext mode, the ordinary synced
+file must already be readable and the requested pair must be
+`owner_accepted_plaintext` / `synced_filesystem_destination_v1`. The Owner
+explicitly selects one immutable
 full 40-character recovery Git SHA and an independent checkout pinned exactly
 to it; a branch/ref-only, ambiguous, dirty, or non-independent checkout is
 not eligible. The selected recovery SHA may differ from the producer SHA when
@@ -440,6 +478,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -ProtectionMode external_encrypted_destination_v1
 ```
 
+A plaintext recovery point uses the same command with
+`-ProtectionState owner_accepted_plaintext` and
+`-ProtectionMode synced_filesystem_destination_v1`. The selected pair must
+match the recovery artifact. A mismatch fails closed before target mutation.
+
 The recovery checkout must be a clean detached independent clone at the exact
 selected SHA. It must not contain `.env`, private data, or prior runtime data.
 Before the first `uv run`, the repository-owned wrapper proves that Git identity,
@@ -454,7 +497,7 @@ the development-worktree inventory. The target profile, its `data` directory,
 and its database must not already exist. Do not pre-create or reuse them.
 
 Before creating the target profile, the command verifies the managed name,
-manifest, full artifact and snapshot hashes, protected-container state,
+manifest, full artifact and snapshot hashes, the matching protection pair,
 producer identity, SQLite integrity/foreign keys, source Alembic revisions,
 the selected checkout identity, and an exact `same_revision` or unambiguous
 linear `forward_upgrade` relationship. It then restores the already-verified
@@ -483,10 +526,14 @@ not remain visible as current. The focused implementation is integrated through
 Real use remains Owner-controlled and requires all of the following after
 synthetic implementation acceptance:
 
-- one protected, destination-read-back-verified recovery point in the
-  intended off-device workflow;
-- independently held recovery material; and
-- one clean isolated disaster-recovery rehearsal.
+- one fresh destination-read-back-verified recovery point in the ordinary
+  synced folder, explicitly marked `owner_accepted_plaintext`;
+- Owner confirmation that the synced artifact is visible off-device; and
+- one clean isolated disaster-recovery rehearsal from that plaintext point.
+
+The encrypted mode remains valid only for a genuinely encrypted destination.
+It is not required for the current Finance off-device workflow, and older
+encrypted attestations are not reclassified as plaintext.
 
 Failure keeps the prior verified point and its evidence. Preserve the failure
 output and action required; do not bypass the protection or isolation guards.

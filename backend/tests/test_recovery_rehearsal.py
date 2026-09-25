@@ -28,7 +28,13 @@ from hermes_finance.recovery_rehearsal_cli import (
     main as recovery_rehearsal_main,
 )
 from hermes_finance.services import protected_backups, recovery_rehearsal
-from hermes_finance.services.protected_backups import PROTECTION_MODE, PROTECTION_STATE
+from hermes_finance.services.protected_backups import (
+    PLAINTEXT_SYNCED_ALIAS,
+    PLAINTEXT_SYNCED_MODE,
+    PLAINTEXT_SYNCED_STATE,
+    PROTECTION_MODE,
+    PROTECTION_STATE,
+)
 from hermes_finance.services.recovery_rehearsal import (
     RELATIONSHIP_FORWARD_UPGRADE,
     RELATIONSHIP_SAME_REVISION,
@@ -91,6 +97,8 @@ def _managed_artifact(
     revision: str | None = None,
     producer_sha: str | None = None,
     month_count: int = 1,
+    protection_state: str = PROTECTION_STATE,
+    protection_mode: str = PROTECTION_MODE,
 ) -> Path:
     destination = root / "mounted-protected-destination"
     destination.mkdir(parents=True)
@@ -104,8 +112,8 @@ def _managed_artifact(
         "created_at": datetime(2035, 1, 2, 3, 4, 5, tzinfo=UTC).isoformat().replace("+00:00", "Z"),
         "format_version": protected_backups.FORMAT_VERSION,
         "producer_git_sha": producer_sha or _git_head(),
-        "protection_state": PROTECTION_STATE,
-        "protection_mode": PROTECTION_MODE,
+        "protection_state": protection_state,
+        "protection_mode": protection_mode,
         "snapshot_sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
         "snapshot_size_bytes": len(snapshot_bytes),
         "source_alembic_revisions": [source_revision],
@@ -191,12 +199,14 @@ def _run_isolated(
     profile: Path | None = None,
     data: Path | None = None,
     database: Path | None = None,
+    protection_state: str = PROTECTION_STATE,
+    protection_mode: str = PROTECTION_MODE,
 ):
     default_profile, default_data, default_database = _target_paths(tmp_path)
     return rehearse_recovery(
         artifact,
-        protection_state=PROTECTION_STATE,
-        protection_mode=PROTECTION_MODE,
+        protection_state=protection_state,
+        protection_mode=protection_mode,
         selected_recovery_sha=_git_head(),
         recovery_checkout=REPOSITORY_ROOT,
         control_checkout=REPOSITORY_ROOT,
@@ -316,6 +326,155 @@ def test_missing_or_wrong_protection_attestation_fails_before_source_or_target_m
 
     assert captured.value.stage == "protection"
     assert artifact.read_bytes() == source_before
+    assert not profile.exists()
+
+
+def _assert_no_provider_claim(payload: dict) -> None:
+    blob = json.dumps(payload, ensure_ascii=True).lower()
+    for token in ("google", "oauth", "googleapis", "cloud_delivered", "offsite_delivered"):
+        assert token not in blob
+
+
+def test_plaintext_synced_rehearsal_accepts_only_a_matching_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = _managed_artifact(
+        tmp_path,
+        protection_state=PLAINTEXT_SYNCED_STATE,
+        protection_mode=PLAINTEXT_SYNCED_MODE,
+    )
+    source_before = artifact.read_bytes()
+    _install_isolated_harness(monkeypatch, tmp_path)
+
+    result = _run_isolated(
+        artifact,
+        tmp_path,
+        protection_state=PLAINTEXT_SYNCED_STATE,
+        protection_mode=PLAINTEXT_SYNCED_MODE,
+    )
+
+    assert result.readiness == "verified"
+    assert result.source_unchanged is True
+    assert result.protection_state == PLAINTEXT_SYNCED_STATE
+    assert result.protection_mode == PLAINTEXT_SYNCED_MODE
+    assert result.destination_alias == PLAINTEXT_SYNCED_ALIAS
+    assert "protected" not in result.destination_alias
+    assert "encrypted" not in result.protection_mode
+    _assert_no_provider_claim(result.as_dict())
+    assert artifact.read_bytes() == source_before
+    assert str(artifact) not in json.dumps(result.as_dict())
+
+
+@pytest.mark.parametrize(
+    ("artifact_state", "artifact_mode", "request_state", "request_mode", "stage"),
+    [
+        (
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            PROTECTION_STATE,
+            PROTECTION_MODE,
+            "source-verification",
+        ),
+        (
+            PROTECTION_STATE,
+            PROTECTION_MODE,
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            "source-verification",
+        ),
+        (
+            PROTECTION_STATE,
+            PROTECTION_MODE,
+            PROTECTION_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            "protection",
+        ),
+        (
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            PLAINTEXT_SYNCED_STATE,
+            PROTECTION_MODE,
+            "protection",
+        ),
+    ],
+)
+def test_recovery_rejects_protection_mismatch_before_target_mutation(
+    tmp_path: Path,
+    artifact_state: str,
+    artifact_mode: str,
+    request_state: str,
+    request_mode: str,
+    stage: str,
+) -> None:
+    artifact = _managed_artifact(
+        tmp_path,
+        protection_state=artifact_state,
+        protection_mode=artifact_mode,
+    )
+    source_before = artifact.read_bytes()
+    profile, data, database = _target_paths(tmp_path)
+
+    with pytest.raises(RecoveryRehearsalError) as captured:
+        rehearse_recovery(
+            artifact,
+            protection_state=request_state,
+            protection_mode=request_mode,
+            selected_recovery_sha=_git_head(),
+            recovery_checkout=REPOSITORY_ROOT,
+            control_checkout=REPOSITORY_ROOT,
+            runtime_config=tmp_path / "runtime-config.json",
+            target_profile=profile,
+            target_data=data,
+            target_database=database,
+        )
+
+    assert captured.value.stage == stage
+    assert artifact.read_bytes() == source_before
+    assert not profile.exists()
+
+
+def test_rehearsal_cli_plaintext_mismatch_does_not_claim_protected_or_cloud(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    profile, data, database = _target_paths(tmp_path)
+
+    exit_code = recovery_rehearsal_main(
+        [
+            "--recovery-point",
+            str(artifact),
+            "--recovery-sha",
+            _git_head(),
+            "--recovery-checkout",
+            str(REPOSITORY_ROOT),
+            "--control-checkout",
+            str(REPOSITORY_ROOT),
+            "--runtime-config",
+            str(tmp_path / "runtime-config.json"),
+            "--target-profile",
+            str(profile),
+            "--target-data",
+            str(data),
+            "--target-database",
+            str(database),
+            "--protection-state",
+            PLAINTEXT_SYNCED_STATE,
+            "--protection-mode",
+            PLAINTEXT_SYNCED_MODE,
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert str(artifact) not in output
+    assert str(profile) not in output
+    payload = json.loads(output)
+    assert payload["failure_stage"] == "source-verification"
+    assert payload["restored"] is False
+    assert payload["protection_state"] == PLAINTEXT_SYNCED_STATE
+    assert payload["protection_mode"] == PLAINTEXT_SYNCED_MODE
+    assert payload["destination_alias"] == PLAINTEXT_SYNCED_ALIAS
+    _assert_no_provider_claim(payload)
     assert not profile.exists()
 
 

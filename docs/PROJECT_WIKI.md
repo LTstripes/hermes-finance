@@ -421,7 +421,7 @@ There is no remaining cutover gate. Separate future work:
 Под #417 implementation queue complete:
 - #461 закрыт канонически после PR #483 и follow-up PR #499;
 - #462 / PR #502 закрыт канонически на `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`, exact-main CI #904 / `35771083594` SUCCESS;
-- реальный protected off-device recovery point, independently held recovery material и clean Owner DR rehearsal остаются Owner-controlled gates.
+- Owner decision 2026-09-25 принимает явный plaintext synced-filesystem режим `owner_accepted_plaintext` / `synced_filesystem_destination_v1`. Это не protected-at-rest. Encrypted mode не переклассифицируется. Оставшиеся gates: свежая read-back-verified plaintext точка, подтверждение видимости off-device и один clean Owner DR rehearsal. Cloud delivery Hermes не заявляет.
 
 Не возрождать monolithic launcher updater.
 
@@ -464,7 +464,7 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; implementation children #458–#462 and #475 complete, Owner-live gates remain.
+- #417 — durability umbrella; implementation children #458–#462 and #475 complete. #527 adds the Owner-accepted plaintext synced-filesystem mode. Owner-live plaintext recovery, off-device visibility, and clean DR gates remain.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.

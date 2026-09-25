@@ -10,8 +10,12 @@ from pathlib import Path
 from hermes_finance.services.protected_backups import (
     DESTINATION_ALIAS,
     FORMAT_VERSION,
+    PLAINTEXT_SYNCED_MODE,
+    PLAINTEXT_SYNCED_STATE,
     PROTECTION_MODE,
     PROTECTION_STATE,
+    ProtectedBackupError,
+    protection_destination_alias,
 )
 from hermes_finance.services.recovery_rehearsal import (
     RECOVERY_ACTION_REQUIRED,
@@ -39,12 +43,27 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-profile", type=Path, required=True)
     parser.add_argument("--target-data", type=Path, required=True)
     parser.add_argument("--target-database", type=Path, required=True)
-    parser.add_argument("--protection-state", choices=(PROTECTION_STATE,), required=True)
-    parser.add_argument("--protection-mode", choices=(PROTECTION_MODE,), required=True)
+    parser.add_argument(
+        "--protection-state",
+        choices=(PROTECTION_STATE, PLAINTEXT_SYNCED_STATE),
+        required=True,
+    )
+    parser.add_argument(
+        "--protection-mode",
+        choices=(PROTECTION_MODE, PLAINTEXT_SYNCED_MODE),
+        required=True,
+    )
     return parser
 
 
-def _failure_payload(stage: str, *, failure_reason: str | None = None) -> dict[str, object]:
+def _failure_payload(
+    stage: str,
+    *,
+    failure_reason: str | None = None,
+    protection_state: str = PROTECTION_STATE,
+    protection_mode: str = PROTECTION_MODE,
+    destination_alias: str = DESTINATION_ALIAS,
+) -> dict[str, object]:
     payload: dict[str, object] = {
         "status": "action_required",
         "failure_stage": stage,
@@ -54,9 +73,9 @@ def _failure_payload(stage: str, *, failure_reason: str | None = None) -> dict[s
         "prepared": False,
         "validated": False,
         "readiness": "not_verified",
-        "destination_alias": DESTINATION_ALIAS,
-        "protection_state": PROTECTION_STATE,
-        "protection_mode": PROTECTION_MODE,
+        "destination_alias": destination_alias,
+        "protection_state": protection_state,
+        "protection_mode": protection_mode,
         "format_version": FORMAT_VERSION,
         "artifact_sha256": None,
         "artifact_identity_sha256": None,
@@ -76,8 +95,21 @@ def _failure_payload(stage: str, *, failure_reason: str | None = None) -> dict[s
 
 
 def main(argv: list[str] | None = None) -> int:
+    failure_identity: dict[str, str] = {}
     try:
         args = _build_parser().parse_args(argv)
+        try:
+            requested_alias = protection_destination_alias(
+                args.protection_state, args.protection_mode
+            )
+        except ProtectedBackupError:
+            requested_alias = None
+        if requested_alias is not None:
+            failure_identity = {
+                "protection_state": args.protection_state,
+                "protection_mode": args.protection_mode,
+                "destination_alias": requested_alias,
+            }
         result = rehearse_recovery(
             args.recovery_point,
             protection_state=args.protection_state,
@@ -95,14 +127,24 @@ def main(argv: list[str] | None = None) -> int:
     except RecoveryRehearsalError as error:
         print(
             json.dumps(
-                _failure_payload(error.stage, failure_reason=error.failure_reason),
+                _failure_payload(
+                    error.stage,
+                    failure_reason=error.failure_reason,
+                    **failure_identity,
+                ),
                 ensure_ascii=True,
                 sort_keys=True,
             )
         )
         return 2
     except Exception:
-        print(json.dumps(_failure_payload("unexpected"), ensure_ascii=True, sort_keys=True))
+        print(
+            json.dumps(
+                _failure_payload("unexpected", **failure_identity),
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
         return 2
 
 

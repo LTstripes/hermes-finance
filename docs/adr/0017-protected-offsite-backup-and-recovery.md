@@ -1,6 +1,6 @@
 # ADR 0017 — Protected off-site recovery points and isolated recovery
 
-- **Status:** Accepted contract; implementation through #462 integrated, Owner-live completion gates pending
+- **Status:** Accepted contract; implementation through #462 integrated. #527 adds one Owner-accepted plaintext synced-filesystem mode. Owner-live completion gates remain pending.
 - **Date:** 2026-09-18
 - **Source task:** #417-A / #458
 - **Parent contract:** #417 execution-contract freeze, `issuecomment-5731304512`
@@ -8,15 +8,28 @@
 
 ## 1. Decision summary
 
-Hermes supports one provider-neutral protected-destination mode for the first
-off-site recovery workflow: `external_encrypted_destination_v1`.
+Hermes supports two explicit provider-neutral filesystem destination modes.
 
-Hermes does not encrypt an archive, derive or store keys, call a cloud API,
-upload in the background, or claim that an ordinary synced folder is
-protected. The configured destination must be the writable view of an already
-existing Owner-managed encrypted container or volume whose encrypted backing
-storage is synchronized off-device. Hermes proves only the local publication
-and read-back boundary.
+`external_encrypted_destination_v1` remains the protected mode. Its configured
+destination must be the writable view of an already existing Owner-managed
+encrypted container or volume whose encrypted backing storage is synchronized
+off-device. Hermes does not encrypt an archive, derive or store keys, call a
+cloud API, or upload in the background. An ordinary synced folder is not
+protected.
+
+`synced_filesystem_destination_v1` is the Owner-accepted plaintext synced
+filesystem mode, recorded as `protection_state=owner_accepted_plaintext`. It
+describes an ordinary synced folder, including the Owner's initial Google
+Drive for desktop folder, and must not be labeled or attested as encrypted or
+protected-at-rest. Hermes proves only local publication and destination
+read-back for either mode. It does not claim Google or any other cloud
+delivery. The Owner confirms off-device visibility separately. No Google API,
+OAuth, SDK, cloud account, telemetry, or background upload service is added.
+
+The Owner decision on #417, 2026-09-25, accepts this plaintext privacy
+tradeoff and supersedes the earlier requirement that the off-device
+destination be encrypted. Existing artifacts that already claim
+`external_encrypted_destination_v1` are not retroactively reclassified.
 
 This ADR freezes the contract for the managed recovery-point publisher,
 retention, isolated disaster-recovery rehearsal, and post-restore read-state
@@ -35,13 +48,26 @@ protection_mode=external_encrypted_destination_v1
 format_version=1
 ```
 
-The state is valid only after the Owner has attested outside Git that the
-existing encrypted container/volume has already been successfully opened or
-mounted and is readable and writable by the supported workflow. Independent
-availability of recovery material remains an Owner-controlled UAT gate;
-Hermes does not validate or authenticate that material. Hermes records or
-returns only the protection mode, format version, and a privacy-safe
-destination alias.
+```text
+protection_state=owner_accepted_plaintext
+protection_mode=synced_filesystem_destination_v1
+format_version=1
+```
+
+The protected state is valid only after the Owner has attested outside Git
+that the existing encrypted container/volume has already been successfully
+opened or mounted and is readable and writable by the supported workflow.
+Independent availability of recovery material remains an Owner-controlled UAT
+gate for that mode. Hermes does not validate or authenticate that material.
+
+The plaintext state is valid only when the Owner explicitly selects that exact
+pair, accepting that the destination is an ordinary readable and writable
+synced filesystem folder and is not encrypted. Its privacy-safe destination
+alias is `synced-filesystem-destination`. The protected alias remains
+`protected-destination`.
+
+Hermes records or returns only the selected protection mode, format version,
+and the matching privacy-safe destination alias.
 
 The following are mandatory fail-closed rules:
 
@@ -49,13 +75,19 @@ The following are mandatory fail-closed rules:
   fails before destination staging;
 - a normal Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
   folder is not protected merely because it synchronizes;
+- plaintext publication succeeds only for the exact pair
+  `owner_accepted_plaintext` + `synced_filesystem_destination_v1`;
+- unknown states, unknown modes, and crossed pairs fail closed before
+  destination staging or restore mutation;
+- a published manifest must match the requested pair on later verification,
+  retention, and disaster-recovery rehearsal;
 - no key, credential, full private path, financial value, or reconstructive
   payload is persisted or logged;
 - Hermes does not validate or authenticate a key or recovery material;
-- independently available recovery material remains an Owner-controlled UAT
-  gate and is not stored inside the recovery artifact or only on the laptop
-  being backed up;
-- there is no successful plaintext-publication state in v1.
+- independently available recovery material for the encrypted mode remains an
+  Owner-controlled UAT gate and is not stored inside the recovery artifact or
+  only on the laptop being backed up;
+- plaintext publication does not claim cloud delivery.
 
 Portable Hermes archive encryption would require a separate accepted design
 for a vetted format/library, authenticated encryption, key derivation and
@@ -70,11 +102,14 @@ is fixed:
 
 - the snapshot is produced through the accepted SQLite online-backup path;
   copying a live `finance.db` is not a backup operation;
-- the manifest identifies format version, protection state/mode, creation
-  time, snapshot/schema identity, artifact size, deterministic artifact and
-  snapshot hashes, the producing checkout's full 40-character Git SHA, and
-  the source database Alembic revision set as an exactly sorted deterministic
-  set;
+- the manifest identifies format version, one exact accepted protection
+  state/mode pair, creation time, snapshot/schema identity, artifact size,
+  deterministic artifact and snapshot hashes, the producing checkout's full
+  40-character Git SHA, and the source database Alembic revision set as an
+  exactly sorted deterministic set;
+- verification accepts only that exact pair; publication, retention, and
+  disaster-recovery rehearsal must request the same pair that the manifest
+  records;
 - a unique destination-local incomplete name is used while the artifact or
   manifest is incomplete;
 - only one exact managed final-name pattern is eligible for listing or
@@ -197,11 +232,14 @@ system or a backup-publisher UI.
 
 ## 7. Owner gates and boundaries
 
-The first real protected Google Drive recovery point, independently held
-recovery material, and clean Owner disaster-recovery rehearsal are
-Owner-controlled gates after the synthetic implementation is accepted. Hermes
-does not prove Google cloud delivery, and no Worker may access Owner data,
-credentials, backups, or private artifacts.
+After the plaintext mode is canonical, the remaining Owner-controlled gates
+are: one fresh destination-read-back-verified recovery point in the ordinary
+synced folder, explicitly marked `owner_accepted_plaintext`; Owner
+confirmation that the synced artifact is visible off-device; and one clean
+isolated disaster-recovery rehearsal from that point. The encrypted mode
+remains available only for a genuinely encrypted destination. Hermes does not
+prove Google cloud delivery, and no Worker may access Owner data, credentials,
+backups, or private artifacts.
 
 The following remain outside this ADR:
 
@@ -209,7 +247,8 @@ The following remain outside this ADR:
 - archive encryption, key handling, or cloud account management;
 - background sync, telemetry, resident services, or an unbounded scheduler;
 - automatic restore over Stable or Preview;
-- plaintext cloud-sync success claims;
+- plaintext cloud-sync success claims, including any claim that Google or
+  another provider has delivered the artifact;
 - production code, dependency changes, schema migrations, backup artifacts,
   or Owner runtime mutation in #458.
 
@@ -240,6 +279,7 @@ operation.
 | A17 | Source revision ahead/divergent or requiring downgrade | Compatibility fails before target mutation | #461 |
 | A18 | Checkout HEAD or dirty state changes between compatibility verification and execution | Each occurring phase has its own immediate re-check; failure prevents restore write where possible and never migration/Start | #461 |
 | A19 | Successful rehearsal identity binding | Evidence binds artifact/hash, producer SHA, source revisions, recovery SHA, checkout heads, accepted relationship, and readiness/schema/code identity | #461 |
+| A20 | Owner-accepted plaintext synced filesystem mode | Exact plaintext pair publishes, verifies, and retains; protected mode stays unchanged; mismatched pairs and DR mode/artifact mismatches fail closed; no cloud-delivery claim | #527 |
 
 ## 9. Dependency-ordered implementation map
 
@@ -267,18 +307,23 @@ implement runtime behavior.
    frontend regression. It is interface-independent of the backend chain but
    is intentionally executed only after the backend chain stops or reaches its
    explicitly allowed gate.
+6. **#527 / #417-H — plaintext synced filesystem mode.** Record one explicit
+   Owner-accepted plaintext synced-filesystem pair. Keep the encrypted mode
+   unchanged and fail closed on mismatched state/mode pairs.
 
 Implementation acceptance is complete through #462, including independent
 review and canonical exact-main verification at `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` (CI #904 /
-`35771083594`). The protected off-device recovery point, independently held
-recovery material and clean Owner DR rehearsal remain final Owner-controlled
-completion gates for parent #417.
+`35771083594`). #527 adds the explicit plaintext synced-filesystem mode without
+reopening publisher, retention, or rehearsal semantics. The fresh plaintext
+recovery point, off-device visibility confirmation, and clean Owner DR
+rehearsal remain the final Owner-controlled completion gates for parent #417.
 
 ## References
 
 - #417 — Owner durability: protected off-site backup and disaster-recovery rehearsal
 - #458 — freeze protected off-site backup and DR contract
 - #459, #460, #461, #462 — dependency-ordered implementation children
+- #527 — Owner-accepted plaintext synced-filesystem destination mode
 - [`MASTER_SPEC.md`](../MASTER_SPEC.md)
 - [`OWNER_RUNTIME_OPERATIONS.md`](../OWNER_RUNTIME_OPERATIONS.md)
 - [ADR 0004](0004-localhost-request-security.md)

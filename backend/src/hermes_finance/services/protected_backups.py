@@ -1,4 +1,4 @@
-"""Managed protected-destination recovery-point publication (ADR 0017)."""
+"""Managed filesystem recovery-point publication (ADR 0017)."""
 
 from __future__ import annotations
 
@@ -33,8 +33,15 @@ from hermes_finance.services.backups import (
 
 PROTECTION_STATE = "protected"
 PROTECTION_MODE = "external_encrypted_destination_v1"
+PLAINTEXT_SYNCED_STATE = "owner_accepted_plaintext"
+PLAINTEXT_SYNCED_MODE = "synced_filesystem_destination_v1"
 FORMAT_VERSION = 1
 DESTINATION_ALIAS = "protected-destination"
+PLAINTEXT_SYNCED_ALIAS = "synced-filesystem-destination"
+_ACCEPTED_PROTECTION = {
+    (PROTECTION_STATE, PROTECTION_MODE): DESTINATION_ALIAS,
+    (PLAINTEXT_SYNCED_STATE, PLAINTEXT_SYNCED_MODE): PLAINTEXT_SYNCED_ALIAS,
+}
 MANAGED_FILENAME_PREFIX = "hermes_recovery_"
 MANAGED_FILENAME_SUFFIX = ".hermes-recovery"
 VERIFIED_RETENTION_LIMIT = 12
@@ -59,7 +66,16 @@ _REPARSE_POINT = 0x400
 
 
 class ProtectedBackupError(RuntimeError):
-    """A protected recovery-point operation failed closed."""
+    """A managed recovery-point operation failed closed."""
+
+
+def protection_destination_alias(protection_state: str, protection_mode: str) -> str:
+    """Return the privacy-safe alias for one exact accepted state/mode pair."""
+
+    try:
+        return _ACCEPTED_PROTECTION[(protection_state, protection_mode)]
+    except KeyError as error:
+        raise ProtectedBackupError("unsupported protection mode") from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,9 +386,11 @@ def _artifact_bytes(snapshot: Path, manifest: dict[str, Any]) -> bytes:
 def _validate_manifest_shape(manifest: dict[str, Any]) -> None:
     if manifest.get("format_version") != FORMAT_VERSION:
         raise ProtectedBackupError("managed artifact format identity is invalid")
-    if manifest.get("protection_mode") != PROTECTION_MODE:
+    protection_mode = manifest.get("protection_mode")
+    protection_state = manifest.get("protection_state")
+    if protection_mode not in {PROTECTION_MODE, PLAINTEXT_SYNCED_MODE}:
         raise ProtectedBackupError("managed artifact protection identity is invalid")
-    if manifest.get("protection_state") != PROTECTION_STATE:
+    if (protection_state, protection_mode) not in _ACCEPTED_PROTECTION:
         raise ProtectedBackupError("managed artifact protection state is invalid")
     producer_sha = manifest.get("producer_git_sha")
     if not isinstance(producer_sha, str) or re.fullmatch(r"[0-9a-f]{40}", producer_sha) is None:
@@ -1102,11 +1120,10 @@ def publish_recovery_point(
     source_checkout: Path | None = None,
     now: datetime | None = None,
 ) -> ProtectedBackupResult:
-    """Publish one verified recovery point to an already-mounted destination."""
+    """Publish one verified recovery point to an Owner-accepted destination."""
 
     created_at = _normalized_now(now)
-    if protection_state != PROTECTION_STATE or protection_mode != PROTECTION_MODE:
-        raise ProtectedBackupError("unsupported protection mode")
+    destination_alias = protection_destination_alias(protection_state, protection_mode)
     checkout = _producer_checkout(source_checkout)
     validated_destination = _validate_destination(destination, database, checkout)
     producer_sha = _git_identity(checkout)
@@ -1125,8 +1142,8 @@ def publish_recovery_point(
                     "created_at": created_at.isoformat().replace("+00:00", "Z"),
                     "format_version": FORMAT_VERSION,
                     "producer_git_sha": producer_sha,
-                    "protection_state": PROTECTION_STATE,
-                    "protection_mode": PROTECTION_MODE,
+                    "protection_state": protection_state,
+                    "protection_mode": protection_mode,
                     "snapshot_sha256": snapshot_hash,
                     "snapshot_size_bytes": snapshot_size,
                     "source_alembic_revisions": list(revisions),
@@ -1186,9 +1203,9 @@ def publish_recovery_point(
                 created=True,
                 verified=True,
                 published=True,
-                destination_alias=DESTINATION_ALIAS,
-                protection_state=PROTECTION_STATE,
-                protection_mode=PROTECTION_MODE,
+                destination_alias=destination_alias,
+                protection_state=protection_state,
+                protection_mode=protection_mode,
                 format_version=FORMAT_VERSION,
                 created_at=created_at,
                 size_bytes=size_bytes,
