@@ -478,6 +478,65 @@ def test_rehearsal_cli_plaintext_mismatch_does_not_claim_protected_or_cloud(
     assert not profile.exists()
 
 
+@pytest.mark.parametrize(
+    ("protection_state", "protection_mode"),
+    [
+        (PROTECTION_STATE, PLAINTEXT_SYNCED_MODE),
+        (PLAINTEXT_SYNCED_STATE, PROTECTION_MODE),
+    ],
+)
+def test_rehearsal_cli_crossed_pair_keeps_requested_identity(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    protection_state: str,
+    protection_mode: str,
+) -> None:
+    artifact = _managed_artifact(tmp_path)
+    source_before = artifact.read_bytes()
+    profile, data, database = _target_paths(tmp_path)
+
+    exit_code = recovery_rehearsal_main(
+        [
+            "--recovery-point",
+            str(artifact),
+            "--recovery-sha",
+            _git_head(),
+            "--recovery-checkout",
+            str(REPOSITORY_ROOT),
+            "--control-checkout",
+            str(REPOSITORY_ROOT),
+            "--runtime-config",
+            str(tmp_path / "runtime-config.json"),
+            "--target-profile",
+            str(profile),
+            "--target-data",
+            str(data),
+            "--target-database",
+            str(database),
+            "--protection-state",
+            protection_state,
+            "--protection-mode",
+            protection_mode,
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert str(artifact) not in output
+    assert str(profile) not in output
+    assert "protected-destination" not in output
+    payload = json.loads(output)
+    assert payload["failure_stage"] == "protection"
+    assert payload["restored"] is False
+    assert payload["source_verified"] is False
+    assert payload["protection_state"] == protection_state
+    assert payload["protection_mode"] == protection_mode
+    assert payload["destination_alias"] is None
+    _assert_no_provider_claim(payload)
+    assert artifact.read_bytes() == source_before
+    assert not profile.exists()
+
+
 def test_unknown_source_revision_fails_compatibility_before_target_mutation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -151,10 +151,15 @@ credentials, encryption material, full private paths, or raw payloads.
 Retention runs only after a replacement has been fully published and read-back
 verified. It is deliberately not a catalogue service:
 
-- enumerate only exact managed final names whose artifact and manifest verify;
-- retain the newest 12 verified managed recovery points;
+- enumerate only exact managed final names whose artifact and manifest verify
+  as the same accepted protection pair as the replacement;
+- retain the newest 12 verified managed recovery points of that pair;
+- in a directory that contains both accepted pairs, the bound is 12 verified
+  managed points per accepted protection pair;
 - perform no age-based expiry or deletion in v1;
-- preserve the newest verified recovery point;
+- preserve the newest verified recovery point of the pair being replaced;
+- never delete a verified point whose manifest pair differs from the
+  replacement;
 - never delete unknown, partial, corrupt, foreign, or unrelated files;
 - never delete the newest verified point before its replacement is complete;
 - report cleanup failure separately without invalidating a newly verified point.
@@ -309,12 +314,15 @@ implement runtime behavior.
    explicitly allowed gate.
 6. **#527 / #417-H — plaintext synced filesystem mode.** Record one explicit
    Owner-accepted plaintext synced-filesystem pair. Keep the encrypted mode
-   unchanged and fail closed on mismatched state/mode pairs.
+   unchanged and fail closed on mismatched state/mode pairs. Retention keeps
+   12 verified points per accepted pair.
 
 Implementation acceptance is complete through #462, including independent
 review and canonical exact-main verification at `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` (CI #904 /
-`35771083594`). #527 adds the explicit plaintext synced-filesystem mode without
-reopening publisher, retention, or rehearsal semantics. The fresh plaintext
+`35771083594`). #527 adds the explicit plaintext synced-filesystem mode.
+Publication, read-back, and rehearsal checks stay pair-bound. Retention keeps
+the newest 12 verified points of the replacement's exact pair, including when
+both pairs share one directory. The fresh plaintext
 recovery point, off-device visibility confirmation, and clean Owner DR
 rehearsal remain the final Owner-controlled completion gates for parent #417.
 

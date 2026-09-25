@@ -295,8 +295,11 @@ artifacts that claim `external_encrypted_destination_v1` are not reclassified.
 The managed publisher is an explicit Owner command; it does not perform cloud
 delivery, restore, or disaster-recovery rehearsal. After a replacement is
 fully published and destination-read-back verified, it retains the newest 12
-verified managed recovery points and never deletes unknown, partial, corrupt,
-or foreign files. A retention failure is reported separately and does not
+verified managed recovery points of that same protection pair. A directory
+that contains both accepted pairs keeps 12 verified points per pair. A
+plaintext run does not delete protected points, and a protected run does not
+delete plaintext points. Unknown, partial, corrupt, or foreign files are never
+deleted. A retention failure is reported separately and does not
 invalidate the newly verified point. Do not improvise a raw database copy or
 archive operation.
 
@@ -386,8 +389,9 @@ Follow this sequence:
 5. atomically expose the exact managed final name on the same filesystem;
 6. read back and fully verify the final artifact;
 7. report `published`/`verified` only after read-back succeeds;
-8. retain the newest 12 verified managed recovery points, with no age-based
-   expiry/deletion in v1, only after that verified replacement exists.
+8. retain the newest 12 verified managed recovery points of the published
+   pair, with no age-based expiry/deletion in v1, only after that verified
+   replacement exists. In a mixed directory the bound is 12 per accepted pair.
 
 Interrupted, stale, corrupt, foreign, or unknown files are never recovery
 points and are never eligible for retention. A failed next run must preserve

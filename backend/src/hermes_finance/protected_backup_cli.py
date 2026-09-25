@@ -23,6 +23,7 @@ from hermes_finance.settings import Settings
 
 _PROTECTED_PUBLICATION_ACTION = "protected recovery-point publication was not completed"
 _PLAINTEXT_PUBLICATION_ACTION = "synced-filesystem recovery-point publication was not completed"
+_UNSUPPORTED_PUBLICATION_ACTION = "recovery-point publication was not completed"
 
 
 class _PrivacySafeArgumentParser(argparse.ArgumentParser):
@@ -81,7 +82,7 @@ def _failure_payload(
     *,
     protection_state: str = PROTECTION_STATE,
     protection_mode: str = PROTECTION_MODE,
-    destination_alias: str = DESTINATION_ALIAS,
+    destination_alias: str | None = DESTINATION_ALIAS,
     action_required: str = _PROTECTED_PUBLICATION_ACTION,
 ) -> dict[str, object]:
     return {
@@ -112,7 +113,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         except ProtectedBackupError:
             requested_alias = None
-        if requested_alias is not None:
+        if requested_alias is None:
+            failure = _failure_payload(
+                protection_state=args.protection_state,
+                protection_mode=args.protection_mode,
+                destination_alias=None,
+                action_required=_UNSUPPORTED_PUBLICATION_ACTION,
+            )
+        else:
             action_required = _PROTECTED_PUBLICATION_ACTION
             if args.protection_mode == PLAINTEXT_SYNCED_MODE:
                 action_required = _PLAINTEXT_PUBLICATION_ACTION

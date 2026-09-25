@@ -62,7 +62,7 @@ def _failure_payload(
     failure_reason: str | None = None,
     protection_state: str = PROTECTION_STATE,
     protection_mode: str = PROTECTION_MODE,
-    destination_alias: str = DESTINATION_ALIAS,
+    destination_alias: str | None = DESTINATION_ALIAS,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "status": "action_required",
@@ -95,7 +95,7 @@ def _failure_payload(
 
 
 def main(argv: list[str] | None = None) -> int:
-    failure_identity: dict[str, str] = {}
+    failure_identity: dict[str, str | None] = {}
     try:
         args = _build_parser().parse_args(argv)
         try:
@@ -104,12 +104,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         except ProtectedBackupError:
             requested_alias = None
-        if requested_alias is not None:
-            failure_identity = {
-                "protection_state": args.protection_state,
-                "protection_mode": args.protection_mode,
-                "destination_alias": requested_alias,
-            }
+        failure_identity = {
+            "protection_state": args.protection_state,
+            "protection_mode": args.protection_mode,
+            "destination_alias": requested_alias,
+        }
         result = rehearse_recovery(
             args.recovery_point,
             protection_state=args.protection_state,

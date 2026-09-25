@@ -696,7 +696,9 @@ class _RetentionCandidate:
         return (self.created_at, self.artifact_hash, self.sequence, self.name)
 
 
-def _inspect_retention_candidate(path: Path) -> _RetentionCandidate | None:
+def _inspect_retention_candidate(
+    path: Path, *, protection_state: str, protection_mode: str
+) -> _RetentionCandidate | None:
     if not _is_regular_managed_file(path):
         return None
     match = _MANAGED_FILENAME_RE.fullmatch(path.name)
@@ -716,6 +718,11 @@ def _inspect_retention_candidate(path: Path) -> _RetentionCandidate | None:
             return None
         payload = _read_fd(fd)
         manifest, artifact_hash, _size = _verify_payload(payload)
+        if (
+            manifest.get("protection_state") != protection_state
+            or manifest.get("protection_mode") != protection_mode
+        ):
+            return None
     except (
         OSError,
         ProtectedBackupError,
@@ -742,22 +749,40 @@ def _inspect_retention_candidate(path: Path) -> _RetentionCandidate | None:
     )
 
 
-def _list_retention_candidates(destination: Path) -> list[_RetentionCandidate]:
-    """Return deletion-eligible verified points, oldest first."""
+def _list_retention_candidates(
+    destination: Path, *, protection_state: str, protection_mode: str
+) -> list[_RetentionCandidate]:
+    """Return one accepted pair's deletion-eligible points, oldest first."""
 
     candidates = [
         candidate
         for name in _destination_listing(destination)
-        if (candidate := _inspect_retention_candidate(destination / name)) is not None
+        if (
+            candidate := _inspect_retention_candidate(
+                destination / name,
+                protection_state=protection_state,
+                protection_mode=protection_mode,
+            )
+        )
+        is not None
     ]
     candidates.sort(key=lambda item: item.recency_key())
     return candidates
 
 
-def _verified_managed_recovery_points(destination: Path) -> list[Path]:
-    """Return retention-eligible verified artifacts only, oldest first."""
+def _verified_managed_recovery_points(
+    destination: Path, *, protection_state: str, protection_mode: str
+) -> list[Path]:
+    """Return one pair's retention-eligible verified artifacts, oldest first."""
 
-    return [candidate.path for candidate in _list_retention_candidates(destination)]
+    return [
+        candidate.path
+        for candidate in _list_retention_candidates(
+            destination,
+            protection_state=protection_state,
+            protection_mode=protection_mode,
+        )
+    ]
 
 
 _GENERIC_READ = 0x80000000
@@ -1093,7 +1118,7 @@ def _commit_retention_deletions(candidates: list[_RetentionCandidate]) -> None:
 def _select_retention_deletions(
     candidates: list[_RetentionCandidate], *, preserve: Path
 ) -> list[_RetentionCandidate]:
-    """Keep preserve plus the newest others, for an exact verified set of 12."""
+    """Keep preserve plus the newest others, for 12 points of one pair."""
 
     preserve_key = _path_key(preserve)
     matched = [item for item in candidates if _path_key(item.path) == preserve_key]
@@ -1108,15 +1133,25 @@ def _retain_verified_recovery_points(
     destination: Path,
     *,
     preserve: Path,
-    retention_action: str = RETENTION_ACTION_REQUIRED,
+    protection_state: str,
+    protection_mode: str,
+    retention_action: str,
 ) -> tuple[str, str | None]:
-    """Keep exactly 12 verified managed points, including the replacement."""
+    """Keep 12 verified points of this exact pair, including the replacement."""
 
     try:
-        candidates = _list_retention_candidates(destination)
+        candidates = _list_retention_candidates(
+            destination,
+            protection_state=protection_state,
+            protection_mode=protection_mode,
+        )
         to_delete = _select_retention_deletions(candidates, preserve=preserve)
         _commit_retention_deletions(to_delete)
-        remaining = _list_retention_candidates(destination)
+        remaining = _list_retention_candidates(
+            destination,
+            protection_state=protection_state,
+            protection_mode=protection_mode,
+        )
         if len(remaining) > VERIFIED_RETENTION_LIMIT:
             return RETENTION_FAILED, retention_action
         return RETENTION_COMPLETED, None
@@ -1213,6 +1248,8 @@ def publish_recovery_point(
             retention, retention_action = _retain_verified_recovery_points(
                 validated_destination,
                 preserve=final,
+                protection_state=protection_state,
+                protection_mode=protection_mode,
                 retention_action=retention_failure_action,
             )
             return ProtectedBackupResult(
