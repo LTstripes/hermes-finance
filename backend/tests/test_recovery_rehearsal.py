@@ -855,6 +855,79 @@ def test_bounded_start_reuses_existing_readiness_and_adds_recovery_surfaces() ->
     assert '"http://127.0.0.1:8000/api/months/{0}/dashboard"' in readiness
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell ownership race")
+@pytest.mark.parametrize("failed_observation", [2, 3, 4, 5])
+def test_windows_start_readiness_classifies_single_ownership_observation(
+    tmp_path: Path, failed_observation: int
+) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        pytest.skip("Windows PowerShell is unavailable")
+
+    probe = tmp_path / "ownership-transition.ps1"
+    probe.write_text(
+        r"""
+param([string]$StartScript, [string]$ReadinessScript, [int]$FailedObservation)
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = "Stop"
+. $ReadinessScript
+
+# Load only the production wait function; starting the script would launch a runtime.
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($StartScript, [ref]$tokens, [ref]$errors)
+$wait = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Wait-ForProductionStack" }, $true)
+. ([scriptblock]::Create($wait.Extent.Text))
+
+$script:observations = 0
+function Test-RecoveryListenerOwned {
+    param([System.Diagnostics.Process]$Backend)
+    $script:observations++
+    return $script:observations -ne $FailedObservation
+}
+function Test-HermesRecoveryHeaders {
+    param($Response, $ExpectedToken, $ExpectedDatabaseIdentity, $ExpectedCheckoutSha)
+    return $true
+}
+function Invoke-WebRequest {
+    param([string]$Uri, [switch]$UseBasicParsing, [int]$TimeoutSec)
+    $content = if ($Uri -eq "http://127.0.0.1:8000/api/months") { "[]" } else { "Hermes Finance" }
+    return [pscustomobject]@{ StatusCode = 200; Content = $content }
+}
+function Assert-ProcessRunning { param($Process, $Name) }
+
+try {
+    Wait-ForProductionStack -Backend ([System.Diagnostics.Process]::GetCurrentProcess()) -RequireRecoverySurfaces $true -ExpectedRecoveryToken "token" -ExpectedDatabaseIdentity "database" -ExpectedCheckoutSha "checkout"
+    $result = "unexpected_success"
+}
+catch {
+    $result = Get-HermesRecoveryReadinessClassification -ErrorRecord $_
+}
+[pscustomobject]@{ Classification = $result; Observations = $script:observations } | ConvertTo-Json -Compress
+""",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(probe),
+            str(REPOSITORY_ROOT / "scripts" / "start-local.ps1"),
+            str(REPOSITORY_ROOT / "scripts" / "recovery-readiness.ps1"),
+            str(failed_observation),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    result = json.loads(completed.stdout)
+    assert result == {"Classification": "listener_not_owned", "Observations": failed_observation}
+
+
 def test_windows_recovery_readiness_month_handoff_and_dashboard_probe(
     tmp_path: Path,
 ) -> None:

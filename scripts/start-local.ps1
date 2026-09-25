@@ -137,49 +137,31 @@ function Wait-ForProductionStack {
                 -Uri "http://127.0.0.1:8000/api/health" `
                 -UseBasicParsing `
                 -TimeoutSec 2
-            if (
-                $RequireRecoverySurfaces -and
-                -not (Test-RecoveryResponseOwned `
-                    -Backend $Backend `
-                    -Response $health `
-                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
-                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
-                    -ExpectedCheckoutSha $ExpectedCheckoutSha)
-            ) {
-                $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $health -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
-                Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
+            if ($RequireRecoverySurfaces) {
+                $ownershipFailure = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $health -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                if ($null -ne $ownershipFailure) {
+                    Throw-HermesRecoveryReadinessFailure -Classification $ownershipFailure
+                }
             }
             $months = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/api/months" `
                 -UseBasicParsing `
                 -TimeoutSec 2
-            if (
-                $RequireRecoverySurfaces -and
-                -not (Test-RecoveryResponseOwned `
-                    -Backend $Backend `
-                    -Response $months `
-                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
-                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
-                    -ExpectedCheckoutSha $ExpectedCheckoutSha)
-            ) {
-                $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $months -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
-                Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
+            if ($RequireRecoverySurfaces) {
+                $ownershipFailure = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $months -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                if ($null -ne $ownershipFailure) {
+                    Throw-HermesRecoveryReadinessFailure -Classification $ownershipFailure
+                }
             }
             $frontend = Invoke-WebRequest `
                 -Uri "http://127.0.0.1:8000/" `
                 -UseBasicParsing `
                 -TimeoutSec 2
-            if (
-                $RequireRecoverySurfaces -and
-                -not (Test-RecoveryResponseOwned `
-                    -Backend $Backend `
-                    -Response $frontend `
-                    -ExpectedRecoveryToken $ExpectedRecoveryToken `
-                    -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
-                    -ExpectedCheckoutSha $ExpectedCheckoutSha)
-            ) {
-                $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $frontend -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
-                Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
+            if ($RequireRecoverySurfaces) {
+                $ownershipFailure = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $frontend -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                if ($null -ne $ownershipFailure) {
+                    Throw-HermesRecoveryReadinessFailure -Classification $ownershipFailure
+                }
             }
             $baseReady = (
                 $health.StatusCode -eq 200 -and
@@ -204,22 +186,12 @@ function Wait-ForProductionStack {
                     -Uri "http://127.0.0.1:8000/api/accounts" `
                     -UseBasicParsing `
                     -TimeoutSec 2
-                if (
-                    $accounts.StatusCode -ne 200 -or
-                    -not (Test-RecoveryResponseOwned `
-                        -Backend $Backend `
-                        -Response $accounts `
-                        -ExpectedRecoveryToken $ExpectedRecoveryToken `
-                        -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity `
-                        -ExpectedCheckoutSha $ExpectedCheckoutSha)
-                ) {
-                    if ($accounts.StatusCode -ne 200) {
-                        Throw-HermesRecoveryReadinessFailure -Classification "api_http_status"
-                    }
-                    else {
-                        $lastFailureReason = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $accounts -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
-                        Throw-HermesRecoveryReadinessFailure -Classification $lastFailureReason
-                    }
+                if ($accounts.StatusCode -ne 200) {
+                    Throw-HermesRecoveryReadinessFailure -Classification "api_http_status"
+                }
+                $ownershipFailure = Get-HermesRecoveryResponseFailureClassification -Backend $Backend -Response $accounts -ExpectedRecoveryToken $ExpectedRecoveryToken -ExpectedDatabaseIdentity $ExpectedDatabaseIdentity -ExpectedCheckoutSha $ExpectedCheckoutSha
+                if ($null -ne $ownershipFailure) {
+                    Throw-HermesRecoveryReadinessFailure -Classification $ownershipFailure
                 }
 
                 $null = Invoke-HermesRecoveryDashboardProbe `
