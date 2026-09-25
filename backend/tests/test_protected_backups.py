@@ -18,6 +18,7 @@ from hermes_finance.database import create_database
 from hermes_finance.protected_backup_cli import main as protected_backup_main
 from hermes_finance.services import protected_backups
 from hermes_finance.services.protected_backups import (
+    PLAINTEXT_RETENTION_ACTION_REQUIRED,
     PLAINTEXT_SYNCED_ALIAS,
     PLAINTEXT_SYNCED_MODE,
     PLAINTEXT_SYNCED_STATE,
@@ -1285,6 +1286,58 @@ def test_retention_cleanup_failure_does_not_invalidate_new_backup(
     assert len(remaining) == VERIFIED_RETENTION_LIMIT + 1
     assert set(created).issubset(remaining)
     assert str(destination) not in result.as_dict().values()
+
+
+@pytest.mark.parametrize(
+    ("protection_state", "protection_mode", "expected_action"),
+    [
+        (
+            PLAINTEXT_SYNCED_STATE,
+            PLAINTEXT_SYNCED_MODE,
+            PLAINTEXT_RETENTION_ACTION_REQUIRED,
+        ),
+        (PROTECTION_STATE, PROTECTION_MODE, RETENTION_ACTION_REQUIRED),
+    ],
+)
+def test_forced_retention_failure_action_matches_publication_mode(
+    tmp_path: Path,
+    synthetic_database,
+    monkeypatch,
+    protection_state: str,
+    protection_mode: str,
+    expected_action: str,
+) -> None:
+    destination = tmp_path / "retention-failure-destination"
+    destination.mkdir()
+
+    def fail_commit(_candidates) -> None:
+        raise OSError("synthetic retention unlink failure")
+
+    monkeypatch.setattr(protected_backups, "_commit_retention_deletions", fail_commit)
+    result = _publish(
+        monkeypatch,
+        synthetic_database,
+        destination,
+        protection_state=protection_state,
+        protection_mode=protection_mode,
+    )
+
+    assert result.published is True
+    assert result.verified is True
+    assert result.read_back == "verified"
+    assert result.retention == RETENTION_FAILED
+    assert result.action_required == expected_action
+    assert result.protection_state == protection_state
+    assert result.protection_mode == protection_mode
+    if protection_mode == PLAINTEXT_SYNCED_MODE:
+        assert "protected" not in expected_action
+        assert result.action_required != RETENTION_ACTION_REQUIRED
+    artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
+    manifest = _manifest_of(artifact)
+    assert manifest["protection_state"] == protection_state
+    assert manifest["protection_mode"] == protection_mode
+    verified, _digest, _size = protected_backups._verify_artifact(artifact)
+    assert verified["snapshot_sha256"] == manifest["snapshot_sha256"]
 
 
 def test_retention_ordering_is_independent_of_directory_listing(

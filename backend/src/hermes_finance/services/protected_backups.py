@@ -49,6 +49,7 @@ RETENTION_COMPLETED = "completed"
 RETENTION_FAILED = "failed"
 RETENTION_NOT_RUN = "not_run"
 RETENTION_ACTION_REQUIRED = "protected recovery-point retention was not completed"
+PLAINTEXT_RETENTION_ACTION_REQUIRED = "synced-filesystem recovery-point retention was not completed"
 _MANAGED_FILENAME_RE = re.compile(
     rf"^{re.escape(MANAGED_FILENAME_PREFIX)}"
     rf"(?P<timestamp>\d{{8}}T\d{{12}}Z)"
@@ -76,6 +77,16 @@ def protection_destination_alias(protection_state: str, protection_mode: str) ->
         return _ACCEPTED_PROTECTION[(protection_state, protection_mode)]
     except KeyError as error:
         raise ProtectedBackupError("unsupported protection mode") from error
+
+
+def _retention_action_for(protection_state: str, protection_mode: str) -> str:
+    """Return the retention-failure text for one exact accepted state/mode pair."""
+
+    if protection_state == PLAINTEXT_SYNCED_STATE and protection_mode == PLAINTEXT_SYNCED_MODE:
+        return PLAINTEXT_RETENTION_ACTION_REQUIRED
+    if protection_state == PROTECTION_STATE and protection_mode == PROTECTION_MODE:
+        return RETENTION_ACTION_REQUIRED
+    raise ProtectedBackupError("unsupported protection mode")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1094,7 +1105,10 @@ def _select_retention_deletions(
 
 
 def _retain_verified_recovery_points(
-    destination: Path, *, preserve: Path
+    destination: Path,
+    *,
+    preserve: Path,
+    retention_action: str = RETENTION_ACTION_REQUIRED,
 ) -> tuple[str, str | None]:
     """Keep exactly 12 verified managed points, including the replacement."""
 
@@ -1104,11 +1118,11 @@ def _retain_verified_recovery_points(
         _commit_retention_deletions(to_delete)
         remaining = _list_retention_candidates(destination)
         if len(remaining) > VERIFIED_RETENTION_LIMIT:
-            return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
+            return RETENTION_FAILED, retention_action
         return RETENTION_COMPLETED, None
     except Exception:
         # A verified replacement must stay valid even if cleanup cannot finish.
-        return RETENTION_FAILED, RETENTION_ACTION_REQUIRED
+        return RETENTION_FAILED, retention_action
 
 
 def publish_recovery_point(
@@ -1124,6 +1138,7 @@ def publish_recovery_point(
 
     created_at = _normalized_now(now)
     destination_alias = protection_destination_alias(protection_state, protection_mode)
+    retention_failure_action = _retention_action_for(protection_state, protection_mode)
     checkout = _producer_checkout(source_checkout)
     validated_destination = _validate_destination(destination, database, checkout)
     producer_sha = _git_identity(checkout)
@@ -1196,7 +1211,9 @@ def publish_recovery_point(
             if final is None or size_bytes is None:
                 raise ProtectedBackupError("recovery-point publication failed")
             retention, retention_action = _retain_verified_recovery_points(
-                validated_destination, preserve=final
+                validated_destination,
+                preserve=final,
+                retention_action=retention_failure_action,
             )
             return ProtectedBackupResult(
                 status="published",
