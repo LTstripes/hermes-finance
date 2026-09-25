@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-22**.
+> Last synchronized: **2026-09-25**.
 
 ## 1. Что мы строим
 
@@ -65,6 +65,8 @@ The predecessor `v0.9.0` remains immutable release history.
 The `v1.0.0` release source is `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 
 The live development SHA is always current GitHub `main`; documentation-only synchronization commits may advance it after publication without changing the immutable `v1.0.0` tag identity.
+
+Owner durability closeout checkpoint: `744c613884d074e6f9d35d61523603f257371713`, exact-main CI #947 / `36139627216` SUCCESS. #417 is closed completed.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -397,7 +399,7 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 / PR #473 bounded verified retention, #461 / PR #483 isolated DR implementation and #462 / PR #502 focused post-restore state reload are integrated. Post-merge verification of #461 found a real Windows process-disposition defect; PR #499 closed it. The final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed CI #904 / `35771083594` SUCCESS. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention, #461 / PR #483 isolated DR implementation and #462 / PR #502 focused post-restore state reload are integrated. Post-merge verification of #461 found a real Windows process-disposition defect; PR #499 closed it. Later real Owner rehearsals found #511 (singleton-month PowerShell JSON handling) and #524 (Windows readiness ownership/classification TOCTOU); both were fixed canonically. #527 / PR #542 added the explicit Owner-accepted plaintext synced-filesystem mode. Final durability checkpoint `744c613884d074e6f9d35d61523603f257371713` passed exact-main CI #947 / `36139627216`; the final fresh plaintext publication, off-device visibility check and clean isolated DR all passed. #417 is closed completed.
 
 ## 11. Что идёт дальше
 
@@ -416,12 +418,24 @@ There is no remaining cutover gate. Separate future work:
 
 ### Runtime / durability
 
-#313 завершён. #459 protected recovery-point publisher, #460 retention, #461 isolated DR implementation, #462 post-restore month-state reload и #475 restore outcome semantics завершены и интегрированы.
+#313 завершён. #417 owner durability тоже завершён.
 
-Под #417 implementation queue complete:
-- #461 закрыт канонически после PR #483 и follow-up PR #499;
-- #462 / PR #502 закрыт канонически на `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`, exact-main CI #904 / `35771083594` SUCCESS;
-- Owner decision 2026-09-25 принимает явный plaintext synced-filesystem режим `owner_accepted_plaintext` / `synced_filesystem_destination_v1`. Это не protected-at-rest. Encrypted mode не переклассифицируется. Оставшиеся gates: свежая read-back-verified plaintext точка, подтверждение видимости off-device и один clean Owner DR rehearsal. Cloud delivery Hermes не заявляет.
+Каноническая durability-цепочка:
+- #459 — managed recovery-point publisher;
+- #460 — bounded retention, 12 verified points на exact protection pair;
+- #461 + PR #499 — isolated DR и Windows process cleanup/disposition;
+- #462 — post-restore month-state reload;
+- #475 — truthful ambiguous restore outcomes;
+- #511 и #524 — реальные дефекты, найденные Owner DR rehearsal и исправленные до финального прогона;
+- #527 / PR #542 — явный `owner_accepted_plaintext / synced_filesystem_destination_v1` для обычной synced folder.
+
+Owner-live closeout 2026-09-25: свежая plaintext recovery point опубликована и read-back verified; точный новый файл подтверждён off-device; clean isolated DR завершился `status=rehearsed`, `readiness=verified`, `source_unchanged=true`, `schema_relationship=same_revision`. Parent #417 закрыт `completed`.
+
+Hermes не заявляет cloud delivery и не добавляет Google API/OAuth/cloud account. Encrypted mode остаётся отдельным режимом для реально encrypted destination.
+
+#543 — отдельный non-blocking hardening после closeout; #417 он не переоткрывает.
+
+Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 Не возрождать monolithic launcher updater.
 
@@ -464,7 +478,7 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; implementation children #458–#462 and #475 complete. #527 adds the Owner-accepted plaintext synced-filesystem mode. Owner-live plaintext recovery, off-device visibility, and clean DR gates remain.
+- #417 — durability umbrella: **completed 2026-09-25** after live plaintext publication, off-device confirmation and clean isolated DR; #543 is separate non-blocking hardening.
 
 Separate follow-up:
 - #476 — real-backend synthetic G04 browser regression gate.
