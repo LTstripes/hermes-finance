@@ -46,7 +46,7 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await page.getByRole("link", { name: "Дашборд" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
   await expect(page.getByText("Ликвидный капитал", { exact: true })).toBeVisible();
-  await expect(page.getByText("Прогноз", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Прогноз · 12 месяцев", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Экспорт" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Экспорт" })).toBeVisible();
