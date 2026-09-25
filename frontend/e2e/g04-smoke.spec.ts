@@ -29,7 +29,10 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await page.getByLabel("Категория расхода").fill("Smoke rent");
   await page.getByLabel("Сумма расхода").fill("20000");
   await page.getByRole("button", { name: "Добавить расход" }).click();
-  await expect(page.getByRole("table").filter({ hasText: "Smoke rent" })).toBeVisible();
+  const expensesPanel = page.locator("section.panel").filter({
+    has: page.getByRole("heading", { level: 2, name: "Расходы", exact: true }),
+  });
+  await expect(expensesPanel.getByRole("table")).toContainText("Smoke rent");
 
   await page.getByRole("button", { name: "Активы", exact: true }).click();
   await page.getByLabel("Название вклада").fill("Smoke deposit");
