@@ -250,8 +250,6 @@ Hermes does not prove Google cloud delivery; the off-device observation is Owner
 
 The following remain outside this ADR:
 
-The following remain outside this ADR:
-
 - Google Drive or any other provider API/OAuth/SDK;
 - archive encryption, key handling, or cloud account management;
 - background sync, telemetry, resident services, or an unbounded scheduler;
