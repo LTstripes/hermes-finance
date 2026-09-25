@@ -60,9 +60,9 @@ def _failure_payload(
     stage: str,
     *,
     failure_reason: str | None = None,
-    protection_state: str = PROTECTION_STATE,
-    protection_mode: str = PROTECTION_MODE,
-    destination_alias: str | None = DESTINATION_ALIAS,
+    protection_state: str | None = None,
+    protection_mode: str | None = None,
+    destination_alias: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "status": "action_required",
