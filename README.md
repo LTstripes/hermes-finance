@@ -22,6 +22,7 @@ The immutable published `v0.9.0` history remains valid as the predecessor releas
 
 Canonical status: [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 Release closeout: [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md).
+Owner durability closeout: [`docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`](docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md).
 
 ## Product/runtime invariants
 
@@ -104,7 +105,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 
 #460 bounded verified retention, #461 isolated DR rehearsal and #462 post-restore month-state reload are now integrated on canonical `main`. The #461 implementation required post-merge Windows process-disposition fix PR #499; #462 then closed the retained Export/Backup stale-month race. Final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594`. The #417 implementation queue through #462 is complete.
 
-#527 adds one explicit Owner-accepted plaintext synced-filesystem mode: `protection_state=owner_accepted_plaintext`, `protection_mode=synced_filesystem_destination_v1`. It is not encrypted or protected-at-rest. `external_encrypted_destination_v1` remains valid only for a genuinely encrypted destination and is not retroactively reclassified. Hermes still proves only local publication and destination read-back. Mismatched state/mode pairs fail closed. No Google API, OAuth, or cloud-delivery claim is added. Remaining Owner gates are a fresh read-back-verified plaintext recovery point, off-device visibility confirmation, and one clean isolated DR rehearsal from that point.
+#527 / PR #542 added the explicit Owner-accepted plaintext synced-filesystem mode: `protection_state=owner_accepted_plaintext`, `protection_mode=synced_filesystem_destination_v1`. It is not encrypted or protected-at-rest; the existing `external_encrypted_destination_v1` mode remains unchanged. Canonical durability checkpoint `744c613884d074e6f9d35d61523603f257371713` passed exact-main CI #947 / `36139627216`. Owner-live closeout then passed: a fresh plaintext recovery point was published with destination read-back verified, its off-device visibility was confirmed independently, and a clean isolated DR rehearsal returned `status=rehearsed`, `readiness=verified`, `source_unchanged=true`. Parent #417 is closed completed. #543 tracks non-blocking hardening only.
 
 ## Requirements
 
@@ -289,7 +290,7 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 Separate future work:
 
 - #476 — one real-backend synthetic G04 browser regression gate; this is regression infrastructure, not a blocker to the accepted cutover;
-- #417 implementation work is complete through #462; only the real Owner-controlled off-device recovery/rehearsal gates remain;
+- #417 owner durability is complete, including fresh plaintext synced recovery publication, independent off-device visibility confirmation and one clean isolated DR rehearsal; #543 remains a separate non-blocking hardening follow-up;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
