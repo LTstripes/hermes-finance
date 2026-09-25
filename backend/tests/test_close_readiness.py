@@ -273,6 +273,80 @@ def test_active_capital_account_without_monthly_snapshot_is_warning(tmp_path: Pa
     assert result.can_close is True
 
 
+def test_unassigned_cash_does_not_satisfy_single_real_cash_account_snapshot(
+    tmp_path: Path,
+) -> None:
+    session, _database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))
+    create_account(session, name="Real Cash Account", account_type=AccountType.CASH)
+    create_cash_balance(
+        session,
+        reporting_month_id=month.id,
+        name="Unassigned cash",
+        amount="100.00",
+    )
+
+    result = build_close_readiness(session, month.id, today=TODAY)
+
+    missing = _by_code(result, CloseReadinessCode.ACTIVE_ACCOUNT_SNAPSHOT_MISSING.value)
+    assert len(missing) == 1
+    assert missing[0].severity is CloseReadinessSeverity.WARNING
+    assert missing[0].context["account_names"] == ["Real Cash Account"]
+    assert result.can_close is True
+
+
+def test_unassigned_cash_does_not_satisfy_missing_account_among_real_cash_accounts(
+    tmp_path: Path,
+) -> None:
+    session, _database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))
+    cash_account_with_snapshot = create_account(
+        session,
+        name="Cash Account With Snapshot",
+        account_type=AccountType.CASH,
+    )
+    create_account(session, name="Cash Account Missing Snapshot", account_type=AccountType.CASH)
+    create_cash_balance(
+        session,
+        reporting_month_id=month.id,
+        account_id=cash_account_with_snapshot.id,
+        name="Linked cash",
+        amount="50.00",
+    )
+    create_cash_balance(
+        session,
+        reporting_month_id=month.id,
+        name="Unassigned cash",
+        amount="100.00",
+    )
+
+    result = build_close_readiness(session, month.id, today=TODAY)
+
+    missing = _by_code(result, CloseReadinessCode.ACTIVE_ACCOUNT_SNAPSHOT_MISSING.value)
+    assert len(missing) == 1
+    assert missing[0].severity is CloseReadinessSeverity.WARNING
+    assert missing[0].context["account_names"] == ["Cash Account Missing Snapshot"]
+    assert result.can_close is True
+
+
+def test_zero_cash_balance_linked_to_account_counts_as_snapshot(tmp_path: Path) -> None:
+    session, _database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))
+    account = create_account(session, name="Zero Cash Account", account_type=AccountType.CASH)
+    create_cash_balance(
+        session,
+        reporting_month_id=month.id,
+        account_id=account.id,
+        name="Explicit zero cash",
+        amount="0.00",
+    )
+
+    result = build_close_readiness(session, month.id, today=TODAY)
+
+    assert _by_code(result, CloseReadinessCode.ACTIVE_ACCOUNT_SNAPSHOT_MISSING.value) == []
+    assert result.can_close is True
+
+
 def test_persisted_stale_quote_is_warning_from_freshness_codes(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=8, snapshot_date=date(2026, 8, 31))
