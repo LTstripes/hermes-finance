@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 from hermes_finance.services.protected_backups import (
-    DESTINATION_ALIAS,
     FORMAT_VERSION,
     PLAINTEXT_SYNCED_MODE,
     PLAINTEXT_SYNCED_STATE,
