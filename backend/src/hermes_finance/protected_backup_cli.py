@@ -9,7 +9,6 @@ from pathlib import Path
 
 from hermes_finance.database import create_database
 from hermes_finance.services.protected_backups import (
-    DESTINATION_ALIAS,
     PLAINTEXT_SYNCED_MODE,
     PLAINTEXT_SYNCED_STATE,
     PROTECTION_MODE,
