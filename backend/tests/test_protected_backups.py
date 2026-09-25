@@ -1515,6 +1515,7 @@ def test_mixed_mode_retention_thirteenth_deletes_only_same_pair_oldest(
 ) -> None:
     destination = tmp_path / "mixed-protection-retention-bound"
     destination.mkdir()
+    can_delete = _object_bound_deletion_available(destination)
     target_created, _target_results = _publish_series(
         monkeypatch,
         synthetic_database,
@@ -1558,7 +1559,6 @@ def test_mixed_mode_retention_thirteenth_deletes_only_same_pair_oldest(
 
     assert result.published is True
     assert result.verified is True
-    assert result.retention == RETENTION_COMPLETED
     target_after = _eligible_names(
         destination,
         protection_state=target_state,
@@ -1569,16 +1569,37 @@ def test_mixed_mode_retention_thirteenth_deletes_only_same_pair_oldest(
         protection_state=other_state,
         protection_mode=other_mode,
     )
-    assert len(target_after) == VERIFIED_RETENTION_LIMIT
-    assert target_created[0] not in target_after
-    assert set(target_created[1:]).issubset(target_after)
-    assert len(target_after - set(target_created)) == 1
+    new_names = target_after - set(target_created)
+    assert len(new_names) == 1
+    new_name = next(iter(new_names))
     assert other_after == set(other_created)
-    assert not (destination / target_created[0]).exists()
-    for name in target_created[1:]:
-        assert (destination / name).read_bytes() == target_before[name]
     for name, payload in other_before.items():
         assert (destination / name).read_bytes() == payload
+
+    if can_delete:
+        assert result.retention == RETENTION_COMPLETED
+        assert len(target_after) == VERIFIED_RETENTION_LIMIT
+        assert target_created[0] not in target_after
+        assert set(target_created[1:]).issubset(target_after)
+        assert not (destination / target_created[0]).exists()
+        for name in target_created[1:]:
+            assert (destination / name).read_bytes() == target_before[name]
+        return
+
+    assert result.retention == RETENTION_FAILED
+    assert target_after == set(target_created) | {new_name}
+    for name, payload in target_before.items():
+        assert (destination / name).read_bytes() == payload
+    candidates = protected_backups._list_retention_candidates(
+        destination,
+        protection_state=target_state,
+        protection_mode=target_mode,
+    )
+    to_delete = protected_backups._select_retention_deletions(
+        candidates,
+        preserve=destination / new_name,
+    )
+    assert [item.name for item in to_delete] == [target_created[0]]
 
 
 def test_retention_ordering_is_independent_of_directory_listing(
