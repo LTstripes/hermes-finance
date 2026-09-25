@@ -13,6 +13,7 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await createDialog.getByLabel("Месяц").selectOption("12");
   await createDialog.getByLabel("Дата снимка").fill("2049-12-31");
   await createDialog.getByRole("button", { name: "Создать месяц" }).click();
+  await expect(createDialog).toBeHidden();
 
   const monthRow = page.getByRole("row").filter({ hasText: "Декабрь" }).last();
   await expect(monthRow).toContainText("Черновик");
