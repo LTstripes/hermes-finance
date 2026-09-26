@@ -105,7 +105,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 
 #460 bounded verified retention, #461 isolated DR rehearsal and #462 post-restore month-state reload are now integrated on canonical `main`. The #461 implementation required post-merge Windows process-disposition fix PR #499; #462 then closed the retained Export/Backup stale-month race. Final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594`. The #417 implementation queue through #462 is complete.
 
-#527 / PR #542 added the explicit Owner-accepted plaintext synced-filesystem mode: `protection_state=owner_accepted_plaintext`, `protection_mode=synced_filesystem_destination_v1`. It is not encrypted or protected-at-rest; the existing `external_encrypted_destination_v1` mode remains unchanged. Canonical durability checkpoint `744c613884d074e6f9d35d61523603f257371713` passed exact-main CI #947 / `36139627216`. Owner-live closeout then passed: a fresh plaintext recovery point was published with destination read-back verified, its off-device visibility was confirmed independently, and a clean isolated DR rehearsal returned `status=rehearsed`, `readiness=verified`, `source_unchanged=true`. Parent #417 is closed completed. #543 tracks non-blocking hardening only.
+#527 / PR #542 added the explicit Owner-accepted plaintext synced-filesystem mode: `protection_state=owner_accepted_plaintext`, `protection_mode=synced_filesystem_destination_v1`. It is not encrypted or protected-at-rest; the existing `external_encrypted_destination_v1` mode remains unchanged. Canonical durability checkpoint `744c613884d074e6f9d35d61523603f257371713` passed exact-main CI #947 / `36139627216`. Owner-live closeout then passed: a fresh plaintext recovery point was published with destination read-back verified, its off-device visibility was confirmed independently, and a clean isolated DR rehearsal returned `status=rehearsed`, `readiness=verified`, `source_unchanged=true`. Parent #417 is closed completed. #543 / PR #547 then completed the separate non-blocking CLI/retention hardening without reopening #417.
 
 ## Requirements
 
@@ -289,8 +289,8 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 
 Separate future work:
 
-- #476 — one real-backend synthetic G04 browser regression gate; this is regression infrastructure, not a blocker to the accepted cutover;
-- #417 owner durability is complete, including fresh plaintext synced recovery publication, independent off-device visibility confirmation and one clean isolated DR rehearsal; #543 remains a separate non-blocking hardening follow-up;
+- #476 / PR #548 is complete: canonical CI now runs one deterministic synthetic real-backend G04 owner journey;
+- #417 owner durability remains complete; #543 / PR #547 separately completed the non-blocking recovery CLI/retention hardening without reopening it;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
