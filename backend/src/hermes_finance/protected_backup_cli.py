@@ -9,7 +9,6 @@ from pathlib import Path
 
 from hermes_finance.database import create_database
 from hermes_finance.services.protected_backups import (
-    DESTINATION_ALIAS,
     PLAINTEXT_SYNCED_MODE,
     PLAINTEXT_SYNCED_STATE,
     PROTECTION_MODE,
@@ -80,10 +79,10 @@ def _require_regular_database(path: Path) -> Path:
 
 def _failure_payload(
     *,
-    protection_state: str = PROTECTION_STATE,
-    protection_mode: str = PROTECTION_MODE,
-    destination_alias: str | None = DESTINATION_ALIAS,
-    action_required: str = _PROTECTED_PUBLICATION_ACTION,
+    protection_state: str | None = None,
+    protection_mode: str | None = None,
+    destination_alias: str | None = None,
+    action_required: str = _UNSUPPORTED_PUBLICATION_ACTION,
 ) -> dict[str, object]:
     return {
         "status": "action_required",
