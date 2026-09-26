@@ -25,6 +25,7 @@ from hermes_finance.domain.risk_allocation import RiskSupportStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.accounts import list_accounts
 from hermes_finance.services.ai_analysis_bundle import (
+    ACTIVE_ACCOUNT_SNAPSHOT_MISSING,
     FUTURE_DATED_VALUATION,
     assemble_ai_analysis_bundle,
 )
@@ -134,6 +135,10 @@ _WARNING_MESSAGES = {
     "unresolved_provider_mapping": (
         "A provider/manual duplicate remains in the existing safe manual-only calendar state."
     ),
+    ACTIVE_ACCOUNT_SNAPSHOT_MISSING: (
+        "One or more active capital-included accounts have no snapshot for the "
+        "selected reporting month; their value is unavailable, not zero."
+    ),
 }
 _INFO_WARNINGS = {
     "authoritative_market_value_change_unavailable",
@@ -197,6 +202,7 @@ _MARKDOWN_REASON_LABELS = {
     "cash_flow_adjusted_return_unavailable": "доходность с учётом денежных потоков не рассчитана",
     "incomplete_12_month_window": "доступно менее 12 закрытых месяцев",
     "no_authoritative_aggregate": "нет принятого агрегата",
+    ACTIVE_ACCOUNT_SNAPSHOT_MISSING: "нет снимка по активному счёту в капитале",
     "no_eligible_closed_months": "нет подходящих закрытых месяцев",
     "profile_concise": "раздел исключён профилем concise",
     "risk_allocation_unavailable": "распределение недоступно в принятой read model",
@@ -1004,6 +1010,49 @@ def _support_state(support) -> dict[str, object]:
     return {"status": state, "reason_codes": _reason_codes(getattr(support, "reason_codes", ()))}
 
 
+def _history_point_snapshot_missing(point: Mapping[str, object]) -> bool:
+    coverage = point.get("coverage")
+    if not isinstance(coverage, Mapping):
+        return False
+    return ACTIVE_ACCOUNT_SNAPSHOT_MISSING in _reason_codes(coverage.get("reason_codes"))
+
+
+def _append_reason_code(metric: dict[str, object], reason: str) -> None:
+    reasons = _reason_codes(metric.get("reason_codes"))
+    if reason not in reasons:
+        metric["reason_codes"] = sorted([*reasons, reason])
+
+
+def _mark_partial_support(support: dict[str, object], reason: str) -> dict[str, object]:
+    """Keep a present denominator and record portfolio-source incompleteness.
+
+    Unavailable support is left alone: that metric is not publishing the known
+    subtotal. Complete support becomes partial. Shares are not touched.
+    """
+    if support.get("status") == "unavailable":
+        return support
+    reasons = _reason_codes(support.get("reason_codes"))
+    if reason not in reasons:
+        reasons = sorted([*reasons, reason])
+    status = "partial" if support.get("status") == "complete" else support.get("status")
+    if status not in {"complete", "partial"}:
+        status = "partial"
+    return {"status": status, "reason_codes": reasons}
+
+
+def _annotate_capital_goal(goal: dict[str, object]) -> None:
+    current = goal.get("current_value")
+    if not isinstance(current, dict) or current.get("availability") != "available":
+        return
+    _append_reason_code(current, ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
+    progress = goal.get("progress")
+    if isinstance(progress, dict):
+        _append_reason_code(progress, ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
+    warnings = _reason_codes(goal.get("warning_codes"))
+    if ACTIVE_ACCOUNT_SNAPSHOT_MISSING not in warnings:
+        goal["warning_codes"] = sorted([*warnings, ACTIVE_ACCOUNT_SNAPSHOT_MISSING])
+
+
 def _key_slug(value: object, *, fallback: str, used: set[str], max_length: int) -> str:
     raw = value if isinstance(value, str) else ""
     candidate = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
@@ -1045,6 +1094,7 @@ def _risk_allocation_data(
     instrument_ref_by_id: Mapping[int, str],
     reporting_period: Mapping[str, int],
     valuation_eligible: bool = True,
+    portfolio_source_partial: bool = False,
 ) -> dict[str, object]:
     # The source DTO carries numeric IDs while the package carries only the
     # export-local refs.  Name-based maps are used only as a display fallback;
@@ -1236,6 +1286,11 @@ def _risk_allocation_data(
         allocation_by_asset_class = allocation_metric(result.allocation_by_asset_class)
         allocation_by_account = allocation_metric(result.allocation_by_account)
         top_positions = concentration_metric(result.top_positions)
+        if portfolio_source_partial:
+            for metric in (allocation_by_asset_class, allocation_by_account, top_positions):
+                metric["support"] = _mark_partial_support(
+                    metric["support"], ACTIVE_ACCOUNT_SNAPSHOT_MISSING
+                )
 
     return {
         "reporting_period": dict(reporting_period),
@@ -1256,27 +1311,32 @@ def _goal_source_path(value: object) -> str:
     return "backend_authoritative_read_model"
 
 
-def _context_data(source: Mapping[str, object]) -> tuple[dict[str, object], list[str]]:
+def _context_data(
+    source: Mapping[str, object],
+    *,
+    capital_snapshot_missing: bool = False,
+) -> tuple[dict[str, object], list[str]]:
     goals = []
     for value in _list(source.get("goals"), label="goals"):
         item = _mapping(value, label="goal")
-        goals.append(
-            {
-                "ref": item.get("ref"),
-                "name": item.get("name"),
-                "goal_type": item.get("goal_type"),
-                "is_primary": item.get("is_primary"),
-                "target": _money_metric(item.get("target")),
-                "current_value": _money_metric(item.get("current_value")),
-                "gap": _money_metric(item.get("gap")),
-                "progress": _ratio_metric(item.get("progress")),
-                "projection_status": item.get("projection_status"),
-                "estimated_achievement_date": item.get("estimated_achievement_date"),
-                "method_version": item.get("method_version", GOAL_ACHIEVEMENT_METHOD_VERSION),
-                "source_metric_path": _goal_source_path(item.get("source_metric_path")),
-                "warning_codes": _reason_codes(item.get("warning_codes")),
-            }
-        )
+        goal = {
+            "ref": item.get("ref"),
+            "name": item.get("name"),
+            "goal_type": item.get("goal_type"),
+            "is_primary": item.get("is_primary"),
+            "target": _money_metric(item.get("target")),
+            "current_value": _money_metric(item.get("current_value")),
+            "gap": _money_metric(item.get("gap")),
+            "progress": _ratio_metric(item.get("progress")),
+            "projection_status": item.get("projection_status"),
+            "estimated_achievement_date": item.get("estimated_achievement_date"),
+            "method_version": item.get("method_version", GOAL_ACHIEVEMENT_METHOD_VERSION),
+            "source_metric_path": _goal_source_path(item.get("source_metric_path")),
+            "warning_codes": _reason_codes(item.get("warning_codes")),
+        }
+        if capital_snapshot_missing and goal["goal_type"] == "capital":
+            _annotate_capital_goal(goal)
+        goals.append(goal)
     goals.sort(key=lambda item: str(item["ref"]))
 
     debts_source = _mapping(source.get("debts_and_real_estate"), label="debt/property context")
@@ -1535,6 +1595,7 @@ def _warnings(
             )[:500],
         }
 
+    bundle_warning_codes: set[str] = set()
     for value in _list(base.get("warnings", []), label="bundle warnings"):
         warning = _mapping(value, label="bundle warning")
         code = warning.get("code")
@@ -1542,6 +1603,7 @@ def _warnings(
             code = "quote_stale"
         if not isinstance(code, str):
             continue
+        bundle_warning_codes.add(code)
         add(
             code,
             str(warning.get("severity", "info")),
@@ -1552,6 +1614,14 @@ def _warnings(
     for scope, reasons in section_reasons.items():
         for code in reasons:
             if code == "total_net_worth_unavailable":
+                continue
+            # The bundle already warns once for the selected month. Section
+            # reason codes still carry the marker; a second warning would only
+            # move the deduped review scope off the portfolio.
+            if (
+                code == ACTIVE_ACCOUNT_SNAPSHOT_MISSING
+                and ACTIVE_ACCOUNT_SNAPSHOT_MISSING in bundle_warning_codes
+            ):
                 continue
             severity = "info" if code in _INFO_WARNINGS else "warning"
             add(code, severity, f"sections.{scope}")
@@ -1648,6 +1718,7 @@ def assemble_portfolio_review_package(
 
     sections: dict[str, dict[str, object]] = {}
     section_reasons: dict[str, list[str]] = {}
+    snapshot_missing = _history_point_snapshot_missing(current_point)
     capital_reasons = ["total_net_worth_unavailable"]
     current_capital_reasons = set()
     for metric_name in ("liquid_assets_total", "liquid_capital_net"):
@@ -1656,6 +1727,8 @@ def assemble_portfolio_review_package(
             current_capital_reasons.update(_reason_codes(metric.get("reason_codes")))
     if FUTURE_DATED_VALUATION in current_capital_reasons:
         capital_reasons.append(FUTURE_DATED_VALUATION)
+    if snapshot_missing:
+        capital_reasons.append(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
     sections["capital"] = _section(
         status="partial",
         reasons=capital_reasons,
@@ -1781,6 +1854,8 @@ def assemble_portfolio_review_package(
             section_reasons["allocation"] = allocation_reasons
         else:
             allocation_reasons = [FUTURE_DATED_VALUATION] if future_dated_valuation else []
+            if snapshot_missing and not future_dated_valuation:
+                allocation_reasons.append(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
             sections["allocation"] = _section(
                 status="partial" if allocation_reasons else "included",
                 reasons=allocation_reasons,
@@ -1791,12 +1866,16 @@ def assemble_portfolio_review_package(
                     instrument_ref_by_id=instrument_ref_by_id,
                     reporting_period=current_period,
                     valuation_eligible=not future_dated_valuation,
+                    portfolio_source_partial=snapshot_missing and not future_dated_valuation,
                 ),
             )
             section_reasons["allocation"] = allocation_reasons
 
         context_source = _mapping(base, label="AI bundle")
-        context_data, context_reasons = _context_data(context_source)
+        context_data, context_reasons = _context_data(
+            context_source,
+            capital_snapshot_missing=snapshot_missing and not future_dated_valuation,
+        )
         sections["context"] = _section(
             status="partial" if context_reasons else "included",
             reasons=context_reasons,
