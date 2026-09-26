@@ -46,7 +46,7 @@ const FX_STRESS_UNAVAILABLE_TITLE = "Недоступен точный пере�
 const FX_UNKNOWN_DATA_TITLE = "Нет данных для точного пересчёта";
 const FX_EMPTY_SCOPE_TITLE = "Нет позиций в валюте шока";
 
-const SCENARIO_OPTIONS: {
+export const SCENARIO_OPTIONS: {
   value: ScenarioShockType;
   label: string;
   description: string;
@@ -196,7 +196,7 @@ function defaultMonth(months: ReportingMonth[]): ReportingMonth | null {
 }
 
 /** Normalize an owner-typed percent/rate: "10,5" → "10.5". Returns null when not a decimal string. No financial caps here. */
-function normalizeDecimalInput(raw: string, allowSigned: boolean): string | null {
+export function normalizeDecimalInput(raw: string, allowSigned: boolean): string | null {
   const value = raw.trim().replace(/\s/g, "").replace(",", ".");
   if (value === "" || value === "." || value === "-." || value === "-") return null;
   const pattern = allowSigned ? /^-?\d+(\.\d+)?$/ : /^\d+(\.\d+)?$/;
@@ -206,13 +206,13 @@ function normalizeDecimalInput(raw: string, allowSigned: boolean): string | null
   return value;
 }
 
-function isWithinRange(value: string | null, max: number): boolean {
+export function isWithinRange(value: string | null, max: number): boolean {
   if (value == null) return false;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= max;
 }
 
-function isAtLeast(value: string | null, min: number): boolean {
+export function isAtLeast(value: string | null, min: number): boolean {
   if (value == null) return false;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= min;
@@ -222,7 +222,7 @@ function parseMoneyOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
-function triggerDownload(blob: Blob, filename: string) {
+export function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -673,7 +673,7 @@ function ScenarioParameterFields({
   );
 }
 
-function ScenarioLabResult({
+export function ScenarioLabResult({
   evaluation,
   selectedMonth,
   onRetry,
