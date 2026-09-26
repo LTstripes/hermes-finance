@@ -23,6 +23,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.monthly_summary import (
     MonthlySummaryResult,
     assemble_warnings,
@@ -67,6 +68,7 @@ def _previous_reporting_month(session: Session, *, year: int, month: int) -> Rep
     )
 
 
+@coherent_read_operation
 def monthly_summary(
     session: Session,
     reporting_month_id: int,

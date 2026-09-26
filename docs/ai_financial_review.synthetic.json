@@ -9,7 +9,7 @@
     "application": { "name": "Hermes Finance", "version": "1.0.0" },
     "generation_mode": "read_only",
     "source_contracts": [
-      { "name": "hermes.finance.ai_analysis_bundle", "version": "1.3.0", "role": "financial_source" },
+      { "name": "hermes.finance.ai_analysis_bundle", "version": "1.4.0", "role": "financial_source" },
       { "name": "hermes.finance.portfolio_review_package", "version": "1.1.0", "role": "envelope_source" }
     ],
     "integrated_contracts": ["#336 financial context contract"],

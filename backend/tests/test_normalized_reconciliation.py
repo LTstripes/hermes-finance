@@ -6,7 +6,9 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from hermes_finance.alfa_pro_diagnostics import AlfaCompatibilityState
 from hermes_finance.broker_data.dto import (
@@ -33,10 +35,14 @@ from hermes_finance.broker_data.reconciliation import (
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType, PriceSource
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base, PositionSnapshot
+from hermes_finance.persistence import Account, Base, PositionSnapshot
+from hermes_finance.services import broker_reconciliation as broker_reconciliation_service
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.instruments import create_instrument
-from hermes_finance.services.positions import create_position_snapshot
+from hermes_finance.services.positions import (
+    create_position_snapshot,
+    stage_update_position_snapshot,
+)
 from hermes_finance.services.reporting_months import create_reporting_month
 
 SYN_PROVIDER_ACCOUNT = "SYN-ACCOUNT-001"
@@ -301,6 +307,54 @@ def test_normalized_api_is_explicit_read_only_and_reuses_fingerprints(tmp_path: 
         assert session.get(PositionSnapshot, position_id).quantity == Decimal("10.000000")
     finally:
         session.close()
+
+
+def test_broker_reconciliation_preview_uses_one_local_snapshot_after_provider_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, month_id, account_id, instrument_id, position_id = _api_context(tmp_path)
+    provider = _StaticSnapshotProvider(_snapshot())
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_accounts = broker_reconciliation_service._load_broker_accounts
+    writer_committed = False
+
+    def interleaved_accounts(session_arg):
+        nonlocal writer_committed
+        accounts = real_accounts(session_arg)
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                writer.execute(
+                    update(Account).where(Account.id == account_id).values(name="Updated brokerage")
+                )
+                stage_update_position_snapshot(writer, position_id, quantity="11")
+                writer.commit()
+        return accounts
+
+    monkeypatch.setattr(
+        broker_reconciliation_service, "_load_broker_accounts", interleaved_accounts
+    )
+    mapping = {
+        "accounts": [
+            {"hermes_account_id": account_id, "provider_account_id": SYN_PROVIDER_ACCOUNT}
+        ],
+        "instruments": [],
+    }
+    with TestClient(create_app(database, broker_snapshot_provider=provider)) as client:
+        response = client.post(
+            f"/api/months/{month_id}/broker-reconciliation-preview", json=mapping
+        )
+        assert response.status_code == 200, response.text
+        assert writer_committed
+        assert response.json()["rows"][0]["state"] == "matched"
+        assert response.json()["rows"][0]["account_name"] == "Synthetic brokerage"
+
+        fresh = client.post(f"/api/months/{month_id}/broker-reconciliation-preview", json=mapping)
+        assert fresh.status_code == 200, fresh.text
+        assert fresh.json()["rows"][0]["account_name"] == "Updated brokerage"
+        assert fresh.json()["rows"][0]["state"] == "differs"
 
 
 def test_normalized_api_stale_expected_row_fails_closed_without_mutation(tmp_path: Path) -> None:

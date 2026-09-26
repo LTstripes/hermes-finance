@@ -22,6 +22,7 @@ from hermes_finance.persistence import (
 from hermes_finance.persistence import (
     CashBoundaryCoverage as CashBoundaryCoverageRecord,
 )
+from hermes_finance.services import performance_decomposition as decomposition_service
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.cash_boundary_coverage import attest_cash_boundary_history
@@ -44,8 +45,12 @@ from hermes_finance.services.performance_availability import performance_availab
 from hermes_finance.services.performance_decomposition import (
     performance_decomposition_for_interval,
 )
-from hermes_finance.services.positions import create_position_snapshot
-from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
+from hermes_finance.services.positions import create_position_snapshot, update_position_snapshot
+from hermes_finance.services.reporting_months import (
+    close_reporting_month,
+    create_reporting_month,
+    reopen_reporting_month,
+)
 from hermes_finance.services.transfer_reconciliation import (
     create_transfer_reconciliation_evidence,
 )
@@ -269,6 +274,60 @@ def _reconcile(
         source="synthetic-perf04c",
         evidence_reference=f"synthetic-perf04c-{link_id}-{kind}",
     )
+
+
+def test_perf04c_uses_one_snapshot_for_parent_and_account_components(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _environment(tmp_path, account_values=(("1000.00", "1100.00"),))
+    try:
+        _close(fixture)
+        with fixture.database.engine.connect() as connection:
+            assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+        real_attribution = decomposition_service.performance_attribution_for_interval
+        writer_committed = False
+
+        def interleaved_attribution(*args, **kwargs):
+            nonlocal writer_committed
+            result = real_attribution(*args, **kwargs)
+            if not writer_committed:
+                writer_committed = True
+                with fixture.database.session_factory() as writer:
+                    reopen_reporting_month(writer, fixture.february_id)
+                    position_id = writer.scalar(
+                        select(PositionSnapshot.id).where(
+                            PositionSnapshot.reporting_month_id == fixture.february_id,
+                            PositionSnapshot.account_id == fixture.account_ids[0],
+                        )
+                    )
+                    assert position_id is not None
+                    update_position_snapshot(
+                        writer,
+                        position_id,
+                        market_price_per_unit="1200.00",
+                    )
+                    close_reporting_month(writer, fixture.february_id)
+            return result
+
+        monkeypatch.setattr(
+            decomposition_service,
+            "performance_attribution_for_interval",
+            interleaved_attribution,
+        )
+
+        interleaved = _decomposition(fixture)
+        assert interleaved.is_available
+        assert interleaved.value is not None and interleaved.value.kopecks == 10_000
+        assert [component.value.kopecks for component in interleaved.account_components] == [10_000]
+
+        fresh = _decomposition(fixture)
+        assert fresh.is_available
+        assert fresh.value is not None and fresh.value.kopecks == 20_000
+        assert [component.value.kopecks for component in fresh.account_components] == [20_000]
+    finally:
+        _finish(fixture)
 
 
 def test_no_flow_bridge_is_exact_and_explicit_zero(tmp_path: Path) -> None:

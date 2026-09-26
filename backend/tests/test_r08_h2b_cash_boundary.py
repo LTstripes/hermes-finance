@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _valuation_capture import create_observed_valuation_point
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -42,7 +43,6 @@ from hermes_finance.services.reporting_months import (
     create_reporting_month,
     reopen_reporting_month,
 )
-from hermes_finance.services.valuation_boundaries import create_observed_valuation_point
 
 START = date(2030, 1, 31)
 MID = date(2030, 2, 14)

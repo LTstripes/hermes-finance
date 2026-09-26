@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal, DecimalException
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import (
@@ -36,6 +36,7 @@ from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.external_flows import classify_external_flow
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
+from hermes_finance.services.valuation_material_signature import material_signature_for_boundary
 
 
 class ObservedValuationPointNotFoundError(LookupError):
@@ -216,13 +217,14 @@ def _validate_group_members(
     flow_ids: list[int],
 ) -> list[ExternalFlow]:
     flows = [_require_flow(session, flow_id) for flow_id in flow_ids]
+    flows = _validate_group_member_state(
+        flows,
+        reporting_month_id=month.id,
+        scope=scope,
+        account_id=account_id,
+        boundary_date=boundary_date,
+    )
     for flow in flows:
-        if flow.reporting_month_id != month.id:
-            raise ValueError("all boundary-group flows must belong to the reporting month")
-        if flow.event_date != boundary_date:
-            raise ValueError("all boundary-group flows must share the same event date")
-        if scope is PerformanceScope.ACCOUNT and flow.account_id != account_id:
-            raise ValueError("account boundary-group flows must belong to the selected account")
         _validate_external_flow_for_scope(
             session,
             flow,
@@ -230,6 +232,44 @@ def _validate_group_members(
             account_id=account_id,
         )
     return flows
+
+
+def _validate_group_member_state(
+    flows: Iterable[ExternalFlow],
+    *,
+    reporting_month_id: int,
+    scope: PerformanceScope,
+    account_id: int | None,
+    boundary_date: date,
+) -> list[ExternalFlow]:
+    member_flows = sorted(flows, key=lambda flow: flow.id)
+    if not member_flows:
+        raise ValueError("the boundary group must contain at least one external flow")
+    for flow in member_flows:
+        if flow.reporting_month_id != reporting_month_id:
+            raise ValueError("all boundary-group flows must belong to the reporting month")
+        if flow.event_date != boundary_date:
+            raise ValueError("all boundary-group flows must share the same event date")
+        if scope is PerformanceScope.ACCOUNT and flow.account_id != account_id:
+            raise ValueError("account boundary-group flows must belong to the selected account")
+    return member_flows
+
+
+def validate_external_flow_boundary_group_members(
+    group: ExternalFlowBoundaryGroup,
+    flows: Iterable[ExternalFlow],
+) -> list[ExternalFlow]:
+    """Validate that a group's current members still match its stored identity."""
+
+    scope = _coerce_scope(group.scope)
+    account_id = _scope_account_id(scope, group.account_id)
+    return _validate_group_member_state(
+        flows,
+        reporting_month_id=group.reporting_month_id,
+        scope=scope,
+        account_id=account_id,
+        boundary_date=group.boundary_date,
+    )
 
 
 def stage_create_external_flow_boundary_group(
@@ -274,6 +314,23 @@ def stage_create_external_flow_boundary_group(
     )
     if existing is not None:
         raise ValueError("a boundary group already exists for this scope and event date")
+
+    existing_member = session.scalar(
+        select(ExternalFlowBoundaryGroupMember.external_flow_id)
+        .join(
+            ExternalFlowBoundaryGroup,
+            ExternalFlowBoundaryGroup.id == ExternalFlowBoundaryGroupMember.boundary_group_id,
+        )
+        .where(
+            ExternalFlowBoundaryGroup.reporting_month_id == month.id,
+            ExternalFlowBoundaryGroup.scope == normalized_scope.value,
+            ExternalFlowBoundaryGroup.account_id == normalized_account_id,
+            ExternalFlowBoundaryGroupMember.external_flow_id.in_(ids),
+        )
+        .limit(1)
+    )
+    if existing_member is not None:
+        raise ValueError("an external flow already belongs to a boundary group")
 
     group = ExternalFlowBoundaryGroup(
         reporting_month_id=month.id,
@@ -325,6 +382,36 @@ def get_external_flow_boundary_group(
     return _require_group(session, group_id)
 
 
+def stage_delete_external_flow_boundary_group(
+    session: Session,
+    group_id: int,
+) -> None:
+    """Remove one explicit group and all evidence tied to its identity."""
+
+    group = _require_group(session, group_id)
+    require_editable_reporting_month(session, group.reporting_month_id)
+    session.execute(
+        delete(ObservedValuationPoint).where(ObservedValuationPoint.boundary_group_id == group.id)
+    )
+    session.execute(
+        delete(ExternalFlowBoundaryGroupMember).where(
+            ExternalFlowBoundaryGroupMember.boundary_group_id == group.id
+        )
+    )
+    session.delete(group)
+    session.flush()
+
+
+def delete_external_flow_boundary_group(
+    session: Session,
+    group_id: int,
+) -> None:
+    """Delete a group before explicitly creating its corrected replacement."""
+
+    stage_delete_external_flow_boundary_group(session, group_id)
+    session.commit()
+
+
 def list_external_flow_boundary_groups(
     session: Session,
     *,
@@ -368,10 +455,18 @@ def stage_create_observed_valuation_point(
     external_flow_id: int | None = None,
     boundary_group_id: int | None = None,
     notes: str | None = None,
+    expected_material_signature: str,
 ) -> ObservedValuationPoint:
-    """Stage an explicitly related observed valuation point."""
+    """Stage an observation against the current material boundary state.
+
+    The producer supplies the signature read when capture began. A synchronous
+    caller can read it immediately before this call.
+    """
 
     month = require_editable_reporting_month(session, reporting_month_id)
+    # The no-op month UPDATE holds SQLite's writer reservation through flush and
+    # commit. Refresh any identity-map state read before a concurrent correction.
+    session.expire_all()
     normalized_scope = _coerce_scope(scope)
     normalized_account_id = _scope_account_id(normalized_scope, account_id)
     normalized_observed_date = _coerce_date(observed_date, field="observed_date")
@@ -426,7 +521,6 @@ def stage_create_observed_valuation_point(
                 ExternalFlowBoundaryGroup.reporting_month_id == month.id,
                 ExternalFlowBoundaryGroup.scope == normalized_scope.value,
                 ExternalFlowBoundaryGroup.account_id == normalized_account_id,
-                ExternalFlowBoundaryGroup.boundary_date == boundary_date,
                 ExternalFlowBoundaryGroupMember.external_flow_id == flow.id,
             )
         )
@@ -439,8 +533,16 @@ def stage_create_observed_valuation_point(
             raise ValueError("the boundary group must belong to the reporting month")
         if group.scope != normalized_scope.value or group.account_id != normalized_account_id:
             raise ValueError("the boundary group scope does not match the observed point")
-        if not boundary_group_flows(session, group.id):
-            raise ValueError("the boundary group must contain at least one external flow")
+        member_flows = validate_external_flow_boundary_group_members(
+            group, boundary_group_flows(session, group.id)
+        )
+        for flow in member_flows:
+            _validate_external_flow_for_scope(
+                session,
+                flow,
+                scope=normalized_scope,
+                account_id=normalized_account_id,
+            )
         boundary_date = group.boundary_date
 
     _require_date_in_month(month, normalized_observed_date, field="observed_date")
@@ -449,6 +551,30 @@ def stage_create_observed_valuation_point(
         raise ValueError(
             f"{normalized_relation.value} observed_date must equal the flow boundary date"
         )
+
+    material_signature = material_signature_for_boundary(
+        session, external_flow_id=external_flow_id, boundary_group_id=boundary_group_id
+    )
+    if material_signature is None or expected_material_signature != material_signature:
+        raise ValueError("valuation capture target changed materially")
+    existing_points = list(
+        session.scalars(
+            select(ObservedValuationPoint).where(
+                ObservedValuationPoint.reporting_month_id == month.id,
+                ObservedValuationPoint.scope == normalized_scope.value,
+                ObservedValuationPoint.account_id == normalized_account_id,
+                ObservedValuationPoint.external_flow_id == external_flow_id,
+                ObservedValuationPoint.boundary_group_id == boundary_group_id,
+            )
+        )
+    )
+    # A legacy/unbound or corrupted older side cannot attest this material
+    # event. Retire it in the same writer transaction before fresh recapture;
+    # the remaining PRE/POST sides then share one current signature.
+    for existing in existing_points:
+        if existing.material_signature != material_signature:
+            session.delete(existing)
+    session.flush()
 
     point = ObservedValuationPoint(
         reporting_month_id=month.id,
@@ -464,6 +590,7 @@ def stage_create_observed_valuation_point(
         relation=normalized_relation.value,
         external_flow_id=external_flow_id,
         boundary_group_id=boundary_group_id,
+        material_signature=material_signature,
         notes=notes,
     )
     session.add(point)

@@ -528,7 +528,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
         response = _export(client)
     assert response.status_code == 200, response.text
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.3.0.json"
+        "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.json"
         in response.headers["content-disposition"]
     )
     payload = json.loads(response.content.decode("utf-8"))
@@ -548,7 +548,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["current_portfolio"]["reporting_status"] == "closed"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["schema_name"] == "hermes.finance.ai_analysis_bundle"
-    assert payload["schema_version"] == "1.3.0"
+    assert payload["schema_version"] == "1.4.0"
 
     mixed_sources = {
         source for point in payload["reporting_history"] for source in point["provenance_sources"]
@@ -823,8 +823,10 @@ def test_future_dated_valuation_on_excluded_account_does_not_degrade_capital_or_
     package = package_response.json()
     _portfolio_review_validator().validate(package)
     allocation = package["sections"]["allocation"]
-    assert allocation["status"] == "included"
+    assert allocation["status"] == "partial"
+    assert allocation["reason_codes"] == ["active_account_snapshot_missing"]
     assert "future_dated_valuation" not in allocation["reason_codes"]
+    assert allocation["data"]["allocation_by_asset_class"]["support"]["status"] == "partial"
     assert allocation["data"]["allocation_by_asset_class"]["denominator"] is not None
 
 
@@ -850,7 +852,9 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
         if point["period"] == {"year": 2026, "month": 4}
     )
     assert january["kpis"]["liquid_capital_net"]["value"] is None
+    assert january["kpis"]["liquid_capital_net"]["availability"] == "unavailable"
     assert "portfolio_snapshot_missing" in january["kpis"]["liquid_capital_net"]["reason_codes"]
+    assert "active_account_snapshot_missing" not in january["coverage"]["reason_codes"]
     assert april["kpis"]["liquid_capital_net"]["value"]["amount"] == "0.00"
 
     august = payload["reporting_history"][-1]
@@ -929,8 +933,10 @@ def test_issue_285_august_fixture_preserves_data_quality_semantics(
     assert len(warning_codes) == len(set(warning_codes))
 
 
+@pytest.mark.parametrize("unassigned_cash", [False, True])
 def test_cash_snapshot_detection_is_account_specific(
     app_context: tuple[TestClient, Database],
+    unassigned_cash: bool,
 ) -> None:
     client, _database = app_context
     covered_account = _ok(
@@ -953,10 +959,21 @@ def test_cash_snapshot_detection_is_account_specific(
                 "reporting_month_id": month_id,
                 "account_id": covered_account,
                 "name": "Synthetic covered cash snapshot",
-                "amount": _money("125000.00"),
+                "amount": _money("100.00"),
             },
         )
     )
+    if unassigned_cash:
+        _ok(
+            client.post(
+                "/api/cash-balances",
+                json={
+                    "reporting_month_id": month_id,
+                    "name": "Synthetic unassigned cash",
+                    "amount": _money("10.00"),
+                },
+            )
+        )
     _close(client, month_id)
 
     response = _export(client)
@@ -971,9 +988,314 @@ def test_cash_snapshot_detection_is_account_specific(
         not in payload["current_portfolio"]["missing_snapshot_account_refs"]
     )
     assert payload["current_portfolio"]["missing_snapshot_account_refs"] == [missing_ref]
+    assert payload["current_portfolio"]["coverage"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
+    point = payload["reporting_history"][0]
+    assert point["coverage"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
+    for name, amount in (
+        ("liquid_assets_total", "110.00" if unassigned_cash else "100.00"),
+        ("included_debts", "0.00"),
+        ("liquid_capital_net", "110.00" if unassigned_cash else "100.00"),
+    ):
+        metric = point["kpis"][name]
+        assert metric["value"]["amount"] == amount
+        assert metric["availability"] == "available"
+        assert metric["precision"] == "exact"
+        assert metric["reason_codes"] == ["active_account_snapshot_missing"]
+    assert payload["coverage"]["domains"]["capital"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
     assert any(
         warning["code"] == "active_account_snapshot_missing" for warning in payload["warnings"]
     )
+
+
+def test_historical_missing_account_keeps_capital_domain_partial_after_current_is_complete(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    account_ids = [
+        _ok(
+            client.post(
+                "/api/accounts",
+                json={"name": name, "account_type": "cash"},
+            )
+        )["id"]
+        for name in ("Synthetic historical A", "Synthetic historical B")
+    ]
+    for month, represented_accounts in ((7, account_ids[:1]), (8, account_ids)):
+        month_id = _create_month(client, 2026, month)
+        for account_id in represented_accounts:
+            _ok(
+                client.post(
+                    "/api/cash-balances",
+                    json={
+                        "reporting_month_id": month_id,
+                        "account_id": account_id,
+                        "name": f"Synthetic account cash {account_id}",
+                        "amount": _money("100.00"),
+                    },
+                )
+            )
+        _close(client, month_id)
+
+    payload = _export(client).json()
+    _validator().validate(payload)
+    first, selected = payload["reporting_history"]
+    assert first["coverage"]["reason_codes"] == ["active_account_snapshot_missing"]
+    assert selected["coverage"] == {"status": "complete", "reason_codes": []}
+    assert payload["current_portfolio"]["coverage"] == selected["coverage"]
+    assert payload["coverage"]["domains"]["capital"] == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+    }
+
+
+def _share_pairs(items: list[dict], *, nested: bool) -> list[tuple[str, str | None]]:
+    pairs = []
+    for item in items:
+        amount = item["amount"]["amount"]
+        share = item["share_pct"]["value_pct"] if nested else item["share_pct"]
+        pairs.append((amount, share))
+    return sorted(pairs)
+
+
+def test_two_account_snapshot_gap_propagates_across_review_goal_and_allocation(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    """#498 / #537: one known subtotal, one portfolio-source reason, three consumers.
+
+    Account A has a 100.00 RUB position. Account B is active and capital-included
+    and has no snapshot. Arithmetic stays the known subtotal. Review capital,
+    the capital goal and allocation/concentration all carry
+    ``active_account_snapshot_missing``. Total net worth, performance and
+    cash-boundary coverage stay separate claims.
+    """
+
+    client, database = app_context
+    covered = _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Covered Brokerage", "account_type": "brokerage"},
+        )
+    )["id"]
+    _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Missing Brokerage", "account_type": "brokerage"},
+        )
+    )
+    instrument = _ok(
+        client.post(
+            "/api/instruments",
+            json={
+                "name": "Synthetic Two Account Bond",
+                "instrument_type": "bond",
+                "currency": "RUB",
+            },
+        )
+    )["id"]
+    month_id = _create_month(client, 2026, 8)
+    _ok(
+        client.post(
+            "/api/positions",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": covered,
+                "instrument_id": instrument,
+                "quantity": "1",
+                "average_cost_per_unit": _money("100.00"),
+                "market_price_per_unit": _money("100.00"),
+                "price_date": "2026-08-31",
+                "price_source": "manual",
+            },
+        )
+    )
+    _ok(
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Capital goal",
+                "goal_type": "capital",
+                "target_value": _money("200.00"),
+                "calculation_mode": "liquid_capital_net",
+            },
+        )
+    )
+    _close(client, month_id)
+
+    before = _table_counts(database)
+    bundle = _export(client).json()
+    _validator().validate(bundle)
+    point = bundle["reporting_history"][0]
+    subtotal = "100.00"
+    snapshot_reason = "active_account_snapshot_missing"
+    net_worth_reason = "total_net_worth_unavailable"
+    assert point["kpis"]["liquid_capital_net"]["value"]["amount"] == subtotal
+    assert point["kpis"]["liquid_capital_net"]["availability"] == "available"
+    assert point["kpis"]["liquid_capital_net"]["precision"] == "exact"
+    assert point["coverage"]["reason_codes"] == [snapshot_reason]
+    bundle_goal = next(item for item in bundle["goals"] if item["goal_type"] == "capital")
+    assert bundle_goal["current_value"]["value"]["amount"] == subtotal
+    assert snapshot_reason not in bundle_goal["current_value"]["reason_codes"]
+    assert snapshot_reason not in bundle_goal["progress"]["reason_codes"]
+    missing_ref = next(
+        item["ref"]
+        for item in bundle["current_portfolio"]["accounts"]
+        if item["name"] == "Synthetic Missing Brokerage"
+    )
+    assert bundle["current_portfolio"]["missing_snapshot_account_refs"] == [missing_ref]
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    package_capital = package["sections"]["capital"]
+    package_net = package_capital["data"]["liquid_capital_net"]
+    assert package_capital["reason_codes"] == [snapshot_reason, net_worth_reason]
+    assert package_net["value"]["amount"] == subtotal
+    assert package_net["availability"] == "available"
+    assert package_net["precision"] == "exact"
+    assert package_net["reason_codes"] == [snapshot_reason]
+    assert net_worth_reason not in package_net["reason_codes"]
+    total_net_worth = package_capital["data"]["total_net_worth"]
+    assert total_net_worth["value"] is None
+    assert total_net_worth["availability"] == "unavailable"
+    assert total_net_worth["reason_codes"] == ["no_authoritative_aggregate"]
+    assert snapshot_reason not in total_net_worth["reason_codes"]
+    assert package["sections"]["dynamics"]["status"] == "partial"
+    assert package["sections"]["dynamics"]["reason_codes"] == [snapshot_reason]
+    assert package["sections"]["dynamics"]["data"]["history"][0]["coverage"] == point["coverage"]
+
+    package_goal = next(
+        item
+        for item in package["sections"]["context"]["data"]["goals"]
+        if item["goal_type"] == "capital"
+    )
+    assert package_goal["current_value"]["value"]["amount"] == subtotal
+    assert package_goal["current_value"]["availability"] == "available"
+    assert package_goal["current_value"]["precision"] == "exact"
+    assert package_goal["current_value"]["reason_codes"] == sorted(
+        {*bundle_goal["current_value"]["reason_codes"], snapshot_reason}
+    )
+    assert package_goal["progress"]["availability"] == bundle_goal["progress"]["availability"]
+    assert package_goal["progress"]["value_pct"] == bundle_goal["progress"]["value_pct"]
+    assert package_goal["progress"]["reason_codes"] == sorted(
+        {*bundle_goal["progress"]["reason_codes"], snapshot_reason}
+    )
+    assert package_goal["gap"]["reason_codes"] == bundle_goal["gap"]["reason_codes"]
+    assert snapshot_reason in package_goal["warning_codes"]
+
+    risk = client.get("/api/analytics/risk-allocation", params={"month_id": month_id})
+    assert risk.status_code == 200, risk.text
+    risk_body = risk.json()
+    package_allocation = package["sections"]["allocation"]
+    assert package_allocation["status"] == "partial"
+    assert package_allocation["reason_codes"] == [snapshot_reason]
+    for key in ("allocation_by_asset_class", "allocation_by_account", "top_positions"):
+        exported = package_allocation["data"][key]
+        source = risk_body[key]
+        assert exported["support"]["status"] == "partial"
+        assert snapshot_reason in exported["support"]["reason_codes"]
+        assert exported["denominator"]["amount"] == subtotal
+        assert source["denominator"]["amount"] == subtotal
+        assert source["support"]["status"] == "supported"
+        assert snapshot_reason not in source["support"]["reason_codes"]
+        assert _share_pairs(exported["items"], nested=True) == _share_pairs(
+            source["items"], nested=False
+        )
+    for key in ("payout_concentration", "redemption_concentration"):
+        source_support = risk_body[key]["support"]
+        mapped_status = {"supported": "complete", "unavailable": "unavailable"}.get(
+            source_support["status"], "partial"
+        )
+        assert snapshot_reason not in package_allocation["data"][key]["support"]["reason_codes"]
+        assert package_allocation["data"][key]["support"] == {
+            "status": mapped_status,
+            "reason_codes": sorted(source_support["reason_codes"]),
+        }
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    _financial_review_validator().validate(review)
+    review_capital = review["sections"]["current_capital"]
+    review_net = review_capital["data"]["liquid_capital_net"]
+    assert review_capital["reason_codes"] == [snapshot_reason, net_worth_reason]
+    assert review_net["value"]["amount"] == subtotal
+    assert review_net["availability"] == "available"
+    assert review_net["precision"] == "exact"
+    assert review_net["reason_codes"] == [snapshot_reason]
+    assert review_capital["data"]["total_net_worth"]["reason_codes"] == [
+        "no_authoritative_aggregate"
+    ]
+    assert review["coverage"]["domains"]["capital"]["reason_codes"] == [
+        snapshot_reason,
+        net_worth_reason,
+    ]
+    assert review["coverage"]["domains"]["history"] == {
+        "status": "partial",
+        "reason_codes": [snapshot_reason],
+    }
+    assert net_worth_reason not in review["coverage"]["domains"]["history"]["reason_codes"]
+    review_history = review["sections"]["historical_dynamics"]["data"]["history"][0]
+    assert review_history["coverage"]["reason_codes"] == [snapshot_reason]
+    assert review_history["liquid_capital_net"]["value"]["amount"] == subtotal
+
+    review_goal = next(
+        item
+        for item in review["sections"]["goals"]["data"]["items"]
+        if item["goal_type"] == "capital"
+    )
+    assert review["sections"]["goals"]["status"] == "partial"
+    assert snapshot_reason in review["sections"]["goals"]["reason_codes"]
+    assert review_goal["current_value"]["value"]["amount"] == subtotal
+    assert review_goal["current_value"]["reason_codes"] == sorted(
+        {*bundle_goal["current_value"]["reason_codes"], snapshot_reason}
+    )
+    assert review_goal["progress"]["value_pct"] == bundle_goal["progress"]["value_pct"]
+    assert review_goal["progress"]["availability"] == bundle_goal["progress"]["availability"]
+    assert review_goal["progress"]["reason_codes"] == sorted(
+        {*bundle_goal["progress"]["reason_codes"], snapshot_reason}
+    )
+    assert review["coverage"]["domains"]["goals"]["status"] == "partial"
+    assert snapshot_reason in review["coverage"]["domains"]["goals"]["reason_codes"]
+
+    review_allocation = review["sections"]["allocation_and_concentration"]
+    assert review_allocation["status"] == "partial"
+    assert review_allocation["reason_codes"] == [snapshot_reason]
+    review_class = review_allocation["data"]["allocation_by_asset_class"]
+    assert review_class["denominator"]["amount"] == subtotal
+    assert review_class["support"]["status"] == "partial"
+    assert snapshot_reason in review_class["support"]["reason_codes"]
+    assert _share_pairs(review_class["items"], nested=True) == _share_pairs(
+        risk_body["allocation_by_asset_class"]["items"], nested=False
+    )
+    review_accounts = {
+        item["name"]: item for item in review["sections"]["current_portfolio"]["data"]["accounts"]
+    }
+    assert "Synthetic Missing Brokerage" in review_accounts
+    assert all(
+        item["account_ref"] != missing_ref
+        for item in review["sections"]["current_portfolio"]["data"]["positions"]
+    )
+
+    performance = review["sections"]["performance"]
+    assert snapshot_reason not in performance["reason_codes"]
+    assert snapshot_reason not in review["coverage"]["domains"]["performance"]["reason_codes"]
+    assert _table_counts(database) == before
 
 
 def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
@@ -989,15 +1311,15 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.3.0.md" in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.3.0")
+    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     alias = _export(client, path="/api/export/ai-analysis-bundle/markdown")
     assert alias.status_code == 200, alias.text
-    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.3.0")
+    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
     assert _table_counts(database) == before
 
 
@@ -1093,7 +1415,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert payload["metadata"]["source_contracts"] == [
         {
             "name": "hermes.finance.ai_analysis_bundle",
-            "version": "1.3.0",
+            "version": "1.4.0",
             "role": "financial_source",
         },
         {
@@ -1243,6 +1565,92 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert not any(isinstance(value, float) for value in _walk(payload))
 
 
+def test_ai_financial_review_uses_one_snapshot_when_price_changes_mid_read(
+    app_context: tuple[TestClient, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, database = app_context
+    ids = _seed_history(client)
+
+    baseline_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert baseline_response.status_code == 200, baseline_response.text
+    baseline = baseline_response.json()
+    baseline_capital = baseline["sections"]["current_capital"]["data"]["liquid_assets_total"][
+        "value"
+    ]["amount"]
+    baseline_position = baseline["sections"]["current_portfolio"]["data"]["positions"][0][
+        "market_value"
+    ]["value"]["amount"]
+
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_liquid_capital_for_month = bundle_service.liquid_capital_for_month
+    writer_committed = False
+
+    def interleaved_liquid_capital_for_month(*args, **kwargs):
+        nonlocal writer_committed
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                position = writer.scalar(
+                    select(PositionSnapshot).where(
+                        PositionSnapshot.reporting_month_id == ids["latest_closed"]
+                    )
+                )
+                assert position is not None
+                price_increment = position.market_price_per_unit_kopecks
+                value_increment = int(position.quantity * price_increment)
+                position.market_price_per_unit_kopecks += price_increment
+                position.market_value_kopecks += value_increment
+                position.unrealized_result_kopecks += value_increment
+                writer.commit()
+        return real_liquid_capital_for_month(*args, **kwargs)
+
+    monkeypatch.setattr(
+        bundle_service,
+        "liquid_capital_for_month",
+        interleaved_liquid_capital_for_month,
+    )
+
+    response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (
+        body["sections"]["current_capital"]["data"]["liquid_assets_total"]["value"]["amount"]
+        == baseline_capital
+    )
+    assert (
+        body["sections"]["current_portfolio"]["data"]["positions"][0]["market_value"]["value"][
+            "amount"
+        ]
+        == baseline_position
+    )
+
+    fresh_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert fresh_response.status_code == 200, fresh_response.text
+    fresh = fresh_response.json()
+    assert (
+        fresh["sections"]["current_capital"]["data"]["liquid_assets_total"]["value"]["amount"]
+        != baseline_capital
+    )
+    assert (
+        fresh["sections"]["current_portfolio"]["data"]["positions"][0]["market_value"]["value"][
+            "amount"
+        ]
+        != baseline_position
+    )
+
+
 def test_ai_financial_review_routes_disable_caching(
     app_context: tuple[TestClient, Database],
 ) -> None:
@@ -1269,12 +1677,12 @@ def test_allocation_money_null_is_limited_to_unavailable_support(
     assert package_response.status_code == 200, package_response.text
     package = package_response.json()
     allocation = package["sections"]["allocation"]["data"]["allocation_by_asset_class"]
-    assert allocation["support"]["status"] == "complete"
+    assert allocation["support"]["status"] == "partial"
     allocation["denominator"] = None
     assert not _portfolio_review_validator().is_valid(package)
     package = package_response.json()
     top_positions = package["sections"]["allocation"]["data"]["top_positions"]
-    assert top_positions["support"]["status"] == "complete"
+    assert top_positions["support"]["status"] == "partial"
     top_positions["top_amount"] = None
     assert not _portfolio_review_validator().is_valid(package)
 
@@ -1287,12 +1695,12 @@ def test_allocation_money_null_is_limited_to_unavailable_support(
     allocation = review["sections"]["allocation_and_concentration"]["data"][
         "allocation_by_asset_class"
     ]
-    assert allocation["support"]["status"] == "complete"
+    assert allocation["support"]["status"] == "partial"
     allocation["denominator"] = None
     assert not _financial_review_validator().is_valid(review)
     review = review_response.json()
     top_positions = review["sections"]["allocation_and_concentration"]["data"]["top_positions"]
-    assert top_positions["support"]["status"] == "complete"
+    assert top_positions["support"]["status"] == "partial"
     top_positions["top_amount"] = None
     assert not _financial_review_validator().is_valid(review)
 
@@ -1443,7 +1851,7 @@ def test_ai_financial_review_preserves_authoritative_context_and_zero_unknown_st
     assert _table_counts(database) == before
 
 
-def test_ai_financial_review_matches_duplicate_rows_fifo_and_synthetic_cash_ref(
+def test_ai_financial_review_matches_duplicate_rows_by_cash_identity_and_preserves_unassigned_ref(
     app_context: tuple[TestClient, Database],
 ) -> None:
     client, database = app_context
@@ -1514,9 +1922,125 @@ def test_ai_financial_review_matches_duplicate_rows_fifo_and_synthetic_cash_ref(
         "second deposit row",
     ]
     assert [item["notes"] for item in cash_rows] == ["first cash row", "second cash row"]
-    assert len({item["account_ref"] for item in cash_rows}) == 1
-    assert cash_rows[0]["account_ref"].startswith("acct-cash-balances")
+    account_refs = {item["name"]: item["ref"] for item in portfolio["accounts"]}
+    cash_refs_by_notes = {item["notes"]: item["account_ref"] for item in cash_rows}
+    assert cash_refs_by_notes["first cash row"].startswith("acct-cash-balances")
+    assert cash_refs_by_notes["second cash row"] == account_refs["Synthetic Brokerage"]
     assert _table_counts(database) == before
+
+
+def test_ai_cash_identity_survives_bundle_package_and_review_with_linked_pair(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    wallet = _ok(
+        client.post("/api/accounts", json={"name": "Synthetic Wallet", "account_type": "cash"})
+    )["id"]
+    savings = _ok(
+        client.post("/api/accounts", json={"name": "Synthetic Savings", "account_type": "cash"})
+    )["id"]
+    month_id = _create_month(client, 2038, 5)
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": wallet,
+                "name": "Wallet balance",
+                "amount": _money("10.00"),
+            },
+        )
+    )
+    _ok(
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": savings,
+                "name": "Savings balance",
+                "amount": _money("100.00"),
+            },
+        )
+    )
+    debt_id = _ok(
+        client.post(
+            "/api/debts",
+            json={
+                "reporting_month_id": month_id,
+                "debt_type": "credit_card",
+                "name": "Synthetic linked debt",
+                "current_balance": _money("40.00"),
+            },
+        )
+    )["id"]
+    _ok(
+        client.put(f"/api/debts/{debt_id}/linked-account", json={"account_id": savings}), status=200
+    )
+    _close(client, month_id)
+
+    bundle_response = _export(client)
+    assert bundle_response.status_code == 200, bundle_response.text
+    bundle = bundle_response.json()
+    _validator().validate(bundle)
+    bundle_portfolio = bundle["current_portfolio"]
+    bundle_account_refs = {item["name"]: item["ref"] for item in bundle_portfolio["accounts"]}
+    expected_cash = {
+        "Wallet balance": ("Synthetic Wallet", "10.00"),
+        "Savings balance": ("Synthetic Savings", "100.00"),
+    }
+    bundle_cash = {item["name"]: item for item in bundle_portfolio["cash_balances"]}
+    assert {
+        name: (row["account_ref"], row["amount"]["value"]["amount"])
+        for name, row in bundle_cash.items()
+    } == {
+        name: (bundle_account_refs[account_name], amount)
+        for name, (account_name, amount) in expected_cash.items()
+    }
+
+    package_response = client.get(
+        "/api/export/portfolio-review-package",
+        params={"profile": "full", "generated_at": GENERATED_AT},
+    )
+    assert package_response.status_code == 200, package_response.text
+    package = package_response.json()
+    _portfolio_review_validator().validate(package)
+    package_cash = package["sections"]["positions"]["data"]["cash_balances"]
+    assert {
+        item["name"]: (item["account_ref"], item["amount"]["value"]["amount"])
+        for item in package_cash
+    } == {
+        name: (bundle_account_refs[account_name], amount)
+        for name, (account_name, amount) in expected_cash.items()
+    }
+
+    review_response = client.get(
+        "/api/export/ai-financial-review",
+        params={"generated_at": GENERATED_AT},
+    )
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    _financial_review_validator().validate(review)
+    review_portfolio = review["sections"]["current_portfolio"]["data"]
+    review_cash = {
+        item["name"]: (item["account_ref"], item["amount"]["value"]["amount"])
+        for item in review_portfolio["cash_balances"]
+    }
+    assert review_cash == {
+        name: (bundle_account_refs[account_name], amount)
+        for name, (account_name, amount) in expected_cash.items()
+    }
+
+    linked_pair = review["sections"]["current_capital"]["data"]["linked_pairs"]
+    assert len(linked_pair) == 1
+    assert linked_pair[0]["account_ref"] == bundle_account_refs["Synthetic Savings"]
+    assert linked_pair[0]["gross_asset_balance"]["value"]["amount"] == "100.00"
+    assert linked_pair[0]["gross_linked_debt_balance"]["value"]["amount"] == "40.00"
+    assert linked_pair[0]["net_economic_contribution"]["value"]["amount"] == "60.00"
+
+    current_capital = review["sections"]["current_capital"]["data"]
+    assert current_capital["liquid_assets_total"]["value"]["amount"] == "110.00"
+    assert current_capital["included_debts"]["value"]["amount"] == "40.00"
+    assert current_capital["liquid_capital_net"]["value"]["amount"] == "70.00"
 
 
 def test_ai_financial_review_merges_freshness_summary_and_bundle_valuation_fields(

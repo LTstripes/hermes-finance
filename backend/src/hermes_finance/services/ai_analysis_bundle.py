@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance import __version__
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
 from hermes_finance.domain.values import FINANCIAL_ROUNDING, PercentageRate, RubleAmount
 from hermes_finance.persistence import (
@@ -73,8 +74,8 @@ from hermes_finance.services.salary import SalaryTaxSnapshot, salary_tax_snapsho
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
-SCHEMA_VERSION = "1.3.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.3.0/schema.json"
+SCHEMA_VERSION = "1.4.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.4.0/schema.json"
 ORDERING_CONTRACT = "arrays_are_stably_sorted_as_defined_by_contract"
 ACTUAL_HISTORY_METRIC_PATH = "reporting_history[].kpis.passive_income_actual"
 PASSIVE_HISTORY_BEFORE_START = "passive_income_history_before_configured_start"
@@ -514,6 +515,7 @@ def _settings(session: Session) -> AppSettings | None:
     return session.scalar(select(AppSettings).where(AppSettings.id == APP_SETTINGS_ID))
 
 
+@coherent_read_operation
 def assemble_ai_analysis_bundle(
     session: Session,
     *,
@@ -539,6 +541,9 @@ def assemble_ai_analysis_bundle(
         list_accounts(session), key=lambda item: (item.name, item.account_type, item.id)
     )
     capital_included_account_ids = {row.id for row in account_rows if row.include_in_capital}
+    required_capital_account_ids = {
+        row.id for row in account_rows if row.status == "active" and row.include_in_capital
+    }
     instrument_rows = sorted(
         list_instruments(session), key=lambda item: (item.name, item.instrument_type, item.id)
     )
@@ -546,11 +551,7 @@ def assemble_ai_analysis_bundle(
     account_refs = {row.id: _slug("acct", row.name, used_refs) for row in account_rows}
     instrument_refs = {row.id: _slug("inst", row.name, used_refs) for row in instrument_rows}
 
-    cash_type_account = next((row for row in account_rows if row.account_type == "cash"), None)
-    if cash_type_account is None:
-        synthetic_cash_ref = _slug("acct", "cash-balances", used_refs)
-    else:
-        synthetic_cash_ref = account_refs[cash_type_account.id]
+    synthetic_cash_ref = _slug("acct", "cash-balances", used_refs)
 
     all_position_rows = list_position_snapshots(session)
     all_deposit_rows = list_deposit_snapshots(session)
@@ -678,6 +679,14 @@ def assemble_ai_analysis_bundle(
         month_cash = cash_by_month.get(month.id, [])
         month_debts = debts_by_month.get(month.id, [])
         has_capital_evidence = bool(month_positions or month_deposits or month_cash or month_debts)
+        represented_account_ids = {
+            row.account_id
+            for row in (*month_positions, *month_deposits, *month_cash)
+            if row.account_id is not None
+        }
+        missing_required_snapshot = bool(
+            has_capital_evidence and required_capital_account_ids - represented_account_ids
+        )
         if not has_capital_evidence:
             coverage_reasons.append(PORTFOLIO_SNAPSHOT_MISSING)
             point_warnings.append(PORTFOLIO_SNAPSHOT_MISSING)
@@ -688,6 +697,9 @@ def assemble_ai_analysis_bundle(
                 "reporting_history",
                 "No persisted portfolio/debt snapshot exists for this reporting month; capital is unavailable, not zero.",
             )
+        if missing_required_snapshot:
+            coverage_reasons.append(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
+            capital_quality_codes.add(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
         if future_dated_positions:
             coverage_reasons.append(FUTURE_DATED_VALUATION)
             point_warnings.append(FUTURE_DATED_VALUATION)
@@ -747,6 +759,8 @@ def assemble_ai_analysis_bundle(
         capital_codes = draft_codes.copy()
         if not has_capital_evidence:
             capital_codes.append(PORTFOLIO_SNAPSHOT_MISSING)
+        if missing_required_snapshot:
+            capital_codes.append(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
         if future_dated_positions:
             capital_codes.append(FUTURE_DATED_VALUATION)
         passive_codes = draft_codes.copy()
@@ -1016,7 +1030,7 @@ def assemble_ai_analysis_bundle(
             return True
         if any(row.account_id == account.id for row in selected_cash):
             return True
-        return account.account_type == "cash" and has_unassigned_cash
+        return False
 
     missing_snapshot_accounts = [
         row
@@ -1077,7 +1091,7 @@ def assemble_ai_analysis_bundle(
         }
         for row in account_rows
     ]
-    if cash_type_account is None and selected_cash:
+    if has_unassigned_cash:
         accounts_out.append(
             {
                 "ref": synthetic_cash_ref,
@@ -1182,8 +1196,8 @@ def assemble_ai_analysis_bundle(
         cash_out.append(
             {
                 "account_ref": (
-                    account_refs[cash_type_account.id]
-                    if cash_type_account is not None
+                    account_refs[row.account_id]
+                    if row.account_id is not None
                     else synthetic_cash_ref
                 ),
                 "name": row.name,

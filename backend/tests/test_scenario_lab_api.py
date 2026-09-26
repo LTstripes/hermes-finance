@@ -27,27 +27,34 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, select, update
 from sqlalchemy.engine import Engine
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import AccountType, InstrumentType
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
+    APP_SETTINGS_ID,
+    AppSettings,
     Base,
+    CashBalance,
     DepositSnapshot,
     ExpectedCashFlow,
     Instrument,
     PositionSnapshot,
     ReportingMonth,
 )
+from hermes_finance.services import scenario_frozen_base as frozen_base_service
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.scenario_frozen_base import materialize_frozen_base
 from hermes_finance.services.scenario_lab import evaluate_scenario_lab
+from hermes_finance.services.settings import get_or_create_settings
 
 EQUITY_10 = {"equity_drawdown": {"drawdown_pct": "10"}}
 DEPOSIT_8 = {
@@ -84,6 +91,55 @@ ENVELOPE_KEYS = {
     "warnings",
     "presentation_metadata",
 }
+
+
+def test_frozen_scenario_base_uses_one_snapshot_across_capture_stages(
+    session, database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    month = create_reporting_month(session, year=2032, month=1, snapshot_date=date(2032, 1, 31))
+    cash = create_cash_balance(
+        session, reporting_month_id=month.id, name="Snapshot cash", amount="100.00"
+    )
+    with database.session_factory() as setup:
+        get_or_create_settings(setup)
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_calendar = frozen_base_service._capture_stage_merged_payout_calendar
+    writer_committed = False
+
+    def interleaved_calendar(*args, **kwargs):
+        nonlocal writer_committed
+        result = real_calendar(*args, **kwargs)
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                writer.execute(
+                    update(CashBalance)
+                    .where(CashBalance.id == cash.id)
+                    .values(amount_kopecks=20_000)
+                )
+                writer.execute(
+                    update(AppSettings)
+                    .where(AppSettings.id == APP_SETTINGS_ID)
+                    .values(passive_income_history_start_month="2031-01")
+                )
+                writer.commit()
+        return result
+
+    monkeypatch.setattr(
+        frozen_base_service, "_capture_stage_merged_payout_calendar", interleaved_calendar
+    )
+    frozen = materialize_frozen_base(session, month.id)
+    assert writer_committed
+    assert frozen.cash[0].amount_kopecks == 10_000
+    assert frozen.forecast.history_start_month is None
+
+    with database.session_factory() as fresh_session:
+        fresh = materialize_frozen_base(fresh_session, month.id)
+    assert fresh.cash[0].amount_kopecks == 20_000
+    assert fresh.forecast.history_start_month == (2031, 1)
+    assert fresh.base_fingerprint != frozen.base_fingerprint
 
 
 @pytest.fixture

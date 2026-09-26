@@ -43,7 +43,7 @@ The intended source map is:
 | Report section | Authoritative source and mapping rule |
 | --- | --- |
 | `current_capital`, `historical_dynamics`, `passive_income`, `future_cash_flows`, `current_portfolio`, `goals`, `iis_and_tax` | The full `portfolio_review_package` and its underlying `ai_analysis_bundle`; use the richer `cash_flow_after_allocations`, passive-income breakdown and salary facts from the bundle where the package projection is narrower. |
-| `allocation_and_concentration` | Existing `risk_allocation` read model as already adapted by `portfolio_review_package`; preserve its support/coverage and export-local refs. |
+| `allocation_and_concentration` | Existing `risk_allocation` read model as already adapted by `portfolio_review_package`. Amounts, shares and export-local refs are preserved. When the denominator is a partial known subtotal, support is `partial` with `active_account_snapshot_missing`. |
 | `current_portfolio.freshness` | Existing freshness/provenance summary and the bundle's valuation freshness fields. No universal freshness score is introduced. |
 | `debts_and_real_estate` | Existing package context plus direct allowlisted debt/property read models for persisted rows and the #336 fields (`annual_rate`, due/end dates, mortgage rate). The report may expose facts that the old package did not project, but must not derive new debt or property semantics. |
 | `user_context` | Persisted `monthly_comments` and explicitly owner-entered notes. Text is carried with provenance and is never parsed as a number or used in a calculation. |
@@ -154,6 +154,21 @@ The required sections are:
   a separate reference metric. `cash_flow_after_allocations` is a derived
   monthly surplus and is never labelled as physical cash; persisted cash is
   reported only under the portfolio cash balances.
+- An `available`/`exact` `liquid_capital_net` is the known subtotal of persisted
+  included rows. When an active capital-included account has no snapshot,
+  portfolio-source coverage is `partial` with `active_account_snapshot_missing`.
+  That reason travels with the capital metric, the history point, and the
+  capital and history coverage domains. A capital goal's current value and
+  progress keep the same known subtotal and carry the reason. Allocation and
+  top-position concentration keep their existing shares; support becomes
+  `partial` with the same reason when the denominator is that subtotal.
+  The account stays in the catalog and
+  in missing-account metadata; only its snapshot value is absent from the
+  subtotal. `CashBalance.account_id = NULL` is synthetic/unassigned cash
+  (#497) and does not satisfy any real account. This is independent of
+  `total_net_worth_unavailable` and of performance or cash-boundary coverage.
+  Payout and redemption concentration are not this denominator.
+  See [`financial-completeness-contract.md`](financial-completeness-contract.md).
 - Passive income keeps existing semantics: salary, cashback, contributions,
   withdrawals, redemption principal and unrealized price growth are excluded;
   persisted net amounts are not taxed or commissioned twice.
@@ -194,7 +209,7 @@ The required sections are:
 
 `metadata.source_contracts` pins the source schemas used by the adapter:
 
-- `hermes.finance.ai_analysis_bundle` `1.3.0`;
+- `hermes.finance.ai_analysis_bundle` `1.4.0`;
 - `hermes.finance.portfolio_review_package` `1.1.0`.
 
 The performance section records the accepted builder identities as method

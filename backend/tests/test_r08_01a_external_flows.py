@@ -1,9 +1,10 @@
 import sqlite3
 from datetime import date
 from pathlib import Path
+from threading import Event, Thread, current_thread
 
 import pytest
-from _migration_helpers import run_alembic
+from _migration_helpers import REVISION, run_alembic
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from hermes_finance.domain import (
 )
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Account, Base
+from hermes_finance.services import _guard, external_flows, transfer_reconciliation
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.external_flows import (
     classify_external_flow,
@@ -49,6 +51,77 @@ def _environment(tmp_path: Path) -> tuple[Session, object, int, int, int]:
         session, name="Synthetic Destination", account_type=AccountType.BROKERAGE
     )
     return session, database, month.id, source.id, destination.id
+
+
+def _overlap(
+    database: object, first, second, entered: Event, attempting: Event, release: Event
+) -> list[object]:
+    results: list[object] = [None, None]
+
+    def run(index: int, operation) -> None:
+        with database.session_factory() as session:
+            try:
+                results[index] = operation(session)
+            except Exception as error:
+                session.rollback()
+                results[index] = error
+
+    first_thread = Thread(target=run, args=(0, first), name="first")
+    second_thread = Thread(target=run, args=(1, second), name="second")
+    try:
+        first_thread.start()
+        assert entered.wait(10), "first writer did not reach the protected read"
+        second_thread.start()
+        assert attempting.wait(10), "second writer did not attempt the reservation"
+    finally:
+        release.set()
+        first_thread.join(10)
+        if second_thread.ident is not None:
+            second_thread.join(10)
+    assert not first_thread.is_alive() and not second_thread.is_alive()
+    return results
+
+
+def _signal_competing_reservation(monkeypatch, attempting: Event) -> None:
+    original = external_flows._reserve_transfer_write
+
+    def reserve(session, **kwargs):
+        if current_thread().name == "second":
+            attempting.set()
+        return original(session, **kwargs)
+
+    monkeypatch.setattr(external_flows, "_reserve_transfer_write", reserve)
+
+
+def _assert_link_state(session: Session, *link_ids: int) -> None:
+    for link_id in link_ids:
+        link = external_flows.get_external_transfer_link(session, link_id)
+        legs = external_flows.transfer_link_legs(session, link_id)
+        expected = "resolved" if external_flows._is_complete_transfer(legs) else "unresolved"
+        assert link.status == expected
+        for leg in legs:
+            assert external_flows.external_flow_transfer_status(session, leg).value == expected
+
+
+def _synthetic_flow(
+    session: Session,
+    month_id: int,
+    account_id: int,
+    direction: str,
+    *,
+    link_id: int | None = None,
+):
+    return create_external_flow(
+        session,
+        reporting_month_id=month_id,
+        account_id=account_id,
+        event_date=date(2030, 5, 15),
+        boundary_amount="50.00",
+        direction=direction,
+        kind=f"external_{direction}",
+        scope_membership="stable_in_scope",
+        transfer_link_id=link_id,
+    )
 
 
 def test_external_contribution_and_withdrawal_use_exact_explicit_boundary_semantics(
@@ -309,6 +382,226 @@ def test_reconciliation_evidence_locks_transfer_leg_identity(tmp_path: Path) -> 
         assert link.status == "resolved"
     finally:
         session.close()
+        database.engine.dispose()
+
+
+def test_competing_links_cannot_both_claim_an_unlinked_flow(tmp_path: Path, monkeypatch) -> None:
+    session, database, month_id, source_id, _ = _environment(tmp_path)
+    first_link = create_external_transfer_link(session, transfer_key="race-first")
+    second_link = create_external_transfer_link(session, transfer_key="race-second")
+    flow = _synthetic_flow(session, month_id, source_id, "withdrawal")
+    flow_id, first_id, second_id = flow.id, first_link.id, second_link.id
+    session.close()
+    entered, attempting, release = Event(), Event(), Event()
+    original = external_flows._validate_new_link_leg
+
+    def pause_after_reservation(*args, **kwargs):
+        if current_thread().name == "first":
+            entered.set()
+            assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(external_flows, "_validate_new_link_leg", pause_after_reservation)
+    _signal_competing_reservation(monkeypatch, attempting)
+    try:
+        first, second = _overlap(
+            database,
+            lambda s: update_external_flow(s, flow_id, transfer_link_id=first_id).id,
+            lambda s: update_external_flow(s, flow_id, transfer_link_id=second_id).id,
+            entered,
+            attempting,
+            release,
+        )
+        assert first == flow_id
+        assert isinstance(second, ValueError) and "ownership changed" in str(second)
+        with database.session_factory() as check:
+            assert check.get(type(flow), flow_id).transfer_link_id == first_id
+            _assert_link_state(check, first_id, second_id)
+    finally:
+        database.engine.dispose()
+
+
+def test_old_pair_completion_wins_over_stale_relink(tmp_path: Path, monkeypatch) -> None:
+    session, database, month_id, source_id, destination_id = _environment(tmp_path)
+    old_link = create_external_transfer_link(session, transfer_key="race-old-pair")
+    new_link = create_external_transfer_link(session, transfer_key="race-new-pair")
+    old_leg = _synthetic_flow(session, month_id, source_id, "withdrawal", link_id=old_link.id)
+    old_id, new_id, old_leg_id = old_link.id, new_link.id, old_leg.id
+    session.close()
+    entered, attempting, release = Event(), Event(), Event()
+    original = external_flows._validate_new_link_leg
+
+    def pause_completion(*args, **kwargs):
+        if current_thread().name == "first":
+            entered.set()
+            assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(external_flows, "_validate_new_link_leg", pause_completion)
+    _signal_competing_reservation(monkeypatch, attempting)
+    try:
+        first, second = _overlap(
+            database,
+            lambda s: (
+                _synthetic_flow(s, month_id, destination_id, "contribution", link_id=old_id).id
+            ),
+            lambda s: update_external_flow(s, old_leg_id, transfer_link_id=new_id).id,
+            entered,
+            attempting,
+            release,
+        )
+        assert isinstance(first, int)
+        assert isinstance(second, ValueError) and "status changed" in str(second)
+        with database.session_factory() as check:
+            assert check.get(type(old_leg), old_leg_id).transfer_link_id == old_id
+            _assert_link_state(check, old_id, new_id)
+            assert len(external_flows.transfer_link_legs(check, old_id)) == 2
+    finally:
+        database.engine.dispose()
+
+
+def test_relink_wins_before_old_link_receives_another_leg(tmp_path: Path, monkeypatch) -> None:
+    session, database, month_id, source_id, destination_id = _environment(tmp_path)
+    old_link = create_external_transfer_link(session, transfer_key="relink-first-old")
+    new_link = create_external_transfer_link(session, transfer_key="relink-first-new")
+    old_leg = _synthetic_flow(session, month_id, source_id, "withdrawal", link_id=old_link.id)
+    old_id, new_id, old_leg_id = old_link.id, new_link.id, old_leg.id
+    session.close()
+    entered, attempting, release = Event(), Event(), Event()
+    original_validate = external_flows._validate_new_link_leg
+    original_month_guard = external_flows.require_editable_reporting_month
+
+    def pause_relink(*args, **kwargs):
+        if current_thread().name == "first":
+            entered.set()
+            assert release.wait(10)
+        return original_validate(*args, **kwargs)
+
+    def signal_completion(session, month_id):
+        if current_thread().name == "second":
+            attempting.set()
+        return original_month_guard(session, month_id)
+
+    monkeypatch.setattr(external_flows, "_validate_new_link_leg", pause_relink)
+    monkeypatch.setattr(external_flows, "require_editable_reporting_month", signal_completion)
+    try:
+        first, second = _overlap(
+            database,
+            lambda s: update_external_flow(s, old_leg_id, transfer_link_id=new_id).id,
+            lambda s: (
+                _synthetic_flow(s, month_id, destination_id, "contribution", link_id=old_id).id
+            ),
+            entered,
+            attempting,
+            release,
+        )
+        assert first == old_leg_id
+        assert isinstance(second, int)
+        with database.session_factory() as check:
+            assert check.get(type(old_leg), old_leg_id).transfer_link_id == new_id
+            _assert_link_state(check, old_id, new_id)
+            assert len(external_flows.transfer_link_legs(check, old_id)) == 1
+            assert len(external_flows.transfer_link_legs(check, new_id)) == 1
+    finally:
+        database.engine.dispose()
+
+
+def test_evidence_creation_wins_over_stale_relink(tmp_path: Path, monkeypatch) -> None:
+    session, database, month_id, source_id, _ = _environment(tmp_path)
+    old_link = create_external_transfer_link(session, transfer_key="race-evidence-old")
+    new_link = create_external_transfer_link(session, transfer_key="race-evidence-new")
+    old_leg = _synthetic_flow(session, month_id, source_id, "withdrawal", link_id=old_link.id)
+    old_id, new_id, old_leg_id = old_link.id, new_link.id, old_leg.id
+    session.close()
+    entered, attempting, release = Event(), Event(), Event()
+    original = transfer_reconciliation._transfer_legs
+
+    def pause_evidence(*args, **kwargs):
+        if current_thread().name == "first":
+            entered.set()
+            assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(transfer_reconciliation, "_transfer_legs", pause_evidence)
+    _signal_competing_reservation(monkeypatch, attempting)
+    try:
+        first, second = _overlap(
+            database,
+            lambda s: (
+                create_transfer_reconciliation_evidence(
+                    s,
+                    transfer_link_id=old_id,
+                    kind="internal_fee",
+                    amount="1.00",
+                    currency="RUB",
+                    source="synthetic",
+                    evidence_reference="race-evidence",
+                ).id
+            ),
+            lambda s: update_external_flow(s, old_leg_id, transfer_link_id=new_id).id,
+            entered,
+            attempting,
+            release,
+        )
+        assert isinstance(first, int)
+        assert isinstance(second, ValueError) and "reconciliation evidence" in str(second)
+        with database.session_factory() as check:
+            assert check.get(type(old_leg), old_leg_id).transfer_link_id == old_id
+            assert len(list_transfer_reconciliation_evidence(check, transfer_link_id=old_id)) == 1
+            _assert_link_state(check, old_id, new_id)
+    finally:
+        database.engine.dispose()
+
+
+def test_evidence_creation_blocks_concurrent_bulk_leg_deletion(tmp_path: Path, monkeypatch) -> None:
+    session, database, month_id, source_id, _ = _environment(tmp_path)
+    link = create_external_transfer_link(session, transfer_key="race-month-evidence")
+    leg = _synthetic_flow(session, month_id, source_id, "withdrawal", link_id=link.id)
+    link_id, leg_id = link.id, leg.id
+    session.close()
+    entered, attempting, release = Event(), Event(), Event()
+    original_legs = transfer_reconciliation._transfer_legs
+    original_guard = _guard.require_editable_reporting_month
+
+    def pause_evidence(*args, **kwargs):
+        if current_thread().name == "first":
+            entered.set()
+            assert release.wait(10)
+        return original_legs(*args, **kwargs)
+
+    def signal_month_delete(session, month_id):
+        if current_thread().name == "second":
+            attempting.set()
+        return original_guard(session, month_id)
+
+    monkeypatch.setattr(transfer_reconciliation, "_transfer_legs", pause_evidence)
+    monkeypatch.setattr(_guard, "require_editable_reporting_month", signal_month_delete)
+    try:
+        first, second = _overlap(
+            database,
+            lambda s: (
+                create_transfer_reconciliation_evidence(
+                    s,
+                    transfer_link_id=link_id,
+                    kind="internal_fee",
+                    amount="1.00",
+                    currency="RUB",
+                    source="synthetic",
+                    evidence_reference="race-month-evidence",
+                ).id
+            ),
+            lambda s: delete_reporting_month(s, month_id),
+            entered,
+            attempting,
+            release,
+        )
+        assert isinstance(first, int)
+        assert isinstance(second, ValueError) and "reconciliation evidence" in str(second)
+        with database.session_factory() as check:
+            assert check.get(type(leg), leg_id).transfer_link_id == link_id
+            assert len(list_transfer_reconciliation_evidence(check, transfer_link_id=link_id)) == 1
+            _assert_link_state(check, link_id)
+    finally:
         database.engine.dispose()
 
 
@@ -766,7 +1059,7 @@ def test_scope_membership_migration_refuses_to_drop_owner_evidence(
     connection = sqlite3.connect(database_path)
     try:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0031_external_flow_scope_membership",
+            REVISION,
         )
         assert connection.execute("SELECT scope_membership FROM external_flows").fetchone() == (
             "stable_in_scope",

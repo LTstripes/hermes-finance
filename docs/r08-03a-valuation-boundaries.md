@@ -21,6 +21,20 @@ date; it never groups flows from a date implicitly.
 - required provenance kind and optional provenance reference;
 - an explicit `pre_external_flow` or `post_external_flow` relation;
 - exactly one target: `external_flow_id` or `boundary_group_id`.
+- a material signature of that flow, or of the group and every current member.
+
+The signature uses the flow ID, reporting month, account, event date, exact
+minor-unit amount, direction, kind, currency, scope membership and transfer
+link. Group signatures also bind the group ID, month, scope, account, boundary
+date and sorted member identities/signatures. Source, notes and timestamps are
+metadata and do not change the signature. Every capture passes the signature
+read when it began; persistence compares it with current state
+under a SQLite writer reservation. Both PRE and POST must bind the same current
+signature. Preexisting observations with no signature are unavailable until
+freshly captured; migration does not infer their original event state. Once the
+capture-start signature matches the current target under the writer reservation,
+recapture retires older unbound or stale points for that same scope and boundary
+before saving new evidence. A partial fresh pair remains unavailable.
 
 The capture services accept only draft reporting months. Existing monthly
 snapshots, legacy investment cash flows, historical scope membership and
@@ -30,6 +44,17 @@ transfers cannot create a boundary group.
 Boundary groups and observed points are scope-specific. Availability considers
 only groups matching the requested scope and account; one external flow may
 therefore have separate valid account- and portfolio-scope groups and evidence.
+
+Group membership is immutable after creation. Both valuation capture and
+performance availability revalidate every current member against the group's
+reporting month, scope/account and boundary date. A group is unusable if a
+member changes date or leaves the selected scope; it cannot accept new observed
+points or make TWRR exact. To correct a stale date or membership, delete the
+group in its editable reporting month, then explicitly create a replacement
+with the chosen date and member IDs and capture fresh PRE/POST observations.
+Deleting a group also deletes its members and observed points. The service does
+not infer a replacement date or membership. Direct boundaries for flows that
+are not members of a group keep their existing lifecycle.
 
 ## Read-only availability
 

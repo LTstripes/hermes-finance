@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.month_close_workflow import (
     GuidedCloseAction,
     GuidedCloseActionId,
@@ -1183,6 +1184,7 @@ def _evidence_version(
     return hashlib.sha256(repr(material).encode("utf-8")).hexdigest()
 
 
+@coherent_read_operation
 def build_final_month_review(
     session: Session,
     month: object,
@@ -1223,6 +1225,7 @@ def build_final_month_review(
     )
 
 
+@coherent_read_operation
 def build_next_month_outlook(session: Session, month: object) -> NextMonthOutlook:
     """Compose only dated, already-persisted facts after an explicit close."""
     if getattr(month, "status") != "closed":
@@ -1339,6 +1342,7 @@ def _next_month_outlook_step(session: Session, month: object) -> GuidedCloseStep
     )
 
 
+@coherent_read_operation
 def build_month_close_workflow(
     session: Session,
     month_id: int,

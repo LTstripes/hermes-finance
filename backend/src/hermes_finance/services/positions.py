@@ -16,7 +16,7 @@ from hermes_finance.services._guard import (
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
-from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.concurrency import ConcurrencyError, atomic_compare_and_update
 from hermes_finance.services.instruments import InstrumentNotFoundError
 
 
@@ -99,7 +99,9 @@ def _compute_metrics(
 def list_position_snapshots(session: Session) -> list[PositionSnapshot]:
     return list(
         session.scalars(
-            select(PositionSnapshot).order_by(
+            select(PositionSnapshot)
+            .where(PositionSnapshot.reporting_month_id.is_not(None))
+            .order_by(
                 PositionSnapshot.reporting_month_id,
                 PositionSnapshot.account_id,
                 PositionSnapshot.instrument_id,
@@ -111,7 +113,7 @@ def list_position_snapshots(session: Session) -> list[PositionSnapshot]:
 
 def get_position_snapshot(session: Session, snapshot_id: int) -> PositionSnapshot:
     snapshot = session.get(PositionSnapshot, snapshot_id)
-    if snapshot is None:
+    if snapshot is None or snapshot.reporting_month_id is None:
         raise PositionSnapshotNotFoundError(f"position snapshot {snapshot_id} was not found")
     return snapshot
 
@@ -275,40 +277,56 @@ def stage_update_position_snapshot(
             _reject_generic_t_invest_source(requested_source)
         if quote_changed:
             raise ValueError("cannot change a T-Invest quote while keeping t_invest price_source")
+    next_quantity = snapshot.quantity
     if quantity is not None:
-        snapshot.quantity = _normalize_quantity(
-            quantity, instrument_type=instrument.instrument_type
-        )
+        next_quantity = _normalize_quantity(quantity, instrument_type=instrument.instrument_type)
+    next_average_cost = snapshot.average_cost_per_unit_kopecks
     if average_cost_per_unit is not None:
-        snapshot.average_cost_per_unit_kopecks = _normalize_per_unit_kopecks(
+        next_average_cost = _normalize_per_unit_kopecks(
             average_cost_per_unit, field="average_cost_per_unit"
         )
-    if market_price_per_unit is not None:
-        snapshot.market_price_per_unit_kopecks = next_price
+    next_accrued_interest = snapshot.accrued_interest_kopecks
     if accrued_interest is not None:
-        snapshot.accrued_interest_kopecks = _normalize_per_unit_kopecks(
+        next_accrued_interest = _normalize_per_unit_kopecks(
             accrued_interest, field="accrued_interest"
         )
-    if price_date is not None:
-        snapshot.price_date = next_date
-    if price_source is not None:
-        snapshot.price_source = requested_source.value
-    if manual_adjustment is not None:
-        snapshot.manual_adjustment = manual_adjustment
-    if notes is not None:
-        snapshot.notes = notes
-
-    (
-        snapshot.market_value_kopecks,
-        snapshot.cost_basis_kopecks,
-        snapshot.unrealized_result_kopecks,
-    ) = _compute_metrics(
-        snapshot.quantity,
-        snapshot.average_cost_per_unit_kopecks,
-        snapshot.market_price_per_unit_kopecks,
-        snapshot.accrued_interest_kopecks,
+    next_manual_adjustment = (
+        manual_adjustment if manual_adjustment is not None else snapshot.manual_adjustment
     )
-    session.flush()
+    next_notes = notes if notes is not None else snapshot.notes
+    market_value, cost_basis, unrealized_result = _compute_metrics(
+        next_quantity,
+        next_average_cost,
+        next_price,
+        next_accrued_interest,
+    )
+    values = {
+        "quantity": next_quantity,
+        "average_cost_per_unit_kopecks": next_average_cost,
+        "market_price_per_unit_kopecks": next_price,
+        "accrued_interest_kopecks": next_accrued_interest,
+        "market_value_kopecks": market_value,
+        "cost_basis_kopecks": cost_basis,
+        "unrealized_result_kopecks": unrealized_result,
+        "price_date": next_date,
+        "price_source": requested_source.value,
+        "manual_adjustment": next_manual_adjustment,
+        "notes": next_notes,
+    }
+    if expected_updated_at is not None:
+        atomic_compare_and_update(
+            session,
+            table=PositionSnapshot.__table__,
+            row_id=snapshot_id,
+            expected_updated_at=expected_updated_at,
+            values=values,
+        )
+        session.expire(snapshot)
+        session.refresh(snapshot)
+    else:
+        for field, value in values.items():
+            setattr(snapshot, field, value)
+        session.flush()
     return snapshot
 
 
@@ -379,6 +397,21 @@ def apply_snapshot_market_quote(
 
 def delete_position_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_position_snapshot(session, snapshot_id)
-    require_editable_child_month(session, snapshot)
-    session.delete(snapshot)
-    session.commit()
+    try:
+        month = require_editable_child_month(session, snapshot)
+        from hermes_finance.services.payout_provenance_lifecycle import (
+            archive_position_payouts,
+            position_has_payout_history,
+        )
+
+        period = f"{month.year:04d}-{month.month:02d}"
+        if position_has_payout_history(session, snapshot_id):
+            archive_position_payouts(session, snapshot_id, period)
+            snapshot.reporting_month_id = None
+            snapshot.archived_from_period = period
+        else:
+            session.delete(snapshot)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise

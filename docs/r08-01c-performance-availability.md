@@ -4,6 +4,11 @@ This document records the backend-only availability contract from issue #197.
 It is an evidence contract for downstream exact XIRR/TWRR work; it does not
 calculate either metric.
 
+Portfolio-source snapshot completeness for liquid capital is a different claim.
+It is defined in [`financial-completeness-contract.md`](financial-completeness-contract.md).
+A known capital subtotal does not prove cash-boundary coverage, and cash-boundary
+coverage does not fill a missing account snapshot.
+
 ## Read-only API
 
 ```text

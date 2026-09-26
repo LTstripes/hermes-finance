@@ -10,6 +10,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import (
     AccountPerformanceComponent,
     AvailabilityReasonCode,
@@ -446,6 +447,7 @@ def _transfer_effects(
     return tuple(effects), reasons
 
 
+@coherent_read_operation
 def performance_decomposition_for_interval(
     session: Session,
     *,

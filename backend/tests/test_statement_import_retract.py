@@ -43,6 +43,7 @@ from hermes_finance.services.investment_cash_flows import (
 from hermes_finance.services.reporting_months import close_reporting_month
 from hermes_finance.services.statement_import_apply import (
     StatementApplyAction,
+    StatementApplyFailureCode,
     StatementApplyItemAction,
 )
 from hermes_finance.services.statement_import_preparation import prepare_income_report_apply
@@ -95,6 +96,96 @@ def test_statement_created_retract_removes_financial_effect(tmp_path: Path) -> N
             is None
         )
         assert counts(session) == (1, 2, 0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_retract_wins_over_planned_correction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hermes_finance.services import statement_import_apply as apply_module
+
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        original = build_income_report_pdf()
+        original_row = preview(session, original, account_id).rows[0]
+        applied = apply(session, original, account_id, (selection_from_row(original_row),))
+        assert applied.success
+        event_id = applied.items[0].applied_statement_event_id
+        corrected = build_income_report_pdf([{"payment_date": "21.01.2026"}])
+        corrected_row = preview(session, corrected, account_id).rows[0]
+        original_plan = apply_module._build_apply_plan
+
+        def interleave_retract(*args, **kwargs):
+            plan = original_plan(*args, **kwargs)
+            monkeypatch.setattr(apply_module, "_build_apply_plan", original_plan)
+            with database.session_factory() as winner_session:
+                retract_applied_statement_event(winner_session, event_id)
+            return plan
+
+        monkeypatch.setattr(apply_module, "_build_apply_plan", interleave_retract)
+        loser = apply(
+            session,
+            corrected,
+            account_id,
+            (selection_from_row(corrected_row, action=StatementApplyAction.REVISE),),
+        )
+        assert loser.success is False
+        assert loser.error_code is StatementApplyFailureCode.PREVIEW_CHANGED
+        session.expire_all()
+        revisions = list_applied_statement_event_revisions(session, event_id)
+        assert [revision.revision_kind for revision in revisions] == ["apply", "retract"]
+        assert list_investment_cash_flows(session) == []
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_correction_wins_over_planned_retract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hermes_finance.services import statement_import_retract as retract_module
+
+    session, database = session_for(tmp_path)
+    try:
+        _, account_id, _ = build_env(session)
+        original = build_income_report_pdf()
+        original_row = preview(session, original, account_id).rows[0]
+        applied = apply(session, original, account_id, (selection_from_row(original_row),))
+        assert applied.success
+        event_id = applied.items[0].applied_statement_event_id
+        corrected = build_income_report_pdf([{"payment_date": "21.01.2026"}])
+        corrected_row = preview(session, corrected, account_id).rows[0]
+        original_guard = retract_module.require_editable_child_month
+
+        def interleave_correction(*args, **kwargs):
+            monkeypatch.setattr(retract_module, "require_editable_child_month", original_guard)
+            with database.session_factory() as winner_session:
+                winner = apply(
+                    winner_session,
+                    corrected,
+                    account_id,
+                    (selection_from_row(corrected_row, action=StatementApplyAction.REVISE),),
+                )
+                assert winner.success
+            return original_guard(*args, **kwargs)
+
+        monkeypatch.setattr(retract_module, "require_editable_child_month", interleave_correction)
+        with pytest.raises(StatementRetractError) as error:
+            retract_applied_statement_event(session, event_id)
+        assert error.value.code == "conflict"
+        session.expire_all()
+        revisions = list_applied_statement_event_revisions(session, event_id)
+        assert [revision.revision_kind for revision in revisions] == ["apply", "revise"]
+        flow = list_investment_cash_flows(session)[0]
+        assert flow.event_date == revisions[-1].event_date
+        assert flow.gross_amount_kopecks == revisions[-1].gross_amount_kopecks
+        assert (
+            get_applied_statement_event(session, event_id).status
+            == StatementEventStatus.ACTIVE.value
+        )
     finally:
         session.close()
         database.engine.dispose()

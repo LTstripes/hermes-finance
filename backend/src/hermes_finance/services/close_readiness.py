@@ -14,6 +14,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.persistence import (
     Account,
     AppliedPayoutReconciliation,
@@ -197,14 +198,12 @@ def _active_account_snapshot_items(session: Session, month) -> list[CloseReadine
         session.scalars(select(CashBalance).where(CashBalance.reporting_month_id == month.id))
     )
     cash_account_ids = {row.account_id for row in cash_rows if row.account_id is not None}
-    has_unassigned_cash = any(row.account_id is None for row in cash_rows)
     missing = [
         account
         for account in accounts
         if account.id not in position_account_ids
         and account.id not in deposit_account_ids
         and account.id not in cash_account_ids
-        and not (account.account_type == "cash" and has_unassigned_cash)
     ]
     if not missing:
         return []
@@ -403,6 +402,7 @@ def _closed_month_items(status: str) -> list[CloseReadinessItem]:
     ]
 
 
+@coherent_read_operation
 def build_close_readiness(
     session: Session,
     month_id: int,

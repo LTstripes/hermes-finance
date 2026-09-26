@@ -12,6 +12,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.market_data.payout import (
     PayoutEvent,
     PayoutEventKind,
@@ -120,6 +121,7 @@ class PayoutPreviewResult:
     rows: tuple[PayoutPreviewRow, ...]
 
 
+@coherent_read_operation
 def build_payout_preview(
     session: Session,
     *,

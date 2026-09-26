@@ -834,6 +834,8 @@ def _capture_stage_late_deposit(session, month, account, *, stage_probe):
 
 
 def test_26_frozen_base_consistent_under_mutation_between_capture_stages(session, monkeypatch):
+    with session.get_bind().connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
     month, account = _full_setup(session)
     shock = {"inflation_real_value": INFLATION_12}
 

@@ -2,7 +2,7 @@
 
 **Schema name:** `hermes.finance.ai_analysis_bundle`
 
-**Current schema version:** `1.3.0`
+**Current schema version:** `1.4.0`
 
 **Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
 
@@ -77,7 +77,7 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
 | Main passive-income goal | persisted `goals` plus `build_goal_achievement_summary` | Current value is the rolling actual average after R02-27, not the C04 forecast. A below-target future date remains `not_projectable` when no trajectory exists. |
 | Monthly cash context | `cash_balance_for_month`, `actual_net_for_month`, expense and saving services | `cash_flow_after_allocations` is the derived surplus. `monthly_cash_balance` remains a backward-compatible alias and is never physical cash. Persisted cash is only `current_portfolio.cash_balances`. |
 | Market value change / return | no accepted aggregate service currently exists | Both fields stay unavailable in v1. A consumer may inspect point-in-time valuations, but must not relabel liquid-capital delta as market value change or market value change as investment return. |
-| Current portfolio | the selected reporting month's persisted accounts, instruments, position/deposit snapshots, and cash balances | Portfolio completeness and `valuation_freshness` are independent. `oldest_price_date`, `latest_price_date`, stale count/share, and `stale_valuation` expose old prices without dropping the persisted position. Active capital-included accounts without a snapshot use `active_account_snapshot_missing`. |
+| Current portfolio | the selected reporting month's persisted accounts, instruments, position/deposit snapshots, and cash balances | Portfolio completeness and `valuation_freshness` are independent. `oldest_price_date`, `latest_price_date`, stale count/share, and `stale_valuation` expose old prices without dropping the persisted position. A missing snapshot on an active capital-included account is `active_account_snapshot_missing`: the account stays in the catalog and in missing-account metadata, its snapshot value is absent from the known liquid-capital subtotal, that subtotal stays `available`/`exact`, and history-point plus capital-domain coverage are `partial`. `CashBalance.account_id = NULL` is synthetic/unassigned cash (#497) and does not satisfy any real account. See [`financial-completeness-contract.md`](financial-completeness-contract.md). |
 | Debt and property | debt, property, liquid-capital, and mortgage services | Included short-term debt affects liquid capital; mortgage/property remain reference context. Property equity is separate. |
 | IIS | `iis_result` plus persisted IIS profile, contributions, and benefit states | `iis_coverage` distinguishes no active IIS (`iis_account_absent`) from an active IIS with unconfigured (`iis_tax_data_unconfigured`) or partial (`iis_tax_data_partial`) tax data. Only received tax benefits increase the result with benefit. Every known active IIS account appears in `iis_accounts`: when the account has no profile, `iis_type`/`opened_at`/`eligible_close_at` are `null`, persisted contributions/benefits are still exported, and both portfolio-result metrics are `unavailable` with `iis_tax_data_unconfigured` instead of being omitted or guessed. |
 | Salary tax | `calculate_salary_tax` and salary-tax opening context | YTD/bracket values appear only if backend calculation succeeds with complete known history. `salary_tax_history_incomplete` is an unavailable state, never an assumed zero. `salary_tax_context.selected_month` always carries the selected reporting month's reconciliation (see the salary-consistency row). |
@@ -136,6 +136,10 @@ Coverage is reported twice on purpose:
 
 `precision=exact` means the value is an exact representation of its authoritative persisted or
 backend-derived source. It does not claim the underlying manual estimate is objectively current.
+It also does not claim portfolio-source coverage is complete: a known liquid-capital subtotal may
+be `available` and `exact` while `active_account_snapshot_missing` makes coverage `partial`.
+The canonical reading, including the closed two-account case, is
+[`financial-completeness-contract.md`](financial-completeness-contract.md).
 Approximate forecast methods use `precision=approximate` and a warning code. `unknown` is reserved
 for unavailable values.
 
@@ -167,6 +171,12 @@ No later price, quantity, or balance may be backfilled into an earlier reporting
 - minor: backward-compatible optional fields, optional sections, or additive enum values;
 - major: removal/rename, changed requiredness, changed units, changed counting/source semantics,
   or another change that can alter an existing consumer's interpretation.
+
+`1.4.0` records the #498 completeness metadata for each history point. When a
+required active capital account lacks a snapshot, its known liquid-capital subtotals
+remain `available` / `exact`, while the point and capital domain become `partial`
+with `active_account_snapshot_missing`. A month without capital evidence remains
+`unavailable` / `null` with `portfolio_snapshot_missing`.
 
 `1.3.0` adds the IIS-account presence semantics for partially configured
 profiles and the directly analyzable `salary_tax_context.selected_month`

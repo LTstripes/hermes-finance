@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.cash_flow_ladder import CashFlowLadderOut, cash_flow_ladder_to_out
 from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
@@ -522,9 +523,10 @@ def get_month_summary(
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
     session: Session = Depends(session_for_request),
 ) -> MonthlySummaryOut:
-    month = get_reporting_month(session, month_id)
-    summary = monthly_summary(session, month_id, forecast_version=forecast_version)
-    return _summary_out(month, summary)
+    with coherent_read_snapshot(session):
+        month = get_reporting_month(session, month_id)
+        summary = monthly_summary(session, month_id, forecast_version=forecast_version)
+        return _summary_out(month, summary)
 
 
 def _income_plan_summary_out(result: IncomePlanSummaryResult) -> IncomePlanSummaryOut:

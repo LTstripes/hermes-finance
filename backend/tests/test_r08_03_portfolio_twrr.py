@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from _valuation_capture import create_observed_valuation_point
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -44,7 +45,6 @@ from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.valuation_boundaries import (
     create_external_flow_boundary_group,
-    create_observed_valuation_point,
 )
 
 START = date(2030, 1, 31)

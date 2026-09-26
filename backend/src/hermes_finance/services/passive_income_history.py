@@ -14,6 +14,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.passive_income import PassiveIncomeResult
 from hermes_finance.domain.passive_income_average import PassiveIncomeAverageResult
 from hermes_finance.domain.reporting import ReportingMonthStatus
@@ -57,6 +58,7 @@ class PassiveIncomeHistoryReadModel:
     selected_report: PassiveIncomeSelectedReport | None
 
 
+@coherent_read_operation
 def passive_income_history(
     session: Session,
     *,
