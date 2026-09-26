@@ -34,6 +34,27 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-26 process hardening closeout — #476 / #543
+
+### #476 / PR #548 — canonical real-backend G04 browser gate
+
+- **Accepted candidate:** `33faa0f44752e81402ea2e09b86e826eee1146c6`; reviewer verdict supplied by Owner: **ACCEPT** with no blockers.
+- **Canonical merge:** `c37ba42213a943824c8b16824dbc77f21dc61d66`.
+- **Verification:** exact-head CI `36147877351` SUCCESS; UI evidence `36147877313` SUCCESS; G04 real-backend job SUCCESS; exact-main push CI `36235038286` SUCCESS.
+- **Delivered:** one deterministic synthetic temp-SQLite browser journey runs in canonical CI against the real local backend/frontend. The retained v1 journey locators were repaired to current UI semantics without product/financial changes; the shared per-run temp DB uses `--retries=0`.
+- **Reviewer context:** Owner reports the read-only reviewer ran in a separate Astra Pro chat session.
+
+### #543 / PR #547 — recovery CLI / pair-scoped retention hardening
+
+- **Accepted candidate:** `c910dcaeb6dfeb83a013c1f0120252ed3dfd5794`; independent recovery/security verdict supplied by Owner: **INDEPENDENT ACCEPT**.
+- **Canonical merge:** `8d6af7a7b370e8d6c5fa6659d3cd16fce47a4561`.
+- **Verification:** exact-head CI `36147122963` SUCCESS; canonical exact-main push CI `36236076568` SUCCESS.
+- **Delivered:** argparse-level publisher/rehearsal failures use neutral null protection identity without echoing private argv; explicit 12 protected + 12 plaintext + 13th same-pair regressions prove pair-scoped retention in both directions while preserving fail-closed object-bound deletion semantics.
+- **Boundary:** #543 remains a post-closeout hardening task only; it does not reopen or alter completed #417/#527 policy.
+- **Reviewer context:** Owner reports the independent reviewer ran in a separate Astra Pro chat session.
+
+---
+
 # 2026-09-25 owner durability closeout — #417 / #527 / PR #542
 
 - **Owner policy:** the Owner explicitly accepted ordinary synced-folder plaintext-at-rest storage for the Finance off-device recovery workflow. The truthful pair is `owner_accepted_plaintext / synced_filesystem_destination_v1`; Hermes still makes no cloud-delivery claim and adds no Google API/OAuth/cloud-account integration.

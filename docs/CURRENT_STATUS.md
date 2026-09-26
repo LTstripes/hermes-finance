@@ -226,7 +226,7 @@ Owner-live acceptance on 2026-09-25:
 
 The Owner explicitly accepted plaintext-at-rest storage in the ordinary synced folder. Hermes does not claim cloud delivery and still has no Google API/OAuth/key-management/cloud architecture. The encrypted mode remains available only for genuinely encrypted destinations; older protected attestations are not reclassified.
 
-Parent #417 is **closed completed**. #543 is a separate non-blocking hardening follow-up (neutral parse-failure identity, explicit 12+12+1 mixed-retention regression, pair-scoped listing documentation).
+Parent #417 is **closed completed**. #543 / PR #547 separately completed the non-blocking hardening: neutral argparse-level failure identity plus explicit 12+12+1 pair-scoped retention regression. It did not reopen #417.
 
 Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
@@ -253,7 +253,7 @@ Current route contract:
 
 V1 retirement is **not** implied by this completion. If later desired, it requires a separate explicit task after real-use evidence.
 
-#476 remains a separate browser-regression-infrastructure follow-up and is not a cutover blocker.
+#476 / PR #548 is complete. Canonical CI now includes one deterministic synthetic real-backend G04 owner journey; this remains regression infrastructure, not product semantics.
 
 Detailed closeouts:
 - `docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`;
@@ -277,7 +277,7 @@ The final Owner-live flow passed on canonical checkpoint `744c613884d074e6f9d35d
 2. exact new artifact confirmed visible off-device;
 3. clean isolated DR restored and started successfully with `readiness=verified` and unchanged source artifact.
 
-#543 tracks non-blocking post-closeout hardening and does not reopen #417.
+#543 / PR #547 is integrated as non-blocking post-closeout hardening and does not reopen #417.
 
 ### Performance
 
@@ -287,18 +287,17 @@ Account + internal-transfer decomposition backend support is complete. Exact ins
 
 Published Stable is `v1.0.0`. #480 release preparation, exact-SHA OPS03 Owner UAT, guarded #124 publication and backup-first OPS02 Stable transition are complete.
 
-#476 tracks one deterministic real-backend synthetic G04 browser journey and an explicit CI gate without expanding into a broad E2E redesign.
+#476 / PR #548 delivered one deterministic real-backend synthetic G04 browser journey as an explicit canonical CI gate, without expanding into a broad E2E redesign.
 
 ## Open umbrella/control issues
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — product/technical roadmap umbrella;
-- #543 — post-closeout recovery hardening; non-blocking and does not reopen completed #417;
+Completed process follow-ups:
+- #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
+- #543 / PR #547 — post-closeout recovery CLI/retention hardening.
 
-Separate follow-up:
-- #476 — real-backend synthetic G04 browser regression gate.
-
-Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #480, #511, #524 and #527.
+Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527 and #543.
 
 ## Canonical references
 
@@ -316,4 +315,4 @@ Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #
 - `docs/release-notes-1.0.0.md`
 - `docs/releases/0.9.0.md`
 - `docs/release-notes-0.9.0.md`
-- #124, #127, #476, #543; completed #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #480, #511, #524, #527.
+- #124, #127; completed #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527, #543.
