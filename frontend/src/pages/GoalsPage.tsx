@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+
+import { Link } from "react-router";
 
 import { formatApiError } from "../api/client";
 import {
@@ -31,6 +41,11 @@ import {
   Select,
 } from "../components/ui";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
+import { UiV2Loading, UiV2Notice, UiV2WidgetState } from "../ui-v2/UiV2StateBlocks";
+import { UiV2Panel } from "../ui-v2/UiV2Panel";
+import { UiV2Shell } from "../ui-v2/UiV2Shell";
+import sharedStyles from "../ui-v2/UiV2Page.module.css";
+import v2Styles from "../ui-v2/UiV2Goals.module.css";
 import {
   GOAL_STATUS_LABELS,
   GOAL_TYPE_LABELS,
@@ -44,7 +59,23 @@ function newestMonth(rows: ReportingMonth[]): ReportingMonth | null {
   );
 }
 
-export function GoalsPage() {
+type GoalsPageProps = {
+  presentation?: "legacy" | "v2";
+  /** `undefined` means no explicit v2 month was requested; `null` means invalid query context. */
+  monthContext?: number | null;
+  monthContextError?: string | null;
+  incomeReturnTo?: string;
+  onMonthContextChange?: (monthId: number, options?: { replace?: boolean }) => void;
+};
+
+export function GoalsPage({
+  presentation = "legacy",
+  monthContext,
+  monthContextError,
+  incomeReturnTo,
+  onMonthContextChange,
+}: GoalsPageProps = {}) {
+  const isV2 = presentation === "v2";
   const [goals, setGoals] = useState<Goal[]>([]);
   const [summary, setSummary] = useState<GoalSummary[]>([]);
   const [months, setMonths] = useState<ReportingMonth[]>([]);
@@ -101,6 +132,12 @@ export function GoalsPage() {
       .then((rows) => {
         if (controller.signal.aborted) return;
         setMonths(rows);
+        if (isV2) {
+          if (monthContext !== undefined) {
+            setSelectedMonthId(monthContext);
+          }
+          return;
+        }
         setSelectedMonthId((previous) => {
           if (previous != null && rows.some((row) => row.id === previous)) return previous;
           return newestMonth(rows)?.id ?? null;
@@ -110,17 +147,32 @@ export function GoalsPage() {
         if (!controller.signal.aborted) setSummaryError(formatApiError(error));
       });
     return () => controller.abort();
-  }, [loadGoals]);
+  }, [isV2, loadGoals, monthContext]);
 
   useEffect(() => {
-    if (selectedMonthId == null) {
+    if (!isV2 || monthContext !== undefined) return;
+    const defaultMonthId = newestMonth(months)?.id ?? null;
+    if (defaultMonthId === null) return;
+    setSelectedMonthId(defaultMonthId);
+    onMonthContextChange?.(defaultMonthId, { replace: true });
+  }, [isV2, monthContext, months, onMonthContextChange]);
+
+  useEffect(() => {
+    if (isV2 && monthContext !== undefined) setSelectedMonthId(monthContext);
+  }, [isV2, monthContext]);
+
+  const selectedMonthIdForView =
+    isV2 && monthContext !== undefined ? monthContext : selectedMonthId;
+
+  useEffect(() => {
+    if (selectedMonthIdForView == null) {
       setSummary([]);
       return;
     }
     const controller = new AbortController();
-    void loadSummary(selectedMonthId, controller.signal);
+    void loadSummary(selectedMonthIdForView, controller.signal);
     return () => controller.abort();
-  }, [loadSummary, selectedMonthId]);
+  }, [loadSummary, selectedMonthIdForView]);
 
   const summaryById = useMemo(
     () => new Map(summary.map((row) => [row.id, row] as const)),
@@ -137,11 +189,16 @@ export function GoalsPage() {
     () => goals.filter((goal) => !goal.is_active).sort((a, b) => a.id - b.id),
     [goals],
   );
-  const selectedMonth = months.find((row) => row.id === selectedMonthId) ?? null;
+  const selectedMonth = months.find((row) => row.id === selectedMonthIdForView) ?? null;
 
   async function refresh() {
     await loadGoals();
-    if (selectedMonthId != null) await loadSummary(selectedMonthId);
+    if (selectedMonthIdForView != null) await loadSummary(selectedMonthIdForView);
+  }
+
+  function selectMonth(monthId: number | null) {
+    setSelectedMonthId(monthId);
+    if (isV2 && monthId !== null) onMonthContextChange?.(monthId);
   }
 
   function openCreate(event: MouseEvent<HTMLButtonElement>) {
@@ -203,137 +260,221 @@ export function GoalsPage() {
     }
   }
 
-  return (
-    <section className="goals-page goals-v03 stack-18">
-      <header className="page-header">
-        <p className="eyebrow">Планирование</p>
-        <h1>Цели</h1>
-        <p className="page-header__description">
-          Текущий прогресс, оставшийся путь и одна главная цель — в одном месте.
-        </p>
-      </header>
+  const monthSelect =
+    months.length > 0 ? (
+      <div className={isV2 ? v2Styles.monthField : "field--inline"}>
+        <Field htmlFor="goals-month" label="Оценка на месяц">
+          <Select
+            id="goals-month"
+            onChange={(event) => {
+              const value = event.target.value;
+              selectMonth(value ? Number(value) : null);
+            }}
+            value={selectedMonthIdForView ?? ""}
+          >
+            {isV2 && selectedMonthIdForView === null ? (
+              <option value="">Выберите отчётный месяц</option>
+            ) : null}
+            {isV2 &&
+            selectedMonthIdForView !== null &&
+            !months.some((month) => month.id === selectedMonthIdForView) ? (
+              <option value={selectedMonthIdForView}>Выбранный месяц недоступен</option>
+            ) : null}
+            {[...months]
+              .sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year))
+              .map((month) => (
+                <option key={month.id} value={month.id}>
+                  {formatMonth(month.year, month.month)}
+                </option>
+              ))}
+          </Select>
+        </Field>
+      </div>
+    ) : null;
 
-      <div className="toolbar goals-v03__toolbar">
-        {months.length > 0 ? (
-          <div className="field--inline">
-            <Field htmlFor="goals-month" label="Оценка на месяц">
-              <Select
-                id="goals-month"
-                onChange={(event) => setSelectedMonthId(Number(event.target.value))}
-                value={selectedMonthId ?? ""}
-              >
-                {[...months]
-                  .sort((a, b) => (a.year === b.year ? b.month - a.month : b.year - a.year))
-                  .map((month) => (
-                    <option key={month.id} value={month.id}>
-                      {formatMonth(month.year, month.month)}
-                    </option>
-                  ))}
-              </Select>
-            </Field>
-          </div>
-        ) : null}
-        <Button onClick={openCreate} variant="primary">
-          Создать цель
-        </Button>
-        <Button
-          disabled={goalsLoading || summaryLoading}
-          onClick={() => void refresh()}
-          variant="ghost"
-        >
-          Обновить
+  const toolbar = (
+    <div className={isV2 ? v2Styles.toolbar : "toolbar goals-v03__toolbar"}>
+      {monthSelect}
+      <Button onClick={openCreate} variant="primary">
+        Создать цель
+      </Button>
+      <Button
+        disabled={goalsLoading || summaryLoading}
+        onClick={() => void refresh()}
+        variant="ghost"
+      >
+        Обновить
+      </Button>
+    </div>
+  );
+
+  const monthContextNotice = selectedMonth ? (
+    <p className={isV2 ? v2Styles.asOf : "goals-v03__as-of muted tiny"}>
+      {isV2 ? (
+        <>
+          Прогресс за {formatMonth(selectedMonth.year, selectedMonth.month)} · снимок{" "}
+          {formatDate(selectedMonth.snapshot_date)}.
+        </>
+      ) : (
+        <>Прогресс на снимок {formatDate(selectedMonth.snapshot_date)}.</>
+      )}
+    </p>
+  ) : isV2 ? (
+    <UiV2Notice title="Нет доступного отчётного месяца">
+      {monthContextError ??
+        "Цели можно редактировать, но их финансовый прогресс пока нельзя показать."}
+    </UiV2Notice>
+  ) : (
+    <div className="inline-alert inline-alert--warn" role="status">
+      Нет отчётного месяца: цели можно редактировать, но их финансовый прогресс пока нельзя
+      показать.
+    </div>
+  );
+
+  const activeGoalCards = (
+    <ul className="goal-card-grid">
+      {activeGoals.map((goal) => (
+        <GoalCard
+          goal={goal}
+          key={goal.id}
+          onDelete={setPendingDelete}
+          onEdit={openEdit}
+          onPatch={patchGoal}
+          summary={summaryLoading ? undefined : summaryById.get(goal.id)}
+          summaryLoading={summaryLoading}
+        />
+      ))}
+    </ul>
+  );
+
+  let activePanelBody: ReactNode;
+  if (goalsLoading) {
+    activePanelBody = isV2 ? (
+      <UiV2Loading label="Загружаем цели…" />
+    ) : (
+      <LoadingState description="Загружаем цели…" inline />
+    );
+  } else if (goalsError) {
+    activePanelBody = isV2 ? (
+      <UiV2Notice retry={() => void loadGoals()} title="Не удалось загрузить цели">
+        {goalsError}
+      </UiV2Notice>
+    ) : (
+      <div className="stack-8">
+        <ErrorState description={goalsError} inline title="Не удалось загрузить цели" />
+        <Button onClick={() => void loadGoals()} size="sm">
+          Повторить
         </Button>
       </div>
+    );
+  } else if (goals.length === 0) {
+    activePanelBody = isV2 ? (
+      <div className={v2Styles.emptyState}>
+        <UiV2WidgetState title="Целей пока нет" />
+        <Button onClick={openCreate} variant="primary">
+          Создать первую цель
+        </Button>
+      </div>
+    ) : (
+      <EmptyState
+        action={
+          <Button onClick={openCreate} size="sm" variant="primary">
+            Создать цель
+          </Button>
+        }
+        description="Список целей пока пуст."
+        inline
+        title="Нет целей"
+      />
+    );
+  } else if (activeGoals.length === 0) {
+    activePanelBody = isV2 ? (
+      <UiV2WidgetState title="Активных целей нет. Можно создать новую или вернуть цель из архива." />
+    ) : (
+      <EmptyState
+        description="Активных целей нет. Можно создать новую или вернуть цель из архива."
+        inline
+        title="Нет активных целей"
+      />
+    );
+  } else {
+    activePanelBody = activeGoalCards;
+  }
 
-      {selectedMonth ? (
-        <p className="goals-v03__as-of muted tiny">
-          Прогресс на снимок {formatDate(selectedMonth.snapshot_date)}.
-        </p>
-      ) : (
-        <div className="inline-alert inline-alert--warn" role="status">
-          Нет отчётного месяца: цели можно редактировать, но их финансовый прогресс пока нельзя
-          показать.
-        </div>
-      )}
+  const activePanel = isV2 ? (
+    <UiV2Panel
+      eyebrow="В приоритете"
+      id="v2-goals-active-title"
+      testIdPrefix="v2-goals"
+      title={`Активные (${activeGoals.length})`}
+      wide
+    >
+      {activePanelBody}
+    </UiV2Panel>
+  ) : (
+    <Panel label="Активные" title={`Цели (${activeGoals.length})`}>
+      {activePanelBody}
+    </Panel>
+  );
 
+  const archive =
+    !goalsLoading && !goalsError && inactiveGoals.length > 0 ? (
+      <details className={`goals-archive${isV2 ? ` ${v2Styles.archive}` : ""}`}>
+        <summary>
+          <span>Архив</span>
+          <strong>{inactiveGoals.length}</strong>
+        </summary>
+        <ul className="goal-card-grid goal-card-grid--archive">
+          {inactiveGoals.map((goal) => (
+            <GoalCard
+              compact
+              goal={goal}
+              key={goal.id}
+              onDelete={setPendingDelete}
+              onEdit={openEdit}
+              onPatch={patchGoal}
+              summary={summaryLoading ? undefined : summaryById.get(goal.id)}
+              summaryLoading={summaryLoading}
+            />
+          ))}
+        </ul>
+      </details>
+    ) : null;
+
+  const notices = (
+    <>
       {actionError ? (
-        <div className="inline-alert inline-alert--error" role="alert">
-          {actionError}
-        </div>
+        isV2 ? (
+          <UiV2Notice title="Не удалось изменить цель">{actionError}</UiV2Notice>
+        ) : (
+          <div className="inline-alert inline-alert--error" role="alert">
+            {actionError}
+          </div>
+        )
       ) : null}
       {summaryError ? (
-        <div className="inline-alert inline-alert--warn" role="status">
-          Прогресс целей недоступен: {summaryError}
-        </div>
-      ) : null}
-
-      <Panel label="Активные" title={`Цели (${activeGoals.length})`}>
-        {goalsLoading ? (
-          <LoadingState description="Загружаем цели…" inline />
-        ) : goalsError ? (
-          <div className="stack-8">
-            <ErrorState description={goalsError} inline title="Не удалось загрузить цели" />
-            <Button onClick={() => void loadGoals()} size="sm">
-              Повторить
-            </Button>
-          </div>
-        ) : goals.length === 0 ? (
-          <EmptyState
-            action={
-              <Button onClick={openCreate} size="sm" variant="primary">
-                Создать цель
-              </Button>
+        isV2 ? (
+          <UiV2Notice
+            retry={
+              selectedMonthIdForView === null
+                ? undefined
+                : () => void loadSummary(selectedMonthIdForView)
             }
-            description="Список целей пока пуст."
-            inline
-            title="Нет целей"
-          />
-        ) : activeGoals.length === 0 ? (
-          <EmptyState
-            description="Активных целей нет. Можно создать новую или вернуть цель из архива."
-            inline
-            title="Нет активных целей"
-          />
+            title="Прогресс целей недоступен"
+          >
+            {summaryError}
+          </UiV2Notice>
         ) : (
-          <ul className="goal-card-grid">
-            {activeGoals.map((goal) => (
-              <GoalCard
-                goal={goal}
-                key={goal.id}
-                onDelete={setPendingDelete}
-                onEdit={openEdit}
-                onPatch={patchGoal}
-                summary={summaryLoading ? undefined : summaryById.get(goal.id)}
-                summaryLoading={summaryLoading}
-              />
-            ))}
-          </ul>
-        )}
-      </Panel>
-
-      {!goalsLoading && !goalsError && inactiveGoals.length > 0 ? (
-        <details className="goals-archive">
-          <summary>
-            <span>Архив</span>
-            <strong>{inactiveGoals.length}</strong>
-          </summary>
-          <ul className="goal-card-grid goal-card-grid--archive">
-            {inactiveGoals.map((goal) => (
-              <GoalCard
-                compact
-                goal={goal}
-                key={goal.id}
-                onDelete={setPendingDelete}
-                onEdit={openEdit}
-                onPatch={patchGoal}
-                summary={summaryLoading ? undefined : summaryById.get(goal.id)}
-                summaryLoading={summaryLoading}
-              />
-            ))}
-          </ul>
-        </details>
+          <div className="inline-alert inline-alert--warn" role="status">
+            Прогресс целей недоступен: {summaryError}
+          </div>
+        )
       ) : null}
+    </>
+  );
 
+  const dialogs = (
+    <>
       <GoalFormDialog
         busy={formBusy}
         error={formError}
@@ -363,6 +504,58 @@ export function GoalsPage() {
         open={pendingDelete != null}
         title="Удалить цель?"
       />
+    </>
+  );
+
+  if (isV2) {
+    const backToIncome =
+      incomeReturnTo ??
+      `/v2/income${selectedMonthIdForView === null ? "" : `?month=${selectedMonthIdForView}`}`;
+    return (
+      <UiV2Shell
+        active="income"
+        busy={goalsLoading || summaryLoading}
+        header={
+          <div className={v2Styles.header}>
+            <p className={sharedStyles.eyebrow}>Доход и планы</p>
+            <h1>Цели</h1>
+            <p className={sharedStyles.subtitle}>
+              Активные цели, архив и прогресс на выбранный отчётный месяц.
+            </p>
+            <Link className={sharedStyles.contextLink} to={backToIncome}>
+              ← Доход и планы
+            </Link>
+          </div>
+        }
+        v1ReturnPath="/goals"
+      >
+        <div className={v2Styles.content}>
+          {toolbar}
+          {monthContextNotice}
+          {notices}
+          {activePanel}
+          {archive}
+          {dialogs}
+        </div>
+      </UiV2Shell>
+    );
+  }
+
+  return (
+    <section className="goals-page goals-v03 stack-18">
+      <header className="page-header">
+        <p className="eyebrow">Планирование</p>
+        <h1>Цели</h1>
+        <p className="page-header__description">
+          Текущий прогресс, оставшийся путь и одна главная цель — в одном месте.
+        </p>
+      </header>
+      {toolbar}
+      {monthContextNotice}
+      {notices}
+      {activePanel}
+      {archive}
+      {dialogs}
     </section>
   );
 }

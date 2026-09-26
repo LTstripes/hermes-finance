@@ -320,6 +320,10 @@ describe("UI v2 Income and plans", () => {
       "income-handoffs-panel",
     ]);
 
+    expect(
+      within(screen.getByTestId("income-goals-panel")).getByRole("link", { name: "Все цели →" }),
+    ).toHaveAttribute("href", "/v2/income/goals?month=91");
+
     const ladder = screen.getByTestId("income-ladder-panel");
     const controls = within(ladder).getByRole("group", { name: "Окно ожидаемых выплат" });
     expect(controls).toHaveAttribute("aria-controls", "income-ladder-content");

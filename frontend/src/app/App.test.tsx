@@ -200,6 +200,26 @@ describe("App", () => {
     ).toHaveAttribute("href", "/v1");
   });
 
+  it("registers the native goals deep-link route with its selected report month", async () => {
+    window.history.pushState({}, "", "/v2/income/goals?month=1");
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/goals?include_inactive=true": () => jsonResponse([]),
+        "GET /api/goals/summary?reporting_month_id=1&include_inactive=true": () => jsonResponse([]),
+        "GET /api/months": () => jsonResponse(sampleMonths),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Цели" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+      "href",
+      "/v2/income?month=1",
+    );
+  });
+
   it("renders the dashboard in the application layout", () => {
     vi.stubGlobal(
       "fetch",

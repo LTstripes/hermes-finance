@@ -30,6 +30,7 @@ import {
   UiV2DataSourcesEntry,
   UiV2Entry,
   UiV2IncomeEntry,
+  UiV2GoalsEntry,
   UiV2ReportEntry,
   UiV2ReportsEntry,
 } from "../ui-v2/UiV2Entry";
@@ -56,6 +57,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/data/catalogs" element={<UiV2DataCatalogsEntry />} />
           <Route path="v2/data/files" element={<UiV2DataFilesEntry />} />
           <Route path="v2/data/app" element={<UiV2DataAppEntry />} />
+          <Route path="v2/income/goals" element={<UiV2GoalsEntry />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route element={<AppLayout />}>
             <Route path="v1" element={<DashboardPage />} />
