@@ -116,6 +116,18 @@ empty array or zero.
 | `context` | existing goals, debt/property, IIS/tax read models | Received benefits only affect actual IIS result; incomplete salary history stays unavailable. Every known active IIS account is listed even with an unconfigured lifecycle/tax profile (`null` lifecycle fields, `iis_tax_data_unconfigured` result metrics), and the selected month's salary/tax reconciliation is projected under `salary_tax_context.selected_month` |
 | `deterministic_insights` | `build_deterministic_insights` | Only the closed typed projection is safe for this contract; open evidence maps are not copied |
 
+When the selected history point is `partial` with `active_account_snapshot_missing`,
+the known liquid-capital subtotal stays `available` / `exact`. The capital
+section carries that reason beside `total_net_worth_unavailable`;
+`total_net_worth` stays unavailable with `no_authoritative_aggregate`.
+Historical-dynamics coverage follows the history point. A capital goal's
+current value and progress keep the subtotal and carry the same reason.
+Asset-class allocation, account allocation and top-position concentration
+keep the risk-allocation shares and amounts; their support becomes `partial`
+with the same reason. Payout and redemption concentration, performance and
+cash-boundary coverage stay separate. See
+[`financial-completeness-contract.md`](financial-completeness-contract.md).
+
 ## Versioning and follow-ups
 
 `schema_version` follows SemVer. A minor version may add optional sections or
