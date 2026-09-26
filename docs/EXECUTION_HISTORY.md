@@ -48,7 +48,7 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 - **Accepted candidate:** `c910dcaeb6dfeb83a013c1f0120252ed3dfd5794`; independent recovery/security verdict supplied by Owner: **INDEPENDENT ACCEPT**.
 - **Canonical merge:** `8d6af7a7b370e8d6c5fa6659d3cd16fce47a4561`.
-- **Verification:** exact-head CI `36147122963` SUCCESS; canonical exact-main push CI `36236076568` is pending final completion at this docs-branch preparation checkpoint.
+- **Verification:** exact-head CI `36147122963` SUCCESS; canonical exact-main push CI `36236076568` SUCCESS.
 - **Delivered:** argparse-level publisher/rehearsal failures use neutral null protection identity without echoing private argv; explicit 12 protected + 12 plaintext + 13th same-pair regressions prove pair-scoped retention in both directions while preserving fail-closed object-bound deletion semantics.
 - **Boundary:** #543 remains a post-closeout hardening task only; it does not reopen or alter completed #417/#527 policy.
 - **Reviewer context:** Owner reports the independent reviewer ran in a separate Astra Pro chat session.
