@@ -13,6 +13,7 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await createDialog.getByLabel("Месяц").selectOption("12");
   await createDialog.getByLabel("Дата снимка").fill("2049-12-31");
   await createDialog.getByRole("button", { name: "Создать месяц" }).click();
+  await expect(createDialog).toBeHidden();
 
   const monthRow = page.getByRole("row").filter({ hasText: "Декабрь" }).last();
   await expect(monthRow).toContainText("Черновик");
@@ -29,7 +30,10 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await page.getByLabel("Категория расхода").fill("Smoke rent");
   await page.getByLabel("Сумма расхода").fill("20000");
   await page.getByRole("button", { name: "Добавить расход" }).click();
-  await expect(page.getByRole("table").filter({ hasText: "Smoke rent" })).toBeVisible();
+  const expensesPanel = page.locator("section.panel").filter({
+    has: page.getByRole("heading", { level: 2, name: "Расходы", exact: true }),
+  });
+  await expect(expensesPanel.getByRole("table")).toContainText("Smoke rent");
 
   await page.getByRole("button", { name: "Активы", exact: true }).click();
   await page.getByLabel("Название вклада").fill("Smoke deposit");
@@ -42,9 +46,15 @@ test("G04 critical monthly workflow", async ({ page }) => {
   await page.getByRole("link", { name: "Дашборд" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
   await expect(page.getByText("Ликвидный капитал", { exact: true })).toBeVisible();
-  await expect(page.getByText("Прогноз", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Прогноз · 12 месяцев", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Экспорт" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Экспорт" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Скачать Markdown" })).toBeEnabled();
+  await page.getByText("Дополнительные / технические выгрузки", { exact: true }).click();
+  const reportExportPanel = page.locator("section.panel").filter({
+    has: page.getByRole("heading", { level: 2, name: "Скачать отчёт", exact: true }),
+  });
+  await expect(
+    reportExportPanel.getByRole("button", { name: "Скачать Markdown", exact: true }),
+  ).toBeEnabled();
 });
