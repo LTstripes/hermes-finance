@@ -4,11 +4,11 @@ import { Link, useSearchParams } from "react-router";
 
 import { getPassiveIncomeHistory } from "../api/analytics";
 import { getCashFlowLadder } from "../api/cashFlowLadder";
-import { listGoalSummary, type GoalSummary } from "../api/goals";
+import { type GoalSummary, listGoalSummary } from "../api/goals";
 import { listMonths } from "../api/months";
 import { plannedVsActual } from "../api/plannedBudget";
-import { getIncomePlanSummary } from "../api/summary";
 import { listSavings } from "../api/savings";
+import { getIncomePlanSummary } from "../api/summary";
 import type {
   CashFlowLadder,
   CashFlowLadderEvent,
@@ -26,11 +26,9 @@ import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month
 import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
-import {
-  eventLabel as ownerEventLabel,
-  PRINCIPAL_REPAYMENT_LABEL,
-  sourceLabel as ownerSourceLabel,
-} from "./uiV2Copy";
+import incomeStyles from "./UiV2Income.module.css";
+import sharedStyles from "./UiV2Page.module.css";
+import { UiV2Shell } from "./UiV2Shell";
 import {
   isQueryReady,
   UiV2Loading,
@@ -38,9 +36,11 @@ import {
   UiV2ReportContext,
   UiV2WidgetState,
 } from "./UiV2StateBlocks";
-import { UiV2Shell } from "./UiV2Shell";
-import sharedStyles from "./UiV2Page.module.css";
-import incomeStyles from "./UiV2Income.module.css";
+import {
+  eventLabel as ownerEventLabel,
+  sourceLabel as ownerSourceLabel,
+  PRINCIPAL_REPAYMENT_LABEL,
+} from "./uiV2Copy";
 import { moneyText as money } from "./valueFormat";
 
 type FactSelection = {
@@ -79,6 +79,29 @@ function averageDetail(average: PassiveIncomeAverage): string {
     return `Нет закрытых месяцев в выбранном периоде · 0 из ${average.target_window_months}${suffix}`;
   }
   return `${average.count_months} из ${average.target_window_months} закрытых отчётов${suffix}`;
+}
+
+/** Closed-month display order only. The API history payload stays oldest-first. */
+function historyNewestFirst(
+  points: PassiveIncomeHistory["points"],
+): PassiveIncomeHistory["points"] {
+  return [...points].sort(
+    (left, right) =>
+      right.year - left.year ||
+      right.month - left.month ||
+      right.reporting_month_id - left.reporting_month_id,
+  );
+}
+
+function planFactCopy(row: PlanVsActualRow): string | null {
+  const planned = row.planned;
+  const actual = row.actual;
+  if (planned === null && actual !== null) return `Факт ${money(actual)}`;
+  if (planned !== null && actual !== null) {
+    return `План ${money(planned)} · факт ${money(actual)}`;
+  }
+  if (planned !== null && actual === null) return `План ${money(planned)} · факта нет`;
+  return null;
 }
 
 function progressStyle(value: string): CSSProperties {
@@ -275,7 +298,7 @@ function FactHistoryBlock({
               aria-label="История фактического пассивного дохода"
               className={incomeStyles.historyList}
             >
-              {history.points.map((point) => {
+              {historyNewestFirst(history.points).map((point) => {
                 const selected =
                   point.reporting_month_id === history.selected_report?.reporting_month_id;
                 return (
@@ -712,16 +735,23 @@ function CoveragePlanBlock({
               ) : budget.length === 0 ? (
                 <p className={incomeStyles.emptyPlan}>План расходов не задан.</p>
               ) : (
-                <ul className={incomeStyles.valueList}>
-                  {budget.slice(0, 5).map((row) => (
-                    <li key={`${row.expense_type}-${row.category}`}>
-                      <span>{row.category}</span>
-                      <strong>
-                        {money(row.planned, "Не задано")} / {money(row.actual, "Нет факта")}
-                      </strong>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <p className={incomeStyles.planFactNote}>
+                    Отдельный план показывается только когда он действительно введён.
+                  </p>
+                  <ul className={incomeStyles.valueList}>
+                    {budget.slice(0, 5).map((row) => {
+                      const copy = planFactCopy(row);
+                      if (copy === null) return null;
+                      return (
+                        <li key={`${row.expense_type}-${row.category}`}>
+                          <span>{row.category}</span>
+                          <strong className={incomeStyles.planFact}>{copy}</strong>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
               )}
             </div>
             <div>

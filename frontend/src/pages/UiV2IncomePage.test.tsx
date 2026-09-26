@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -418,6 +419,104 @@ describe("UI v2 Income and plans", () => {
     expect(
       within(screen.getByTestId("income-plan-panel")).getByText("Данные временно недоступны"),
     ).toBeVisible();
+  });
+
+  it("lists closed factual months newest-first and keeps the dropdown on that selection", async () => {
+    const user = userEvent.setup();
+    const { mount, state } = setup();
+    mount();
+
+    const list = await screen.findByRole("region", {
+      name: "История фактического пассивного дохода",
+    });
+    const buttons = within(list).getAllByRole("button");
+    expect(buttons.map((button) => button.dataset.testid)).toEqual([
+      "income-history-91",
+      "income-history-90",
+      "income-history-89",
+      "income-history-88",
+    ]);
+    expect(state.history.points.map((point) => point.reporting_month_id)).toEqual([88, 89, 90, 91]);
+    expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+
+    const select = screen.getByRole("combobox", {
+      name: "Отчёт для разбивки фактического дохода",
+    });
+    const options = within(select).getAllByRole("option");
+    expect(options.map((option) => option.textContent?.replaceAll("\u00a0", " "))).toEqual([
+      "Июль 2031",
+      "Май 2031",
+      "Апрель 2031",
+      "Февраль 2031",
+    ]);
+    expect(options.map((option) => option.getAttribute("value"))).toEqual(["91", "90", "89", "88"]);
+    expect(screen.queryByRole("option", { name: /Август/ })).toBeNull();
+
+    select.focus();
+    await user.tab();
+    expect(screen.getByTestId("income-history-91")).toHaveFocus();
+    await user.tab();
+    expect(screen.getByTestId("income-history-90")).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByTestId("test-location")).toHaveTextContent("/v2/income?month=90");
+    expect(await screen.findByTestId("income-history-90")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Источники\s+·\s+Май\s+2031/)).toBeVisible();
+    expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
+  });
+
+  it("states plan and fact without calling a missing plan unset", async () => {
+    const { mount, state } = setup();
+    state.budget = [
+      {
+        category: "Жильё",
+        expense_type: "mandatory",
+        planned: money("50000.00"),
+        actual: money("48000.00"),
+      },
+      { category: "Связь", expense_type: "mandatory", planned: null, actual: money("3000.00") },
+      {
+        category: "Подарки",
+        expense_type: "discretionary",
+        planned: money("1000.00"),
+        actual: null,
+      },
+      {
+        category: "Нулевой план",
+        expense_type: "discretionary",
+        planned: money("0.00"),
+        actual: money("250.00"),
+      },
+      {
+        category: "Нулевой план без факта",
+        expense_type: "discretionary",
+        planned: money("0.00"),
+        actual: null,
+      },
+    ];
+    mount();
+
+    expect(
+      await screen.findByText("Отдельный план показывается только когда он действительно введён."),
+    ).toBeVisible();
+    const plan = screen.getByTestId("income-plan-panel");
+    expect(within(plan).getByText("Жильё").closest("li")).toHaveTextContent(
+      "План 50 000 ₽ · факт 48 000 ₽",
+    );
+    const actualOnly = within(plan).getByText("Связь").closest("li");
+    expect(actualOnly).toHaveTextContent("Факт 3 000 ₽");
+    expect(actualOnly).not.toHaveTextContent("План");
+    expect(actualOnly).not.toHaveTextContent("Не задано");
+    expect(within(plan).getByText("Подарки").closest("li")).toHaveTextContent(
+      "План 1 000 ₽ · факта нет",
+    );
+    expect(within(plan).getByText("Нулевой план").closest("li")).toHaveTextContent(
+      "План 0 ₽ · факт 250 ₽",
+    );
+    expect(within(plan).getByText("Нулевой план без факта").closest("li")).toHaveTextContent(
+      "План 0 ₽ · факта нет",
+    );
+    expect(plan).not.toHaveTextContent("Не задано");
   });
 
   it("stops planning reads when there is no CLOSED report", async () => {
