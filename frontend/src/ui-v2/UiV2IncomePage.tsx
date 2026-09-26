@@ -798,7 +798,7 @@ function Handoffs({ narrow }: { narrow: boolean }) {
             <div>
               <h3>Сценарии</h3>
               <p>Сценарии открываются в отдельном разделе; действий на этой странице нет.</p>
-              <Link to="/scenario-lab">Открыть сценарии →</Link>
+              <Link to="/v2/income/scenario-lab">Открыть сценарии →</Link>
             </div>
           </div>
         </div>

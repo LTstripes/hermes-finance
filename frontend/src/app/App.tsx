@@ -33,6 +33,7 @@ import {
   UiV2ReportEntry,
   UiV2ReportsEntry,
 } from "../ui-v2/UiV2Entry";
+import UiV2ScenarioLabPage from "../ui-v2/UiV2ScenarioLabPage";
 
 type AppProps = {
   queryClient?: QueryClient;
@@ -57,6 +58,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/data/files" element={<UiV2DataFilesEntry />} />
           <Route path="v2/data/app" element={<UiV2DataAppEntry />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
+          <Route path="v2/income/scenario-lab" element={<UiV2ScenarioLabPage />} />
           <Route element={<AppLayout />}>
             <Route path="v1" element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
