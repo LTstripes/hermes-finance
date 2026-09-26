@@ -116,7 +116,7 @@ function TabButton({
 }
 
 export default function UiV2DataCatalogsPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
@@ -126,7 +126,20 @@ export default function UiV2DataCatalogsPage() {
   const resolution = resolveDataMonth(params.getAll("month"), months, monthsReady);
   const monthId = resolution.kind === "ready" ? resolution.month.id : undefined;
 
-  const [tab, setTab] = useState<CatalogTab>("accounts");
+  const requestedTabs = params.getAll("tab");
+  const tab: CatalogTab =
+    requestedTabs.length === 1 &&
+    (requestedTabs[0] === "accounts" ||
+      requestedTabs[0] === "instruments" ||
+      requestedTabs[0] === "mappings")
+      ? requestedTabs[0]
+      : "accounts";
+  function selectTab(nextTab: CatalogTab) {
+    const next = new URLSearchParams(params);
+    if (nextTab === "accounts") next.delete("tab");
+    else next.set("tab", nextTab);
+    setParams(next);
+  }
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -815,18 +828,18 @@ export default function UiV2DataCatalogsPage() {
             active={tab === "accounts"}
             count={accounts.length}
             label="Счета"
-            onClick={() => setTab("accounts")}
+            onClick={() => selectTab("accounts")}
           />
           <TabButton
             active={tab === "instruments"}
             count={instruments.length}
             label="Инструменты"
-            onClick={() => setTab("instruments")}
+            onClick={() => selectTab("instruments")}
           />
           <TabButton
             active={tab === "mappings"}
             label="Постоянные сопоставления"
-            onClick={() => setTab("mappings")}
+            onClick={() => selectTab("mappings")}
           />
         </div>
         {actionError ? (

@@ -78,7 +78,12 @@ export function selectDiagnosticMonth(months: ReportingMonth[]): ReportingMonth 
 
 export type DataAppSection = "sources" | "reconciliation" | "catalogs" | "files" | "app";
 
-export function dataAppPath(section: DataAppSection, monthId?: number): string {
+export function dataAppPath(
+  section: DataAppSection,
+  monthId?: number,
+  search = "",
+  hash = "",
+): string {
   const base =
     section === "sources"
       ? "/v2/data"
@@ -89,7 +94,8 @@ export function dataAppPath(section: DataAppSection, monthId?: number): string {
           : section === "files"
             ? "/v2/data/files"
             : "/v2/data/app";
-  if (monthId == null) return base;
-  const params = new URLSearchParams({ month: String(monthId) });
-  return `${base}?${params.toString()}`;
+  const params = new URLSearchParams(search);
+  if (monthId != null && !params.has("month")) params.set("month", String(monthId));
+  const query = params.toString();
+  return `${base}${query ? `?${query}` : ""}${hash}`;
 }

@@ -70,6 +70,13 @@ export function withMonthlyCloseReturn(
   return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
 }
 
+export function withSelectedReturnMonth(params: URLSearchParams, monthId: number): URLSearchParams {
+  const next = new URLSearchParams(params);
+  next.set("month", String(monthId));
+  if (parseMonthlyCloseReturnContext(params)) next.set("monthId", String(monthId));
+  return next;
+}
+
 const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
   open_month: (monthId) => `/months/${monthId}`,
   set_snapshot_date: (monthId) => `/months/${monthId}?section=general`,
@@ -91,5 +98,16 @@ export function routeForGuidedAction(
   step: GuidedCloseStepId,
   origin: MonthlyCloseOrigin = "monthly-close",
 ): string {
-  return withMonthlyCloseReturn(ACTION_PATHS[actionId](monthId), monthId, step, origin);
+  const nativePath =
+    origin === "monthly-close-v2" && actionId === "open_reconciliation_preview"
+      ? `/v2/data/reconciliation?month=${monthId}`
+      : origin === "monthly-close-v2" && actionId === "open_freshness"
+        ? `/v2/data?month=${monthId}`
+        : null;
+  return withMonthlyCloseReturn(
+    nativePath ?? ACTION_PATHS[actionId](monthId),
+    monthId,
+    step,
+    origin,
+  );
 }

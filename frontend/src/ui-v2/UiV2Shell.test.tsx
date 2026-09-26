@@ -54,4 +54,21 @@ describe("UiV2Shell rollback", () => {
       screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
     ).toBeNull();
   });
+
+  it("offers native files, settings and diagnostics while retaining explicit v1 escape", () => {
+    renderShell("/export");
+    expect(screen.getByRole("link", { name: "Экспорт и копии" })).toHaveAttribute(
+      "href",
+      "/v2/data/files",
+    );
+    expect(screen.getByRole("link", { name: "Настройки" })).toHaveAttribute("href", "/v2/data/app");
+    expect(screen.getByRole("link", { name: "Диагностика" })).toHaveAttribute(
+      "href",
+      "/v2/data/app#diagnostics",
+    );
+    expect(screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toHaveAttribute(
+      "href",
+      "/v1",
+    );
+  });
 });

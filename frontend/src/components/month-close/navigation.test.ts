@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseMonthlyCloseReturnContext, routeForGuidedAction } from "./navigation";
+import {
+  parseMonthlyCloseReturnContext,
+  routeForGuidedAction,
+  withSelectedReturnMonth,
+} from "./navigation";
 
 describe("monthly close navigation", () => {
   it("accepts only the enumerated return context", () => {
@@ -46,7 +50,32 @@ describe("monthly close navigation", () => {
       "/months/3/close?from=monthly-close&step=readiness&monthId=3#final_review_close",
     );
     expect(routeForGuidedAction("open_freshness", 7, "readiness", "monthly-close-v2")).toBe(
-      "/freshness?from=monthly-close-v2&step=readiness&monthId=7",
+      "/v2/data?month=7&from=monthly-close-v2&step=readiness&monthId=7",
     );
+    expect(
+      routeForGuidedAction(
+        "open_reconciliation_preview",
+        7,
+        "broker_reconciliation",
+        "monthly-close-v2",
+      ),
+    ).toBe(
+      "/v2/data/reconciliation?month=7&from=monthly-close-v2&step=broker_reconciliation&monthId=7",
+    );
+  });
+
+  it("updates the selected month and bounded close return together", () => {
+    expect(
+      withSelectedReturnMonth(
+        new URLSearchParams("month=12&from=monthly-close-v2&step=readiness&monthId=12"),
+        91,
+      ).toString(),
+    ).toBe("month=91&from=monthly-close-v2&step=readiness&monthId=91");
+    expect(
+      withSelectedReturnMonth(
+        new URLSearchParams("month=0&from=https://evil.test&monthId=12"),
+        91,
+      ).toString(),
+    ).toBe("month=91&from=https%3A%2F%2Fevil.test&monthId=12");
   });
 });

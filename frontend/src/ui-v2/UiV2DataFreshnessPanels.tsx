@@ -279,7 +279,7 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
       ) : null}
       <div className={dataStyles.familyActions}>
         {step ? (
-          <Link to={monthlyCloseReturnPath({ monthId, origin: "monthly-close", step })}>
+          <Link to={monthlyCloseReturnPath({ monthId, origin: "monthly-close-v2", step })}>
             Открыть шаг закрытия →
           </Link>
         ) : (

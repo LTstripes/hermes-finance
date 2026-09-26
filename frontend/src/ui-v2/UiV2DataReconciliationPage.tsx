@@ -10,7 +10,11 @@ import {
 import { formatApiError } from "../api/client";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
-import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
+import {
+  isGuidedCloseStepId,
+  monthlyCloseReturnPath,
+  withSelectedReturnMonth,
+} from "../components/month-close/navigation";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
 import dataStyles from "./UiV2Data.module.css";
@@ -72,6 +76,10 @@ export default function UiV2DataReconciliationPage() {
     requestedStepValues.length === 1 && isGuidedCloseStepId(requestedStepValues[0])
       ? requestedStepValues[0]
       : null;
+  const closeStep =
+    params.getAll("from").length === 1 && params.get("from") === "monthly-close-v2" && requestedStep
+      ? requestedStep
+      : "broker_reconciliation";
   const v1ReturnPath =
     resolution.kind === "ready"
       ? requestedStep
@@ -84,9 +92,7 @@ export default function UiV2DataReconciliationPage() {
       : "/reconciliation";
 
   function selectMonth(id: number) {
-    const next = new URLSearchParams(params);
-    next.set("month", String(id));
-    setParams(next, { replace: true });
+    setParams(withSelectedReturnMonth(params, id), { replace: true });
     setResult(null);
     setAccountValues({});
     setInstrumentValues({});
@@ -184,8 +190,8 @@ export default function UiV2DataReconciliationPage() {
               <Link
                 to={monthlyCloseReturnPath({
                   monthId: month.id,
-                  origin: "monthly-close",
-                  step: "broker_reconciliation",
+                  origin: "monthly-close-v2",
+                  step: closeStep,
                 })}
               >
                 Открыть шаг закрытия →
@@ -246,8 +252,8 @@ export default function UiV2DataReconciliationPage() {
               <Link
                 to={monthlyCloseReturnPath({
                   monthId: month.id,
-                  origin: "monthly-close",
-                  step: "broker_reconciliation",
+                  origin: "monthly-close-v2",
+                  step: closeStep,
                 })}
               >
                 Открыть шаг закрытия →

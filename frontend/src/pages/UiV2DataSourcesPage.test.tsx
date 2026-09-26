@@ -229,7 +229,7 @@ describe("UI v2 Data sources", () => {
     mount();
     const family = await screen.findByTestId("freshness-family-market_quotes");
     const link = within(family).getByRole("link", { name: /Открыть шаг закрытия/ });
-    expect(link).toHaveAttribute("href", "/months/12/close#market_quotes");
+    expect(link).toHaveAttribute("href", "/v2/close?month=12&step=market_quotes");
   });
 
   it("shows mode-grouped Data/App subnav with v1 escape", async () => {
@@ -245,5 +245,24 @@ describe("UI v2 Data sources", () => {
       "href",
       "/freshness",
     );
+  });
+
+  it("keeps the exact v2 Close month and step on refresh and native return", async () => {
+    const { mount, reads } = setup(
+      "/v2/data?month=12&from=monthly-close-v2&step=market_quotes&monthId=12",
+    );
+    mount();
+    expect(await screen.findByTestId("data-month-context")).toHaveTextContent("Август 2031");
+    expect(screen.getByRole("link", { name: "Открыть закрытие месяца →" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12&step=market_quotes",
+    );
+    expect(screen.getByRole("link", { name: "Сверка портфеля" })).toHaveAttribute(
+      "href",
+      "/v2/data/reconciliation?month=12&from=monthly-close-v2&step=market_quotes&monthId=12",
+    );
+    expect(reads.filter((item) => item.includes("freshness-provenance"))).toEqual([
+      "GET /api/months/12/freshness-provenance",
+    ]);
   });
 });

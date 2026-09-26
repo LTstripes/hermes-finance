@@ -171,6 +171,38 @@ describe("UI v2 Data reconciliation", () => {
     expect(posts).toEqual([]);
   });
 
+  it("keeps the v2 Close return and opens the exact mappings tab for a selected month", async () => {
+    const user = userEvent.setup();
+    const { mount, posts, state } = setup(
+      "/v2/data/reconciliation?month=12&from=monthly-close-v2&step=broker_reconciliation&monthId=12",
+    );
+    state.preview = result({
+      accounts: [
+        {
+          provider_account_id: "synthetic-account",
+          hermes_account_id: null,
+          status: "unresolved",
+          reason: "mapping_unresolved",
+        },
+      ],
+    });
+    mount();
+    expect(await screen.findByTestId("reconciliation-idle")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Открыть шаг закрытия →" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12&step=broker_reconciliation",
+    );
+    expect(posts).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "Проверить снимок" }));
+    expect(await screen.findByTestId("reconciliation-mapping")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Сохранить сопоставление в справочниках →" }),
+    ).toHaveAttribute(
+      "href",
+      "/v2/data/catalogs?month=12&from=monthly-close-v2&step=broker_reconciliation&monthId=12&tab=mappings",
+    );
+  });
+
   it("runs preview only after owner click and keeps read-only semantics", async () => {
     const user = userEvent.setup();
     const { mount, posts } = setup();
