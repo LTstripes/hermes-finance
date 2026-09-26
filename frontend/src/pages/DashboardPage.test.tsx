@@ -140,6 +140,25 @@ afterEach(() => {
 });
 
 describe("DashboardPage R03-04 semantics", () => {
+  it("keeps the known amount visible with backend partial-source coverage", async () => {
+    setupDashboard((monthId) => {
+      const value = dashboard(monthId);
+      return jsonResponse({
+        ...value,
+        kpis: {
+          ...value.kpis,
+          portfolio_source_coverage: {
+            status: "partial",
+            reason_codes: ["active_account_snapshot_missing"],
+            missing_account_ids: [2],
+          },
+        },
+      });
+    });
+    expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();
+    expect(screen.getByText(/4\s*820\s*500\s*₽/)).toBeVisible();
+  });
+
   it("keeps four overview blocks with distinct fact, forecast and coverage semantics", async () => {
     const fetchMock = setupDashboard((monthId) =>
       jsonResponse(dashboard(monthId, monthId === 2 ? "Среднее доступно за 6 месяцев" : null)),

@@ -32,6 +32,7 @@ import type {
   ReportingMonth,
 } from "../api/types";
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
@@ -154,8 +155,11 @@ function KpiGrid({
         {comparisonReady && comparison?.current ? (
           <>
             <p className={styles.metricValue} data-testid="v2-capital">
-              {money(comparison.current.liquid_capital_net)}
+              {comparison.current.portfolio_source_coverage?.status === "unavailable"
+                ? "—"
+                : money(comparison.current.liquid_capital_net)}
             </p>
+            <PortfolioCoverageNote coverage={comparison.current.portfolio_source_coverage} />
             <p className={styles.metricDetail}>Активы за вычетом включённых обязательств</p>
           </>
         ) : (
@@ -173,7 +177,9 @@ function KpiGrid({
               data-testid="v2-capital-change"
               data-tone={tone(comparison?.liquid_capital_net_delta)}
             >
-              {moneyDelta(comparison?.liquid_capital_net_delta)}
+              {comparison?.liquid_capital_net_delta_coverage?.status === "unavailable"
+                ? "—"
+                : moneyDelta(comparison?.liquid_capital_net_delta)}
             </p>
             <p className={styles.metricDetail} id="v2-change-definition">
               к {formatMonth(comparison?.previous?.year ?? 0, comparison?.previous?.month ?? 0)} ·
@@ -213,6 +219,7 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
     label: string;
     amount: string | null;
     rubles: number | null;
+    portfolio_source_coverage?: CapitalCompositionPoint["portfolio_source_coverage"];
   }> = [];
   let previous: CapitalCompositionPoint | undefined;
   for (const point of points) {
@@ -231,7 +238,11 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
       key: `${point.year}-${point.month}`,
       label: `${String(point.month).padStart(2, "0")}.${point.year}`,
       amount: point.liquid_capital_net.amount,
-      rubles: moneyToChartNumber(point.liquid_capital_net.amount),
+      rubles:
+        point.portfolio_source_coverage?.status === "unavailable"
+          ? null
+          : moneyToChartNumber(point.liquid_capital_net.amount),
+      portfolio_source_coverage: point.portfolio_source_coverage,
     });
     previous = point;
   }
@@ -244,7 +255,12 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
           <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
           <YAxis axisLine={false} hide tickLine={false} />
           <Tooltip
-            formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Капитал"]}
+            formatter={(_value, _name, item) => [
+              formatMoney(item.payload.amount),
+              item.payload.portfolio_source_coverage?.status === "partial"
+                ? "Капитал · покрытие частичное"
+                : "Капитал",
+            ]}
             labelFormatter={(label) => `Отчёт ${label}`}
           />
           <Line
@@ -393,7 +409,11 @@ function CompositionBlock({
             </div>
             <div>
               <dt>Ликвидный капитал</dt>
-              <dd>{money(comparison.current.liquid_capital_net)}</dd>
+              <dd>
+                {comparison.current.portfolio_source_coverage?.status === "unavailable"
+                  ? "—"
+                  : money(comparison.current.liquid_capital_net)}
+              </dd>
             </div>
           </dl>
         </>
@@ -443,8 +463,11 @@ function ChangeBlock({
           <div className={styles.changeTotal}>
             <span>Изменение ликвидного капитала</span>
             <strong data-tone={tone(comparison.liquid_capital_net_delta)}>
-              {moneyDelta(comparison.liquid_capital_net_delta)}
+              {comparison.liquid_capital_net_delta_coverage?.status === "unavailable"
+                ? "—"
+                : moneyDelta(comparison.liquid_capital_net_delta)}
             </strong>
+            <PortfolioCoverageNote coverage={comparison.liquid_capital_net_delta_coverage} />
           </div>
           <p className={styles.panelFootnote}>
             Перемещение между классами может менять строки без роста капитала. Рост обязательств

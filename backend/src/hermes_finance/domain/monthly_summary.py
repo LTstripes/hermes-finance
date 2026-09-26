@@ -25,6 +25,7 @@ from hermes_finance.domain.forecast_passive_income import (
 from hermes_finance.domain.iis_result import IisResult
 from hermes_finance.domain.liquid_capital import LiquidCapitalResult
 from hermes_finance.domain.normalized_bonus import NormalizedBonusResult
+from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.salary_tax import SalaryTaxResult
 from hermes_finance.domain.values import RubleAmount
 
@@ -70,6 +71,8 @@ class MonthlySummaryResult:
     calculation_version: str = CALCULATION_VERSION
     passive_income_history_start_month: str | None = None
     passive_income_average_months_used: tuple[str, ...] = ()
+    portfolio_source_coverage: PortfolioSourceCoverage | None = None
+    liquid_capital_delta_coverage: PortfolioSourceCoverage | None = None
 
 
 def assemble_warnings(

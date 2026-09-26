@@ -180,6 +180,19 @@ it("shows the three capital headlines in the frozen order and reads only GET", a
   expect(reads.some((read) => read.includes("scope=portfolio"))).toBe(true);
 });
 
+it("keeps the known capital and marks partial source support", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  state.comparison.current.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  mount();
+  expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+});
+
 it("keeps the closed snapshot while a newer draft exists and never duplicates the Home CTA", async () => {
   const { mount } = setup();
   mount();

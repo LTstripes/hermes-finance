@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import { getCapitalComposition } from "../api/analytics";
 import { listMonths } from "../api/months";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { Table, Td, Th } from "../components/ui";
 import type { ArchiveReportRow } from "./reportsArchive";
 import { formatDate, formatMonth } from "../lib/format";
@@ -38,7 +39,19 @@ function ReportRowCells({ row }: { row: ArchiveReportRow }) {
       <Td data-label={COLUMNS[1]}>{row.statusLabel}</Td>
       <Td data-label={COLUMNS[2]}>{formatDate(row.month.snapshot_date)}</Td>
       <Td className={reportStyles.moneyCell} data-label={COLUMNS[3]} numeric>
-        {point ? money(point.liquid_capital_net) : "—"}
+        <span className={reportStyles.coveredMoney}>
+          {point
+            ? point.portfolio_source_coverage?.status === "unavailable"
+              ? "—"
+              : money(point.liquid_capital_net)
+            : "—"}
+          {point?.portfolio_source_coverage?.status &&
+          point.portfolio_source_coverage.status !== "complete" ? (
+            <span className={reportStyles.coverageLine}>
+              <PortfolioCoverageNote coverage={point.portfolio_source_coverage} />
+            </span>
+          ) : null}
+        </span>
       </Td>
       <Td className={reportStyles.moneyCell} data-label={COLUMNS[4]} numeric>
         {point ? money(point.liquid_assets_total) : "—"}

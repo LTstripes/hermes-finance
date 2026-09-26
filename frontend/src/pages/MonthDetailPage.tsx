@@ -15,6 +15,7 @@ import { MonthReviewSection, type MonthReadinessSummary } from "../components/Mo
 import { MonthFlowsSection } from "../components/MonthFlowsSection";
 import { MonthLiabilitiesSection } from "../components/MonthLiabilitiesSection";
 import { MonthPositionsSection } from "../components/MonthPositionsSection";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { SalaryTaxRateSummary } from "../components/SalaryTaxRateSummary";
 import {
   Badge,
@@ -742,7 +743,13 @@ function MonthStickySummary({
   return (
     <div className="month-workspace__summary">
       <span className="month-workspace__summary-item">
-        Капитал <strong>{formatMoney(moneyAmount(kpis.liquid_capital_net))}</strong>
+        Капитал{" "}
+        <strong>
+          {kpis.portfolio_source_coverage?.status === "unavailable"
+            ? "—"
+            : formatMoney(moneyAmount(kpis.liquid_capital_net))}
+        </strong>{" "}
+        <PortfolioCoverageNote coverage={kpis.portfolio_source_coverage} />
       </span>
       <span className="month-workspace__summary-item">
         Средний пассивный доход{" "}

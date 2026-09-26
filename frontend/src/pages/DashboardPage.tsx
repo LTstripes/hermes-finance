@@ -15,6 +15,7 @@ import type {
 import { CapitalChart } from "../components/charts/CapitalChart";
 import { PassiveIncomeChart } from "../components/charts/PassiveIncomeChart";
 import { CashFlowLadder } from "../components/CashFlowLadder";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import {
   EmptyState,
   ErrorState,
@@ -233,12 +234,22 @@ function CapitalOverviewCard({
     <article className="overview-card">
       <div className="overview-card__label">Ликвидный капитал</div>
       <div className="overview-card__value">
-        {loading || !kpis ? "…" : formatMoney(moneyAmount(kpis.liquid_capital_net))}
+        {loading || !kpis
+          ? "…"
+          : kpis.portfolio_source_coverage?.status === "unavailable"
+            ? "—"
+            : formatMoney(moneyAmount(kpis.liquid_capital_net))}
       </div>
+      <PortfolioCoverageNote coverage={kpis?.portfolio_source_coverage} />
       <div className={`overview-card__delta overview-card__delta--${tone}`}>
         <span>Изменение за месяц</span>
         <strong>
-          {loading || !kpis ? "…" : kpis.liquid_capital_delta ? formatMoneyDelta(delta) : "—"}
+          {loading || !kpis
+            ? "…"
+            : kpis.liquid_capital_delta &&
+                kpis.liquid_capital_delta_coverage?.status !== "unavailable"
+              ? formatMoneyDelta(delta)
+              : "—"}
         </strong>
       </div>
       {!loading && allocation?.length ? (
