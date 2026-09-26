@@ -409,8 +409,7 @@ The core UI v2 roadmap (#387) is complete.
 
 UI v2 is primary at `/`; v1 remains available at `/v1` plus retained legacy routes/editors.
 
-There is no remaining cutover gate. Separate future work:
-- #476 — one real-backend synthetic G04 browser regression gate;
+There is no remaining cutover gate. #476 / PR #548 has completed the real-backend synthetic G04 canonical CI gate. Separate future work:
 - #389 — future configurable dashboards, separate from the completed core roadmap;
 - v1 retirement — only as a later explicit task if real use shows rollback/legacy paths are no longer needed.
 
@@ -433,7 +432,7 @@ Owner-live closeout 2026-09-25: свежая plaintext recovery point опубл
 
 Hermes не заявляет cloud delivery и не добавляет Google API/OAuth/cloud account. Encrypted mode остаётся отдельным режимом для реально encrypted destination.
 
-#543 — отдельный non-blocking hardening после closeout; #417 он не переоткрывает.
+#543 / PR #547 — отдельный non-blocking hardening после closeout завершён; #417 он не переоткрывал.
 
 Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
@@ -479,11 +478,11 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
 
-Separate follow-up:
-- #476 — real-backend synthetic G04 browser regression gate;
-- #543 — non-blocking post-closeout recovery hardening.
+Completed process follow-ups:
+- #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
+- #543 / PR #547 — non-blocking post-closeout recovery hardening.
 
-Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #480, #511, #524 and #527.
+Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527 and #543.
 
 ## 14. Canonical reference documents
 
