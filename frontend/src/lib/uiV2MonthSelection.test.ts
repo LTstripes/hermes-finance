@@ -65,5 +65,11 @@ describe("Data/App diagnostic month", () => {
     expect(dataAppPath("catalogs")).toBe("/v2/data/catalogs");
     expect(dataAppPath("files")).toBe("/v2/data/files");
     expect(dataAppPath("app", 91)).toBe("/v2/data/app?month=91");
+    expect(dataAppPath("app", 91, "?month=0&step=readiness", "#diagnostics")).toBe(
+      "/v2/data/app?month=0&step=readiness#diagnostics",
+    );
+    expect(dataAppPath("files", 12, "?from=monthly-close-v2&step=readiness")).toBe(
+      "/v2/data/files?from=monthly-close-v2&step=readiness&month=12",
+    );
   });
 });
