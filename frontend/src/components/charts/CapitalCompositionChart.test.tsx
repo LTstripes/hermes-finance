@@ -80,4 +80,29 @@ describe("CapitalCompositionChart", () => {
     expect(screen.getByText("Капитал нетто")).toBeInTheDocument();
     expect(screen.getByText("Включённые долги")).toBeInTheDocument();
   });
+
+  it("shows point-level source coverage in the history tooltip", () => {
+    const partial = point(1);
+    partial.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    };
+    const datum = buildCapitalCompositionSeries(
+      [partial],
+      ["cash", "deposits", "stocks", "bonds", "gold_other"],
+    )[0];
+    render(
+      <CapitalCompositionTooltip
+        {...({ active: true, payload: [{ payload: datum }] } as unknown as Parameters<
+          typeof CapitalCompositionTooltip
+        >[0])}
+        assetClasses={["cash", "deposits", "stocks", "bonds", "gold_other"]}
+        mode="amount"
+        points={[partial]}
+      />,
+    );
+    expect(screen.getByText("Капитал нетто")).toBeVisible();
+    expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+  });
 });

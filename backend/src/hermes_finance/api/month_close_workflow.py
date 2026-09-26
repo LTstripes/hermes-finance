@@ -395,7 +395,9 @@ def _kpis_out(
         liquid_capital_net=MoneyValue(
             amount=summary.liquid_capital.liquid_capital_net.to_api(), currency="RUB"
         ),
+        portfolio_source_coverage=summary.portfolio_source_coverage,
         liquid_capital_delta=_money(summary.liquid_capital_delta),
+        liquid_capital_delta_coverage=summary.liquid_capital_delta_coverage,
         passive_income_actual=MoneyValue(
             amount=summary.passive_income_actual.to_api(), currency="RUB"
         ),

@@ -84,16 +84,25 @@ export function buildCapitalCompositionSeries(
     const allocation = new Map(
       point.allocation.map((item) => [item.asset_class, item.amount.amount]),
     );
-    const totalAmount = point.liquid_assets_total.amount;
-    const netAmount = point.liquid_capital_net.amount;
-    const hasPositiveTotal = toKopecks(totalAmount) > 0n;
+    const unavailable = point.portfolio_source_coverage?.status === "unavailable";
+    const totalAmount = unavailable ? null : point.liquid_assets_total.amount;
+    const netAmount = unavailable ? null : point.liquid_capital_net.amount;
+    const hasPositiveTotal = totalAmount !== null && toKopecks(totalAmount) > 0n;
     const amounts = Object.fromEntries(
-      assetClasses.map((assetClass) => [assetClass, allocation.get(assetClass) ?? "0.00"]),
+      assetClasses.map((assetClass) => [
+        assetClass,
+        unavailable ? null : (allocation.get(assetClass) ?? "0.00"),
+      ]),
     );
     const shares = Object.fromEntries(
       assetClasses.map((assetClass) => {
-        const amount = amounts[assetClass] ?? "0.00";
-        return [assetClass, hasPositiveTotal ? moneySharePercent(amount, totalAmount, 1) : null];
+        const amount = amounts[assetClass];
+        return [
+          assetClass,
+          hasPositiveTotal && amount !== null && totalAmount !== null
+            ? moneySharePercent(amount, totalAmount, 1)
+            : null,
+        ];
       }),
     );
 
@@ -110,7 +119,7 @@ export function buildCapitalCompositionSeries(
       amountCoordinates: Object.fromEntries(
         assetClasses.map((assetClass) => [
           assetClass,
-          moneyToChartNumber(amounts[assetClass] ?? "0.00"),
+          amounts[assetClass] === null ? null : moneyToChartNumber(amounts[assetClass]),
         ]),
       ),
       shareCoordinates: Object.fromEntries(
@@ -120,12 +129,15 @@ export function buildCapitalCompositionSeries(
         }),
       ),
       totalAmount,
-      debtsAmount: point.included_debts.amount,
+      debtsAmount: unavailable ? null : point.included_debts.amount,
       netAmount,
-      totalCoordinate: moneyToChartNumber(totalAmount),
-      netCoordinate: moneyToChartNumber(netAmount),
+      totalCoordinate: totalAmount === null ? null : moneyToChartNumber(totalAmount),
+      netCoordinate: netAmount === null ? null : moneyToChartNumber(netAmount),
       totalShare: hasPositiveTotal ? "100.0" : null,
-      netShare: hasPositiveTotal ? signedSharePercent(netAmount, totalAmount) : null,
+      netShare:
+        hasPositiveTotal && netAmount !== null && totalAmount !== null
+          ? signedSharePercent(netAmount, totalAmount)
+          : null,
     });
     previous = { year: point.year, month: point.month };
   }

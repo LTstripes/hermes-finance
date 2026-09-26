@@ -18,6 +18,7 @@ from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
+from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.dashboard import DashboardResult, build_dashboard
 from hermes_finance.services.income_plan_summary import (
@@ -85,6 +86,7 @@ class LiquidCapitalOut(BaseModel):
     total_assets: MoneyValue
     total_debts_included: MoneyValue
     liquid_capital_net: MoneyValue
+    portfolio_source_coverage: PortfolioSourceCoverage | None = None
     breakdown: LiquidCapitalBreakdownOut
     accounts: list[AccountAmountOut]
     linked_pairs: list[LinkedPairOut]
@@ -217,6 +219,7 @@ class MonthlySummaryOut(BaseModel):
     month: MonthRefOut
     liquid_capital: LiquidCapitalOut
     liquid_capital_delta: MoneyValue | None
+    liquid_capital_delta_coverage: PortfolioSourceCoverage | None
     passive_income_actual: MoneyValue
     passive_income_delta: MoneyValue | None
     passive_income_average: MoneyValue
@@ -253,6 +256,7 @@ class HistoricalPointOut(BaseModel):
     month: int
     reporting_month_id: int
     liquid_capital_net: MoneyValue
+    portfolio_source_coverage: PortfolioSourceCoverage
     passive_income_actual: MoneyValue
     linked_pair_assets: MoneyValue
     linked_pair_debts: MoneyValue
@@ -314,7 +318,9 @@ class KpiOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     liquid_capital_net: MoneyValue
+    portfolio_source_coverage: PortfolioSourceCoverage | None
     liquid_capital_delta: MoneyValue | None
+    liquid_capital_delta_coverage: PortfolioSourceCoverage | None
     passive_income_actual: MoneyValue
     passive_income_delta: MoneyValue | None
     forecast_monthly_passive_income: MoneyValue
@@ -362,11 +368,14 @@ class DashboardOut(BaseModel):
     cash_flow_ladder: CashFlowLadderOut | None = None
 
 
-def _liquid_out(result: object) -> LiquidCapitalOut:
+def _liquid_out(
+    result: object, coverage: PortfolioSourceCoverage | None = None
+) -> LiquidCapitalOut:
     return LiquidCapitalOut(
         total_assets=_money(result.total_assets),
         total_debts_included=_money(result.total_debts_included),
         liquid_capital_net=_money(result.liquid_capital_net),
+        portfolio_source_coverage=coverage,
         breakdown=LiquidCapitalBreakdownOut(
             cash=_money(result.breakdown.cash),
             deposits=_money(result.breakdown.deposits),
@@ -413,8 +422,9 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             snapshot_date=month.snapshot_date,
             source=month.source,
         ),
-        liquid_capital=_liquid_out(summary.liquid_capital),
+        liquid_capital=_liquid_out(summary.liquid_capital, summary.portfolio_source_coverage),
         liquid_capital_delta=_money_opt(summary.liquid_capital_delta),
+        liquid_capital_delta_coverage=summary.liquid_capital_delta_coverage,
         passive_income_actual=_money(summary.passive_income_actual),
         passive_income_delta=_money_opt(summary.passive_income_delta),
         passive_income_average=_money(summary.passive_income_average),
@@ -612,7 +622,9 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
         month=summary_out.month,
         kpis=KpiOut(
             liquid_capital_net=summary_out.liquid_capital.liquid_capital_net,
+            portfolio_source_coverage=summary_out.liquid_capital.portfolio_source_coverage,
             liquid_capital_delta=summary_out.liquid_capital_delta,
+            liquid_capital_delta_coverage=summary_out.liquid_capital_delta_coverage,
             passive_income_actual=summary_out.passive_income_actual,
             passive_income_delta=summary_out.passive_income_delta,
             forecast_monthly_passive_income=summary_out.forecast.monthly_total,
@@ -640,6 +652,7 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
                 month=point.month,
                 reporting_month_id=point.reporting_month_id,
                 liquid_capital_net=_money(point.liquid_capital_net),
+                portfolio_source_coverage=point.portfolio_source_coverage,
                 passive_income_actual=_money(point.passive_income_actual),
                 linked_pair_assets=_money(point.linked_pair_assets),
                 linked_pair_debts=_money(point.linked_pair_debts),

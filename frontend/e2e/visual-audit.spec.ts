@@ -97,7 +97,12 @@ const forbiddenVisibleCopy = [
   /\bmissing_provider\b/i,
 ];
 
-async function installSyntheticApi(page: Page, state: AuditState = "content", delayMonths = false) {
+async function installSyntheticApi(
+  page: Page,
+  state: AuditState = "content",
+  delayMonths = false,
+  capitalCoverage = false,
+) {
   const unhandled: string[] = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -125,14 +130,42 @@ async function installSyntheticApi(page: Page, state: AuditState = "content", de
       });
       return;
     }
+    let json = response.json;
+    if (capitalCoverage && /^\/api\/months\/\d+\/dashboard$/.test(url.pathname)) {
+      const dashboard = structuredClone(response.json) as { kpis: Record<string, unknown> };
+      dashboard.kpis.portfolio_source_coverage = {
+        status: "partial",
+        reason_codes: ["active_account_snapshot_missing"],
+        missing_account_ids: [2],
+      };
+      json = dashboard;
+    }
     await route.fulfill({
       status: response.status ?? 200,
       contentType: "application/json",
-      json: response.json,
+      json,
     });
   });
   return unhandled;
 }
+
+test("v1 dashboard and month detail show partial source coverage beside known capital", async ({
+  page,
+}, testInfo) => {
+  const unhandled = await installSyntheticApi(page, "content", false, true);
+  const dir = path.resolve(".visual-audit", testInfo.project.name);
+  fs.mkdirSync(dir, { recursive: true });
+  await page.goto("/v1");
+  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await page.screenshot({
+    path: path.join(dir, "issue-538-v1-dashboard-partial.png"),
+    fullPage: true,
+  });
+  await page.goto("/months/12?section=income");
+  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await page.screenshot({ path: path.join(dir, "issue-538-v1-month-partial.png"), fullPage: true });
+  expect(unhandled).toEqual([]);
+});
 
 async function collectLayoutIssues(page: Page) {
   return page.evaluate(() => {

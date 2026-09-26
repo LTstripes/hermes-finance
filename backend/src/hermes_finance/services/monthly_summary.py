@@ -42,6 +42,10 @@ from hermes_finance.services.passive_income import passive_income_for_month
 from hermes_finance.services.passive_income_average import (
     passive_income_average,
 )
+from hermes_finance.services.portfolio_source_coverage import (
+    combined_portfolio_source_coverage,
+    portfolio_source_coverage_for_months,
+)
 from hermes_finance.services.reporting_months import get_reporting_month
 from hermes_finance.services.salary import (
     actual_net_for_month,
@@ -94,11 +98,19 @@ def monthly_summary(
 
     # --- Previous month (for deltas only) ---
     prev = _previous_reporting_month(session, year=year, month=month)
+    coverage_by_month = portfolio_source_coverage_for_months(
+        session, [reporting_month_id] + ([prev.id] if prev is not None else [])
+    )
+    capital_coverage = coverage_by_month[reporting_month_id]
+    delta_coverage = None
 
     liquid_capital_delta: RubleAmount | None = None
     passive_income_delta: RubleAmount | None = None
 
     if prev is not None:
+        delta_coverage = combined_portfolio_source_coverage(
+            capital_coverage, coverage_by_month[prev.id]
+        )
         prev_liquid = liquid_capital_for_month(session, prev.id)
         prev_passive = passive_income_for_month(session, prev.id)
 
@@ -155,6 +167,8 @@ def monthly_summary(
         month=month,
         liquid_capital=liquid_capital,
         liquid_capital_delta=liquid_capital_delta,
+        portfolio_source_coverage=capital_coverage,
+        liquid_capital_delta_coverage=delta_coverage,
         passive_income_actual=passive_income_actual,
         passive_income_delta=passive_income_delta,
         passive_income_average=passive_income_avg,

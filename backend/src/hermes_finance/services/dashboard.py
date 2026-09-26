@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.monthly_summary import MonthlySummaryResult
+from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
@@ -38,6 +39,7 @@ from hermes_finance.services.liquid_capital import (
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION, monthly_summary
 from hermes_finance.services.passive_income import passive_income_for_months
 from hermes_finance.services.payout_calendar import merged_payout_calendar
+from hermes_finance.services.portfolio_source_coverage import portfolio_source_coverage_for_months
 from hermes_finance.services.properties import mortgage_coverage, total_mortgage_balance
 from hermes_finance.services.reporting_months import get_reporting_month
 
@@ -60,6 +62,7 @@ class HistoricalPoint:
     linked_pair_assets: RubleAmount
     linked_pair_debts: RubleAmount
     linked_pair_net_contribution: RubleAmount
+    portfolio_source_coverage: PortfolioSourceCoverage
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +140,7 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
     )
     month_ids = [month.id for month in months]
     liquid_by_month = liquid_capital_for_months(session, month_ids)
+    coverage_by_month = portfolio_source_coverage_for_months(session, month_ids)
     passive_by_month = passive_income_for_months(session, month_ids)
     points: list[HistoricalPoint] = []
     for month in months:
@@ -152,6 +156,7 @@ def _historical_series(session: Session) -> tuple[HistoricalPoint, ...]:
                 linked_pair_assets=liquid.linked_pair_assets,
                 linked_pair_debts=liquid.linked_pair_debts,
                 linked_pair_net_contribution=liquid.linked_pair_net_contribution,
+                portfolio_source_coverage=coverage_by_month[month.id],
             )
         )
     return tuple(points)

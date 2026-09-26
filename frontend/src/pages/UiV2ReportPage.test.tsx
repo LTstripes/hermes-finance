@@ -125,6 +125,22 @@ afterEach(() => {
 });
 
 describe("UI v2 historical report", () => {
+  it("marks the selected historical known subtotal when its source coverage is partial", async () => {
+    const { mount, state } = setup();
+    const selected = state.composition.points.find(
+      (point) => point.reporting_month_id === historicalId,
+    );
+    if (!selected) throw new Error("Missing historical point fixture");
+    selected.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    };
+    mount();
+    expect(await screen.findByTestId("report-net")).toHaveTextContent("2 761 300 ₽");
+    expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+  });
+
   it("shows the historical context, canonical values, composition and neighbours", async () => {
     const { mount, reads } = setup();
     const view = mount();

@@ -88,6 +88,33 @@ beforeEach(() => {
 });
 
 describe("MonthReviewSection", () => {
+  it("shows portfolio coverage beside the known preview subtotal", async () => {
+    getDashboardMock.mockResolvedValue({
+      ...dashboard,
+      kpis: {
+        ...kpis,
+        portfolio_source_coverage: {
+          status: "partial",
+          reason_codes: ["active_account_snapshot_missing"],
+          missing_account_ids: [2],
+        },
+      },
+    });
+    render(
+      <MemoryRouter>
+        <MonthReviewSection
+          dirty={false}
+          monthId={7}
+          onStatusChanged={vi.fn()}
+          readOnly={false}
+          status="draft"
+        />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();
+    expect(screen.getByText("1 000 000 ₽")).toBeVisible();
+  });
+
   it("renders three readiness groups and closes a draft after confirmation", async () => {
     const user = userEvent.setup();
     const onStatusChanged = vi.fn();

@@ -2,6 +2,7 @@ import type { TooltipContentProps } from "recharts";
 
 import { formatMoney } from "../../lib/format";
 import type { ChartDatum } from "../../lib/chartData";
+import { PortfolioCoverageNote } from "../PortfolioCoverageNote";
 
 /** Shared chart tooltip: month label + formatted money amount. */
 export function MoneyTooltip({ active, payload }: TooltipContentProps) {
@@ -13,6 +14,7 @@ export function MoneyTooltip({ active, payload }: TooltipContentProps) {
     <div className="chart-tooltip">
       <strong>{datum.label}</strong>
       <span className="chart-tooltip__amount">{formatMoney(datum.amount)}</span>
+      <PortfolioCoverageNote coverage={datum.portfolio_source_coverage} />
     </div>
   );
 }

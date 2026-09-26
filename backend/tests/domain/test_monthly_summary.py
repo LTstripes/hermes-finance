@@ -59,6 +59,8 @@ EXPECTED_FIELDS = (
     "calculation_version",
     "passive_income_history_start_month",
     "passive_income_average_months_used",
+    "portfolio_source_coverage",
+    "liquid_capital_delta_coverage",
 )
 
 
@@ -253,7 +255,7 @@ def test_assemble_warnings_no_delta_warning_when_delta_is_present() -> None:
 def test_result_field_names_and_count() -> None:
     actual = tuple(f.name for f in fields(MonthlySummaryResult))
     assert actual == EXPECTED_FIELDS
-    assert len(actual) == 20
+    assert len(actual) == 22
 
 
 def test_calculation_version_constant_and_default() -> None:

@@ -132,6 +132,21 @@ it("renders the latest CLOSED report as a quiet Home with exactly three canonica
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
 });
 
+it("shows the backend partial-source marker beside the known subtotal and delta", async () => {
+  const { mount, state } = setup();
+  const partial = {
+    status: "partial" as const,
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  state.comparison.current.portfolio_source_coverage = partial;
+  state.comparison.liquid_capital_net_delta_coverage = partial;
+  mount();
+  expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
+  expect(screen.getAllByText("Частично: нет снимка счёта")).toHaveLength(2);
+});
+
 it("keeps a newer draft separate and routes its single CTA to the server recommendation", async () => {
   const { mount } = setup();
   mount();
