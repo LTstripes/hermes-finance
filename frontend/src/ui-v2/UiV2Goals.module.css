@@ -1,0 +1,131 @@
+.content {
+  display: grid;
+  gap: 17px;
+  min-width: 0;
+}
+
+.header {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+}
+
+.header h1 {
+  font-size: clamp(2rem, 2.8vw, 2.55rem);
+}
+
+.toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.monthField {
+  width: min(100%, 340px);
+  min-width: min(100%, 250px);
+}
+
+.asOf {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.emptyState {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.archive {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+
+.archive > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 19px;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.archive > summary::-webkit-details-marker {
+  display: none;
+}
+
+.archive > summary::after {
+  content: "+";
+  color: var(--muted);
+}
+
+.archive[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.archive[open] > summary::after {
+  content: "−";
+}
+
+.archive :global(.goal-card-grid--archive) {
+  padding: 0 18px 18px;
+}
+
+.content :global(.goal-card-grid) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 14px;
+}
+
+.content :global(.goal-card) {
+  border-color: #d8e0e8;
+  border-radius: 12px;
+  background: white;
+  box-shadow: none;
+}
+
+.content :global(.goal-card--main) {
+  border-color: #cfdae7;
+  background: #edf3f9;
+  box-shadow: 0 1px 1px rgb(23 40 60 / 3%);
+}
+
+.content :global(.goal-card__actions) {
+  flex-wrap: wrap;
+}
+
+.content :global(.goal-card__progress) {
+  accent-color: #244f83;
+}
+
+@media (max-width: 680px) {
+  .toolbar {
+    align-items: stretch;
+  }
+
+  .monthField {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .toolbar > button {
+    width: 100%;
+  }
+
+  .content :global(.goal-card__header) {
+    flex-direction: column;
+  }
+
+  .content :global(.goal-card__actions) {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

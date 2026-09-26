@@ -35,6 +35,7 @@ import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
+import { uiV2GoalsPath } from "./goalRoute";
 import {
   reportIndex,
   monthWorkspacePath,
@@ -554,10 +555,12 @@ function goalProgressStyle(value: string): CSSProperties {
 
 function GoalsBlock({
   goals,
+  monthId,
   ready,
   retry,
 }: {
   goals: GoalSummary[];
+  monthId: number | null;
   ready: boolean;
   retry: () => void;
 }) {
@@ -576,7 +579,7 @@ function GoalsBlock({
           <p className={styles.eyebrow}>Текущий прогресс</p>
           <h2 id="goals-title">Ключевые цели</h2>
         </div>
-        <Link className={styles.contextLink} to="/goals">
+        <Link className={styles.contextLink} to={uiV2GoalsPath(monthId)}>
           Все цели →
         </Link>
       </div>
@@ -748,6 +751,7 @@ export default function UiV2Page() {
           />
           <GoalsBlock
             goals={goalsReady ? (goalsQuery.data ?? []) : []}
+            monthId={closedId}
             ready={goalsReady}
             retry={() => void goalsQuery.refetch()}
           />

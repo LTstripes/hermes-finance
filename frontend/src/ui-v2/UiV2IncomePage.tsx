@@ -25,6 +25,7 @@ import type {
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
+import { uiV2GoalsPath } from "./goalRoute";
 import { sortReportingMonths } from "./monthSelection";
 import incomeStyles from "./UiV2Income.module.css";
 import sharedStyles from "./UiV2Page.module.css";
@@ -586,10 +587,12 @@ function LadderBlock({
 
 function GoalsBlock({
   goals,
+  monthId,
   ready,
   retry,
 }: {
   goals: GoalSummary[];
+  monthId: number | null;
   ready: boolean;
   retry: () => void;
 }) {
@@ -604,7 +607,7 @@ function GoalsBlock({
   return (
     <Panel
       action={
-        <Link className={sharedStyles.contextLink} to="/goals">
+        <Link className={sharedStyles.contextLink} to={uiV2GoalsPath(monthId)}>
           Все цели →
         </Link>
       }
@@ -989,6 +992,7 @@ export default function UiV2IncomePage() {
           />
           <GoalsBlock
             goals={goalsReady ? (goalsQuery.data ?? []) : []}
+            monthId={planningId}
             ready={goalsReady}
             retry={() => void goalsQuery.refetch()}
           />
