@@ -274,6 +274,13 @@ function moneyText(expected: string) {
   return (content: string) => content.replace(/\s/g, " ") === expected.replace(/\s/g, " ");
 }
 
+/** Captures the beforeEach store-backed create implementation for failure-injection wrappers. */
+function baseCreateMock() {
+  const implementation = vi.mocked(createIncome).getMockImplementation();
+  if (!implementation) throw new Error("createIncome base mock is missing");
+  return implementation;
+}
+
 /** Resolves once the section finished loading its canonical data. */
 async function readySection(): Promise<HTMLElement> {
   const section = await screen.findByRole("region", { name: "Зарплата и прочее" });
@@ -630,5 +637,195 @@ describe("native month editor income leaf", () => {
     );
     expect(within(section).queryByRole("alert")).not.toBeInTheDocument();
     expect(within(section).getByRole("button", { name: "Сохранить доходы" })).toBeDisabled();
+  });
+
+  it("gates the retry until a partial save is reconciled and never duplicates the created row", async () => {
+    store = [
+      entry({
+        id: 1,
+        income_type: "salary",
+        name: "Зарплата",
+        gross_amount: money("100000.00"),
+        tax_amount: money("13000.00"),
+        net_amount: money("87000.00"),
+      }),
+    ];
+    sequence = 1;
+
+    // Bonus create commits; the following side-income create fails once.
+    const baseCreate = baseCreateMock();
+    let sideFailed = false;
+    vi.mocked(createIncome).mockImplementation(async (payload, signal) => {
+      if (payload.income_type === "side_income" && !sideFailed) {
+        sideFailed = true;
+        throw new ApiClientError(500, {
+          code: "internal_error",
+          message: "side create failed",
+          details: [],
+        });
+      }
+      return baseCreate(payload, signal);
+    });
+    // Hold the post-failure canonical re-read so the gated state is observable.
+    const gateReconcile = deferred<void>();
+    const baseList = vi.mocked(listIncomes).getMockImplementation();
+    if (!baseList) throw new Error("listIncomes base mock is missing");
+    let listReads = 0;
+    vi.mocked(listIncomes).mockImplementation(async (monthId, signal) => {
+      listReads += 1;
+      if (listReads > 1) await gateReconcile.promise;
+      return baseList(monthId, signal);
+    });
+
+    renderSection();
+    const section = await readySection();
+    const user = userEvent.setup();
+    await user.type(within(section).getByLabelText("Премия"), "5000");
+    await user.type(within(section).getByLabelText("Дополнительный доход"), "200");
+    await user.click(within(section).getByRole("button", { name: "Сохранить доходы" }));
+
+    // Partial outcome is reported, no success is claimed, the draft survives,
+    // and the retry stays gated while the canonical re-read is pending.
+    expect(await within(section).findByRole("alert")).toHaveTextContent(
+      "Внутренняя ошибка приложения.",
+    );
+    expect(within(section).queryByText("Доходы сохранены и подтверждены.")).not.toBeInTheDocument();
+    expect(
+      within(section).getByText("Часть изменений могла сохраниться. Перечитываем данные месяца…"),
+    ).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: "Сохранить доходы" })).toBeDisabled();
+    expect(within(section).getByLabelText("Премия")).toHaveValue(formatMoneyInput("5000"));
+    expect(within(section).getByLabelText("Дополнительный доход")).toHaveValue(
+      formatMoneyInput("200"),
+    );
+    expect(store.filter((row) => row.income_type === "bonus")).toHaveLength(1);
+    expect(store.filter((row) => row.income_type === "side_income")).toHaveLength(0);
+
+    gateReconcile.resolve();
+    const saveButton = within(section).getByRole("button", { name: "Сохранить доходы" });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    expect(
+      within(section).getByText(
+        "Данные месяца перечитаны после сбоя. Проверь значения и сохрани ещё раз.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(saveButton);
+    expect(
+      await within(section).findByText("Доходы сохранены и подтверждены."),
+    ).toBeInTheDocument();
+    expect(within(section).queryByRole("alert")).not.toBeInTheDocument();
+
+    // Exactly one create per successful type: the retry updates the persisted
+    // bonus row; the failed side-income create is replayed exactly once.
+    const createdTypes = vi.mocked(createIncome).mock.calls.map(([payload]) => payload.income_type);
+    expect(createdTypes).toEqual(["bonus", "side_income", "side_income"]);
+    expect(createdTypes.filter((type) => type === "bonus")).toHaveLength(1);
+    expect(vi.mocked(updateIncome).mock.calls.map(([id]) => id)).toEqual([3]);
+    expect(store.filter((row) => row.income_type === "bonus")).toHaveLength(1);
+    expect(store.filter((row) => row.income_type === "side_income")).toHaveLength(1);
+  });
+
+  it("reconciles a persisted-but-timeout create and never re-creates it on retry", async () => {
+    store = [
+      entry({
+        id: 1,
+        income_type: "salary",
+        name: "Зарплата",
+        gross_amount: money("100000.00"),
+        tax_amount: money("13000.00"),
+        net_amount: money("87000.00"),
+      }),
+    ];
+    sequence = 1;
+
+    const baseCreate = baseCreateMock();
+    let persisted = false;
+    vi.mocked(createIncome).mockImplementation(async (payload, signal) => {
+      if (payload.income_type === "bonus" && !persisted) {
+        persisted = true;
+        await baseCreate(payload, signal); // the row commits…
+        throw new ApiClientError(0, { code: "network_error", message: "timed out", details: [] }); // …but the response is lost
+      }
+      return baseCreate(payload, signal);
+    });
+
+    renderSection();
+    const section = await readySection();
+    const user = userEvent.setup();
+    await user.type(within(section).getByLabelText("Премия"), "5000");
+    await user.click(within(section).getByRole("button", { name: "Сохранить доходы" }));
+
+    expect(await within(section).findByRole("alert")).toHaveTextContent(
+      "Не удалось подключиться к локальному приложению.",
+    );
+    expect(within(section).queryByText("Доходы сохранены и подтверждены.")).not.toBeInTheDocument();
+    expect(store.filter((row) => row.income_type === "bonus")).toHaveLength(1);
+    expect(within(section).getByLabelText("Премия")).toHaveValue(formatMoneyInput("5000"));
+
+    const saveButton = within(section).getByRole("button", { name: "Сохранить доходы" });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
+    expect(
+      await within(section).findByText("Доходы сохранены и подтверждены."),
+    ).toBeInTheDocument();
+
+    const bonusCreates = vi
+      .mocked(createIncome)
+      .mock.calls.filter(([payload]) => payload.income_type === "bonus");
+    expect(bonusCreates).toHaveLength(1);
+    expect(vi.mocked(updateIncome).mock.calls.map(([id]) => id)).toEqual([3]);
+    expect(store.filter((row) => row.income_type === "bonus")).toHaveLength(1);
+    expect(within(section).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps retry gated while the reconciliation read fails and the draft survives", async () => {
+    store = [
+      entry({
+        id: 1,
+        income_type: "salary",
+        name: "Зарплата",
+        gross_amount: money("100000.00"),
+        tax_amount: money("13000.00"),
+        net_amount: money("87000.00"),
+      }),
+    ];
+    sequence = 1;
+
+    renderSection();
+    const section = await readySection();
+    vi.mocked(replaceSalaryIncome).mockRejectedValueOnce(new Error("save failed"));
+    vi.mocked(listIncomes).mockRejectedValueOnce(
+      new ApiClientError(0, { code: "network_error", message: "reconcile down", details: [] }),
+    );
+    const user = userEvent.setup();
+    await user.type(within(section).getByLabelText("Премия"), "5000");
+    await user.click(within(section).getByRole("button", { name: "Сохранить доходы" }));
+
+    expect(
+      await within(section).findByRole("button", { name: "Перечитать данные" }),
+    ).toBeInTheDocument();
+    expect(within(section).getByText("save failed")).toBeInTheDocument();
+    expect(within(section).getByText(/Не удалось перечитать данные месяца/)).toBeInTheDocument();
+    expect(within(section).queryByText("Доходы сохранены и подтверждены.")).not.toBeInTheDocument();
+
+    const saveButton = within(section).getByRole("button", { name: "Сохранить доходы" });
+    expect(saveButton).toBeDisabled();
+    expect(within(section).getByLabelText("Премия")).toHaveValue(formatMoneyInput("5000"));
+    expect(replaceSalaryIncome).toHaveBeenCalledTimes(1);
+    expect(createIncome).not.toHaveBeenCalled();
+
+    await user.click(within(section).getByRole("button", { name: "Перечитать данные" }));
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
+    expect(
+      await within(section).findByText("Доходы сохранены и подтверждены."),
+    ).toBeInTheDocument();
+
+    expect(replaceSalaryIncome).toHaveBeenCalledTimes(2);
+    expect(createIncome).toHaveBeenCalledTimes(1);
+    expect(store.filter((row) => row.income_type === "bonus")).toHaveLength(1);
+    expect(store.filter((row) => row.income_type === "salary")).toHaveLength(1);
+    expect(within(section).queryByRole("alert")).not.toBeInTheDocument();
   });
 });

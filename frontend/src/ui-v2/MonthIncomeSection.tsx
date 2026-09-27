@@ -151,9 +151,18 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * After a failed write the canonical rows may already contain some of the
+   * attempts (partial or persisted-but-timeout creates). Retry stays gated
+   * until this exact month has been re-read, so a stale ID map can never turn
+   * a retry into a duplicate income.
+   */
+  const [recovery, setRecovery] = useState<"idle" | "pending" | "confirmed" | "failed">("idle");
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [identity, setIdentity] = useState(month.id);
   const operation = useRef(0);
   const dirty = !sameForm(form, baseline);
+  const retryBlocked = recovery === "pending" || recovery === "failed";
 
   // Never keep edits or a pending save from another month on this leaf.
   if (identity !== month.id) {
@@ -163,6 +172,8 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
     setSaving(false);
     setError(null);
     setNotice(null);
+    setRecovery("idle");
+    setRecoveryError(null);
     operation.current += 1;
   }
 
@@ -201,11 +212,15 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (readOnly || saving || !dirty) return;
+    if (readOnly || saving || retryBlocked || !dirty) return;
     const token = ++operation.current;
     setSaving(true);
     setError(null);
     setNotice(null);
+    setRecovery("idle");
+    setRecoveryError(null);
+    const monthId = month.id;
+    let writesStarted = false;
     try {
       for (const [label, value] of [
         ["Зарплата до вычета налогов", form.salaryGross],
@@ -219,10 +234,10 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
         }
       }
 
-      const monthId = month.id;
       const loaded = incomes ?? [];
       const expected = expectedFormAfterSave(form, loaded, calcTax);
 
+      writesStarted = true;
       await upsertSalaryLine(monthId, {
         gross: form.salaryGross,
         actualNet: form.salaryActualNet,
@@ -265,10 +280,48 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
       setBaseline(confirmed);
       setNotice("Доходы сохранены и подтверждены.");
     } catch (cause) {
-      if (operation.current === token) setError(formatApiError(cause));
+      if (operation.current !== token) return;
+      setError(formatApiError(cause));
+      setSaving(false);
+      // A write may have committed before this failure (partial or timed-out
+      // create): re-read this month's canonical rows so the retry updates the
+      // persisted identity instead of replaying a create with pre-write IDs.
+      if (writesStarted) {
+        setRecovery("pending");
+        await reconcileAfterFailure(token, monthId);
+      }
     } finally {
       if (operation.current === token) setSaving(false);
     }
+  }
+
+  async function reconcileAfterFailure(token: number, monthId: number): Promise<void> {
+    try {
+      const freshIncomes = await listIncomes(monthId);
+      if (operation.current !== token) return;
+      queryClient.setQueryData(["month-income", monthId], freshIncomes);
+      setRecoveryError(null);
+      setRecovery("confirmed");
+      try {
+        const freshSummary = await getMonthSummary(monthId);
+        if (operation.current === token) {
+          queryClient.setQueryData(["month-income-summary", monthId], freshSummary);
+        }
+      } catch {
+        // A stale tax readout never gates retry: it cannot duplicate a row.
+      }
+    } catch (cause) {
+      if (operation.current !== token) return;
+      setRecoveryError(formatApiError(cause));
+      setRecovery("failed");
+    }
+  }
+
+  async function retryRecovery(): Promise<void> {
+    if (readOnly || saving || recovery !== "failed") return;
+    const token = operation.current;
+    setRecovery("pending");
+    await reconcileAfterFailure(token, month.id);
   }
 
   return (
@@ -384,7 +437,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
             </p>
           </details>
           {!readOnly ? (
-            <button disabled={!dirty || saving} type="submit">
+            <button disabled={!dirty || saving || retryBlocked} type="submit">
               {saving ? "Сохраняем…" : "Сохранить доходы"}
             </button>
           ) : null}
@@ -394,6 +447,25 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
         <p className={styles.warning} role="alert">
           {error}
         </p>
+      ) : null}
+      {recovery === "pending" ? (
+        <p role="status">Часть изменений могла сохраниться. Перечитываем данные месяца…</p>
+      ) : null}
+      {recovery === "confirmed" ? (
+        <p role="status">
+          Данные месяца перечитаны после сбоя. Проверь значения и сохрани ещё раз.
+        </p>
+      ) : null}
+      {recovery === "failed" ? (
+        <div className={styles.warning} role="alert">
+          <p>
+            Не удалось перечитать данные месяца: {recoveryError ?? "неизвестная ошибка"}. Сохранение
+            заблокировано, чтобы не создать дубликат дохода.
+          </p>
+          <button onClick={() => void retryRecovery()} type="button">
+            Перечитать данные
+          </button>
+        </div>
       ) : null}
       {notice ? <p role="status">{notice}</p> : null}
     </section>
