@@ -226,6 +226,53 @@ describe("App", () => {
     );
   });
 
+  it("registers the native Tax/IIS deep-link route with its selected report month", async () => {
+    window.history.pushState({}, "", "/v2/income/tax-iis?month=1");
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/months": () => jsonResponse(sampleMonths),
+        "GET /api/tax-iis-planner?reporting_month_id=1": () =>
+          jsonResponse({
+            contract_version: "tax_iis_planner_v1",
+            tax_year: 2026,
+            as_of: {
+              reporting_month: sampleMonths[1],
+              selection_reason: "requested",
+            },
+            salary_tax: {
+              tax_year: 2026,
+              history_complete: true,
+              history_coverage: "complete",
+              available: true,
+              opening_context_available: false,
+              taxable_gross_ytd: { amount: "100000.00", currency: "RUB" },
+              current_marginal_bracket: {
+                threshold_from: { amount: "0.00", currency: "RUB" },
+                threshold_to: { amount: "2400000.00", currency: "RUB" },
+                rate_bps: 1300,
+              },
+              current_marginal_rate_bps: 1300,
+              next_threshold: { amount: "2400000.00", currency: "RUB" },
+              distance_to_next_threshold: { amount: "2300000.00", currency: "RUB" },
+              tax_bracket_source: "official_default",
+              warning_codes: [],
+            },
+            iis_accounts: [],
+            warnings: [],
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Налоги и ИИС" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+      "href",
+      "/v2/income?month=1",
+    );
+  });
+
   it("loads Scenario Lab through the shared lazy fallback and error boundary", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     window.history.pushState({}, "", "/v2/income/scenario-lab");
