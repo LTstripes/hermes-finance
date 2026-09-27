@@ -14,6 +14,7 @@ export default defineConfig({
     "ui-v2-data.visual.spec.ts",
     "ui-v2-income.visual.spec.ts",
     "ui-v2-default-switch.spec.ts",
+    "performance-preparation.visual.spec.ts",
   ],
   outputDir: path.join(configDir, ".visual-audit", "playwright-results"),
   fullyParallel: false,

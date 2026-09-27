@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.performance_evidence_guard import preparation_session
 from hermes_finance.domain import CashBoundaryCoverageState
 from hermes_finance.persistence import CashBoundaryCoverage as CashBoundaryCoverageRecord
 from hermes_finance.services.cash_boundary_coverage import (
@@ -74,7 +74,7 @@ def _response(row: CashBoundaryCoverageRecord) -> CashBoundaryCoverageResponse:
 @router.get("", response_model=list[CashBoundaryCoverageResponse])
 def list_cash_boundary_coverages_endpoint(
     account_id: int | None = Query(default=None),
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[CashBoundaryCoverageResponse]:
     return [_response(row) for row in list_cash_boundary_coverages(session, account_id=account_id)]
 
@@ -82,7 +82,7 @@ def list_cash_boundary_coverages_endpoint(
 @router.post("", response_model=CashBoundaryCoverageResponse, status_code=status.HTTP_201_CREATED)
 def create_cash_boundary_coverage_endpoint(
     payload: CashBoundaryCoverageCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashBoundaryCoverageResponse:
     return _response(
         create_cash_boundary_coverage(
@@ -101,7 +101,7 @@ def create_cash_boundary_coverage_endpoint(
 @router.get("/{coverage_id}", response_model=CashBoundaryCoverageResponse)
 def get_cash_boundary_coverage_endpoint(
     coverage_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashBoundaryCoverageResponse:
     return _response(get_cash_boundary_coverage(session, coverage_id))
 
@@ -110,7 +110,7 @@ def get_cash_boundary_coverage_endpoint(
 def update_cash_boundary_coverage_endpoint(
     coverage_id: int,
     payload: CashBoundaryCoverageUpdate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashBoundaryCoverageResponse:
     return _response(
         update_cash_boundary_coverage(
