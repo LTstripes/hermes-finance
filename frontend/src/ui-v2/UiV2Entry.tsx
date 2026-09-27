@@ -11,6 +11,7 @@ const UiV2ReportPage = lazy(() => import("./UiV2ReportPage"));
 const UiV2ClosePage = lazy(() => import("./UiV2ClosePage"));
 const UiV2DataSourcesPage = lazy(() => import("./UiV2DataSourcesPage"));
 const UiV2MonthsPage = lazy(() => import("./UiV2MonthsPage"));
+const UiV2MonthEditorPage = lazy(() => import("./UiV2MonthEditorPage"));
 const UiV2DataReconciliationPage = lazy(() => import("./UiV2DataReconciliationPage"));
 const UiV2DataCatalogsPage = lazy(() => import("./UiV2DataCatalogsPage"));
 const UiV2DataFilesPage = lazy(() => import("./UiV2DataFilesPage"));
@@ -95,6 +96,14 @@ export function UiV2MonthsEntry() {
   return (
     <SuspenseFrame>
       <UiV2MonthsPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2MonthEditorEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2MonthEditorPage />
     </SuspenseFrame>
   );
 }

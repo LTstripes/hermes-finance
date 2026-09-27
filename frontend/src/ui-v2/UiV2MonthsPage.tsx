@@ -381,6 +381,7 @@ export default function UiV2MonthsPage() {
                       Удалить черновик
                     </button>
                   ) : null}
+                  <Link to={`/v2/data/months/${month.id}`}>Открыть редактор месяца</Link>
                   <Link to={`/months/${month.id}`}>Редактор в предыдущем интерфейсе ↗</Link>
                 </div>
               </li>
@@ -388,8 +389,8 @@ export default function UiV2MonthsPage() {
           </ul>
         ) : null}
         <p className={styles.hint}>
-          Редактор месяца пока доступен в предыдущем интерфейсе. Архив подтверждённых отчётов
-          остаётся отдельным разделом.
+          В native редакторе доступны общие данные и заметки. Остальные разделы пока доступны в
+          предыдущем интерфейсе. Архив подтверждённых отчётов остаётся отдельным разделом.
         </p>
       </section>
       <ConfirmDialog
