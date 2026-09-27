@@ -1,0 +1,12 @@
+.note {
+  display: inline-block;
+  margin-inline-start: 0.4em;
+  padding: 0.12em 0.45em;
+  border: 1px solid currentColor;
+  border-radius: 0.45em;
+  color: var(--color-text-muted, #725b32);
+  font-size: 0.72em;
+  font-weight: 500;
+  line-height: 1.35;
+  vertical-align: middle;
+}

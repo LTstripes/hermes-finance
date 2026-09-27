@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.3.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.4.0/schema.json",
   "title": "Hermes Finance AI Analysis Bundle",
   "description": "Versioned read-only multi-period financial analysis export. Financial calculations are supplied by authoritative Hermes backend services; this schema defines transport only.",
   "type": "object",
@@ -22,7 +22,7 @@
   "properties": {
     "$schema": {"type": "string"},
     "schema_name": {"const": "hermes.finance.ai_analysis_bundle"},
-    "schema_version": {"const": "1.3.0"},
+    "schema_version": {"const": "1.4.0"},
     "metadata": {"$ref": "#/$defs/metadata"},
     "coverage": {"$ref": "#/$defs/coverage"},
     "reporting_history": {

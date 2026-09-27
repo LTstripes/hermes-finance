@@ -20,7 +20,6 @@ from hermes_finance.domain import IncomeType, ReportingMonthStatus, RubleAmount
 from hermes_finance.domain.salary_tax import (
     SalaryTaxInput,
     SalaryTaxResult,
-    TaxBracketRule,
     calculate_progressive_tax,
 )
 from hermes_finance.persistence import IncomeEntry, ReportingMonth
@@ -29,10 +28,7 @@ from hermes_finance.services.salary_tax_context import (
     SalaryTaxHistoryIncompleteError,
     get_salary_tax_year_context,
 )
-from hermes_finance.services.tax_brackets import (
-    effective_tax_bracket_rules,
-    get_or_create_default_tax_brackets,
-)
+from hermes_finance.services.tax_brackets import effective_tax_bracket_rules
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,22 +121,10 @@ def _progressive_tax(
     year: int,
     ytd_gross_kopecks: int,
     payment_gross_kopecks: int,
-    seed_brackets: bool,
 ) -> SalaryTaxResult:
     if payment_gross_kopecks == 0:
         return SalaryTaxResult(tax_kopecks=0, calculated_net_kopecks=0, parts=())
-    if seed_brackets:
-        brackets_orm = get_or_create_default_tax_brackets(session, year)
-        brackets = tuple(
-            TaxBracketRule(
-                from_kopecks=item.threshold_from_kopecks,
-                to_kopecks=item.threshold_to_kopecks,
-                rate_bps=item.rate_bps,
-            )
-            for item in brackets_orm
-        )
-    else:
-        brackets = effective_tax_bracket_rules(session, year)
+    brackets = effective_tax_bracket_rules(session, year)
     return calculate_progressive_tax(
         SalaryTaxInput(
             ytd_gross_kopecks=ytd_gross_kopecks,
@@ -156,8 +140,9 @@ def calculate_salary_tax(session: Session, reporting_month_id: int) -> SalaryTax
     * ``payment_gross`` = sum of SALARY gross for this reporting month.
     * ``ytd_gross`` follows the opening-context contract: prior months must be
       explicitly closed, and an optional annual opening baseline is used once.
-    * Brackets are loaded (or seeded) from the tax-brackets configuration
-      table for the reporting month's year.
+    * Brackets are loaded from the tax-brackets configuration table for the
+      reporting month's year. When absent, official defaults are used in
+      memory without mutating this read path.
 
     Returns the pure-domain :class:`SalaryTaxResult`.
     """
@@ -171,7 +156,6 @@ def calculate_salary_tax(session: Session, reporting_month_id: int) -> SalaryTax
         year=reporting_month.year,
         ytd_gross_kopecks=ytd_gross,
         payment_gross_kopecks=payment_gross,
-        seed_brackets=True,
     )
 
 
@@ -204,7 +188,6 @@ def salary_tax_snapshot_for_month(session: Session, reporting_month_id: int) -> 
         year=reporting_month.year,
         ytd_gross_kopecks=ytd_before,
         payment_gross_kopecks=payment_gross,
-        seed_brackets=False,
     )
     marginal_bps: int | None = None
     for part in result.parts:

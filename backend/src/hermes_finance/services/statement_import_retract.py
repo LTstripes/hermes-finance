@@ -143,12 +143,32 @@ def retract_applied_statement_event(
             "incompatible_provenance",
             "linked investment cash flow is missing",
         )
+    revisions = list_applied_statement_event_revisions(session, event.id)
+    if not revisions:
+        raise StatementRetractError(
+            "incompatible_provenance", "applied statement event has no revision history"
+        )
+    expected_revision_id = revisions[-1].id
     try:
         require_editable_child_month(session, flow)
     except ClosedReportingMonthError as error:
         raise StatementRetractError("closed_month", str(error)) from error
     except ReportingMonthNotFoundError as error:
         raise StatementRetractError("incompatible_provenance", str(error)) from error
+
+    # The month guard reserves SQLite's writer after the initial read. A
+    # correction can win in between, so refresh before staging the retract.
+    session.refresh(event)
+    current_revisions = list_applied_statement_event_revisions(session, event.id)
+    if (
+        event.status != StatementEventStatus.ACTIVE.value
+        or event.investment_cash_flow_id != flow.id
+        or not current_revisions
+        or current_revisions[-1].id != expected_revision_id
+    ):
+        session.rollback()
+        raise StatementRetractError("conflict", "statement event changed; re-review before retract")
+    session.refresh(flow)
 
     accepted_at = _timestamp(retracted_at)
     remaining_flow_id = None if link_mode is StatementLinkMode.STATEMENT_CREATED else flow.id

@@ -41,6 +41,7 @@ from hermes_finance.broker_data.reconciliation.normalized import (
     build_normalized_reconciliation,
 )
 from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.persistence import (
     Account,
     CashBalance,
@@ -54,7 +55,7 @@ def load_hermes_state_for_month(session: Session, reporting_month_id: int) -> He
     month = get_reporting_month(session, reporting_month_id)
     month_status = str(month.status)
 
-    accounts = list(session.scalars(select(Account).order_by(Account.id)))
+    accounts = _load_broker_accounts(session)
     account_ids = {acc.id for acc in accounts}
     account_views = tuple(
         HermesAccountView(
@@ -129,6 +130,10 @@ def load_hermes_state_for_month(session: Session, reporting_month_id: int) -> He
     )
 
 
+def _load_broker_accounts(session: Session) -> list[Account]:
+    return list(session.scalars(select(Account).order_by(Account.id)))
+
+
 def reconcile_broker_snapshot_read_only(
     session: Session,
     *,
@@ -147,15 +152,16 @@ def reconcile_broker_snapshot_read_only(
     snapshot = provider.fetch_snapshot()
     if not isinstance(snapshot, BrokerSnapshot):
         raise TypeError("broker snapshot provider returned an invalid snapshot")
-    hermes = load_hermes_state_for_month(session, reporting_month_id)
-    return build_normalized_reconciliation_for_snapshot(
-        session,
-        snapshot=snapshot,
-        hermes=hermes,
-        mapping=mapping,
-        expected_row_fingerprints=expected_row_fingerprints,
-        expected_snapshot_fingerprint=expected_snapshot_fingerprint,
-    )
+    with coherent_read_snapshot(session):
+        hermes = load_hermes_state_for_month(session, reporting_month_id)
+        return build_normalized_reconciliation_for_snapshot(
+            session,
+            snapshot=snapshot,
+            hermes=hermes,
+            mapping=mapping,
+            expected_row_fingerprints=expected_row_fingerprints,
+            expected_snapshot_fingerprint=expected_snapshot_fingerprint,
+        )
 
 
 def build_normalized_reconciliation_for_snapshot(

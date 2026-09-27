@@ -16,17 +16,31 @@ import { EmptyState } from "../ui";
 import { MoneyTooltip } from "./MoneyTooltip";
 
 export function CapitalChart({ points }: { points: CapitalHistoryPoint[] }) {
-  const data = useMemo(
-    () =>
-      buildGappedSeries(
-        points.map((p) => ({
-          year: p.year,
-          month: p.month,
-          amount: moneyAmount(p.liquid_capital_net),
-        })),
+  const data = useMemo(() => {
+    const coverageByMonth = new Map<string, CapitalHistoryPoint["portfolio_source_coverage"]>(
+      points.map(
+        (point) =>
+          [
+            `${point.year}-${String(point.month).padStart(2, "0")}`,
+            point.portfolio_source_coverage,
+          ] as const,
       ),
-    [points],
-  );
+    );
+    return buildGappedSeries(
+      points.map((p) => ({
+        year: p.year,
+        month: p.month,
+        amount: moneyAmount(p.liquid_capital_net),
+      })),
+    ).map((datum) => {
+      const coverage = coverageByMonth.get(datum.key);
+      return {
+        ...datum,
+        rubles: coverage?.status === "unavailable" ? null : datum.rubles,
+        portfolio_source_coverage: coverage,
+      };
+    });
+  }, [points]);
 
   if (data.length === 0) {
     return (
@@ -79,7 +93,7 @@ export function CapitalChart({ points }: { points: CapitalHistoryPoint[] }) {
       </ResponsiveContainer>
       {hasGap ? (
         <p className="capital-chart__note">
-          Линия разрывается в месяцах без закрытых данных — без интерполяции.
+          Линия разрывается без подтверждённого значения или закрытого месяца — без интерполяции.
         </p>
       ) : null}
     </section>

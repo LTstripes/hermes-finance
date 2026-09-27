@@ -18,6 +18,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import GoalType, RubleAmount
 from hermes_finance.domain.goal_achievement import (
     GOAL_ACHIEVEMENT_METHOD_VERSION,
@@ -101,6 +102,7 @@ def _passive_average_warnings(*, count_months: int, is_complete_12m: bool) -> tu
     return ()
 
 
+@coherent_read_operation
 def build_goal_achievement_summary(
     session: Session,
     reporting_month_id: int,

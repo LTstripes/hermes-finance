@@ -7,10 +7,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, PositionSnapshot
+from hermes_finance.services import dashboard as dashboard_service
+from hermes_finance.services.positions import update_position_snapshot
 
 
 @pytest.fixture
@@ -238,6 +241,82 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     assert dash["expected_payments"][0]["expected_net_amount"] == _rub("870.00")
     assert dash["mortgage"]["mortgage_balance"] == _rub("4000000.00")
     assert dash["calculation_version"] == "v3"
+
+
+def test_dashboard_uses_one_snapshot_when_position_price_changes_mid_read(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    month_id = client.post(
+        "/api/months",
+        json={"year": 2032, "month": 1, "snapshot_date": "2032-01-31"},
+    ).json()["id"]
+    account_id = client.post(
+        "/api/accounts",
+        json={"name": "Snapshot brokerage", "account_type": "brokerage"},
+    ).json()["id"]
+    instrument_id = client.post(
+        "/api/instruments",
+        json={"name": "Snapshot stock", "instrument_type": "stock"},
+    ).json()["id"]
+    created = client.post(
+        "/api/positions",
+        json={
+            "reporting_month_id": month_id,
+            "account_id": account_id,
+            "instrument_id": instrument_id,
+            "quantity": "1",
+            "average_cost_per_unit": _rub("100.00"),
+            "market_price_per_unit": _rub("100.00"),
+            "price_source": "manual",
+            "price_date": "2032-01-31",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    database = client.app.state.database
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_monthly_summary = dashboard_service.monthly_summary
+    writer_committed = False
+
+    def interleaved_monthly_summary(*args, **kwargs):
+        nonlocal writer_committed
+        result = real_monthly_summary(*args, **kwargs)
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                position_id = writer.scalar(
+                    select(PositionSnapshot.id).where(
+                        PositionSnapshot.reporting_month_id == month_id
+                    )
+                )
+                assert position_id is not None
+                update_position_snapshot(
+                    writer,
+                    position_id,
+                    market_price_per_unit="200.00",
+                )
+        return result
+
+    monkeypatch.setattr(dashboard_service, "monthly_summary", interleaved_monthly_summary)
+
+    response = client.get(f"/api/months/{month_id}/dashboard")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    allocation = {item["asset_class"]: item["amount"] for item in body["asset_allocation"]}
+    assert body["summary"]["liquid_capital"]["total_assets"] == _rub("100.00")
+    assert allocation["stocks"] == _rub("100.00")
+
+    fresh = client.get(f"/api/months/{month_id}/dashboard")
+    assert fresh.status_code == 200, fresh.text
+    fresh_body = fresh.json()
+    fresh_allocation = {
+        item["asset_class"]: item["amount"] for item in fresh_body["asset_allocation"]
+    }
+    assert fresh_body["summary"]["liquid_capital"]["total_assets"] == _rub("200.00")
+    assert fresh_allocation["stocks"] == _rub("200.00")
 
 
 def test_dashboard_asset_allocation_delta_uses_current_and_previous_classes(

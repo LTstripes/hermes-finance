@@ -7,10 +7,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, PositionSnapshot
+from hermes_finance.services import capital_composition as capital_composition_service
+from hermes_finance.services.positions import update_position_snapshot
+from hermes_finance.services.reporting_months import reopen_reporting_month
 
 
 @pytest.fixture
@@ -115,6 +119,131 @@ def _comparison(client: TestClient) -> dict[str, object]:
     response = client.get("/api/analytics/closed-report-comparison")
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_known_capital_subtotal_carries_account_coverage_through_all_read_models(
+    client: TestClient,
+) -> None:
+    account_a = client.post(
+        "/api/accounts", json={"name": "Known account", "account_type": "cash"}
+    ).json()["id"]
+    account_b = client.post(
+        "/api/accounts", json={"name": "Required account", "account_type": "cash"}
+    ).json()["id"]
+    first = _create_month(client, year=2033, month=1, snapshot_date="2033-01-31")
+    _create_cash(client, first, "100.00", account_id=account_a)
+    _create_cash(client, first, "0.00", account_id=account_b)
+    assert client.post(f"/api/months/{first}/close").status_code == 200
+
+    second = _create_month(client, year=2033, month=2, snapshot_date="2033-02-28")
+    _create_cash(client, second, "120.00", account_id=account_a)
+    _create_cash(client, second, "5.00")  # Synthetic cash contributes, but cannot cover B.
+    assert client.post(f"/api/months/{second}/close").status_code == 200
+
+    history = client.get("/api/analytics/capital-composition").json()["points"]
+    assert [point["liquid_capital_net"] for point in history] == [_rub("100.00"), _rub("125.00")]
+    assert history[0]["portfolio_source_coverage"] == {
+        "status": "complete",
+        "reason_codes": [],
+        "missing_account_ids": [],
+    }
+    partial = history[1]["portfolio_source_coverage"]
+    assert partial == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+        "missing_account_ids": [account_b],
+    }
+
+    comparison = _comparison(client)
+    assert comparison["current"]["portfolio_source_coverage"] == partial
+    assert comparison["previous"]["portfolio_source_coverage"]["status"] == "complete"
+    assert comparison["liquid_capital_net_delta"] == _rub("25.00")
+    assert comparison["liquid_capital_net_delta_coverage"]["status"] == "partial"
+    assert comparison["liquid_capital_net_delta_coverage"]["reason_codes"] == [
+        "active_account_snapshot_missing"
+    ]
+
+    summary = client.get(f"/api/months/{second}/summary").json()
+    assert summary["liquid_capital"]["liquid_capital_net"] == _rub("125.00")
+    assert summary["liquid_capital"]["portfolio_source_coverage"] == partial
+    assert summary["liquid_capital_delta"] == _rub("25.00")
+    assert summary["liquid_capital_delta_coverage"]["status"] == "partial"
+
+    dashboard = client.get(f"/api/months/{second}/dashboard").json()
+    assert dashboard["kpis"]["liquid_capital_net"] == _rub("125.00")
+    assert dashboard["kpis"]["portfolio_source_coverage"] == partial
+    assert dashboard["historical_series"][-1]["portfolio_source_coverage"] == partial
+
+
+def test_closed_history_uses_one_snapshot_when_month_is_reopened_mid_read(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    account_id = client.post(
+        "/api/accounts",
+        json={"name": "Snapshot account", "account_type": "brokerage"},
+    ).json()["id"]
+    instrument_id = client.post(
+        "/api/instruments",
+        json={"name": "Snapshot stock", "instrument_type": "stock"},
+    ).json()["id"]
+    month_id = _create_month(client, year=2032, month=2, snapshot_date="2032-02-29")
+    _create_position(
+        client,
+        month_id=month_id,
+        account_id=account_id,
+        instrument_id=instrument_id,
+        amount="100.00",
+        price_date="2032-02-29",
+    )
+    closed = client.post(f"/api/months/{month_id}/close")
+    assert closed.status_code == 200, closed.text
+
+    database = client.app.state.database
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_liquid_capital_for_months = capital_composition_service.liquid_capital_for_months
+    writer_committed = False
+
+    def interleaved_liquid_capital_for_months(*args, **kwargs):
+        nonlocal writer_committed
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                reopen_reporting_month(writer, month_id)
+                position_id = writer.scalar(
+                    select(PositionSnapshot.id).where(
+                        PositionSnapshot.reporting_month_id == month_id
+                    )
+                )
+                assert position_id is not None
+                update_position_snapshot(
+                    writer,
+                    position_id,
+                    market_price_per_unit="200.00",
+                )
+        return real_liquid_capital_for_months(*args, **kwargs)
+
+    monkeypatch.setattr(
+        capital_composition_service,
+        "liquid_capital_for_months",
+        interleaved_liquid_capital_for_months,
+    )
+
+    response = client.get("/api/analytics/capital-composition")
+    assert response.status_code == 200, response.text
+    points = response.json()["points"]
+    assert len(points) == 1
+    point = points[0]
+    allocation = {item["asset_class"]: item["amount"] for item in point["allocation"]}
+    assert point["liquid_assets_total"] == _rub("100.00")
+    assert point["liquid_capital_net"] == _rub("100.00")
+    assert allocation["stocks"] == _rub("100.00")
+
+    fresh = client.get("/api/analytics/capital-composition")
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["points"] == []
 
 
 def test_capital_composition_closed_history_gap_and_known_zero(client: TestClient) -> None:

@@ -1150,6 +1150,8 @@ def test_deposit_frozen_base_consistent_under_mutation_between_capture_stages(se
     read-model stages) must not leak into the running evaluation: the frozen
     base, target scope, fingerprints and every surface stay one consistent
     pre-mutation snapshot."""
+    with session.get_bind().connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
     month, account = _month(session), _account(session)
     d1 = _deposit(session, month.id, account.id, balance="100000.00", annual_rate="6.00", name="A")
     shock_payload = {**RATE_ALL, "all_eligible_deposits": True}
@@ -1183,6 +1185,8 @@ def test_equity_frozen_base_consistent_under_mutation_between_capture_stages(ses
     committed mid-capture do not enter the running evaluation."""
     from hermes_finance.domain import InstrumentType
 
+    with session.get_bind().connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
     month, account = _month(session), _account(session)
     stock = create_instrument(session, name="LateStock", instrument_type=InstrumentType.STOCK)
     _position(session, month.id, account.id, stock.id, "1000.00")

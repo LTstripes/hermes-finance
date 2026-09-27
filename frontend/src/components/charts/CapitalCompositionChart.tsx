@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import type { CapitalCompositionPoint } from "../../api/types";
+import { PortfolioCoverageNote } from "../PortfolioCoverageNote";
 import { formatMoney, formatPercent } from "../../lib/format";
 import {
   buildCapitalCompositionSeries,
@@ -54,10 +55,12 @@ export function CapitalCompositionTooltip({
   assetClasses,
   classColors,
   mode,
+  points,
 }: TooltipContentProps & {
   assetClasses: string[];
   classColors?: Record<string, string>;
   mode: CapitalCompositionMode;
+  points?: CapitalCompositionPoint[];
 }) {
   const datum = (payload?.[0]?.payload ?? undefined) as CapitalCompositionDatum | undefined;
   if (!active || !datum || datum.isGap) return null;
@@ -93,6 +96,12 @@ export function CapitalCompositionTooltip({
           <span>Капитал нетто</span>
           <strong>{valueFor(datum.netAmount, datum.netShare)}</strong>
         </div>
+        <PortfolioCoverageNote
+          coverage={
+            points?.find((point) => point.reporting_month_id === datum.reportingMonthId)
+              ?.portfolio_source_coverage
+          }
+        />
         <div className="composition-tooltip__row composition-tooltip__debt">
           <span>Включённые долги</span>
           <strong>{formatMoney(datum.debtsAmount)}</strong>
@@ -202,6 +211,7 @@ export function CapitalCompositionChart({
                 assetClasses={assetClasses}
                 classColors={classColors}
                 mode={mode}
+                points={points}
               />
             )}
             cursor={{ stroke: "#b9c4b9" }}
