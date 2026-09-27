@@ -17,8 +17,8 @@ A case is `(repository, issue, role, assigned baseline, initial candidate, execu
 | Field | What to record |
 | --- | --- |
 | Task | Repo/issue/PR, profile (UI, financial write, provider, research, review, etc.), complexity and risk separately |
-| Execution | Client/version, requested model/effort, actual runtime model ID/provider/effort, fallback/delegates |
-| Attribution | `runtime_confirmed`, `owner_reported`, `worker_reported`, `assigned_only`, or `unknown`; a model-picker label is not runtime proof |
+| Execution | Actual model and provider/client reported for the task. Other runtime metadata is optional and recorded only when independently available. |
+| Attribution | The Integrator may note whether model/provider identity was runtime-confirmed, Owner-reported, Worker-reported or otherwise uncertain; Workers are not required to supply a separate attribution field. |
 | Identity | Assigned baseline, first candidate, reviewed candidates, accepted/merged SHA, source links |
 | Quality | First-pass verdict, unique confirmed blockers, severity, escaped defects, scope discipline |
 | Rework | Substantive correction rounds; formatting-only commits, duplicate review comments and unchanged-SHA reruns do not add rounds |
@@ -77,14 +77,16 @@ DeepSeek V4.1 Flash, LongCat 2.5 Preview and Space Bunny are Owner-available tri
 ```text
 case_id / role / profile / complexity / risk:
 issue / PR / contract link / baseline:
-client + requested model/effort:
-actual model/provider/effort + attribution source (or unknown):
+model:
+provider/client:
 first SHA -> attempts -> accepted SHA:
 first-pass verdict / substantive fix rounds / confirmed blockers:
 scope / test & browser evidence / independent review:
 leaf integration / aggregate integration / Owner UAT:
-measured time/cost (or unknown) / confounders:
+optional measured telemetry if independently available / confounders:
 provisional use / avoid / next evidence needed:
 ```
+
+Worker handoffs require only model + provider/client. The Integrator may append other telemetry when it is independently available; missing usage/cost/time/delegate data is simply omitted, not filled with repeated `unknown` fields.
 
 Only technical metadata, synthetic-safe summaries and source links belong here. Never include Owner finance/health values, DBs, credentials, private screenshots, raw provider payloads or unsanitized model transcripts. Controlled blind A/B requires a separate explicit assignment with identical contract/baseline and no candidate cross-reading; normal outcome logging does not activate it.
