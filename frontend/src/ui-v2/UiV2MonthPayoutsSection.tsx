@@ -146,6 +146,9 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
 
   const liveRef = useRef({ monthId, gen: 0 });
   const versionRef = useRef(forecastVersion);
+  const defaultDateRef = useRef(defaultDate);
+  defaultDateRef.current = defaultDate;
+  const loadedKeyRef = useRef("");
   const readAllSeq = useRef(0);
   const readExpSeq = useRef(0);
   const actualRev = useRef(0);
@@ -196,6 +199,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
     async (signal?: AbortSignal) => {
       const target = monthId;
       const version = versionRef.current;
+      const asOf = defaultDateRef.current;
       const seq = ++readAllSeq.current;
       const alive = () => liveRef.current.monthId === target && readAllSeq.current === seq;
       setLoading(true);
@@ -219,13 +223,13 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         setActualDraft((prev) => ({
           ...prev,
           account_id: prev.account_id || (firstAccount ? String(firstAccount.id) : ""),
-          event_date: prev.event_date || defaultDate,
+          event_date: prev.event_date || asOf,
         }));
         setExpectedDraft((prev) => ({
           ...prev,
           account_id: prev.account_id || (firstAccount ? String(firstAccount.id) : ""),
           instrument_id: prev.instrument_id || (firstInstrument ? String(firstInstrument.id) : ""),
-          expected_date: prev.expected_date || defaultDate,
+          expected_date: prev.expected_date || asOf,
           forecast_version: prev.forecast_version || version,
         }));
       } catch (err) {
@@ -234,7 +238,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         if (!signal?.aborted && alive()) setLoading(false);
       }
     },
-    [defaultDate, monthId],
+    [monthId],
   );
 
   const loadExpected = useCallback(
@@ -269,11 +273,14 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
     liveRef.current = { monthId, gen: liveRef.current.gen + 1 };
     readAllSeq.current += 1;
     readExpSeq.current += 1;
+    // Marker (not the snapshot itself, so this effect stays month-identity-only):
+    // the snapshot effect below adopts the current key without a second reload.
+    loadedKeyRef.current = `${monthId}|*reset*`;
     setForecastVersion("v1");
     versionRef.current = "v1";
     setVersionInput("v1");
-    setActualDraft(emptyActual(defaultDate));
-    setExpectedDraft(emptyExpected(defaultDate));
+    setActualDraft(emptyActual(defaultDateRef.current));
+    setExpectedDraft(emptyExpected(defaultDateRef.current));
     setActualDraftTouched(false);
     setExpectedDraftTouched(false);
     setEditingActualId(null);
@@ -287,7 +294,19 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
     const controller = new AbortController();
     void loadAll(controller.signal);
     return () => controller.abort();
-  }, [defaultDate, loadAll, monthId]);
+  }, [loadAll, monthId]);
+
+  useEffect(() => {
+    const key = `${monthId}|${month.snapshot_date}`;
+    if (loadedKeyRef.current === key || loadedKeyRef.current === `${monthId}|*reset*`) {
+      loadedKeyRef.current = key;
+      return;
+    }
+    loadedKeyRef.current = key;
+    const controller = new AbortController();
+    void loadAll(controller.signal);
+    return () => controller.abort();
+  }, [loadAll, month.snapshot_date, monthId]);
 
   useEffect(() => {
     versionRef.current = forecastVersion;
@@ -519,14 +538,6 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
     const current = actual.find((row) => row.id === editingActualId);
     if (!current || !isManuallyEditableInvestmentFlow(current.source, current.statement_link))
       return;
-    const submitted = {
-      flow_type: editActual.flow_type,
-      event_date: editActual.event_date,
-      gross: rub(editActual.gross).amount,
-      tax: rub(editActual.tax.trim() === "" ? "0" : editActual.tax).amount,
-      commission: rub(editActual.commission.trim() === "" ? "0" : editActual.commission).amount,
-      net: rub(editActual.net).amount,
-    };
     setBusy(true);
     setActionError(null);
     setActionNotice(null);
@@ -535,6 +546,16 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         throw new Error("Укажи gross и net");
       }
       const instrumentId = editActual.instrument_id ? Number(editActual.instrument_id) : null;
+      const sentInstrumentId = instrumentId && instrumentId > 0 ? instrumentId : null;
+      const submitted = {
+        flow_type: editActual.flow_type,
+        event_date: editActual.event_date,
+        gross: rub(editActual.gross).amount,
+        tax: rub(editActual.tax.trim() === "" ? "0" : editActual.tax).amount,
+        commission: rub(editActual.commission.trim() === "" ? "0" : editActual.commission).amount,
+        net: rub(editActual.net).amount,
+        instrument_id: sentInstrumentId ?? current.instrument_id,
+      };
       const saved = await updateInvestmentFlow(editingActualId, {
         flow_type: submitted.flow_type,
         event_date: submitted.event_date,
@@ -542,7 +563,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         tax_amount: rub(editActual.tax.trim() === "" ? "0" : editActual.tax),
         commission_amount: rub(editActual.commission.trim() === "" ? "0" : editActual.commission),
         net_amount: rub(editActual.net),
-        ...(instrumentId && instrumentId > 0 ? { instrument_id: instrumentId } : {}),
+        ...(sentInstrumentId ? { instrument_id: sentInstrumentId } : {}),
       });
       if (!opLive(op)) return;
       if (saved.reporting_month_id !== target)
@@ -560,7 +581,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         moneyAmount(confirmed.gross_amount) !== submitted.gross ||
         moneyAmount(confirmed.tax_amount) !== submitted.tax ||
         moneyAmount(confirmed.commission_amount) !== submitted.commission ||
-        moneyAmount(confirmed.net_amount) !== submitted.net
+        moneyAmount(confirmed.net_amount) !== submitted.net ||
+        confirmed.instrument_id !== submitted.instrument_id
       ) {
         throw new Error("Изменение не подтверждено повторной загрузкой.");
       }

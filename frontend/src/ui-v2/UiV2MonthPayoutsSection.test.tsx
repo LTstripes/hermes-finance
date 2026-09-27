@@ -38,6 +38,13 @@ const instrument = {
   notes: null,
 };
 
+const secondInstrument = {
+  ...instrument,
+  id: 22,
+  name: "Second Bond",
+  ticker: "SEC",
+};
+
 const manualFlow = {
   id: 41,
   reporting_month_id: 7,
@@ -94,13 +101,18 @@ const expectedFlow = {
   notes: null,
 };
 
-function contextFor(monthId = 7, readOnly = false, setDirty = vi.fn()): MonthEditorContext {
+function contextFor(
+  monthId = 7,
+  readOnly = false,
+  setDirty = vi.fn(),
+  snapshot = "2031-01-31",
+): MonthEditorContext {
   const month: ReportingMonth = {
     id: monthId,
     year: 2031,
     month: 1,
     status: readOnly ? "closed" : "draft",
-    snapshot_date: "2031-01-31",
+    snapshot_date: snapshot,
     source: "manual",
   };
   return {
@@ -123,6 +135,7 @@ function setup({
   slowExpectedCreate = false,
   slowPatch = false,
   stalePatch = false,
+  staleInstrumentOnly = false,
 }: {
   flows?: unknown[];
   expected?: unknown[];
@@ -134,6 +147,7 @@ function setup({
   slowExpectedCreate?: boolean;
   slowPatch?: boolean;
   stalePatch?: boolean;
+  staleInstrumentOnly?: boolean;
 } = {}) {
   let finishCreate!: (value: Response) => void;
   let finishExpectedCreate!: (value: Response) => void;
@@ -143,7 +157,7 @@ function setup({
     const method = (init?.method ?? "GET").toUpperCase();
     if (method === "GET" && url === "/api/accounts") return jsonResponse([account]);
     if (method === "GET" && url === "/api/instruments?active=true")
-      return jsonResponse([instrument]);
+      return jsonResponse([instrument, secondInstrument]);
     if (method === "GET" && url === "/api/investment-flows?month_id=7") return jsonResponse(flows);
     if (method === "GET" && url === "/api/investment-flows?month_id=8") return jsonResponse([]);
     if (
@@ -197,7 +211,11 @@ function setup({
         });
       if (!stalePatch) {
         flows = (flows as unknown[]).map((row) =>
-          (row as { id: number }).id === 41 ? updated : row,
+          (row as { id: number }).id === 41
+            ? staleInstrumentOnly
+              ? { ...updated, instrument_id: 21 }
+              : updated
+            : row,
         );
       }
       return jsonResponse(updated);
@@ -686,5 +704,110 @@ describe("UiV2MonthPayoutsSection", () => {
       gross_amount: { amount: "1000.00", currency: "RUB" },
       net_amount: { amount: "860.00", currency: "RUB" },
     });
+  });
+
+  it("keeps dirty forms when the same month snapshot refreshes", async () => {
+    const { fetchMock } = setup({ flows: [manualFlow], expected: [expectedFlow] });
+    const user = userEvent.setup();
+    const setDirty = vi.fn();
+    const { rerender } = render(
+      <UiV2MonthPayoutsSection context={contextFor(7, false, setDirty)} />,
+    );
+
+    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await user.type(screen.getByLabelText("Брутто"), "1000");
+    await user.type(screen.getByLabelText("Прогноз брутто"), "500");
+    const table = screen.getAllByRole("table")[0];
+    await user.click(
+      within(table).getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const editNet = screen.getByDisplayValue("860.00");
+    await user.clear(editNet);
+    await user.type(editNet, "861.00");
+    await waitFor(() => expect(setDirty).toHaveBeenCalledWith("payouts", true));
+    const readsBefore = fetchMock.mock.calls.filter(([input]) =>
+      String(input).startsWith("/api/investment-flows?month_id=7"),
+    ).length;
+
+    rerender(<UiV2MonthPayoutsSection context={contextFor(7, false, setDirty, "2031-02-01")} />);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          String(input).startsWith("/api/investment-flows?month_id=7"),
+        ).length,
+      ).toBeGreaterThan(readsBefore),
+    );
+    // Dirty actual/expected/edit input survives the same-month refresh.
+    expect(
+      screen.getAllByLabelText("Брутто").map((el) => (el as HTMLInputElement).value).sort(),
+    ).toEqual(["1000", "1000.00"]);
+    expect(screen.getByLabelText("Прогноз брутто")).toHaveValue("500");
+    expect(screen.getByDisplayValue("861.00")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(setDirty).toHaveBeenLastCalledWith("payouts", true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("rejects an instrument-only edit whose readback keeps the old instrument", async () => {
+    const { fetchMock } = setup({ flows: [manualFlow], staleInstrumentOnly: true });
+    const user = userEvent.setup();
+    render(<UiV2MonthPayoutsSection context={contextFor()} />);
+
+    const table = await screen.findAllByRole("table").then((tables) => tables[0]);
+    await user.click(
+      within(table).getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const editRow = screen.getByDisplayValue("860.00").closest("tr");
+    expect(editRow).not.toBeNull();
+    await user.selectOptions(
+      within(editRow as HTMLElement).getByLabelText("Инструмент выплаты"),
+      "22",
+    );
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    const patch = await waitFor(() =>
+      fetchMock.mock.calls.find(
+        ([input, init]) => String(input) === "/api/investment-flows/41" && init?.method === "PATCH",
+      ),
+    );
+    expect(JSON.parse(String(patch?.[1]?.body))).toMatchObject({ instrument_id: 22 });
+    expect(
+      await screen.findByText("Изменение не подтверждено повторной загрузкой."),
+    ).toBeInTheDocument();
+    // The edit stays open with the submitted instrument; nothing is announced as saved.
+    expect(
+      screen
+        .getAllByLabelText("Инструмент выплаты")
+        .some((el) => (el as HTMLSelectElement).value === "22"),
+    ).toBe(true);
+    expect(screen.queryByText("Выплата обновлена и подтверждена.")).not.toBeInTheDocument();
+  });
+
+  it("shows a visible error for invalid edited money without any request", async () => {
+    const { fetchMock } = setup({ flows: [manualFlow] });
+    const user = userEvent.setup();
+    render(<UiV2MonthPayoutsSection context={contextFor()} />);
+
+    const table = await screen.findAllByRole("table").then((tables) => tables[0]);
+    await user.click(
+      within(table).getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const net = screen.getByDisplayValue("860.00");
+    await user.clear(net);
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    expect(await screen.findByText("Укажи gross и net")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => String(input) === "/api/investment-flows/41" && init?.method === "PATCH",
+      ),
+    ).toBe(false);
+    // The draft stays available for correction.
+    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(screen.queryByText("Выплата обновлена и подтверждена.")).not.toBeInTheDocument();
   });
 });
