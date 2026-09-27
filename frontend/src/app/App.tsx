@@ -29,6 +29,7 @@ import {
   UiV2DataReconciliationEntry,
   UiV2DataSourcesEntry,
   UiV2MonthsEntry,
+  UiV2MonthlyResultEntry,
   UiV2Entry,
   UiV2IncomeEntry,
   UiV2GoalsEntry,
@@ -51,6 +52,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="/" element={<UiV2Entry />} />
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
+          <Route path="v2/capital/monthly-result" element={<UiV2MonthlyResultEntry />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
           <Route path="v2/close" element={<UiV2CloseEntry />} />
