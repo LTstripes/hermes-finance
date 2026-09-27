@@ -861,4 +861,226 @@ describe("UiV2MonthAssetsSection", () => {
     expect(screen.queryByText("Чужой кошелёк")).not.toBeInTheDocument();
     expect(screen.queryByText("Пусто")).not.toBeInTheDocument();
   });
+
+  // ——— Integrator B1 (5857697723): complete deposit write confirmation ———
+
+  type UiScope = ReturnType<typeof within>;
+  type User = ReturnType<typeof userEvent.setup>;
+
+  function seedStaleUpdate(
+    staleField: "annual_rate" | "deposit_type" | "actual_interest_received",
+  ) {
+    vi.mocked(updateDeposit).mockImplementation(async (snapshotId, payload) => {
+      deposits = deposits.map((row) =>
+        row.id === snapshotId
+          ? {
+              ...row,
+              name: payload.name ?? row.name,
+              deposit_type:
+                staleField === "deposit_type"
+                  ? row.deposit_type
+                  : (payload.deposit_type ?? row.deposit_type),
+              balance: payload.balance ?? row.balance,
+              annual_rate:
+                staleField === "annual_rate"
+                  ? row.annual_rate
+                  : (payload.annual_rate ?? row.annual_rate),
+              actual_interest_received:
+                staleField === "actual_interest_received"
+                  ? row.actual_interest_received
+                  : (payload.actual_interest_received ?? row.actual_interest_received),
+              updated_at: "2031-01-31T06:00:00",
+            }
+          : row,
+      );
+      const updated = deposits.find((row) => row.id === snapshotId);
+      if (!updated) throw new Error("deposit not found");
+      return updated;
+    });
+  }
+
+  const staleEditCases: Array<{
+    scenario: string;
+    stale: "annual_rate" | "deposit_type" | "actual_interest_received";
+    mutate: (scope: UiScope, user: User) => Promise<void>;
+    expectPreserved: (scope: UiScope) => void;
+  }> = [
+    {
+      scenario: "rate-only",
+      stale: "annual_rate",
+      mutate: async (scope, user) => {
+        const rate = scope.getByDisplayValue("12.00");
+        await user.clear(rate);
+        await user.type(rate, "13.50");
+      },
+      expectPreserved: (scope) => expect(scope.getByDisplayValue("13.50")).toBeInTheDocument(),
+    },
+    {
+      scenario: "deposit-type-only",
+      stale: "deposit_type",
+      mutate: async (scope, user) => {
+        await user.selectOptions(scope.getByRole("combobox"), "savings");
+      },
+      expectPreserved: (scope) => expect(scope.getByRole("combobox")).toHaveValue("savings"),
+    },
+    {
+      scenario: "actual-interest-only",
+      stale: "actual_interest_received",
+      mutate: async (scope, user) => {
+        const actual = scope.getByDisplayValue("900.00");
+        await user.clear(actual);
+        await user.type(actual, "1000");
+      },
+      expectPreserved: (scope) => expect(scope.getByDisplayValue("1000")).toBeInTheDocument(),
+    },
+  ];
+
+  it.each(staleEditCases)(
+    "keeps a $scenario deposit edit open when readback returns the stale row",
+    async ({ stale, mutate, expectPreserved }) => {
+      seedDepositMutations();
+      seedStaleUpdate(stale);
+      setup();
+      const user = userEvent.setup();
+
+      await tables();
+      await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
+      await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+      const editRow = screen.getByDisplayValue("Вклад Альфа").closest("tr") as HTMLElement;
+      const scope = within(editRow);
+      await mutate(scope, user);
+
+      await user.click(scope.getByRole("button", { name: "OK" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/Изменение вклада не подтверждено/);
+      expect(screen.queryByText(/Вклад «Вклад Альфа» сохранён/)).not.toBeInTheDocument();
+
+      // Новейший ввод сохранён в форме — повтор возможен после корректного readback.
+      expectPreserved(scope);
+      vi.mocked(updateDeposit).mockReset();
+      seedDepositMutations();
+      await user.click(scope.getByRole("button", { name: "OK" }));
+      await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+    },
+  );
+
+  // ——— Integrator B2 (5857697723): freeze controls during write + readback ———
+
+  it("freezes the deposit create form until the deferred write is confirmed", async () => {
+    deposits = [];
+    seedDepositMutations();
+    const gate = deferred<void>();
+    vi.mocked(createDeposit).mockImplementationOnce(async (payload) => {
+      await gate.promise;
+      const created = makeDeposit(payload, 906);
+      deposits = [...deposits, created];
+      return created;
+    });
+    setup();
+    const user = userEvent.setup();
+
+    const submit = await screen.findByRole("button", { name: "Добавить вклад" });
+    const nameInput = screen.getByLabelText("Название вклада");
+    const balanceInput = screen.getByLabelText("Баланс вклада");
+    const typeSelect = screen.getByLabelText("Тип");
+    await user.type(nameInput, "Вклад Отложенный");
+    await user.type(balanceInput, "5000");
+    await user.click(submit);
+
+    await waitFor(() => expect(nameInput).toBeDisabled());
+    expect(balanceInput).toBeDisabled();
+    expect(typeSelect).toBeDisabled();
+    expect(submit).toBeDisabled();
+    // Черновик (в т.ч. новейший ввод) не выбрасывается во время записи.
+    expect(nameInput).toHaveValue("Вклад Отложенный");
+    expect(balanceInput).toHaveValue("5000");
+
+    gate.resolve();
+    await screen.findByText(/Вклад «Вклад Отложенный» сохранён; данные перечитаны/);
+    expect(screen.getByText("Вклад Отложенный")).toBeInTheDocument();
+    // Черновик очищается только после подтверждения, форма снова доступна.
+    expect(nameInput).toHaveValue("");
+    expect(nameInput).toBeEnabled();
+  });
+
+  it("freezes the cash create form until the deferred write is confirmed", async () => {
+    seedCashMutations();
+    const gate = deferred<void>();
+    vi.mocked(createCashBalance).mockImplementationOnce(async (payload) => {
+      await gate.promise;
+      const created: CashBalance = {
+        id: 907,
+        reporting_month_id: payload.reporting_month_id,
+        account_id: null,
+        name: payload.name,
+        amount: payload.amount,
+        currency: "RUB",
+        include_in_capital: payload.include_in_capital ?? true,
+        notes: null,
+      };
+      cashRows = [...cashRows, created];
+      return created;
+    });
+    setup();
+    const user = userEvent.setup();
+
+    const submit = await screen.findByRole("button", { name: "Добавить денежную позицию" });
+    const nameInput = screen.getByLabelText("Название денежной позиции");
+    const amountInput = screen.getByLabelText("Сумма наличных");
+    const checkbox = screen.getByRole("checkbox", { name: "Включать в ликвидный капитал" });
+    await user.type(nameInput, "Копилка");
+    await user.type(amountInput, "700");
+    await user.click(submit);
+
+    await waitFor(() => expect(nameInput).toBeDisabled());
+    expect(amountInput).toBeDisabled();
+    expect(checkbox).toBeDisabled();
+    expect(submit).toBeDisabled();
+    // Черновик не выбрасывается во время записи.
+    expect(nameInput).toHaveValue("Копилка");
+    expect(amountInput).toHaveValue("700");
+
+    gate.resolve();
+    await screen.findByText(/Денежная позиция «Копилка» сохранена; данные перечитаны/);
+    expect(screen.getByText("Копилка")).toBeInTheDocument();
+    expect(nameInput).toHaveValue("");
+    expect(nameInput).toBeEnabled();
+  });
+
+  it("freezes deposit edit controls until the deferred edit is confirmed", async () => {
+    seedDepositMutations();
+    const gate = deferred<void>();
+    vi.mocked(updateDeposit).mockImplementationOnce(async (snapshotId, payload) => {
+      await gate.promise;
+      deposits = deposits.map((row) =>
+        row.id === snapshotId ? { ...row, ...payload, updated_at: "2031-01-31T06:00:00" } : row,
+      );
+      const updated = deposits.find((row) => row.id === snapshotId);
+      if (!updated) throw new Error("deposit not found");
+      return updated;
+    });
+    setup();
+    const user = userEvent.setup();
+
+    await tables();
+    await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const editRow = screen.getByDisplayValue("Вклад Альфа").closest("tr") as HTMLElement;
+    const scope = within(editRow);
+    const balance = scope.getByDisplayValue("100000.00");
+    await user.clear(balance);
+    await user.type(balance, "115000.00");
+    await user.click(scope.getByRole("button", { name: "OK" }));
+
+    await waitFor(() => expect(scope.getByDisplayValue("Вклад Альфа")).toBeDisabled());
+    expect(scope.getByDisplayValue("115000.00")).toBeDisabled();
+    expect(scope.getByRole("combobox")).toBeDisabled();
+    // Изменение остаётся в форме на время записи и readback.
+    expect(scope.getByDisplayValue("115000.00")).toHaveValue("115000.00");
+
+    gate.resolve();
+    await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+    expect(screen.queryByDisplayValue("115000.00")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Изменение вклада не подтверждено/)).not.toBeInTheDocument();
+  });
 });

@@ -123,6 +123,48 @@ function requireMonthRows<T extends { reporting_month_id: number }>(
   return rows;
 }
 
+/** Exactly the values submitted for a deposit write, normalized as sent. */
+type DepositIntent = {
+  name: string;
+  deposit_type: string;
+  balance: MoneyValue;
+  annual_rate: string;
+  actual_interest_received: MoneyValue;
+};
+
+/** Rates compare numerically ("12" and "12.00" are the same rate). */
+function sameRate(left: string, right: string): boolean {
+  const a = Number.parseFloat(left);
+  const b = Number.parseFloat(right);
+  return Number.isFinite(a) && Number.isFinite(b) && a === b;
+}
+
+/**
+ * Complete write confirmation (Integrator B1): every submitted field — name,
+ * type, balance amount+currency, rate and actual interest amount+currency —
+ * must come back from the reread list; a stale row confirms nothing.
+ */
+function matchesDepositIntent(
+  row: DepositSnapshot | undefined,
+  intent: DepositIntent,
+): row is DepositSnapshot {
+  return (
+    row !== undefined &&
+    row.name === intent.name &&
+    row.deposit_type === intent.deposit_type &&
+    row.balance.currency === intent.balance.currency &&
+    sameMoney(row.balance.amount, intent.balance.amount) &&
+    sameRate(row.annual_rate, intent.annual_rate) &&
+    row.actual_interest_received.currency === intent.actual_interest_received.currency &&
+    sameMoney(row.actual_interest_received.amount, intent.actual_interest_received.amount)
+  );
+}
+
+const DEPOSIT_CREATE_UNCONFIRMED =
+  "Создание вклада не подтверждено: перечитанные данные не совпадают с отправленными. Повтори создание.";
+const DEPOSIT_EDIT_UNCONFIRMED =
+  "Изменение вклада не подтверждено: перечитанные данные не совпадают с отправленными. Изменение оставлено в форме; повтори сохранение.";
+
 /**
  * Native month-editor leaf (#560): month deposits, cash positions and the
  * canonical linked-pair context for the exact month of the editor context.
@@ -368,30 +410,32 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (!Number.isInteger(accountId) || accountId < 1) {
         accountId = await ensureDepositAccount();
       }
-      const balance = moneyValue(depositDraft.balance, "RUB");
-      const created = await createDeposit({
-        reporting_month_id: monthId,
-        account_id: accountId,
+      const intent: DepositIntent = {
         name: depositDraft.name.trim(),
         deposit_type: depositDraft.deposit_type,
-        balance,
+        balance: moneyValue(depositDraft.balance, "RUB"),
         annual_rate: depositDraft.annual_rate.trim() || "0.00",
         actual_interest_received: moneyValue(
           depositDraft.actual_interest.trim() === "" ? "0" : depositDraft.actual_interest,
           "RUB",
         ),
+      };
+      const created = await createDeposit({
+        reporting_month_id: monthId,
+        account_id: accountId,
+        name: intent.name,
+        deposit_type: intent.deposit_type,
+        balance: intent.balance,
+        annual_rate: intent.annual_rate,
+        actual_interest_received: intent.actual_interest_received,
       });
       if (created.reporting_month_id !== monthId) {
         throw new Error("API сохранил вклад в другом месяце.");
       }
       const fresh = await refetchDepositRows();
       const confirmed = fresh.find((row) => row.id === created.id);
-      if (
-        !confirmed ||
-        confirmed.name !== created.name ||
-        !sameMoney(moneyAmount(confirmed.balance), moneyAmount(balance))
-      ) {
-        throw new Error("Сохранение вклада не подтверждено перечитыванием списка.");
+      if (!matchesDepositIntent(confirmed, intent)) {
+        throw new Error(DEPOSIT_CREATE_UNCONFIRMED);
       }
       await markDataStale();
       if (operation.current !== token) return;
@@ -431,19 +475,24 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (!editDeposit.name.trim()) {
         throw new Error("Укажи название вклада");
       }
-      const balance = moneyValue(editDeposit.balance, current.balance.currency);
-      const actualInterest = moneyValue(
-        editDeposit.actual_interest.trim() === "" ? "0" : editDeposit.actual_interest,
-        current.actual_interest_received.currency,
-      );
+      const intent: DepositIntent = {
+        name: editDeposit.name.trim(),
+        deposit_type: editDeposit.deposit_type,
+        balance: moneyValue(editDeposit.balance, current.balance.currency),
+        annual_rate: editDeposit.annual_rate.trim() || "0.00",
+        actual_interest_received: moneyValue(
+          editDeposit.actual_interest.trim() === "" ? "0" : editDeposit.actual_interest,
+          current.actual_interest_received.currency,
+        ),
+      };
       const changed = await updateDeposit(
         editingDepositId,
         {
-          name: editDeposit.name.trim(),
-          deposit_type: editDeposit.deposit_type,
-          balance,
-          annual_rate: editDeposit.annual_rate.trim() || "0.00",
-          actual_interest_received: actualInterest,
+          name: intent.name,
+          deposit_type: intent.deposit_type,
+          balance: intent.balance,
+          annual_rate: intent.annual_rate,
+          actual_interest_received: intent.actual_interest_received,
         },
         current.updated_at,
       );
@@ -452,12 +501,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       }
       const fresh = await refetchDepositRows();
       const confirmed = fresh.find((row) => row.id === current.id);
-      if (
-        !confirmed ||
-        confirmed.name !== editDeposit.name.trim() ||
-        !sameMoney(moneyAmount(confirmed.balance), moneyAmount(balance))
-      ) {
-        throw new Error("Изменение вклада не подтверждено перечитыванием списка.");
+      if (!matchesDepositIntent(confirmed, intent)) {
+        // The edit stays open with the newer values so the user can retry.
+        throw new Error(DEPOSIT_EDIT_UNCONFIRMED);
       }
       await markDataStale();
       if (operation.current !== token) return;
@@ -724,6 +770,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                         <Td>
                           {editing ? (
                             <Input
+                              disabled={busy || readOnly}
                               value={editDeposit.name}
                               onChange={(event) =>
                                 setEditDeposit({ ...editDeposit, name: event.target.value })
@@ -736,6 +783,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                         <Td>
                           {editing ? (
                             <Select
+                              disabled={busy || readOnly}
                               value={editDeposit.deposit_type}
                               onChange={(event) =>
                                 setEditDeposit({ ...editDeposit, deposit_type: event.target.value })
@@ -752,6 +800,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           {editing ? (
                             <Input
                               className="input--money"
+                              disabled={busy || readOnly}
                               value={editDeposit.balance}
                               onChange={(event) =>
                                 setEditDeposit({ ...editDeposit, balance: event.target.value })
@@ -767,6 +816,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           {editing ? (
                             <Input
                               className="input--money"
+                              disabled={busy || readOnly}
                               value={editDeposit.annual_rate}
                               onChange={(event) =>
                                 setEditDeposit({ ...editDeposit, annual_rate: event.target.value })
@@ -787,6 +837,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           {editing ? (
                             <Input
                               className="input--money"
+                              disabled={busy || readOnly}
                               value={editDeposit.actual_interest}
                               onChange={(event) =>
                                 setEditDeposit({
@@ -888,6 +939,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 <div className="editor-grid">
                   <Field htmlFor="dep-name" label="Название вклада">
                     <Input
+                      disabled={busy}
                       id="dep-name"
                       onChange={(event) => {
                         setDepositDraft({ ...depositDraft, name: event.target.value });
@@ -899,6 +951,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   </Field>
                   <Field htmlFor="dep-type" label="Тип">
                     <Select
+                      disabled={busy}
                       id="dep-type"
                       onChange={(event) => {
                         setDepositDraft({ ...depositDraft, deposit_type: event.target.value });
@@ -912,6 +965,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   </Field>
                   <Field htmlFor="dep-account" label="Счёт">
                     <Select
+                      disabled={busy}
                       id="dep-account"
                       onChange={(event) => {
                         setDepositDraft({ ...depositDraft, account_id: event.target.value });
@@ -930,6 +984,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   <Field htmlFor="dep-balance" label="Баланс вклада">
                     <Input
                       className="input--money"
+                      disabled={busy}
                       id="dep-balance"
                       inputMode="decimal"
                       onChange={(event) => {
@@ -943,6 +998,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   <Field htmlFor="dep-rate" label="Годовая ставка %">
                     <Input
                       className="input--money"
+                      disabled={busy}
                       id="dep-rate"
                       onChange={(event) => {
                         setDepositDraft({ ...depositDraft, annual_rate: event.target.value });
@@ -954,6 +1010,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   <Field htmlFor="dep-actual" label="Факт. процент">
                     <Input
                       className="input--money"
+                      disabled={busy}
                       id="dep-actual"
                       onChange={(event) => {
                         setDepositDraft({ ...depositDraft, actual_interest: event.target.value });
@@ -1082,6 +1139,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 <div className="editor-grid">
                   <Field htmlFor="cash-name" label="Название денежной позиции">
                     <Input
+                      disabled={busy}
                       id="cash-name"
                       onChange={(event) => {
                         setCashDraft({ ...cashDraft, name: event.target.value });
@@ -1094,6 +1152,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   <Field htmlFor="cash-amount" label="Сумма наличных">
                     <Input
                       className="input--money"
+                      disabled={busy}
                       id="cash-amount"
                       inputMode="decimal"
                       onChange={(event) => {
@@ -1108,6 +1167,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 <label className="check-row">
                   <input
                     checked={cashDraft.include_in_capital}
+                    disabled={busy}
                     onChange={(event) => {
                       setCashDraft({ ...cashDraft, include_in_capital: event.target.checked });
                       setCashDraftTouched(true);
