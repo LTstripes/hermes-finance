@@ -38,7 +38,7 @@ from hermes_finance.services.accounts import list_accounts
 from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.cash_balance import cash_balance_for_month
-from hermes_finance.services.debts import list_debts, total_debts, total_included_debts
+from hermes_finance.services.debts import total_debts, total_included_debts
 from hermes_finance.services.deposits import list_deposit_snapshots
 from hermes_finance.services.deterministic_insights import (
     DETERMINISTIC_INSIGHTS_CONTRACT_VERSION,
@@ -59,6 +59,9 @@ from hermes_finance.services.payout_calendar import (
     MergedPayoutCalendarItem,
     PayoutCalendarSource,
     merged_payout_calendar,
+)
+from hermes_finance.services.portfolio_source_coverage import (
+    portfolio_source_coverage_for_months,
 )
 from hermes_finance.services.positions import list_position_snapshots
 from hermes_finance.services.properties import (
@@ -541,9 +544,6 @@ def assemble_ai_analysis_bundle(
         list_accounts(session), key=lambda item: (item.name, item.account_type, item.id)
     )
     capital_included_account_ids = {row.id for row in account_rows if row.include_in_capital}
-    required_capital_account_ids = {
-        row.id for row in account_rows if row.status == "active" and row.include_in_capital
-    }
     instrument_rows = sorted(
         list_instruments(session), key=lambda item: (item.name, item.instrument_type, item.id)
     )
@@ -554,25 +554,17 @@ def assemble_ai_analysis_bundle(
     synthetic_cash_ref = _slug("acct", "cash-balances", used_refs)
 
     all_position_rows = list_position_snapshots(session)
-    all_deposit_rows = list_deposit_snapshots(session)
-    all_cash_rows = list_cash_balances(session)
-    all_debt_rows = list_debts(session)
     all_property_rows = list_property_snapshots(session)
     positions_by_month = {}
-    deposits_by_month = {}
-    cash_by_month = {}
-    debts_by_month = {}
     properties_by_month = {}
     for row in all_position_rows:
         positions_by_month.setdefault(row.reporting_month_id, []).append(row)
-    for row in all_deposit_rows:
-        deposits_by_month.setdefault(row.reporting_month_id, []).append(row)
-    for row in all_cash_rows:
-        cash_by_month.setdefault(row.reporting_month_id, []).append(row)
-    for row in all_debt_rows:
-        debts_by_month.setdefault(row.reporting_month_id, []).append(row)
     for row in all_property_rows:
         properties_by_month.setdefault(row.reporting_month_id, []).append(row)
+
+    portfolio_coverage_by_month = portfolio_source_coverage_for_months(
+        session, [month.id for month in ordered_months]
+    )
 
     future_valuations_by_month = {
         month.id: [
@@ -675,20 +667,11 @@ def assemble_ai_analysis_bundle(
             point_warnings.extend(property_reasons)
         month_positions = positions_by_month.get(month.id, [])
         future_dated_positions = future_included_valuations_by_month.get(month.id, [])
-        month_deposits = deposits_by_month.get(month.id, [])
-        month_cash = cash_by_month.get(month.id, [])
-        month_debts = debts_by_month.get(month.id, [])
-        has_capital_evidence = bool(month_positions or month_deposits or month_cash or month_debts)
-        represented_account_ids = {
-            row.account_id
-            for row in (*month_positions, *month_deposits, *month_cash)
-            if row.account_id is not None
-        }
-        missing_required_snapshot = bool(
-            has_capital_evidence and required_capital_account_ids - represented_account_ids
-        )
-        if not has_capital_evidence:
-            coverage_reasons.append(PORTFOLIO_SNAPSHOT_MISSING)
+        portfolio_coverage = portfolio_coverage_by_month[month.id]
+        has_capital_evidence = portfolio_coverage.status != "unavailable"
+        missing_required_snapshot = portfolio_coverage.status == "partial"
+        if PORTFOLIO_SNAPSHOT_MISSING in portfolio_coverage.reason_codes:
+            coverage_reasons.extend(portfolio_coverage.reason_codes)
             point_warnings.append(PORTFOLIO_SNAPSHOT_MISSING)
             capital_quality_codes.add(PORTFOLIO_SNAPSHOT_MISSING)
             add_warning(
@@ -698,8 +681,8 @@ def assemble_ai_analysis_bundle(
                 "No persisted portfolio/debt snapshot exists for this reporting month; capital is unavailable, not zero.",
             )
         if missing_required_snapshot:
-            coverage_reasons.append(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
-            capital_quality_codes.add(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
+            coverage_reasons.extend(portfolio_coverage.reason_codes)
+            capital_quality_codes.update(portfolio_coverage.reason_codes)
         if future_dated_positions:
             coverage_reasons.append(FUTURE_DATED_VALUATION)
             point_warnings.append(FUTURE_DATED_VALUATION)
@@ -756,11 +739,7 @@ def assemble_ai_analysis_bundle(
             coverage_reasons.append("draft_month_incomplete")
             point_warnings.append("draft_month_incomplete")
             draft_codes.append("draft_value")
-        capital_codes = draft_codes.copy()
-        if not has_capital_evidence:
-            capital_codes.append(PORTFOLIO_SNAPSHOT_MISSING)
-        if missing_required_snapshot:
-            capital_codes.append(ACTIVE_ACCOUNT_SNAPSHOT_MISSING)
+        capital_codes = [*draft_codes, *portfolio_coverage.reason_codes]
         if future_dated_positions:
             capital_codes.append(FUTURE_DATED_VALUATION)
         passive_codes = draft_codes.copy()
