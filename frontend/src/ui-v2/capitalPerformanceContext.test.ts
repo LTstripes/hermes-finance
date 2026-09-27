@@ -64,6 +64,37 @@ describe("parsePerformanceContext", () => {
     );
   });
 
+  it("rejects repeated context parameters instead of collapsing them", () => {
+    expect(
+      parsePerformanceContext(params("start=2031-05-31&start=2031-06-30&end=2031-07-31")).error
+        ?.code,
+    ).toBe("repeated_param");
+    expect(
+      parsePerformanceContext(params("start=2031-05-31&end=2031-07-31&scope=portfolio&scope=account"))
+        .error?.code,
+    ).toBe("repeated_param");
+    expect(
+      parsePerformanceContext(
+        params("start=2031-05-31&end=2031-07-31&scope=account&account_id=3&account_id=3"),
+      ).error?.code,
+    ).toBe("repeated_param");
+  });
+
+  it("rejects invalid scope and view values instead of normalizing them", () => {
+    expect(
+      parsePerformanceContext(params("start=2031-05-31&end=2031-07-31&scope=banana")).error?.code,
+    ).toBe("invalid_scope");
+    expect(
+      parsePerformanceContext(params("start=2031-05-31&end=2031-07-31&view=grid")).error?.code,
+    ).toBe("invalid_view");
+  });
+
+  it("keeps the documented defaults for missing scope and view", () => {
+    const result = parsePerformanceContext(params("start=2031-05-31&end=2031-07-31"));
+    expect(result.context?.scope).toBe("portfolio");
+    expect(result.context?.view).toBe("accounts");
+  });
+
   it("requires an account for the account scope and never falls back to portfolio", () => {
     expect(
       parsePerformanceContext(params("start=2031-05-31&end=2031-07-31&scope=account")).error?.code,

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,8 +6,6 @@ import type {
   PerformanceAttribution,
   PerformanceReadiness,
   PerformanceReadinessDiagnostic,
-  PortfolioTwrr,
-  PortfolioXirr,
 } from "../api/types";
 import {
   CapitalPerformanceSummary,
@@ -119,39 +117,6 @@ function readinessFixture(
   };
 }
 
-function legacyXirr(value: string | null): PortfolioXirr | null {
-  if (value === null) return null;
-  return {
-    metric: "xirr",
-    scope: "portfolio",
-    performance_currency: "RUB",
-    value,
-    value_unit: "percentage_points",
-    annualized: true,
-    period: { start_date: START, end_date: END },
-    availability: "available",
-    quality: "exact",
-    reason_codes: [],
-  };
-}
-
-function legacyTwrr(value: string | null): PortfolioTwrr | null {
-  if (value === null) return null;
-  return {
-    metric: "twrr",
-    scope: "portfolio",
-    account_id: null,
-    performance_currency: "RUB",
-    value,
-    value_unit: "percentage_points",
-    annualized: false,
-    period: { start_date: START, end_date: END },
-    availability: "available",
-    quality: "exact",
-    reason_codes: [],
-  };
-}
-
 function attributionFixture(): PerformanceAttribution {
   return {
     contract: "PERF04A",
@@ -194,17 +159,10 @@ function baseProps(
     detailHref: HREF,
     pairStart: START,
     pairEnd: END,
-    performanceCurrency: "RUB",
     readiness: readinessFixture("7.42", "6.10"),
     readinessError: false,
     readinessReady: true,
     retry: vi.fn(),
-    twrr: legacyTwrr("6.10"),
-    twrrError: false,
-    twrrReady: true,
-    xirr: legacyXirr("7.42"),
-    xirrError: false,
-    xirrReady: true,
     ...overrides,
   };
 }
@@ -236,8 +194,6 @@ describe("CapitalPerformanceSummary", () => {
         readiness: readinessFixture("5.00", null, [
           diagnostic("valuation_boundary", ["twrr"], "not_implemented"),
         ]),
-        twrr: null,
-        twrrReady: true,
       }),
     );
     expect(screen.getByTestId("capital-performance-xirr")).toHaveTextContent("+5,00%");
@@ -255,8 +211,6 @@ describe("CapitalPerformanceSummary", () => {
           diagnostic("cash_history", ["xirr", "twrr"], "requires_reopen"),
           diagnostic("unknown_future_code", ["twrr"], "unsupported"),
         ]),
-        xirr: null,
-        twrr: null,
       }),
     );
     expect(screen.getAllByText(/Не подтверждена полнота денежной истории/i).length).toBeGreaterThan(
@@ -280,32 +234,49 @@ describe("CapitalPerformanceSummary", () => {
 
   it("never shows a stale response as current", () => {
     const stale = readinessFixture("7.42", "6.10");
+    const retry = vi.fn();
     renderSummary(
       baseProps({
         readiness: { ...stale, start_date: "2031-04-30", end_date: "2031-05-31" },
         readinessReady: true,
-        xirr: null,
-        xirrReady: false,
-        twrr: null,
-        twrrReady: false,
+        retry,
       }),
     );
     expect(screen.queryByText("+7,42%")).toBeNull();
+    expect(screen.queryByText("+6,10%")).toBeNull();
     expect(screen.getByText(/прошлый процент как текущий не показывается/i)).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "Повторить" }).length).toBeGreaterThan(0);
+    const retryButtons = screen.getAllByRole("button", { name: "Повторить" });
+    expect(retryButtons.length).toBeGreaterThan(0);
+    fireEvent.click(retryButtons[0]);
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to legacy metrics when the readiness read fails", () => {
+  it("hides both metrics and retries the coherent read when readiness fails", () => {
+    const retry = vi.fn();
     renderSummary(
       baseProps({
         readiness: null,
         readinessError: true,
         readinessReady: false,
+        retry,
       }),
     );
-    expect(screen.getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
-    expect(screen.getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
+    expect(screen.queryByText(/%/)).toBeNull();
     expect(screen.getByText(/Проверка готовности не завершилась/i)).toBeVisible();
+    fireEvent.click(screen.getAllByRole("button", { name: "Повторить" })[0]);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows loading placeholders while the coherent read is pending", () => {
+    renderSummary(
+      baseProps({
+        readiness: null,
+        readinessError: false,
+        readinessReady: false,
+      }),
+    );
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.getByText(/Проверяем готовность расчёта/i)).toBeVisible();
   });
 
   it("keeps the monetary bridge secondary with its disclaimer", () => {
@@ -321,8 +292,6 @@ describe("CapitalPerformanceSummary", () => {
         readiness: readinessFixture(null, null, [
           diagnostic("membership_history", ["xirr", "twrr"], "not_implemented"),
         ]),
-        xirr: null,
-        twrr: null,
       }),
     );
     expect(screen.getByText(/Возможность пока не реализована/i)).toBeVisible();

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { listAccounts } from "../api/accounts";
@@ -10,12 +10,7 @@ import { listDebts } from "../api/debts";
 import { listDeposits } from "../api/deposits";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
-import {
-  getPerformanceAttribution,
-  getPerformanceReadiness,
-  getPortfolioTwrr,
-  getPortfolioXirr,
-} from "../api/performance";
+import { getPerformanceAttribution, getPerformanceReadiness } from "../api/performance";
 import { listPositions } from "../api/positions";
 import { listProperties } from "../api/properties";
 import { getRiskAllocation, type RiskAllocationResponse } from "../api/riskAllocation";
@@ -29,8 +24,6 @@ import type {
   DebtEntry,
   PerformanceAttribution,
   PerformanceReadiness,
-  PortfolioTwrr,
-  PortfolioXirr,
   PropertySnapshot,
 } from "../api/types";
 import {
@@ -90,26 +83,6 @@ function rowsMatchMonth(
 
 function isZeroAmount(amount: string): boolean {
   return /^-?0(?:\.0+)?$/.test(amount.trim());
-}
-
-/** Secondary performance evidence starts collapsed on the narrow layout only. */
-function useNarrowViewport(maxWidthPx = 800): boolean {
-  const query = `(max-width: ${maxWidthPx}px)`;
-  const [narrow, setNarrow] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const list = window.matchMedia(query);
-    const handle = (event: MediaQueryListEvent) => setNarrow(event.matches);
-    setNarrow(list.matches);
-    list.addEventListener("change", handle);
-    return () => list.removeEventListener("change", handle);
-  }, [query]);
-  return narrow;
 }
 
 function Panel({
@@ -699,36 +672,21 @@ function PerformanceBlock({
   attributionReady,
   pairEnd,
   pairStart,
-  performanceCurrency,
   readiness,
   readinessError,
   readinessReady,
   retry,
-  twrr,
-  twrrError,
-  twrrReady,
-  xirr,
-  xirrError,
-  xirrReady,
 }: {
   attribution: PerformanceAttribution | null;
   attributionError: boolean;
   attributionReady: boolean;
   pairEnd: string | null;
   pairStart: string | null;
-  performanceCurrency: string | null;
   readiness: PerformanceReadiness | null;
   readinessError: boolean;
   readinessReady: boolean;
   retry: () => void;
-  twrr: PortfolioTwrr | null;
-  twrrError: boolean;
-  twrrReady: boolean;
-  xirr: PortfolioXirr | null;
-  xirrError: boolean;
-  xirrReady: boolean;
 }) {
-  const narrow = useNarrowViewport();
   const detailHref =
     pairStart !== null && pairEnd !== null
       ? performanceDetailHref({
@@ -744,28 +702,18 @@ function PerformanceBlock({
       {pairStart === null || pairEnd === null ? (
         <UiV2WidgetState title="Нужны два закрытых отчёта для расчёта за период" />
       ) : (
-        <details className={capitalStyles.collapsible} open={!narrow}>
-          <summary>Показать расчёты за период между двумя закрытыми отчётами</summary>
-          <CapitalPerformanceSummary
-            attribution={attribution}
-            attributionError={attributionError}
-            attributionReady={attributionReady}
-            detailHref={detailHref}
-            pairEnd={pairEnd}
-            pairStart={pairStart}
-            performanceCurrency={performanceCurrency}
-            readiness={readiness}
-            readinessError={readinessError}
-            readinessReady={readinessReady}
-            retry={retry}
-            twrr={twrr}
-            twrrError={twrrError}
-            twrrReady={twrrReady}
-            xirr={xirr}
-            xirrError={xirrError}
-            xirrReady={xirrReady}
-          />
-        </details>
+        <CapitalPerformanceSummary
+          attribution={attribution}
+          attributionError={attributionError}
+          attributionReady={attributionReady}
+          detailHref={detailHref}
+          pairEnd={pairEnd}
+          pairStart={pairStart}
+          readiness={readiness}
+          readinessError={readinessError}
+          readinessReady={readinessReady}
+          retry={retry}
+        />
       )}
       <p className={styles.panelFootnote}>
         Расчёты доступны только для того же интервала между двумя закрытыми отчётами.{" "}
@@ -973,18 +921,6 @@ export default function UiV2CapitalPage() {
       getPerformanceAttribution(pairStart as string, pairEnd as string, signal),
     refetchOnWindowFocus: true,
   });
-  const xirrQuery = useQuery({
-    enabled: pairStart !== null,
-    queryKey: queryKeys.portfolioXirr(pairStart, pairEnd),
-    queryFn: ({ signal }) => getPortfolioXirr(pairStart as string, pairEnd as string, signal),
-    refetchOnWindowFocus: true,
-  });
-  const twrrQuery = useQuery({
-    enabled: pairStart !== null,
-    queryKey: queryKeys.portfolioTwrr(pairStart, pairEnd),
-    queryFn: ({ signal }) => getPortfolioTwrr(pairStart as string, pairEnd as string, signal),
-    refetchOnWindowFocus: true,
-  });
   const readinessQuery = useQuery({
     enabled: pairStart !== null,
     queryKey: queryKeys.performanceReadiness(pairStart, pairEnd, "portfolio", null),
@@ -1002,14 +938,6 @@ export default function UiV2CapitalPage() {
     isQueryReady(attributionQuery) &&
     attributionQuery.data?.scope === "portfolio" &&
     periodMatches(attributionQuery.data.period);
-  const xirrReady =
-    isQueryReady(xirrQuery) &&
-    xirrQuery.data?.scope === "portfolio" &&
-    periodMatches(xirrQuery.data.period);
-  const twrrReady =
-    isQueryReady(twrrQuery) &&
-    twrrQuery.data?.scope === "portfolio" &&
-    periodMatches(twrrQuery.data.period);
   const readinessReady =
     isQueryReady(readinessQuery) &&
     readinessQuery.data?.scope === "portfolio" &&
@@ -1165,30 +1093,12 @@ export default function UiV2CapitalPage() {
             attributionReady={attributionReady}
             pairEnd={pairEnd}
             pairStart={pairStart}
-            performanceCurrency={
-              xirrReady
-                ? (xirrQuery.data?.performance_currency ?? null)
-                : twrrReady
-                  ? (twrrQuery.data?.performance_currency ?? null)
-                  : null
-            }
             readiness={readinessReady ? (readinessQuery.data ?? null) : null}
             readinessError={readinessQuery.isError}
             readinessReady={readinessReady}
             retry={() =>
-              void Promise.all([
-                attributionQuery.refetch(),
-                xirrQuery.refetch(),
-                twrrQuery.refetch(),
-                readinessQuery.refetch(),
-              ])
+              void Promise.all([attributionQuery.refetch(), readinessQuery.refetch()])
             }
-            twrr={twrrReady ? (twrrQuery.data ?? null) : null}
-            twrrError={twrrQuery.isError}
-            twrrReady={twrrReady}
-            xirr={xirrReady ? (xirrQuery.data ?? null) : null}
-            xirrError={xirrQuery.isError}
-            xirrReady={xirrReady}
           />
           {propertiesQuery.isError ||
           (propertiesReady && (propertiesQuery.data?.length ?? 0) > 0) ? (

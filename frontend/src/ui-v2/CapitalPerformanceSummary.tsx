@@ -4,24 +4,15 @@ import type {
   PerformanceAttribution,
   PerformanceReadiness,
   PerformanceReadinessDiagnostic,
-  PortfolioTwrr,
-  PortfolioXirr,
 } from "../api/types";
 import { formatDate, formatPercent } from "../lib/format";
 import {
   performanceAttributionUnavailableMessage,
-  portfolioTwrrUnavailableMessage,
-  portfolioXirrUnavailableMessage,
   VALUE_BRIDGE_DISCLAIMER,
   VALUE_BRIDGE_LABEL,
 } from "../lib/performanceMessages";
 import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
-import {
-  intervalDays,
-  isZeroPercent,
-  needsAnnualizationWarning,
-  type PerformanceContext,
-} from "./capitalPerformanceContext";
+import { intervalDays, isZeroPercent, needsAnnualizationWarning } from "./capitalPerformanceContext";
 import styles from "./UiV2CapitalPerformance.module.css";
 import { UiV2WidgetState } from "./UiV2StateBlocks";
 import { moneyDeltaText as moneyDelta } from "./valueFormat";
@@ -184,23 +175,18 @@ export type CapitalPerformanceSummaryProps = {
   detailHref: string;
   pairStart: string;
   pairEnd: string;
-  performanceCurrency: string | null;
   readiness: PerformanceReadiness | null;
   readinessError: boolean;
   readinessReady: boolean;
   retry: () => void;
-  twrr: PortfolioTwrr | null;
-  twrrError: boolean;
-  twrrReady: boolean;
-  xirr: PortfolioXirr | null;
-  xirrError: boolean;
-  xirrReady: boolean;
 };
 
 /**
  * Compact portfolio summary: period TWRR, annualized XIRR, state/next action.
- * XIRR and TWRR resolve independently; readiness diagnostics come only from
- * the accepted capability-driven projection, never from substring heuristics.
+ * Numbers come only from the fresh coherent readiness projection. A stale,
+ * failed or missing readiness read hides both metrics and retries the same
+ * coherent read — legacy XIRR/TWRR endpoints are never a financial fallback.
+ * Diagnostics come only from the capability-driven projection.
  */
 export function CapitalPerformanceSummary({
   attribution,
@@ -209,17 +195,10 @@ export function CapitalPerformanceSummary({
   detailHref,
   pairEnd,
   pairStart,
-  performanceCurrency,
   readiness,
   readinessError,
   readinessReady,
   retry,
-  twrr,
-  twrrError,
-  twrrReady,
-  xirr,
-  xirrError,
-  xirrReady,
 }: CapitalPerformanceSummaryProps) {
   const fresh = isReadinessFresh(readiness, {
     start: pairStart,
@@ -228,23 +207,25 @@ export function CapitalPerformanceSummary({
     accountId: null,
   });
   const effective = fresh && readinessReady ? readiness : null;
-  const staleReadiness = readiness !== null && readinessReady && !fresh;
+  // Stale identity or a transport failure: no percentage may be shown as current.
+  const failed = readinessError || (readiness !== null && readinessReady && !fresh);
+  const loading = !failed && effective === null;
 
   const xirrMetric = effective?.xirr ?? null;
   const twrrMetric = effective?.twrr ?? null;
 
   const xirrValue =
-    xirrMetric && xirrMetric.availability === "available" && xirrMetric.quality === "exact"
+    xirrMetric?.availability === "available" &&
+    xirrMetric.quality === "exact" &&
+    xirrMetric.value !== null
       ? formatPerformancePercent(xirrMetric.value)
-      : xirr && xirr.availability === "available" && xirr.value !== null
-        ? formatPerformancePercent(xirr.value)
-        : null;
+      : null;
   const twrrValue =
-    twrrMetric && twrrMetric.availability === "available" && twrrMetric.quality === "exact"
+    twrrMetric?.availability === "available" &&
+    twrrMetric.quality === "exact" &&
+    twrrMetric.value !== null
       ? formatPerformancePercent(twrrMetric.value)
-      : twrr && twrr.availability === "available" && twrr.value !== null
-        ? formatPerformancePercent(twrr.value)
-        : null;
+      : null;
 
   const xirrDiagnostics = (effective?.diagnostics ?? []).filter((d) =>
     d.affected_metrics.includes("xirr"),
@@ -255,34 +236,17 @@ export function CapitalPerformanceSummary({
   const xirrReason =
     xirrDiagnostics.length > 0
       ? diagnosticCopy(sortDiagnostics(xirrDiagnostics)[0].key).title
-      : xirr
-        ? portfolioXirrUnavailableMessage(xirr.reason_codes)
-        : null;
+      : null;
   const twrrReason =
     twrrDiagnostics.length > 0
       ? diagnosticCopy(sortDiagnostics(twrrDiagnostics)[0].key).title
-      : twrr
-        ? portfolioTwrrUnavailableMessage(twrr.reason_codes)
-        : null;
-
-  const xirrResolvedReady = effective !== null || xirrReady;
-  const twrrResolvedReady = effective !== null || twrrReady;
-  const xirrRequestError = staleReadiness || (!effective && xirrError && !xirrReady);
-  const twrrRequestError = staleReadiness || (!effective && twrrError && !twrrReady);
+      : null;
 
   const diagnostics = effective?.diagnostics ?? [];
   const days = intervalDays(pairStart, pairEnd);
   const showAnnualizationWarning = needsAnnualizationWarning(pairStart, pairEnd);
-  const currency = performanceCurrency ?? effective?.performance_currency ?? null;
+  const currency = effective?.performance_currency ?? null;
   const period = `${formatDate(pairStart)} — ${formatDate(pairEnd)}`;
-  const detailContext: PerformanceContext = {
-    start: pairStart,
-    end: pairEnd,
-    scope: "portfolio",
-    accountId: null,
-    view: "accounts",
-  };
-  void detailContext;
 
   const bridgeValue =
     attribution &&
@@ -302,8 +266,8 @@ export function CapitalPerformanceSummary({
       <div className={styles.metricGrid}>
         <CompactMetric
           label="Доходность ваших вложений · XIRR, годовых"
-          requestError={xirrRequestError}
-          ready={xirrResolvedReady}
+          requestError={failed}
+          ready={!loading}
           retry={retry}
           sublabel={period}
           testId="capital-performance-xirr"
@@ -312,8 +276,8 @@ export function CapitalPerformanceSummary({
         />
         <CompactMetric
           label="Доходность за период · TWRR"
-          requestError={twrrRequestError}
-          ready={twrrResolvedReady}
+          requestError={failed}
+          ready={!loading}
           retry={retry}
           sublabel={period}
           testId="capital-performance-twrr"
@@ -324,13 +288,15 @@ export function CapitalPerformanceSummary({
       {showAnnualizationWarning && xirrValue !== null ? (
         <p className={styles.warning}>XIRR приведён к году по короткому периоду; это не прогноз.</p>
       ) : null}
-      {staleReadiness || readinessError ? (
+      {failed ? (
         <p className={styles.stateLine}>
           Проверка готовности не завершилась — прошлый процент как текущий не показывается.{" "}
           <button className={styles.inlineButton} onClick={retry} type="button">
             Повторить
           </button>
         </p>
+      ) : loading ? (
+        <p className={styles.stateLine}>Проверяем готовность расчёта…</p>
       ) : diagnostics.length > 0 ? (
         <>
           <p className={styles.stateLine}>

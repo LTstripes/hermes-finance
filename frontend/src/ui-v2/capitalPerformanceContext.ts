@@ -14,12 +14,15 @@ export type PerformanceContextError = {
   code:
     | "missing_interval"
     | "partial_interval"
+    | "repeated_param"
     | "malformed_date"
     | "equal_dates"
     | "reversed_interval"
+    | "invalid_scope"
     | "missing_account"
     | "portfolio_account_mismatch"
-    | "unknown_account";
+    | "unknown_account"
+    | "invalid_view";
   message: string;
 };
 
@@ -35,8 +38,9 @@ function isValidIsoDate(value: string): boolean {
 }
 
 /**
- * Validate the leaf detail context. Malformed/partial/equal/reversed intervals
- * and scope/account mismatches are context errors, never silent defaults.
+ * Validate the leaf detail context. Repeated parameters, malformed/partial/
+ * equal/reversed intervals, invalid scope/view values and scope/account
+ * mismatches are context errors, never silent defaults or substitution.
  * Unknown/deleted accounts are reported by the caller via `accountExists`.
  */
 export function parsePerformanceContext(
@@ -45,12 +49,41 @@ export function parsePerformanceContext(
 ):
   | { context: PerformanceContext; error: null }
   | { context: null; error: PerformanceContextError } {
+  for (const name of ["start", "end", "scope", "account_id", "view"]) {
+    if (params.getAll(name).length > 1) {
+      return {
+        context: null,
+        error: {
+          code: "repeated_param",
+          message: `Параметр «${name}» задан несколько раз: оставьте одно значение.`,
+        },
+      };
+    }
+  }
   const start = params.get("start");
   const end = params.get("end");
   const scopeRaw = params.get("scope");
   const accountRaw = params.get("account_id");
   const viewRaw = params.get("view");
 
+  if (scopeRaw !== null && scopeRaw !== "portfolio" && scopeRaw !== "account") {
+    return {
+      context: null,
+      error: {
+        code: "invalid_scope",
+        message: "Охват задан неверно: допустимы только «portfolio» и «account».",
+      },
+    };
+  }
+  if (viewRaw !== null && viewRaw !== "accounts" && viewRaw !== "classes") {
+    return {
+      context: null,
+      error: {
+        code: "invalid_view",
+        message: "Вид задан неверно: допустимы только «accounts» и «classes».",
+      },
+    };
+  }
   const scope: PerformanceReadinessScope = scopeRaw === "account" ? "account" : "portfolio";
   const view: PerformanceDetailView = viewRaw === "classes" ? "classes" : "accounts";
 

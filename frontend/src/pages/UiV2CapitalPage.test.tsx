@@ -190,14 +190,6 @@ function setup(path = "/v2/capital") {
           data = state.performance.attribution;
           failed = state.performanceError;
           break;
-        case "/api/performance/xirr":
-          data = state.performance.xirr;
-          failed = state.performanceError;
-          break;
-        case "/api/performance/twrr":
-          data = state.performance.twrr;
-          failed = state.performanceError;
-          break;
         case "/api/performance/readiness":
           expect(url.searchParams.get("scope")).toBe("portfolio");
           data = makeReadiness(state.performance);
@@ -410,20 +402,20 @@ it("shows supported performance for the same closed pair and hides raw reason co
   const { mount } = setup();
   mount();
 
-  const pair = await waitFor(() => {
-    const element = document.querySelector("details[open]");
-    if (!element) throw new Error("performance disclosure is not open");
-    return element as HTMLElement;
-  });
+  const pair = await screen.findByTestId("capital-performance-period");
+  const panel = pair.closest("section");
+  if (!panel) throw new Error("performance panel is missing");
   await waitFor(() =>
-    expect(within(pair).getByTestId("capital-performance-bridge")).toHaveTextContent("+42 600 ₽"),
+    expect(within(panel).getByTestId("capital-performance-bridge")).toHaveTextContent(
+      "+42 600 ₽",
+    ),
   );
-  expect(within(pair).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
-  expect(within(pair).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
-  expect(within(pair).getByTestId("capital-performance-bridge")).toHaveTextContent(
+  expect(within(panel).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
+  expect(within(panel).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
+  expect(within(panel).getByTestId("capital-performance-bridge")).toHaveTextContent(
     /Это изменение стоимости, а не доходность/i,
   );
-  expect(within(pair).getByTestId("capital-performance-bridge")).toHaveTextContent(
+  expect(within(panel).getByTestId("capital-performance-bridge")).toHaveTextContent(
     /Не прибыль и не доходность/i,
   );
   expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute(
@@ -432,7 +424,7 @@ it("shows supported performance for the same closed pair and hides raw reason co
   );
 });
 
-it("starts the performance disclosure collapsed on the narrow layout", async () => {
+it("keeps the compact performance summary visible on the narrow layout", async () => {
   vi.stubGlobal(
     "matchMedia",
     vi.fn((query: string) => ({
@@ -447,9 +439,13 @@ it("starts the performance disclosure collapsed on the narrow layout", async () 
   mount();
 
   await screen.findByTestId("capital-net");
-  const details = document.querySelector("details");
-  if (!details) throw new Error("performance disclosure is missing");
-  expect(details).not.toHaveAttribute("open");
+  // Primary XIRR/TWRR summary is not hidden inside a collapsed disclosure.
+  expect(await screen.findByText("+7,42%")).toBeVisible();
+  expect(await screen.findByText("+6,10%")).toBeVisible();
+  // Only the secondary monetary bridge stays collapsed.
+  const bridge = screen.getByTestId("capital-performance-bridge").closest("details");
+  if (!bridge) throw new Error("performance bridge disclosure is missing");
+  expect(bridge).not.toHaveAttribute("open");
 });
 
 it("reports an unavailable performance metric with an owner-facing reason", async () => {
@@ -656,15 +652,13 @@ it("refuses a non-portfolio attribution response on the portfolio panel", async 
   mount();
 
   await screen.findByTestId("capital-net");
-  const pair = await waitFor(() => {
-    const element = document.querySelector("details[open]");
-    if (!element) throw new Error("performance disclosure is not open");
-    return element as HTMLElement;
-  });
-  const bridge = within(pair).getByTestId("capital-performance-bridge");
+  const pair = await screen.findByTestId("capital-performance-period");
+  const panel = pair.closest("section");
+  if (!panel) throw new Error("performance panel is missing");
+  const bridge = within(panel).getByTestId("capital-performance-bridge");
   expect(bridge).not.toHaveTextContent("+42 600 ₽");
-  expect(within(pair).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
-  expect(within(pair).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
+  expect(within(panel).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
+  expect(within(panel).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
 
