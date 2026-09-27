@@ -10,7 +10,12 @@ import { listDebts } from "../api/debts";
 import { listDeposits } from "../api/deposits";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
-import { getPerformanceAttribution, getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
+import {
+  getPerformanceAttribution,
+  getPerformanceReadiness,
+  getPortfolioTwrr,
+  getPortfolioXirr,
+} from "../api/performance";
 import { listPositions } from "../api/positions";
 import { listProperties } from "../api/properties";
 import { getRiskAllocation, type RiskAllocationResponse } from "../api/riskAllocation";
@@ -23,6 +28,7 @@ import type {
   DashboardMortgage,
   DebtEntry,
   PerformanceAttribution,
+  PerformanceReadiness,
   PortfolioTwrr,
   PortfolioXirr,
   PropertySnapshot,
@@ -35,16 +41,11 @@ import { buildLinkedPairFacts, pairFactNote } from "../components/LinkedPairCont
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { buildCapitalCompositionSeries } from "../lib/capitalComposition";
-import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
-import {
-  performanceAttributionUnavailableMessage,
-  portfolioTwrrUnavailableMessage,
-  portfolioXirrUnavailableMessage,
-  VALUE_BRIDGE_DISCLAIMER,
-  VALUE_BRIDGE_LABEL,
-} from "../lib/performanceMessages";
+import { formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { unsupportedMetricReason } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
+import { CapitalPerformanceSummary } from "./CapitalPerformanceSummary";
+import { performanceDetailHref } from "./capitalPerformanceContext";
 import {
   buildHoldingRows,
   filterHoldingRows,
@@ -692,80 +693,52 @@ function LinkedPairsBlock({
   );
 }
 
-function PerformanceItem({
-  currency,
-  metricLabel,
-  ready,
-  reason,
-  period,
-  retry,
-  testId,
-}: {
-  currency: string | null;
-  metricLabel: string;
-  period: string | null;
-  ready: boolean;
-  reason: string | null;
-  retry: () => void;
-  testId: string;
-}) {
-  return (
-    <article data-testid={testId}>
-      <p className={styles.eyebrow}>{metricLabel}</p>
-      {!ready ? (
-        <UiV2WidgetState retry={retry} />
-      ) : currency === null ? (
-        <p className={capitalStyles.muted}>
-          {reason ?? "Не удалось получить подтверждённый результат для выбранного периода."}
-        </p>
-      ) : (
-        <>
-          <p className={capitalStyles.performanceValue}>{currency}</p>
-          <p className={capitalStyles.muted}>{period}</p>
-        </>
-      )}
-    </article>
-  );
-}
-
 function PerformanceBlock({
   attribution,
+  attributionError,
   attributionReady,
   pairEnd,
   pairStart,
+  performanceCurrency,
+  readiness,
+  readinessError,
+  readinessReady,
   retry,
   twrr,
+  twrrError,
   twrrReady,
   xirr,
+  xirrError,
   xirrReady,
 }: {
   attribution: PerformanceAttribution | null;
+  attributionError: boolean;
   attributionReady: boolean;
   pairEnd: string | null;
   pairStart: string | null;
+  performanceCurrency: string | null;
+  readiness: PerformanceReadiness | null;
+  readinessError: boolean;
+  readinessReady: boolean;
   retry: () => void;
   twrr: PortfolioTwrr | null;
+  twrrError: boolean;
   twrrReady: boolean;
   xirr: PortfolioXirr | null;
+  xirrError: boolean;
   xirrReady: boolean;
 }) {
   const narrow = useNarrowViewport();
-  const period = pairStart && pairEnd ? `${formatDate(pairStart)} — ${formatDate(pairEnd)}` : null;
-  const bridgeValue =
-    attribution &&
-    attribution.availability === "available" &&
-    attribution.quality === "exact" &&
-    attribution.value !== null
-      ? moneyDelta(attribution.value)
-      : null;
-  const xirrValue =
-    xirr && xirr.availability === "available" && xirr.value !== null
-      ? formatPercent(xirr.value, { digits: 2, signed: true })
-      : null;
-  const twrrValue =
-    twrr && twrr.availability === "available" && twrr.value !== null
-      ? formatPercent(twrr.value, { digits: 2, signed: true })
-      : null;
+  const detailHref =
+    pairStart !== null && pairEnd !== null
+      ? performanceDetailHref({
+          start: pairStart,
+          end: pairEnd,
+          scope: "portfolio",
+          accountId: null,
+          view: "accounts",
+        })
+      : "/v2/capital";
   return (
     <Panel eyebrow="Доходность" id="capital-performance-title" title="Доходность портфеля" wide>
       {pairStart === null || pairEnd === null ? (
@@ -773,39 +746,25 @@ function PerformanceBlock({
       ) : (
         <details className={capitalStyles.collapsible} open={!narrow}>
           <summary>Показать расчёты за период между двумя закрытыми отчётами</summary>
-          <div className={capitalStyles.performanceList}>
-            <PerformanceItem
-              currency={bridgeValue}
-              metricLabel={`${VALUE_BRIDGE_LABEL} · ${VALUE_BRIDGE_DISCLAIMER}`}
-              period={period}
-              ready={attributionReady}
-              reason={
-                attribution
-                  ? performanceAttributionUnavailableMessage(attribution.reason_codes)
-                  : null
-              }
-              retry={retry}
-              testId="capital-performance-bridge"
-            />
-            <PerformanceItem
-              currency={xirrValue}
-              metricLabel="Годовая доходность (XIRR)"
-              period={period}
-              ready={xirrReady}
-              reason={xirr ? portfolioXirrUnavailableMessage(xirr.reason_codes) : null}
-              retry={retry}
-              testId="capital-performance-xirr"
-            />
-            <PerformanceItem
-              currency={twrrValue}
-              metricLabel="Доходность за период (TWRR)"
-              period={period}
-              ready={twrrReady}
-              reason={twrr ? portfolioTwrrUnavailableMessage(twrr.reason_codes) : null}
-              retry={retry}
-              testId="capital-performance-twrr"
-            />
-          </div>
+          <CapitalPerformanceSummary
+            attribution={attribution}
+            attributionError={attributionError}
+            attributionReady={attributionReady}
+            detailHref={detailHref}
+            pairEnd={pairEnd}
+            pairStart={pairStart}
+            performanceCurrency={performanceCurrency}
+            readiness={readiness}
+            readinessError={readinessError}
+            readinessReady={readinessReady}
+            retry={retry}
+            twrr={twrr}
+            twrrError={twrrError}
+            twrrReady={twrrReady}
+            xirr={xirr}
+            xirrError={xirrError}
+            xirrReady={xirrReady}
+          />
         </details>
       )}
       <p className={styles.panelFootnote}>
@@ -1026,6 +985,13 @@ export default function UiV2CapitalPage() {
     queryFn: ({ signal }) => getPortfolioTwrr(pairStart as string, pairEnd as string, signal),
     refetchOnWindowFocus: true,
   });
+  const readinessQuery = useQuery({
+    enabled: pairStart !== null,
+    queryKey: queryKeys.performanceReadiness(pairStart, pairEnd, "portfolio", null),
+    queryFn: ({ signal }) =>
+      getPerformanceReadiness(pairStart as string, pairEnd as string, "portfolio", null, signal),
+    refetchOnWindowFocus: true,
+  });
 
   const periodMatches = (period: { start_date: string; end_date: string } | undefined) =>
     period !== undefined &&
@@ -1044,6 +1010,12 @@ export default function UiV2CapitalPage() {
     isQueryReady(twrrQuery) &&
     twrrQuery.data?.scope === "portfolio" &&
     periodMatches(twrrQuery.data.period);
+  const readinessReady =
+    isQueryReady(readinessQuery) &&
+    readinessQuery.data?.scope === "portfolio" &&
+    readinessQuery.data?.account_id === null &&
+    readinessQuery.data?.start_date === pairStart &&
+    readinessQuery.data?.end_date === pairEnd;
 
   const holdingRows = useMemo(
     () =>
@@ -1189,19 +1161,33 @@ export default function UiV2CapitalPage() {
           />
           <PerformanceBlock
             attribution={attributionReady ? (attributionQuery.data ?? null) : null}
+            attributionError={attributionQuery.isError}
             attributionReady={attributionReady}
             pairEnd={pairEnd}
             pairStart={pairStart}
+            performanceCurrency={
+              xirrReady
+                ? (xirrQuery.data?.performance_currency ?? null)
+                : twrrReady
+                  ? (twrrQuery.data?.performance_currency ?? null)
+                  : null
+            }
+            readiness={readinessReady ? (readinessQuery.data ?? null) : null}
+            readinessError={readinessQuery.isError}
+            readinessReady={readinessReady}
             retry={() =>
               void Promise.all([
                 attributionQuery.refetch(),
                 xirrQuery.refetch(),
                 twrrQuery.refetch(),
+                readinessQuery.refetch(),
               ])
             }
             twrr={twrrReady ? (twrrQuery.data ?? null) : null}
+            twrrError={twrrQuery.isError}
             twrrReady={twrrReady}
             xirr={xirrReady ? (xirrQuery.data ?? null) : null}
+            xirrError={xirrQuery.isError}
             xirrReady={xirrReady}
           />
           {propertiesQuery.isError ||
