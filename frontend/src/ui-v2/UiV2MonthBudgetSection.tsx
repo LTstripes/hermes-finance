@@ -14,6 +14,7 @@ import type {
   ExpenseEntry,
   PlannedBudgetLine,
   PlanVsActualRow,
+  ReportingMonth,
   SavingAllocation,
 } from "../api/types";
 import { ConfirmDialog, Table, Td, Th } from "../components/ui";
@@ -25,6 +26,82 @@ import styles from "./UiV2MonthEditor.module.css";
 
 /** Leaf section id reserved for Integrator wiring (#563, after #558). */
 export const MONTH_BUDGET_SECTION_ID = "budget";
+
+type ExpenseExpectation = {
+  category: string;
+  expense_type: string;
+  amount: string;
+  notes: string;
+};
+
+type SavingExpectation = {
+  destination: string;
+  amount: string;
+  notes: string;
+};
+
+type PlanExpectation = {
+  category: string;
+  expense_type: string;
+  planned_amount: string;
+  notes: string;
+};
+
+type BudgetSnapshot = {
+  expenses: ExpenseEntry[];
+  savings: SavingAllocation[];
+  plan: PlannedBudgetLine[];
+  comparison: PlanVsActualRow[];
+};
+
+function kindLabel(kind: "expense" | "saving" | "plan"): string {
+  return kind === "expense" ? "Расход" : kind === "saving" ? "Накопление" : "План";
+}
+
+function expenseMatches(row: ExpenseEntry, expected: ExpenseExpectation): boolean {
+  return (
+    row.category === expected.category.trim() &&
+    row.expense_type === expected.expense_type &&
+    normalizeMoneyInput(moneyAmount(row.amount)) === normalizeMoneyInput(expected.amount) &&
+    (row.notes ?? null) === (expected.notes.trim() || null)
+  );
+}
+
+function savingMatches(row: SavingAllocation, expected: SavingExpectation): boolean {
+  return (
+    row.destination === expected.destination.trim() &&
+    normalizeMoneyInput(moneyAmount(row.amount)) === normalizeMoneyInput(expected.amount) &&
+    (row.notes ?? null) === (expected.notes.trim() || null)
+  );
+}
+
+function planMatches(row: PlannedBudgetLine, expected: PlanExpectation): boolean {
+  return (
+    row.category === expected.category.trim() &&
+    row.expense_type === expected.expense_type &&
+    normalizeMoneyInput(moneyAmount(row.planned_amount)) ===
+      normalizeMoneyInput(expected.planned_amount) &&
+    (row.notes ?? null) === (expected.notes.trim() || null)
+  );
+}
+
+function missingRowError(kind: "expense" | "saving" | "plan", id: number): Error {
+  return new Error(
+    `${kindLabel(kind)} #${id} отсутствует в перечитанных данных. Запись не подтверждена, черновик сохранён.`,
+  );
+}
+
+function staleRowError(kind: "expense" | "saving" | "plan", id: number): Error {
+  return new Error(
+    `${kindLabel(kind)} #${id} в перечитанных данных не отражает запрошенные изменения. Правка не подтверждена.`,
+  );
+}
+
+function deleteMissingError(kind: "expense" | "saving" | "plan", id: number): Error {
+  return new Error(
+    `${kindLabel(kind)} #${id} остался в перечитанных данных. Удаление не подтверждено.`,
+  );
+}
 
 type ExpenseDraft = {
   category: string;
@@ -185,14 +262,49 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     return operation.current !== token || month.id !== target;
   }
 
-  async function reloadAfterWrite(token: number, target: number): Promise<void> {
+  const latestInputs = useRef({
+    expCategory: "",
+    expType: "mandatory",
+    expAmount: "",
+    expNotes: "",
+    savDest: "",
+    savAmount: "",
+    savNotes: "",
+    planCategory: "",
+    planType: "mandatory",
+    planAmount: "",
+    planNotes: "",
+    editExpense: null as ExpenseDraft | null,
+    editSaving: null as SavingDraft | null,
+    editPlan: null as PlanDraft | null,
+  });
+
+  useEffect(() => {
+    latestInputs.current = {
+      expCategory,
+      expType,
+      expAmount,
+      expNotes,
+      savDest,
+      savAmount,
+      savNotes,
+      planCategory,
+      planType,
+      planAmount,
+      planNotes,
+      editExpense,
+      editSaving,
+      editPlan,
+    };
+  });
+
+  async function refetchBudget(target: number): Promise<BudgetSnapshot> {
     const [freshExpenses, freshSavings, freshPlan, freshComparison] = await Promise.all([
       listExpenses(target),
       listSavings(target),
       listPlannedBudget(target),
       plannedVsActual(target),
     ]);
-    if (isStale(token, target)) return;
     if (
       freshExpenses.some((row) => row.reporting_month_id !== target) ||
       freshSavings.some((row) => row.reporting_month_id !== target) ||
@@ -200,13 +312,37 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     ) {
       throw new Error("Подтверждение вернуло записи другого месяца.");
     }
-    setExpenses(freshExpenses);
-    setSavings(freshSavings);
-    setPlan(freshPlan);
-    setComparison(freshComparison);
+    return {
+      expenses: freshExpenses,
+      savings: freshSavings,
+      plan: freshPlan,
+      comparison: freshComparison,
+    };
+  }
+
+  function installSnapshot(snapshot: BudgetSnapshot): void {
+    setExpenses(snapshot.expenses);
+    setSavings(snapshot.savings);
+    setPlan(snapshot.plan);
+    setComparison(snapshot.comparison);
+  }
+
+  async function refreshMonthChecked(
+    token: number,
+    target: number,
+  ): Promise<ReportingMonth | null> {
     const freshMonth = await refresh();
-    if (isStale(token, target)) return;
+    if (isStale(token, target)) return null;
     if (freshMonth.id !== target) throw new Error("Подтверждение вернуло другой месяц.");
+    return freshMonth;
+  }
+
+  function lifecycleNotice(statusAtSubmit: string, freshStatus: string): string | null {
+    if (freshStatus === statusAtSubmit) return null;
+    return (
+      `Запись подтверждена, но статус месяца изменился ` +
+      `(${statusAtSubmit} → ${freshStatus}). Обновите раздел.`
+    );
   }
 
   async function addExpense(event: FormEvent) {
@@ -214,30 +350,53 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
+    const submitted: ExpenseExpectation = {
+      category: expCategory,
+      expense_type: expType,
+      amount: expAmount,
+      notes: expNotes,
+    };
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (!expCategory.trim() || !normalizeMoneyInput(expAmount)) {
+      if (!submitted.category.trim() || !normalizeMoneyInput(submitted.amount)) {
         throw new Error("Категория и сумма обязательны");
       }
       const created = await createExpense({
         reporting_month_id: target,
-        category: expCategory.trim(),
-        amount: rub(expAmount),
-        expense_type: expType,
-        notes: expNotes.trim() || null,
+        category: submitted.category.trim(),
+        amount: rub(submitted.amount),
+        expense_type: submitted.expense_type,
+        notes: submitted.notes.trim() || null,
       });
       if (created.reporting_month_id !== target) {
         throw new Error("Создана запись другого месяца.");
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
-      setExpCategory("");
-      setExpAmount("");
-      setExpNotes("");
-      setExpenseDraftTouched(false);
-      setNotice("Расход сохранён и перечитан.");
+      const confirmed = snapshot.expenses.find((row) => row.id === created.id);
+      if (!confirmed) throw missingRowError("expense", created.id);
+      if (!expenseMatches(confirmed, submitted)) throw staleRowError("expense", created.id);
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
+      const latest = latestInputs.current;
+      if (
+        latest.expCategory === submitted.category &&
+        latest.expType === submitted.expense_type &&
+        latest.expAmount === submitted.amount &&
+        latest.expNotes === submitted.notes
+      ) {
+        setExpCategory("");
+        setExpAmount("");
+        setExpNotes("");
+        setExpenseDraftTouched(false);
+      }
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ?? "Расход сохранён и подтверждён.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
@@ -249,28 +408,47 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (editingExpenseId == null || !editExpense || readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
     const rowId = editingExpenseId;
+    const submitted: ExpenseExpectation = { ...editExpense };
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (!editExpense.category.trim() || !normalizeMoneyInput(editExpense.amount)) {
+      if (!submitted.category.trim() || !normalizeMoneyInput(submitted.amount)) {
         throw new Error("Категория и сумма обязательны");
       }
       const updated = await updateExpense(rowId, {
-        category: editExpense.category.trim(),
-        amount: rub(editExpense.amount),
-        expense_type: editExpense.expense_type,
-        notes: editExpense.notes.trim() || null,
+        category: submitted.category.trim(),
+        amount: rub(submitted.amount),
+        expense_type: submitted.expense_type,
+        notes: submitted.notes.trim() || null,
       });
       if (updated.id !== rowId || updated.reporting_month_id !== target) {
         throw new Error("Подтверждение вернуло другую запись.");
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
-      setEditingExpenseId(null);
-      setEditExpense(null);
-      setNotice("Расход обновлён и перечитан.");
+      const confirmed = snapshot.expenses.find((row) => row.id === rowId);
+      if (!confirmed) throw missingRowError("expense", rowId);
+      if (!expenseMatches(confirmed, submitted)) throw staleRowError("expense", rowId);
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
+      const latest = latestInputs.current.editExpense;
+      if (
+        latest !== null &&
+        latest.category === submitted.category &&
+        latest.expense_type === submitted.expense_type &&
+        latest.amount === submitted.amount &&
+        latest.notes === submitted.notes
+      ) {
+        setEditingExpenseId(null);
+        setEditExpense(null);
+      }
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ?? "Расход обновлён и подтверждён.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
@@ -283,29 +461,51 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
+    const submitted: SavingExpectation = {
+      destination: savDest,
+      amount: savAmount,
+      notes: savNotes,
+    };
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (!savDest.trim() || !normalizeMoneyInput(savAmount)) {
+      if (!submitted.destination.trim() || !normalizeMoneyInput(submitted.amount)) {
         throw new Error("Назначение и сумма обязательны");
       }
       const created = await createSaving({
         reporting_month_id: target,
-        destination: savDest.trim(),
-        amount: rub(savAmount),
-        notes: savNotes.trim() || null,
+        destination: submitted.destination.trim(),
+        amount: rub(submitted.amount),
+        notes: submitted.notes.trim() || null,
       });
       if (created.reporting_month_id !== target) {
         throw new Error("Создана запись другого месяца.");
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
-      setSavDest("");
-      setSavAmount("");
-      setSavNotes("");
-      setSavingDraftTouched(false);
-      setNotice("Накопление сохранено и перечитано.");
+      const confirmed = snapshot.savings.find((row) => row.id === created.id);
+      if (!confirmed) throw missingRowError("saving", created.id);
+      if (!savingMatches(confirmed, submitted)) throw staleRowError("saving", created.id);
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
+      const latest = latestInputs.current;
+      if (
+        latest.savDest === submitted.destination &&
+        latest.savAmount === submitted.amount &&
+        latest.savNotes === submitted.notes
+      ) {
+        setSavDest("");
+        setSavAmount("");
+        setSavNotes("");
+        setSavingDraftTouched(false);
+      }
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ??
+          "Накопление сохранено и подтверждено.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
@@ -317,27 +517,46 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (editingSavingId == null || !editSaving || readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
     const rowId = editingSavingId;
+    const submitted: SavingExpectation = { ...editSaving };
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (!editSaving.destination.trim() || !normalizeMoneyInput(editSaving.amount)) {
+      if (!submitted.destination.trim() || !normalizeMoneyInput(submitted.amount)) {
         throw new Error("Назначение и сумма обязательны");
       }
       const updated = await updateSaving(rowId, {
-        destination: editSaving.destination.trim(),
-        amount: rub(editSaving.amount),
-        notes: editSaving.notes.trim() || null,
+        destination: submitted.destination.trim(),
+        amount: rub(submitted.amount),
+        notes: submitted.notes.trim() || null,
       });
       if (updated.id !== rowId || updated.reporting_month_id !== target) {
         throw new Error("Подтверждение вернуло другую запись.");
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
-      setEditingSavingId(null);
-      setEditSaving(null);
-      setNotice("Накопление обновлено и перечитано.");
+      const confirmed = snapshot.savings.find((row) => row.id === rowId);
+      if (!confirmed) throw missingRowError("saving", rowId);
+      if (!savingMatches(confirmed, submitted)) throw staleRowError("saving", rowId);
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
+      const latest = latestInputs.current.editSaving;
+      if (
+        latest !== null &&
+        latest.destination === submitted.destination &&
+        latest.amount === submitted.amount &&
+        latest.notes === submitted.notes
+      ) {
+        setEditingSavingId(null);
+        setEditSaving(null);
+      }
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ??
+          "Накопление обновлено и подтверждено.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
@@ -350,30 +569,53 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
+    const submitted: PlanExpectation = {
+      category: planCategory,
+      expense_type: planType,
+      planned_amount: planAmount,
+      notes: planNotes,
+    };
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (!planCategory.trim() || !normalizeMoneyInput(planAmount)) {
+      if (!submitted.category.trim() || !normalizeMoneyInput(submitted.planned_amount)) {
         throw new Error("Категория и сумма плана обязательны");
       }
       const created = await createPlannedBudget({
         reporting_month_id: target,
-        category: planCategory.trim(),
-        planned_amount: rub(planAmount),
-        expense_type: planType,
-        notes: planNotes.trim() || null,
+        category: submitted.category.trim(),
+        planned_amount: rub(submitted.planned_amount),
+        expense_type: submitted.expense_type,
+        notes: submitted.notes.trim() || null,
       });
       if (created.reporting_month_id !== target) {
         throw new Error("Создана запись другого месяца.");
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
-      setPlanCategory("");
-      setPlanAmount("");
-      setPlanNotes("");
-      setPlanDraftTouched(false);
-      setNotice("План сохранён и перечитан.");
+      const confirmed = snapshot.plan.find((row) => row.id === created.id);
+      if (!confirmed) throw missingRowError("plan", created.id);
+      if (!planMatches(confirmed, submitted)) throw staleRowError("plan", created.id);
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
+      const latest = latestInputs.current;
+      if (
+        latest.planCategory === submitted.category &&
+        latest.planType === submitted.expense_type &&
+        latest.planAmount === submitted.planned_amount &&
+        latest.planNotes === submitted.notes
+      ) {
+        setPlanCategory("");
+        setPlanAmount("");
+        setPlanNotes("");
+        setPlanDraftTouched(false);
+      }
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ?? "План сохранён и подтверждён.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
@@ -385,28 +627,47 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (editingPlanId == null || !editPlan || readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
     const rowId = editingPlanId;
+    const submitted: PlanExpectation = { ...editPlan };
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (!editPlan.category.trim() || !normalizeMoneyInput(editPlan.planned_amount)) {
+      if (!submitted.category.trim() || !normalizeMoneyInput(submitted.planned_amount)) {
         throw new Error("Категория и сумма плана обязательны");
       }
       const updated = await updatePlannedBudget(rowId, {
-        category: editPlan.category.trim(),
-        planned_amount: rub(editPlan.planned_amount),
-        expense_type: editPlan.expense_type,
-        notes: editPlan.notes.trim() || null,
+        category: submitted.category.trim(),
+        planned_amount: rub(submitted.planned_amount),
+        expense_type: submitted.expense_type,
+        notes: submitted.notes.trim() || null,
       });
       if (updated.id !== rowId || updated.reporting_month_id !== target) {
         throw new Error("Подтверждение вернуло другую запись.");
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
-      setEditingPlanId(null);
-      setEditPlan(null);
-      setNotice("План обновлён и перечитан.");
+      const confirmed = snapshot.plan.find((row) => row.id === rowId);
+      if (!confirmed) throw missingRowError("plan", rowId);
+      if (!planMatches(confirmed, submitted)) throw staleRowError("plan", rowId);
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
+      const latest = latestInputs.current.editPlan;
+      if (
+        latest !== null &&
+        latest.category === submitted.category &&
+        latest.expense_type === submitted.expense_type &&
+        latest.planned_amount === submitted.planned_amount &&
+        latest.notes === submitted.notes
+      ) {
+        setEditingPlanId(null);
+        setEditPlan(null);
+      }
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ?? "План обновлён и подтверждён.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
@@ -418,37 +679,47 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     if (readOnly || busy) return;
     const token = ++operation.current;
     const target = month.id;
+    const statusAtSubmit = month.status;
     const expenseId = delExpense?.id ?? null;
     const savingId = delSaving?.id ?? null;
     const planId = delPlan?.id ?? null;
+    const deletedId = kind === "expense" ? expenseId : kind === "saving" ? savingId : planId;
+    if (deletedId == null) return;
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      if (kind === "expense" && expenseId != null) {
-        await deleteExpense(expenseId);
-      } else if (kind === "saving" && savingId != null) {
-        await deleteSaving(savingId);
-      } else if (kind === "plan" && planId != null) {
-        await deletePlannedBudget(planId);
+      if (kind === "expense") {
+        await deleteExpense(deletedId);
+      } else if (kind === "saving") {
+        await deleteSaving(deletedId);
       } else {
-        return;
+        await deletePlannedBudget(deletedId);
       }
-      await reloadAfterWrite(token, target);
+      const snapshot = await refetchBudget(target);
       if (isStale(token, target)) return;
+      const remaining =
+        kind === "expense"
+          ? snapshot.expenses
+          : kind === "saving"
+            ? snapshot.savings
+            : snapshot.plan;
+      if (remaining.some((row) => row.id === deletedId)) {
+        throw deleteMissingError(kind, deletedId);
+      }
+      installSnapshot(snapshot);
+      const freshMonth = await refreshMonthChecked(token, target);
+      if (freshMonth === null) return;
       setDelExpense(null);
       setDelSaving(null);
       setDelPlan(null);
-      setNotice("Запись удалена, список перечитан.");
+      setNotice(
+        lifecycleNotice(statusAtSubmit, freshMonth.status) ?? "Запись удалена и подтверждена.",
+      );
     } catch (cause) {
       if (!isStale(token, target)) setActionError(formatApiError(cause));
     } finally {
-      if (!isStale(token, target)) {
-        setBusy(false);
-        if (kind === "expense") setDelExpense(null);
-        if (kind === "saving") setDelSaving(null);
-        if (kind === "plan") setDelPlan(null);
-      }
+      if (!isStale(token, target)) setBusy(false);
     }
   }
 

@@ -212,7 +212,7 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
 
   it("supports savings create with exact money and readback", async () => {
     const user = userEvent.setup();
-    vi.mocked(listSavings).mockResolvedValue([]);
+    vi.mocked(listSavings).mockResolvedValue([{ ...savingRow }]);
     vi.mocked(createSaving).mockResolvedValue({ ...savingRow });
     const context = contextWith();
     renderLeaf(context);
@@ -231,7 +231,7 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     });
     expect(listSavings).toHaveBeenCalledTimes(2);
     expect(context.refresh).toHaveBeenCalled();
-    expect(await screen.findByText("Накопление сохранено и перечитано.")).toBeInTheDocument();
+    expect(await screen.findByText("Накопление сохранено и подтверждено.")).toBeInTheDocument();
   });
 });
 
@@ -273,6 +273,7 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
   it("blocks a second submit while the first request is in flight", async () => {
     const user = userEvent.setup();
     let release!: (value: typeof expenseFoodMandatory) => void;
+    vi.mocked(listExpenses).mockResolvedValue([{ ...expenseFoodMandatory }]);
     vi.mocked(createExpense).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -289,13 +290,15 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
     expect(createExpense).toHaveBeenCalledTimes(1);
     release({ ...expenseFoodMandatory });
     await waitFor(() =>
-      expect(screen.getByText("Расход сохранён и перечитан.")).toBeInTheDocument(),
+      expect(screen.getByText("Расход сохранён и подтверждён.")).toBeInTheDocument(),
     );
   });
 
   it("deletes a saving only after confirmation and rereads", async () => {
     const user = userEvent.setup();
-    vi.mocked(listSavings).mockResolvedValue([savingRow]);
+    vi.mocked(listSavings)
+      .mockResolvedValueOnce([{ ...savingRow }])
+      .mockResolvedValue([]);
     renderLeaf(contextWith());
 
     const savingSection = await screen.findByRole("region", { name: "Накопления месяца" });
@@ -303,11 +306,16 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
     const dialog = await screen.findByRole("alertdialog", { name: "Удалить накопление?" });
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
     await waitFor(() => expect(deleteSaving).toHaveBeenCalledWith(21));
+    expect(await screen.findByText("Запись удалена и подтверждена.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("alertdialog", { name: "Удалить накопление?" }),
+    ).not.toBeInTheDocument();
     expect(listSavings).toHaveBeenCalledTimes(2);
   });
 
   it("reports dirty state for an open draft and clears it after save", async () => {
     const user = userEvent.setup();
+    vi.mocked(listExpenses).mockResolvedValue([{ ...expenseFoodMandatory }]);
     vi.mocked(createExpense).mockResolvedValue({ ...expenseFoodMandatory });
     const context = contextWith();
     renderLeaf(context);
@@ -318,7 +326,7 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
 
     await user.type(screen.getByLabelText("Сумма расхода"), "50000");
     await user.click(screen.getByRole("button", { name: "Добавить расход" }));
-    await screen.findByText("Расход сохранён и перечитан.");
+    await screen.findByText("Расход сохранён и подтверждён.");
     await waitFor(() =>
       expect(context.setDirty).toHaveBeenLastCalledWith(MONTH_BUDGET_SECTION_ID, false),
     );
@@ -357,6 +365,223 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
     );
     release({ ...expenseFoodMandatory });
     await waitFor(() => expect(createExpense).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText("Расход сохранён и перечитан.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Расход сохранён и подтверждён.")).not.toBeInTheDocument();
+  });
+});
+
+describe("UiV2MonthBudgetSection readback confirmation", () => {
+  it("fails an expense create when readback lacks the created id and keeps the draft", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createExpense).mockResolvedValue({ ...expenseFoodMandatory, id: 99 });
+    renderLeaf(contextWith());
+
+    await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.type(screen.getByLabelText("Категория расхода"), "Еда");
+    await user.type(screen.getByLabelText("Сумма расхода"), "50000");
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+
+    expect(await screen.findByText(/отсутствует в перечитанных данных/)).toBeInTheDocument();
+    expect(screen.queryByText("Расход сохранён и подтверждён.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Категория расхода")).toHaveValue("Еда");
+    expect(screen.getByLabelText("Сумма расхода")).toHaveValue("50000");
+  });
+
+  it("fails a plan create when readback lacks the created id and keeps the draft", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createPlannedBudget).mockResolvedValue({ ...planRow, id: 98 });
+    renderLeaf(contextWith());
+
+    await screen.findByRole("region", { name: "План бюджета месяца" });
+    await user.type(screen.getByLabelText("Категория плана"), "Еда");
+    await user.type(screen.getByLabelText("Сумма плана"), "48000");
+    await user.click(screen.getByRole("button", { name: "Добавить в план" }));
+
+    expect(await screen.findByText(/отсутствует в перечитанных данных/)).toBeInTheDocument();
+    expect(screen.queryByText("План сохранён и подтверждён.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Категория плана")).toHaveValue("Еда");
+  });
+
+  it("fails a saving create when readback lacks the created id and keeps the draft", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createSaving).mockResolvedValue({ ...savingRow, id: 97 });
+    renderLeaf(contextWith());
+
+    await screen.findByRole("region", { name: "Накопления месяца" });
+    await user.type(screen.getByLabelText("Направление накопления"), "Подушка");
+    await user.type(screen.getByLabelText("Сумма накопления"), "20000");
+    await user.click(screen.getByRole("button", { name: "Добавить накопление" }));
+
+    expect(await screen.findByText(/отсутствует в перечитанных данных/)).toBeInTheDocument();
+    expect(screen.queryByText("Накопление сохранено и подтверждено.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Направление накопления")).toHaveValue("Подушка");
+  });
+
+  it("fails an expense update when readback still shows old values and keeps the edit", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listExpenses).mockResolvedValue([{ ...expenseFoodMandatory }]);
+    vi.mocked(updateExpense).mockResolvedValue({
+      ...expenseFoodMandatory,
+      amount: { amount: "51000.00", currency: "RUB" },
+    });
+    renderLeaf(contextWith());
+
+    const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.click(within(expenseSection).getByRole("button", { name: "Изменить" }));
+    const editingRow = screen.getByDisplayValue("Еда").closest("tr") as HTMLElement;
+    const amount = within(editingRow).getByLabelText("Сумма расхода");
+    await user.clear(amount);
+    await user.type(amount, "51000");
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    expect(await screen.findByText(/не отражает запрошенные изменения/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(within(editingRow).getByLabelText("Сумма расхода")).toHaveValue("51000");
+  });
+
+  it("fails a plan update when readback still shows old values and keeps the edit", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listPlannedBudget).mockResolvedValue([{ ...planRow }]);
+    vi.mocked(updatePlannedBudget).mockResolvedValue({
+      ...planRow,
+      planned_amount: { amount: "49000.00", currency: "RUB" },
+    });
+    renderLeaf(contextWith());
+
+    const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
+    await user.click(within(planSection).getByRole("button", { name: "Изменить" }));
+    const editingRow = screen.getByDisplayValue("Еда").closest("tr") as HTMLElement;
+    const amount = within(editingRow).getByLabelText("Сумма плана");
+    await user.clear(amount);
+    await user.type(amount, "49000");
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    expect(await screen.findByText(/не отражает запрошенные изменения/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(within(editingRow).getByLabelText("Сумма плана")).toHaveValue("49000");
+  });
+
+  it("fails a saving update when readback still shows old values and keeps the edit", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listSavings).mockResolvedValue([{ ...savingRow }]);
+    vi.mocked(updateSaving).mockResolvedValue({
+      ...savingRow,
+      amount: { amount: "21000.00", currency: "RUB" },
+    });
+    renderLeaf(contextWith());
+
+    const savingSection = await screen.findByRole("region", { name: "Накопления месяца" });
+    await user.click(within(savingSection).getByRole("button", { name: "Изменить" }));
+    const editingRow = screen.getByDisplayValue("Подушка").closest("tr") as HTMLElement;
+    const amount = within(editingRow).getByLabelText("Сумма накопления");
+    await user.clear(amount);
+    await user.type(amount, "21000");
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    expect(await screen.findByText(/не отражает запрошенные изменения/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(within(editingRow).getByLabelText("Сумма накопления")).toHaveValue("21000");
+  });
+
+  it("fails an expense delete when readback still contains the row and keeps the dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listExpenses).mockResolvedValue([{ ...expenseFoodMandatory }]);
+    renderLeaf(contextWith());
+
+    const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.click(within(expenseSection).getByRole("button", { name: "Удалить" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Удалить расход?" });
+    await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
+
+    expect(await screen.findByText(/Удаление не подтверждено/)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: "Удалить расход?" })).toBeInTheDocument();
+    expect(deleteExpense).toHaveBeenCalledWith(11);
+  });
+
+  it("fails a saving delete when readback still contains the row and keeps the dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listSavings).mockResolvedValue([{ ...savingRow }]);
+    renderLeaf(contextWith());
+
+    const savingSection = await screen.findByRole("region", { name: "Накопления месяца" });
+    await user.click(within(savingSection).getByRole("button", { name: "Удалить" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Удалить накопление?" });
+    await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
+
+    expect(await screen.findByText(/Удаление не подтверждено/)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: "Удалить накопление?" })).toBeInTheDocument();
+    expect(deleteSaving).toHaveBeenCalledWith(21);
+  });
+
+  it("fails a plan delete when readback still contains the row and keeps the dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listPlannedBudget).mockResolvedValue([{ ...planRow }]);
+    renderLeaf(contextWith());
+
+    const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
+    await user.click(within(planSection).getByRole("button", { name: "Удалить" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Удалить план?" });
+    await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
+
+    expect(await screen.findByText(/Удаление не подтверждено/)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: "Удалить план?" })).toBeInTheDocument();
+    expect(deletePlannedBudget).toHaveBeenCalledWith(31);
+  });
+
+  it("fails a create when readback carries another month identity", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createExpense).mockResolvedValue({ ...expenseFoodMandatory });
+    vi.mocked(listExpenses)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ ...expenseFoodMandatory, reporting_month_id: 8 }]);
+    renderLeaf(contextWith());
+
+    await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.type(screen.getByLabelText("Категория расхода"), "Еда");
+    await user.type(screen.getByLabelText("Сумма расхода"), "50000");
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+
+    expect(await screen.findByText(/другого месяца/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Категория расхода")).toHaveValue("Еда");
+  });
+
+  it("keeps a newer draft typed during a deferred save", async () => {
+    const user = userEvent.setup();
+    let release!: (value: typeof expenseFoodMandatory) => void;
+    vi.mocked(createExpense).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const created = { ...expenseFoodMandatory, id: 13 };
+    vi.mocked(listExpenses).mockResolvedValueOnce([]).mockResolvedValue([created]);
+    renderLeaf(contextWith());
+
+    await screen.findByRole("region", { name: "Расходы месяца" });
+    const category = screen.getByLabelText("Категория расхода");
+    await user.type(category, "Еда");
+    await user.type(screen.getByLabelText("Сумма расхода"), "50000");
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+    await user.type(category, "X");
+    release(created);
+
+    expect(await screen.findByText("Расход сохранён и подтверждён.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Категория расхода")).toHaveValue("ЕдаX");
+  });
+
+  it("reports a month lifecycle change explicitly instead of a routine success", async () => {
+    const user = userEvent.setup();
+    const closed: ReportingMonth = { ...draftMonth, status: "closed" };
+    vi.mocked(createExpense).mockResolvedValue({ ...expenseFoodMandatory });
+    vi.mocked(listExpenses).mockResolvedValue([{ ...expenseFoodMandatory }]);
+    renderLeaf(contextWith({ refresh: vi.fn(async () => ({ ...closed })) }));
+
+    await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.type(screen.getByLabelText("Категория расхода"), "Еда");
+    await user.type(screen.getByLabelText("Сумма расхода"), "50000");
+    await user.click(screen.getByRole("button", { name: "Добавить расход" }));
+
+    expect(await screen.findByText(/статус месяца изменился/)).toBeInTheDocument();
+    expect(screen.queryByText("Расход сохранён и подтверждён.")).not.toBeInTheDocument();
   });
 });
