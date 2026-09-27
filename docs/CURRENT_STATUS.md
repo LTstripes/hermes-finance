@@ -2,13 +2,14 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-25**.
+> Last synchronized: **2026-09-27**.
 
 ## Canonical identity
 
 - Published Stable release: **v1.0.0**.
-- Current accepted implementation checkpoint: `744c613884d074e6f9d35d61523603f257371713`.
-- Exact-main CI for that checkpoint: **#947 / run `36139627216` — SUCCESS**.
+- Current accepted implementation checkpoint: `b6f3ff1aff93f06ae0a563ba8704b91086a80924`.
+- Exact-main push CI for that checkpoint: **run `36306845860` — SUCCESS**.
+- Post-Astra data-integrity/completeness hardening (#484–#498, #536–#539): **complete**; final aggregate #509 merged after exact merge-ref CI/UI evidence passed.
 - Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 - Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
 - Guarded Release run `35580890145`: **SUCCESS**.
@@ -72,6 +73,25 @@ Complete and integrated:
 - exact-zero versus unavailable/null distinction.
 
 Closeout: `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`.
+
+### Post-Astra data-integrity and financial-completeness hardening
+
+The full audit wave is complete on canonical `main`: #484–#498 plus #536–#539.
+
+Delivered across the wave:
+
+- database-level write atomicity for financial edits, month-close races, statement corrections, linked-debt evidence, transfer ownership and salary cardinality;
+- coherent SQLite snapshots for composite financial reads;
+- atomic month clone source/target behavior;
+- auditable payout/reconciliation provenance through DRAFT corrections;
+- performance coverage/version/group invalidation so stale evidence cannot recreate false exact XIRR/TWRR;
+- stable real-versus-unassigned cash identity through AI/export;
+- canonical portfolio-source coverage: an exact known subtotal can coexist with partial account coverage, while missing evidence is never zero-filled;
+- the same coverage semantics now propagate through AI bundle/reviews/goals/allocation and owner-facing v1/v2 capital/history surfaces.
+
+Final integration head `ad59be98450599c0253e9dbf027385d06f1eabb1` merged through PR #509 as canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`. Merge-ref CI `36306528111`, UI comparison `36306528183` and exact-main push CI `36306845860` all succeeded.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
 
 ### PERF04B / PERF04C bounded decomposition
 
@@ -232,6 +252,8 @@ Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 ## Active roadmap / what comes next
 
+The Astra-audit hardening queue is closed. There are no remaining implementation tasks from #484–#498 / #536–#539; future work starts from current canonical `main`.
+
 ### UI v2 — core roadmap complete / primary interface
 
 The core UI v2 roadmap (#387) is complete.
@@ -297,7 +319,7 @@ Completed process follow-ups:
 - #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
 - #543 / PR #547 — post-closeout recovery CLI/retention hardening.
 
-Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527 and #543.
+Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #476, #480, #484–#498, #511, #524, #527, #536–#539 and #543.
 
 ## Canonical references
 
@@ -305,6 +327,7 @@ Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #
 - `docs/MASTER_SPEC.md`
 - `docs/VERIFICATION_POLICY.md`
 - `docs/PROJECT_WIKI.md`
+- `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`
 - `docs/EXECUTION_HISTORY.md`
 - `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`
 - `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
