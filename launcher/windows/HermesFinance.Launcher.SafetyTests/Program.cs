@@ -68,14 +68,12 @@ var tests = new (string Name, Action Run)[]
     ("setup rejects Preview sharing Stable git dir", SetupRejectsPreviewSharingStableGitDir),
     ("prepared setup passes the next preflight identity stage", PreparedSetupPassesPreflightIdentity),
     ("configuration failure offers executable setup action", ConfigFailureOffersSetupAction),
-    ("layout keeps the default window free of overlap and clipping", LayoutKeepsDefaultWindowClean),
-    ("layout fits Russian labels at 100, 125, and 150 percent scaling", LayoutFitsRussianLabelsWhenScaled),
-    ("layout survives narrow and wide resizes", LayoutSurvivesCommonResizes),
-    ("layout keeps cards comparable with one obvious primary CTA", LayoutKeepsCardsComparableAndPrimaryObvious),
     ("owner title derives from validated identity, never stale display copy", OwnerTitleDerivesFromValidatedIdentity),
-    ("last-run footer derives from validated owner title, never stale display copy", LastRunFooterDerivesFromValidatedIdentity),
-    ("loopback badge keeps the address readable without digit wrap", LoopbackBadgeKeepsAddressReadable),
-    ("selected and card titles fit without clipping when scaled", SelectedAndCardTitlesFitWhenScaled),
+    ("compact default window stays smaller than the old control panel", CompactDefaultWindow),
+    ("compact shell fits at 125 and 150 percent scaling", CompactShellFitsWhenScaled),
+    ("compact shell survives a narrow resize", CompactShellSurvivesNarrowResize),
+    ("ready shell exposes exactly one primary action", CompactShellHasOnePrimaryAction),
+    ("quiet loopback line keeps the address readable", QuietLoopbackLineStaysReadable),
 };
 
 var failures = 0;
@@ -136,9 +134,10 @@ static void PresentsBrandedOwnerSurface()
     Assert(buttons.Any(button => button.Text == "Остановить" && !button.Enabled), "Stop must be disabled before a runtime is launched.");
     Assert(buttons.Any(button => button.Text == "Открыть Hermes" && !button.Enabled), "Open Hermes must stay disabled until health probes pass.");
     Assert(buttons.Any(button => button.Text == "Диагностика и логи"), "Raw diagnostics must have a dedicated details action.");
-    Assert(labels.Any(label => label.Text == "STABLE  ·  PRODUCTION"), "The Stable owner badge is missing.");
-    Assert(labels.Any(label => label.Text == "PREVIEW  ·  ISOLATED"), "The Preview owner badge is missing.");
-    Assert(labels.Any(label => label.Text.Contains("Release v1.0.0", StringComparison.Ordinal) || label.Text.Contains("UNRELEASED", StringComparison.Ordinal)), "Profile cards must show Stable pinned release or Preview UNRELEASED badge.");
+    Assert(labels.Any(label => label.Text == "Stable · production"), "The Stable choice must show production data.");
+    Assert(labels.Any(label => label.Text == "Preview · isolated"), "The Preview choice must show isolated data.");
+    Assert(labels.Any(label => label.Text.Contains("127.0.0.1:8000", StringComparison.Ordinal)), "The quiet loopback line must remain.");
+    Assert(!labels.Any(label => label.Text.Contains("LOCAL ONLY", StringComparison.Ordinal)), "The large LOCAL ONLY badge must be gone.");
 
     var status = controls.OfType<TextBox>().Single();
     Assert(status.Parent is not null && status.Parent.Parent is not null && !status.Parent.Parent.Visible, "Raw logs must be hidden from the primary UX.");
@@ -683,7 +682,7 @@ static void SetupIsBlockedDuringOwnedStartAndRestoredAfterStop()
         var applyValidated = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Setup lifecycle regression could not find ApplyValidated.");
         applyValidated.Invoke(form, [validated]);
-        Assert(GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску", "Real preflight did not establish the Ready state before StartSelectedAsync.");
+        Assert(GetPrivate<Label>(form, "_readinessTitle").Text == "Готов", "Real preflight did not establish the Ready state before StartSelectedAsync.");
         Assert(GetButton(form, "Настроить…").Enabled, "Setup must be available in the genuine Ready state.");
 
         var start = typeof(MainForm).GetMethod("StartSelectedAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
@@ -694,7 +693,7 @@ static void SetupIsBlockedDuringOwnedStartAndRestoredAfterStop()
         WaitForUi(
             form,
             () => processField.GetValue(form) is not null
-                && GetPrivate<Label>(form, "_readinessTitle").Text == "Hermes запускается",
+                && GetPrivate<Label>(form, "_readinessTitle").Text == "Запускается",
             $"StartSelectedAsync did not expose the Starting/owned-process window (title={GetPrivate<Label>(form, "_readinessTitle").Text}; status={GetPrivate<TextBox>(form, "_status").Text}; task={startTask.Status}; error={startTask.Exception?.GetBaseException().Message}).");
         process = (Process?)processField.GetValue(form);
         Assert(!GetButton(form, "Настроить…").Enabled, "Setup must be disabled immediately while the launcher-owned runtime is starting.");
@@ -734,7 +733,7 @@ static void SetupIsBlockedDuringOwnedStartAndRestoredAfterStop()
         Assert(startedProcess.WaitForExit(5_000), "Synthetic runtime did not stop after launcher-owned Stop.");
         WaitForUi(
             form,
-            () => GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску"
+            () => GetPrivate<Label>(form, "_readinessTitle").Text == "Готов"
                 && GetButton(form, "Настроить…").Enabled,
             "Setup was not restored after launcher-owned Stop returned to Ready.");
         process = null;
@@ -847,16 +846,16 @@ static void OwnerStopReturnsToReady()
         WaitForUi(
             form,
             () => GetButton(form, "Запустить").Enabled
-                && GetPrivate<Label>(form, "_readinessTitle").Text == "Готово к запуску",
+                && GetPrivate<Label>(form, "_readinessTitle").Text == "Готов",
             "Launcher-owned Stop did not complete cleanup, preflight, and return the UI to Ready with Start enabled.");
         Assert(!File.Exists(markerPath), "Launcher-owned Stop must remove ownership metadata before Ready is restored.");
         ProfileValidator.AssertPortAvailable();
         Assert(
-            !GetPrivate<Label>(form, "_lastLaunch").Text.Contains("код -1", StringComparison.Ordinal),
-            "Expected launcher-owned Stop must not remain a fatal exit-code -1 launch status.");
+            !AllControls(form).OfType<Label>().Any(label => label.Text.Contains("код -1", StringComparison.Ordinal) || label.Text.Contains("завершён с кодом", StringComparison.Ordinal)),
+            "Expected launcher-owned Stop must not be presented as a fatal exit.");
         Assert(
-            GetPrivate<Label>(form, "_serviceCheck").ForeColor == Color.FromArgb(102, 227, 190),
-            "Automatic post-stop preflight must leave the loopback/Alembic check green.");
+            GetPrivate<Label>(form, "_shaSummary").Text.Contains("production", StringComparison.OrdinalIgnoreCase),
+            "Automatic post-stop preflight must restore the production identity line.");
         process = null;
     }
     finally
@@ -1427,14 +1426,11 @@ static void SummarizesChecksPlainLanguage()
     var apply = typeof(MainForm).GetMethod("ApplyValidated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
     apply.Invoke(form, [validated]);
     var labels = AllControls(form).OfType<Label>().ToArray();
-    // Checks are the 4 rows: we look for human labels
-    Assert(labels.Any(l => l.Text.Contains("production", StringComparison.OrdinalIgnoreCase) || l.Text.Contains("isolated", StringComparison.OrdinalIgnoreCase)), "Data boundary check must be human language.");
-    // Diagnostics TextBox must be hidden (secondary layer)
+    Assert(labels.Any(l => l.Text.Contains("production", StringComparison.OrdinalIgnoreCase)), "The identity line must say production in plain language.");
+    Assert(!labels.Any(l => l.Text.Contains("C:\\", StringComparison.OrdinalIgnoreCase)), "The compact shell must not show raw paths.");
+    Assert(!labels.Any(l => l.Text is "Code identity" or "Data boundary" or "Locked dependencies" or "Loopback service"), "Technical check rows must not return to the primary surface.");
     var status = AllControls(form).OfType<TextBox>().Single();
     Assert(!status.Parent!.Parent!.Visible, "Raw diagnostics must remain secondary (hidden) layer.");
-    // Health/Alembic summarized: service check should mention port or Alembic OK in plain language, not raw paths
-    var checks = AllControls(form).OfType<Label>().Where(l => l.Text.Contains("locked") || l.Text.Contains("порт") || l.Text.Contains("Alembic")).ToArray();
-    Assert(checks.Length > 0, "Health/Alembic/deps must be summarized in human plain language.");
 }
 
 static void MissingConfigFailsClosedWithoutPlaceholder()
@@ -1527,9 +1523,10 @@ static void PortCollisionOffersRefreshNotStop()
     Assert(!human.Contains("«Остановить»", StringComparison.Ordinal), "Port-collision guidance must not promise a launcher Stop action.");
     Assert(human.Contains("«Обновить проверку»", StringComparison.Ordinal), "Port-collision guidance must point at Refresh after manual stop.");
 
-    // Running (launcher-owned process) keeps Stop as the executable primary.
+    // Running keeps Open as the single primary. Stop stays secondary and is
+    // never the action offered for a foreign port occupant.
     var planRunning = LauncherUi.PlanPrimaryAction(LauncherReadinessState.Running, null, stable, null);
-    Assert(planRunning.Primary == LauncherPrimaryAction.Stop, "Running state must keep Stop for the launcher-owned process.");
+    Assert(planRunning.Primary == LauncherPrimaryAction.Open, "Running state must offer Open Hermes as the primary action.");
 
     // UI level: Blocked port must not enable Stop when the launcher owns no process.
     var config = new LauncherConfig
@@ -1684,7 +1681,7 @@ static void OwnerTitleDerivesFromValidatedIdentity()
         CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
         Profiles = [stable],
     });
-    ForceLayout(form, new Size(960, 820));
+    ForceLayout(form, form.ClientSize);
     var beforeLabels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
     Assert(!beforeLabels.Any(text => text.Contains("0.8.0", StringComparison.Ordinal)),
         "No owner-facing label may show the stale 0.8.0 display copy, even before validation.");
@@ -1693,179 +1690,16 @@ static void OwnerTitleDerivesFromValidatedIdentity()
         stable, stable.Checkout, stable.DataDir, stable.Database, "d04f46696a991ea59066b59d4870980ac4b69089",
         "production", new DependencyStatus(true, true, "ready", "ready"));
     ApplyValidatedOn(form, validated);
-    ForceLayout(form, new Size(960, 820));
+    ForceLayout(form, form.ClientSize);
     var afterLabels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
     Assert(!afterLabels.Any(text => text.Contains("0.8.0", StringComparison.Ordinal)),
         "A validated v1.0.0 Stable must never show Stable 0.8.0 anywhere.");
     Assert(afterLabels.Any(text => text.Contains("v1.0.0", StringComparison.Ordinal)),
         "The validated Stable identity must show the proven v1.0.0 release.");
-    var selectedName = (Label)typeof(MainForm)
-        .GetField("_selectedName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-        .GetValue(form)!;
-    Assert(selectedName.Text == "Hermes Finance — Stable",
-        $"The selected-profile title must be the version-free owner title, found '{selectedName.Text}'.");
+    Assert(afterLabels.Any(text => text.Contains("production", StringComparison.OrdinalIgnoreCase)),
+        "The validated Stable identity line must keep the production data boundary.");
 }
 
-// #308: bottom-right last-run footer must never surface stale
-// profiles[].display_name (e.g. "Hermes Finance — Stable 0.8.0").
-// The footer label is normalized through LauncherUi.OwnerTitle and the
-// time suffix "  ·  HH:mm" stays intact.
-static void LastRunFooterDerivesFromValidatedIdentity()
-{
-    LauncherProfile StaleStable() => new()
-    {
-        Id = "stable",
-        DisplayName = "Hermes Finance — Stable 0.8.0",
-        Type = "stable",
-        Checkout = "C:\\synthetic\\stable",
-        ExpectedRef = "refs/tags/v1.0.0",
-        DataDir = "C:\\synthetic\\stable\\data",
-        Database = "C:\\synthetic\\stable\\data\\finance.db",
-        OpenBrowser = false,
-    };
-
-    // LauncherUi.OwnerTitle itself is the canonical normalization.
-    Assert(LauncherUi.OwnerTitle(StaleStable()) == "Hermes Finance — Stable",
-        "OwnerTitle must normalize a stale Stable display_name for the footer.");
-    var startFooter = $"Последний запуск: стартует {LauncherUi.OwnerTitle(StaleStable())}";
-    Assert(startFooter == "Последний запуск: стартует Hermes Finance — Stable",
-        $"Start footer must use the normalized owner title, found '{startFooter}'.");
-    Assert(!startFooter.Contains("0.8.0", StringComparison.Ordinal),
-        "Start footer must not leak the stale 0.8.0 version.");
-    Assert(startFooter.Contains("стартует", StringComparison.Ordinal),
-        "Start footer must preserve the status text.");
-
-    var stalePreview = new LauncherProfile
-    {
-        Id = "preview",
-        DisplayName = "Hermes Finance БЂ 0.7 Preview",
-        Type = "preview",
-        Checkout = "C:\\synthetic\\preview",
-        ExpectedRef = "refs/remotes/origin/main",
-        DataDir = "C:\\synthetic\\preview\\data",
-        Database = "C:\\synthetic\\preview\\data\\finance.db",
-        OpenBrowser = false,
-    };
-    Assert(LauncherUi.OwnerTitle(stalePreview) == "Hermes Finance — Preview",
-        "OwnerTitle must normalize a mojibake Preview display_name for the footer.");
-
-    // Presentation-only: no state-machine, runtime, or release changes.
-    // Ready/recovered footers share the same path — prove the actual
-    // MainForm wiring does not use raw DisplayName.
-    var stable = StaleStable();
-    using var form = new MainForm(new LauncherConfig
-    {
-        Version = 1,
-        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
-        Profiles = [stable],
-    });
-    var validated = new ValidatedProfile(
-        stable, stable.Checkout, stable.DataDir, stable.Database, "d04f46696a991ea59066b59d4870980ac4b69089",
-        "production", new DependencyStatus(true, true, "ready", "ready"));
-    var completeReady = typeof(MainForm).GetMethod("CompleteReady", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-        ?? throw new InvalidOperationException("Could not find CompleteReady for last-run footer.");
-    completeReady.Invoke(form, [validated, "v1.0.0"]);
-    var lastLaunch = GetPrivate<Label>(form, "_lastLaunch").Text;
-    Assert(lastLaunch.Contains("Hermes Finance — Stable", StringComparison.Ordinal),
-        $"Ready footer must show the normalized owner title, found '{lastLaunch}'.");
-    Assert(!lastLaunch.Contains("0.8.0", StringComparison.Ordinal),
-        $"Ready footer must not leak stale 0.8.0, found '{lastLaunch}'.");
-    Assert(lastLaunch.Contains("готов —", StringComparison.Ordinal),
-        "Ready footer must preserve the ready status text.");
-    Assert(lastLaunch.Contains(" · ", StringComparison.Ordinal),
-        "Ready footer must preserve the ' · HH:mm' time separator.");
-
-    using var formPreview = new MainForm(new LauncherConfig
-    {
-        Version = 1,
-        CanonicalProduction = new CanonicalProduction { Checkout = stable.Checkout, DataDir = stable.DataDir, Database = stable.Database },
-        Profiles = [stalePreview],
-    });
-    var validatedPreview = new ValidatedProfile(
-        stalePreview, stalePreview.Checkout, stalePreview.DataDir, stalePreview.Database, "abc1234",
-        "preview", new DependencyStatus(true, true, "ready", "ready"));
-    completeReady.Invoke(formPreview, [validatedPreview, null]);
-    var lastPreview = GetPrivate<Label>(formPreview, "_lastLaunch").Text;
-    Assert(lastPreview.Contains("Hermes Finance — Preview", StringComparison.Ordinal),
-        $"Recovered/ready Preview footer must show normalized title, found '{lastPreview}'.");
-    Assert(!lastPreview.Contains("БЂ", StringComparison.Ordinal) && !lastPreview.Contains("0.7", StringComparison.Ordinal),
-        $"Preview footer must not leak mojibake/stale version, found '{lastPreview}'.");
-    Assert(lastPreview.Contains(" · ", StringComparison.Ordinal),
-        "Preview footer must preserve the time suffix.");
-}
-
-// #302: the LOCAL ONLY / 127.0.0.1:8000 badge must keep the address on its
-// own explicit line — the last digit must never wrap onto a separate line
-// at 100%, 125% or 150% scaling.
-static void LoopbackBadgeKeepsAddressReadable()
-{
-    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
-    {
-        var scenario = $"{factor * 100:0}% scaled";
-        using var form = MainForm.CreateSyntheticSmoke();
-        if (factor == 1f)
-        {
-            ForceLayout(form, new Size(960, 820));
-        }
-        else
-        {
-            ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
-        }
-        var pill = (Label)typeof(MainForm)
-            .GetField("_localPill", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .GetValue(form)!;
-        const string address = "127.0.0.1:8000";
-        Assert(pill.Text.Contains(address, StringComparison.Ordinal),
-            $"{scenario}: the loopback badge must show the full {address}.");
-        var need = TextRenderer.MeasureText(address, pill.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-        var usable = pill.Width - pill.Padding.Horizontal;
-        Assert(need.Width <= usable + 1,
-            $"{scenario}: the address needs {need.Width}px but the badge fits {usable}px; the last digit would wrap.");
-        var needFull = TextRenderer.MeasureText(pill.Text, pill.Font, new Size(Math.Max(50, pill.Width), int.MaxValue), TextFormatFlags.WordBreak);
-        Assert(needFull.Height <= pill.Height + 2,
-            $"{scenario}: the badge needs height {needFull.Height} but is {pill.Height}; text clips.");
-    }
-}
-
-// #302: card titles and the selected-profile header must not clip at
-// supported scaling. AutoEllipsis labels are exempt from the generic
-// AssertLabelFits by design, so this covers them explicitly.
-static void SelectedAndCardTitlesFitWhenScaled()
-{
-    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
-    {
-        var scenario = $"{factor * 100:0}% scaled";
-        using var form = MainForm.CreateSyntheticSmoke();
-        if (factor == 1f)
-        {
-            ForceLayout(form, new Size(960, 820));
-        }
-        else
-        {
-            ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
-        }
-        var selectedName = (Label)typeof(MainForm)
-            .GetField("_selectedName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .GetValue(form)!;
-        var needTitle = TextRenderer.MeasureText(selectedName.Text, selectedName.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-        Assert(needTitle.Width <= selectedName.Width + 1,
-            $"{scenario}: selected title '{selectedName.Text}' needs width {needTitle.Width} but the header fits {selectedName.Width}.");
-        Assert(needTitle.Height <= selectedName.Height + 2,
-            $"{scenario}: selected title needs height {needTitle.Height} but the header fits {selectedName.Height}.");
-        foreach (var card in AllControls(form).OfType<ProfileCard>().ToArray())
-        {
-            var cardName = (Label)typeof(ProfileCard)
-                .GetField("_name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                .GetValue(card)!;
-            var need = TextRenderer.MeasureText(cardName.Text, cardName.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-            Assert(need.Width <= cardName.Width + 1,
-                $"{scenario}: card title '{cardName.Text}' needs width {need.Width} but the card fits {cardName.Width}.");
-            Assert(need.Height <= cardName.Height + 2,
-                $"{scenario}: card title needs height {need.Height} but the card fits {cardName.Height}.");
-        }
-        AssertLayoutClean(form, scenario);
-    }
-}
 
 static void SetupFlowCreatesConcreteConfig()
 {
@@ -2216,102 +2050,109 @@ static void DeleteSyntheticTree(string root)
 
 static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
 
-// #284 layout regressions: deterministic WinForms checks (no screenshots).
-// A synthetic smoke form is laid out headless (handle forced, never shown)
-// and then inspected for containment, sibling overlap and text fit.
-static void LayoutKeepsDefaultWindowClean()
+static void CompactDefaultWindow()
 {
     using var form = MainForm.CreateSyntheticSmoke();
-    ForceLayout(form, new Size(960, 820));
-    AssertLayoutClean(form, "default 960x820");
+    ForceLayout(form, form.ClientSize);
+    Assert(form.ClientSize.Width <= 640 && form.ClientSize.Height <= 360,
+        $"The default launcher window must be a compact shell, found {form.ClientSize}.");
+    Assert(form.ClientSize.Width < 960 && form.ClientSize.Height < 820,
+        "The compact shell must be smaller than the previous 960x820 control panel.");
+    AssertLayoutClean(form, "compact default");
+    AssertExactlyOnePrimary(form, "Запустить");
+    AssertProfileBoundaries(form);
 }
 
-static void LayoutFitsRussianLabelsWhenScaled()
+static void CompactShellFitsWhenScaled()
 {
-    // Faithful DPI emulation: fonts AND window AND absolute table metrics
-    // scale together (real 125/150% scales the whole form, not just fonts).
-    // The longest Russian readiness text (NeedsPreparation) is used.
-    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
+    foreach (var factor in new[] { 1.25f, 1.5f })
     {
-        using var form = LayoutNeedsPreparationForm();
-        ScaleLayoutForDpi(form, factor, new Size((int)(960 * factor), (int)(820 * factor)));
-        AssertReadinessHeightPropagates(form, $"{factor * 100:0}% scaled");
-        AssertLayoutClean(form, $"{factor * 100:0}% scaled");
+        using var ready = MainForm.CreateSyntheticSmoke();
+        ScaleLayoutForDpi(ready, factor, new Size((int)(ready.ClientSize.Width * factor), (int)(ready.ClientSize.Height * factor)));
+        AssertLayoutClean(ready, $"ready {factor * 100:0}%");
+        AssertExactlyOnePrimary(ready, "Запустить");
+        AssertLoopbackFits(ready);
+
+        using var needs = NeedsPreparationForm();
+        ScaleLayoutForDpi(needs, factor, new Size((int)(needs.ClientSize.Width * factor), (int)(needs.ClientSize.Height * factor)));
+        AssertLayoutClean(needs, $"needs preparation {factor * 100:0}%");
+        AssertExactlyOnePrimary(needs, "Обновить проверку");
     }
 }
 
-static void LayoutSurvivesCommonResizes()
-{
-    using var narrow = LayoutNeedsPreparationForm();
-    ForceLayout(narrow, new Size(780, 720));
-    AssertReadinessHeightPropagates(narrow, "minimum 780x720");
-    AssertLayoutClean(narrow, "minimum 780x720");
-    using var defaultSize = LayoutNeedsPreparationForm();
-    ForceLayout(defaultSize, new Size(960, 820));
-    AssertReadinessHeightPropagates(defaultSize, "default 960x820 with NeedsPreparation");
-    AssertLayoutClean(defaultSize, "default 960x820 with NeedsPreparation");
-    using var wide = LayoutNeedsPreparationForm();
-    ForceLayout(wide, new Size(1280, 800));
-    AssertReadinessHeightPropagates(wide, "wide 1280x800 with NeedsPreparation");
-    AssertLayoutClean(wide, "wide 1280x800");
-    // Opening diagnostics must not break the layout either.
-    var toggle = typeof(MainForm).GetMethod("ToggleDetails", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-    toggle.Invoke(wide, []);
-    ForceLayout(wide, new Size(1280, 800));
-    AssertLayoutClean(wide, "wide with diagnostics open");
-    toggle.Invoke(wide, []);
-    ForceLayout(wide, new Size(1280, 800));
-    AssertLayoutClean(wide, "wide with diagnostics closed again");
-}
-
-static void AssertReadinessHeightPropagates(MainForm form, string scenario)
-{
-    var readinessPanel = (Panel)typeof(MainForm)
-        .GetField("_readinessPanel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-        .GetValue(form)!;
-    var description = (Label)typeof(MainForm)
-        .GetField("_readinessDescription", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-        .GetValue(form)!;
-    var readinessLayout = (TableLayoutPanel)description.Parent!;
-    var selectedLayout = (TableLayoutPanel)typeof(MainForm)
-        .GetField("_selectedLayout", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-        .GetValue(form)!;
-    var need = TextRenderer.MeasureText(
-        description.Text,
-        description.Font,
-        new Size(Math.Max(1, description.Width), int.MaxValue),
-        TextFormatFlags.WordBreak);
-    var contentBottom = description.Parent!.Top + description.Bottom + readinessPanel.Padding.Bottom;
-    Assert(need.Height <= description.Height + 2,
-        $"{scenario}: readiness description needs {need.Height}px but is {description.Height}px.");
-    var descriptionRow = readinessLayout.GetPositionFromControl(description).Row;
-    var descriptionRowHeight = readinessLayout.GetRowHeights()[descriptionRow];
-    Assert(readinessLayout.RowStyles[descriptionRow].SizeType == SizeType.Absolute,
-        $"{scenario}: readiness description row must be content-driven Absolute before layout.");
-    Assert(descriptionRowHeight >= need.Height - 1,
-        $"{scenario}: readiness description row is {descriptionRowHeight}px but wrapped text needs {need.Height}px.");
-    Assert(contentBottom <= readinessPanel.ClientSize.Height + 1,
-        $"{scenario}: readiness outer container is {readinessPanel.Height}px but its wrapped content needs at least {contentBottom}px.");
-    var row = selectedLayout.GetPositionFromControl(readinessPanel).Row;
-    Assert(selectedLayout.GetRowHeights()[row] >= readinessPanel.Height - 1,
-        $"{scenario}: selectedLayout row {row} did not propagate readiness height {readinessPanel.Height}px.");
-}
-
-static void LayoutKeepsCardsComparableAndPrimaryObvious()
+static void CompactShellSurvivesNarrowResize()
 {
     using var form = MainForm.CreateSyntheticSmoke();
-    ForceLayout(form, new Size(960, 820));
-    var cards = AllControls(form).OfType<ProfileCard>().ToArray();
-    Assert(cards.Length == 2, "Synthetic smoke must show Stable and Preview cards.");
-    Assert(cards[0].Width == cards[1].Width && cards[0].Height == cards[1].Height,
-        $"Stable/Preview cards must share one footprint for glance comparison, found {cards[0].Size} vs {cards[1].Size}.");
-    var allButtons = AllControls(form).OfType<Button>().Where(button => OwnVisible(button)).Select(button => button.Text + "=" + button.FlatAppearance.BorderSize.ToString() + (button.Enabled ? "+en" : "-dis")).ToArray();
-    var emphasized = AllControls(form).OfType<Button>().Where(button => OwnVisible(button) && button.FlatAppearance.BorderSize == 2).ToArray();
-    Assert(emphasized.Length == 1 && emphasized[0].Text == "Запустить" && emphasized[0].Enabled,
-        "Ready state must emphasize exactly one primary CTA ('Запустить'); secondary actions stay BorderSize 1. Got: " + string.Join(" | ", allButtons));
+    ForceLayout(form, new Size(440, 300));
+    AssertLayoutClean(form, "narrow 440x300");
+    AssertExactlyOnePrimary(form, "Запустить");
+    AssertLoopbackFits(form);
+    var toggle = typeof(MainForm).GetMethod("ToggleDetails", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    toggle.Invoke(form, []);
+    ForceLayout(form, new Size(440, 480));
+    AssertLayoutClean(form, "narrow with diagnostics open");
+    toggle.Invoke(form, []);
+    ForceLayout(form, new Size(440, 300));
+    AssertLayoutClean(form, "narrow with diagnostics closed");
 }
 
-static MainForm LayoutNeedsPreparationForm()
+static void CompactShellHasOnePrimaryAction()
+{
+    using var form = MainForm.CreateSyntheticSmoke();
+    ForceLayout(form, form.ClientSize);
+    AssertExactlyOnePrimary(form, "Запустить");
+    var stop = GetButton(form, "Остановить");
+    Assert(!stop.Enabled && !OwnVisible(stop), "Stop must stay off the ready shell.");
+    AssertProfileBoundaries(form);
+}
+
+static void QuietLoopbackLineStaysReadable()
+{
+    foreach (var factor in new[] { 1f, 1.25f, 1.5f })
+    {
+        using var form = MainForm.CreateSyntheticSmoke();
+        if (factor == 1f)
+        {
+            ForceLayout(form, form.ClientSize);
+        }
+        else
+        {
+            ScaleLayoutForDpi(form, factor, new Size((int)(form.ClientSize.Width * factor), (int)(form.ClientSize.Height * factor)));
+        }
+
+        AssertLoopbackFits(form);
+        AssertLayoutClean(form, $"loopback {factor * 100:0}%");
+    }
+}
+
+static void AssertExactlyOnePrimary(MainForm form, string text)
+{
+    var emphasized = AllControls(form).OfType<Button>().Where(button => OwnVisible(button) && button.FlatAppearance.BorderSize == 2).ToArray();
+    Assert(emphasized.Length == 1 && emphasized[0].Text == text && emphasized[0].Enabled,
+        $"Exactly one primary action '{text}' is required, found [{string.Join(", ", emphasized.Select(button => button.Text))}].");
+}
+
+static void AssertProfileBoundaries(MainForm form)
+{
+    var labels = AllControls(form).OfType<Label>().Select(label => label.Text).ToArray();
+    Assert(labels.Any(text => text.Contains("production", StringComparison.OrdinalIgnoreCase)), "Stable production data must stay visible.");
+    Assert(labels.Any(text => text.Contains("isolated", StringComparison.OrdinalIgnoreCase)), "Preview isolated data must stay visible.");
+    Assert(labels.Any(text => text.Contains("production", StringComparison.OrdinalIgnoreCase) && text.Contains("SHA", StringComparison.Ordinal)),
+        "The selected identity line must carry the short SHA and the production boundary.");
+}
+
+static void AssertLoopbackFits(MainForm form)
+{
+    var pill = GetPrivate<Label>(form, "_localPill");
+    const string address = "127.0.0.1:8000";
+    Assert(pill.Text.Contains(address, StringComparison.Ordinal), "The quiet local line must show 127.0.0.1:8000.");
+    Assert(!pill.Text.Contains("LOCAL ONLY", StringComparison.Ordinal), "The large LOCAL ONLY badge must stay gone.");
+    var need = TextRenderer.MeasureText(pill.Text, pill.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+    Assert(need.Width <= pill.Width + 1 && need.Height <= pill.Height + 2,
+        $"The loopback line needs {need} but is {pill.Size}.");
+}
+
+static MainForm NeedsPreparationForm()
 {
     var form = MainForm.CreateSyntheticSmoke();
     var configField = typeof(MainForm).GetField("_config", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;

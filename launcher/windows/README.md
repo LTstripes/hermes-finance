@@ -33,13 +33,13 @@ options for smoke tests.
 
 ## Normal owner workflow
 
-1. Open the installed launcher and select Stable or isolated Main/Preview.
-2. Press Обновить проверку for a read-only local preflight.
-3. If dependencies are missing, run the external OPS01 Prepare workflow, then refresh the check.
-4. Press Запустить; after health readiness, Открыть Hermes becomes available.
-5. Press Остановить only for the launcher-owned running process.
+1. Open the installed launcher and select Stable or isolated Preview. Selection runs a read-only preflight.
+2. When the state is Готов, press Запустить.
+3. If the state is Нужна подготовка, run the external OPS01 Prepare workflow, then use the recheck action.
+4. When the state is Работает, press Открыть Hermes. Остановить is the small secondary action and only stops a launcher-owned process.
+5. Настроить… is for a missing or invalid config, not the ordinary daily path.
 
-Diagnostics/logs are a secondary, opt-in surface. Raw paths and database
+Diagnostics/logs stay hidden until requested. Raw paths and database
 filenames are not shown in the primary view.
 
 ## Verification
