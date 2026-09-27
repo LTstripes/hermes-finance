@@ -20,7 +20,12 @@ async function installApi(page: Page) {
       return;
     }
     calls.push(`${request.method()} ${path}`);
-    if (path === "/api/months/7" && request.method() === "GET") {
+    if (path === "/api/months" && request.method() === "GET") {
+      await route.fulfill({ json: [month] });
+    } else if (path === "/api/months/7" && request.method() === "GET") {
+      await route.fulfill({ json: month });
+    } else if (path === "/api/months/7" && request.method() === "PATCH") {
+      month = { ...month, ...request.postDataJSON() };
       await route.fulfill({ json: month });
     } else if (path === "/api/months/7/reopen" && request.method() === "POST") {
       month = { ...month, status: "draft" };
@@ -36,6 +41,39 @@ async function installApi(page: Page) {
   });
   return calls;
 }
+
+test("browser Back keeps an unsaved month until the user confirms", async ({ page }) => {
+  await installApi(page);
+  await page.goto("/v2/data/months");
+  await page.goto("/v2/data/months/7");
+  await expect(page.getByLabel("Дата снимка")).toBeDisabled();
+  await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+  await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+  await page.getByLabel("Дата снимка").fill("2030-04-29");
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.evaluate(() => window.history.back());
+  await expect(page.getByLabel("Дата снимка")).toHaveValue("2030-04-29");
+  await expect(page).toHaveURL(/\/v2\/data\/months\/7$/);
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.evaluate(() => window.history.back());
+  await expect(page).toHaveURL(/\/v2\/data\/months$/);
+});
+
+test("saving removes the history guard and Back returns to the month list", async ({ page }) => {
+  await installApi(page);
+  await page.goto("/v2/data/months");
+  await page.goto("/v2/data/months/7");
+  await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+  await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+  await page.getByLabel("Дата снимка").fill("2030-04-29");
+  await page.getByRole("button", { name: "Сохранить общие данные" }).click();
+  await expect(page.getByText("Общие данные сохранены и подтверждены.")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.history.state?.monthEditorDirtyGuard ?? null))
+    .toBeNull();
+  await page.evaluate(() => window.history.back());
+  await expect(page).toHaveURL(/\/v2\/data\/months$/);
+});
 
 for (const width of [1280, 390]) {
   test(`native month editor ${width}px and keyboard`, async ({ page }, testInfo) => {

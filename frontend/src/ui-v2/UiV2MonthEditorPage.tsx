@@ -57,6 +57,8 @@ export default function UiV2MonthEditorPage() {
   const month = monthQuery.isSuccess && monthQuery.data.id === monthId ? monthQuery.data : null;
   const [dirtySections, setDirtySections] = useState<Record<string, boolean>>({});
   const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const historyGuard = useRef(false);
+  const allowHistoryPop = useRef(false);
   const setDirty = useCallback(
     (name: string, value: boolean) =>
       setDirtySections((previous) =>
@@ -65,6 +67,44 @@ export default function UiV2MonthEditorPage() {
     [],
   );
   const dirty = Object.values(dirtySections).some(Boolean);
+
+  useEffect(() => {
+    if (!dirty || monthId === null) return;
+    if (!historyGuard.current) {
+      allowHistoryPop.current = false;
+      historyGuard.current = true;
+      window.history.pushState(
+        { ...window.history.state, monthEditorDirtyGuard: monthId },
+        "",
+        window.location.href,
+      );
+    }
+    const onPopState = () => {
+      if (allowHistoryPop.current) return;
+      if (window.confirm("Есть несохранённые изменения. Перейти и потерять их?")) {
+        allowHistoryPop.current = true;
+        historyGuard.current = false;
+        setDirtySections({});
+        window.setTimeout(() => window.history.back(), 0);
+      } else {
+        window.history.pushState(
+          { ...window.history.state, monthEditorDirtyGuard: monthId },
+          "",
+          window.location.href,
+        );
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [dirty, monthId]);
+
+  useEffect(() => {
+    if (dirty || !historyGuard.current || window.history.state?.monthEditorDirtyGuard !== monthId)
+      return;
+    allowHistoryPop.current = true;
+    historyGuard.current = false;
+    window.history.back();
+  }, [dirty, monthId]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -147,8 +187,11 @@ export default function UiV2MonthEditorPage() {
         onCancel={() => setPendingHref(null)}
         onConfirm={() => {
           if (pendingHref) {
+            allowHistoryPop.current = true;
+            historyGuard.current = false;
+            setDirtySections({});
             setPendingHref(null);
-            navigate(pendingHref);
+            navigate(pendingHref, { replace: true });
           }
         }}
         open={pendingHref !== null}
