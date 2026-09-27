@@ -228,6 +228,60 @@ function seedCashMutations() {
   });
 }
 
+/**
+ * Actual backend rounding evidence — `PercentageRate.from_api` → basis points
+ * with ROUND_HALF_UP → `to_api()` with two decimals. Sources:
+ * `tests/domain/test_values.py` ("13.50"→1350bp, "13.505"→1351bp,
+ * "-0.005"→-1bp, rejects ""/"not-rate"/"1,25"/NaN/Infinity/floats) and
+ * `tests/test_scenario_lab_deposit_rate.py` ("12"→1200bp→"12.00",
+ * "12.3"→1230bp→"12.30", "12.345"→1235bp→"12.35").
+ */
+const BACKEND_RATE_ECHO: Record<string, string> = {
+  "12": "12.00",
+  "12.3": "12.30",
+  "12.345": "12.35",
+  "13.505": "13.51",
+};
+
+function backendRateEcho(rate: string): string {
+  return BACKEND_RATE_ECHO[rate] ?? rate;
+}
+
+/** Create mock whose annual_rate comes back exactly as the backend echoes it. */
+function seedBackendEchoCreates(echo: (rate: string) => string = backendRateEcho) {
+  vi.mocked(createDeposit).mockImplementation(async (payload) => {
+    const created: DepositSnapshot = {
+      ...makeDeposit(payload, 909),
+      annual_rate: echo(payload.annual_rate),
+    };
+    deposits = [...deposits, created];
+    return created;
+  });
+}
+
+/** Update mock whose annual_rate comes back exactly as the backend echoes it. */
+function seedBackendEchoUpdates(echo: (rate: string) => string = backendRateEcho) {
+  vi.mocked(updateDeposit).mockImplementation(async (snapshotId, payload) => {
+    deposits = deposits.map((row) =>
+      row.id === snapshotId
+        ? {
+            ...row,
+            name: payload.name ?? row.name,
+            deposit_type: payload.deposit_type ?? row.deposit_type,
+            balance: payload.balance ?? row.balance,
+            annual_rate: echo(payload.annual_rate ?? row.annual_rate),
+            actual_interest_received:
+              payload.actual_interest_received ?? row.actual_interest_received,
+            updated_at: "2031-01-31T07:00:00",
+          }
+        : row,
+    );
+    const updated = deposits.find((row) => row.id === snapshotId);
+    if (!updated) throw new Error("deposit not found");
+    return updated;
+  });
+}
+
 type DirtySpy = Mock<(section: string, dirty: boolean) => void>;
 
 function contextFor(
@@ -1082,5 +1136,123 @@ describe("UiV2MonthAssetsSection", () => {
     await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
     expect(screen.queryByDisplayValue("115000.00")).not.toBeInTheDocument();
     expect(screen.queryByText(/Изменение вклада не подтверждено/)).not.toBeInTheDocument();
+  });
+
+  // ——— Integrator (5858294059): exact rate contract + create recovery ———
+
+  it.each([
+    { submitted: "12", echoed: "12.00" },
+    { submitted: "12.345", echoed: "12.35" },
+  ])(
+    "confirms a create of rate $submitted against the backend-echoed $echoed row",
+    async ({ submitted, echoed }) => {
+      deposits = [];
+      seedDepositMutations();
+      seedBackendEchoCreates();
+      setup();
+      const user = userEvent.setup();
+
+      const submit = await screen.findByRole("button", { name: "Добавить вклад" });
+      await user.type(screen.getByLabelText("Название вклада"), "Вклад Ставка");
+      await user.type(screen.getByLabelText("Баланс вклада"), "1000");
+      const rate = screen.getByLabelText("Годовая ставка %");
+      await user.clear(rate);
+      await user.type(rate, submitted);
+      await user.click(submit);
+
+      await screen.findByText(/Вклад «Вклад Ставка» сохранён; данные перечитаны/);
+      // Ставка уходит в API без клиентского округления (семантика не менялась).
+      expect(vi.mocked(createDeposit).mock.calls[0][0].annual_rate).toBe(submitted);
+      expect(screen.getByText(echoed)).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    { submitted: "12", echoed: "12.00" },
+    { submitted: "12.345", echoed: "12.35" },
+  ])(
+    "confirms a rate-only edit $submitted against the backend-echoed $echoed row",
+    async ({ submitted, echoed }) => {
+      seedDepositMutations();
+      seedBackendEchoUpdates();
+      setup();
+      const user = userEvent.setup();
+
+      await tables();
+      await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
+      await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+      const editRow = screen.getByDisplayValue("Вклад Альфа").closest("tr") as HTMLElement;
+      const scope = within(editRow);
+      const rate = scope.getByDisplayValue("12.00");
+      await user.clear(rate);
+      await user.type(rate, submitted);
+      await user.click(scope.getByRole("button", { name: "OK" }));
+
+      await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+      expect(vi.mocked(updateDeposit).mock.calls[0][1].annual_rate).toBe(submitted);
+      expect(screen.getByText(echoed)).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(["12garbage", "NaN", "Infinity"])(
+    "cannot confirm a create whose row echoes rate %s",
+    async (rate) => {
+      deposits = [];
+      seedDepositMutations();
+      // Изоляция контракта подтверждения: «backend» вернул строку как есть.
+      seedBackendEchoCreates(() => rate);
+      setup();
+      const user = userEvent.setup();
+
+      const submit = await screen.findByRole("button", { name: "Добавить вклад" });
+      await user.type(screen.getByLabelText("Название вклада"), "Вклад Странная");
+      await user.type(screen.getByLabelText("Баланс вклада"), "1000");
+      const rateField = screen.getByLabelText("Годовая ставка %");
+      await user.clear(rateField);
+      await user.type(rateField, rate);
+      await user.click(submit);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/Создание вклада не подтверждено/);
+      expect(screen.queryByText(/сохранён; данные перечитаны/)).not.toBeInTheDocument();
+      // Retained identity: кнопка переключается на read-only проверку.
+      expect(createDeposit).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Проверить создание" })).toBeInTheDocument();
+      // Черновик удержан.
+      expect(screen.getByLabelText("Название вклада")).toHaveValue("Вклад Странная");
+    },
+  );
+
+  it("recovers a successful create by retained identity without a duplicate POST", async () => {
+    deposits = [];
+    seedDepositMutations();
+    let listCalls = 0;
+    vi.mocked(listDeposits).mockImplementation(async (monthId) => {
+      listCalls += 1;
+      if (listCalls === 2) return []; // readback подтверждения не видит новую строку
+      return deposits.filter((row) => row.reporting_month_id === monthId);
+    });
+    setup();
+    const user = userEvent.setup();
+
+    const submit = await screen.findByRole("button", { name: "Добавить вклад" });
+    await user.type(screen.getByLabelText("Название вклада"), "Вклад Один");
+    await user.type(screen.getByLabelText("Баланс вклада"), "5000");
+    await user.click(submit);
+
+    await screen.findByText(/Создание вклада не подтверждено/);
+    expect(createDeposit).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Название вклада")).toHaveValue("Вклад Один");
+    expect(screen.getByRole("button", { name: "Проверить создание" })).toBeInTheDocument();
+
+    // Восстановление — только перечитывание по удержанному id, без второго POST.
+    await user.click(screen.getByRole("button", { name: "Проверить создание" }));
+    await screen.findByText(/Вклад «Вклад Один» сохранён; данные перечитаны/);
+    expect(createDeposit).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Вклад Один")).toBeInTheDocument();
+    expect(screen.getByLabelText("Название вклада")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Добавить вклад" })).toBeInTheDocument();
   });
 });

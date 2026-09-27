@@ -132,11 +132,70 @@ type DepositIntent = {
   actual_interest_received: MoneyValue;
 };
 
-/** Rates compare numerically ("12" and "12.00" are the same rate). */
+/**
+ * Retained identity of an already-POSTED deposit: confirmation retries re-check
+ * by id and can never issue a second POST (Integrator duplicate guard).
+ */
+type PendingCreate = {
+  id: number;
+  accountId: number;
+  intent: DepositIntent;
+  draft: DepositDraft;
+};
+
+/**
+ * Exact rate canonicalization mirroring the backend contract
+ * (`PercentageRate.from_api` → integer basis points with ROUND_HALF_UP away
+ * from zero → `to_api()` with two decimals; see `domain/values.py` and the
+ * evidence tables in `tests/domain/test_values.py` /
+ * `tests/test_scenario_lab_deposit_rate.py`: `12`→`12.00`, `12.3`→`12.30`,
+ * `12.345`→`12.35`, `13.505`→`13.51`, `-0.005`→`-0.01`).
+ *
+ * Pure digit-string arithmetic with BigInt rounding — no binary-float
+ * conversion and no numeric-prefix acceptance: `12garbage`, `NaN`, `Infinity`
+ * and other non-decimal strings canonicalize to null and can never confirm.
+ */
+function canonicalRate(rate: string): string | null {
+  const match = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(rate.trim());
+  if (!match) return null;
+  const negative = match[1] === "-";
+  const mantissa = match[2];
+  const exponent = match[3] === undefined ? 0 : Number.parseInt(match[3], 10);
+  const dot = mantissa.indexOf(".");
+  const intPart = dot === -1 ? mantissa : mantissa.slice(0, dot);
+  const fracPart = dot === -1 ? "" : mantissa.slice(dot + 1);
+  // Value = digits × 10^-scale, exact; the exponent only moves the point.
+  let digits = `${intPart}${fracPart}`;
+  let scale = fracPart.length - exponent;
+  if (scale < 0) {
+    digits += "0".repeat(-scale);
+    scale = 0;
+  }
+  if (digits.length > 40 || scale > 40) return null;
+  digits = digits.replace(/^0+/, "") || "0";
+  digits = digits.padStart(scale, "0");
+  if (scale > 2) {
+    // Round to basis points (2 decimals): half-up on the magnitude, which for
+    // negatives rounds ties away from zero — exactly like _scaled_half_up.
+    const drop = scale - 2;
+    const keep = digits.slice(0, digits.length - drop);
+    const firstDropped = digits.charCodeAt(digits.length - drop) - 48;
+    digits = (BigInt(keep) + (firstDropped >= 5 ? 1n : 0n)).toString();
+    scale = 2;
+  } else if (scale < 2) {
+    digits += "0".repeat(2 - scale);
+    scale = 2;
+  }
+  const padded = digits.padStart(3, "0");
+  const magnitude = `${padded.slice(0, padded.length - 2)}.${padded.slice(-2)}`;
+  if (magnitude === "0.00") return "0.00";
+  return negative ? `-${magnitude}` : magnitude;
+}
+
+/** Exact rate equality on the canonical basis-points contract. */
 function sameRate(left: string, right: string): boolean {
-  const a = Number.parseFloat(left);
-  const b = Number.parseFloat(right);
-  return Number.isFinite(a) && Number.isFinite(b) && a === b;
+  const a = canonicalRate(left);
+  return a !== null && a === canonicalRate(right);
 }
 
 /**
@@ -161,7 +220,7 @@ function matchesDepositIntent(
 }
 
 const DEPOSIT_CREATE_UNCONFIRMED =
-  "Создание вклада не подтверждено: перечитанные данные не совпадают с отправленными. Повтори создание.";
+  "Создание вклада не подтверждено: перечитанные данные не совпадают с отправленными. Вклад уже создан — повторное нажатие проверит его без нового создания.";
 const DEPOSIT_EDIT_UNCONFIRMED =
   "Изменение вклада не подтверждено: перечитанные данные не совпадают с отправленными. Изменение оставлено в форме; повтори сохранение.";
 
@@ -220,6 +279,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   // total readback failed — the pre-write value is never shown as current (B1).
   const [totalUnconfirmed, setTotalUnconfirmed] = useState(false);
   const [totalWarning, setTotalWarning] = useState<string | null>(null);
+  // A successful POST is retained here until confirmed: retries re-check by id
+  // without ever repeating the create (duplicate-POST guard).
+  const [pendingCreated, setPendingCreated] = useState<PendingCreate | null>(null);
   const busyRef = useRef(false);
   const operation = useRef(0);
 
@@ -400,6 +462,12 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setActionError(null);
     setNotice(null);
     try {
+      if (pendingCreated) {
+        // Identity retained from a successful POST: confirm by id only — a
+        // retry can never repeat the create (duplicate-POST guard).
+        await confirmCreatedDeposit(pendingCreated, token);
+        return;
+      }
       if (!normalizeMoneyInput(depositDraft.balance)) {
         throw new Error("Укажи баланс вклада");
       }
@@ -432,22 +500,51 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (created.reporting_month_id !== monthId) {
         throw new Error("API сохранил вклад в другом месяце.");
       }
-      const fresh = await refetchDepositRows();
-      const confirmed = fresh.find((row) => row.id === created.id);
-      if (!matchesDepositIntent(confirmed, intent)) {
-        throw new Error(DEPOSIT_CREATE_UNCONFIRMED);
-      }
-      await markDataStale();
-      if (operation.current !== token) return;
-      setDepositDraft({ ...emptyDeposit(), account_id: String(accountId) });
-      setDepositDraftTouched(false);
-      setNotice(`Вклад «${confirmed.name}» сохранён; данные перечитаны.`);
+      const pending: PendingCreate = {
+        id: created.id,
+        accountId,
+        intent,
+        draft: { ...depositDraft },
+      };
+      setPendingCreated(pending);
+      await confirmCreatedDeposit(pending, token);
     } catch (cause) {
       reportFailure(token, cause);
       void depositsQuery.refetch();
     } finally {
       finishAction(token);
     }
+  }
+
+  /**
+   * Readback-only confirmation of a retained create: re-checks the row by its
+   * stored id and intent without ever issuing another POST. The draft is
+   * cleared only when it still equals what was submitted — newer input stays.
+   */
+  async function confirmCreatedDeposit(pending: PendingCreate, token: number): Promise<void> {
+    const fresh = await refetchDepositRows();
+    const confirmed = fresh.find((row) => row.id === pending.id);
+    if (!matchesDepositIntent(confirmed, pending.intent)) {
+      throw new Error(DEPOSIT_CREATE_UNCONFIRMED);
+    }
+    await markDataStale();
+    if (operation.current !== token) return;
+    setPendingCreated(null);
+    const draft = depositDraft;
+    const unchanged =
+      draft.name === pending.draft.name &&
+      draft.account_id === pending.draft.account_id &&
+      draft.deposit_type === pending.draft.deposit_type &&
+      draft.balance === pending.draft.balance &&
+      draft.annual_rate === pending.draft.annual_rate &&
+      draft.actual_interest === pending.draft.actual_interest;
+    if (unchanged) {
+      setDepositDraft({ ...emptyDeposit(), account_id: String(pending.accountId) });
+      setDepositDraftTouched(false);
+    }
+    setNotice(
+      `Вклад «${confirmed.name}» сохранён; данные перечитаны.${unchanged ? "" : " Введённые данные оставлены в форме."}`,
+    );
   }
 
   async function handleSaveDepositEdit() {
@@ -1021,7 +1118,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   </Field>
                 </div>
                 <Button disabled={busy || readOnly} type="submit" variant="primary">
-                  Добавить вклад
+                  {pendingCreated ? "Проверить создание" : "Добавить вклад"}
                 </Button>
                 <details className="field-details">
                   <summary>О прогнозе процентов</summary>
