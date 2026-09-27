@@ -22,6 +22,7 @@ import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
 import {
   UiV2CapitalEntry,
+  UiV2CapitalPerformanceEntry,
   UiV2CloseEntry,
   UiV2DataAppEntry,
   UiV2DataCatalogsEntry,
@@ -48,6 +49,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="/" element={<UiV2Entry />} />
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
+          <Route path="v2/capital/performance" element={<UiV2CapitalPerformanceEntry />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
           <Route path="v2/close" element={<UiV2CloseEntry />} />
