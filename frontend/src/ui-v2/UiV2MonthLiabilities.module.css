@@ -1,0 +1,100 @@
+/* Leaf-local layout for #564; the shared panels, tables and fields stay global. */
+.leaf {
+  display: grid;
+  /* minmax(0, 1fr) keeps a wide table inside its column instead of pushing the
+     page sideways: the leaf owns its width before it is wired into the frame. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* The panels already stack in the leaf grid, so their page margin is noise. */
+.leaf section {
+  min-width: 0;
+  margin: 0;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.empty {
+  margin: 8px 0;
+  color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 4px;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  margin-top: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.linkControl {
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.linkAccount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.details {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.details summary {
+  cursor: pointer;
+}
