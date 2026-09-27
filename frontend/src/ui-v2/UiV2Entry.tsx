@@ -16,6 +16,7 @@ const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
 const UiV2DataPlaceholderPage = lazy(() => import("./UiV2DataPlaceholderPage"));
 const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
 const UiV2GoalsPage = lazy(() => import("./UiV2GoalsPage"));
+const UiV2ScenarioLabPage = lazy(() => import("./UiV2ScenarioLabPage"));
 
 export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
@@ -159,6 +160,14 @@ export function UiV2GoalsEntry() {
   return (
     <SuspenseFrame>
       <UiV2GoalsPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2ScenarioLabEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2ScenarioLabPage />
     </SuspenseFrame>
   );
 }

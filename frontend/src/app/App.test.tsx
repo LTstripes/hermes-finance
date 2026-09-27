@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
+vi.mock("../ui-v2/UiV2ScenarioLabPage", () => ({
+  default: function BrokenScenarioLabPage() {
+    throw new Error("synthetic Scenario Lab chunk failure");
+  },
+}));
+
 const sampleMonths = [
   {
     id: 2,
@@ -218,6 +224,23 @@ describe("App", () => {
       "href",
       "/v2/income?month=1",
     );
+  });
+
+  it("loads Scenario Lab through the shared lazy fallback and error boundary", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    window.history.pushState({}, "", "/v2/income/scenario-lab");
+
+    render(<App />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
   });
 
   it("renders the dashboard in the application layout", () => {
