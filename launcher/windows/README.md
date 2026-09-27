@@ -46,7 +46,14 @@ filenames are not shown in the primary view.
 
 The retained launcher safety harness is synthetic/private-safe and covers
 profile identity, production/isolated data boundaries, read-only dependency readiness,
-process actions, owner-facing UI state and package/install guards. Run:
+process actions, owner-facing UI state and package/install guards. CI runs the
+canonical package/install chain only when launcher-relevant paths change.
+That chain still executes the in-process scenarios before publish. Those
+scenarios are not copies of the outer smoke: the outer smoke owns the
+published and installed files, the self-contained layout, the shortcut target,
+and a clean worktree; the in-process scenarios own profile, process, data, and
+UI fail-closed behavior. Unrelated frontend or financial changes skip the
+heavy job and do not delete those scenarios. Run:
 
     dotnet run --project .\HermesFinance.Launcher.SafetyTests\HermesFinance.Launcher.SafetyTests.csproj --configuration Release
     .\..\..\scripts\tests\test-windows-launcher-package.ps1
