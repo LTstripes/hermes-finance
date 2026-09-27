@@ -1,7 +1,7 @@
 # Historical membership — bounded lifecycle proposal (#532)
 
-Status: **PROPOSED; pending independent integrity review and Integrator acceptance.**
-This document does not authorize a writer, migration, HTTP endpoint or backfill.
+Status: **ACCEPTED as the bounded lifecycle contract gate in the independent #604 review.**
+This document still does not authorize a writer, migration, HTTP endpoint or backfill. #608 implementation remains blocked by the membership-aware observed-valuation identity decision in #610.
 The membership slice of #532 stops here. The accepted #529/#530 readers and their
 fail-closed diagnostics remain authoritative.
 
