@@ -19,11 +19,11 @@ def env(tmp_path):
     database.engine.dispose()
 
 
-def read(env):
+def read(env, account_id=None):
     response = env[0].get(
         "/api/performance/preparation",
         params={
-            "account_id": env[4],
+            "account_id": env[4] if account_id is None else account_id,
             "start_date": "2030-05-01",
             "end_date": "2030-05-31",
         },
@@ -92,6 +92,47 @@ def test_concurrent_duplicate_create_has_one_winner(env):
         )
     assert sorted(r.status_code for r in responses) == [201, 409]
     assert len(read(env)["flows"]) == 1
+
+
+def test_move_flow_between_accounts_rereads_both_ledgers_and_rejects_old_token(env):
+    from sqlalchemy import select
+
+    from hermes_finance.persistence import AccountPerformanceScopeMembership
+
+    client, session, _, month, account, partner = env
+    created = client.post("/api/external-flows", json=flow(env), headers=headers(env))
+    assert created.status_code == 201, created.text
+    flow_id = created.json()["id"]
+    for owner in (account, partner):
+        response = client.post(
+            "/api/cash-boundary-coverages",
+            json={**coverage(env), "account_id": owner},
+            headers=headers(env),
+        )
+        assert response.status_code == 201, response.text
+    assert [row["id"] for row in read(env)["flows"]] == [flow_id]
+    assert read(env, partner)["flows"] == []
+    old = headers(env)
+    path = f"/api/external-flows/{flow_id}"
+    moved = client.patch(path, json={"account_id": partner}, headers=old)
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["account_id"] == partner
+    assert moved.json()["scope_membership"] == "unknown"
+    source, destination = read(env), read(env, partner)
+    assert source["flows"] == []
+    assert [row["id"] for row in destination["flows"]] == [flow_id]
+    assert destination["flows"][0]["account_id"] == partner
+    assert source["evidence_token"] == destination["evidence_token"]
+    for ledger in (source, destination):
+        assert ledger["cash_coverages"][0]["coverage_state"] == "unknown"
+    assert client.patch(path, json={"account_id": account}, headers=old).status_code == 409
+    assert read(env, partner)["flows"][0]["account_id"] == partner
+    assert list(session.scalars(select(AccountPerformanceScopeMembership))) == []
+    close_reporting_month(session, month)
+    blocked = client.patch(path, json={"account_id": account}, headers=headers(env))
+    assert blocked.status_code == 409, blocked.text
+    assert read(env)["flows"] == []
+    assert read(env, partner)["flows"][0]["id"] == flow_id
 
 
 @pytest.mark.parametrize("kind", ["cash", "in-kind"])
@@ -170,6 +211,15 @@ def test_transfer_classifications_are_canonical(env):
     row = read(env)["flows"][0]
     assert row["portfolio_scope_classification"] == "internal_transfer"
     assert row["account_scope_classification"] == "external_withdrawal"
+    # Moving a linked leg onto its partner's account still uses canonical validation.
+    token = headers(env)
+    rejected = client.patch(
+        f"/api/external-flows/{first['id']}", json={"account_id": env[5]}, headers=token
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert headers(env) == token
+    assert read(env)["flows"][0]["account_id"] == env[4]
+    assert read(env)["flows"][0]["transfer_link_id"] == linked.json()["id"]
 
 
 def test_failed_write_rolls_back_and_token_remains_usable(env):

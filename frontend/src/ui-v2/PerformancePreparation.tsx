@@ -142,17 +142,20 @@ function CoverageForm({
 
 function FlowForm({
   data,
+  accounts,
   flow,
   locked,
   save,
   cancel,
 }: {
   data: Preparation;
+  accounts: Account[];
   flow: ExternalFlow | null;
   locked: boolean;
   save: Save;
   cancel: () => void;
 }) {
+  const [account, setAccount] = useState(String(flow?.account_id ?? ""));
   const [eventDate, setEventDate] = useState(flow?.event_date ?? "");
   const [month, setMonth] = useState(String(flow?.reporting_month_id ?? ""));
   const [amount, setAmount] = useState(flow?.boundary_amount.amount ?? "");
@@ -164,6 +167,7 @@ function FlowForm({
   const [attested, setAttested] = useState(false);
   const chosen = data.months.find((m) => m.id === Number(month));
   const valid =
+    accounts.some((a) => String(a.id) === account) &&
     chosen?.status === "draft" &&
     eventDate >= data.start_date &&
     eventDate <= data.end_date &&
@@ -177,7 +181,7 @@ function FlowForm({
         if (!valid || !attested || locked) return;
         void save(`/api/external-flows${flow ? `/${flow.id}` : ""}`, flow ? "PATCH" : "POST", {
           ...(flow ? {} : { reporting_month_id: Number(month) }),
-          account_id: data.account_id,
+          account_id: Number(account),
           event_date: eventDate,
           boundary_amount: { amount, currency: "RUB" },
           direction,
@@ -191,6 +195,21 @@ function FlowForm({
       <fieldset disabled={locked} className={styles.compositionBlock}>
         <legend>{flow ? `Исправление операции ${flow.id}` : "Новая операция"}</legend>
         <div className={styles.controls} onChange={() => setAttested(false)}>
+          <label>
+            Счёт
+            <select
+              aria-label="Счёт операции"
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+            >
+              <option value="">Выберите счёт</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Отчёт
             <select
@@ -318,10 +337,12 @@ function FlowForm({
 
 function PreparationForms({
   data,
+  accounts,
   locked,
   save,
 }: {
   data: Preparation;
+  accounts: Account[];
   locked: boolean;
   save: Save;
 }) {
@@ -397,6 +418,7 @@ function PreparationForms({
         <FlowForm
           key={editing?.id ?? "new"}
           data={data}
+          accounts={accounts}
           flow={editing}
           locked={locked}
           save={save}
@@ -452,9 +474,11 @@ function PreparationForms({
 
 function AccountPreparation({
   accountId,
+  accounts,
   context,
 }: {
   accountId: number;
+  accounts: Account[];
   context: PerformanceContext;
 }) {
   const client = useQueryClient();
@@ -487,8 +511,38 @@ function AccountPreparation({
       await client.invalidateQueries();
       const result = await query.refetch();
       const reread = result.data;
-      const collection = path.startsWith("/api/external-flows")
-        ? reread?.flows
+      if (
+        result.isError ||
+        !reread ||
+        reread.account_id !== accountId ||
+        reread.start_date !== context.start ||
+        reread.end_date !== context.end
+      )
+        throw new Error("readback");
+      const flowWrite = path.startsWith("/api/external-flows");
+      const destinationId = flowWrite ? (body as { account_id: number }).account_id : accountId;
+      let destination = reread;
+      if (destinationId !== accountId) {
+        destination = await client.fetchQuery({
+          queryKey: ["performance-preparation", destinationId, context.start, context.end],
+          queryFn: ({ signal }) =>
+            getPreparation(destinationId, context.start, context.end, signal),
+          staleTime: 0,
+          retry: false,
+        });
+        // A moved flow must leave the original ledger and appear in the selected
+        // destination at the same evidence version; never confirm a partial read.
+        if (
+          destination.account_id !== destinationId ||
+          destination.start_date !== context.start ||
+          destination.end_date !== context.end ||
+          destination.evidence_token !== reread.evidence_token ||
+          reread.flows.some((r) => r.id === saved.id)
+        )
+          throw new Error("readback");
+      }
+      const collection = flowWrite
+        ? destination.flows
         : path.startsWith("/api/cash-boundary-coverages")
           ? reread?.cash_coverages
           : path.startsWith("/api/in-kind-boundary-coverages")
@@ -498,12 +552,8 @@ function AccountPreparation({
               : reread?.cash_balances;
       const row = collection?.find((r) => r.id === saved.id);
       if (
-        result.isError ||
-        !reread ||
-        reread.account_id !== accountId ||
-        reread.start_date !== context.start ||
-        reread.end_date !== context.end ||
         !row ||
+        (flowWrite && (row as ExternalFlow).account_id !== destinationId) ||
         Object.entries(body as Record<string, unknown>).some(([key, value]) => {
           const actual = (row as unknown as Record<string, unknown>)[key];
           // Compare authoritative response for canonical amount formatting and fields
@@ -578,7 +628,13 @@ function AccountPreparation({
       ) : query.isFetching ? (
         <p>Читаем данные…</p>
       ) : fresh && data ? (
-        <PreparationForms key={data.evidence_token} data={data} locked={locked} save={save} />
+        <PreparationForms
+          key={data.evidence_token}
+          data={data}
+          accounts={accounts}
+          locked={locked}
+          save={save}
+        />
       ) : (
         <p role="alert">Ответ не соответствует выбранному счёту и интервалу.</p>
       )}
@@ -644,6 +700,7 @@ export function PerformancePreparation({
         <AccountPreparation
           key={`${account.id}:${context.start}:${context.end}`}
           accountId={account.id}
+          accounts={accounts ?? []}
           context={context}
         />
       ) : null}

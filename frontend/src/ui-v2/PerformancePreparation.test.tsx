@@ -76,7 +76,19 @@ function setup(raw = "1") {
         ]}
       >
         <PerformancePreparation
-          accounts={[{ id: 1, name: "Synthetic" } as Account]}
+          accounts={[
+            { id: 1, name: "Synthetic A" } as Account,
+            {
+              id: 2,
+              name: "Synthetic B",
+              account_type: "brokerage",
+              status: "inactive",
+              external_code: null,
+              include_in_capital: false,
+              include_in_returns: false,
+              notes: null,
+            },
+          ]}
           context={context}
         />
       </MemoryRouter>
@@ -170,6 +182,11 @@ describe("Owner preparation", () => {
     fireEvent.change(screen.getByLabelText("Сумма операции"), {
       target: { value: "90071992547409.91" },
     });
+    expect(screen.getByLabelText("Счёт операции")).toHaveValue("");
+    fireEvent.click(screen.getByLabelText(/Я проверил.*дату, счёт, сумму/));
+    expect(screen.getByRole("button", { name: "Сохранить операцию" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Счёт операции"), { target: { value: "2" } });
+    expect(screen.getByLabelText(/Я проверил.*дату, счёт, сумму/)).not.toBeChecked();
     fireEvent.click(screen.getByLabelText(/Я проверил.*дату, счёт, сумму/));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить операцию" }));
     await screen.findByText(/Не повторяйте запись вслепую/);
@@ -179,6 +196,7 @@ describe("Owner preparation", () => {
       "POST",
       expect.objectContaining({
         boundary_amount: { amount: "90071992547409.91", currency: "RUB" },
+        account_id: 2,
         scope_membership: "unknown",
       }),
       "read-version",
@@ -221,15 +239,95 @@ describe("Owner preparation", () => {
       "href",
       expect.stringContaining("account_id=1"),
     );
-    fireEvent.change(screen.getByLabelText("Сумма операции"), { target: { value: "2.00" } });
+    expect(screen.getByLabelText("Счёт операции")).toHaveValue("1");
+    fireEvent.change(screen.getByLabelText("Счёт операции"), { target: { value: "2" } });
     fireEvent.click(screen.getByLabelText(/Я проверил.*дату, счёт, сумму/));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить операцию" }));
     await screen.findByText(
       /Запись отклонена: transfer link legs cannot change while reconciliation evidence exists/,
     );
     expect(savePreparation).toHaveBeenCalledTimes(1);
+    expect(savePreparation).toHaveBeenCalledWith(
+      "/api/external-flows/8",
+      "PATCH",
+      expect.objectContaining({ account_id: 2, transfer_link_id: 9 }),
+      "read-version",
+    );
     expect(screen.getByRole("button", { name: "Добавить операцию" })).toBeDisabled();
   });
+
+  it.each(["success", "wrong-account", "different-version", "still-in-source", "missing-row"])(
+    "checks both account ledgers after moving a flow: %s",
+    async (outcome) => {
+      const original = {
+        id: 8,
+        reporting_month_id: 4,
+        account_id: 1,
+        event_date: "2030-05-12",
+        boundary_amount: { amount: "1.00", currency: "RUB" },
+        direction: "contribution",
+        kind: "external_contribution",
+        scope_membership: "unknown",
+        transfer_link_id: null,
+        source: "manual",
+      } as Preparation["flows"][number];
+      data.flows = [original];
+      let destination: Preparation;
+      vi.mocked(getPreparation).mockImplementation(async (accountId) =>
+        structuredClone(accountId === 2 ? destination : data),
+      );
+      vi.mocked(savePreparation).mockImplementation(async (_path, _method, body) => {
+        const saved = { ...original, ...(body as object) };
+        data.flows = outcome === "still-in-source" ? [original] : [];
+        data.evidence_token = "after-move";
+        destination = {
+          ...data,
+          account_id: outcome === "wrong-account" ? 1 : 2,
+          evidence_token: outcome === "different-version" ? "concurrent-edit" : "after-move",
+          flows: outcome === "missing-row" ? [] : [saved],
+        };
+        return saved;
+      });
+      setup();
+      fireEvent.click(await screen.findByRole("button", { name: "Исправить операцию 8" }));
+      fireEvent.change(screen.getByLabelText("Счёт операции"), { target: { value: "2" } });
+      fireEvent.click(screen.getByLabelText(/Я проверил.*дату, счёт, сумму/));
+      const save = screen.getByRole("button", { name: "Сохранить операцию" });
+      fireEvent.click(save);
+      fireEvent.click(save);
+      await screen.findByText(
+        outcome === "success" ? /Запись подтверждена/ : /повторная проверка не завершилась/,
+      );
+      expect(savePreparation).toHaveBeenCalledTimes(1);
+      expect(savePreparation).toHaveBeenCalledWith(
+        "/api/external-flows/8",
+        "PATCH",
+        expect.objectContaining({ account_id: 2, scope_membership: "unknown" }),
+        "read-version",
+      );
+      expect(getPreparation).toHaveBeenCalledWith(
+        2,
+        context.start,
+        context.end,
+        expect.any(AbortSignal),
+      );
+      if (outcome === "success") {
+        expect(
+          screen.queryByRole("button", { name: "Исправить операцию 8" }),
+        ).not.toBeInTheDocument();
+        expect(getPerformanceReadiness).toHaveBeenCalledWith(
+          context.start,
+          context.end,
+          "account",
+          1,
+          expect.any(AbortSignal),
+        );
+      } else {
+        expect(screen.getByRole("button", { name: "Добавить операцию" })).toBeDisabled();
+        expect(getPerformanceReadiness).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("distinguishes acknowledged writes from failed readiness read-back", async () => {
     vi.mocked(savePreparation).mockImplementation(async (_path, _method, body) => {

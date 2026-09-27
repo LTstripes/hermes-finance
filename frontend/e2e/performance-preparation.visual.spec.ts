@@ -92,6 +92,10 @@ for (const width of [390, 1366]) {
     await page.getByLabel("Сумма операции").fill("123.45");
     await expect(page.getByRole("button", { name: "Сохранить операцию" })).toBeDisabled();
     await page.getByLabel(/Я проверил.*дату, счёт, сумму/).check();
+    await expect(page.getByRole("button", { name: "Сохранить операцию" })).toBeDisabled();
+    await page.getByLabel("Счёт операции").selectOption("1");
+    await expect(page.getByLabel(/Я проверил.*дату, счёт, сумму/)).not.toBeChecked();
+    await page.getByLabel(/Я проверил.*дату, счёт, сумму/).check();
     await expect(page.getByRole("button", { name: "Сохранить операцию" })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
