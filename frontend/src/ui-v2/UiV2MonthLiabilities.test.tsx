@@ -119,14 +119,21 @@ function findProperty(id: number): PropertySnapshot {
   throw new Error(`property ${id} is not in the store`);
 }
 
-function leaf(monthId: number, readOnly: boolean) {
-  const month: ReportingMonth = {
-    id: monthId,
+function monthRef(id: number) {
+  return {
+    id,
     year: 2030,
     month: 4,
-    status: readOnly ? "closed" : "draft",
+    status: "draft",
     snapshot_date: "2030-04-30",
     source: "manual",
+  };
+}
+
+function leaf(monthId: number, readOnly: boolean) {
+  const month: ReportingMonth = {
+    ...monthRef(monthId),
+    status: readOnly ? "closed" : "draft",
   };
   const context: MonthEditorContext = {
     month,
@@ -196,8 +203,12 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     vi.mocked(listProperties).mockImplementation(async (monthId) =>
       (propertiesByMonth.get(monthId) ?? []).map((row) => ({ ...row })),
     );
-    vi.mocked(getDashboard).mockResolvedValue({ mortgage: null } as never);
-    vi.mocked(getMonthSummary).mockResolvedValue({ coverage: { coverage_pct: null } } as never);
+    vi.mocked(getDashboard).mockImplementation(
+      async (monthId) => ({ month: monthRef(monthId), mortgage: null }) as never,
+    );
+    vi.mocked(getMonthSummary).mockImplementation(
+      async (monthId) => ({ month: monthRef(monthId), coverage: { coverage_pct: null } }) as never,
+    );
 
     vi.mocked(createDebt).mockImplementation(async (payload) => {
       const monthId = payload.reporting_month_id;
@@ -417,6 +428,8 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("save failed");
     expect(within(debtTable).getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("100000.00")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("100000.00")).toBeEnabled();
 
     await user.click(within(debtTable).getByRole("button", { name: "OK" }));
     await waitFor(() => expect(updateDebt).toHaveBeenCalledTimes(2));
@@ -745,5 +758,285 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     view.unmount();
     expect(setDirty).toHaveBeenLastCalledWith("liabilities", false);
+  });
+
+  it("declines foreign-month debts on the initial read and recovers on a valid response", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listDebts).mockResolvedValueOnce([
+      { ...debt, id: 77, name: "Чужой долг", reporting_month_id: 99 },
+    ]);
+    renderLeaf();
+
+    expect(
+      await screen.findByText("Долги относятся к другому месяцу: чтение отклонено."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Чужой долг")).toBeNull();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Изменить долг «Основная карта»" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Удалить долг «Основная карта»" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Связать счёт" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Добавить долг" })).toBeNull();
+    expect(createDebt).not.toHaveBeenCalled();
+    expect(updateDebt).not.toHaveBeenCalled();
+    expect(deleteDebt).not.toHaveBeenCalled();
+    expect(linkDebtToAccount).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("Основная карта")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Изменить долг «Основная карта»" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Долги относятся к другому месяцу: чтение отклонено.")).toBeNull();
+  });
+
+  it("declines foreign-month properties on the initial read and keeps the debt section usable", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listProperties).mockResolvedValueOnce([
+      { ...property, id: 88, name: "Чужой объект", reporting_month_id: 99 },
+    ]);
+    renderLeaf();
+
+    expect(
+      await screen.findByText("Недвижимость относится к другому месяцу: чтение отклонено."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Чужой объект")).toBeNull();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "Изменить объект «Синтетическая квартира»" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Добавить объект" })).toBeNull();
+    expect(updateProperty).not.toHaveBeenCalled();
+    expect(deleteProperty).not.toHaveBeenCalled();
+
+    const [debtTable] = await tables();
+    expect(
+      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
+    ).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("Синтетическая квартира")).toBeInTheDocument();
+  });
+
+  it("drops cached rows after a foreign refetch instead of keeping them editable", async () => {
+    const user = userEvent.setup();
+    renderLeaf();
+    const [debtTable] = await tables();
+    expect(within(debtTable).getByText("Основная карта")).toBeInTheDocument();
+
+    vi.mocked(listDebts).mockResolvedValueOnce([
+      { ...debt, id: 77, name: "Чужой долг", reporting_month_id: 99 },
+    ]);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["debts", 7] });
+    });
+
+    expect(
+      await screen.findByText("Долги относятся к другому месяцу: чтение отклонено."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Основная карта")).toBeNull();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Изменить долг «Основная карта»" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Удалить долг «Основная карта»" })).toBeNull();
+    expect(updateDebt).not.toHaveBeenCalled();
+    expect(deleteDebt).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("Основная карта")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Изменить долг «Основная карта»" }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops cached rows after a failed refresh instead of keeping them editable", async () => {
+    const user = userEvent.setup();
+    renderLeaf();
+    const [debtTable] = await tables();
+    expect(within(debtTable).getByText("Основная карта")).toBeInTheDocument();
+
+    vi.mocked(listDebts).mockRejectedValueOnce(new Error("refresh failed"));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["debts", 7] });
+    });
+
+    expect(await screen.findByText("refresh failed")).toBeInTheDocument();
+    expect(screen.queryByText("Основная карта")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Изменить долг «Основная карта»" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Удалить долг «Основная карта»" })).toBeNull();
+    expect(updateDebt).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    expect(await screen.findByText("Основная карта")).toBeInTheDocument();
+    expect(screen.queryByText("refresh failed")).toBeNull();
+  });
+
+  it("treats a foreign dashboard and summary as unknown month context", async () => {
+    vi.mocked(getDashboard).mockResolvedValue({
+      month: monthRef(99),
+      mortgage: {
+        mortgage_balance: { amount: "98765432.00", currency: "RUB" },
+        coverage_pct: "50.00",
+        gap: { amount: "999.00", currency: "RUB" },
+      },
+      summary: { liquid_capital: { linked_pairs: [] } },
+    } as never);
+    vi.mocked(getMonthSummary).mockResolvedValue({
+      month: monthRef(99),
+      coverage: { coverage_pct: "35.00" },
+    } as never);
+    renderLeaf();
+
+    const propertyBlock = await propertySection();
+    expect(labelledValue(propertyBlock, "Покрытие ипотеки (ориентир):")).toHaveTextContent("—");
+    expect(labelledValue(propertyBlock, "Недостаток покрытия:")).toHaveTextContent("—");
+    expect(labelledValue(propertyBlock, "Покрытие обязательных расходов:")).toHaveTextContent("—");
+    expect(screen.queryByText(/98\s*765\s*432/)).toBeNull();
+    expect(screen.queryByText("35.00")).toBeNull();
+
+    expect(await screen.findByText("Контекст пары недоступен")).toBeInTheDocument();
+    expect(
+      screen.getByText("Сводка выбранного месяца недоступна: чтение отклонено."),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Основная карта")).toBeInTheDocument();
+  });
+
+  it("freezes debt edit inputs while the save and its readback are pending", async () => {
+    let release: (() => void) | null = null;
+    vi.mocked(updateDebt).mockImplementation(
+      (id, payload) =>
+        new Promise<DebtEntry>((resolve) => {
+          release = () => {
+            const row = findDebt(id);
+            Object.assign(row, payload);
+            resolve({ ...row });
+          };
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderLeaf();
+    const [debtTable] = await tables();
+    await user.click(
+      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
+    );
+    const balance = screen.getByDisplayValue("123456.00");
+    await user.clear(balance);
+    await user.type(balance, "100000.00");
+    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(updateDebt).toHaveBeenCalledTimes(1));
+
+    expect(within(debtTable).getByLabelText("Название долга")).toBeDisabled();
+    const pendingBalance = screen.getByDisplayValue("100000.00");
+    expect(pendingBalance).toBeDisabled();
+    await user.type(pendingBalance, "9");
+    expect(screen.getByDisplayValue("100000.00")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("100000.009")).toBeNull();
+    expect(within(debtTable).getByRole("button", { name: "OK" })).toBeDisabled();
+
+    await act(async () => {
+      release?.();
+    });
+
+    const [debtTableAfter] = await tables();
+    expect(within(debtTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
+    expect(debtTableAfter).toHaveTextContent(/100\s*000\s*₽/);
+    expect(updateDebt).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes debt create inputs while the write and its readback are pending", async () => {
+    let release: (() => void) | null = null;
+    vi.mocked(createDebt).mockImplementation(
+      (payload) =>
+        new Promise<DebtEntry>((resolve) => {
+          release = () => {
+            const monthId = payload.reporting_month_id;
+            const row: DebtEntry = {
+              id: nextDebtId++,
+              reporting_month_id: monthId,
+              debt_type: payload.debt_type,
+              name: payload.name,
+              current_balance: payload.current_balance,
+              include_in_liquid_capital: payload.include_in_liquid_capital ?? true,
+              linked_account_id: null,
+              annual_rate: payload.annual_rate ?? null,
+              next_due_date: payload.next_due_date ?? null,
+              contract_end_date: payload.contract_end_date ?? null,
+              notes: null,
+            };
+            debtsByMonth.set(monthId, [...(debtsByMonth.get(monthId) ?? []), row]);
+            resolve(row);
+          };
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderLeaf();
+    let month = await debtSection();
+    await user.type(within(month).getByLabelText("Текущий баланс долга"), "100000.50");
+    await user.click(within(month).getByRole("button", { name: "Добавить долг" }));
+    await waitFor(() => expect(createDebt).toHaveBeenCalledTimes(1));
+
+    month = await debtSection();
+    const pendingBalance = within(month).getByLabelText("Текущий баланс долга");
+    expect(pendingBalance).toBeDisabled();
+    expect(pendingBalance).toHaveValue("100000.50");
+    expect(within(month).getByRole("button", { name: "Добавить долг" })).toBeDisabled();
+    await user.type(pendingBalance, "9");
+    expect(within(await debtSection()).getByLabelText("Текущий баланс долга")).toHaveValue(
+      "100000.50",
+    );
+
+    await act(async () => {
+      release?.();
+    });
+
+    expect(await screen.findByText("Кредитка")).toBeInTheDocument();
+    const monthAfter = await debtSection();
+    expect(within(monthAfter).getByLabelText("Текущий баланс долга")).toHaveValue("");
+    expect(within(monthAfter).getByLabelText("Текущий баланс долга")).toBeEnabled();
+    expect(createDebt).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes property edit inputs while the save and its readback are pending", async () => {
+    let release: (() => void) | null = null;
+    vi.mocked(updateProperty).mockImplementation(
+      (id, payload) =>
+        new Promise<PropertySnapshot>((resolve) => {
+          release = () => {
+            const row = findProperty(id);
+            Object.assign(row, payload);
+            resolve({ ...row });
+          };
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderLeaf();
+    const [, propertyTable] = await tables();
+    await user.click(
+      within(propertyTable).getByRole("button", {
+        name: "Изменить объект «Синтетическая квартира»",
+      }),
+    );
+    const mortgage = screen.getByDisplayValue("3000000.00");
+    await user.clear(mortgage);
+    await user.type(mortgage, "2900000.00");
+    await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1));
+
+    expect(within(propertyTable).getByLabelText("Название объекта")).toBeDisabled();
+    const pendingMortgage = screen.getByDisplayValue("2900000.00");
+    expect(pendingMortgage).toBeDisabled();
+    await user.type(pendingMortgage, "9");
+    expect(screen.getByDisplayValue("2900000.00")).toBeInTheDocument();
+    expect(within(propertyTable).getByRole("button", { name: "OK" })).toBeDisabled();
+
+    await act(async () => {
+      release?.();
+    });
+
+    const [, propertyTableAfter] = await tables();
+    expect(within(propertyTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
+    expect(propertyTableAfter).toHaveTextContent(/2\s*900\s*000\s*₽/);
+    expect(updateProperty).toHaveBeenCalledTimes(1);
   });
 });

@@ -57,6 +57,9 @@ const LINK_CONFIRM_ERROR = "Связь не подтверждена повто�
 const UNLINK_CONFIRM_ERROR = "Отвязка не подтверждена повторной загрузкой.";
 const DEBT_DELETE_CONFIRM_ERROR = "Удаление долга не подтверждено повторной загрузкой.";
 const PROPERTY_DELETE_CONFIRM_ERROR = "Удаление объекта не подтверждено повторной загрузкой.";
+const FOREIGN_DEBTS_ERROR = "Долги относятся к другому месяцу: чтение отклонено.";
+const FOREIGN_PROPERTIES_ERROR = "Недвижимость относится к другому месяцу: чтение отклонено.";
+const FOREIGN_CONTEXT_ERROR = "Сводка выбранного месяца недоступна: чтение отклонено.";
 
 type DebtAddDraft = {
   name: string;
@@ -152,6 +155,22 @@ function rowsBelongToMonth(rows: Array<{ reporting_month_id: number }>, monthId:
   return rows.every((row) => row.reporting_month_id === monthId);
 }
 
+/**
+ * A month-scoped list is accepted only when it settled and every row belongs
+ * to the selected month. A failed refresh and a foreign payload are declined
+ * as unavailable — never rendered, never reduced to an authoritative empty
+ * list, and never offered again as confirmed editable data.
+ */
+function readListError<T extends { reporting_month_id: number }>(
+  query: { data: T[] | undefined; error: unknown; isError: boolean },
+  monthId: number,
+  foreignMessage: string,
+): string | null {
+  if (query.isError) return formatApiError(query.error);
+  if (query.data !== undefined && !rowsBelongToMonth(query.data, monthId)) return foreignMessage;
+  return null;
+}
+
 function assertDebtWriteConfirmed(
   rows: DebtEntry[],
   monthId: number,
@@ -200,6 +219,9 @@ type BlockProps = {
   monthId: number;
   onDirtyChange: (dirty: boolean) => void;
   readOnly: boolean;
+  retry: () => void;
+  /** Declined read (failed refresh or foreign month) shown instead of rows. */
+  unavailable: string | null;
 };
 
 /**
@@ -320,15 +342,34 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
   }
 
   const accounts = accountsQuery.data ?? [];
-  const debts = debtsQuery.data ?? [];
-  const properties = propertiesQuery.data ?? [];
   const dashboard = dashboardQuery.data;
-  const linkedPairs = dashboard ? (dashboard.summary?.liquid_capital?.linked_pairs ?? []) : null;
-  const mortgage: DashboardMortgage | null = dashboard?.mortgage ?? null;
-  const coveragePct = summaryQuery.data?.coverage?.coverage_pct ?? null;
+  const summaryRead = summaryQuery.data;
+
+  // Month identity is checked before anything is rendered, totals are derived
+  // or a row action is offered: a declined list reaches the blocks as empty
+  // and the block shows an explicit unavailable state instead of rows.
+  const debtsUnavailable = readListError(debtsQuery, monthId, FOREIGN_DEBTS_ERROR);
+  const propertiesUnavailable = readListError(propertiesQuery, monthId, FOREIGN_PROPERTIES_ERROR);
+  const debts = debtsUnavailable === null ? (debtsQuery.data ?? []) : [];
+  const properties = propertiesUnavailable === null ? (propertiesQuery.data ?? []) : [];
+
+  // Month-scoped dashboard/summary context keeps the same identity gate.
+  const dashboardForeign = dashboard !== undefined && dashboard.month?.id !== monthId;
+  const summaryForeign = summaryRead !== undefined && summaryRead.month?.id !== monthId;
+  const linkedPairs = dashboardForeign
+    ? null
+    : dashboard
+      ? (dashboard.summary?.liquid_capital?.linked_pairs ?? [])
+      : null;
+  const mortgage: DashboardMortgage | null = dashboardForeign
+    ? null
+    : (dashboard?.mortgage ?? null);
+  const coveragePct = summaryForeign ? null : (summaryRead?.coverage?.coverage_pct ?? null);
   let linkedPairError: string | null = null;
   if (dashboardQuery.isError) {
     linkedPairError = formatApiError(dashboardQuery.error);
+  } else if (dashboardForeign) {
+    linkedPairError = FOREIGN_CONTEXT_ERROR;
   } else if (accountsQuery.isError) {
     linkedPairError = formatApiError(accountsQuery.error);
   }
@@ -341,20 +382,6 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
     summaryQuery.isPending
   ) {
     return <UiV2Loading label="Загружаем долги и недвижимость…" />;
-  }
-
-  let loadError: string | null = null;
-  if (debtsQuery.isError && debtsQuery.data === undefined) {
-    loadError = formatApiError(debtsQuery.error);
-  } else if (propertiesQuery.isError && propertiesQuery.data === undefined) {
-    loadError = formatApiError(propertiesQuery.error);
-  }
-  if (loadError !== null) {
-    return (
-      <UiV2Notice title="Не удалось загрузить обязательства" retry={retryAll}>
-        {loadError}
-      </UiV2Notice>
-    );
   }
 
   const paused = [debtsQuery, propertiesQuery, accountsQuery, dashboardQuery, summaryQuery].some(
@@ -384,6 +411,8 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
         monthId={monthId}
         onDirtyChange={setDebtsDirty}
         readOnly={readOnly}
+        retry={() => void debtsQuery.refetch()}
+        unavailable={debtsUnavailable}
       />
       <LinkedPairContext
         accounts={accounts}
@@ -403,6 +432,8 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
         onDirtyChange={setPropertiesDirty}
         properties={properties}
         readOnly={readOnly}
+        retry={() => void propertiesQuery.refetch()}
+        unavailable={propertiesUnavailable}
       />
     </div>
   );
@@ -416,6 +447,8 @@ function DebtBlock({
   monthId,
   onDirtyChange,
   readOnly,
+  retry,
+  unavailable,
 }: BlockProps & { accounts: Account[]; debts: DebtEntry[] }) {
   const queryClient = useQueryClient();
   const debtsKey = useMemo<QueryKey>(() => queryKeys.debts(monthId), [monthId]);
@@ -593,6 +626,24 @@ function DebtBlock({
     setDeleteTarget(null);
   }
 
+  // A declined read never reaches rows, totals or a write path.
+  if (unavailable !== null) {
+    return (
+      <section aria-label="Долги месяца" className={editorStyles.panel}>
+        <div className={leafStyles.heading}>
+          <div>
+            <p className={leafStyles.eyebrow}>Обязательства</p>
+            <h2>Долги</h2>
+          </div>
+          <Badge>—</Badge>
+        </div>
+        <UiV2Notice title="Не удалось загрузить обязательства" retry={retry}>
+          {unavailable}
+        </UiV2Notice>
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Долги месяца" className={editorStyles.panel}>
       <div className={leafStyles.heading}>
@@ -640,6 +691,7 @@ function DebtBlock({
                     {editing ? (
                       <Input
                         aria-label="Название долга"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous ? { ...previous, name: event.target.value } : previous,
@@ -655,6 +707,7 @@ function DebtBlock({
                     {editing ? (
                       <Select
                         aria-label="Тип долга"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous ? { ...previous, debt_type: event.target.value } : previous,
@@ -674,6 +727,7 @@ function DebtBlock({
                       <Input
                         aria-label="Текущий баланс долга"
                         className="input--money"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -691,6 +745,7 @@ function DebtBlock({
                     {editing ? (
                       <Input
                         aria-label="Годовая ставка долга"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous ? { ...previous, annual_rate: event.target.value } : previous,
@@ -709,6 +764,7 @@ function DebtBlock({
                     {editing ? (
                       <Input
                         aria-label="Ближайший обязательный платёж"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -727,6 +783,7 @@ function DebtBlock({
                     {editing ? (
                       <Input
                         aria-label="Окончание договора"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -746,6 +803,7 @@ function DebtBlock({
                       <label className={leafStyles.checkRow}>
                         <input
                           checked={editing.include_in_liquid_capital}
+                          disabled={busy || readOnly}
                           onChange={(event) =>
                             setEditDraft((previous) =>
                               previous
@@ -936,6 +994,7 @@ function DebtBlock({
           <div className={leafStyles.formGrid}>
             <Field htmlFor="debt-name" label="Название долга">
               <Input
+                disabled={busy || readOnly}
                 id="debt-name"
                 onChange={(event) => {
                   setAddDraft((previous) => ({ ...previous, name: event.target.value }));
@@ -947,6 +1006,7 @@ function DebtBlock({
             </Field>
             <Field htmlFor="debt-type" label="Тип долга">
               <Select
+                disabled={busy || readOnly}
                 id="debt-type"
                 onChange={(event) => {
                   setAddDraft((previous) => ({ ...previous, debt_type: event.target.value }));
@@ -961,6 +1021,7 @@ function DebtBlock({
             <Field htmlFor="debt-bal" label="Текущий баланс долга">
               <Input
                 className="input--money"
+                disabled={busy || readOnly}
                 id="debt-bal"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
@@ -975,6 +1036,7 @@ function DebtBlock({
             </Field>
             <Field htmlFor="debt-rate" label="Годовая ставка, % (пусто — неизвестно)">
               <Input
+                disabled={busy || readOnly}
                 id="debt-rate"
                 onChange={(event) => {
                   setAddDraft((previous) => ({ ...previous, annual_rate: event.target.value }));
@@ -986,9 +1048,13 @@ function DebtBlock({
             </Field>
             <Field htmlFor="debt-due" label="Ближайший платёж">
               <Input
+                disabled={busy || readOnly}
                 id="debt-due"
                 onChange={(event) => {
-                  setAddDraft((previous) => ({ ...previous, next_due_date: event.target.value }));
+                  setAddDraft((previous) => ({
+                    ...previous,
+                    next_due_date: event.target.value,
+                  }));
                   setAddTouched(true);
                 }}
                 type="date"
@@ -997,6 +1063,7 @@ function DebtBlock({
             </Field>
             <Field htmlFor="debt-end" label="Окончание договора">
               <Input
+                disabled={busy || readOnly}
                 id="debt-end"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
@@ -1057,6 +1124,8 @@ function PropertyBlock({
   onDirtyChange,
   properties,
   readOnly,
+  retry,
+  unavailable,
 }: BlockProps & {
   coveragePct: string | null;
   mortgage: DashboardMortgage | null;
@@ -1191,6 +1260,24 @@ function PropertyBlock({
     setDeleteTarget(null);
   }
 
+  // A declined read never reaches rows, totals or a write path.
+  if (unavailable !== null) {
+    return (
+      <section aria-label="Недвижимость месяца" className={editorStyles.panel}>
+        <div className={leafStyles.heading}>
+          <div>
+            <p className={leafStyles.eyebrow}>Обязательства</p>
+            <h2>Недвижимость</h2>
+          </div>
+          <Badge>—</Badge>
+        </div>
+        <UiV2Notice title="Не удалось загрузить недвижимость" retry={retry}>
+          {unavailable}
+        </UiV2Notice>
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Недвижимость месяца" className={editorStyles.panel}>
       <div className={leafStyles.heading}>
@@ -1230,6 +1317,7 @@ function PropertyBlock({
                     {editing ? (
                       <Input
                         aria-label="Название объекта"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous ? { ...previous, name: event.target.value } : previous,
@@ -1246,6 +1334,7 @@ function PropertyBlock({
                       <Input
                         aria-label="Стоимость"
                         className="input--money"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -1264,6 +1353,7 @@ function PropertyBlock({
                       <Input
                         aria-label="Остаток ипотеки"
                         className="input--money"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -1282,6 +1372,7 @@ function PropertyBlock({
                       <Input
                         aria-label="Ежемесячный платёж"
                         className="input--money"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -1299,6 +1390,7 @@ function PropertyBlock({
                     {editing ? (
                       <Input
                         aria-label="Годовая ставка ипотеки"
+                        disabled={busy || readOnly}
                         onChange={(event) =>
                           setEditDraft((previous) =>
                             previous
@@ -1402,6 +1494,7 @@ function PropertyBlock({
           <div className={leafStyles.formGrid}>
             <Field htmlFor="prop-name" label="Название объекта">
               <Input
+                disabled={busy || readOnly}
                 id="prop-name"
                 onChange={(event) => {
                   setAddDraft((previous) => ({ ...previous, name: event.target.value }));
@@ -1414,6 +1507,7 @@ function PropertyBlock({
             <Field htmlFor="prop-val" label="Стоимость">
               <Input
                 className="input--money"
+                disabled={busy || readOnly}
                 id="prop-val"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
@@ -1429,6 +1523,7 @@ function PropertyBlock({
             <Field htmlFor="prop-mort" label="Остаток ипотеки">
               <Input
                 className="input--money"
+                disabled={busy || readOnly}
                 id="prop-mort"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
@@ -1444,6 +1539,7 @@ function PropertyBlock({
             <Field htmlFor="prop-pay" label="Ежемесячный платёж">
               <Input
                 className="input--money"
+                disabled={busy || readOnly}
                 id="prop-pay"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
@@ -1458,6 +1554,7 @@ function PropertyBlock({
             </Field>
             <Field htmlFor="prop-rate" label="Годовая ставка, % (пусто — неизвестно)">
               <Input
+                disabled={busy || readOnly}
                 id="prop-rate"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
