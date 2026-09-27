@@ -1,9 +1,9 @@
 # Financial completeness — known subtotal and portfolio-source coverage
 
-- **Status:** #498 canonical contract. Runtime behavior is unchanged in this change.
-- **Baseline:** `integration/data-integrity-hardening` at `31dc9af` (Merge PR #520).
+- **Status:** canonical #498 contract, fully implemented through #536–#539.
+- **Canonical implementation:** `main` at `b6f3ff1aff93f06ae0a563ba8704b91086a80924` (aggregate PR #509).
 - **Issue:** [#498](https://github.com/LTstripes/hermes-finance/issues/498)
-- **Review:** independent product/financial-semantics review is required before any follow-up implementation.
+- **Review:** contract and implementation follow-ups were accepted before canonical integration.
 
 This document defines how a mathematically exact sum of persisted rows relates to coverage words. It does not change `MASTER_SPEC` §10.1 arithmetic, ADR 0007 composition classes, close guards, or performance formulas.
 
@@ -94,24 +94,24 @@ That field does not attest:
 
 The two-account case, same closed period.
 
-| Surface | `100.00` means | Coverage that must travel with it | Current behavior at this baseline | Follow-up |
-|---|---|---|---|---|
-| v1 Dashboard and month detail; v2 Home via closed-report comparison | known subtotal | `partial` / `active_account_snapshot_missing` | number only | F3 |
-| v2 Capital: net, composition, allocation shares | known subtotal; shares are shares of that subtotal | same marker on the net and on allocation support | number and shares only | F3 |
-| v2 Reports / history archive | known subtotal of each closed point | per-point marker | amount only | F3 |
-| Closed-to-closed delta | exact difference of the two known subtotals | partial when either endpoint is partial | unmarked delta | F3 |
-| Month close readiness and deterministic insight | warning for the missing account | already `active_account_snapshot_missing`; close still allowed | two-account warning aligned. One `account_id` NULL cash row still treats every active capital-included cash account as represented | F4 |
-| AI bundle `reporting_history[]` KPI | known subtotal, `available` / `exact` | point `coverage` partial, and the same reason on `liquid_assets_total`, `included_debts`, `liquid_capital_net` | point `coverage` can be `complete`; KPI reason list can be empty; value is the subtotal | F1 |
-| AI bundle `coverage.domains.capital` | — | `partial` with the same reason | can be `complete` | F1 |
-| AI bundle `current_portfolio.coverage` and `coverage.domains.portfolio` | — | `partial` / `active_account_snapshot_missing` | already this | none |
-| Portfolio-review and financial-review capital section | known subtotal | snapshot reason in addition to the net-worth reason | section is partial only because total net worth is unavailable; metric reasons can be empty | F2 |
-| Financial-review `coverage.domains.history` | — | `partial` once the history point is partial | can be `complete` | F2, via F1 |
-| Capital goal current value / progress | known subtotal | same snapshot reason; not complete-capital progress | reason can be absent | F2 |
-| Allocation / concentration denominator | shares of the known subtotal | support `partial` with the same reason | can be included with no snapshot reason | F2 |
-| Performance availability, XIRR, TWRR, valuation point | not this subtotal | fail closed when a historically selected account lacks a required component | already withholds an exact total | none |
-| Cash-boundary coverage | unrelated owner attestation of cash crossings | independent `complete` / `unknown` | independent | none |
+| Surface | `100.00` means | Coverage that travels with it | Canonical behavior |
+|---|---|---|---|
+| v1 Dashboard and month detail; v2 Home via closed-report comparison | known subtotal | `partial` / `active_account_snapshot_missing` | implemented in #538 |
+| v2 Capital: net, composition, allocation shares | known subtotal; shares are shares of that subtotal | marker on the net; allocation support partial | implemented in #537/#538 |
+| v2 Reports / history archive | known subtotal of each closed point | per-point marker | implemented in #538 |
+| Closed-to-closed delta | exact difference of the two known subtotals | partial when either endpoint is partial | implemented in #538 |
+| Month close readiness and deterministic insight | warning for the missing account | warning remains non-blocking | implemented in #539; unassigned cash does not satisfy a real account |
+| AI bundle `reporting_history[]` KPI | known subtotal, `available` / `exact` | point coverage + metric reason | implemented in #536 using canonical portfolio-source coverage |
+| AI bundle `coverage.domains.capital` | — | `partial` with the same reason | implemented in #536 |
+| AI bundle `current_portfolio.coverage` and `coverage.domains.portfolio` | — | `partial` / `active_account_snapshot_missing` | aligned with the same identity contract |
+| Portfolio-review and financial-review capital section | known subtotal | snapshot reason in addition to the separate net-worth reason | implemented in #537 |
+| Financial-review `coverage.domains.history` | — | `partial` once the history point is partial | implemented in #537 |
+| Capital goal current value / progress | known subtotal | same snapshot reason; arithmetic unchanged | implemented in #537 |
+| Allocation / concentration denominator | shares of the known subtotal | support `partial` with the same reason | implemented in #537; shares are not recomputed |
+| Performance availability, XIRR, TWRR, valuation point | not this subtotal | independent fail-closed prerequisites | unchanged and separate |
+| Cash-boundary coverage | unrelated owner attestation of cash crossings | independent `complete` / `unknown` | unchanged and separate |
 
-Comparison, goals, and allocation keep their existing arithmetic. Only the coverage metadata changes in the follow-ups.
+Comparison, goals, and allocation keep their existing arithmetic. The completed follow-ups changed coverage/support metadata and owner-facing explanation, not the underlying capital formula.
 
 ## 6. Current catalog and historical membership
 
@@ -133,11 +133,11 @@ For a valuation point, each account selected by historical performance membershi
 
 Cash-boundary coverage (`docs/r08-01c-performance-availability.md`) is an owner attestation that cash crossings are known. It stores no amount. Snapshot presence does not prove it. Its absence does not change the capital known subtotal and does not create `active_account_snapshot_missing`.
 
-## 8. Follow-up implementation
+## 8. Completed follow-up implementation
 
-File these only after independent review of this contract. Do not change formulas, close blockers, performance component rules, or cash-boundary rules inside them.
+All four accepted implementation slices are complete on canonical `main`. They did not change formulas, close blockers, performance component rules or cash-boundary rules.
 
-### F1 — AI analysis bundle metadata
+### F1 — AI analysis bundle metadata — completed in #536
 
 `backend/src/hermes_finance/services/ai_analysis_bundle.py` and `backend/tests/test_ai_analysis_bundle_export.py`.
 
@@ -150,7 +150,7 @@ For each reporting-history point, when portfolio-source coverage is partial:
 
 Keep `portfolio_snapshot_missing` for a month with no capital evidence, value `null`. Keep the selected-portfolio block as it is: the missing account stays in the account catalog and in `missing_snapshot_account_refs`. `test_cash_snapshot_detection_is_account_specific` is the closest fixture; extend it to the history point and the KPI reason list. Reason codes are already free-form strings in the bundle schema. Emitting a new status/reason combination changes instance meaning, so the follow-up records a bundle `schema_version` minor bump under `docs/AI_ANALYSIS_BUNDLE.md`.
 
-### F2 — Review, goals, and allocation metadata
+### F2 — Review, goals, and allocation metadata — completed in #537
 
 `portfolio_review_package.py`, `ai_financial_review.py`, and their tests.
 
@@ -160,11 +160,11 @@ Keep `portfolio_snapshot_missing` for a month with no capital evidence, value `n
 - A capital goal's current value and progress keep the known subtotal and carry the same reason.
 - Allocation / concentration support becomes `partial` with the same reason when its denominator is that partial subtotal. Shares are not recomputed.
 
-### F3 — Owner-facing marker
+### F3 — Owner-facing marker — completed in #538
 
 Add portfolio-source coverage, computed with the section 2 rule, onto the read models that already emit the known subtotal: month dashboard liquid capital, closed-report comparison (including the delta), and capital composition. Render that marker beside the figure on v1 Dashboard, v1 month detail, v2 Home, v2 Capital, and v2 Reports/history. Do not reimplement the required-account rule in React. Do not hide or restate `100.00`. The missing account stays visible in the account list.
 
-### F4 — Close-readiness cash identity
+### F4 — Close-readiness cash identity — completed in #539
 
 `backend/src/hermes_finance/services/close_readiness.py`, and the deterministic insight that repeats its warning.
 
