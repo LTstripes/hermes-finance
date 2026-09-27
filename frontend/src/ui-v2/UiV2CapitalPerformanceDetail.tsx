@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-
 import { listAccounts } from "../api/accounts";
 import { listMonths } from "../api/months";
 import { getPerformanceAttribution, getPerformanceReadiness } from "../api/performance";
@@ -12,26 +11,27 @@ import {
   VALUE_BRIDGE_DISCLAIMER,
   VALUE_BRIDGE_LABEL,
 } from "../lib/performanceMessages";
+import { queryKeys } from "../queryClient";
 import {
+  formatPerformancePercent,
   isReadinessFresh,
   sortDiagnostics,
-  formatPerformancePercent,
 } from "./CapitalPerformanceSummary";
-import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
 import {
   intervalDays,
   needsAnnualizationWarning,
+  type PerformanceContext,
   parsePerformanceContext,
   performanceDetailHref,
   periodPresets,
-  type PerformanceContext,
 } from "./capitalPerformanceContext";
+import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
 import { sortReportingMonths } from "./monthSelection";
+import { PerformancePreparation } from "./PerformancePreparation";
 import styles from "./UiV2CapitalPerformance.module.css";
 import pageStyles from "./UiV2Page.module.css";
-import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
-import { queryKeys } from "../queryClient";
+import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { moneyDeltaText as moneyDelta } from "./valueFormat";
 
 function accountName(accounts: Account[] | undefined, id: number): string {
@@ -293,6 +293,22 @@ function ReadinessBody({
                     <p className={styles.capabilityNote}>
                       {capabilityCopy(diagnostic.action.capability)}
                     </p>
+                    {hasWorkingAction(diagnostic.action.capability) &&
+                    [
+                      "review_external_flows",
+                      "review_transfer",
+                      "review_cash_history",
+                      "review_in_kind_history",
+                      "review_cash_binding",
+                    ].includes(diagnostic.action.kind) ? (
+                      <p>
+                        <Link
+                          to={`${performanceDetailHref(context)}${diagnostic.refs.account_ids.length === 1 ? `&prepare_account=${diagnostic.refs.account_ids[0]}` : ""}&prepare_reason=${encodeURIComponent(diagnostic.key)}#performance-preparation`}
+                        >
+                          Проверить данные
+                        </Link>
+                      </p>
+                    ) : null}
                     {hasWorkingAction(diagnostic.action.capability) ? (
                       <p className={styles.capabilityNote}>
                         Доступное действие — повторное чтение после проверки данных раздела.{" "}
@@ -618,6 +634,9 @@ export default function UiV2CapitalPerformanceDetail() {
         ) : null}
       </section>
       {content}
+      {context && context.view === "accounts" ? (
+        <PerformancePreparation accounts={accounts} context={context} />
+      ) : null}
     </UiV2Shell>
   );
 }

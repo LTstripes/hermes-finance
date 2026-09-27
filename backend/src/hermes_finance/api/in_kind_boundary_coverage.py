@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.performance_evidence_guard import preparation_session
 from hermes_finance.domain import InKindBoundaryCoverageState, InKindMovementKind
 from hermes_finance.persistence import (
     InKindBoundaryCoverage as InKindBoundaryCoverageRecord,
@@ -133,7 +133,7 @@ coverage_router = APIRouter(
 @coverage_router.get("", response_model=list[InKindBoundaryCoverageResponse])
 def list_in_kind_boundary_coverages_endpoint(
     account_id: int | None = Query(default=None),
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[InKindBoundaryCoverageResponse]:
     return [
         _coverage_response(row)
@@ -146,7 +146,7 @@ def list_in_kind_boundary_coverages_endpoint(
 )
 def create_in_kind_boundary_coverage_endpoint(
     payload: InKindBoundaryCoverageCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> InKindBoundaryCoverageResponse:
     return _coverage_response(create_in_kind_boundary_coverage(session, **payload.model_dump()))
 
@@ -154,7 +154,7 @@ def create_in_kind_boundary_coverage_endpoint(
 @coverage_router.get("/{coverage_id}", response_model=InKindBoundaryCoverageResponse)
 def get_in_kind_boundary_coverage_endpoint(
     coverage_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> InKindBoundaryCoverageResponse:
     return _coverage_response(get_in_kind_boundary_coverage(session, coverage_id))
 
@@ -163,7 +163,7 @@ def get_in_kind_boundary_coverage_endpoint(
 def update_in_kind_boundary_coverage_endpoint(
     coverage_id: int,
     payload: InKindBoundaryCoverageUpdate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> InKindBoundaryCoverageResponse:
     return _coverage_response(
         update_in_kind_boundary_coverage(
@@ -178,7 +178,7 @@ movement_router = APIRouter(prefix="/api/in-kind-movements", tags=["in-kind-move
 @movement_router.get("", response_model=list[InKindMovementResponse])
 def list_in_kind_movements_endpoint(
     account_id: int | None = Query(default=None),
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[InKindMovementResponse]:
     return [
         _movement_response(row) for row in list_in_kind_movements(session, account_id=account_id)
@@ -190,7 +190,7 @@ def list_in_kind_movements_endpoint(
 )
 def create_in_kind_movement_endpoint(
     payload: InKindMovementCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> InKindMovementResponse:
     return _movement_response(create_in_kind_movement(session, **payload.model_dump()))
 
@@ -198,6 +198,6 @@ def create_in_kind_movement_endpoint(
 @movement_router.get("/{movement_id}", response_model=InKindMovementResponse)
 def get_in_kind_movement_endpoint(
     movement_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> InKindMovementResponse:
     return _movement_response(get_in_kind_movement(session, movement_id))

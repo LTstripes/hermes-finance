@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.api.performance_evidence_guard import preparation_session
+from hermes_finance.api.settings import MoneyValue
 from hermes_finance.domain import RubleAmount
 from hermes_finance.services.external_flows import (
     classify_external_flow,
@@ -232,7 +233,7 @@ def list_external_flows_endpoint(
     month_id: int | None = Query(default=None),
     account_id: int | None = Query(default=None),
     transfer_link_id: int | None = Query(default=None),
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[ExternalFlowResponse]:
     flows = list_external_flows(
         session,
@@ -250,7 +251,7 @@ def list_external_flows_endpoint(
 )
 def create_external_flow_endpoint(
     payload: ExternalFlowCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> ExternalFlowResponse:
     flow = create_external_flow(
         session,
@@ -272,7 +273,7 @@ def create_external_flow_endpoint(
 @router.get("/api/external-flows/{flow_id}", response_model=ExternalFlowResponse)
 def get_external_flow_endpoint(
     flow_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> ExternalFlowResponse:
     return _flow_response(session, get_external_flow(session, flow_id))
 
@@ -281,7 +282,7 @@ def get_external_flow_endpoint(
 def update_external_flow_endpoint(
     flow_id: int,
     payload: ExternalFlowUpdate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> ExternalFlowResponse:
     kwargs: dict[str, object] = {
         "account_id": payload.account_id,
@@ -304,14 +305,14 @@ def update_external_flow_endpoint(
 @router.delete("/api/external-flows/{flow_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_external_flow_endpoint(
     flow_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> None:
     delete_external_flow(session, flow_id)
 
 
 @router.get("/api/transfer-links", response_model=list[TransferLinkResponse])
 def list_transfer_links_endpoint(
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[TransferLinkResponse]:
     return [
         _transfer_link_response(session, link) for link in list_external_transfer_links(session)
@@ -325,7 +326,7 @@ def list_transfer_links_endpoint(
 )
 def create_transfer_link_endpoint(
     payload: TransferLinkCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> TransferLinkResponse:
     link = create_external_transfer_link(
         session,
@@ -339,7 +340,7 @@ def create_transfer_link_endpoint(
 @router.get("/api/transfer-links/{link_id}", response_model=TransferLinkResponse)
 def get_transfer_link_endpoint(
     link_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> TransferLinkResponse:
     return _transfer_link_response(session, get_external_transfer_link(session, link_id))
 
@@ -348,7 +349,7 @@ def get_transfer_link_endpoint(
 def update_transfer_link_endpoint(
     link_id: int,
     payload: TransferLinkUpdate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> TransferLinkResponse:
     link = update_external_transfer_link(
         session,
@@ -362,7 +363,7 @@ def update_transfer_link_endpoint(
 @router.delete("/api/transfer-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_transfer_link_endpoint(
     link_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> None:
     delete_external_transfer_link(session, link_id)
 
@@ -373,7 +374,7 @@ def delete_transfer_link_endpoint(
 )
 def list_transfer_reconciliation_evidence_endpoint(
     link_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[TransferReconciliationEvidenceResponse]:
     return [
         _reconciliation_evidence_response(evidence)
@@ -392,7 +393,7 @@ def list_transfer_reconciliation_evidence_endpoint(
 def create_transfer_reconciliation_evidence_endpoint(
     link_id: int,
     payload: TransferReconciliationEvidenceCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> TransferReconciliationEvidenceResponse:
     evidence = create_transfer_reconciliation_evidence(
         session,
@@ -413,7 +414,7 @@ def create_transfer_reconciliation_evidence_endpoint(
 )
 def delete_transfer_reconciliation_evidence_endpoint(
     evidence_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> None:
     delete_transfer_reconciliation_evidence(session, evidence_id)
 
@@ -425,7 +426,7 @@ def delete_transfer_reconciliation_evidence_endpoint(
 def attach_transfer_leg_endpoint(
     link_id: int,
     flow_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> TransferLinkResponse:
     update_external_flow(session, flow_id, transfer_link_id=link_id)
     return _transfer_link_response(session, get_external_transfer_link(session, link_id))
@@ -438,7 +439,7 @@ def attach_transfer_leg_endpoint(
 def detach_transfer_leg_endpoint(
     link_id: int,
     flow_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> TransferLinkResponse:
     flow = get_external_flow(session, flow_id)
     if flow.transfer_link_id != link_id:
