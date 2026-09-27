@@ -59,7 +59,7 @@ public sealed class LauncherConfig
             }
 
             throw new LauncherValidationException(
-                $"Launcher config not found at {configPath}. Run install.ps1 to install the launcher, then open it and press «Обновить проверку». Manual JSON editing is recovery-only; see docs for prepared Stable/Preview runtimes.");
+                $"Launcher config not found at {configPath}. Run install.ps1 to install the launcher, then open it and press «Настроить…». Manual JSON editing is recovery-only; see docs for prepared Stable/Preview runtimes.");
         }
 
         var raw = File.ReadAllText(configPath);
