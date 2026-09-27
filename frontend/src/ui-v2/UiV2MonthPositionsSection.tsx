@@ -718,6 +718,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               <Field htmlFor={`pos-edit-${row.id}-qty`} label="Количество">
                                 <Input
                                   className="input--money"
+                                  disabled={busy || readOnly}
                                   id={`pos-edit-${row.id}-qty`}
                                   value={editDraft.quantity}
                                   onChange={(e) =>
@@ -731,6 +732,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               >
                                 <Input
                                   className="input--money"
+                                  disabled={busy || readOnly}
                                   id={`pos-edit-${row.id}-avg`}
                                   value={editDraft.average_cost}
                                   onChange={(e) =>
@@ -741,6 +743,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               <Field htmlFor={`pos-edit-${row.id}-price`} label="Рыночная цена">
                                 <Input
                                   className="input--money"
+                                  disabled={busy || readOnly}
                                   id={`pos-edit-${row.id}-price`}
                                   value={editDraft.market_price}
                                   onChange={(e) =>
@@ -752,6 +755,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                                 <Input
                                   aria-label="НКД"
                                   className="input--money"
+                                  disabled={busy || readOnly}
                                   id={`pos-edit-${row.id}-nkd`}
                                   placeholder="НКД"
                                   value={editDraft.accrued_interest}
@@ -766,6 +770,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               <Field htmlFor={`pos-edit-${row.id}-date`} label="Дата оценки">
                                 <Input
                                   aria-label="Дата оценки"
+                                  disabled={busy || readOnly}
                                   id={`pos-edit-${row.id}-date`}
                                   type="date"
                                   value={editDraft.price_date}
@@ -777,6 +782,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               <Field htmlFor={`pos-edit-${row.id}-source`} label="Источник оценки">
                                 <Select
                                   aria-label="Источник оценки"
+                                  disabled={busy || readOnly}
                                   id={`pos-edit-${row.id}-source`}
                                   value={editDraft.price_source}
                                   onChange={(e) =>
@@ -919,6 +925,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
               <div className="editor-grid">
                 <Field htmlFor="instr-name" label="Название инструмента">
                   <Input
+                    disabled={busy}
                     id="instr-name"
                     onChange={(e) => {
                       setNewInstrumentName(e.target.value);
@@ -929,6 +936,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 </Field>
                 <Field htmlFor="instr-type" label="Тип инструмента">
                   <Select
+                    disabled={busy}
                     id="instr-type"
                     onChange={(e) => {
                       setNewInstrumentType(e.target.value);
@@ -946,6 +954,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 </Field>
                 <Field htmlFor="instr-ticker" label="Тикер">
                   <Input
+                    disabled={busy}
                     id="instr-ticker"
                     onChange={(e) => {
                       setNewInstrumentTicker(e.target.value);
@@ -965,6 +974,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
               <div className="editor-grid">
                 <Field htmlFor="pos-account" label="Счёт позиции">
                   <Select
+                    disabled={busy}
                     id="pos-account"
                     onChange={(e) => {
                       setDraft({ ...draft, account_id: e.target.value });
@@ -982,6 +992,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 </Field>
                 <Field htmlFor="pos-instrument" label="Инструмент позиции">
                   <Select
+                    disabled={busy}
                     id="pos-instrument"
                     onChange={(e) => {
                       setDraft({ ...draft, instrument_id: e.target.value });
@@ -1001,6 +1012,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 <Field htmlFor="pos-qty" label="Количество">
                   <Input
                     className="input--money"
+                    disabled={busy}
                     id="pos-qty"
                     inputMode="decimal"
                     onChange={(e) => {
@@ -1014,6 +1026,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 <Field htmlFor="pos-avg" label="Средняя цена приобретения">
                   <Input
                     className="input--money"
+                    disabled={busy}
                     id="pos-avg"
                     inputMode="decimal"
                     onChange={(e) => {
@@ -1027,6 +1040,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 <Field htmlFor="pos-price" label="Рыночная цена">
                   <Input
                     className="input--money"
+                    disabled={busy}
                     id="pos-price"
                     inputMode="decimal"
                     onChange={(e) => {
@@ -1040,6 +1054,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 <Field htmlFor="pos-nkd" label="НКД (облигации, необязательно)">
                   <Input
                     className="input--money"
+                    disabled={busy}
                     id="pos-nkd"
                     inputMode="decimal"
                     onChange={(e) => {
@@ -1051,6 +1066,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 </Field>
                 <Field htmlFor="pos-price-date" label="Дата цены">
                   <Input
+                    disabled={busy}
                     id="pos-price-date"
                     onChange={(e) => {
                       setDraft({ ...draft, price_date: e.target.value });
@@ -1063,6 +1079,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                 </Field>
                 <Field htmlFor="pos-source" label="Источник цены">
                   <Select
+                    disabled={busy}
                     id="pos-source"
                     onChange={(e) => {
                       setDraft({ ...draft, price_source: e.target.value });

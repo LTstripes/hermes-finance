@@ -92,6 +92,14 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function deferred() {
+  let release: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release: () => release?.() };
+}
+
 type Handler = (init?: RequestInit) => Response | Promise<Response>;
 function setup(overrides: Record<string, Handler> = {}, initial: unknown[] = [position]) {
   const routes: Record<string, Handler> = {
@@ -213,6 +221,138 @@ describe("native month positions leaf", () => {
         ([url, init]) => String(url) === "/api/positions/31" && init?.method === "DELETE",
       ),
     ).toBe(true);
+  });
+
+  it("freezes every inline edit field until a delayed PATCH and readback complete", async () => {
+    const gate = deferred();
+    const revised = { ...position, quantity: "0.750000", updated_at: "2031-02-02T00:00:00Z" };
+    let rows: unknown[] = [position];
+    const { fetchMock, setDirty } = setup({
+      "GET /api/positions?month_id=7": () => json(rows),
+      "PATCH /api/positions/31": async () => {
+        await gate.promise;
+        rows = [revised];
+        return json(revised);
+      },
+    });
+    const user = userEvent.setup();
+    await screen.findByText("Synthetic Fund (SYN)");
+    await user.click(screen.getByRole("button", { name: "Действия для позиции Synthetic Fund" }));
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const form = document.querySelector(".position-inline-edit") as HTMLElement;
+    const quantity = within(form).getByLabelText("Количество");
+    await user.clear(quantity);
+    await user.type(quantity, "0.75");
+    await user.click(within(form).getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url) === "/api/positions/31")).toBe(true),
+    );
+    expect(
+      [...form.querySelectorAll("input,select")].every(
+        (field) => (field as HTMLInputElement).disabled,
+      ),
+    ).toBe(true);
+    await user.type(quantity, "9");
+    expect(quantity).toHaveValue("0.75");
+    expect(setDirty).toHaveBeenCalledWith("positions", true);
+    gate.release();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Сохранить" })).toBeNull());
+    expect(screen.getByRole("table")).toHaveTextContent("0,75");
+    expect(setDirty).toHaveBeenCalledWith("positions", false);
+  });
+
+  it("freezes the add form through delayed POST and confirmation, then clears only its submitted draft", async () => {
+    const gate = deferred();
+    let rows: unknown[] = [];
+    const { fetchMock, setDirty } = setup(
+      {
+        "GET /api/positions?month_id=7": () => json(rows),
+        "POST /api/positions": async () => {
+          await gate.promise;
+          rows = [position];
+          return json(position, 201);
+        },
+      },
+      [],
+    );
+    const user = userEvent.setup();
+    await screen.findByText("Пусто");
+    const form = screen
+      .getByRole("button", { name: "Добавить позицию" })
+      .closest("form") as HTMLFormElement;
+    const quantity = within(form).getByLabelText("Количество");
+    await user.type(quantity, "0.5");
+    await user.type(within(form).getByLabelText("Средняя цена приобретения"), "1000");
+    await user.type(within(form).getByLabelText("Рыночная цена"), "1100");
+    await user.click(within(form).getByRole("button", { name: "Добавить позицию" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) => String(url) === "/api/positions" && init?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      [...form.querySelectorAll("input,select")].every(
+        (field) => (field as HTMLInputElement).disabled,
+      ),
+    ).toBe(true);
+    await user.type(quantity, "9");
+    expect(quantity).toHaveValue("0.5");
+    gate.release();
+    await screen.findByText("Synthetic Fund (SYN)");
+    await waitFor(() => expect(quantity).toHaveValue(""));
+    expect(setDirty).toHaveBeenCalledWith("positions", false);
+  });
+
+  it("freezes quick instrument fields through delayed POST and catalog readback", async () => {
+    const gate = deferred();
+    const created = {
+      ...instrument,
+      id: 22,
+      name: "Synthetic New",
+      ticker: "NEW",
+      currency: "RUB",
+    };
+    let instruments = [instrument];
+    const { fetchMock } = setup({
+      "GET /api/instruments?active=true": () => json(instruments),
+      "POST /api/instruments": async () => {
+        await gate.promise;
+        instruments = [...instruments, created];
+        return json(created, 201);
+      },
+    });
+    const user = userEvent.setup();
+    await screen.findByText("Synthetic Fund (SYN)");
+    const form = screen
+      .getByRole("button", { name: "Создать инструмент" })
+      .closest("form") as HTMLFormElement;
+    const name = within(form).getByLabelText("Название инструмента");
+    await user.type(name, "Synthetic New");
+    await user.type(within(form).getByLabelText("Тикер"), "NEW");
+    await user.click(within(form).getByRole("button", { name: "Создать инструмент" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) => String(url) === "/api/instruments" && init?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      [...form.querySelectorAll("input,select")].every(
+        (field) => (field as HTMLInputElement).disabled,
+      ),
+    ).toBe(true);
+    await user.type(name, " later");
+    expect(name).toHaveValue("Synthetic New");
+    gate.release();
+    await waitFor(() => expect(name).toHaveValue(""));
+    expect(
+      within(
+        screen.getByRole("button", { name: "Добавить позицию" }).closest("form") as HTMLFormElement,
+      ).getByLabelText("Инструмент позиции"),
+    ).toHaveValue("22");
   });
 
   it("allows a closed month to preview but blocks apply and manual writes", async () => {
