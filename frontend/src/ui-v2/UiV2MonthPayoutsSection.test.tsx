@@ -741,7 +741,10 @@ describe("UiV2MonthPayoutsSection", () => {
     );
     // Dirty actual/expected/edit input survives the same-month refresh.
     expect(
-      screen.getAllByLabelText("Брутто").map((el) => (el as HTMLInputElement).value).sort(),
+      screen
+        .getAllByLabelText("Брутто")
+        .map((el) => (el as HTMLInputElement).value)
+        .sort(),
     ).toEqual(["1000", "1000.00"]);
     expect(screen.getByLabelText("Прогноз брутто")).toHaveValue("500");
     expect(screen.getByDisplayValue("861.00")).toBeInTheDocument();
