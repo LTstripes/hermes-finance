@@ -77,9 +77,27 @@ function readinessFixture(options: {
   };
 }
 
-function setup(path: string) {
+function setup(path: string, months?: Array<Record<string, unknown>>) {
   const client = createQueryClient();
   const reads: string[] = [];
+  const monthRows = months ?? [
+    {
+      id: 90,
+      year: 2031,
+      month: 5,
+      status: "closed",
+      snapshot_date: START,
+      source: "manual",
+    },
+    {
+      id: 91,
+      year: 2031,
+      month: 7,
+      status: "closed",
+      snapshot_date: END,
+      source: "manual",
+    },
+  ];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
@@ -94,24 +112,7 @@ function setup(path: string) {
           ];
           break;
         case "/api/months":
-          data = [
-            {
-              id: 90,
-              year: 2031,
-              month: 5,
-              status: "closed",
-              snapshot_date: START,
-              source: "manual",
-            },
-            {
-              id: 91,
-              year: 2031,
-              month: 7,
-              status: "closed",
-              snapshot_date: END,
-              source: "manual",
-            },
-          ];
+          data = monthRows;
           break;
         case "/api/performance/readiness":
           if (url.searchParams.get("scope") === "account") {
@@ -256,9 +257,54 @@ describe("UiV2CapitalPerformanceDetail", () => {
 
     const preset = await screen.findByRole("button", { name: "1 мес." });
     expect(preset).toBeDisabled();
-    expect(preset).toHaveAttribute(
-      "title",
-      expect.stringContaining("Нет снимка на точную дату пресета"),
+    expect(preset).toHaveAttribute("title", expect.stringContaining("Нет снимка на точную дату"));
+  });
+
+  it("applies YTD and all-history presets from exact closed boundaries", async () => {
+    const { mount } = setup(PORTFOLIO_PATH, [
+      {
+        id: 88,
+        year: 2030,
+        month: 6,
+        status: "closed",
+        snapshot_date: "2030-06-30",
+        source: "manual",
+      },
+      {
+        id: 89,
+        year: 2030,
+        month: 12,
+        status: "closed",
+        snapshot_date: "2030-12-31",
+        source: "manual",
+      },
+      {
+        id: 90,
+        year: 2031,
+        month: 5,
+        status: "closed",
+        snapshot_date: START,
+        source: "manual",
+      },
+      {
+        id: 91,
+        year: 2031,
+        month: 7,
+        status: "closed",
+        snapshot_date: END,
+        source: "manual",
+      },
+    ]);
+    mount();
+
+    await screen.findByTestId("performance-detail-period");
+    fireEvent.click(await screen.findByRole("button", { name: "С начала года" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("start=2030-12-31"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Вся история" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("start=2030-06-30"),
     );
   });
 

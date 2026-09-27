@@ -23,7 +23,7 @@ import {
   needsAnnualizationWarning,
   parsePerformanceContext,
   performanceDetailHref,
-  shiftCalendarBack,
+  periodPresets,
   type PerformanceContext,
 } from "./capitalPerformanceContext";
 import { sortReportingMonths } from "./monthSelection";
@@ -409,21 +409,7 @@ export default function UiV2CapitalPerformanceDetail() {
 
   const presets = useMemo(() => {
     if (context === null || closedSnapshots.length === 0) return [];
-    const ends = new Set(closedSnapshots);
-    const items: Array<{ label: string; target: string | null; available: boolean }> = [];
-    for (const [label, months] of [
-      ["1 мес.", 1],
-      ["3 мес.", 3],
-      ["12 мес.", 12],
-    ] as const) {
-      const target = shiftCalendarBack(context.end, months);
-      items.push({
-        label,
-        target,
-        available: target !== null && ends.has(target),
-      });
-    }
-    return items;
+    return periodPresets(context.end, closedSnapshots);
   }, [context, closedSnapshots]);
 
   let content: React.ReactNode;
@@ -615,13 +601,9 @@ export default function UiV2CapitalPerformanceDetail() {
               <button
                 className={styles.inlineButton}
                 disabled={!preset.available}
-                key={preset.label}
+                key={preset.key}
                 onClick={() => preset.target && applyParams({ start: preset.target })}
-                title={
-                  preset.available
-                    ? `Начало: ${preset.target}`
-                    : "Нет снимка на точную дату пресета; соседняя дата не подставляется"
-                }
+                title={preset.hint}
                 type="button"
               >
                 {preset.label}

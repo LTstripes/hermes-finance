@@ -237,3 +237,84 @@ export function shiftCalendarBack(endIso: string, months: number): string | null
   const dd = String(day).padStart(2, "0");
   return `${targetYear}-${mm}-${dd}`;
 }
+
+export type PeriodPresetKey = "m1" | "m3" | "m12" | "ytd" | "all";
+
+export type PeriodPreset = {
+  key: PeriodPresetKey;
+  label: string;
+  /** Exact start snapshot date the preset would apply, or null when it cannot be derived. */
+  target: string | null;
+  available: boolean;
+  hint: string;
+};
+
+/**
+ * Accepted #529 period presets. A preset is available only when both required
+ * boundary dates exist unambiguously (exactly one closed snapshot each).
+ * YTD requires the exact Dec 31 snapshot of the previous year; all-history
+ * uses the earliest closed snapshot boundary, never solver success. No
+ * nearest-date substitution, interpolation or shorter fallback.
+ */
+export function periodPresets(end: string, closedSnapshots: string[]): PeriodPreset[] {
+  const counts = new Map<string, number>();
+  for (const snapshot of closedSnapshots) {
+    if (isValidIsoDate(snapshot)) counts.set(snapshot, (counts.get(snapshot) ?? 0) + 1);
+  }
+  const earliest = closedSnapshots.filter(isValidIsoDate).sort()[0] ?? null;
+  const endYear = /^(\d{4})-\d{2}-\d{2}$/.exec(end)?.[1];
+  const defs: Array<{ key: PeriodPresetKey; label: string; target: string | null }> = [
+    { key: "m1", label: "1 мес.", target: shiftCalendarBack(end, 1) },
+    { key: "m3", label: "3 мес.", target: shiftCalendarBack(end, 3) },
+    { key: "m12", label: "12 мес.", target: shiftCalendarBack(end, 12) },
+    {
+      key: "ytd",
+      label: "С начала года",
+      target: endYear !== undefined ? `${Number(endYear) - 1}-12-31` : null,
+    },
+    { key: "all", label: "Вся история", target: earliest },
+  ];
+  return defs.map(({ key, label, target }) => {
+    if (target === null || !isValidIsoDate(end)) {
+      return {
+        key,
+        label,
+        target: null,
+        available: false,
+        hint: "Нет закрытых границ для пресета.",
+      };
+    }
+    if (target >= end) {
+      return {
+        key,
+        label,
+        target,
+        available: false,
+        hint: "Пресет даёт пустой или обратный интервал.",
+      };
+    }
+    const targetCount = counts.get(target) ?? 0;
+    const endCount = counts.get(end) ?? 0;
+    if (targetCount === 0 || endCount === 0) {
+      const missing = targetCount === 0 ? target : end;
+      return {
+        key,
+        label,
+        target,
+        available: false,
+        hint: `Нет снимка на точную дату ${missing}; соседняя дата не подставляется.`,
+      };
+    }
+    if (targetCount > 1 || endCount > 1) {
+      const duplicated = targetCount > 1 ? target : end;
+      return {
+        key,
+        label,
+        target,
+        available: false,
+        hint: `Дата ${duplicated} встречается несколько раз — граница неоднозначна.`,
+      };
+    }
+    return { key, label, target, available: true, hint: `Начало: ${target}` };
+  });
+}

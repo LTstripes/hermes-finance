@@ -6,6 +6,7 @@ import {
   needsAnnualizationWarning,
   parsePerformanceContext,
   performanceDetailHref,
+  periodPresets,
   shiftCalendarBack,
 } from "./capitalPerformanceContext";
 
@@ -157,5 +158,54 @@ describe("interval helpers", () => {
     expect(shiftCalendarBack("2031-07-31", 1)).toBe("2031-06-30");
     expect(shiftCalendarBack("2031-03-31", 1)).toBe("2031-02-28");
     expect(shiftCalendarBack("2031-07-15", 3)).toBe("2031-04-15");
+  });
+});
+
+describe("periodPresets", () => {
+  const END = "2031-07-31";
+  const CLOSED = ["2030-12-31", "2031-05-31", "2031-06-30", "2031-07-31"];
+
+  function byKey(end: string, snapshots: string[]) {
+    return Object.fromEntries(periodPresets(end, snapshots).map((preset) => [preset.key, preset]));
+  }
+
+  it("enables exact 1/3/12-month shifts and YTD/all-history on exact boundaries", () => {
+    const presets = byKey(END, CLOSED);
+    expect(presets.m1).toMatchObject({ target: "2031-06-30", available: true });
+    expect(presets.ytd).toMatchObject({ target: "2030-12-31", available: true });
+    expect(presets.all).toMatchObject({ target: "2030-12-31", available: true });
+    // 3-month target 2031-04-30 has no exact snapshot: no substitution.
+    expect(presets.m3.available).toBe(false);
+  });
+
+  it("keeps YTD unavailable without the exact prior-year Dec 31 snapshot", () => {
+    const presets = byKey(END, ["2030-12-30", "2031-05-31", "2031-07-31"]);
+    expect(presets.ytd).toMatchObject({ target: "2030-12-31", available: false });
+    expect(presets.ytd.hint).toContain("2030-12-31");
+  });
+
+  it("chooses the earliest closed boundary for all-history, not solver success", () => {
+    const presets = byKey(END, ["2031-07-31", "2030-06-30", "2031-05-31", "2030-12-31"]);
+    expect(presets.all).toMatchObject({ target: "2030-06-30", available: true });
+  });
+
+  it("rejects all-history when the earliest boundary is ambiguous or not before the end", () => {
+    const duplicated = byKey(END, ["2030-06-30", "2030-06-30", "2031-07-31"]);
+    expect(duplicated.all.available).toBe(false);
+    expect(duplicated.all.hint).toContain("неоднозначна");
+    const single = byKey(END, [END]);
+    expect(single.all.available).toBe(false);
+    const empty = byKey(END, []);
+    expect(empty.all.available).toBe(false);
+    expect(empty.m1.available).toBe(false);
+  });
+
+  it("disables presets on duplicate target or end snapshot dates", () => {
+    const duplicatedTarget = byKey(END, ["2030-12-31", "2031-06-30", "2031-06-30", "2031-07-31"]);
+    expect(duplicatedTarget.m1.available).toBe(false);
+    expect(duplicatedTarget.m1.hint).toContain("неоднозначна");
+    const duplicatedEnd = byKey(END, ["2030-12-31", "2031-06-30", "2031-07-31", "2031-07-31"]);
+    expect(duplicatedEnd.m1.available).toBe(false);
+    expect(duplicatedEnd.ytd.available).toBe(false);
   });
 });
