@@ -27,6 +27,7 @@ import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/f
 import { queryKeys } from "../queryClient";
 import { uiV2GoalsPath } from "./goalRoute";
 import { sortReportingMonths } from "./monthSelection";
+import { uiV2TaxIisPath } from "./taxIisRoute";
 import incomeStyles from "./UiV2Income.module.css";
 import sharedStyles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
@@ -781,7 +782,7 @@ function CoveragePlanBlock({
   );
 }
 
-function Handoffs({ narrow }: { narrow: boolean }) {
+function Handoffs({ narrow, taxIisPath }: { narrow: boolean; taxIisPath: string }) {
   return (
     <Panel
       eyebrow="Дополнительные разделы"
@@ -795,8 +796,8 @@ function Handoffs({ narrow }: { narrow: boolean }) {
           <div className={incomeStyles.handoffGrid}>
             <div>
               <h3>Налоги и ИИС</h3>
-              <p>Подробная работа остаётся в предыдущем интерфейсе.</p>
-              <Link to="/tax-iis-planner">Открыть Налоги и ИИС →</Link>
+              <p>НДФЛ и ИИС по выбранному отчётному срезу.</p>
+              <Link to={taxIisPath}>Открыть Налоги и ИИС →</Link>
             </div>
             <div>
               <h3>Сценарии</h3>
@@ -829,6 +830,7 @@ export default function UiV2IncomePage() {
   const planningId = latestClosed?.id ?? null;
   const factSelection = resolveFactSelection(params.getAll("month"), closedMonths);
   const factId = factSelection.month?.id ?? null;
+  const taxIisPath = uiV2TaxIisPath(params, planningId);
 
   const summaryQuery = useQuery({
     enabled: planningId !== null,
@@ -1015,7 +1017,7 @@ export default function UiV2IncomePage() {
             ready={ladderReady}
             retry={() => void ladderQuery.refetch()}
           />
-          <Handoffs narrow={narrow} />
+          <Handoffs narrow={narrow} taxIisPath={taxIisPath} />
         </div>
       </>
     );
