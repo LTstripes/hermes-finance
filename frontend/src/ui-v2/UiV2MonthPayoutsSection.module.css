@@ -1,0 +1,24 @@
+/* Leaf-local narrow-screen readability for #562. Shared Table/global CSS stays untouched. */
+
+.scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.scroll:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.scroll table {
+  width: max-content;
+  max-width: none;
+  min-width: 44rem;
+}
+
+.scroll th,
+.scroll td {
+  white-space: nowrap;
+  vertical-align: top;
+}

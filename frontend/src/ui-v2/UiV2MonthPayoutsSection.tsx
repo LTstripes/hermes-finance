@@ -37,6 +37,7 @@ import {
 import { FLOW_TYPE_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
+import styles from "./UiV2MonthPayoutsSection.module.css";
 
 type ActualDraft = {
   account_id: string;
@@ -681,220 +682,225 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
             title="Пусто"
           />
         ) : (
-          <Table className="month-flows-table">
-            <thead>
-              <tr>
-                <Th>Дата</Th>
-                <Th>Тип</Th>
-                <Th>Счёт / инструмент</Th>
-                <Th numeric>Брутто</Th>
-                <Th numeric>Налог</Th>
-                <Th numeric>Комиссия</Th>
-                <Th numeric>Нетто</Th>
-                <Th className="month-flows-table__actions">Действия</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedActual.map((row) => {
-                const editing = editingActualId === row.id && editActual;
-                const redemption = isRedemptionFlowType(row.flow_type);
-                const passive = isPassiveInvestmentFlowType(row.flow_type);
-                const manual = isManuallyEditableInvestmentFlow(row.source, row.statement_link);
-                const instrument =
-                  row.instrument_id == null
-                    ? null
-                    : instruments.find((item) => item.id === row.instrument_id);
-                const instrumentPrimary = instrument
-                  ? instrument.ticker
-                    ? `${instrument.name} (${instrument.ticker})`
-                    : instrument.name
-                  : accountName(row.account_id);
-                return (
-                  <tr
-                    className={redemption ? "row--muted" : passive ? "row--income" : undefined}
-                    key={row.id}
-                  >
-                    <Td className="month-flows-table__date">
-                      {editing ? (
-                        <Input
-                          aria-label="Дата события"
-                          disabled={busy}
-                          onChange={(e) => touchEdit({ event_date: e.target.value })}
-                          type="date"
-                          value={editActual.event_date}
-                        />
-                      ) : (
-                        formatDate(row.event_date)
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <Select
-                          aria-label="Тип потока"
-                          disabled={busy}
-                          onChange={(e) => touchEdit({ flow_type: e.target.value })}
-                          value={editActual.flow_type}
-                        >
-                          <option value="coupon">Купон</option>
-                          <option value="dividend">Дивиденды</option>
-                          <option value="interest">Проценты</option>
-                          <option value="redemption">Погашение</option>
-                          <option value="commission">Комиссия</option>
-                          <option value="tax">Налог</option>
-                          <option value="other">Прочее</option>
-                        </Select>
-                      ) : (
-                        <>
-                          <span
-                            className={redemption ? "badge badge--closed" : "badge badge--draft"}
-                          >
-                            {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
-                          </span>
-                          {redemption ? (
-                            <div className="muted tiny">не доход (погашение)</div>
-                          ) : null}
-                          {passive ? <div className="muted tiny">пассивный доход</div> : null}
-                          {!manual ? (
-                            <div className="muted tiny">
-                              {labelOf(SOURCE_LABELS, row.source)} · не редактируется
-                            </div>
-                          ) : null}
-                        </>
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <>
-                          <div>{accountName(row.account_id)}</div>
-                          <Select
-                            aria-label="Инструмент выплаты"
+          <section
+            aria-label="Фактические выплаты: горизонтальная прокрутка таблицы"
+            className={styles.scroll}
+          >
+            <Table className="month-flows-table">
+              <thead>
+                <tr>
+                  <Th>Дата</Th>
+                  <Th>Тип</Th>
+                  <Th>Счёт / инструмент</Th>
+                  <Th numeric>Брутто</Th>
+                  <Th numeric>Налог</Th>
+                  <Th numeric>Комиссия</Th>
+                  <Th numeric>Нетто</Th>
+                  <Th className="month-flows-table__actions">Действия</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedActual.map((row) => {
+                  const editing = editingActualId === row.id && editActual;
+                  const redemption = isRedemptionFlowType(row.flow_type);
+                  const passive = isPassiveInvestmentFlowType(row.flow_type);
+                  const manual = isManuallyEditableInvestmentFlow(row.source, row.statement_link);
+                  const instrument =
+                    row.instrument_id == null
+                      ? null
+                      : instruments.find((item) => item.id === row.instrument_id);
+                  const instrumentPrimary = instrument
+                    ? instrument.ticker
+                      ? `${instrument.name} (${instrument.ticker})`
+                      : instrument.name
+                    : accountName(row.account_id);
+                  return (
+                    <tr
+                      className={redemption ? "row--muted" : passive ? "row--income" : undefined}
+                      key={row.id}
+                    >
+                      <Td className="month-flows-table__date">
+                        {editing ? (
+                          <Input
+                            aria-label="Дата события"
                             disabled={busy}
-                            onChange={(e) => touchEdit({ instrument_id: e.target.value })}
-                            value={editActual.instrument_id}
+                            onChange={(e) => touchEdit({ event_date: e.target.value })}
+                            type="date"
+                            value={editActual.event_date}
+                          />
+                        ) : (
+                          formatDate(row.event_date)
+                        )}
+                      </Td>
+                      <Td>
+                        {editing ? (
+                          <Select
+                            aria-label="Тип потока"
+                            disabled={busy}
+                            onChange={(e) => touchEdit({ flow_type: e.target.value })}
+                            value={editActual.flow_type}
                           >
-                            <option value="">—</option>
-                            {instruments.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name}
-                                {item.ticker ? ` (${item.ticker})` : ""}
-                              </option>
-                            ))}
+                            <option value="coupon">Купон</option>
+                            <option value="dividend">Дивиденды</option>
+                            <option value="interest">Проценты</option>
+                            <option value="redemption">Погашение</option>
+                            <option value="commission">Комиссия</option>
+                            <option value="tax">Налог</option>
+                            <option value="other">Прочее</option>
                           </Select>
-                        </>
-                      ) : (
-                        <div className="month-flows-table__party">
-                          <strong>{instrumentPrimary || "—"}</strong>
-                          <div className="muted tiny">
-                            {instrument ? accountName(row.account_id) : "—"}
-                          </div>
-                        </div>
-                      )}
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <Input
-                          aria-label="Брутто"
-                          className="input--money"
-                          disabled={busy}
-                          onChange={(e) => touchEdit({ gross: e.target.value })}
-                          value={editActual.gross}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.gross_amount))
-                      )}
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <Input
-                          aria-label="Налог"
-                          className="input--money"
-                          disabled={busy}
-                          onChange={(e) => touchEdit({ tax: e.target.value })}
-                          value={editActual.tax}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.tax_amount))
-                      )}
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <Input
-                          aria-label="Комиссия"
-                          className="input--money"
-                          disabled={busy}
-                          onChange={(e) => touchEdit({ commission: e.target.value })}
-                          value={editActual.commission}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.commission_amount))
-                      )}
-                    </Td>
-                    <Td numeric>
-                      {editing ? (
-                        <Input
-                          aria-label="Нетто"
-                          className="input--money"
-                          disabled={busy}
-                          onChange={(e) => touchEdit({ net: e.target.value })}
-                          value={editActual.net}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.net_amount))
-                      )}
-                    </Td>
-                    <Td className="month-flows-table__actions">
-                      <div className="row-actions">
+                        ) : (
+                          <>
+                            <span
+                              className={redemption ? "badge badge--closed" : "badge badge--draft"}
+                            >
+                              {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
+                            </span>
+                            {redemption ? (
+                              <div className="muted tiny">не доход (погашение)</div>
+                            ) : null}
+                            {passive ? <div className="muted tiny">пассивный доход</div> : null}
+                            {!manual ? (
+                              <div className="muted tiny">
+                                {labelOf(SOURCE_LABELS, row.source)} · не редактируется
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </Td>
+                      <Td>
                         {editing ? (
                           <>
-                            <Button
-                              disabled={busy || readOnly}
-                              onClick={() => void handleSaveActualEdit()}
-                              size="sm"
-                              type="button"
-                              variant="primary"
-                            >
-                              OK
-                            </Button>
-                            <Button
+                            <div>{accountName(row.account_id)}</div>
+                            <Select
+                              aria-label="Инструмент выплаты"
                               disabled={busy}
-                              onClick={() => {
-                                setEditingActualId(null);
-                                setEditActual(null);
-                              }}
-                              size="sm"
-                              type="button"
+                              onChange={(e) => touchEdit({ instrument_id: e.target.value })}
+                              value={editActual.instrument_id}
                             >
-                              Отмена
-                            </Button>
+                              <option value="">—</option>
+                              {instruments.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name}
+                                  {item.ticker ? ` (${item.ticker})` : ""}
+                                </option>
+                              ))}
+                            </Select>
                           </>
-                        ) : manual ? (
-                          <OverflowMenu
-                            label={`Действия для выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» от ${row.event_date}`}
-                          >
-                            <OverflowMenuItem
-                              disabled={busy || readOnly}
-                              onClick={() => startActualEdit(row)}
-                            >
-                              Изменить
-                            </OverflowMenuItem>
-                            <OverflowMenuItem
-                              danger
-                              disabled={busy || readOnly}
-                              onClick={() => setPendingDeleteActual(row)}
-                            >
-                              Удалить
-                            </OverflowMenuItem>
-                          </OverflowMenu>
                         ) : (
-                          <span className="muted tiny">чтение</span>
+                          <div className="month-flows-table__party">
+                            <strong>{instrumentPrimary || "—"}</strong>
+                            <div className="muted tiny">
+                              {instrument ? accountName(row.account_id) : "—"}
+                            </div>
+                          </div>
                         )}
-                      </div>
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
+                      </Td>
+                      <Td numeric>
+                        {editing ? (
+                          <Input
+                            aria-label="Брутто"
+                            className="input--money"
+                            disabled={busy}
+                            onChange={(e) => touchEdit({ gross: e.target.value })}
+                            value={editActual.gross}
+                          />
+                        ) : (
+                          formatMoney(moneyAmount(row.gross_amount))
+                        )}
+                      </Td>
+                      <Td numeric>
+                        {editing ? (
+                          <Input
+                            aria-label="Налог"
+                            className="input--money"
+                            disabled={busy}
+                            onChange={(e) => touchEdit({ tax: e.target.value })}
+                            value={editActual.tax}
+                          />
+                        ) : (
+                          formatMoney(moneyAmount(row.tax_amount))
+                        )}
+                      </Td>
+                      <Td numeric>
+                        {editing ? (
+                          <Input
+                            aria-label="Комиссия"
+                            className="input--money"
+                            disabled={busy}
+                            onChange={(e) => touchEdit({ commission: e.target.value })}
+                            value={editActual.commission}
+                          />
+                        ) : (
+                          formatMoney(moneyAmount(row.commission_amount))
+                        )}
+                      </Td>
+                      <Td numeric>
+                        {editing ? (
+                          <Input
+                            aria-label="Нетто"
+                            className="input--money"
+                            disabled={busy}
+                            onChange={(e) => touchEdit({ net: e.target.value })}
+                            value={editActual.net}
+                          />
+                        ) : (
+                          formatMoney(moneyAmount(row.net_amount))
+                        )}
+                      </Td>
+                      <Td className="month-flows-table__actions">
+                        <div className="row-actions">
+                          {editing ? (
+                            <>
+                              <Button
+                                disabled={busy || readOnly}
+                                onClick={() => void handleSaveActualEdit()}
+                                size="sm"
+                                type="button"
+                                variant="primary"
+                              >
+                                OK
+                              </Button>
+                              <Button
+                                disabled={busy}
+                                onClick={() => {
+                                  setEditingActualId(null);
+                                  setEditActual(null);
+                                }}
+                                size="sm"
+                                type="button"
+                              >
+                                Отмена
+                              </Button>
+                            </>
+                          ) : manual ? (
+                            <OverflowMenu
+                              label={`Действия для выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» от ${row.event_date}`}
+                            >
+                              <OverflowMenuItem
+                                disabled={busy || readOnly}
+                                onClick={() => startActualEdit(row)}
+                              >
+                                Изменить
+                              </OverflowMenuItem>
+                              <OverflowMenuItem
+                                danger
+                                disabled={busy || readOnly}
+                                onClick={() => setPendingDeleteActual(row)}
+                              >
+                                Удалить
+                              </OverflowMenuItem>
+                            </OverflowMenu>
+                          ) : (
+                            <span className="muted tiny">чтение</span>
+                          )}
+                        </div>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </section>
         )}
 
         <div className="totals-bar">
@@ -1056,64 +1062,69 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
           />
         ) : null}
         {sortedExpected.length > 0 ? (
-          <Table className="month-flows-table">
-            <thead>
-              <tr>
-                <Th>Дата</Th>
-                <Th>Тип</Th>
-                <Th>Инструмент</Th>
-                <Th numeric>Брутто</Th>
-                <Th numeric>Прогноз налога</Th>
-                <Th numeric>Прогноз нетто</Th>
-                <Th>Статус</Th>
-                <Th className="month-flows-table__actions">Действия</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedExpected.map((row) => {
-                const redemption = isRedemptionFlowType(row.flow_type);
-                return (
-                  <tr className={redemption ? "row--muted" : "row--income"} key={row.id}>
-                    <Td>{formatDate(row.expected_date)}</Td>
-                    <Td>
-                      <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
-                        {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
-                      </span>
-                      {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
-                    </Td>
-                    <Td>{instrumentName(row.instrument_id)}</Td>
-                    <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
-                    <Td numeric>
-                      {row.expected_tax_amount
-                        ? formatMoney(moneyAmount(row.expected_tax_amount))
-                        : "—"}
-                    </Td>
-                    <Td numeric>{formatMoney(moneyAmount(row.expected_net_amount))}</Td>
-                    <Td>
-                      <div className="muted tiny">
-                        {row.is_confirmed ? "подтверждено" : "план"}
-                        {row.is_approximate ? " · примерно" : ""}
-                      </div>
-                      <div className="muted tiny">{row.forecast_version}</div>
-                    </Td>
-                    <Td className="month-flows-table__actions">
-                      <OverflowMenu
-                        label={`Действия для ожидаемой выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» на ${row.expected_date}`}
-                      >
-                        <OverflowMenuItem
-                          danger
-                          disabled={busy || readOnly}
-                          onClick={() => setPendingDeleteExpected(row)}
+          <section
+            aria-label="Ожидаемые выплаты: горизонтальная прокрутка таблицы"
+            className={styles.scroll}
+          >
+            <Table className="month-flows-table">
+              <thead>
+                <tr>
+                  <Th>Дата</Th>
+                  <Th>Тип</Th>
+                  <Th>Инструмент</Th>
+                  <Th numeric>Брутто</Th>
+                  <Th numeric>Прогноз налога</Th>
+                  <Th numeric>Прогноз нетто</Th>
+                  <Th>Статус</Th>
+                  <Th className="month-flows-table__actions">Действия</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedExpected.map((row) => {
+                  const redemption = isRedemptionFlowType(row.flow_type);
+                  return (
+                    <tr className={redemption ? "row--muted" : "row--income"} key={row.id}>
+                      <Td>{formatDate(row.expected_date)}</Td>
+                      <Td>
+                        <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
+                          {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
+                        </span>
+                        {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
+                      </Td>
+                      <Td>{instrumentName(row.instrument_id)}</Td>
+                      <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
+                      <Td numeric>
+                        {row.expected_tax_amount
+                          ? formatMoney(moneyAmount(row.expected_tax_amount))
+                          : "—"}
+                      </Td>
+                      <Td numeric>{formatMoney(moneyAmount(row.expected_net_amount))}</Td>
+                      <Td>
+                        <div className="muted tiny">
+                          {row.is_confirmed ? "подтверждено" : "план"}
+                          {row.is_approximate ? " · примерно" : ""}
+                        </div>
+                        <div className="muted tiny">{row.forecast_version}</div>
+                      </Td>
+                      <Td className="month-flows-table__actions">
+                        <OverflowMenu
+                          label={`Действия для ожидаемой выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» на ${row.expected_date}`}
                         >
-                          Удалить
-                        </OverflowMenuItem>
-                      </OverflowMenu>
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
+                          <OverflowMenuItem
+                            danger
+                            disabled={busy || readOnly}
+                            onClick={() => setPendingDeleteExpected(row)}
+                          >
+                            Удалить
+                          </OverflowMenuItem>
+                        </OverflowMenu>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </section>
         ) : null}
 
         <div className="totals-bar">
