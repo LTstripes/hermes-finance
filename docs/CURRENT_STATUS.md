@@ -192,22 +192,25 @@ No private database, backup identifier or financial values are recorded in repos
 
 Detailed closeout: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
 
-## Why the launcher looks similar — and why quality changed
+## Windows launcher compact-shell closeout — completed 2026-09-27
 
-The redesign was intentionally not a visual launcher rewrite.
+The runtime responsibility split remains unchanged:
 
-The launcher remains useful as an owner-facing profile/status/Start/Stop shell. What changed is responsibility and blast radius:
-
-- **launcher** — presentation + ordinary Start/Stop;
+- **launcher** — compact profile/status/Start/Open/Stop shell;
 - **Prepare/Validate** — `scripts/prepare-runtime.ps1`;
 - **deterministic Start** — `scripts/start-local.ps1`;
 - **Stable release transition** — `scripts/update-stable.ps1`;
 - **exact candidate Preview/UAT** — `scripts/prepare-preview.ps1`;
 - **release publication** — guarded #124 flow.
 
-This provides reproducible exact code identity, backup-before-mutation, smaller failure boundaries, clearer diagnosis and no accidental coupling between update, Preview, migration, Start and publication.
+Two post-v1.0.0 launcher follow-ups are now complete on canonical development `main`:
 
-A future launcher may wrap these accepted operations, but must not recreate an independent update state machine.
+- **#585 / PR #589** — heavy `Windows launcher safety` + package/install CI is path-gated. Unrelated frontend/financial/backend diffs skip the heavy Windows/.NET lane; launcher/package/schema-helper changes still run the retained full harness. Accepted candidate `85769623244d7185b669ea34ca90a2b28a3b1168`; canonical merge `d2acd8b52c43725b76b32fb514a56744def6f529`; exact-main CI `36313666733` SUCCESS.
+- **#586 / PR #593** — the owner launcher was reduced from the large control-panel presentation to a compact shell (default 560×320) with environment choice, one concise identity/boundary line, one readiness state and one primary action. Old selected-profile/check-grid/footer/badge layout code and its implementation-specific tests were removed with net code deletion. Accepted candidate `22c2dc5c7245953b08ad378de88ba4df3e22fd7c`; canonical merge/main `bbfa4508f2ad66f35d15ed0f0b45bd41518427af`; exact-head CI `36315571533` and exact-main CI `36315775997` SUCCESS.
+
+Semantic safety is unchanged: no launcher-owned Git/update flow, Stable production vs Preview isolated data remain fail-closed, process ownership/foreign-port protection stay retained, and ordinary runtime remains loopback-only.
+
+Published Stable is still immutable **v1.0.0**; the compact launcher is newer development-main launcher code until a future release. It may be installed separately from a clean current-main/control checkout without promoting or mutating Stable.
 
 ## Release flow
 

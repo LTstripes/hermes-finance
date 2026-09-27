@@ -150,19 +150,22 @@ Do not use a production runtime checkout as an agent/development workspace.
 
 ## Windows launcher — current role
 
-The launcher is a quiet owner-facing shell for configured, already-prepared Stable and isolated Main/Preview profiles:
+The launcher is now a compact owner shell for configured, already-prepared Stable and isolated Preview profiles. The normal window is intentionally small: choose the environment, see one concise version/SHA + data-boundary line, see one readiness state, and use one primary action for that state.
 
-- profile/status presentation;
-- ordinary Start/Stop;
-- open Hermes after health is ready;
-- diagnostics;
-- installed Desktop/Start-menu shortcuts.
+Normal actions are:
 
-It shows exact version/SHA identity, readiness and the production/isolated data boundary. Its ordinary Start and status refresh are read-only with respect to Git and release state: it never follows `origin/main`, fetches, switches refs, publishes releases or performs OPS02/OPS03 work. Dependency readiness is read-only in the launcher; run external OPS01 Prepare when needed, then use Start, Stop, Open Hermes, setup and secondary diagnostics/logs.
+- `Готов` → `Запустить`;
+- `Работает` → `Открыть Hermes`;
+- launcher-owned running process → secondary `Остановить`;
+- blocked / needs preparation → one contextual recheck action;
+- diagnostics/logs stay hidden until requested;
+- `Настроить…` is recovery/setup, not the ordinary daily path.
 
-Stable release transition remains `scripts/update-stable.ps1`; exact Preview/UAT preparation remains `scripts/prepare-preview.ps1`. These composable operations are intentionally outside the launcher.
+The launcher remains read-only with respect to Git/release state: it never follows `origin/main`, fetches, switches refs, publishes releases or performs OPS02/OPS03 work. Stable release transition remains `scripts/update-stable.ps1`; exact Preview/UAT preparation remains `scripts/prepare-preview.ps1`.
 
-To install/reinstall the launcher from the current published Stable checkout:
+The heavy Windows launcher safety + package/install CI lane is path-gated since #585: unrelated frontend/financial/backend changes skip that lane, while launcher/package/schema-helper changes still run the full retained safety harness.
+
+To install/reinstall the **released** launcher, run `install.ps1` from the published Stable checkout. To try the newer launcher currently on development `main` before the next Stable release, run the same installer from a clean current-main/control checkout; this updates only the installed launcher package/shortcuts and does not promote or mutate the Stable runtime/database.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1

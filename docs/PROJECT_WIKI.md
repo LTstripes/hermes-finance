@@ -316,28 +316,25 @@ The redesign acceptance boundary is now fulfilled on a real owner release transi
 
 Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
-## 8. Windows launcher — what changed and what did not
+## 8. Windows launcher — compact owner shell
 
-Launcher не retired, и внешне он специально не обязан выглядеть новым.
+Launcher не retired, но теперь он действительно соответствует своей ограниченной роли.
 
-Его полезная роль:
+После #586 primary UI — маленький owner shell:
 
-- owner-facing Stable/Preview profile/status UI;
-- ordinary Start/Stop;
-- shortcut/install shell;
-- diagnostics/status presentation.
+- компактный выбор Stable / Preview;
+- одна строка version / short SHA + production или isolated data;
+- одно состояние готовности;
+- одна primary action: `Запустить`, `Открыть Hermes` или контекстный recheck;
+- `Остановить` — вторичное действие только для доказанного launcher-owned процесса;
+- diagnostics/logs скрыты;
+- setup/reconfigure — recovery path, а не часть ежедневного запуска.
 
-Но launcher **не является canonical Stable updater**.
+Старые большие profile cards, selected-profile panel, четыре technical check rows, большой SHA block, постоянный refresh CTA, last-run footer и крупный LOCAL ONLY badge удалены вместе с их implementation-specific layout tests. Default window уменьшен до 560×320.
 
-Поэтому главный результат R09 — не новая кнопка, а качественно другая система под ней:
+Launcher по-прежнему **не является canonical Stable updater**. Он не двигает Git, не делает OPS02/OPS03 и не готовит зависимости. Под ним остаётся доказанная composable architecture: exact code identity, отдельные Prepare/Start/Preview/Stable-update/publication operations и fail-closed production/isolated boundaries.
 
-- exact code tested = exact code published = exact code installed;
-- backup exists before mutation;
-- publication, update, Preview and Start are separate actions;
-- failures локализованы по операции;
-- future UI can wrap proven primitives instead of duplicating their safety semantics.
-
-Если позже launcher получает новые кнопки, они должны быть thin wrappers над accepted operations, а не вторая state machine.
+#585 отдельно убрал тяжёлый launcher harness из нерелевантного CI: frontend/financial/backend изменения больше не поднимают Windows/.NET launcher lane, а любые launcher/package/schema-helper изменения всё ещё получают полный retained safety + package/install chain.
 
 ## 9. Release flow — теперь доказанный
 
@@ -472,24 +469,19 @@ Account + internal-transfer decomposition backend завершён.
 
 `v1.0.0` is now published and installed as real Stable after exact-SHA Owner OPS03 PASS, guarded #124 publication and backup-first OPS02 transition.
 
-## 12. CI/test execution optimization — closeout 2026-09-16
+## 12. CI/test execution optimization — closeout + launcher follow-up
 
-Отдельный bounded pass по CI завершён. Целью было убрать лишнюю работу, не сокращая regression coverage.
+Основной bounded CI pass от 2026-09-16 завершился без удаления regression coverage:
 
-Принятые изменения:
+- PR #397 — full Windows launcher safety harness перестал запускаться дважды;
+- PR #399 — Windows timezone lane сокращён до Windows-specific nodes;
+- PR #401 — Synthetic visual audit использует bounded two-worker execution.
 
-- PR #397 — full Windows launcher safety harness больше не запускается дважды; 88 сценариев выполняются один раз через canonical package/install chain;
-- PR #399 — Windows timezone lane сокращён с 35 до 7 Windows-specific nodes; исключённые 28 nodes продолжают обязательное выполнение в Linux lanes;
-- PR #401 — Synthetic visual audit сохраняет те же 84 nodes, но безопасно выполняется двумя Playwright workers при `fullyParallel: false`.
+Позже реальная owner-потребность дала ещё один безопасный follow-up:
 
-Итог:
+- **#585 / PR #589** — launcher safety/package lane стал path-gated. На нерелевантном diff heavy job получает terminal `skipped`; на launcher-relevant diff полный harness/package/install chain остаётся blocking и прошёл exact-head/exact-main CI. Контрольный PR #590 доказал отсутствие вечного pending check. На docs-only baseline-run heavy job занимал примерно 1.5 минуты Windows runner.
 
-- примерно 116 redundant test/scenario executions убраны из каждого полного CI;
-- удалённых regression tests: 0;
-- visual coverage и screenshot inventory сохранены;
-- whole-CI wall time на closeout checkpoint сократился примерно до 3.5 минут, с обычной оговоркой о GitHub-runner variance.
-
-После отдельного read-only launcher audit принят STOP: оставшийся безопасный резерв в несколько секунд не оправдывает дополнительную сложность safety fixtures.
+57 launcher scenarios не удалялись: аудит не нашёл точного дубля с outer package/install smoke. Убрано именно нерелевантное выполнение, а не гарантия.
 
 Project-specific evidence: `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`.
 

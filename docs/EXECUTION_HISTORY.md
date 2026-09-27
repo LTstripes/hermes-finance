@@ -34,6 +34,38 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-27 Windows launcher CI + compact-shell closeout — #585 / #586
+
+### #585 / PR #589 — path-gate heavy launcher CI
+
+- **Status:** accepted, integrated and canonically verified.
+- **Worker:** Grok worker session supplied by Owner; exact model/effort not independently runtime-confirmed in the repository evidence.
+- **Integrator:** ChatGPT/Lera.
+- **Baseline:** `988090419b6edfbfa5f6ef5c0a02064fedb07fb2`.
+- **Accepted candidate:** `85769623244d7185b669ea34ca90a2b28a3b1168`.
+- **Canonical merge:** `d2acd8b52c43725b76b32fb514a56744def6f529`.
+- **Verification:** exact-head CI `36313043068` SUCCESS; control empty-diff PR #590 CI `36313059976` SUCCESS with `Windows launcher safety` terminal `skipped`; exact-main CI `36313666733` SUCCESS.
+- **Delivered:** deterministic launcher path classifier + job-level gating. Unrelated frontend/financial/backend diffs no longer start .NET, the retained 57-scenario launcher harness, publish or package/install smoke. Launcher/package/schema-helper/CI-contract changes still run the full blocking chain.
+- **Audit decision:** no launcher scenarios were deleted. The inner harness and outer package/install smoke own different guarantees; only irrelevant execution was removed.
+- **Observed effect:** roughly 1.5 minutes of Windows runner work is avoided on typical irrelevant diffs, while launcher-relevant CI still exercises the full package/install path.
+
+### #586 / PR #593 — compact prepared-runtime owner shell
+
+- **Status:** accepted, integrated and canonically verified.
+- **Worker:** Grok worker session supplied by Owner; exact model/effort not independently runtime-confirmed in the repository evidence.
+- **Integrator:** ChatGPT/Lera.
+- **Baseline:** `d2acd8b52c43725b76b32fb514a56744def6f529`.
+- **Accepted candidate:** `22c2dc5c7245953b08ad378de88ba4df3e22fd7c`.
+- **Canonical merge/main:** `bbfa4508f2ad66f35d15ed0f0b45bd41518427af`.
+- **Verification:** exact-head CI `36315571533` SUCCESS; exact-main CI `36315775997` SUCCESS; exact-main `Windows launcher safety` SUCCESS.
+- **Change size:** +419 / -1330 lines.
+- **Delivered:** default 560×320 shell with compact Stable/Preview choice, concise version/short-SHA + production/isolated boundary line, one readiness state and one primary action. Running state uses `Открыть Hermes` as primary; launcher-owned `Остановить` is secondary. Diagnostics are hidden; setup/reconfigure is recovery/setup rather than daily workflow.
+- **Removed with old UI:** large profile cards, separate selected-profile panel, four technical check rows, large SHA block, permanent refresh CTA, last-run footer, large LOCAL ONLY badge and their implementation-specific layout tests.
+- **Retained safety:** prepared-runtime only, no launcher Git/update behavior, Stable production vs Preview isolated-data fail-closed boundary, strict process ownership, foreign-port protection, sidecar/data identity, setup fail-closed behavior and loopback-only runtime.
+- **Release boundary:** published Stable remains immutable v1.0.0. The compact launcher is development-main launcher code until a future release; it can be installed independently from a clean trusted current-main/control checkout without promoting or mutating Stable.
+
+---
+
 # 2026-09-27 Astra audit data-integrity hardening closeout — #484–#498 / #536–#539
 
 - **Status:** complete; all scoped issues closed and integrated to canonical `main`.
