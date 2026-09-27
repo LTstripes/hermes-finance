@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-22**.
+> Last synchronized: **2026-09-27**.
 
 ## 1. Что мы строим
 
@@ -65,6 +65,10 @@ The predecessor `v0.9.0` remains immutable release history.
 The `v1.0.0` release source is `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 
 The live development SHA is always current GitHub `main`; documentation-only synchronization commits may advance it after publication without changing the immutable `v1.0.0` tag identity.
+
+Owner durability closeout checkpoint: `744c613884d074e6f9d35d61523603f257371713`, exact-main CI #947 / `36139627216` SUCCESS. #417 is closed completed.
+
+Current accepted development checkpoint after the Astra-audit hardening wave: `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; exact-main push CI `36306845860` SUCCESS.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -152,6 +156,24 @@ Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 #400 / PR #402 реализовал bounded backend read model и прошёл independent financial-semantics review.
 
 Важно: PERF04C пока **backend-only**. API/UI exposure отдельно не разблокирован автоматически.
+
+### Post-Astra data-integrity / completeness hardening
+
+The audit-driven hardening wave #484–#498 and #536–#539 is complete and canonical.
+
+What changed structurally:
+
+- financial writes and month-state guards are serialized/atomic where stale validation previously could race;
+- composite reads hold one coherent SQLite snapshot;
+- statement correction, transfer ownership, salary cardinality and month clone workflows now fail with conflicts instead of committing mixed state;
+- payout/reconciliation provenance survives DRAFT corrections without destroying history or blocking the corrected active relationship;
+- Performance boundary/coverage evidence is invalidated or version-bound so stale PRE/POST evidence cannot recreate false exactness;
+- real cash-account identity is preserved through AI/export; unassigned cash stays synthetic;
+- portfolio-source coverage is canonical across backend, AI exports and UI: known subtotal and completeness are separate claims, missing accounts are not zero-filled, and no-capital-evidence periods remain unavailable.
+
+Final aggregate PR #509 merged integration head `ad59be98450599c0253e9dbf027385d06f1eabb1` into canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`. Merge-ref CI `36306528111`, UI comparison `36306528183` and exact-main push CI `36306845860` all passed.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
 
 ## 6. Что по-прежнему нельзя называть exact attribution
 
@@ -397,9 +419,11 @@ Closeouts:
 - cleanup cannot overwrite the ambiguity classification;
 - independent safety re-review ACCEPT.
 
-#460 / PR #473 bounded verified retention, #461 / PR #483 isolated DR implementation and #462 / PR #502 focused post-restore state reload are integrated. Post-merge verification of #461 found a real Windows process-disposition defect; PR #499 closed it. The final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed CI #904 / `35771083594` SUCCESS. Real Owner off-device backup/recovery remains a later Owner-controlled gate.
+#460 / PR #473 bounded verified retention, #461 / PR #483 isolated DR implementation and #462 / PR #502 focused post-restore state reload are integrated. Post-merge verification of #461 found a real Windows process-disposition defect; PR #499 closed it. Later real Owner rehearsals found #511 (singleton-month PowerShell JSON handling) and #524 (Windows readiness ownership/classification TOCTOU); both were fixed canonically. #527 / PR #542 added the explicit Owner-accepted plaintext synced-filesystem mode. Final durability checkpoint `744c613884d074e6f9d35d61523603f257371713` passed exact-main CI #947 / `36139627216`; the final fresh plaintext publication, off-device visibility check and clean isolated DR all passed. #417 is closed completed.
 
 ## 11. Что идёт дальше
+
+The Astra-audit hardening queue is complete. No task from #484–#498 or #536–#539 remains open; future product/engineering work starts from canonical `main`.
 
 ### UI / product
 
@@ -407,8 +431,7 @@ The core UI v2 roadmap (#387) is complete.
 
 UI v2 is primary at `/`; v1 remains available at `/v1` plus retained legacy routes/editors.
 
-There is no remaining cutover gate. Separate future work:
-- #476 — one real-backend synthetic G04 browser regression gate;
+There is no remaining cutover gate. #476 / PR #548 has completed the real-backend synthetic G04 canonical CI gate. Separate future work:
 - #389 — future configurable dashboards, separate from the completed core roadmap;
 - v1 retirement — only as a later explicit task if real use shows rollback/legacy paths are no longer needed.
 
@@ -416,12 +439,24 @@ There is no remaining cutover gate. Separate future work:
 
 ### Runtime / durability
 
-#313 завершён. #459 protected recovery-point publisher, #460 retention, #461 isolated DR implementation, #462 post-restore month-state reload и #475 restore outcome semantics завершены и интегрированы.
+#313 завершён. #417 owner durability тоже завершён.
 
-Под #417 implementation queue complete:
-- #461 закрыт канонически после PR #483 и follow-up PR #499;
-- #462 / PR #502 закрыт канонически на `5bb52b8e1a8394e389968514deaeb4faf8cc5a19`, exact-main CI #904 / `35771083594` SUCCESS;
-- реальный protected off-device recovery point, independently held recovery material и clean Owner DR rehearsal остаются Owner-controlled gates.
+Каноническая durability-цепочка:
+- #459 — managed recovery-point publisher;
+- #460 — bounded retention, 12 verified points на exact protection pair;
+- #461 + PR #499 — isolated DR и Windows process cleanup/disposition;
+- #462 — post-restore month-state reload;
+- #475 — truthful ambiguous restore outcomes;
+- #511 и #524 — реальные дефекты, найденные Owner DR rehearsal и исправленные до финального прогона;
+- #527 / PR #542 — явный `owner_accepted_plaintext / synced_filesystem_destination_v1` для обычной synced folder.
+
+Owner-live closeout 2026-09-25: свежая plaintext recovery point опубликована и read-back verified; точный новый файл подтверждён off-device; clean isolated DR завершился `status=rehearsed`, `readiness=verified`, `source_unchanged=true`, `schema_relationship=same_revision`. Parent #417 закрыт `completed`.
+
+Hermes не заявляет cloud delivery и не добавляет Google API/OAuth/cloud account. Encrypted mode остаётся отдельным режимом для реально encrypted destination.
+
+#543 / PR #547 — отдельный non-blocking hardening после closeout завершён; #417 он не переоткрывал.
+
+Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 Не возрождать monolithic launcher updater.
 
@@ -464,12 +499,12 @@ Reusable process: `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`.
 
 - #124 — permanent Release Control; intentionally stays open;
 - #127 — roadmap umbrella;
-- #417 — durability umbrella; implementation children #458–#462 and #475 complete, Owner-live gates remain.
 
-Separate follow-up:
-- #476 — real-backend synthetic G04 browser regression gate.
+Completed process follow-ups:
+- #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
+- #543 / PR #547 — non-blocking post-closeout recovery hardening.
 
-Completed: #313, #387, #410, #429, #430, #459, #460, #461, #462, #475 and #480.
+Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #476, #480, #484–#498, #511, #524, #527, #536–#539 and #543.
 
 ## 14. Canonical reference documents
 
@@ -485,6 +520,8 @@ Completed: #313, #387, #410, #429, #430, #459, #460, #461, #462, #475 and #480.
 - `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
+- `docs/financial-completeness-contract.md` — #498 known subtotal versus portfolio-source coverage; implemented end-to-end through #536–#539.
+- `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md` — canonical closeout for the Astra-audit hardening wave.
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/1.0.0.md`
 - `docs/release-notes-1.0.0.md`

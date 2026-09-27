@@ -411,6 +411,10 @@ def stage_quantity_plans(
 ) -> list[BrokerSnapshotApplyItemResult]:
     """Stage R06-05 quantity writes. Caller owns the transaction."""
 
+    if any(not plan.no_op for plan in plans):
+        # Preparation ends its read transaction before provider I/O. Reacquire
+        # the month write guard in the transaction that actually commits rows.
+        require_editable_reporting_month(session, reporting_month_id)
     item_results: list[BrokerSnapshotApplyItemResult] = []
     for plan in plans:
         if plan.no_op:
@@ -457,6 +461,20 @@ def apply_broker_snapshot_preview(
         )
         if any(not plan.no_op for plan in prepared.plans):
             session.commit()
+    except ClosedReportingMonthError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            BrokerSnapshotApplyFailureCode.CLOSED_MONTH,
+            "closed reporting month must be reopened before broker snapshot apply",
+        )
+    except ReportingMonthNotFoundError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            BrokerSnapshotApplyFailureCode.VALIDATION_ERROR,
+            "reporting month was not found",
+        )
     except Exception:
         session.rollback()
         return _failure(

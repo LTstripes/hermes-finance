@@ -6,7 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
-from hermes_finance.persistence import Account, ExpectedCashFlow, Instrument, ReportingMonth
+from hermes_finance.persistence import (
+    Account,
+    AppliedPayoutReconciliation,
+    ExpectedCashFlow,
+    Instrument,
+    ReportingMonth,
+)
 from hermes_finance.services._guard import (
     require_editable_child_month,
     require_editable_reporting_month,
@@ -399,7 +405,23 @@ def update_expected_cash_flow(
 
 
 def delete_expected_cash_flow(session: Session, flow_id: int) -> None:
-    flow = get_expected_cash_flow(session, flow_id)
-    require_editable_child_month(session, flow)
-    session.delete(flow)
-    session.commit()
+    try:
+        flow = get_expected_cash_flow(session, flow_id)
+        require_editable_child_month(session, flow)
+        links = list(
+            session.scalars(
+                select(AppliedPayoutReconciliation).where(
+                    AppliedPayoutReconciliation.expected_cash_flow_id == flow_id
+                )
+            )
+        )
+        if any(link.archived_from_period is not None for link in links):
+            raise ValueError("expected cash flow is retained by historical payout reconciliation")
+        for link in links:
+            session.delete(link)
+        session.flush()
+        session.delete(flow)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise

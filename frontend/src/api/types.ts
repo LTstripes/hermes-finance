@@ -258,7 +258,9 @@ export type DashboardMortgage = {
 
 export type DashboardKpis = {
   liquid_capital_net: MoneyValue;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
   liquid_capital_delta: MoneyValue | null;
+  liquid_capital_delta_coverage?: PortfolioSourceCoverage | null;
   passive_income_actual: MoneyValue;
   passive_income_delta: MoneyValue | null;
   forecast_monthly_passive_income: MoneyValue;
@@ -347,6 +349,7 @@ export type DashboardLinkedPair = {
 
 export type DashboardLiquidCapital = {
   linked_pairs: DashboardLinkedPair[];
+  portfolio_source_coverage?: PortfolioSourceCoverage | null;
 };
 
 export type CashFlowLadderEvent = {
@@ -426,6 +429,7 @@ export type CapitalHistoryPoint = {
   month: number;
   reporting_month_id: number;
   liquid_capital_net: MoneyValue;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
   passive_income_actual: MoneyValue;
 };
 
@@ -433,6 +437,12 @@ export type CapitalHistoryPoint = {
 export type AssetAllocationPoint = {
   asset_class: string;
   amount: MoneyValue;
+};
+
+export type PortfolioSourceCoverage = {
+  status: "complete" | "partial" | "unavailable";
+  reason_codes: string[];
+  missing_account_ids: number[];
 };
 
 /** One closed-month point from the read-only Analytics capital-composition API. */
@@ -445,6 +455,7 @@ export type CapitalCompositionPoint = {
   liquid_assets_total: MoneyValue;
   included_debts: MoneyValue;
   liquid_capital_net: MoneyValue;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
   /** Returned by `/api/analytics/capital-composition` for every point (ADR 0007). */
   linked_pair_assets: MoneyValue;
   linked_pair_debts: MoneyValue;
@@ -473,6 +484,7 @@ export type ClosedReportComparison = {
   liquid_assets_total_delta: MoneyValue | null;
   included_debts_delta: MoneyValue | null;
   liquid_capital_net_delta: MoneyValue | null;
+  liquid_capital_net_delta_coverage?: PortfolioSourceCoverage | null;
   linked_pair_assets_delta: MoneyValue | null;
   linked_pair_debts_delta: MoneyValue | null;
   linked_pair_net_contribution_delta: MoneyValue | null;

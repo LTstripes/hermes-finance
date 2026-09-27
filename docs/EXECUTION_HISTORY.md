@@ -34,6 +34,95 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+# 2026-09-27 Astra audit data-integrity hardening closeout — #484–#498 / #536–#539
+
+- **Status:** complete; all scoped issues closed and integrated to canonical `main`.
+- **Original staging line:** `integration/data-integrity-hardening`.
+- **Final accepted staging head:** `ad59be98450599c0253e9dbf027385d06f1eabb1`.
+- **Aggregate PR:** #509.
+- **Canonical merge/main:** `b6f3ff1aff93f06ae0a563ba8704b91086a80924`.
+- **Aggregate verification:** merge-ref CI `36306528111` SUCCESS; UI comparison `36306528183` SUCCESS; exact-main push CI `36306845860` SUCCESS.
+- **Main-drift proof:** before final merge, current `main` was `10d545882041593f37d65cf8f56b42b3a18ccebd`; GitHub test merge `4c918569cb940519118e50522ab5f1202a7a4d3e` combined that main with the staging head and was the exact tree checked by aggregate CI.
+- **Review model:** implementation used multiple isolated Worker sessions and multiple model families/effort levels. Per-task model identity was not uniformly runtime-confirmed, so this aggregate record does not invent a single model attribution. Integrator acceptance was performed by ChatGPT/Lera with independent review where the project risk policy or task gate required it.
+
+Accepted task candidates:
+
+| Issue | PR | Accepted candidate | Result |
+| --- | --- | --- | --- |
+| #484 | #504 | `9b04463e35c84039de97017b64e77ed6df257767` | DB-level CAS write atomicity |
+| #485 | #508 | `b4a75a0d69a07432ce4230108d4ecc992b7563b1` | closed-month writer reservation |
+| #486 | #523 | `3a769023b401d378bcd63aee8c1c2aca14f286ff` | payout/provenance correction lifecycle |
+| #487 | #520 | `fbc47cb71e6f667a690922992883de416a60ebf5` | conservative payout ambiguity fallback |
+| #488 | #513 | `271138e4eb9e87fe19c802cb2b5a5dc7a85dce3c` | statement correction/revision atomicity |
+| #489 | #510 | `a294b8b8bb0a398aacd0055b61538617c92d2ffb` | linked-debt balance-evidence atomic guard |
+| #490 | #515 | `ee1feab0080e58ac50d396cccdc2e1418a07d9af` | transfer-link ownership/evidence atomicity |
+| #491 | #512 | `a7ad85708947a3ed0f48c66a2fa5ce4139a4a0ec` | salary canonical-cardinality atomicity |
+| #492 | #514 | `b78e9664ae7dc2b73abbb1122a10dc86d2061ab2` | coherent/atomic month clone |
+| #493 | #519 | `618fea1b00e118b5e48a98db3513e41bd68b7b8d` | performance coverage invalidation on month delete |
+| #494 | #526 | `83acc7e2ab1939321fb2bb831bfe365d8c26cf04` | valuation material-signature binding |
+| #495 | #522 | `bada0db0a0c7d90a33a6b390cfdffd6ac16bec7e` | valuation boundary-group consistency |
+| #496 | #505 | `e562aaa1e1eed4184cf8b2277bfcdc589cdcdde6` | coherent composite financial reads |
+| #497 | #503 | `1316fa7a048fc91c1209d23fbf94b1271388cba7` | real/unassigned cash identity preservation |
+| #498 | #521 | `2978a8925ff7f1da66a05c490495baa5d2297103` | financial-completeness contract |
+| #536 | #546 | `c5b9e89841bd2adbc95c5f3ed616a1c4eba49abb` | AI bundle/history completeness propagation |
+| #537 | #549 | `4bdbcc2d3cf2d39a040be97b2fd43dda46ad9fea` | review/goals/allocation completeness propagation |
+| #538 | #579 | `d105542eca762f6e4248757e567e1c963d7a614d` | canonical owner-facing portfolio-source coverage |
+| #539 | #544 | `fdd6df92c50dac1434dfb7fc0079c1e5244738ab` | close-readiness unassigned-cash identity fix |
+
+Material blockers caught before final integration included stale statement revision races, payout reconciliation-slot ownership after correction, divergent Alembic heads during #494 refresh, and a final #538 drift where AI bundle treated excluded reference debt as capital evidence while owner-facing coverage did not. Each blocker was remediated and re-reviewed before merge.
+
+Delivered project effect:
+
+- stale validations cannot silently commit hybrid financial state across the covered write paths;
+- composite reads cannot mix several committed database moments in one result;
+- payout/statement audit history survives owner corrections without remaining active financial state;
+- stale Performance evidence fails closed instead of recreating false exact XIRR/TWRR;
+- cash account identity is preserved through AI/export;
+- exact known subtotal, availability and source completeness are separate claims across backend, AI and UI;
+- missing account values are never zero-filled merely to make a total look complete.
+
+Published Stable `v1.0.0` was not changed or promoted by this wave.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
+
+---
+
+# 2026-09-26 process hardening closeout — #476 / #543
+
+### #476 / PR #548 — canonical real-backend G04 browser gate
+
+- **Accepted candidate:** `33faa0f44752e81402ea2e09b86e826eee1146c6`; reviewer verdict supplied by Owner: **ACCEPT** with no blockers.
+- **Canonical merge:** `c37ba42213a943824c8b16824dbc77f21dc61d66`.
+- **Verification:** exact-head CI `36147877351` SUCCESS; UI evidence `36147877313` SUCCESS; G04 real-backend job SUCCESS; exact-main push CI `36235038286` SUCCESS.
+- **Delivered:** one deterministic synthetic temp-SQLite browser journey runs in canonical CI against the real local backend/frontend. The retained v1 journey locators were repaired to current UI semantics without product/financial changes; the shared per-run temp DB uses `--retries=0`.
+- **Reviewer context:** Owner reports the read-only reviewer ran in a separate Astra Pro chat session.
+
+### #543 / PR #547 — recovery CLI / pair-scoped retention hardening
+
+- **Accepted candidate:** `c910dcaeb6dfeb83a013c1f0120252ed3dfd5794`; independent recovery/security verdict supplied by Owner: **INDEPENDENT ACCEPT**.
+- **Canonical merge:** `8d6af7a7b370e8d6c5fa6659d3cd16fce47a4561`.
+- **Verification:** exact-head CI `36147122963` SUCCESS; canonical exact-main push CI `36236076568` SUCCESS.
+- **Delivered:** argparse-level publisher/rehearsal failures use neutral null protection identity without echoing private argv; explicit 12 protected + 12 plaintext + 13th same-pair regressions prove pair-scoped retention in both directions while preserving fail-closed object-bound deletion semantics.
+- **Boundary:** #543 remains a post-closeout hardening task only; it does not reopen or alter completed #417/#527 policy.
+- **Reviewer context:** Owner reports the independent reviewer ran in a separate Astra Pro chat session.
+
+---
+
+# 2026-09-25 owner durability closeout — #417 / #527 / PR #542
+
+- **Owner policy:** the Owner explicitly accepted ordinary synced-folder plaintext-at-rest storage for the Finance off-device recovery workflow. The truthful pair is `owner_accepted_plaintext / synced_filesystem_destination_v1`; Hermes still makes no cloud-delivery claim and adds no Google API/OAuth/cloud-account integration.
+- **Accepted implementation:** #527 / PR #542 exact candidate `720074dcc94954f7485b2e71762fff9cad5d9917`; canonical merge/main `744c613884d074e6f9d35d61523603f257371713`; exact-head CI #946 / `36127808612` SUCCESS; exact-main CI #947 / `36139627216` SUCCESS; independent security/recovery re-review: **ACCEPT**.
+- **Contract result:** plaintext and protected modes remain distinct; crossed pairs fail before mutation; manifest/read-back/DR stay exact-pair-bound; retention keeps 12 verified managed points per accepted pair in mixed directories; no protected-at-rest or cloud-delivery claim is made for plaintext.
+- **Owner-live publication:** fresh plaintext managed recovery point returned `published=true`, `verified=true`, `read_back=verified`, `retention=completed`, `action_required=null`.
+- **Off-device evidence:** Owner independently confirmed the exact newly published artifact was visible through Google Drive on another device.
+- **Final clean DR:** **PASS** — `status=rehearsed`, source verified and unchanged, restore/Prepare/Validate successful, `readiness=verified`, producer/recovery SHA both `744c613884d074e6f9d35d61523603f257371713`, schema relationship `same_revision`, source/result head `0041_debt_linked_account`. Privacy-safe broad counts: 8 reporting months, 43 user tables, 25 populated user tables, 25 user indexes, 0 user views.
+- **Real defects found by Owner rehearsal:** #511 / PR #518 fixed Windows PowerShell singleton-month JSON normalization before dashboard probing; #524 / PR #525 fixed startup ownership/classification TOCTOU and absent-listener handling. Both were independently reviewed and canonically green before the final rehearsal.
+- **Closeout:** parent #417 closed `completed`. #543 keeps three non-blocking hardening observations separate and does not reopen durability acceptance.
+- **References:** #417, #511, #524, #527, #543, PR #518, PR #525, PR #542, ADR 0017, `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
+
+---
+
+
 # 2026-09-22 isolated DR implementation + Windows cleanup closeout
 
 ### #461 / PR #483 + PR #499 — isolated disaster-recovery rehearsal

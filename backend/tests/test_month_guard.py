@@ -10,10 +10,14 @@ Global entities (accounts, instruments, goals, app_settings, iis profiles)
 are not month-scoped and must remain editable regardless of month status.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
+from threading import Event
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -45,6 +49,8 @@ from hermes_finance.persistence import (
     PropertySnapshot,
     SavingAllocation,
 )
+from hermes_finance.services import comments as comments_service
+from hermes_finance.services import expenses as expenses_service
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import (
     create_cash_balance,
@@ -403,6 +409,208 @@ def test_reopen_allows_child_edits_again(tmp_path: Path) -> None:
         reopen_reporting_month(session, month.id)
         updated = update_income_entry(session, entry.id, name="Allowed")
         assert updated.name == "Allowed"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("operation", ["create", "update", "delete"])
+@pytest.mark.parametrize("winner", ["close", "child"])
+def test_child_write_and_close_serialize(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str, winner: str
+) -> None:
+    session, database = session_for(tmp_path)
+    reached_guard = Event()
+    release_child = Event()
+    try:
+        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        entry = (
+            create_expense_entry(
+                session,
+                reporting_month_id=month.id,
+                category="Original",
+                amount="5.00",
+                expense_type=ExpenseType.MANDATORY,
+            )
+            if operation != "create"
+            else None
+        )
+
+        guard_name = (
+            "require_editable_reporting_month"
+            if operation == "create"
+            else "require_editable_child_month"
+        )
+        original_guard = getattr(expenses_service, guard_name)
+
+        def paused_guard(*args: object) -> object:
+            if winner == "close":
+                reached_guard.set()
+                assert release_child.wait(10)
+            result = original_guard(*args)
+            if winner == "child":
+                reached_guard.set()
+                assert release_child.wait(10)
+            return result
+
+        monkeypatch.setattr(expenses_service, guard_name, paused_guard)
+
+        def mutate() -> str:
+            with database.session_factory() as child_session:
+                try:
+                    if operation == "create":
+                        create_expense_entry(
+                            child_session,
+                            reporting_month_id=month.id,
+                            category="Created",
+                            amount="7.00",
+                            expense_type=ExpenseType.MANDATORY,
+                        )
+                    elif operation == "update":
+                        assert entry is not None
+                        update_expense_entry(child_session, entry.id, amount="7.00")
+                    else:
+                        assert entry is not None
+                        delete_expense_entry(child_session, entry.id)
+                except ClosedReportingMonthError:
+                    return "closed"
+                return "committed"
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(mutate)
+            try:
+                assert reached_guard.wait(10)
+                if winner == "close":
+                    close_reporting_month(session, month.id)
+                else:
+                    # An actual competing Close cannot acquire SQLite's writer
+                    # reservation while the child is between guard and commit.
+                    session.execute(text("PRAGMA busy_timeout=0"))
+                    with pytest.raises(OperationalError, match="database is locked"):
+                        close_reporting_month(session, month.id)
+                    session.rollback()
+            finally:
+                release_child.set()
+            assert future.result(timeout=10) == ("closed" if winner == "close" else "committed")
+
+        if winner == "child":
+            close_reporting_month(session, month.id)
+        session.expire_all()
+        assert session.get(type(month), month.id).status == "closed"
+        rows = list(session.query(ExpenseEntry).filter_by(reporting_month_id=month.id))
+        if operation == "create":
+            assert [row.category for row in rows] == ([] if winner == "close" else ["Created"])
+        elif operation == "update":
+            assert [row.amount_kopecks for row in rows] == [500 if winner == "close" else 700]
+        else:
+            assert len(rows) == (1 if winner == "close" else 0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_failed_child_write_releases_reservation_and_reopen_is_fresh(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        with database.session_factory() as failed_session:
+            with pytest.raises(ValueError):
+                create_expense_entry(
+                    failed_session,
+                    reporting_month_id=month.id,
+                    category="Invalid",
+                    amount="-1.00",
+                    expense_type=ExpenseType.MANDATORY,
+                )
+            failed_session.rollback()
+        with database.session_factory() as lifecycle_session:
+            close_reporting_month(lifecycle_session, month.id)
+        with pytest.raises(ClosedReportingMonthError):
+            create_expense_entry(
+                session,
+                reporting_month_id=month.id,
+                category="Blocked",
+                amount="1.00",
+                expense_type=ExpenseType.MANDATORY,
+            )
+        with database.session_factory() as lifecycle_session:
+            reopen_reporting_month(lifecycle_session, month.id)
+        create_expense_entry(
+            session,
+            reporting_month_id=month.id,
+            category="Allowed",
+            amount="1.00",
+            expense_type=ExpenseType.MANDATORY,
+        )
+        assert [row.category for row in session.query(ExpenseEntry).all()] == ["Allowed"]
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_comment_delete_keeps_reposition_inside_guarded_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session, database = session_for(tmp_path)
+    reached_reposition = Event()
+    release_delete = Event()
+    try:
+        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        first = create_monthly_comment(session, reporting_month_id=month.id, text="First")
+        create_monthly_comment(session, reporting_month_id=month.id, text="Second")
+        original_reposition = comments_service._reposition
+
+        def paused_reposition(child_session: Session, comments: list[MonthlyComment]) -> None:
+            reached_reposition.set()
+            assert release_delete.wait(10)
+            original_reposition(child_session, comments)
+
+        monkeypatch.setattr(comments_service, "_reposition", paused_reposition)
+
+        def remove() -> None:
+            with database.session_factory() as child_session:
+                delete_monthly_comment(child_session, first.id)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(remove)
+            try:
+                assert reached_reposition.wait(10)
+                session.execute(text("PRAGMA busy_timeout=0"))
+                with pytest.raises(OperationalError, match="database is locked"):
+                    close_reporting_month(session, month.id)
+                session.rollback()
+            finally:
+                release_delete.set()
+            future.result(timeout=10)
+
+        close_reporting_month(session, month.id)
+        assert [(row.position, row.text) for row in list_monthly_comments(session, month.id)] == [
+            (1, "Second")
+        ]
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_noop_comment_move_releases_writer_for_close(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        first = create_monthly_comment(session, reporting_month_id=month.id, text="First")
+        create_monthly_comment(session, reporting_month_id=month.id, text="Second")
+
+        moved = move_monthly_comment(session, first.id, new_position=1)
+        assert moved.id == first.id
+        assert moved.position == 1
+
+        # Keep the original Session open. Close must be able to write at once,
+        # even if this successful move changed no comment positions.
+        with database.session_factory() as closer:
+            closer.execute(text("PRAGMA busy_timeout=0"))
+            close_reporting_month(closer, month.id)
+        assert not session.in_transaction()
+        session.expire_all()
+        assert session.get(type(month), month.id).status == "closed"
     finally:
         session.close()
         database.engine.dispose()

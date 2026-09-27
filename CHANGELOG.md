@@ -4,7 +4,20 @@
 
 ## [Unreleased]
 
-Development `main` after the published Stable `v1.0.0`. No additional post-release product changes are recorded by this closeout.
+Development `main` after the published Stable `v1.0.0`. Published Stable remains unchanged; the following accepted post-release work is not yet a new release.
+
+### Data integrity and financial completeness
+
+- completed the Astra-audit hardening wave #484–#498 and completeness follow-ups #536–#539;
+- made covered financial writes atomic against the state they validated, including month-close, statement, linked-debt, transfer, salary and clone races;
+- added coherent composite SQLite read snapshots so one result cannot mix several committed database moments;
+- preserved payout/reconciliation/revision audit history across supported DRAFT corrections;
+- hardened Performance evidence invalidation/version binding so stale evidence cannot recreate false exact XIRR/TWRR;
+- preserved real versus unassigned cash identity through AI/export;
+- implemented canonical portfolio-source coverage across AI bundle/reviews/goals/allocation and owner-facing capital/history UI, keeping exact known subtotals separate from completeness and never zero-filling missing accounts;
+- canonical Alembic head advanced to `0044_observed_valuation_material_signature`.
+
+Final aggregate PR #509 merged as canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; merge-ref CI, UI comparison and exact-main push CI all passed. See `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
 
 ## [1.0.0] — 2026-09-21
 

@@ -171,12 +171,46 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         raise ClosedReportingMonthError("closed reporting month must be reopened before deletion")
 
     try:
+        from hermes_finance.persistence import ExternalFlow
+        from hermes_finance.services._guard import require_editable_reporting_month
+        from hermes_finance.services.cash_boundary_coverage import (
+            invalidate_cash_boundary_coverages_for_external_flow,
+        )
         from hermes_finance.services.external_flows import (
             refresh_external_transfer_link_statuses,
             require_no_transfer_reconciliation_evidence_for_month_deletion,
         )
 
+        # The evidence check and bulk leg deletion must share one writer reservation.
+        require_editable_reporting_month(session, month_id)
         require_no_transfer_reconciliation_evidence_for_month_deletion(session, month_id)
+
+        # Collect cash-boundary intersections before set-based child deletion.
+        # Bulk month deletion bypasses per-row ExternalFlow services, so the
+        # same COMPLETE→UNKNOWN invalidation must run here transactionally or
+        # stale attestations would keep exact TWRR/XIRR available after the
+        # removed contribution/withdrawal history disappears (#493).
+        affected_flow_boundaries = {
+            (flow.account_id, flow.event_date)
+            for flow in session.scalars(
+                select(ExternalFlow).where(ExternalFlow.reporting_month_id == month_id)
+            )
+        }
+        for account_id, event_date in sorted(affected_flow_boundaries):
+            invalidate_cash_boundary_coverages_for_external_flow(
+                session,
+                account_id=account_id,
+                event_date=event_date,
+            )
+
+        from hermes_finance.services.payout_provenance_lifecycle import (
+            archive_month_payout_history,
+        )
+
+        archive_month_payout_history(
+            session, month_id, f"{reporting_month.year:04d}-{reporting_month.month:02d}"
+        )
+
         for table in _reporting_month_owned_tables():
             reporting_month_id = table.c.reporting_month_id
             session.execute(delete(table).where(reporting_month_id == month_id))

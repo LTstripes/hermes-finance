@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain.passive_income import PassiveIncomeResult
+from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.capital_composition import (
     CapitalCompositionPoint,
@@ -44,6 +45,7 @@ class CapitalCompositionPointOut(BaseModel):
     liquid_assets_total: MoneyValue
     included_debts: MoneyValue
     liquid_capital_net: MoneyValue
+    portfolio_source_coverage: PortfolioSourceCoverage
     linked_pair_assets: MoneyValue
     linked_pair_debts: MoneyValue
     linked_pair_net_contribution: MoneyValue
@@ -68,6 +70,7 @@ class ClosedReportSnapshotOut(BaseModel):
     liquid_assets_total: MoneyValue
     included_debts: MoneyValue
     liquid_capital_net: MoneyValue
+    portfolio_source_coverage: PortfolioSourceCoverage
     linked_pair_assets: MoneyValue
     linked_pair_debts: MoneyValue
     linked_pair_net_contribution: MoneyValue
@@ -89,6 +92,7 @@ class ClosedReportComparisonOut(BaseModel):
     liquid_assets_total_delta: MoneyValue | None
     included_debts_delta: MoneyValue | None
     liquid_capital_net_delta: MoneyValue | None
+    liquid_capital_net_delta_coverage: PortfolioSourceCoverage | None
     linked_pair_assets_delta: MoneyValue | None
     linked_pair_debts_delta: MoneyValue | None
     linked_pair_net_contribution_delta: MoneyValue | None
@@ -165,6 +169,7 @@ def _snapshot(point: CapitalCompositionPoint) -> ClosedReportSnapshotOut:
         liquid_assets_total=_money(point.liquid_assets_total),
         included_debts=_money(point.included_debts),
         liquid_capital_net=_money(point.liquid_capital_net),
+        portfolio_source_coverage=point.portfolio_source_coverage,
         linked_pair_assets=_money(point.linked_pair_assets),
         linked_pair_debts=_money(point.linked_pair_debts),
         linked_pair_net_contribution=_money(point.linked_pair_net_contribution),
@@ -251,6 +256,7 @@ def get_capital_composition(
                 liquid_assets_total=_money(point.liquid_assets_total),
                 included_debts=_money(point.included_debts),
                 liquid_capital_net=_money(point.liquid_capital_net),
+                portfolio_source_coverage=point.portfolio_source_coverage,
                 linked_pair_assets=_money(point.linked_pair_assets),
                 linked_pair_debts=_money(point.linked_pair_debts),
                 linked_pair_net_contribution=_money(point.linked_pair_net_contribution),
@@ -317,6 +323,7 @@ def get_closed_report_comparison(
             if comparison.liquid_capital_net_delta is not None
             else None
         ),
+        liquid_capital_net_delta_coverage=comparison.liquid_capital_net_delta_coverage,
         linked_pair_assets_delta=(
             _money(comparison.linked_pair_assets_delta)
             if comparison.linked_pair_assets_delta is not None

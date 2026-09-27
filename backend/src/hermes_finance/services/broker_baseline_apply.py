@@ -21,6 +21,7 @@ from hermes_finance.persistence import (
     BrokerBaselineApplyItem,
     PositionSnapshot,
 )
+from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.broker_identity_mappings import (
     BrokerIdentityMappingConflictError,
     BrokerIdentitySubjectKind,
@@ -38,6 +39,7 @@ from hermes_finance.services.broker_snapshot_apply import (
     stage_quantity_plans,
 )
 from hermes_finance.services.reporting_months import (
+    ClosedReportingMonthError,
     ReportingMonthNotFoundError,
     get_reporting_month,
 )
@@ -121,6 +123,7 @@ def apply_owner_approved_baseline(
 
     confirmed_at = datetime.now(UTC)
     try:
+        require_editable_reporting_month(session, reporting_month_id)
         _confirm_selected_identities(session, prepared)
         item_results = stage_quantity_plans(
             session,
@@ -136,6 +139,20 @@ def apply_owner_approved_baseline(
             items=item_results,
         )
         session.commit()
+    except ClosedReportingMonthError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            BrokerBaselineApplyFailureCode.CLOSED_MONTH,
+            "closed reporting month must be reopened before broker snapshot apply",
+        )
+    except ReportingMonthNotFoundError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            BrokerBaselineApplyFailureCode.VALIDATION_ERROR,
+            "reporting month was not found",
+        )
     except BrokerIdentityMappingConflictError as error:
         session.rollback()
         return _failure(

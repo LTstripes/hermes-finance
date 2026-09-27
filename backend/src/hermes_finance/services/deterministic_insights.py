@@ -15,6 +15,7 @@ from enum import StrEnum
 
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.risk_allocation import RiskSupportStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services.close_readiness import (
@@ -486,6 +487,7 @@ def _sort_insights(insights: list[DeterministicInsight]) -> tuple[DeterministicI
     )
 
 
+@coherent_read_operation
 def build_deterministic_insights(
     session: Session,
     reporting_month_id: int,

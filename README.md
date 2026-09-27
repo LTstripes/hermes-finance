@@ -22,6 +22,7 @@ The immutable published `v0.9.0` history remains valid as the predecessor releas
 
 Canonical status: [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 Release closeout: [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md).
+Owner durability closeout: [`docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`](docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md).
 
 ## Product/runtime invariants
 
@@ -69,6 +70,21 @@ Completed and integrated:
 
 Closeout: [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
 
+### Post-release data-integrity hardening
+
+The Astra-audit hardening wave is complete on development `main`:
+
+- atomic financial writes and closed-month race protection;
+- coherent composite SQLite reads;
+- safe statement/payout/transfer/salary/month-clone concurrency handling;
+- stale Performance evidence invalidation/version binding;
+- preserved real/unassigned cash identity through AI/export;
+- canonical portfolio-source completeness from backend through AI reviews and owner UI, without zero-filling missing accounts.
+
+All scoped issues #484–#498 and #536–#539 are closed. Aggregate PR #509 merged as canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; exact-main push CI `36306845860` succeeded.
+
+Closeout: [`docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`](docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md).
+
 ### PERF04B / PERF04C decomposition
 
 #396 accepted **PARTIAL GO** for the exact backend decomposition:
@@ -102,7 +118,9 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 - supported mode is provider-neutral `external_encrypted_destination_v1` over an explicitly attested mounted filesystem destination;
 - no cloud API/OAuth, custom cryptography, key validation, retention deletion, DR rehearsal or Owner-live backup was added by #459.
 
-#460 bounded verified retention, #461 isolated DR rehearsal and #462 post-restore month-state reload are now integrated on canonical `main`. The #461 implementation required post-merge Windows process-disposition fix PR #499; #462 then closed the retained Export/Backup stale-month race. Final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594`. The #417 implementation queue is complete; only the real protected off-device recovery point, independently held recovery material and first Owner-controlled DR rehearsal remain pending Owner gates.
+#460 bounded verified retention, #461 isolated DR rehearsal and #462 post-restore month-state reload are now integrated on canonical `main`. The #461 implementation required post-merge Windows process-disposition fix PR #499; #462 then closed the retained Export/Backup stale-month race. Final implementation checkpoint `5bb52b8e1a8394e389968514deaeb4faf8cc5a19` passed exact-main CI #904 / `35771083594`. The #417 implementation queue through #462 is complete.
+
+#527 / PR #542 added the explicit Owner-accepted plaintext synced-filesystem mode: `protection_state=owner_accepted_plaintext`, `protection_mode=synced_filesystem_destination_v1`. It is not encrypted or protected-at-rest; the existing `external_encrypted_destination_v1` mode remains unchanged. Canonical durability checkpoint `744c613884d074e6f9d35d61523603f257371713` passed exact-main CI #947 / `36139627216`. Owner-live closeout then passed: a fresh plaintext recovery point was published with destination read-back verified, its off-device visibility was confirmed independently, and a clean isolated DR rehearsal returned `status=rehearsed`, `readiness=verified`, `source_unchanged=true`. Parent #417 is closed completed. #543 / PR #547 then completed the separate non-blocking CLI/retention hardening without reopening #417.
 
 ## Requirements
 
@@ -241,7 +259,7 @@ The proven sequence is now:
 
 ## Current product surfaces
 
-Published **v1.0.0** is the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release durability work.
+Published **v1.0.0** is the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release durability and data-integrity/completeness hardening.
 
 UI v2 is part of the published v1.0.0 release and is the primary/default owner interface at `/`; the previous UI remains available at `/v1`.
 
@@ -286,8 +304,8 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 
 Separate future work:
 
-- #476 — one real-backend synthetic G04 browser regression gate; this is regression infrastructure, not a blocker to the accepted cutover;
-- #417 implementation work is complete through #462; only the real Owner-controlled off-device recovery/rehearsal gates remain;
+- #476 / PR #548 is complete: canonical CI now runs one deterministic synthetic real-backend G04 owner journey;
+- #417 owner durability remains complete; #543 / PR #547 separately completed the non-blocking recovery CLI/retention hardening without reopening it;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
@@ -336,6 +354,7 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) — proven runtime/release closeout;
 - [`docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md) — UI v2 implementation/completion closeout;
 - [`docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`](docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md) — final UI v2 default-switch/Owner-UAT closeout;
+- [`docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`](docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md) — Astra-audit data-integrity/completeness closeout;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — durable execution journal;
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;
