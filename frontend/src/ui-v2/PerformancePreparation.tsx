@@ -476,10 +476,12 @@ function AccountPreparation({
     busy.current = true;
     setLocked(true);
     setNotice("Сохраняем и перечитываем данные…");
+    let writeAcknowledged = false;
     try {
       const saved = (await savePreparation(path, method, body, data.evidence_token)) as {
         id: number;
       };
+      writeAcknowledged = true;
       // Readiness includes both canonical final solvers. Invalidate all consumers,
       // including inactive summaries and legacy metric queries after any write.
       await client.invalidateQueries();
@@ -539,9 +541,13 @@ function AccountPreparation({
     } catch (error) {
       await client.invalidateQueries();
       setNotice(
-        error instanceof ApiClientError && error.status === 409
-          ? "Данные изменились или месяц закрыт. Форма устарела: перечитайте и проверьте её заново."
-          : "Результат записи или повторного чтения не подтверждён. Не повторяйте запись вслепую: перечитайте данные и проверьте наличие изменений.",
+        writeAcknowledged
+          ? "Сервер принял запись, но повторная проверка не завершилась. Перечитайте данные и проверьте результат перед следующим действием."
+          : error instanceof ApiClientError && error.status === 409
+            ? "Данные изменились или месяц закрыт. Форма устарела: перечитайте и проверьте её заново."
+            : error instanceof ApiClientError && error.status >= 400 && error.status < 500
+              ? `Запись отклонена: ${error.message}. Перечитайте данные и исправьте причину; автоматического изменения связей или свидетельств сверки нет.`
+              : "Результат записи или повторного чтения не подтверждён. Не повторяйте запись вслепую: перечитайте данные и проверьте наличие изменений.",
       );
     } finally {
       busy.current = false;

@@ -187,6 +187,13 @@ describe("Owner preparation", () => {
   });
 
   it("does not relabel a transfer as a portfolio contribution and preserves link on edit", async () => {
+    vi.mocked(savePreparation).mockRejectedValue(
+      new ApiClientError(422, {
+        code: "unprocessable",
+        message: "transfer link legs cannot change while reconciliation evidence exists",
+        details: [],
+      }),
+    );
     data.flows = [
       {
         id: 8,
@@ -214,5 +221,33 @@ describe("Owner preparation", () => {
       "href",
       expect.stringContaining("account_id=1"),
     );
+    fireEvent.change(screen.getByLabelText("Сумма операции"), { target: { value: "2.00" } });
+    fireEvent.click(screen.getByLabelText(/Я проверил.*дату, счёт, сумму/));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить операцию" }));
+    await screen.findByText(
+      /Запись отклонена: transfer link legs cannot change while reconciliation evidence exists/,
+    );
+    expect(savePreparation).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Добавить операцию" })).toBeDisabled();
+  });
+
+  it("distinguishes acknowledged writes from failed readiness read-back", async () => {
+    vi.mocked(savePreparation).mockImplementation(async (_path, _method, body) => {
+      const saved = { id: 7, ...(body as object) };
+      data.cash_coverages = [saved as Preparation["cash_coverages"][number]];
+      data.evidence_token = "after";
+      return saved;
+    });
+    vi.mocked(getPerformanceReadiness).mockRejectedValue(
+      new ApiClientError(422, { code: "unprocessable", message: "invalid interval", details: [] }),
+    );
+    setup();
+    await screen.findByRole("button", { name: "Сохранить: денежная история" });
+    fireEvent.click(screen.getAllByLabelText(/история неполна или ещё не проверена/)[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить: денежная история" }));
+    await screen.findByText(/Сервер принял запись, но повторная проверка не завершилась/);
+    expect(screen.queryByText(/Запись отклонена/)).not.toBeInTheDocument();
+    expect(savePreparation).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Сохранить: денежная история" })).toBeDisabled();
   });
 });
