@@ -70,6 +70,21 @@ Completed and integrated:
 
 Closeout: [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
 
+### Post-release data-integrity hardening
+
+The Astra-audit hardening wave is complete on development `main`:
+
+- atomic financial writes and closed-month race protection;
+- coherent composite SQLite reads;
+- safe statement/payout/transfer/salary/month-clone concurrency handling;
+- stale Performance evidence invalidation/version binding;
+- preserved real/unassigned cash identity through AI/export;
+- canonical portfolio-source completeness from backend through AI reviews and owner UI, without zero-filling missing accounts.
+
+All scoped issues #484–#498 and #536–#539 are closed. Aggregate PR #509 merged as canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; exact-main push CI `36306845860` succeeded.
+
+Closeout: [`docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`](docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md).
+
 ### PERF04B / PERF04C decomposition
 
 #396 accepted **PARTIAL GO** for the exact backend decomposition:
@@ -244,7 +259,7 @@ The proven sequence is now:
 
 ## Current product surfaces
 
-Published **v1.0.0** is the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release durability work.
+Published **v1.0.0** is the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release durability and data-integrity/completeness hardening.
 
 UI v2 is part of the published v1.0.0 release and is the primary/default owner interface at `/`; the previous UI remains available at `/v1`.
 
@@ -339,6 +354,7 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) — proven runtime/release closeout;
 - [`docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md`](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md) — UI v2 implementation/completion closeout;
 - [`docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md`](docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md) — final UI v2 default-switch/Owner-UAT closeout;
+- [`docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`](docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md) — Astra-audit data-integrity/completeness closeout;
 - [`docs/EXECUTION_HISTORY.md`](docs/EXECUTION_HISTORY.md) — durable execution journal;
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;
