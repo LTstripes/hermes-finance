@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-25**.
+> Last synchronized: **2026-09-27**.
 
 ## 1. Что мы строим
 
@@ -67,6 +67,8 @@ The `v1.0.0` release source is `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 The live development SHA is always current GitHub `main`; documentation-only synchronization commits may advance it after publication without changing the immutable `v1.0.0` tag identity.
 
 Owner durability closeout checkpoint: `744c613884d074e6f9d35d61523603f257371713`, exact-main CI #947 / `36139627216` SUCCESS. #417 is closed completed.
+
+Current accepted development checkpoint after the Astra-audit hardening wave: `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; exact-main push CI `36306845860` SUCCESS.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -154,6 +156,24 @@ Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 #400 / PR #402 реализовал bounded backend read model и прошёл independent financial-semantics review.
 
 Важно: PERF04C пока **backend-only**. API/UI exposure отдельно не разблокирован автоматически.
+
+### Post-Astra data-integrity / completeness hardening
+
+The audit-driven hardening wave #484–#498 and #536–#539 is complete and canonical.
+
+What changed structurally:
+
+- financial writes and month-state guards are serialized/atomic where stale validation previously could race;
+- composite reads hold one coherent SQLite snapshot;
+- statement correction, transfer ownership, salary cardinality and month clone workflows now fail with conflicts instead of committing mixed state;
+- payout/reconciliation provenance survives DRAFT corrections without destroying history or blocking the corrected active relationship;
+- Performance boundary/coverage evidence is invalidated or version-bound so stale PRE/POST evidence cannot recreate false exactness;
+- real cash-account identity is preserved through AI/export; unassigned cash stays synthetic;
+- portfolio-source coverage is canonical across backend, AI exports and UI: known subtotal and completeness are separate claims, missing accounts are not zero-filled, and no-capital-evidence periods remain unavailable.
+
+Final aggregate PR #509 merged integration head `ad59be98450599c0253e9dbf027385d06f1eabb1` into canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`. Merge-ref CI `36306528111`, UI comparison `36306528183` and exact-main push CI `36306845860` all passed.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
 
 ## 6. Что по-прежнему нельзя называть exact attribution
 
@@ -403,6 +423,8 @@ Closeouts:
 
 ## 11. Что идёт дальше
 
+The Astra-audit hardening queue is complete. No task from #484–#498 or #536–#539 remains open; future product/engineering work starts from canonical `main`.
+
 ### UI / product
 
 The core UI v2 roadmap (#387) is complete.
@@ -482,7 +504,7 @@ Completed process follow-ups:
 - #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
 - #543 / PR #547 — non-blocking post-closeout recovery hardening.
 
-Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527 and #543.
+Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #476, #480, #484–#498, #511, #524, #527, #536–#539 and #543.
 
 ## 14. Canonical reference documents
 
@@ -498,7 +520,8 @@ Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #47
 - `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
-- `docs/financial-completeness-contract.md` — #498 known subtotal versus portfolio-source coverage. Contract only; implementation follow-ups stay closed until independent review.
+- `docs/financial-completeness-contract.md` — #498 known subtotal versus portfolio-source coverage; implemented end-to-end through #536–#539.
+- `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md` — canonical closeout for the Astra-audit hardening wave.
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/1.0.0.md`
 - `docs/release-notes-1.0.0.md`
