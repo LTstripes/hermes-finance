@@ -126,6 +126,117 @@ export type PortfolioTwrr = {
   reason_codes: string[];
 };
 
+/** Read-only readiness projection (accepted #530): coherent availability + final results. */
+
+export type PerformanceReadinessScope = "portfolio" | "account";
+
+export type PerformanceReadinessMetric = {
+  metric: "xirr" | "twrr";
+  scope: PerformanceReadinessScope;
+  account_id: number | null;
+  performance_currency: string;
+  value: string | null;
+  value_unit: "percentage_points";
+  annualized: boolean;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  reason_codes: string[];
+};
+
+export type PerformanceReadinessRefs = {
+  account_ids: number[];
+  reporting_month_ids: number[];
+  external_flow_ids: number[];
+  legacy_flow_ids: number[];
+  movement_ids: number[];
+  boundary_group_ids: number[];
+  dates: string[];
+};
+
+export type PerformanceReadinessCapability =
+  | "available"
+  | "requires_reopen"
+  | "not_implemented"
+  | "source_required"
+  | "unsupported";
+
+export type PerformanceReadinessActionKind =
+  | "select_interval"
+  | "review_month"
+  | "review_scope"
+  | "review_cash_binding"
+  | "review_cash_history"
+  | "review_legacy_flows"
+  | "review_external_flows"
+  | "review_transfer"
+  | "review_in_kind_history"
+  | "review_in_kind_movement"
+  | "review_observations"
+  | "review_fx"
+  | "inspect_result";
+
+export type PerformanceReadinessAction = {
+  kind: PerformanceReadinessActionKind;
+  capability: PerformanceReadinessCapability;
+  params: PerformanceReadinessRefs;
+  verify: "reread_readiness";
+};
+
+export type PerformanceReadinessDiagnostic = {
+  key: string;
+  reason_codes: string[];
+  affected_metrics: Array<"xirr" | "twrr">;
+  category: "actionable" | "limitation";
+  refs: PerformanceReadinessRefs;
+  action: PerformanceReadinessAction;
+};
+
+/** Minimal evidence surface used by the leaf Performance UI. Extra backend fields are ignored. */
+export type PerformanceReadinessEvidence = {
+  scope: PerformanceReadinessScope;
+  account_id: number | null;
+  start_date: string;
+  end_date: string;
+  performance_currency: string;
+  availability: "available" | "not_computable";
+  reason_codes: string[];
+  scope_membership: {
+    status: string;
+    account_ids: number[];
+    missing_or_ambiguous_account_ids: number[];
+    reason_codes: string[];
+  };
+  cash_boundary_coverage: {
+    status: string;
+    account_ids: number[];
+    missing_or_incomplete_account_ids: number[];
+    reason_codes: string[];
+  };
+  in_kind_boundary_coverage: {
+    status: string;
+    account_ids: number[];
+    missing_or_incomplete_account_ids: number[];
+    reason_codes: string[];
+  };
+};
+
+export type PerformanceReadiness = {
+  schema_version: 1;
+  scope: PerformanceReadinessScope;
+  account_id: number | null;
+  start_date: string;
+  end_date: string;
+  performance_currency: string;
+  xirr: PerformanceReadinessMetric;
+  twrr: PerformanceReadinessMetric;
+  evidence: PerformanceReadinessEvidence;
+  diagnostics: PerformanceReadinessDiagnostic[];
+};
+
 export type PerformanceAttributionEvidence = {
   opening_valuation: {
     availability: "available" | "not_computable";

@@ -499,6 +499,49 @@ test("ui-v2 Monthly Close narrow: current action and collapsed step list stay bo
 
 type CapitalScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial" | "coverage";
 
+/** Coherent readiness projection mirroring the synthetic performance fixture. */
+function makeReadinessBody(performance: ReturnType<typeof makeUiV2Performance>) {
+  const available = performance.xirr.availability === "available";
+  return {
+    schema_version: 1,
+    scope: "portfolio",
+    account_id: null,
+    start_date: "2031-05-31",
+    end_date: "2031-07-31",
+    performance_currency: "RUB",
+    xirr: { ...performance.xirr, account_id: null },
+    twrr: performance.twrr,
+    evidence: {
+      scope: "portfolio",
+      account_id: null,
+      start_date: "2031-05-31",
+      end_date: "2031-07-31",
+      performance_currency: "RUB",
+      availability: available ? "available" : "not_computable",
+      reason_codes: [],
+      scope_membership: {
+        status: "complete",
+        account_ids: [3],
+        missing_or_ambiguous_account_ids: [],
+        reason_codes: [],
+      },
+      cash_boundary_coverage: {
+        status: "complete",
+        account_ids: [3],
+        missing_or_incomplete_account_ids: [],
+        reason_codes: [],
+      },
+      in_kind_boundary_coverage: {
+        status: "complete",
+        account_ids: [],
+        missing_or_incomplete_account_ids: [],
+        reason_codes: [],
+      },
+    },
+    diagnostics: [],
+  };
+}
+
 async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
   const firstClosed = scene === "first-closed";
   const zero = scene === "zero";
@@ -588,10 +631,8 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       status = state.instrumentsError ? 503 : 200;
     } else if (url.pathname === "/api/performance/attribution") {
       json = state.performance.attribution;
-    } else if (url.pathname === "/api/performance/xirr") {
-      json = state.performance.xirr;
-    } else if (url.pathname === "/api/performance/twrr") {
-      json = state.performance.twrr;
+    } else if (url.pathname === "/api/performance/readiness") {
+      json = makeReadinessBody(state.performance);
     } else {
       unexpected.push(`${request.method()} ${url.pathname}`);
       status = 404;
@@ -660,7 +701,7 @@ test("ui-v2 Capital partial coverage keeps the known net", async ({ page }, test
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Capital narrow: long values, collapsed performance and actions stay operable", async ({
+test("ui-v2 Capital narrow: long values and compact performance stay operable", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
@@ -671,10 +712,11 @@ test("ui-v2 Capital narrow: long values, collapsed performance and actions stay 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/v2/capital");
   await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123,45 ₽");
-  const disclosure = page.locator("details").first();
-  await expect(disclosure).not.toHaveAttribute("open", "");
-  await page.locator("details summary").first().click();
-  await expect(page.getByTestId("capital-performance-xirr")).toBeVisible();
+  // Compact XIRR/TWRR summary is visible by default; only the secondary bridge is disclosed.
+  await expect(page.getByTestId("capital-performance-xirr")).toContainText("+7,42%");
+  await expect(page.getByTestId("capital-performance-twrr")).toContainText("+6,10%");
+  const bridge = page.locator('details:has([data-testid="capital-performance-bridge"])');
+  await expect(bridge).not.toHaveAttribute("open", "");
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-narrow");
   expect(evidence.unexpected).toEqual([]);
