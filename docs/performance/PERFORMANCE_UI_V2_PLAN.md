@@ -1,127 +1,99 @@
-# Performance UI v2 — план отдельного потока
+# Performance UI v2 — план и маршрутизация работ
 
-Дата: 2026-09-25. Parent: [#528](https://github.com/LTstripes/hermes-finance/issues/528).
+Parent: [#528](https://github.com/LTstripes/hermes-finance/issues/528). Обновлено: 2026-09-27.
 
-**Статус: план / backlog, не реализовано.** Этот документ фиксирует Owner direction и последовательность задач. Детальный UX/data contract принимает #529; новый class scope — #534. План не заменяет MASTER_SPEC, принятые ADR и performance contracts.
+**Статус:** implementation ещё не поставлен. #529 имеет docs-only candidate, который требует независимого review. Остальные задачи запускаются по своим gates, не автоматически. [UX/data contract candidate](PERFORMANCE_UI_V2_CONTRACT.md) не считается принятым только из-за появления этого файла.
 
-## 1. Изоляция и исходное состояние
+## 1. Актуальная база и изоляция
 
-- Новая staging-ветка: `integration/performance-ui-v2`.
-- Создана GitHub-native от canonical main `f328c82b6c7c3af0f6cd436c7e1d408bb54a8885`.
-- В этом planning change меняется только этот документ. Product code, main, Stable, Owner data, релизы и чужие ветки не меняются.
-- Каждый Worker работает в отдельной child branch и отдельном физическом workspace. До запуска Integrator назначает точный baseline и абсолютный локальный путь; машинные пути не записываются в Git.
-- PR Workers направляются только в staging. Workers не merge main/siblings, не self-accept и не запускают следующую задачу. Delivery-loop не активирован.
-- Staging не является alternate main/release source. Интеграция — только exact reviewed aggregate + CI + applicable Owner UAT; релиз отдельно.
+- Canonical main, проверенный при старте: `988090419b6edfbfa5f6ef5c0a02064fedb07fb2`.
+- Exact-main push CI: `36307812833` — SUCCESS.
+- Staging: `integration/performance-ui-v2`, обновлённый checkpoint `3254f0dd413118cf6b88032346c5434330bf280a`.
+- Refresh — механический two-parent merge старого staging `435eac2979555a3574bafd8cbf1e7a6a00e5d640` и exact main. До refresh: 1 planning-only commit ahead / 87 behind. Все продуктовые файлы после refresh совпадают с exact main; исходный план сохранён, история не переписана.
+- Исторический split: `f328c82b6c7c3af0f6cd436c7e1d408bb54a8885`; это больше не baseline для новых Workers.
+- Worker #529: ChatGPT/Lera, GitHub-native branch `task/529-performance-ui-contract` от `3254f0d…`. Это авторство, не независимое принятие собственного результата.
+- Каждый локальный Worker/Reviewer получает отдельный физический workspace и точный SHA при запуске. Абсолютные пути — только в owner-local assignment, не в tracked docs. Не переключать/сбрасывать занятые или грязные рабочие деревья.
+- Child PR идут в staging. Main/Stable/Preview/private DB/.env/backups/exports не затрагиваются. Никакого force-push, автономной очереди или релиза этой постановкой не разрешено.
 
-Проверенные основания на split SHA:
+## 2. Что уже завершено вне нашего потока
 
-1. В [UiV2CapitalPage.tsx](../../frontend/src/ui-v2/UiV2CapitalPage.tsx) уже есть `PerformanceBlock`, XIRR/TWRR и monetary bridge. Развиваем существующий блок, а не дублируем его.
-2. [XIRR API](../../backend/src/hermes_finance/api/portfolio_xirr.py) и [TWRR API](../../backend/src/hermes_finance/api/portfolio_twrr.py) поддерживают portfolio/account. Class/instrument scope ещё не реализован этими API.
-3. [Availability contract](../r08-01c-performance-availability.md) содержит оценки, historical membership, cash-history completeness, external flows и PRE/POST evidence; верхнее объединённое availability не заменяет metric-specific states.
-4. [Performance v1 closeout](../PERFORMANCE_V1_CLOSEOUT_2026-09-12.md): #358 уже PASS. На реальной неполной истории подтверждён правильный отказ, а не наличие вычислимой доходности. Предстоящая проверка — новый UX/data-workflow UAT.
-5. [PERF04B](PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) не разрешает вывести class/instrument performance из текущих snapshot labels. Денежный bridge — не прибыль/P&L и не attribution доходности.
+По [CURRENT_STATUS](../CURRENT_STATUS.md) и [audit closeout](../DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md), #484–#498 и #536–#539 завершены, aggregate #509 интегрирован в main. Эти работы **включены в нашу обновлённую базу**, не ждут реализации повторно.
 
-Приватный Owner-скрин/суммы не публикуются и не используются как fixture. Общая фраза на скрине не доказывает, какая именно операция отсутствует.
+- #494 / PR #526: material-signature binding уже включён. Актуальная миграция — `0044_observed_valuation_material_signature`, не прежний номер 0042 из промежуточного кандидата.
+- #498: контракт known subtotal / portfolio-source coverage и его распространение реализованы. Performance cash-history/in-kind/membership gates остаются отдельными утверждениями.
+- #509: coherent reads, write/close/correction serialization и invalidation переиспользуются. Не копировать старые варианты из прежней integration ветки.
+- #476 / PR #548: real-backend G04 gate уже в canonical CI; для #541 переиспользовать текущую инфраструктуру, не создавать второй проект её восстановления.
 
-## 2. Предлагаемая структура интерфейса
+Завершение audit hardening не означает готовность новых UI/actions: historical membership write path и публичный PRE/POST capture adapter требуют своих контрактных границ. Не смешивать завершённый bugfix и ещё не реализованную возможность.
 
-Один вход: **Капитал → Доходность**. Без нового пункта глобального меню и новых карточек на Home.
+## 3. Продуктовая структура
 
-На обычном Capital overview — существующий блок, сведённый к одному компактному summary. Полный разбор — отдельное локальное представление внутри Capital. Поведение navigation/deep link замораживает #529, реализует #531.
-
-Схематично, не текущие данные Owner:
+Один вход **Капитал → Доходность**. Уже существующий `UiV2CapitalPage::PerformanceBlock` становится компактным summary. Подробности вынесены в локальный detail, без нового глобального меню/Home-карточек.
 
 ```text
-Капитал
-Обзор | Доходность
+Капитал → Доходность
+Период / фактические даты / валюта / состав расчёта
 
-Доходность портфеля                  Период: [выбранный]
-Фактические даты начала и конца · валюта · состав расчёта
+TWRR: … % за период       XIRR: … % годовых
+Одна понятная строка состояния → Проверить данные
 
-Доходность за период       Доходность ваших вложений
-TWRR: +… %                XIRR: +… % годовых
-
-[Подробнее]               [Проверить данные]
+По счетам | По классам (только после Phase B)
+Название / TWRR / XIRR / состояние
+Подробности строки — по запросу
 ```
 
-В detail view — один переключатель «По счетам / По классам», одна компактная таблица: название, TWRR за период, XIRR годовых, состояние. Классы появляются только с принятым и реализованным backend, не как обещающая пустая вкладка.
+Новые целевые маршруты #529: `/v2/capital/performance` и `/v2/capital/performance/data`. Это proposal до acceptance/implementation, не существующие на baseline страницы.
 
-Строка раскрывает основание/охват и причины. Не показывать одновременно отдельные карточки на каждый счёт, класс и инструмент. Таблица всех бумаг, heatmap, несколько графиков, benchmark, dashboard composer и новый экспорт вне scope.
+Принцип действия: **что не подтверждено → где → что действительно можно сделать → свежая проверка результата**. Не обещать ввод/исправление, пока capability не реализована. Пустой ledger не означает complete; успешное сохранение не означает готовую доходность. XIRR может быть доступен при недоступном TWRR.
 
-По отдельному инструменту — потенциальный будущий drill-down из класса или карточки инструмента. Не реализуется автоматически: #534 оценивает, есть ли корректная история. Доходность бумаги, изменение её цены и вклад в портфель не взаимозаменяемы.
+Периоды используют реальные snapshot dates, не название отчётного месяца. Нет подмены отсутствующей границы соседней датой/коротким успешным окном. Исторический scope не выводится из текущих account flags. Rates не суммируются и не усредняются. Bridge остаётся вторичным изменением стоимости, не «прибылью».
 
-## 3. Периоды, единицы и финансовый смысл
+По классам сначала #534 data/capability contract, затем принятый backend и UI. Инструменты — только возможный будущий drill-down, не массовая таблица и не реализация этого milestone.
 
-- Период определяется реальными датами подтверждённых снимков. Возможные пресеты: месяц, 3 месяца, 12 месяцев, с начала года, вся доступная история; точные правила и состав замораживает #529.
-- Нет точной требуемой границы — объяснить ограничение. Не подставлять ближайшую дату или более короткое окно ради available.
-- XIRR — годовая приведённая ставка, TWRR — доходность выбранного интервала. На короткой истории нужна оговорка, что annualization не является прогнозом.
-- Состав Performance не равен автоматически всему ликвидному капиталу Home. Отдельно показывать исторический scope, охват и валюту.
-- Rates счетов/классов не суммируются и не усредняются для получения итога. Parent result — из backend своего scope.
-- Exact zero остаётся нулём; unavailable остаётся unavailable. Одна доступная метрика не скрывается из-за другой.
-- Monetary `value_change_after_external_flows` — вторичное раскрываемое пояснение с точным названием «Изменение стоимости после внешних потоков», не карточка «Заработано»/«Прибыль».
+## 4. Кто делает задачи
 
-## 4. Отказ должен вести к следующему действию
+Это per-task рекомендации для текущего запуска, не глобальный рейтинг моделей. Конкретный provider/model/variant/effort фиксируется из фактического клиента, не из догадки по названию. Owner сейчас тестирует Muse Spark 1.3 и MiMo V2.6 Flash в OpenCode; неизвестные варианты reasoning не назначаются как будто проверенные.
 
-Рабочий шаблон: **что не подтверждено → где → что можно сделать → как проверить результат**.
-
-Illustrative states, не диагноз Owner screenshot:
-
-| Причина | Что сообщить | Поддержанное действие |
+| Задача | Где и кем | Текущий gate / результат |
 | --- | --- | --- |
-| История операций не подтверждена | Нет подтверждения полноты для указанного счёта/интервала | Показать известный ledger и условия явного Owner attestation |
-| Есть неразобранные/legacy операции | Какие evidence rows требуют проверки, только когда они известны | Открыть конкретные записи; не конвертировать их автоматически |
-| Нет исторического состава/связи cash со счётом | Какая связь или период не подтверждены | Перейти к существующему разрешённому owner path либо честно обозначить отсутствующую возможность |
-| XIRR доступен, TWRR нет | Не хватает наблюдений до/после определённой внешней операции | Показать boundary и разрешить фактический capture, если есть источник и accepted service |
-| Исторических PRE/POST наблюдений нет | Месячные итоги не восстанавливают точную TWRR boundary | Не предлагать подставить вычисленные суммы; объяснить требования к будущим наблюдениям |
-| Технический сбой | Проверка не завершилась | Безопасный retry чтения, не приглашение исправлять финансы |
-| Новый class scope не поддержан | Ограничение приложения/контракта, не ошибка Owner | Не показывать неработающую кнопку ввода |
+| [#529](https://github.com/LTstripes/hermes-finance/issues/529) UX/evidence contract | Авторство здесь в ChatGPT; независимый senior review в отдельной сессии | Candidate. Muse может дать узкий read-only UX/copy report, не финансовый ACCEPT. |
+| [#530](https://github.com/LTstripes/hermes-finance/issues/530) Readiness projection | Локальный сильный backend Worker; контракт/интеграция здесь | После принятия #529. Старый #509 уже не blocker. Нужны реальные backend/API checks. |
+| [#531](https://github.com/LTstripes/hermes-finance/issues/531) Portfolio/account UI | Кандидат для Muse в OpenCode после заморозки API; local frontend harness | После #529/#530. Один writer страницы и serial navigation slot. |
+| [#532](https://github.com/LTstripes/hermes-finance/issues/532) Owner data actions | Локальный сильный cross-layer Worker; write-contract decisions здесь | После #529/#530. Historical membership writer требует отдельного bounded contract, не direct ORM/backfill. |
+| [#533](https://github.com/LTstripes/hermes-finance/issues/533) PRE/POST capture | Локальный сильный Worker + независимый review | #494 уже включён; capture DTO/UI ещё нет. Подпись берётся при начале формы, не заново только при POST. |
+| [#534](https://github.com/LTstripes/hermes-finance/issues/534) Class-return contract | Синтез и решение здесь; MiMo в OpenCode — отдельный read-only source inventory | Inventory можно начать параллельно #529. Он не authorizes class calculations или GO. |
+| [#535](https://github.com/LTstripes/hermes-finance/issues/535) Class backend | Локальный сильный numerical/data Worker | BLOCKED ON accepted #534 и его prerequisites. Audit completion этот gate не отменяет. |
+| [#540](https://github.com/LTstripes/hermes-finance/issues/540) Class UI | Кандидат для Muse; MiMo — только отдельно назначенный ограниченный helper/test slice | После #531/#534/#535. Без двух writers в одних файлах. |
+| [#541](https://github.com/LTstripes/hermes-finance/issues/541) E2E / UAT | Здесь runbook и reconciliation; runtime/browser проверки локально; private UAT — Owner | Отдельные exact aggregate checkpoints A/B. Старый #358 не переоткрывается. |
 
-Summary показывает максимум две приоритетные причины и вход в полный список. В деталях нет выдуманных счётчиков «готово на 80%» или отсутствующих операций. Mapping по точным codes, а не substring `flow`.
+Не выдавать незнакомой модели financial writes только ради эксперимента. Сначала отдельные ограниченные read-only задания ниже; успешный отчёт не заменяет независимое review implementation.
 
-Owner attestation — подтверждение проверенной истории, не магическое создание evidence. Отсутствие строк само по себе не значит нулевые потоки. Закрытые месяцы остаются неизменяемыми без явного reopen. После записи: перечитать диагностику и метрики, а не объявить успех заранее.
+## 5. Первые параллельные задания
 
-## 5. Backlog для Workers
+**A — Muse, внутри #529:** прочитать exact contract candidate и актуальный Capital UI; дать максимум 5–7 конкретных UX-проблем и короткие альтернативные тексты состояния/действия. Проверить минимализм, понятность XIRR/TWRR, доступные versus неподдержанные действия, возврат в тот же период. Не менять код/документ и не утверждать финансовый ACCEPT. Результат — отчёт в чате исполнителя.
 
-В каждой issue есть пользовательский результат, scope/non-goals, критерии, сложности/риски, зависимости, review и короткий launch template. Модели/effort, exact baseline и реальные workspace paths намеренно не выдуманы: их назначает Integrator при запуске. Шаблон с placeholders не считается готовой к исполнению командой.
+**B — MiMo, внутри #534:** на том же exact code baseline составить source inventory по депозитам/облигациям/акциям/золоту: какие исторические valuations/flows/classification существуют, какие поля/сервисы их подтверждают, чего не хватает. Нужны пути и строки, не домыслы о возможностях. Отдельно заметить sold holdings, account-versus-class scope и новые write paths. Без новых формул/GO/изменений/провайдеров; результат — отчёт в чате исполнителя для дальнейшего synthesis.
 
-| ID | Issue | Deliverable | Сложность | Зависимость |
-| --- | --- | --- | --- | --- |
-| PUI-01 | [#529](https://github.com/LTstripes/hermes-finance/issues/529) | UX/data-path contract, evidence/action matrix | Средняя | Первая задача |
-| PUI-02 | [#530](https://github.com/LTstripes/hermes-finance/issues/530) | Read-only metric-specific диагностика | Средняя | Accepted #529 |
-| PUI-03 | [#531](https://github.com/LTstripes/hermes-finance/issues/531) | Compact portfolio/account UI и периоды | Средняя | Accepted #529/#530 |
-| PUI-04 | [#532](https://github.com/LTstripes/hermes-finance/issues/532) | Owner ledger/coverage/membership correction path | Сложная | Accepted #529/#530; UI integration после #531 |
-| PUI-05 | [#533](https://github.com/LTstripes/hermes-finance/issues/533) | Version-bound observed PRE/POST capture API/UI | Сложная | Accepted #529/#530/#494; UI integration после #531/#532 |
-| PUI-06 | [#534](https://github.com/LTstripes/hermes-finance/issues/534) | Class-return evidence/capability contract | Сложная | Может идти docs-only параллельно PUI-01 |
-| PUI-07 | [#535](https://github.com/LTstripes/hermes-finance/issues/535) | Class backend/API после явного GO | Сложная, уточнить после контракта | BLOCKED ON #534 и prerequisites |
-| PUI-08 | [#540](https://github.com/LTstripes/hermes-finance/issues/540) | Одна таблица «По классам» и drill-in | Средняя | Accepted #531/#534/#535 |
-| PUI-09 | [#541](https://github.com/LTstripes/hermes-finance/issues/541) | Real-backend synthetic journey + Owner UAT/checkpoints | Средняя/сложная | Exact aggregate выбранной фазы |
+**C — независимый senior reviewer #529:** отдельный контекст, exact candidate/PR; проверка contract/source consistency и ложных обещаний action paths. Это отдельное review от Muse UX-отчёта. Автор #529 не выдаёт себе independent ACCEPT.
 
-Фаза A: PUI-01 → PUI-02 → PUI-03/PUI-04 → PUI-05 → PUI-09 checkpoint A.
+Exact SHA, ограниченное разрешение создать конкретный отсутствующий workspace и имя выбранной модели находятся в актуальном launch-note/Owner prompt. Указание workspace не означает, что он уже существует или подготовлен. Provider credentials и любые приватные данные не входят в эти задания.
 
-Фаза B: PUI-06 → принятие scope/необходимых prerequisites → PUI-07 → PUI-08 → PUI-09 checkpoint B.
+## 6. Параллельный UI parity и последовательность
 
-Shared files не правятся одновременно независимыми writers: route/navigation spine принадлежит PUI-03/Integrator, PUI-04/05 добавляют согласованные leaf surfaces. Parallel готовность не отменяет проверку совместимости accepted staging head.
+#554/#570 и [#575](https://github.com/LTstripes/hermes-finance/issues/575) продолжаются отдельно. #575 владеет денежным результатом `/v2/capital/monthly-result`; Performance — процентной доходностью за интервал. Не реализовывать #575 повторно и не называть его unrealized snapshot «прибылью за месяц».
 
-Фаза B не задерживает отдельную поставку A. BLOCK по классам не считается их реализацией; новые ledger/migration/import prerequisites выделяются явно перед кодом.
+`frontend/src/app/App.tsx`, UiV2Entry, Capital/Reports links и общий shell согласуются в одном Integrator-owned serial slot совместно с #555/#569/#575. Остальные Workers держат изменения в leaf files. Наличие отдельной ветки не устраняет будущие конфликты общей навигации.
 
-## 6. Не мешать текущим работам
+Фаза A: #529 → review → #530 → #531/#532 → #533 → #541 A.
 
-- [#494](https://github.com/LTstripes/hermes-finance/issues/494) / [PR #526](https://github.com/LTstripes/hermes-finance/pull/526): accepted version binding обязателен перед публичным capture PUI-05. Не дублировать и не переносить непринятый фикс.
-- [PR #509](https://github.com/LTstripes/hermes-finance/pull/509), `integration/data-integrity-hardening`: согласовать lifecycle/invalidation/coherent reads и migration chain на нужном этапе. Ветка не подмешивается автоматически.
-- [#498](https://github.com/LTstripes/hermes-finance/issues/498) / [PR #521](https://github.com/LTstripes/hermes-finance/pull/521): не создавать альтернативные capital completeness semantics; Performance gates остаются отдельными.
-- [#476](https://github.com/LTstripes/hermes-finance/issues/476): существующий G04 regression work не превращать в дубликат или широкий E2E redesign.
-- [#389](https://github.com/LTstripes/hermes-finance/issues/389): dashboard composer остаётся отдельной будущей задачей.
+Фаза B: #534 inventory/synthesis → independent contract acceptance → необходимые bounded prerequisites → #535 → #540 → #541 B.
 
-Исходный split main не содержит автоматически весь незавершённый hardening stream. Перед write-capture/final integration Integrator фиксирует конкретные accepted зависимости и точную совместимую базу.
+B не задерживает полезную поставку A. BLOCK/unsupported классов не считается реализованной разбивкой. Смена main не повод ежедневно перестраивать кандидатов: refresh только при доказанной необходимости и отдельном assignment.
 
-## 7. Критерий полезности и завершения
+## 7. Проверки и завершение
 
-Нельзя ограничиться тестом «три надписи unavailable видны».
+Docs candidate требует проверки источников/diff/privacy и независимого review. Здесь не заявляются backend/frontend suites, Windows runtime или Owner UAT. Product Worker следует [VERIFICATION_POLICY](../VERIFICATION_POLICY.md), риски/review — [MODEL_ROUTING](../MODEL_ROUTING.md).
 
-Минимальный synthetic journey: неполная история → понятная причина → известный ledger → явное подтверждение полноты → XIRR доступен при достаточных остальных данных → фактические PRE/POST → TWRR доступен. Отдельно отсутствие исторического источника остаётся честно unavailable.
+Для реализации нужен synthetic journey, а не только три текста unavailable: понятная причина → просмотр данных → поддержанное явное действие → fresh read → XIRR/TWRR либо честный оставшийся blocker. Coverage cash/in-kind независимы; missing historical membership не лечится текущим флагом; PRE/POST не синтезируются. Zero/loss, ошибки, stale reads, corrected evidence, CLOSED guards и narrow/keyboard/deep links остаются acceptance gates.
 
-Проверить zero/loss, XIRR-only, scope/date changes, unknown code, errors, cash/member/transfer ambiguity, stale evidence after correction, CLOSED guard и stale UI после reopen/delete/restore. Desktop/narrow/keyboard/deep links обязательны для затронутого UI.
-
-Новый Owner UAT проводится на одном exact reviewed aggregate в isolated Preview. Синтетика остаётся в agent workspace; private данные туда не попадают. Owner PASS не требует невозможного восстановления отсутствующей истории, но требует понятного supported действия/ограничения. Результаты A/B записываются отдельно в #541.
-
-Checks пропорционально [VERIFICATION_POLICY](../VERIFICATION_POLICY.md). Высокий риск требует независимого Reviewer по [MODEL_ROUTING](../MODEL_ROUTING.md). Создание этого плана не означает запуска suites, implementation, UAT или release.
+Final project acceptance/merge — после required reviews и exact aggregate evidence/Owner UAT. Release и Stable promotion отдельны. Исторический план 2026-09-25 сохранён в Git; этот документ и актуальные Integrator notes заменяют его прежние статусы зависимостей, не финансовые определения.
