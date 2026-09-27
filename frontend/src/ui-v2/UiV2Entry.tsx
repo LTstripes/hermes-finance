@@ -17,6 +17,7 @@ const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
 const UiV2DataPlaceholderPage = lazy(() => import("./UiV2DataPlaceholderPage"));
 const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
 const UiV2GoalsPage = lazy(() => import("./UiV2GoalsPage"));
+const UiV2TaxIisPage = lazy(() => import("./UiV2TaxIisPage"));
 const UiV2ScenarioLabPage = lazy(() => import("./UiV2ScenarioLabPage"));
 
 export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -169,6 +170,14 @@ export function UiV2GoalsEntry() {
   return (
     <SuspenseFrame>
       <UiV2GoalsPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2TaxIisEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2TaxIisPage />
     </SuspenseFrame>
   );
 }
