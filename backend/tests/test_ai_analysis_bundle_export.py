@@ -783,6 +783,56 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert "future_dated_valuation" in review["sections"]["iis_and_tax"]["reason_codes"]
 
 
+def test_excluded_debt_does_not_make_missing_portfolio_snapshot_available(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, _database = app_context
+    account = _ok(
+        client.post(
+            "/api/accounts",
+            json={"name": "Synthetic Required Account", "account_type": "brokerage"},
+        )
+    )
+    month_id = _create_month(client, 2032, 4)
+    _ok(
+        client.post(
+            "/api/debts",
+            json={
+                "reporting_month_id": month_id,
+                "debt_type": "other",
+                "name": "Synthetic Excluded Reference Debt",
+                "current_balance": _money("125.00"),
+                "include_in_liquid_capital": False,
+            },
+        )
+    )
+    _close(client, month_id)
+
+    owner_history_response = client.get("/api/analytics/capital-composition")
+    assert owner_history_response.status_code == 200, owner_history_response.text
+    owner_point = owner_history_response.json()["points"][-1]
+    expected_coverage = {
+        "status": "unavailable",
+        "reason_codes": ["portfolio_snapshot_missing"],
+        "missing_account_ids": [account["id"]],
+    }
+    assert owner_point["portfolio_source_coverage"] == expected_coverage
+
+    bundle_response = _export(client)
+    assert bundle_response.status_code == 200, bundle_response.text
+    bundle = bundle_response.json()
+    _validator().validate(bundle)
+    point = bundle["reporting_history"][-1]
+    assert "portfolio_snapshot_missing" in point["coverage"]["reason_codes"]
+    assert "active_account_snapshot_missing" not in point["coverage"]["reason_codes"]
+    for metric_name in ("liquid_assets_total", "included_debts", "liquid_capital_net"):
+        metric = point["kpis"][metric_name]
+        assert metric["value"] is None
+        assert metric["availability"] == "unavailable"
+        assert "portfolio_snapshot_missing" in metric["reason_codes"]
+        assert "active_account_snapshot_missing" not in metric["reason_codes"]
+
+
 def test_future_dated_valuation_on_excluded_account_does_not_degrade_capital_or_risk(
     app_context: tuple[TestClient, Database],
 ) -> None:

@@ -9,6 +9,7 @@ import type { CloseReadiness, CloseReadinessItem, DashboardKpis } from "../api/t
 import { formatMoney, formatPercent } from "../lib/format";
 import { moneyAmount } from "../lib/money";
 import { readinessCopy, readinessDiagnostic } from "../lib/ownerCopy";
+import { PortfolioCoverageNote } from "./PortfolioCoverageNote";
 import { Badge, Button, ConfirmDialog, ErrorState, LoadingState, Panel } from "./ui";
 
 export type MonthReadinessSummary = {
@@ -169,7 +170,12 @@ export function MonthReviewSection({
           <div className="totals-bar">
             <span>
               Ликвидный капитал:{" "}
-              <strong>{formatMoney(moneyAmount(previewKpis.liquid_capital_net))}</strong>
+              <strong>
+                {previewKpis.portfolio_source_coverage?.status === "unavailable"
+                  ? "—"
+                  : formatMoney(moneyAmount(previewKpis.liquid_capital_net))}
+              </strong>{" "}
+              <PortfolioCoverageNote coverage={previewKpis.portfolio_source_coverage} />
             </span>
             <span>
               Средний пассивный доход:{" "}

@@ -67,4 +67,25 @@ describe("buildCapitalCompositionSeries", () => {
     expect(datum.totalShare).toBeNull();
     expect(datum.netShare).toBeNull();
   });
+
+  it("keeps a partial known point numeric but does not plot an unavailable point as zero", () => {
+    const partial = point(2031, 1, "500.00", "450.00");
+    partial.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    };
+    const unavailable = point(2031, 2, "0.00", "0.00");
+    unavailable.portfolio_source_coverage = {
+      status: "unavailable",
+      reason_codes: ["portfolio_snapshot_missing"],
+      missing_account_ids: [1, 2],
+    };
+    const [known, absent] = buildCapitalCompositionSeries([partial, unavailable], classes);
+    expect(known.netAmount).toBe("450.00");
+    expect(absent.isGap).toBe(false);
+    expect(absent.netAmount).toBeNull();
+    expect(absent.netCoordinate).toBeNull();
+    expect(absent.amountCoordinates.cash).toBeNull();
+  });
 });

@@ -1,5 +1,6 @@
 import { formatMonth } from "./format";
 import { moneyToChartNumber } from "./money";
+import type { PortfolioSourceCoverage } from "../api/types";
 
 const SHORT_MONTHS_RU = [
   "Янв",
@@ -25,6 +26,7 @@ export type ChartDatum = {
   shortLabel: string;
   rubles: number | null;
   amount: string;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
 };
 
 /** Input point: a closed month with its decimal-string amount. */

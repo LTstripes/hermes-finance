@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
+from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import ReportingMonth
@@ -23,6 +24,10 @@ from hermes_finance.services.asset_allocation import (
     asset_allocation_for_months,
 )
 from hermes_finance.services.liquid_capital import liquid_capital_for_months
+from hermes_finance.services.portfolio_source_coverage import (
+    combined_portfolio_source_coverage,
+    portfolio_source_coverage_for_months,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +43,7 @@ class CapitalCompositionPoint:
     linked_pair_assets: RubleAmount
     linked_pair_debts: RubleAmount
     linked_pair_net_contribution: RubleAmount
+    portfolio_source_coverage: PortfolioSourceCoverage
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +68,7 @@ class ClosedReportComparison:
     liquid_assets_total_delta: RubleAmount | None
     included_debts_delta: RubleAmount | None
     liquid_capital_net_delta: RubleAmount | None
+    liquid_capital_net_delta_coverage: PortfolioSourceCoverage | None
     linked_pair_assets_delta: RubleAmount | None
     linked_pair_debts_delta: RubleAmount | None
     linked_pair_net_contribution_delta: RubleAmount | None
@@ -92,6 +99,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
             liquid_assets_total_delta=None,
             included_debts_delta=None,
             liquid_capital_net_delta=None,
+            liquid_capital_net_delta_coverage=None,
             linked_pair_assets_delta=None,
             linked_pair_debts_delta=None,
             linked_pair_net_contribution_delta=None,
@@ -116,6 +124,9 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
         included_debts_delta=_amount_delta(current.included_debts, previous.included_debts),
         liquid_capital_net_delta=_amount_delta(
             current.liquid_capital_net, previous.liquid_capital_net
+        ),
+        liquid_capital_net_delta_coverage=combined_portfolio_source_coverage(
+            current.portfolio_source_coverage, previous.portfolio_source_coverage
         ),
         linked_pair_assets_delta=_amount_delta(
             current.linked_pair_assets, previous.linked_pair_assets
@@ -142,6 +153,7 @@ def capital_composition_history(session: Session) -> CapitalCompositionHistory:
 
     month_ids = [month.id for month in months]
     liquid_by_month = liquid_capital_for_months(session, month_ids)
+    coverage_by_month = portfolio_source_coverage_for_months(session, month_ids)
     allocation_by_month = asset_allocation_for_months(session, month_ids, liquid_by_month)
     points: list[CapitalCompositionPoint] = []
     for month in months:
@@ -160,6 +172,7 @@ def capital_composition_history(session: Session) -> CapitalCompositionHistory:
                 linked_pair_assets=liquid.linked_pair_assets,
                 linked_pair_debts=liquid.linked_pair_debts,
                 linked_pair_net_contribution=liquid.linked_pair_net_contribution,
+                portfolio_source_coverage=coverage_by_month[month.id],
             )
         )
 

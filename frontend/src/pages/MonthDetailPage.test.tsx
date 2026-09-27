@@ -12,7 +12,7 @@ import { listDeposits } from "../api/deposits";
 import { listIncomes, replaceSalaryIncome } from "../api/incomes";
 import { closeMonth, getCloseReadiness, getMonth, reopenMonth, updateMonth } from "../api/months";
 import { getMonthSummary } from "../api/summary";
-import type { ReportingMonth } from "../api/types";
+import type { PortfolioSourceCoverage, ReportingMonth } from "../api/types";
 import { MonthDetailPage } from "./MonthDetailPage";
 
 vi.mock("../api/dashboard", () => ({ getDashboard: vi.fn() }));
@@ -140,7 +140,7 @@ function renderPage(entry = "/months/1", withMonthSwitcher = false) {
   );
 }
 
-function mockLoadedMonth(month: ReportingMonth = draftMonth) {
+function mockLoadedMonth(month: ReportingMonth = draftMonth, coverage?: PortfolioSourceCoverage) {
   getMonthMock.mockResolvedValue(month);
   listIncomesMock.mockResolvedValue([]);
   getMonthSummaryMock.mockResolvedValue({
@@ -162,6 +162,7 @@ function mockLoadedMonth(month: ReportingMonth = draftMonth) {
     month,
     kpis: {
       liquid_capital_net: { amount: "1500000.00", currency: "RUB" },
+      portfolio_source_coverage: coverage,
       liquid_capital_delta: { amount: "10000.00", currency: "RUB" },
       passive_income_actual: { amount: "42000.00", currency: "RUB" },
       passive_income_delta: { amount: "2000.00", currency: "RUB" },
@@ -223,6 +224,17 @@ describe("MonthDetailPage R03-06 workspace", () => {
     updateMonthMock.mockResolvedValue(draftMonth);
     closeMonthMock.mockResolvedValue(closedMonth);
     reopenMonthMock.mockResolvedValue(draftMonth);
+  });
+
+  it("shows the backend coverage near the known month capital", async () => {
+    mockLoadedMonth(draftMonth, {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    });
+    renderPage("/months/1?section=income");
+    expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();
+    expect(screen.getByText(/1\s*500\s*000\s*₽/)).toBeVisible();
   });
 
   it("opens a section directly from the URL and keeps one section visible", async () => {

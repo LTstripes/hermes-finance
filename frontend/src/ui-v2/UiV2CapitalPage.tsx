@@ -32,6 +32,7 @@ import {
   type CapitalCompositionMode,
 } from "../components/charts/CapitalCompositionChart";
 import { buildLinkedPairFacts, pairFactNote } from "../components/LinkedPairContext";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { buildCapitalCompositionSeries } from "../lib/capitalComposition";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
@@ -157,7 +158,11 @@ function HeadlineGrid({
       eyebrow: "Ликвидный капитал",
       primary: true,
       testId: "capital-net",
-      value: current ? money(current.liquid_capital_net) : null,
+      value: current
+        ? current.portfolio_source_coverage?.status === "unavailable"
+          ? "—"
+          : money(current.liquid_capital_net)
+        : null,
     },
     {
       detail: "Деньги, депозиты, ценные бумаги и прочее ликвидное",
@@ -188,6 +193,9 @@ function HeadlineGrid({
                 <p className={styles.metricValue} data-testid={metric.testId}>
                   {metric.value}
                 </p>
+                {metric.primary ? (
+                  <PortfolioCoverageNote coverage={current?.portfolio_source_coverage} />
+                ) : null}
                 <p className={styles.metricDetail}>{metric.detail}</p>
               </>
             )}
@@ -354,7 +362,11 @@ function CurrentAllocation({
             </div>
             <div>
               <dt>Ликвидный капитал</dt>
-              <dd>{money(current.liquid_capital_net)}</dd>
+              <dd>
+                {current.portfolio_source_coverage?.status === "unavailable"
+                  ? "—"
+                  : money(current.liquid_capital_net)}
+              </dd>
             </div>
           </dl>
           <div className={capitalStyles.subBlock}>
@@ -434,8 +446,11 @@ function ChangeBlock({
           <div className={styles.changeTotal}>
             <span>Изменение ликвидного капитала</span>
             <strong data-tone={tone(comparison?.liquid_capital_net_delta)}>
-              {moneyDelta(comparison?.liquid_capital_net_delta)}
+              {comparison?.liquid_capital_net_delta_coverage?.status === "unavailable"
+                ? "—"
+                : moneyDelta(comparison?.liquid_capital_net_delta)}
             </strong>
+            <PortfolioCoverageNote coverage={comparison?.liquid_capital_net_delta_coverage} />
           </div>
           <p className={styles.panelFootnote}>
             Та же пара закрытых отчётов, что на «Мои финансы». Перемещение между классами может

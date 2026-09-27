@@ -121,6 +121,60 @@ def _comparison(client: TestClient) -> dict[str, object]:
     return response.json()
 
 
+def test_known_capital_subtotal_carries_account_coverage_through_all_read_models(
+    client: TestClient,
+) -> None:
+    account_a = client.post(
+        "/api/accounts", json={"name": "Known account", "account_type": "cash"}
+    ).json()["id"]
+    account_b = client.post(
+        "/api/accounts", json={"name": "Required account", "account_type": "cash"}
+    ).json()["id"]
+    first = _create_month(client, year=2033, month=1, snapshot_date="2033-01-31")
+    _create_cash(client, first, "100.00", account_id=account_a)
+    _create_cash(client, first, "0.00", account_id=account_b)
+    assert client.post(f"/api/months/{first}/close").status_code == 200
+
+    second = _create_month(client, year=2033, month=2, snapshot_date="2033-02-28")
+    _create_cash(client, second, "120.00", account_id=account_a)
+    _create_cash(client, second, "5.00")  # Synthetic cash contributes, but cannot cover B.
+    assert client.post(f"/api/months/{second}/close").status_code == 200
+
+    history = client.get("/api/analytics/capital-composition").json()["points"]
+    assert [point["liquid_capital_net"] for point in history] == [_rub("100.00"), _rub("125.00")]
+    assert history[0]["portfolio_source_coverage"] == {
+        "status": "complete",
+        "reason_codes": [],
+        "missing_account_ids": [],
+    }
+    partial = history[1]["portfolio_source_coverage"]
+    assert partial == {
+        "status": "partial",
+        "reason_codes": ["active_account_snapshot_missing"],
+        "missing_account_ids": [account_b],
+    }
+
+    comparison = _comparison(client)
+    assert comparison["current"]["portfolio_source_coverage"] == partial
+    assert comparison["previous"]["portfolio_source_coverage"]["status"] == "complete"
+    assert comparison["liquid_capital_net_delta"] == _rub("25.00")
+    assert comparison["liquid_capital_net_delta_coverage"]["status"] == "partial"
+    assert comparison["liquid_capital_net_delta_coverage"]["reason_codes"] == [
+        "active_account_snapshot_missing"
+    ]
+
+    summary = client.get(f"/api/months/{second}/summary").json()
+    assert summary["liquid_capital"]["liquid_capital_net"] == _rub("125.00")
+    assert summary["liquid_capital"]["portfolio_source_coverage"] == partial
+    assert summary["liquid_capital_delta"] == _rub("25.00")
+    assert summary["liquid_capital_delta_coverage"]["status"] == "partial"
+
+    dashboard = client.get(f"/api/months/{second}/dashboard").json()
+    assert dashboard["kpis"]["liquid_capital_net"] == _rub("125.00")
+    assert dashboard["kpis"]["portfolio_source_coverage"] == partial
+    assert dashboard["historical_series"][-1]["portfolio_source_coverage"] == partial
+
+
 def test_closed_history_uses_one_snapshot_when_month_is_reopened_mid_read(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
