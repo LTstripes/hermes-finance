@@ -90,10 +90,30 @@ function emptyExpected(date: string): ExpectedDraft {
   };
 }
 
+/** Sentinel for completions retired by a month switch/unmount: never rendered as an error. */
+const STALE = Symbol("stale-operation");
+
+type Operation = {
+  month: number;
+  gen: number;
+};
+
 /**
  * V2P-08 leaf: manual payout fact + manual forecast for the exact editor month.
  * Calendar, provider preview/apply and statement import live in #566/#567 and are
  * intentionally not implemented here.
+ *
+ * Lifetime rules (Integrator B1/B2):
+ * - Drafts belong to the exact month and are never reset by reads or by the
+ *   forecast-version filter. Only a month change resets them.
+ * - Every mutation captures {month, gen}; gen is retired on month change and
+ *   unmount. A retired completion publishes nothing: no rows, no notices, no
+ *   draft resets, no error. The server-side outcome stands and appears on the
+ *   next load of its own month.
+ * - Expected rows are installed only for the currently viewed version; a write
+ *   for another version never renders as the current view.
+ * - A successful write clears only the draft revision it submitted; newer input
+ *   typed while the request was in flight is preserved with an honest notice.
  */
 export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorContext }) {
   const { month, readOnly, setDirty } = context;
@@ -105,8 +125,11 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   const [actual, setActual] = useState<InvestmentFlow[]>([]);
   const [expected, setExpected] = useState<ExpectedFlow[]>([]);
   const [forecastVersion, setForecastVersion] = useState("v1");
+  const [versionInput, setVersionInput] = useState("v1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expectedRefreshing, setExpectedRefreshing] = useState(false);
+  const [expectedError, setExpectedError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -121,9 +144,41 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   const [editingActualId, setEditingActualId] = useState<number | null>(null);
   const [editActual, setEditActual] = useState<ActualDraft | null>(null);
 
-  const requestId = useRef(0);
-  const operation = useRef(0);
+  const liveRef = useRef({ monthId, gen: 0 });
+  const versionRef = useRef(forecastVersion);
+  const readAllSeq = useRef(0);
+  const readExpSeq = useRef(0);
+  const actualRev = useRef(0);
+  const expectedRev = useRef(0);
+  const editRev = useRef(0);
   const localDirty = actualDraftTouched || expectedDraftTouched || editingActualId !== null;
+
+  function captureOp(): Operation {
+    return { month: monthId, gen: liveRef.current.gen };
+  }
+
+  function opLive(op: Operation): boolean {
+    const live = liveRef.current;
+    return op.month === live.monthId && op.gen === live.gen;
+  }
+
+  function touchActualDraft(patch: Partial<ActualDraft>) {
+    actualRev.current += 1;
+    setActualDraft((prev) => ({ ...prev, ...patch }));
+    setActualDraftTouched(true);
+  }
+
+  function touchExpectedDraft(patch: Partial<ExpectedDraft>) {
+    expectedRev.current += 1;
+    setExpectedDraft((prev) => ({ ...prev, ...patch }));
+    setExpectedDraftTouched(true);
+  }
+
+  function touchEdit(patch: Partial<ActualDraft>) {
+    if (!editActual) return;
+    editRev.current += 1;
+    setEditActual({ ...editActual, ...patch });
+  }
 
   useEffect(() => {
     setDirty("payouts", localDirty);
@@ -131,17 +186,18 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
 
   useEffect(
     () => () => {
-      requestId.current += 1;
-      operation.current += 1;
+      liveRef.current = { monthId: liveRef.current.monthId, gen: liveRef.current.gen + 1 };
       setDirty("payouts", false);
     },
     [setDirty],
   );
 
-  const load = useCallback(
+  const loadAll = useCallback(
     async (signal?: AbortSignal) => {
-      const token = ++requestId.current;
       const target = monthId;
+      const version = versionRef.current;
+      const seq = ++readAllSeq.current;
+      const alive = () => liveRef.current.monthId === target && readAllSeq.current === seq;
       setLoading(true);
       setError(null);
       try {
@@ -149,13 +205,15 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
           listAccounts(signal),
           listInstruments({ active: true }, signal),
           listInvestmentFlows(target, undefined, signal),
-          listExpectedFlows(target, forecastVersion, signal),
+          listExpectedFlows(target, version, signal),
         ]);
-        if (signal?.aborted || requestId.current !== token) return;
+        if (signal?.aborted || !alive()) return;
         setAccounts(accs);
         setInstruments(instrs);
         setActual(flows.filter((row) => row.reporting_month_id === target));
-        setExpected(exp.filter((row) => row.reporting_month_id === target));
+        if (versionRef.current === version) {
+          setExpected(exp.filter((row) => row.reporting_month_id === target));
+        }
         const firstAccount = accs.find((a) => a.status === "active");
         const firstInstrument = instrs[0];
         setActualDraft((prev) => ({
@@ -168,35 +226,81 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
           account_id: prev.account_id || (firstAccount ? String(firstAccount.id) : ""),
           instrument_id: prev.instrument_id || (firstInstrument ? String(firstInstrument.id) : ""),
           expected_date: prev.expected_date || defaultDate,
-          forecast_version: prev.forecast_version || forecastVersion,
+          forecast_version: prev.forecast_version || version,
         }));
       } catch (err) {
-        if (!signal?.aborted && requestId.current === token) setError(formatApiError(err));
+        if (!signal?.aborted && alive()) setError(formatApiError(err));
       } finally {
-        if (!signal?.aborted && requestId.current === token) setLoading(false);
+        if (!signal?.aborted && alive()) setLoading(false);
       }
     },
-    [defaultDate, forecastVersion, monthId],
+    [defaultDate, monthId],
+  );
+
+  const loadExpected = useCallback(
+    async (signal?: AbortSignal) => {
+      const target = monthId;
+      const version = versionRef.current;
+      const seq = ++readExpSeq.current;
+      const alive = () =>
+        liveRef.current.monthId === target &&
+        readExpSeq.current === seq &&
+        versionRef.current === version;
+      setExpectedRefreshing(true);
+      setExpectedError(null);
+      try {
+        const exp = await listExpectedFlows(target, version, signal);
+        if (signal?.aborted || !alive()) return;
+        setExpected(exp.filter((row) => row.reporting_month_id === target));
+      } catch (err) {
+        if (signal?.aborted || !alive()) return;
+        setExpected([]);
+        setExpectedError(formatApiError(err));
+      } finally {
+        if (liveRef.current.monthId === target && readExpSeq.current === seq) {
+          setExpectedRefreshing(false);
+        }
+      }
+    },
+    [monthId],
   );
 
   useEffect(() => {
+    liveRef.current = { monthId, gen: liveRef.current.gen + 1 };
+    readAllSeq.current += 1;
+    readExpSeq.current += 1;
+    setForecastVersion("v1");
+    versionRef.current = "v1";
+    setVersionInput("v1");
     setActualDraft(emptyActual(defaultDate));
-    setExpectedDraft((prev) => ({
-      ...emptyExpected(defaultDate),
-      forecast_version: prev.forecast_version || "v1",
-    }));
+    setExpectedDraft(emptyExpected(defaultDate));
     setActualDraftTouched(false);
     setExpectedDraftTouched(false);
     setEditingActualId(null);
     setEditActual(null);
     setActionError(null);
     setActionNotice(null);
+    setExpectedError(null);
+    setBusy(false);
     setPendingDeleteActual(null);
     setPendingDeleteExpected(null);
     const controller = new AbortController();
-    void load(controller.signal);
+    void loadAll(controller.signal);
     return () => controller.abort();
-  }, [defaultDate, load]);
+  }, [defaultDate, loadAll, monthId]);
+
+  useEffect(() => {
+    versionRef.current = forecastVersion;
+    const controller = new AbortController();
+    void loadExpected(controller.signal);
+    return () => controller.abort();
+  }, [forecastVersion, loadExpected]);
+
+  function commitVersion() {
+    const next = versionInput.trim() || "v1";
+    setVersionInput(next);
+    if (next !== forecastVersion) setForecastVersion(next);
+  }
 
   const accountName = useMemo(() => {
     const map = new Map(accounts.map((a) => [a.id, a.name]));
@@ -248,21 +352,29 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
     [sortedExpected],
   );
 
-  async function reloadAfterWrite(token: number, target: number) {
-    const flows = await listInvestmentFlows(target);
-    if (operation.current !== token) throw new Error("Ответ относится к другому состоянию.");
-    const scoped = flows.filter((row) => row.reporting_month_id === target);
-    const exp = await listExpectedFlows(target, forecastVersion);
-    if (operation.current !== token) throw new Error("Ответ относится к другому состоянию.");
-    setActual(scoped);
-    setExpected(exp.filter((row) => row.reporting_month_id === target));
+  /** Reload the currently viewed month+version. Throws STALE when retired. */
+  async function reloadCurrentView(op: Operation) {
+    const flows = await listInvestmentFlows(op.month);
+    if (!opLive(op)) throw STALE;
+    setActual(flows.filter((row) => row.reporting_month_id === op.month));
+    const version = versionRef.current;
+    const exp = await listExpectedFlows(op.month, version);
+    if (!opLive(op) || versionRef.current !== version) {
+      const current = versionRef.current;
+      const retry = await listExpectedFlows(op.month, current);
+      if (!opLive(op) || versionRef.current !== current) throw STALE;
+      setExpected(retry.filter((row) => row.reporting_month_id === op.month));
+      return;
+    }
+    setExpected(exp.filter((row) => row.reporting_month_id === op.month));
   }
 
   async function handleCreateActual(event: FormEvent) {
     event.preventDefault();
     if (readOnly || busy) return;
-    const token = ++operation.current;
+    const op = captureOp();
     const target = monthId;
+    const submittedRev = actualRev.current;
     setBusy(true);
     setActionError(null);
     setActionNotice(null);
@@ -285,30 +397,36 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         instrument_id: instrumentId && instrumentId > 0 ? instrumentId : null,
         source: actualDraft.source.trim() || "manual",
       });
+      if (!opLive(op)) return;
       if (created.reporting_month_id !== target)
         throw new Error("Ответ сохранения не подтверждает выбранный месяц.");
-      await reloadAfterWrite(token, target);
+      await reloadCurrentView(op);
       const fresh = await listInvestmentFlows(target);
-      if (operation.current !== token) return;
+      if (!opLive(op)) return;
       if (!fresh.some((row) => row.id === created.id && row.reporting_month_id === target))
         throw new Error("Сохранение не подтверждено повторной загрузкой.");
-      if (operation.current === token) {
+      if (!opLive(op)) return;
+      if (actualRev.current !== submittedRev) {
+        setActionNotice("Выплата сохранена. Есть новые несохранённые правки.");
+      } else {
         setActualDraft((prev) => ({ ...emptyActual(defaultDate), account_id: prev.account_id }));
         setActualDraftTouched(false);
         setActionNotice("Выплата сохранена и подтверждена.");
       }
     } catch (err) {
-      if (operation.current === token) setActionError(formatApiError(err));
+      if (err === STALE || !opLive(op)) return;
+      setActionError(formatApiError(err));
     } finally {
-      if (operation.current === token) setBusy(false);
+      if (opLive(op)) setBusy(false);
     }
   }
 
   async function handleCreateExpected(event: FormEvent) {
     event.preventDefault();
     if (readOnly || busy) return;
-    const token = ++operation.current;
+    const op = captureOp();
     const target = monthId;
+    const submittedRev = expectedRev.current;
     setBusy(true);
     setActionError(null);
     setActionNotice(null);
@@ -319,7 +437,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
       if (!Number.isInteger(accountId) || accountId < 1) throw new Error("Выбери счёт");
       if (!Number.isInteger(instrumentId) || instrumentId < 1)
         throw new Error("Выбери инструмент для ожидаемой выплаты");
-      const version = expectedDraft.forecast_version.trim() || forecastVersion;
+      const rowVersion = expectedDraft.forecast_version.trim() || versionRef.current;
       const created = await createExpectedFlow({
         reporting_month_id: target,
         account_id: accountId,
@@ -329,39 +447,57 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         gross_amount: rub(expectedDraft.gross),
         source: expectedDraft.source.trim() || "manual",
         source_as_of_date: defaultDate,
-        forecast_version: version,
+        forecast_version: rowVersion,
         ...(expectedDraft.tax.trim() === "" ? {} : { expected_tax_amount: rub(expectedDraft.tax) }),
         ...(expectedDraft.net.trim() === "" ? {} : { expected_net_amount: rub(expectedDraft.net) }),
       });
+      if (!opLive(op)) return;
       if (created.reporting_month_id !== target)
         throw new Error("Ответ сохранения не подтверждает выбранный месяц.");
       if (created.is_confirmed) throw new Error("Прогноз не должен подтверждаться автоматически.");
-      setForecastVersion(version);
-      await reloadAfterWrite(token, target);
-      const fresh = await listExpectedFlows(target, version);
-      if (operation.current !== token) return;
-      if (!fresh.some((row) => row.id === created.id && row.reporting_month_id === target))
-        throw new Error("Сохранение не подтверждено повторной загрузкой.");
-      if (operation.current === token) {
+      await reloadCurrentView(op);
+      if (!opLive(op)) return;
+      const viewingVersion = versionRef.current;
+      const hasNewerInput = expectedRev.current !== submittedRev;
+      if (rowVersion === viewingVersion) {
+        const fresh = await listExpectedFlows(target, rowVersion);
+        if (!opLive(op) || versionRef.current !== rowVersion) return;
+        if (!fresh.some((row) => row.id === created.id && row.reporting_month_id === target))
+          throw new Error("Сохранение не подтверждено повторной загрузкой.");
+        if (!opLive(op)) return;
+      }
+      if (hasNewerInput) {
+        setActionNotice(
+          rowVersion === viewingVersion
+            ? "Ожидаемая выплата сохранена. Есть новые несохранённые правки."
+            : `Ожидаемая выплата сохранена (версия «${rowVersion}»). Есть новые несохранённые правки.`,
+        );
+      } else {
         setExpectedDraft((prev) => ({
           ...emptyExpected(defaultDate),
           account_id: prev.account_id,
           instrument_id: prev.instrument_id,
-          forecast_version: version,
+          forecast_version: prev.forecast_version,
         }));
         setExpectedDraftTouched(false);
-        setActionNotice("Ожидаемая выплата сохранена и подтверждена.");
+        setActionNotice(
+          rowVersion === viewingVersion
+            ? "Ожидаемая выплата сохранена и подтверждена."
+            : `Ожидаемая выплата сохранена (версия «${rowVersion}»).`,
+        );
       }
     } catch (err) {
-      if (operation.current === token) setActionError(formatApiError(err));
+      if (err === STALE || !opLive(op)) return;
+      setActionError(formatApiError(err));
     } finally {
-      if (operation.current === token) setBusy(false);
+      if (opLive(op)) setBusy(false);
     }
   }
 
   function startActualEdit(row: InvestmentFlow) {
     if (!isManuallyEditableInvestmentFlow(row.source, row.statement_link)) return;
     setEditingActualId(row.id);
+    editRev.current += 1;
     setEditActual({
       account_id: String(row.account_id),
       instrument_id: row.instrument_id == null ? "" : String(row.instrument_id),
@@ -377,11 +513,20 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
 
   async function handleSaveActualEdit() {
     if (editingActualId == null || !editActual || readOnly || busy) return;
-    const token = ++operation.current;
+    const op = captureOp();
     const target = monthId;
+    const submittedRev = editRev.current;
     const current = actual.find((row) => row.id === editingActualId);
     if (!current || !isManuallyEditableInvestmentFlow(current.source, current.statement_link))
       return;
+    const submitted = {
+      flow_type: editActual.flow_type,
+      event_date: editActual.event_date,
+      gross: rub(editActual.gross).amount,
+      tax: rub(editActual.tax.trim() === "" ? "0" : editActual.tax).amount,
+      commission: rub(editActual.commission.trim() === "" ? "0" : editActual.commission).amount,
+      net: rub(editActual.net).amount,
+    };
     setBusy(true);
     setActionError(null);
     setActionNotice(null);
@@ -391,32 +536,49 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
       }
       const instrumentId = editActual.instrument_id ? Number(editActual.instrument_id) : null;
       const saved = await updateInvestmentFlow(editingActualId, {
-        flow_type: editActual.flow_type,
-        event_date: editActual.event_date,
+        flow_type: submitted.flow_type,
+        event_date: submitted.event_date,
         gross_amount: rub(editActual.gross),
         tax_amount: rub(editActual.tax.trim() === "" ? "0" : editActual.tax),
         commission_amount: rub(editActual.commission.trim() === "" ? "0" : editActual.commission),
         net_amount: rub(editActual.net),
         ...(instrumentId && instrumentId > 0 ? { instrument_id: instrumentId } : {}),
       });
+      if (!opLive(op)) return;
       if (saved.reporting_month_id !== target)
         throw new Error("Ответ сохранения не подтверждает выбранный месяц.");
-      await reloadAfterWrite(token, target);
-      if (operation.current === token) {
-        setEditingActualId(null);
-        setEditActual(null);
-        setActionNotice("Выплата обновлена и подтверждена.");
+      await reloadCurrentView(op);
+      const fresh = await listInvestmentFlows(target);
+      if (!opLive(op)) return;
+      const confirmed = fresh.find(
+        (row) => row.id === editingActualId && row.reporting_month_id === target,
+      );
+      if (
+        !confirmed ||
+        confirmed.flow_type !== submitted.flow_type ||
+        confirmed.event_date !== submitted.event_date ||
+        moneyAmount(confirmed.gross_amount) !== submitted.gross ||
+        moneyAmount(confirmed.tax_amount) !== submitted.tax ||
+        moneyAmount(confirmed.commission_amount) !== submitted.commission ||
+        moneyAmount(confirmed.net_amount) !== submitted.net
+      ) {
+        throw new Error("Изменение не подтверждено повторной загрузкой.");
       }
+      if (!opLive(op) || editRev.current !== submittedRev) return;
+      setEditingActualId(null);
+      setEditActual(null);
+      setActionNotice("Выплата обновлена и подтверждена.");
     } catch (err) {
-      if (operation.current === token) setActionError(formatApiError(err));
+      if (err === STALE || !opLive(op)) return;
+      setActionError(formatApiError(err));
     } finally {
-      if (operation.current === token) setBusy(false);
+      if (opLive(op)) setBusy(false);
     }
   }
 
   async function confirmDeleteActual() {
     if (!pendingDeleteActual || readOnly || busy) return;
-    const token = ++operation.current;
+    const op = captureOp();
     const target = monthId;
     const deletedId = pendingDeleteActual.id;
     setBusy(true);
@@ -424,51 +586,50 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
     setActionNotice(null);
     try {
       await deleteInvestmentFlow(deletedId);
-      await reloadAfterWrite(token, target);
+      if (!opLive(op)) return;
+      await reloadCurrentView(op);
       const fresh = await listInvestmentFlows(target);
-      if (operation.current !== token) return;
+      if (!opLive(op)) return;
       if (fresh.some((row) => row.id === deletedId))
         throw new Error("Удаление не подтверждено повторной загрузкой.");
-      if (operation.current === token) {
-        setPendingDeleteActual(null);
-        setActionNotice("Выплата удалена и подтверждена.");
-      }
+      if (!opLive(op)) return;
+      setPendingDeleteActual(null);
+      setActionNotice("Выплата удалена и подтверждена.");
     } catch (err) {
-      if (operation.current === token) {
-        setActionError(formatApiError(err));
-        setPendingDeleteActual(null);
-      }
+      if (err === STALE || !opLive(op)) return;
+      setActionError(formatApiError(err));
+      setPendingDeleteActual(null);
     } finally {
-      if (operation.current === token) setBusy(false);
+      if (opLive(op)) setBusy(false);
     }
   }
 
   async function confirmDeleteExpected() {
     if (!pendingDeleteExpected || readOnly || busy) return;
-    const token = ++operation.current;
+    const op = captureOp();
     const target = monthId;
+    const version = versionRef.current;
     const deletedId = pendingDeleteExpected.id;
     setBusy(true);
     setActionError(null);
     setActionNotice(null);
     try {
       await deleteExpectedFlow(deletedId);
-      await reloadAfterWrite(token, target);
-      const fresh = await listExpectedFlows(target, forecastVersion);
-      if (operation.current !== token) return;
+      if (!opLive(op)) return;
+      await reloadCurrentView(op);
+      const fresh = await listExpectedFlows(target, version);
+      if (!opLive(op) || versionRef.current !== version) return;
       if (fresh.some((row) => row.id === deletedId))
         throw new Error("Удаление не подтверждено повторной загрузкой.");
-      if (operation.current === token) {
-        setPendingDeleteExpected(null);
-        setActionNotice("Ожидаемая выплата удалена и подтверждена.");
-      }
+      if (!opLive(op)) return;
+      setPendingDeleteExpected(null);
+      setActionNotice("Ожидаемая выплата удалена и подтверждена.");
     } catch (err) {
-      if (operation.current === token) {
-        setActionError(formatApiError(err));
-        setPendingDeleteExpected(null);
-      }
+      if (err === STALE || !opLive(op)) return;
+      setActionError(formatApiError(err));
+      setPendingDeleteExpected(null);
     } finally {
-      if (operation.current === token) setBusy(false);
+      if (opLive(op)) setBusy(false);
     }
   }
 
@@ -535,9 +696,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                       {editing ? (
                         <Input
                           aria-label="Дата события"
-                          onChange={(e) =>
-                            setEditActual({ ...editActual, event_date: e.target.value })
-                          }
+                          disabled={busy}
+                          onChange={(e) => touchEdit({ event_date: e.target.value })}
                           type="date"
                           value={editActual.event_date}
                         />
@@ -549,9 +709,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                       {editing ? (
                         <Select
                           aria-label="Тип потока"
-                          onChange={(e) =>
-                            setEditActual({ ...editActual, flow_type: e.target.value })
-                          }
+                          disabled={busy}
+                          onChange={(e) => touchEdit({ flow_type: e.target.value })}
                           value={editActual.flow_type}
                         >
                           <option value="coupon">Купон</option>
@@ -587,9 +746,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                           <div>{accountName(row.account_id)}</div>
                           <Select
                             aria-label="Инструмент выплаты"
-                            onChange={(e) =>
-                              setEditActual({ ...editActual, instrument_id: e.target.value })
-                            }
+                            disabled={busy}
+                            onChange={(e) => touchEdit({ instrument_id: e.target.value })}
                             value={editActual.instrument_id}
                           >
                             <option value="">—</option>
@@ -615,7 +773,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                         <Input
                           aria-label="Брутто"
                           className="input--money"
-                          onChange={(e) => setEditActual({ ...editActual, gross: e.target.value })}
+                          disabled={busy}
+                          onChange={(e) => touchEdit({ gross: e.target.value })}
                           value={editActual.gross}
                         />
                       ) : (
@@ -627,7 +786,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                         <Input
                           aria-label="Налог"
                           className="input--money"
-                          onChange={(e) => setEditActual({ ...editActual, tax: e.target.value })}
+                          disabled={busy}
+                          onChange={(e) => touchEdit({ tax: e.target.value })}
                           value={editActual.tax}
                         />
                       ) : (
@@ -639,9 +799,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                         <Input
                           aria-label="Комиссия"
                           className="input--money"
-                          onChange={(e) =>
-                            setEditActual({ ...editActual, commission: e.target.value })
-                          }
+                          disabled={busy}
+                          onChange={(e) => touchEdit({ commission: e.target.value })}
                           value={editActual.commission}
                         />
                       ) : (
@@ -653,7 +812,8 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                         <Input
                           aria-label="Нетто"
                           className="input--money"
-                          onChange={(e) => setEditActual({ ...editActual, net: e.target.value })}
+                          disabled={busy}
+                          onChange={(e) => touchEdit({ net: e.target.value })}
                           value={editActual.net}
                         />
                       ) : (
@@ -738,10 +898,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-act-type" label="Тип потока">
                 <Select
                   id="payout-act-type"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, flow_type: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ flow_type: e.target.value })}
                   value={actualDraft.flow_type}
                 >
                   <option value="coupon">Купон</option>
@@ -756,10 +913,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-act-date" label="Дата события">
                 <Input
                   id="payout-act-date"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, event_date: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ event_date: e.target.value })}
                   required
                   type="date"
                   value={actualDraft.event_date}
@@ -768,10 +922,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-act-account" label="Счёт фактической выплаты">
                 <Select
                   id="payout-act-account"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, account_id: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ account_id: e.target.value })}
                   required
                   value={actualDraft.account_id}
                 >
@@ -786,10 +937,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-act-instr" label="Инструмент (необязательно)">
                 <Select
                   id="payout-act-instr"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, instrument_id: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ instrument_id: e.target.value })}
                   value={actualDraft.instrument_id}
                 >
                   <option value="">—</option>
@@ -805,10 +953,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-act-gross"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, gross: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ gross: e.target.value })}
                   required
                   value={actualDraft.gross}
                 />
@@ -817,10 +962,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-act-tax"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, tax: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ tax: e.target.value })}
                   value={actualDraft.tax}
                 />
               </Field>
@@ -828,10 +970,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-act-comm"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, commission: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ commission: e.target.value })}
                   value={actualDraft.commission}
                 />
               </Field>
@@ -839,10 +978,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-act-net"
-                  onChange={(e) => {
-                    setActualDraft({ ...actualDraft, net: e.target.value });
-                    setActualDraftTouched(true);
-                  }}
+                  onChange={(e) => touchActualDraft({ net: e.target.value })}
                   required
                   value={actualDraft.net}
                 />
@@ -868,20 +1004,36 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
           <Field htmlFor="payout-exp-version" label="Версия прогноза">
             <Input
               id="payout-exp-version"
-              onChange={(e) => setForecastVersion(e.target.value || "v1")}
-              onBlur={() => void load()}
-              value={forecastVersion}
+              onBlur={() => commitVersion()}
+              onChange={(e) => setVersionInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitVersion();
+                }
+              }}
+              value={versionInput}
             />
           </Field>
+          <Button disabled={expectedRefreshing} onClick={() => commitVersion()} type="button">
+            Показать
+          </Button>
         </div>
+        {expectedRefreshing ? <p role="status">Обновляем прогноз…</p> : null}
+        {expectedError ? (
+          <div className="inline-alert inline-alert--warn" role="alert">
+            Прогноз временно недоступен: {expectedError}
+          </div>
+        ) : null}
 
-        {sortedExpected.length === 0 ? (
+        {sortedExpected.length === 0 && !expectedError ? (
           <EmptyState
             description={`Нет ожидаемых выплат для версии «${forecastVersion}».`}
             inline
             title="Пусто"
           />
-        ) : (
+        ) : null}
+        {sortedExpected.length > 0 ? (
           <Table className="month-flows-table">
             <thead>
               <tr>
@@ -940,7 +1092,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               })}
             </tbody>
           </Table>
-        )}
+        ) : null}
 
         <div className="totals-bar">
           <span>
@@ -955,10 +1107,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-exp-type" label="Тип выплаты">
                 <Select
                   id="payout-exp-type"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, flow_type: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ flow_type: e.target.value })}
                   value={expectedDraft.flow_type}
                 >
                   <option value="coupon">Купон</option>
@@ -971,10 +1120,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-exp-date" label="Дата выплаты">
                 <Input
                   id="payout-exp-date"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, expected_date: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ expected_date: e.target.value })}
                   required
                   type="date"
                   value={expectedDraft.expected_date}
@@ -983,10 +1129,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-exp-account" label="Счёт выплаты">
                 <Select
                   id="payout-exp-account"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, account_id: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ account_id: e.target.value })}
                   required
                   value={expectedDraft.account_id}
                 >
@@ -1001,10 +1144,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               <Field htmlFor="payout-exp-instr" label="Инструмент выплаты">
                 <Select
                   id="payout-exp-instr"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, instrument_id: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ instrument_id: e.target.value })}
                   required
                   value={expectedDraft.instrument_id}
                 >
@@ -1021,10 +1161,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-exp-gross"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, gross: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ gross: e.target.value })}
                   required
                   value={expectedDraft.gross}
                 />
@@ -1033,10 +1170,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-exp-tax"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, tax: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ tax: e.target.value })}
                   value={expectedDraft.tax}
                 />
               </Field>
@@ -1044,20 +1178,14 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                 <Input
                   className="input--money"
                   id="payout-exp-net"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, net: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ net: e.target.value })}
                   value={expectedDraft.net}
                 />
               </Field>
               <Field htmlFor="payout-exp-ver" label="Версия">
                 <Input
                   id="payout-exp-ver"
-                  onChange={(e) => {
-                    setExpectedDraft({ ...expectedDraft, forecast_version: e.target.value });
-                    setExpectedDraftTouched(true);
-                  }}
+                  onChange={(e) => touchExpectedDraft({ forecast_version: e.target.value })}
                   value={expectedDraft.forecast_version}
                 />
               </Field>
