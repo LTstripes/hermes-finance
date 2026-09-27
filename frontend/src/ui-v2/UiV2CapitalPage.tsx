@@ -1096,9 +1096,7 @@ export default function UiV2CapitalPage() {
             readiness={readinessReady ? (readinessQuery.data ?? null) : null}
             readinessError={readinessQuery.isError}
             readinessReady={readinessReady}
-            retry={() =>
-              void Promise.all([attributionQuery.refetch(), readinessQuery.refetch()])
-            }
+            retry={() => void Promise.all([attributionQuery.refetch(), readinessQuery.refetch()])}
           />
           {propertiesQuery.isError ||
           (propertiesReady && (propertiesQuery.data?.length ?? 0) > 0) ? (

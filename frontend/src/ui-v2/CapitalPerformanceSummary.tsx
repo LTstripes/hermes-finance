@@ -12,7 +12,11 @@ import {
   VALUE_BRIDGE_LABEL,
 } from "../lib/performanceMessages";
 import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
-import { intervalDays, isZeroPercent, needsAnnualizationWarning } from "./capitalPerformanceContext";
+import {
+  intervalDays,
+  isZeroPercent,
+  needsAnnualizationWarning,
+} from "./capitalPerformanceContext";
 import styles from "./UiV2CapitalPerformance.module.css";
 import { UiV2WidgetState } from "./UiV2StateBlocks";
 import { moneyDeltaText as moneyDelta } from "./valueFormat";

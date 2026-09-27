@@ -406,9 +406,7 @@ it("shows supported performance for the same closed pair and hides raw reason co
   const panel = pair.closest("section");
   if (!panel) throw new Error("performance panel is missing");
   await waitFor(() =>
-    expect(within(panel).getByTestId("capital-performance-bridge")).toHaveTextContent(
-      "+42 600 ₽",
-    ),
+    expect(within(panel).getByTestId("capital-performance-bridge")).toHaveTextContent("+42 600 ₽"),
   );
   expect(within(panel).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
   expect(within(panel).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");

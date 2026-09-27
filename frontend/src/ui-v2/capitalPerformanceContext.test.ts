@@ -70,8 +70,9 @@ describe("parsePerformanceContext", () => {
         ?.code,
     ).toBe("repeated_param");
     expect(
-      parsePerformanceContext(params("start=2031-05-31&end=2031-07-31&scope=portfolio&scope=account"))
-        .error?.code,
+      parsePerformanceContext(
+        params("start=2031-05-31&end=2031-07-31&scope=portfolio&scope=account"),
+      ).error?.code,
     ).toBe("repeated_param");
     expect(
       parsePerformanceContext(
