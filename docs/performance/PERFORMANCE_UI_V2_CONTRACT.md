@@ -68,7 +68,11 @@ URL-параметры: `start`, `end` (ISO dates), `scope=portfolio|account`, `
 
 Все выбранные даты передаются в canonical API без клиентского пересчёта доходности. Каждая показанная метрика обязана соответствовать запрошенным scope/account/date/currency/units. XIRR annualized, TWRR не annualized. При интервале короче 365 дней рядом с XIRR: «Приведено к году по короткому периоду; это не прогноз». Это presentation warning, не изменение значения/availability.
 
-Состав Performance — исторический, не список текущих active accounts и не весь капитал Home. `scope_membership.account_ids` и missing/ambiguous IDs отображаются раздельно: неизвестное участие нельзя назвать подтверждённо включённым. Для названий допустим lookup всех accounts, но не реконструкция membership из имён/флагов. Исчезнувшее название не разрешает подменить identity.
+Состав Performance — исторический, не список текущих active accounts и не весь капитал Home. В текущем availability **нет одного готового поля «вот эти счета исторически включены в расчёт»**. На portfolio scope `scope_membership.account_ids` — это все каталожные счета, для которых проверяется история участия; туда попадает и счёт с цельной историей `include_in_returns=false`. Поэтому этот список, в том числе после вычитания `missing_or_ambiguous_account_ids`, нельзя показывать как состав доходности. `missing_or_ambiguous_account_ids` означает только пробел/неоднозначность истории участия.
+
+Для выбранного интервала текущий авторитетный список счетов, которым нужна **денежная** проверка Performance, — `cash_boundary_coverage.account_ids`: это счета, чья effective-dated history содержит `include_in_returns=true` на пересечении с интервалом. Отдельный `in_kind_boundary_coverage.account_ids` уже и означает только счета, для которых требуется **неденежная** проверка (brokerage/IIS либо счета с position history по принятому сервису). Эти списки нельзя взаимозаменять.
+
+«Состав расчёта» поэтому показывает три разные вещи: (1) счета денежной проверки из `cash_boundary_coverage.account_ids`; (2) отдельный, при наличии, список счетов неденежной проверки из `in_kind_boundary_coverage.account_ids`; (3) состояние проверки истории участия, где `scope_membership.account_ids` — именно проверяемый каталог, а `missing_or_ambiguous_account_ids` — проблемные identity. До появления отдельного canonical included-set нельзя переименовывать membership `account_ids` в «включённые счета». Для названий допустим lookup всех accounts, но не реконструкция membership из имён/текущих флагов. Исчезнувшее название не разрешает подменить identity.
 
 В таблице счетов rates не суммируются и не усредняются. У каждой строки свои final availability/quality при одинаковом запрошенном интервале; доступные отдельные счета не делают итог портфеля доступным. Отсутствие одного ответа не прячется за сообщением «все счета проверены».
 
@@ -111,7 +115,9 @@ Diagnostic item: стабильный UI diagnostic key, исходные canoni
 
 Successful prerequisites не заменяют final solver result. Top-level union availability не применяется как общий hide-switch. Финальный процент показывается только при available/exact, непустом value, правильных units/annualized и совпадающей identity. Несогласованный DTO — технический сбой, не вычисленный UI fallback.
 
-Для запроса отдельного счёта не нужны все остальные account solver calls. Таблица допускает отдельные ленивые запросы, но не должна называться атомарной сверкой всего портфеля. После финансового изменения все затронутые results/diagnostics инвалидируются; новый ответ другой генерации не склеивается со старым. Не требуется новая persisted revision/schema только ради UI.
+Для запроса отдельного счёта не нужны все остальные account solver calls. Таблица допускает отдельные ленивые запросы, но не должна называться атомарной сверкой всего портфеля. Readiness DTO обязан сохранять различие между `membership_checked_account_ids` (источник: `scope_membership.account_ids`), `cash_required_account_ids` (источник: `cash_boundary_coverage.account_ids`) и `in_kind_required_account_ids` (источник: `in_kind_boundary_coverage.account_ids`) либо передавать исходные evidence blocks без переименования. Нельзя создавать `included_account_ids` простым `scope_membership.account_ids - missing_or_ambiguous`: это ошибочно включает исторически исключённые счета. Если #530 захочет добавить отдельный canonical included-set, его семантика должна переиспользовать effective-dated membership selection и получить отдельную contract/test фиксацию, а не выводиться во frontend.
+
+После финансового изменения все затронутые results/diagnostics инвалидируются; новый ответ другой генерации не склеивается со старым. Не требуется новая persisted revision/schema только ради UI.
 
 ## 7. Поддержанный путь записи — #532/#533
 
@@ -138,7 +144,7 @@ Reopen — отдельное явное действие в существую�
 | V05 | Пустой ledger, cash coverage unknown | Не 0 flows complete; требуется отдельное явное attestation. |
 | V06 | Cash coverage complete, in-kind coverage unknown | XIRR/TWRR не объявляются готовыми; показана независимая причина. |
 | V07 | Known in-kind movement unvalued | Complete coverage не превращает движение в оценённое. |
-| V08 | Current include flag меняется при historical gap | Нет обещания исцелить прошлый интервал; historical path gate сохранён. |
+| V08 | Portfolio содержит счёт с цельной историей `include_in_returns=false` и отдельный historical gap; текущий include flag меняется | Исторически исключённый счёт может присутствовать в `scope_membership.account_ids`, но не показывается участником расчёта; денежный состав берётся из `cash_boundary_coverage.account_ids`, gap остаётся отдельным blocker, текущий flag прошлое не лечит. |
 | V09 | Нет snapshot на точную дату пресета / duplicate date | Пресет недоступен с объяснением, без соседней даты или shorter window. |
 | V10 | Scope/период изменены, поздний старый ответ | Старая цифра не показана как текущая; back/refresh восстанавливает валидный URL. |
 | V11 | Reopen/delete/restore затронули выбранную границу | Старый успех скрыт; explicit выбор не заменён последним периодом. |
