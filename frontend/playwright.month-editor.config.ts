@@ -12,12 +12,12 @@ export default defineConfig({
   outputDir: path.join(os.tmpdir(), "hermes-finance-month-editor-playwright"),
   workers: 1,
   reporter: "list",
-  use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:5173" },
+  use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:1607" },
   webServer: {
-    command: "node node_modules/vite/bin/vite.js --host 127.0.0.1",
+    command: "node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 1607 --strictPort",
     cwd: configDir,
-    url: "http://127.0.0.1:5173",
+    url: "http://127.0.0.1:1607",
     timeout: 120_000,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
   },
 });

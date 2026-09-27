@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,17 @@ import { getMonth, reopenMonth, updateMonth } from "../api/months";
 import type { MonthlyComment, ReportingMonth } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import UiV2MonthEditorPage from "./UiV2MonthEditorPage";
+
+vi.mock("../api/incomes", () => ({ listIncomes: vi.fn(async () => []) }));
+vi.mock("../api/summary", () => ({
+  getMonthSummary: vi.fn(async () => ({
+    salary_tax: {
+      tax: { amount: "0.00", currency: "RUB" },
+      calculated_net: { amount: "0.00", currency: "RUB" },
+    },
+    salary_actual_net: { amount: "0.00", currency: "RUB" },
+  })),
+}));
 
 vi.mock("../api/months", () => ({ getMonth: vi.fn(), updateMonth: vi.fn(), reopenMonth: vi.fn() }));
 vi.mock("../api/comments", () => ({
@@ -46,7 +57,7 @@ function Location() {
 
 function renderPage(path = "/v2/data/months/7") {
   const client = createQueryClient();
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Location />
@@ -58,6 +69,7 @@ function renderPage(path = "/v2/data/months/7") {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, client };
 }
 
 describe("native month editor frame", () => {
@@ -225,5 +237,22 @@ describe("native month editor frame", () => {
     await waitFor(() =>
       expect(screen.queryByText("Общие данные сохранены и подтверждены.")).not.toBeInTheDocument(),
     );
+  });
+  it("same-month snapshot refresh preserves a dirty income leaf and its navigation guard", async () => {
+    const user = userEvent.setup();
+    const { client } = renderPage("/v2/data/months/7?section=income");
+    const input = await screen.findByLabelText("Премия");
+    await user.type(input, "123");
+    current = { ...current, snapshot_date: "2030-04-29" };
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["month-editor", 7] });
+    });
+    expect(input).toHaveValue("123");
+    expect(screen.getByText("Есть несохранённые изменения")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Бюджет", exact: true }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Остаться" }));
+    expect(input).toHaveValue("123,00");
+    expect(screen.getByTestId("location")).toHaveTextContent("/v2/data/months/7?section=income");
   });
 });

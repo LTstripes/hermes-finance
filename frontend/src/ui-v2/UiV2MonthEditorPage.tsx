@@ -15,8 +15,24 @@ import { formatDate, formatMonth } from "../lib/format";
 import { SOURCE_LABELS, labelOf } from "../lib/labels";
 import { UiV2DataFrame, DataMonthContext } from "./UiV2DataShell";
 import styles from "./UiV2MonthEditor.module.css";
+import { MonthIncomeSection } from "./MonthIncomeSection";
+import { UiV2MonthAssetsSection } from "./UiV2MonthAssetsSection";
+import { UiV2MonthPositionsSection } from "./UiV2MonthPositionsSection";
+import { UiV2MonthPayoutsSection } from "./UiV2MonthPayoutsSection";
+import { UiV2MonthBudgetSection } from "./UiV2MonthBudgetSection";
+import { UiV2MonthLiabilities } from "./UiV2MonthLiabilities";
 
-type EditorSection = "general" | "note";
+const EDITOR_SECTIONS = {
+  general: "Общие данные",
+  income: "Зарплата и прочее",
+  assets: "Активы",
+  positions: "Позиции",
+  payouts: "Выплаты",
+  budget: "Бюджет",
+  liabilities: "Долги и недвижимость",
+  note: "Заметки",
+} as const;
+type EditorSection = keyof typeof EDITOR_SECTIONS;
 
 /** Leaf sections #559–#564 receive this exact-month contract, not a global save action. */
 export type MonthEditorContext = {
@@ -36,7 +52,8 @@ function validMonthId(value: string | undefined): number | null {
 function selectedSection(params: URLSearchParams): EditorSection | null {
   const values = params.getAll("section");
   if (values.length === 0 || (values.length === 1 && values[0] === "general")) return "general";
-  if (values.length === 1 && values[0] === "note") return "note";
+  if (values.length === 1 && Object.hasOwn(EDITOR_SECTIONS, values[0]))
+    return values[0] as EditorSection;
   return null;
 }
 
@@ -220,35 +237,48 @@ export default function UiV2MonthEditorPage() {
             {dirty ? "Есть несохранённые изменения" : "Изменения сохранены или не вносились"}
           </p>
           <nav aria-label="Разделы редактора месяца" className={styles.tabs}>
-            <Link
-              aria-current={section === "general" ? "page" : undefined}
-              to={`${location.pathname}${new URLSearchParams([...params].filter(([key]) => key !== "section")).toString() ? `?${new URLSearchParams([...params].filter(([key]) => key !== "section"))}` : ""}`}
-            >
-              Общие данные
-            </Link>
-            <Link
-              aria-current={section === "note" ? "page" : undefined}
-              to={`${location.pathname}?${(() => {
-                const next = new URLSearchParams(params);
-                next.set("section", "note");
-                return next.toString();
-              })()}`}
-            >
-              Заметки
-            </Link>
+            {Object.entries(EDITOR_SECTIONS).map(([id, label]) => {
+              const next = new URLSearchParams(params);
+              next.delete("section");
+              if (id !== "general") next.set("section", id);
+              const query = next.toString();
+              return (
+                <Link
+                  key={id}
+                  aria-current={section === id ? "page" : undefined}
+                  to={`${location.pathname}${query ? `?${query}` : ""}${location.hash}`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </nav>
           {section === null ? (
             <p className={styles.warning} role="alert">
-              Неизвестный раздел. Выбери «Общие данные» или «Заметки».
+              Неизвестный раздел. Выбери раздел редактора.
             </p>
           ) : (
             <>
-              <p className={styles.hint}>
-                Доходы, активы, позиции, выплаты, бюджет и долги появятся в следующих задачах. Для
-                них пока доступен редактор в предыдущем интерфейсе.
-              </p>
               {section === "general" ? (
                 <GeneralSection key={month.id} context={editorContext} />
+              ) : null}
+              {section === "income" ? (
+                <MonthIncomeSection key={month.id} context={editorContext} />
+              ) : null}
+              {section === "assets" ? (
+                <UiV2MonthAssetsSection key={month.id} context={editorContext} />
+              ) : null}
+              {section === "positions" ? (
+                <UiV2MonthPositionsSection key={month.id} context={editorContext} />
+              ) : null}
+              {section === "payouts" ? (
+                <UiV2MonthPayoutsSection key={month.id} context={editorContext} />
+              ) : null}
+              {section === "budget" ? (
+                <UiV2MonthBudgetSection key={month.id} context={editorContext} />
+              ) : null}
+              {section === "liabilities" ? (
+                <UiV2MonthLiabilities key={month.id} context={editorContext} />
               ) : null}
               {section === "note" ? <NoteSection key={month.id} context={editorContext} /> : null}
             </>
