@@ -48,6 +48,7 @@ from hermes_finance.api.months import router as months_router
 from hermes_finance.api.payouts import router as payouts_router
 from hermes_finance.api.performance_attribution import router as performance_attribution_router
 from hermes_finance.api.performance_availability import router as performance_availability_router
+from hermes_finance.api.performance_readiness import router as performance_readiness_router
 from hermes_finance.api.planned_budget import router as planned_budget_router
 from hermes_finance.api.portfolio_review_package import router as portfolio_review_package_router
 from hermes_finance.api.portfolio_twrr import router as portfolio_twrr_router
@@ -133,6 +134,7 @@ def create_app(
     application.include_router(quote_apply_router)
     application.include_router(payouts_router)
     application.include_router(performance_availability_router)
+    application.include_router(performance_readiness_router)
     application.include_router(performance_attribution_router)
     application.include_router(portfolio_xirr_router)
     application.include_router(portfolio_twrr_router)
