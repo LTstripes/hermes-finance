@@ -323,6 +323,12 @@ describe("UI v2 Income and plans", () => {
     expect(
       within(screen.getByTestId("income-goals-panel")).getByRole("link", { name: "Все цели →" }),
     ).toHaveAttribute("href", "/v2/income/goals?month=91");
+    const handoffs = within(screen.getByTestId("income-handoffs-panel"));
+    expect(handoffs.getByText("НДФЛ и ИИС по выбранному отчётному срезу.")).toBeVisible();
+    expect(handoffs.getByRole("link", { name: "Открыть Налоги и ИИС →" })).toHaveAttribute(
+      "href",
+      "/v2/income/tax-iis?month=91",
+    );
 
     const ladder = screen.getByTestId("income-ladder-panel");
     const controls = within(ladder).getByRole("group", { name: "Окно ожидаемых выплат" });
