@@ -159,7 +159,12 @@ backend lockfile/full tests and frontend tests/build. The canonical CI matrix
 also runs Ruff, Biome, the Windows timezone subset, the G04 synthetic
 real-backend owner journey, synthetic visual audit, privacy/path checks,
 release PowerShell contracts, production smoke, and the .NET launcher safety
-harness. These are complementary lanes, not duplicate test files.
+harness. The launcher harness is path-gated: it runs when
+`launcher/windows/**`, `scripts/launcher-schema-check.py`, the package/install
+smoke, the path classifier, or `.github/workflows/ci.yml` changes. Frontend,
+financial/backend domain, and `start-local` / `prepare-runtime` changes do not
+start it; Windows production smoke remains their runtime lane. These are
+complementary lanes, not duplicate test files.
 
 The G04 browser gate is intentionally not path-filtered: it runs on every pull
 request and canonical `main` push because either frontend routing/editor
