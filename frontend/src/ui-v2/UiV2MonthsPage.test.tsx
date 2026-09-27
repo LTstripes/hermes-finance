@@ -235,8 +235,8 @@ describe("native month management", () => {
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить черновик" }),
     );
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("from=close"));
-    expect(screen.getByTestId("location")).not.toHaveTextContent("month=2");
+    await waitFor(() => expect(screen.getByTestId("location")).not.toHaveTextContent("month=2"));
+    expect(screen.getByTestId("location")).toHaveTextContent("from=close");
     expect(deleteMonth).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Удалить черновик" })).not.toBeInTheDocument();
   });
