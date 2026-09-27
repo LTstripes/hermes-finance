@@ -1,0 +1,20 @@
+.root {
+  min-width: 0;
+}
+
+.scrollHint {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .scrollHint {
+    display: block;
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .root :global(.month-positions-table) {
+    min-width: 900px;
+  }
+}
