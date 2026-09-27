@@ -88,6 +88,7 @@ function setup(path = "/v2/capital/monthly-result") {
     failDashboard: false,
     payload: result(latest) as DashboardFixture,
     pendingOlder: null as Promise<void> | null,
+    pendingLatest: null as Promise<void> | null,
   };
   vi.stubGlobal(
     "fetch",
@@ -103,6 +104,9 @@ function setup(path = "/v2/capital/monthly-result") {
       }
       if (url.pathname === `/api/months/${older.id}/dashboard` && state.pendingOlder) {
         await state.pendingOlder;
+      }
+      if (url.pathname === `/api/months/${latest.id}/dashboard` && state.pendingLatest) {
+        await state.pendingLatest;
       }
       return new Response(
         JSON.stringify(
@@ -239,6 +243,50 @@ describe("UiV2MonthlyResultPage", () => {
     releaseOlder?.();
     await screen.findByRole("table", { name: "Результат по счетам" });
     expect(screen.getByTestId("location")).toHaveTextContent(`month=${latest.id}`);
+    expect(screen.getByTestId("v2-report-context")).toHaveTextContent("Июль 2031");
+  });
+
+  it("hides cached values through restore invalidation and ignores a late pre-restore read with reused month identity", async () => {
+    const { client, reads, state } = setup();
+    await screen.findByRole("table", { name: "Результат по счетам" });
+    let releaseOld: (() => void) | undefined;
+    state.pendingLatest = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
+    const priorRead = client.invalidateQueries({ queryKey: ["dashboard", latest.id] });
+    await waitFor(() =>
+      expect(
+        reads.filter((read) => read === `GET /api/months/${latest.id}/dashboard`),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+
+    // Restore retains id/year/month/snapshot_date but replaces monetary facts.
+    state.payload = {
+      ...result(latest),
+      result_by_account: [
+        {
+          account_id: 7,
+          account_name: "После восстановления",
+          account_type: "brokerage",
+          cash_income: rub("300.00"),
+          unrealized_result: rub("0.00"),
+        },
+      ],
+    };
+    state.pendingLatest = null;
+    const restoredRead = client.invalidateQueries();
+    await waitFor(() =>
+      expect(
+        reads.filter((read) => read === `GET /api/months/${latest.id}/dashboard`),
+      ).toHaveLength(3),
+    );
+    expect(screen.queryByText(/Тестовый счёт/)).toBeNull();
+    releaseOld?.();
+    await Promise.all([priorRead, restoredRead]);
+    const table = await screen.findByRole("table", { name: "Результат по счетам" });
+    expect(within(table).getByText("После восстановления")).toBeInTheDocument();
+    expect(within(table).queryByText("Тестовый счёт")).toBeNull();
     expect(screen.getByTestId("v2-report-context")).toHaveTextContent("Июль 2031");
   });
 
