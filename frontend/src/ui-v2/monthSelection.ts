@@ -76,7 +76,7 @@ export function selectDiagnosticMonth(months: ReportingMonth[]): ReportingMonth 
   return sorted.find((month) => month.status === "closed") ?? null;
 }
 
-export type DataAppSection = "sources" | "reconciliation" | "catalogs" | "files" | "app";
+export type DataAppSection = "sources" | "reconciliation" | "months" | "catalogs" | "files" | "app";
 
 export function dataAppPath(
   section: DataAppSection,
@@ -89,11 +89,13 @@ export function dataAppPath(
       ? "/v2/data"
       : section === "reconciliation"
         ? "/v2/data/reconciliation"
-        : section === "catalogs"
-          ? "/v2/data/catalogs"
-          : section === "files"
-            ? "/v2/data/files"
-            : "/v2/data/app";
+        : section === "months"
+          ? "/v2/data/months"
+          : section === "catalogs"
+            ? "/v2/data/catalogs"
+            : section === "files"
+              ? "/v2/data/files"
+              : "/v2/data/app";
   const params = new URLSearchParams(search);
   if (monthId != null && !params.has("month")) params.set("month", String(monthId));
   const query = params.toString();

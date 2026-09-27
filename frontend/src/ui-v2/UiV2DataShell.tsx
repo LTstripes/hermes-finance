@@ -19,6 +19,7 @@ const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
 ];
 
 const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
+  { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },
   { id: "files", label: "Файлы" },
   { id: "app", label: "Приложение" },
