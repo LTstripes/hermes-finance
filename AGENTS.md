@@ -236,14 +236,33 @@ No document may continue to describe the published release as RC, candidate or u
 
 ## Completion reporting
 
-A normal Worker returns a per-task completion report with:
+A normal Worker returns one concise per-task completion report with:
 
-- task ID and status;
-- baseline, branch/workspace and exact candidate SHA;
-- work completed and changed files;
+- task/issue ID and status;
+- **Model evidence** using the common fields below;
+- baseline, target integration branch, task branch/workspace and exact candidate SHA;
+- work completed, key files and exact `git diff --stat` additions/deletions when available;
 - exact checks and outcomes;
-- limitations/questions/blockers;
-- final working-tree state when local.
+- deviations, limitations, blockers and relevant execution confounders (for example resource contention);
+- final working-tree state and remote/HEAD read-back when local.
+
+Use this compact block in every Worker handoff:
+
+```text
+Model evidence
+client/runtime: <name + version if exposed>
+requested model/effort: <value or unknown>
+actual model/provider/effort: <runtime-reported value or unknown>
+identity source: runtime_confirmed | worker_reported | owner_reported | assigned_only | unknown
+delegates/fallbacks: <chain or none/unknown>
+usage: input=<n|unknown>; cached_input=<n|unknown>; output=<n|unknown>; reasoning=<n|unknown>; total=<n|unknown>
+reported cost/credits: <exact runtime/billing value or unknown>
+reported active/elapsed time: <exact runtime value or unknown>
+```
+
+Usage fields are evidence only when the executing client/runtime exposes exact counters. Do not estimate token counts, infer subscription cost, convert public list prices into a claimed run cost, or treat unavailable counters as zero. Report only aggregate counters/metadata; never include private prompts, secrets or hidden reasoning. If a provider/client does not expose a field, write `unknown`.
+
+Workers/Execution Orchestrators do **not** edit `docs/MODEL_BENCHMARK.md` or the benchmark tracker to grade themselves. The Integrator records accepted, rejected, pending and abandoned attempts centrally after source/evidence review and keeps Worker, Reviewer and research roles separate.
 
 An orchestrated queue additionally returns one final queue report listing every authorized task, its final internal state, candidate SHA where applicable, review path and unresolved Integrator action. That queue report is not a batch project acceptance.
 
