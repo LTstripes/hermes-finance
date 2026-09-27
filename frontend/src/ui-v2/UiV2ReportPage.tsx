@@ -621,6 +621,9 @@ export default function UiV2ReportPage() {
             ) : null}
             <Link to="/v2">Мои финансы</Link>
             <Link to="/v2/capital">Капитал</Link>
+            <Link to={`/v2/capital/monthly-result?month=${month.id}`}>
+              Денежный результат месяца →
+            </Link>
           </span>
         </UiV2ReportContext>
         <p className={reportStyles.caveat} data-testid="report-methodology-caveat">
