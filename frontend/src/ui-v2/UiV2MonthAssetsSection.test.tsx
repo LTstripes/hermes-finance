@@ -612,14 +612,12 @@ describe("UiV2MonthAssetsSection", () => {
     expect(createDeposit).toHaveBeenCalledTimes(1);
   });
 
-  it("switches to the exact month, filters foreign rows and ignores a late response", async () => {
+  it("switches to the exact month and ignores a late response", async () => {
     deposits = [deposit, { ...deposit, id: 22, reporting_month_id: 8, name: "Вклад Февральский" }];
     cashRows = [
       cashRow,
       { ...cashRow, id: 42, reporting_month_id: 8, name: "Февральский кошелёк" },
     ];
-    vi.mocked(listDeposits).mockImplementation(async () => deposits);
-    vi.mocked(listCashBalances).mockImplementation(async () => cashRows);
     const gate = deferred<void>();
     vi.mocked(createDeposit).mockImplementationOnce(async (payload) => {
       const created = makeDeposit(payload, 905);
@@ -705,5 +703,162 @@ describe("UiV2MonthAssetsSection", () => {
 
     unmount();
     expect(setDirty).toHaveBeenLastCalledWith("assets", false);
+  });
+
+  // ——— Integrator B1: aggregate authority after a failed total readback ———
+
+  it("never presents a pre-write cash total as current after a failed aggregate readback", async () => {
+    seedCashMutations();
+    cashTotal = {
+      reporting_month_id: 7,
+      total: money("12345.00"),
+      total_in_capital: money("12345.00"),
+    };
+    let reads = 0;
+    vi.mocked(getCashTotal).mockImplementation(async () => {
+      reads += 1;
+      if (reads === 1) return { ...cashTotal };
+      if (reads === 2) throw new Error("агрегат недоступен");
+      return {
+        reporting_month_id: 7,
+        total: money("14845.00"),
+        total_in_capital: money("14845.00"),
+      };
+    });
+    setup();
+    const user = userEvent.setup();
+
+    await screen.findByText("Кошелёк");
+    expect(screen.getAllByText("12 345 ₽")).toHaveLength(2);
+
+    await user.type(screen.getByLabelText("Название денежной позиции"), "Копилка");
+    await user.type(screen.getByLabelText("Сумма наличных"), "2500");
+    await user.click(screen.getByRole("button", { name: "Добавить денежную позицию" }));
+
+    // Строки подтверждены перечитыванием списка…
+    await screen.findByText(/Денежная позиция «Копилка» сохранена; данные перечитаны/);
+    // …но итог не перечитан: старое значение не показывается как текущее.
+    await screen.findByText(/Итог наличных не перечитан/);
+    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
+    expect(screen.queryByText("12 345 ₽")).not.toBeInTheDocument();
+    expect(screen.getByText("Копилка")).toBeInTheDocument();
+
+    // Восстановление: сервер снова отдаёт итог, повтор подтверждает его.
+    await user.click(screen.getByRole("button", { name: "Повторить чтение итога" }));
+    await waitFor(() => expect(screen.getAllByText("14 845 ₽")).toHaveLength(2));
+    expect(screen.queryByText(/Итог наличных не перечитан/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Недоступно")).not.toBeInTheDocument();
+    expect(reads).toBe(3);
+  });
+
+  it("keeps the aggregate unconfirmed when a capital toggle cannot refresh the total", async () => {
+    seedCashMutations();
+    cashTotal = {
+      reporting_month_id: 7,
+      total: money("9000.00"),
+      total_in_capital: money("9000.00"),
+    };
+    let reads = 0;
+    vi.mocked(getCashTotal).mockImplementation(async () => {
+      reads += 1;
+      if (reads === 1) return { ...cashTotal };
+      throw new Error("итог не перечитан");
+    });
+    setup();
+    const user = userEvent.setup();
+
+    await screen.findByText("Кошелёк");
+    expect(screen.getAllByText("9 000 ₽")).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "да" }));
+    await screen.findByText(/«Кошелёк»: исключена из ликвидного капитала/);
+    await screen.findByText(/Итог наличных не перечитан/);
+    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
+    expect(screen.queryByText("9 000 ₽")).not.toBeInTheDocument();
+    expect(reads).toBe(2);
+  });
+
+  // ——— Integrator B2: foreign-month responses are rejected, not filtered ———
+
+  it("rejects an initial deposit list that belongs to another month", async () => {
+    vi.mocked(listDeposits).mockImplementation(async () => [
+      { ...deposit, id: 55, reporting_month_id: 8, name: "Чужой вклад" },
+    ]);
+    setup();
+
+    await screen.findByText(/Ответ API по вкладам принадлежит другому месяцу/);
+    expect(screen.queryByText("Чужой вклад")).not.toBeInTheDocument();
+    expect(screen.queryByText("Пусто")).not.toBeInTheDocument();
+    expect(screen.queryAllByText(/^0\s?₽$/)).toHaveLength(0);
+    expect(screen.getByText(/Баланс:/)).toHaveTextContent("—");
+    // Отклонённый список не рендерится таблицей; таблица только у денежных средств.
+    expect(await tables()).toHaveLength(1);
+  });
+
+  it("rejects an initial cash list that belongs to another month", async () => {
+    vi.mocked(listCashBalances).mockImplementation(async () => [
+      { ...cashRow, id: 56, reporting_month_id: 8, name: "Чужой кошелёк" },
+    ]);
+    setup();
+
+    await screen.findByText(/Ответ API по денежным позициям принадлежит другому месяцу/);
+    expect(screen.queryByText("Чужой кошелёк")).not.toBeInTheDocument();
+    expect(screen.queryByText("Пусто")).not.toBeInTheDocument();
+    expect(screen.queryAllByText(/^0\s?₽$/)).toHaveLength(0);
+    // Отдельный месячный эндпоинт итога остаётся валидным для этого месяца.
+    expect(screen.getAllByText("5 000 ₽").length).toBeGreaterThan(0);
+    expect(await tables()).toHaveLength(1);
+  });
+
+  it("does not confirm a deposit deletion from a foreign-month readback", async () => {
+    seedDepositMutations();
+    vi.mocked(listDeposits).mockReset();
+    vi.mocked(listDeposits).mockImplementationOnce(async (monthId) =>
+      deposits.filter((row) => row.reporting_month_id === monthId),
+    );
+    vi.mocked(listDeposits).mockImplementation(async () => [
+      { ...deposit, id: 77, reporting_month_id: 8, name: "Чужой вклад" },
+    ]);
+    setup();
+    const user = userEvent.setup();
+
+    await tables();
+    await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Удалить вклад?" });
+    await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
+
+    await screen.findByText(/перечитывание не подтверждает выбранный снимок/);
+    expect(deleteDeposit).toHaveBeenCalledWith(21);
+    expect(screen.queryByText(/Вклад «Вклад Альфа» удалён/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Чужой вклад")).not.toBeInTheDocument();
+    expect(screen.queryByText("Пусто")).not.toBeInTheDocument();
+  });
+
+  it("does not confirm a cash deletion from a foreign-month readback", async () => {
+    seedCashMutations();
+    vi.mocked(listCashBalances).mockReset();
+    vi.mocked(listCashBalances).mockImplementationOnce(async (monthId) =>
+      cashRows.filter((row) => row.reporting_month_id === monthId),
+    );
+    vi.mocked(listCashBalances).mockImplementation(async () => [
+      { ...cashRow, id: 78, reporting_month_id: 8, name: "Чужой кошелёк" },
+    ]);
+    setup();
+    const user = userEvent.setup();
+
+    await screen.findByText("Кошелёк");
+    await user.click(
+      screen.getByRole("button", { name: "Действия для денежной позиции «Кошелёк»" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Удалить денежную позицию?" });
+    await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
+
+    await screen.findByText(/перечитывание не подтверждает выбранный снимок/);
+    expect(deleteCashBalance).toHaveBeenCalledWith(41);
+    expect(screen.queryByText(/Денежная позиция «Кошелёк» удалена/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Чужой кошелёк")).not.toBeInTheDocument();
+    expect(screen.queryByText("Пусто")).not.toBeInTheDocument();
   });
 });

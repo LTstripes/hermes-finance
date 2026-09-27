@@ -71,6 +71,15 @@ const emptyCash = (): CashDraft => ({
   include_in_capital: true,
 });
 
+/** Visible rejection for a mismatched list — never filtered into an "empty" snapshot. */
+const DEPOSITS_FOREIGN_MESSAGE =
+  "Ответ API по вкладам принадлежит другому месяцу: список отклонён и не показывается пустым снимком.";
+const CASH_FOREIGN_MESSAGE =
+  "Ответ API по денежным позициям принадлежит другому месяцу: список отклонён и не показывается пустым снимком.";
+/** Row mutation confirmed, aggregate not: kept apart on purpose (Integrator B1). */
+const CASH_TOTAL_WARNING =
+  "Итог наличных не перечитан: прежнее значение не показывается как текущее. Строки подтверждаются отдельным перечитыванием списка.";
+
 /** API currency code → suffix used by formatMoney; unknown codes stay verbatim. */
 function currencySuffix(currency: string | null | undefined): string {
   const code = (currency ?? "RUB").toUpperCase();
@@ -94,6 +103,24 @@ function sameMoney(left: string | null | undefined, right: string | null | undef
 /** A total is rendered only when every component amount is valid; otherwise — never a zero. */
 function totalText(value: string | null, currency: string | null | undefined): string {
   return value === null ? "—" : formatMoney(value, { currency: currencySuffix(currency) });
+}
+
+/**
+ * A response carrying any foreign-month row is rejected wholesale (Integrator
+ * B2): filtering it would turn a mismatched list into an "authoritative"
+ * empty snapshot and could falsely confirm a deletion.
+ */
+function requireMonthRows<T extends { reporting_month_id: number }>(
+  rows: T[],
+  monthId: number,
+  label: string,
+): T[] {
+  if (rows.some((row) => row.reporting_month_id !== monthId)) {
+    throw new Error(
+      `Ответ списка ${label} принадлежит другому месяцу: перечитывание не подтверждает выбранный снимок.`,
+    );
+  }
+  return rows;
 }
 
 /**
@@ -147,6 +174,10 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Cash aggregate authority: unconfirmed while a write is in flight or its
+  // total readback failed — the pre-write value is never shown as current (B1).
+  const [totalUnconfirmed, setTotalUnconfirmed] = useState(false);
+  const [totalWarning, setTotalWarning] = useState<string | null>(null);
   const busyRef = useRef(false);
   const operation = useRef(0);
 
@@ -162,16 +193,14 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   );
 
   const accounts = accountsQuery.data ?? [];
-  // Rows from another month are never rendered or counted: the snapshot belongs
-  // to the exact selected month, not to whatever a late response contained.
-  const depositRows = useMemo(
-    () => (depositsQuery.data ?? []).filter((row) => row.reporting_month_id === monthId),
-    [depositsQuery.data, monthId],
+  // A mismatched response is rejected wholesale and visibly (B2); it is never
+  // filtered into an empty slice that would look like an empty snapshot.
+  const depositsForeign = (depositsQuery.data ?? []).some(
+    (row) => row.reporting_month_id !== monthId,
   );
-  const cashRows = useMemo(
-    () => (cashRowsQuery.data ?? []).filter((row) => row.reporting_month_id === monthId),
-    [cashRowsQuery.data, monthId],
-  );
+  const cashForeign = (cashRowsQuery.data ?? []).some((row) => row.reporting_month_id !== monthId);
+  const depositRows = useMemo(() => depositsQuery.data ?? [], [depositsQuery.data]);
+  const cashRows = useMemo(() => cashRowsQuery.data ?? [], [cashRowsQuery.data]);
   const cashTotal =
     cashTotalQuery.data && cashTotalQuery.data.reporting_month_id === monthId
       ? cashTotalQuery.data
@@ -191,6 +220,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   );
 
   const depositTotals = useMemo(() => {
+    // A rejected (foreign) list yields unknown totals — "—", never a computed zero.
+    if (depositsForeign)
+      return { balance: null, expected: null, actual: null, currency: "RUB", mixed: false };
     const firstCurrency = depositRows[0]?.balance.currency ?? "RUB";
     const balances = depositRows.map((row) => moneyAmount(row.balance));
     const expected = depositRows.map((row) => moneyAmount(row.expected_monthly_interest));
@@ -204,7 +236,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       currency: firstCurrency,
       mixed: depositRows.some((row) => row.balance.currency !== firstCurrency),
     };
-  }, [depositRows]);
+  }, [depositRows, depositsForeign]);
 
   const defaultAccountId = depositAccounts[0]?.id ?? null;
   const effectiveAccountId =
@@ -213,20 +245,26 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const loading = accountsQuery.isPending || depositsQuery.isPending || cashRowsQuery.isPending;
   const loadError = [accountsQuery, depositsQuery, cashRowsQuery].find((query) => query.isError);
 
-  const cashTotalText = !cashTotalQuery.isPending
-    ? cashTotal
+  // Authority of the displayed aggregates: current only after a confirmed read
+  // of this month's total. Retained data behind an error, a foreign month, or
+  // an unconfirmed post-write refresh renders as "Загружаем…"/«Недоступно» (B1).
+  const cashTotalSettling =
+    cashTotalQuery.isPending || (totalUnconfirmed && !cashTotalQuery.isError);
+  const cashTotalCurrent = cashTotalQuery.isSuccess && !totalUnconfirmed;
+  const cashTotalText = cashTotalSettling
+    ? "Загружаем…"
+    : cashTotal && cashTotalCurrent
       ? formatMoney(moneyAmount(cashTotal.total), {
           currency: currencySuffix(cashTotal.total.currency),
         })
-      : "Недоступно"
-    : "Загружаем…";
-  const cashInCapitalText = !cashTotalQuery.isPending
-    ? cashTotal
+      : "Недоступно";
+  const cashInCapitalText = cashTotalSettling
+    ? "Загружаем…"
+    : cashTotal && cashTotalCurrent
       ? formatMoney(moneyAmount(cashTotal.total_in_capital), {
           currency: currencySuffix(cashTotal.total_in_capital.currency),
         })
-      : "Недоступно"
-    : "Загружаем…";
+      : "Недоступно";
 
   const debts = debtsQuery.data ?? [];
   const linkedPairs =
@@ -244,7 +282,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     if (!result.isSuccess || !result.data) {
       throw new Error("Список вкладов не удалось перечитать.");
     }
-    return result.data.filter((row) => row.reporting_month_id === monthId);
+    return requireMonthRows(result.data, monthId, "вкладов");
   }
 
   async function refetchCashRows(): Promise<CashBalance[]> {
@@ -252,13 +290,30 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     if (!result.isSuccess || !result.data) {
       throw new Error("Список денежных позиций не удалось перечитать.");
     }
-    return result.data.filter((row) => row.reporting_month_id === monthId);
+    return requireMonthRows(result.data, monthId, "денежных позиций");
   }
 
   /** Confirmed save → other surfaces go stale; linked-pair facts reread now. */
   async function markDataStale(): Promise<void> {
     await queryClient.invalidateQueries({ refetchType: "none" });
     await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) });
+  }
+
+  /**
+   * Reread the cash aggregate and inspect the outcome (Integrator B1): the
+   * total stays unconfirmed — with a visible warning and retry — unless this
+   * month's aggregate comes back successfully.
+   */
+  async function refreshCashTotal(): Promise<void> {
+    setTotalUnconfirmed(true);
+    const result = await cashTotalQuery.refetch();
+    const confirmed = result.isSuccess && result.data?.reporting_month_id === monthId;
+    if (confirmed) {
+      setTotalUnconfirmed(false);
+      setTotalWarning(null);
+    } else {
+      setTotalWarning(CASH_TOTAL_WARNING);
+    }
   }
 
   function reportFailure(token: number, cause: unknown): void {
@@ -354,6 +409,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   async function handleSaveDepositEdit() {
     if (busyRef.current || readOnly) return;
     if (editingDepositId == null || !editDeposit) return;
+    if (depositsForeign) {
+      setActionError(DEPOSITS_FOREIGN_MESSAGE);
+      void depositsQuery.refetch();
+      return;
+    }
     const current = depositRows.find((row) => row.id === editingDepositId);
     if (!current) {
       setEditingDepositId(null);
@@ -462,6 +522,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (!normalizeMoneyInput(cashDraft.amount)) {
         throw new Error("Укажи сумму");
       }
+      // From this point the pre-write total must not present as current (B1).
+      setTotalUnconfirmed(true);
       const created = await createCashBalance({
         reporting_month_id: monthId,
         name: cashDraft.name.trim(),
@@ -481,7 +543,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       ) {
         throw new Error("Сохранение денежной позиции не подтверждено перечитыванием списка.");
       }
-      await cashTotalQuery.refetch();
+      await refreshCashTotal();
       await markDataStale();
       if (operation.current !== token) return;
       setCashDraft(emptyCash());
@@ -490,7 +552,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     } catch (cause) {
       reportFailure(token, cause);
       void cashRowsQuery.refetch();
-      void cashTotalQuery.refetch();
+      void refreshCashTotal();
     } finally {
       finishAction(token);
     }
@@ -510,20 +572,22 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setActionError(null);
     setNotice(null);
     setPendingDeleteCash(null);
+    // From this point the pre-write total must not present as current (B1).
+    setTotalUnconfirmed(true);
     try {
       await deleteCashBalance(target.id);
       const fresh = await refetchCashRows();
       if (fresh.some((row) => row.id === target.id)) {
         throw new Error("Удаление не подтверждено перечитыванием списка.");
       }
-      await cashTotalQuery.refetch();
+      await refreshCashTotal();
       await markDataStale();
       if (operation.current !== token) return;
       setNotice(`Денежная позиция «${target.name}» удалена; данные перечитаны.`);
     } catch (cause) {
       reportFailure(token, cause);
       void cashRowsQuery.refetch();
-      void cashTotalQuery.refetch();
+      void refreshCashTotal();
     } finally {
       finishAction(token);
     }
@@ -541,6 +605,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setActionError(null);
     setNotice(null);
     try {
+      // From this point the pre-write total must not present as current (B1).
+      setTotalUnconfirmed(true);
       const target = !row.include_in_capital;
       const changed = await updateCashBalance(row.id, { include_in_capital: target });
       if (changed.id !== row.id || changed.reporting_month_id !== monthId) {
@@ -551,7 +617,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (!confirmed || confirmed.include_in_capital !== target) {
         throw new Error("Изменение не подтверждено перечитыванием списка.");
       }
-      await cashTotalQuery.refetch();
+      await refreshCashTotal();
       await markDataStale();
       if (operation.current !== token) return;
       setNotice(
@@ -560,7 +626,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     } catch (cause) {
       reportFailure(token, cause);
       void cashRowsQuery.refetch();
-      void cashTotalQuery.refetch();
+      void refreshCashTotal();
     } finally {
       finishAction(token);
     }
@@ -614,14 +680,24 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           <Panel
             action={
               <Badge>
-                итог {totalText(depositTotals.balance, depositTotals.currency)} ·{" "}
-                {depositRows.length} шт.
+                {depositsForeign ? (
+                  <>итог — · снимок не подтверждён</>
+                ) : (
+                  <>
+                    итог {totalText(depositTotals.balance, depositTotals.currency)} ·{" "}
+                    {depositRows.length} шт.
+                  </>
+                )}
               </Badge>
             }
             label="Активы"
             title="Депозиты"
           >
-            {depositRows.length === 0 ? (
+            {depositsForeign ? (
+              <div className="inline-alert inline-alert--error" role="alert">
+                {DEPOSITS_FOREIGN_MESSAGE}
+              </div>
+            ) : depositRows.length === 0 ? (
               <EmptyState
                 description="Депозитов пока нет — добавь вклад формой ниже."
                 inline
@@ -910,7 +986,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
             label="Активы"
             title="Денежные средства"
           >
-            {cashRows.length === 0 ? (
+            {cashForeign ? (
+              <div className="inline-alert inline-alert--error" role="alert">
+                {CASH_FOREIGN_MESSAGE}
+              </div>
+            ) : cashRows.length === 0 ? (
               <EmptyState description="Наличных позиций нет." inline title="Пусто" />
             ) : (
               <Table className="month-cash-table">
@@ -966,10 +1046,33 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 В ликвидном капитале: <strong>{cashInCapitalText}</strong>
               </span>
             </div>
-            {!cashTotalQuery.isPending && !cashTotal ? (
+            {!cashTotalQuery.isPending &&
+            !totalUnconfirmed &&
+            !(cashTotal && cashTotalQuery.isSuccess) ? (
               <div className="inline-alert inline-alert--warn" role="status">
                 Итоги наличных за выбранный месяц недоступны: сумма не подменяется нулём, полнота
-                капитала не утверждается.
+                капитала не утверждается.{" "}
+                <Button
+                  disabled={cashTotalQuery.isFetching}
+                  onClick={() => void refreshCashTotal()}
+                  size="sm"
+                  type="button"
+                >
+                  Повторить чтение итога
+                </Button>
+              </div>
+            ) : null}
+            {totalWarning && !cashTotalQuery.isPending ? (
+              <div className="inline-alert inline-alert--warn" role="alert">
+                {totalWarning}{" "}
+                <Button
+                  disabled={cashTotalQuery.isFetching}
+                  onClick={() => void refreshCashTotal()}
+                  size="sm"
+                  type="button"
+                >
+                  Повторить чтение итога
+                </Button>
               </div>
             ) : null}
 
