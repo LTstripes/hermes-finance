@@ -1,0 +1,111 @@
+.toolbar,
+.tabs,
+.noteActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.toolbar {
+  margin-bottom: 16px;
+}
+.toolbar a,
+.tabs a {
+  color: var(--accent);
+}
+.toolbar button,
+.panel button,
+.warning button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.panel button:disabled,
+.toolbar button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.panel {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+.panel h2 {
+  margin: 0 0 10px;
+}
+.panel p {
+  margin: 8px 0;
+}
+.form {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+  margin-top: 16px;
+}
+.form label {
+  display: grid;
+  gap: 5px;
+  font-weight: 650;
+}
+.form input {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+.status {
+  font-weight: 650;
+}
+.tabs {
+  margin: 16px 0;
+}
+.tabs a {
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+}
+.tabs a[aria-current="page"] {
+  background: var(--soft);
+  font-weight: 700;
+}
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+.warning {
+  padding: 12px;
+  border-radius: 9px;
+  background: #f8eaea;
+  color: #7a2e2e;
+}
+.notes {
+  padding-left: 24px;
+}
+.notes li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.noteActions {
+  margin-top: 6px;
+}
+@media (max-width: 480px) {
+  .toolbar > *,
+  .form button,
+  .noteActions > button {
+    width: 100%;
+  }
+  .toolbar,
+  .noteActions {
+    align-items: stretch;
+  }
+}
