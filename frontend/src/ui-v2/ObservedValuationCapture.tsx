@@ -23,15 +23,9 @@ import styles from "./UiV2CapitalPerformance.module.css";
  * total or an interpolation, and never retries an ambiguous write.
  */
 
-type CoverageChoice = "complete" | "unavailable" | "unknown";
-type QualityChoice = "exact" | "unavailable" | "unknown";
-
 export type CaptureDraft = {
   relation: ValuationCaptureRelation;
   total_value: string;
-  performance_currency: string;
-  coverage: CoverageChoice;
-  quality: QualityChoice;
   provenance_kind: string;
   provenance_reference: string | null;
   notes: string | null;
@@ -100,13 +94,26 @@ function blockedCopy(reason: string | null): string {
   }
 }
 
-function SideEvidence({ side }: { side: ValuationCaptureSide }) {
+function SideEvidence({
+  side,
+  targetCurrency,
+}: {
+  side: ValuationCaptureSide;
+  targetCurrency: string;
+}) {
+  const authoritative =
+    side.coverage === "complete" &&
+    side.quality === "exact" &&
+    side.performance_currency === targetCurrency;
   return (
     <p data-testid={`valuation-capture-side-${side.id}`}>
       {relationLabel(side.relation)}: {side.total_value.amount} {side.total_value.currency} ·
       покрытие: {coverageLabel(side.coverage)} · качество: {qualityLabel(side.quality)} · источник:{" "}
       {side.provenance_kind}
       {side.bound ? "" : " · не привязано к текущей версии"}
+      {side.bound && !authoritative
+        ? " · запись не является авторитетной для расчёта (покрытие/качество/валюта); исправление или удаление принятым контрактом не поддержано"
+        : ""}
     </p>
   );
 }
@@ -125,21 +132,15 @@ function CaptureForm({
     relations.length === 1 ? relations[0] : "",
   );
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(target.performance_currency);
-  const [coverageChoice, setCoverageChoice] = useState<CoverageChoice | "">("");
   const [provenanceKind, setProvenanceKind] = useState("");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [attested, setAttested] = useState(false);
 
-  const quality: QualityChoice | "" =
-    coverageChoice === "complete" ? "exact" : coverageChoice === "" ? "" : coverageChoice;
   const valid =
     relation !== "" &&
     relations.includes(relation) &&
     /^\d+(\.\d{1,2})?$/.test(amount) &&
-    /^[A-Za-z]{3}$/.test(currency.trim()) &&
-    quality !== "" &&
     provenanceKind.trim().length > 0 &&
     provenanceKind.trim().length <= 64 &&
     reference.trim().length <= 128;
@@ -148,13 +149,10 @@ function CaptureForm({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!valid || !attested || locked || !coverageChoice || !quality) return;
+        if (!valid || !attested || locked) return;
         void save(target, {
           relation,
           total_value: amount,
-          performance_currency: currency.trim().toUpperCase(),
-          coverage: coverageChoice,
-          quality,
           provenance_kind: provenanceKind.trim(),
           provenance_reference: reference.trim() || null,
           notes: notes.trim() || null,
@@ -166,6 +164,11 @@ function CaptureForm({
         <p>
           Значение должно быть фактически наблюдённой стоимостью из источника до или после операции.
           Оно не рассчитывается из суммы потока, месячного итога или интерполяции.
+        </p>
+        <p>
+          Поддерживается только подтверждённое полное и точное наблюдение (complete/exact) в валюте
+          расчёта. Если фактического подтверждённого источника нет, ничего не вводите: наблюдение не
+          будет записано, и расчёт останется недоступным с объяснением.
         </p>
         <div className={styles.controls} onChange={() => setAttested(false)}>
           <label>
@@ -193,26 +196,13 @@ function CaptureForm({
             />
           </label>
           <label>
-            Валюта
+            Валюта расчёта (фиксирована целью)
             <input
               aria-label="Валюта наблюдения"
-              maxLength={3}
-              value={currency}
-              onChange={(event) => setCurrency(event.target.value)}
+              aria-readonly="true"
+              readOnly
+              value={target.performance_currency}
             />
-          </label>
-          <label>
-            Полнота и точность
-            <select
-              aria-label="Полнота наблюдения"
-              value={coverageChoice}
-              onChange={(event) => setCoverageChoice(event.target.value as CoverageChoice | "")}
-            >
-              <option value="">Выберите явно</option>
-              <option value="complete">Подтверждено полностью и точно (complete/exact)</option>
-              <option value="unknown">Источник не подтверждён (unknown)</option>
-              <option value="unavailable">Источник недоступен (unavailable)</option>
-            </select>
           </label>
           <label>
             Источник (provenance)
@@ -248,8 +238,8 @@ function CaptureForm({
             checked={attested}
             onChange={(event) => setAttested(event.target.checked)}
           />{" "}
-          Я ввёл(а) фактически наблюдённую стоимость из источника; она не вычислена из потока и не
-          взята из месячного итога
+          Я ввёл(а) подтверждённую фактически наблюдённую стоимость complete/exact из источника в
+          валюте расчёта; она не вычислена из потока и не взята из месячного итога
         </label>
         {target.reporting_month_status === "closed" ? (
           <p role="alert">
@@ -302,10 +292,10 @@ function TargetBlock({
         {stateCopy(target, "post_external_flow")}.
       </p>
       {target.pre_external_flow.map((side) => (
-        <SideEvidence key={side.id} side={side} />
+        <SideEvidence key={side.id} side={side} targetCurrency={target.performance_currency} />
       ))}
       {target.post_external_flow.map((side) => (
-        <SideEvidence key={side.id} side={side} />
+        <SideEvidence key={side.id} side={side} targetCurrency={target.performance_currency} />
       ))}
       {target.missing_relations.length > 0 ? (
         <p data-testid={`valuation-capture-missing-${targetKey(target)}`}>
@@ -380,9 +370,9 @@ export function ObservedValuationCapture({ context }: { context: PerformanceCont
         relation: draft.relation,
         expected_material_signature: target.material_signature,
         total_value: draft.total_value,
-        performance_currency: draft.performance_currency,
-        coverage: draft.coverage,
-        quality: draft.quality,
+        performance_currency: target.performance_currency,
+        coverage: "complete",
+        quality: "exact",
         provenance_kind: draft.provenance_kind,
         provenance_reference: draft.provenance_reference,
         notes: draft.notes,

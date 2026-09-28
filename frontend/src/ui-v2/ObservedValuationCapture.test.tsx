@@ -181,9 +181,6 @@ async function capturePre(amount = "1100.00") {
     target: { value: "pre_external_flow" },
   });
   fireEvent.change(screen.getByLabelText("Сумма наблюдения"), { target: { value: amount } });
-  fireEvent.change(screen.getByLabelText("Полнота наблюдения"), {
-    target: { value: "complete" },
-  });
   fireEvent.change(screen.getByLabelText("Источник наблюдения"), {
     target: { value: "owner_statement" },
   });
@@ -214,6 +211,63 @@ describe("observed PRE/POST valuation capture", () => {
     });
     expect(await screen.findByTestId("valuation-capture-side-101")).toBeInTheDocument();
     expect(screen.getByText(/Не хватает: POST/)).toBeInTheDocument();
+  });
+
+  it("offers only source-backed complete/exact input in the fixed target currency", async () => {
+    setup();
+    await screen.findByTestId("valuation-capture-missing-flow:5");
+    // No incomplete/inexact write choices exist any more.
+    expect(screen.queryByLabelText("Полнота наблюдения")).not.toBeInTheDocument();
+    const currency = screen.getByLabelText("Валюта наблюдения");
+    expect(currency).toHaveValue("RUB");
+    expect(currency).toHaveAttribute("readonly");
+    expect(screen.getAllByText(/complete\/exact/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Если фактического подтверждённого источника нет/)).toBeInTheDocument();
+  });
+
+  it("keeps legacy non-authoritative sides visible without offering a repair write", async () => {
+    target = baseTarget({
+      pre_external_flow: [
+        {
+          id: 7,
+          relation: "pre_external_flow",
+          observed_date: "2030-05-15",
+          total_value: { amount: "1100.00", currency: "USD" },
+          performance_currency: "USD",
+          coverage: "unknown",
+          quality: "unknown",
+          provenance_kind: "legacy_import",
+          bound: true,
+        },
+      ],
+      post_external_flow: [
+        {
+          id: 8,
+          relation: "post_external_flow",
+          observed_date: "2030-05-15",
+          total_value: { amount: "1200.00", currency: "USD" },
+          performance_currency: "USD",
+          coverage: "complete",
+          quality: "exact",
+          provenance_kind: "legacy_import",
+          bound: true,
+        },
+      ],
+      pre_state: "captured",
+      post_state: "captured",
+      missing_relations: [],
+      capture_capability: null,
+      form_token: null,
+    });
+    setup();
+    const pre = await screen.findByTestId("valuation-capture-side-7");
+    expect(pre).toHaveTextContent(/покрытие: не подтверждено/);
+    expect(pre).toHaveTextContent(/не является авторитетной/);
+    const post = screen.getByTestId("valuation-capture-side-8");
+    expect(post).toHaveTextContent(/валюта/i);
+    expect(post).toHaveTextContent(/не является авторитетной/);
+    // No edit/delete/repair path is offered for the persisted sides.
+    expect(screen.queryByRole("button", { name: "Сохранить наблюдение" })).not.toBeInTheDocument();
   });
 
   it("does not retry an ambiguous write and unlocks only after an explicit reread", async () => {

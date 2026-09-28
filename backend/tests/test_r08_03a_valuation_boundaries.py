@@ -51,6 +51,7 @@ from hermes_finance.services.valuation_boundaries import (
     delete_external_flow_boundary_group,
     list_observed_valuation_points,
 )
+from hermes_finance.services.valuation_capture import stage_observed_valuation_capture
 from hermes_finance.services.valuation_material_signature import material_signature_for_boundary
 
 START = date(2030, 1, 31)
@@ -1803,42 +1804,190 @@ def test_capture_api_closed_month_requires_explicit_reopen(tmp_path: Path) -> No
         database.engine.dispose()
 
 
-def test_capture_api_unknown_quality_stays_blocked_and_keeps_xirr(tmp_path: Path) -> None:
+def test_capture_api_rejects_non_authoritative_and_mismatched_currency_without_mutation(
+    tmp_path: Path,
+) -> None:
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:
         flow = _flow(session, february_id, account_id)
         with TestClient(create_app(database=database)) as client:
             target = _capture_target(client, account_id)
             assert target["flow_ids"] == [flow.id]
-            for relation, amount in (
-                ("pre_external_flow", "1100.00"),
-                ("post_external_flow", "1200.00"),
-            ):
-                current = _capture_target(client, account_id)
-                response = client.post(
-                    CAPTURE_PATH,
-                    json=_capture_submission(
-                        current,
-                        relation=relation,
-                        amount=amount,
-                        coverage="unknown",
-                        quality="unknown",
-                    ),
-                )
-                assert response.status_code == 200, response.text
-            attest_cash_boundary_history(
-                session, account_id=account_id, covered_from=START, covered_to=END
+            assert target["performance_currency"] == "RUB"
+            non_authoritative = (
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", coverage="unknown"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", coverage="unavailable"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", quality="unknown"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", quality="unavailable"
+                ),
             )
-            _close_interval(session, january_id, february_id)
+            for payload in non_authoritative:
+                response = client.post(CAPTURE_PATH, json=payload)
+                assert response.status_code == 422, response.text
+            mismatched = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(
+                    target,
+                    relation="pre_external_flow",
+                    amount="1100.00",
+                    performance_currency="USD",
+                ),
+            )
+            assert mismatched.status_code == 409, mismatched.text
+            assert "currency" in mismatched.json()["error"]["message"]
+            verify = database.session_factory()
+            try:
+                assert list_observed_valuation_points(verify) == []
+            finally:
+                verify.close()
+
+            # Nothing was written, so a fresh source-backed complete/exact side
+            # in the target currency is still possible.
+            fresh = _capture_target(client, account_id)
+            valid = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(fresh, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert valid.status_code == 200, valid.text
+            assert valid.json()["captured"]["relation"] == "pre_external_flow"
+            verify = database.session_factory()
+            try:
+                rows = list_observed_valuation_points(
+                    verify, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+                assert len(rows) == 1
+                assert rows[0].coverage_status == "complete"
+                assert rows[0].quality == "exact"
+                assert rows[0].performance_currency == "RUB"
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "overrides,message",
+    [
+        ({"coverage": "unknown"}, "coverage must be complete"),
+        ({"coverage": "unavailable"}, "coverage must be complete"),
+        ({"quality": "unknown"}, "quality must be exact"),
+        ({"quality": "unavailable"}, "quality must be exact"),
+        ({"performance_currency": "USD"}, "currency must equal"),
+    ],
+)
+def test_capture_service_rejects_non_authoritative_values_without_mutation(
+    tmp_path: Path, overrides: dict[str, str], message: str
+) -> None:
+    session, database, _january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert signature is not None
+        kwargs: dict[str, object] = {
+            "scope": "account",
+            "account_id": account_id,
+            "relation": "pre_external_flow",
+            "expected_material_signature": signature,
+            "total_value": "1100.00",
+            "performance_currency": "RUB",
+            "coverage": "complete",
+            "quality": "exact",
+            "provenance_kind": "synthetic_non_authoritative",
+            "external_flow_id": flow.id,
+        }
+        kwargs.update(overrides)
+        with pytest.raises(ValueError, match=message):
+            stage_observed_valuation_capture(session, **kwargs)  # type: ignore[arg-type]
+        session.rollback()
+        assert (
+            list_observed_valuation_points(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )
+            == []
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_non_authoritative_legacy_sides_stay_visible_and_fail_closed(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert signature is not None
+        # Persisted legacy/non-authoritative sides (as a migration or an older
+        # writer could have left them): unknown coverage/quality and a foreign
+        # currency that can never make the pair authoritative.
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=110_000,
+                    performance_currency="USD",
+                    coverage_status="unknown",
+                    quality="unknown",
+                    provenance_kind="synthetic_legacy_non_authoritative",
+                    relation="pre_external_flow",
+                    external_flow_id=flow.id,
+                    material_signature=signature,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=120_000,
+                    performance_currency="USD",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_legacy_non_authoritative",
+                    relation="post_external_flow",
+                    external_flow_id=flow.id,
+                    material_signature=signature,
+                ),
+            )
+        )
+        session.commit()
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        with TestClient(create_app(database=database)) as client:
             final = client.get(CAPTURE_PATH, params=_capture_params(account_id)).json()
+            target = final["targets"][0]
+            # Stored sides stay visible in their exact persisted form.
+            assert target["pre_state"] == target["post_state"] == "captured"
+            pre = target["pre_external_flow"][0]
+            post = target["post_external_flow"][0]
+            assert pre["coverage"] == "unknown" and pre["quality"] == "unknown"
+            assert pre["performance_currency"] == "USD"
+            assert post["coverage"] == "complete" and post["quality"] == "exact"
+            assert post["performance_currency"] == "USD"
+            # No supported write/repair path may be presented for them.
+            assert target["capture_capability"] is None
+            assert target["form_token"] is None
+            assert target["missing_relations"] == []
             readiness = final["readiness"]
             assert readiness["twrr"]["availability"] == "not_computable"
-            assert "not_computable_valuation_boundary_missing" in readiness["twrr"]["reason_codes"]
+            # The foreign-currency observation is TWRR-boundary evidence only;
+            # XIRR stays independently available from the canonical snapshots.
             assert readiness["xirr"]["availability"] == "available"
-            # Both sides are recorded, so capture cannot be presented as the fix.
-            target = final["targets"][0]
-            assert target["pre_state"] == target["post_state"] == "captured"
-            assert target["capture_capability"] is None
             diagnostics = {item["key"]: item for item in readiness["diagnostics"]}
             assert diagnostics["valuation_boundary"]["action"]["capability"] == "not_implemented"
     finally:

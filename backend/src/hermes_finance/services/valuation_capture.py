@@ -37,6 +37,7 @@ from hermes_finance.persistence import (
 from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.performance_availability import (
+    _performance_currency,
     performance_availability_for_interval,
 )
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
@@ -490,10 +491,32 @@ def stage_observed_valuation_capture(
     reread, so a concurrent correction or close deterministically wins or
     loses.  Duplicate or ambiguous same-relation sides fail closed instead of
     publishing an unresolvable pair.
+
+    Only authoritative evidence is persisted: the canonical service has no
+    observation correction path, so an incomplete, inexact or foreign-currency
+    side would permanently consume the target without ever making the pair
+    usable.  Such submissions are rejected before any mutation; source-less
+    situations must remain a displayed limitation instead of a write.
     """
 
     normalized_scope = _coerce_scope(scope)
     normalized_relation = _coerce_relation(relation)
+    try:
+        normalized_coverage = CoverageStatus(coverage)
+    except ValueError as error:
+        raise ValueError("coverage must be complete for a supported capture") from error
+    if normalized_coverage is not CoverageStatus.COMPLETE:
+        raise ValueError("coverage must be complete for a supported capture")
+    try:
+        normalized_quality = ValuationQuality(quality)
+    except ValueError as error:
+        raise ValueError("quality must be exact for a supported capture") from error
+    if normalized_quality is not ValuationQuality.EXACT:
+        raise ValueError("quality must be exact for a supported capture")
+    normalized_currency = performance_currency.strip().upper()
+    target_currency, _reasons = _performance_currency(session)
+    if normalized_currency != target_currency:
+        raise ValueError("observation currency must equal the target performance currency")
 
     # Resolve identity first (read-only), then hold SQLite's writer reservation
     # through the authoritative reread, publication and the caller's commit.
@@ -538,13 +561,13 @@ def stage_observed_valuation_capture(
         reporting_month_id=month.id,
         observed_date=target.boundary_date,
         total_value=total_value,
-        performance_currency=performance_currency,
+        performance_currency=normalized_currency,
         provenance_kind=provenance_kind,
         relation=normalized_relation,
         scope=normalized_scope,
         account_id=account_id,
-        coverage=coverage,
-        quality=quality,
+        coverage=normalized_coverage,
+        quality=normalized_quality,
         provenance_reference=provenance_reference,
         external_flow_id=target.external_flow_id,
         boundary_group_id=target.boundary_group_id,

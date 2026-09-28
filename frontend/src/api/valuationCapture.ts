@@ -71,8 +71,11 @@ export type ValuationCaptureSubmission = {
   expected_material_signature: string;
   total_value: string;
   performance_currency: string;
-  coverage: "complete" | "unavailable" | "unknown";
-  quality: "exact" | "unavailable" | "unknown";
+  // The supported adapter persists only authoritative evidence. The Owner form
+  // offers no incomplete/inexact write path and fixes the currency to the
+  // target performance currency.
+  coverage: "complete";
+  quality: "exact";
   provenance_kind: string;
   provenance_reference: string | null;
   notes: string | null;

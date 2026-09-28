@@ -112,6 +112,14 @@ class CaptureContext(BaseModel):
 
 
 class CaptureSubmission(CaptureContext):
+    """One authoritative observed side; only source-backed values are accepted.
+
+    The supported #533 adapter has no observation correction path, so it
+    persists only ``complete``/``exact`` evidence in the target performance
+    currency.  Incomplete, inexact or foreign-currency submissions are
+    rejected before any mutation.
+    """
+
     form_token: str = Field(min_length=1, max_length=128)
     external_flow_id: int | None = Field(default=None, gt=0)
     boundary_group_id: int | None = Field(default=None, gt=0)
@@ -119,8 +127,8 @@ class CaptureSubmission(CaptureContext):
     expected_material_signature: str = Field(min_length=64, max_length=64)
     total_value: str = Field(min_length=1, max_length=32)
     performance_currency: str = Field(min_length=3, max_length=3)
-    coverage: Literal["complete", "unavailable", "unknown"]
-    quality: Literal["exact", "unavailable", "unknown"]
+    coverage: Literal["complete"]
+    quality: Literal["exact"]
     provenance_kind: str = Field(min_length=1, max_length=64)
     provenance_reference: str | None = Field(default=None, max_length=128)
     notes: str | None = Field(default=None, max_length=2000)
