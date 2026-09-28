@@ -66,6 +66,12 @@ const APPLY_FAILURE_LABELS: Record<string, string> = {
 const STALE_APPLY_MESSAGE =
   "Параметры изменились после preview. Получи свежий preview для текущего месяца, версии и позиции.";
 
+const IDENTITY_MISMATCH_MESSAGE =
+  "Preview не соответствует запрошенному месяцу, версии и позиции. Получи свежий preview.";
+
+const UNCONFIRMED_READBACK_MESSAGE =
+  "Применённые выплаты не подтверждены повторной загрузкой. Успех не показан.";
+
 type PendingApply = {
   payload: PayoutContextRequest;
   rows: PayoutApplySelection[];
@@ -73,6 +79,55 @@ type PendingApply = {
   previewVersion: string;
   batchPreviewId: number | null;
 };
+
+function isExactSinglePreview(
+  value: PayoutPreview,
+  monthId: number,
+  payload: PayoutContextRequest,
+): boolean {
+  return (
+    value.reporting_month_id === monthId &&
+    value.account_id === payload.account_id &&
+    value.instrument_id === payload.instrument_id &&
+    value.position_snapshot_id === payload.position_snapshot_id
+  );
+}
+
+function isConsistentBatchItem(
+  item: PayoutBatchPreview["items"][number],
+  monthId: number,
+  positions: PositionSnapshot[],
+  requestedIds?: number[],
+): boolean {
+  if (requestedIds && !requestedIds.includes(item.position_snapshot_id)) return false;
+  const position = positions.find((row) => row.id === item.position_snapshot_id);
+  if (!position || position.reporting_month_id !== monthId) return false;
+  if (position.account_id !== item.account_id || position.instrument_id !== item.instrument_id)
+    return false;
+  if (item.preview) {
+    if (
+      !isExactSinglePreview(item.preview, monthId, {
+        account_id: item.account_id,
+        instrument_id: item.instrument_id,
+        position_snapshot_id: item.position_snapshot_id,
+        forecast_version: "",
+      })
+    )
+      return false;
+  }
+  return true;
+}
+
+function isExactBatchPreview(
+  value: PayoutBatchPreview,
+  monthId: number,
+  version: string,
+  positions: PositionSnapshot[],
+  requestedIds?: number[],
+): boolean {
+  if (value.reporting_month_id !== monthId || value.forecast_version !== version) return false;
+  return value.items.every((item) => isConsistentBatchItem(item, monthId, positions, requestedIds));
+}
 
 function newestMonth(months: ReportingMonth[]): ReportingMonth | undefined {
   return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id)[0];
@@ -270,10 +325,10 @@ function PayoutForecastTool({
     try {
       const value = await previewPayouts(monthId, payload);
       if (!alive.current || token !== applyGeneration.current) return;
-      if (value.reporting_month_id !== monthId) {
+      if (!isExactSinglePreview(value, monthId, payload)) {
         setPreview(null);
         setPreviewMeta(null);
-        setActionError("Получен preview другого месяца. Обнови данные.");
+        setActionError(IDENTITY_MISMATCH_MESSAGE);
         return;
       }
       setPreview(value);
@@ -295,16 +350,18 @@ function PayoutForecastTool({
   async function handleBatchPreview(positionSnapshotIds?: number[]) {
     if (!version || applying) return;
     const token = ++applyGeneration.current;
+    // Capture the current position identities for exact batch validation.
+    const positionsAtRequest = positions;
     setBatchLoading(true);
     setActionError(null);
     setLastApplyResult(null);
     try {
       const value = await previewPayoutsBatch(monthId, version, positionSnapshotIds);
       if (!alive.current || token !== applyGeneration.current) return;
-      if (value.reporting_month_id !== monthId) {
+      if (!isExactBatchPreview(value, monthId, version, positionsAtRequest, positionSnapshotIds)) {
         setBatchPreview(null);
         setBatchMeta(null);
-        setActionError("Получен batch preview другого месяца. Обнови данные.");
+        setActionError(IDENTITY_MISMATCH_MESSAGE);
         return;
       }
       setBatchPreview(value);
@@ -322,20 +379,23 @@ function PayoutForecastTool({
   async function handleBatchPositionRefresh(positionSnapshotId: number) {
     const position = positions.find((row) => row.id === positionSnapshotId);
     if (!position || applying) return;
+    const requested: PayoutContextRequest = {
+      account_id: position.account_id,
+      instrument_id: position.instrument_id,
+      position_snapshot_id: position.id,
+      forecast_version: version,
+    };
     const token = ++applyGeneration.current;
     setPreviewLoading(true);
     setActionError(null);
     setLastApplyResult(null);
     try {
-      const value = await previewPayouts(monthId, {
-        account_id: position.account_id,
-        instrument_id: position.instrument_id,
-        position_snapshot_id: position.id,
-        forecast_version: version,
-      });
+      const value = await previewPayouts(monthId, requested);
       if (!alive.current || token !== applyGeneration.current) return;
-      if (value.reporting_month_id !== monthId) {
-        setActionError("Получен preview другого месяца. Обнови данные.");
+      // A refreshed item must prove its own identity and can only replace
+      // the batch item with the same PositionSnapshot id.
+      if (!isExactSinglePreview(value, monthId, requested)) {
+        setActionError(IDENTITY_MISMATCH_MESSAGE);
         return;
       }
       setBatchPreview((current) =>
@@ -343,7 +403,9 @@ function PayoutForecastTool({
           ? {
               ...current,
               items: current.items.map((item) =>
-                item.position_snapshot_id === positionSnapshotId
+                item.position_snapshot_id === positionSnapshotId &&
+                item.account_id === requested.account_id &&
+                item.instrument_id === requested.instrument_id
                   ? {
                       ...item,
                       status: value.rows.length === 0 ? "no_events" : "previewed",
@@ -376,7 +438,7 @@ function PayoutForecastTool({
       previewMeta.monthId !== monthId ||
       previewMeta.version !== version ||
       previewMeta.positionSnapshotId !== payload.position_snapshot_id ||
-      preview.reporting_month_id !== monthId
+      !isExactSinglePreview(preview, monthId, payload)
     ) {
       setPreview(null);
       setPreviewMeta(null);
@@ -441,6 +503,24 @@ function PayoutForecastTool({
       setActionError(APPLY_FAILURE_LABELS.closed_month);
       return;
     }
+    // B3: a pending single apply must still match the currently selected
+    // position/account/instrument. Batch applies stay independent of the
+    // single-position selector.
+    if (pending.batchPreviewId === null) {
+      const current = contextPayload();
+      if (
+        !current ||
+        current.account_id !== pending.payload.account_id ||
+        current.instrument_id !== pending.payload.instrument_id ||
+        current.position_snapshot_id !== pending.payload.position_snapshot_id
+      ) {
+        setPendingApply(null);
+        setPreview(null);
+        setPreviewMeta(null);
+        setActionError(STALE_APPLY_MESSAGE);
+        return;
+      }
+    }
     const token = ++applyGeneration.current;
     setApplying(true);
     setActionError(null);
@@ -463,25 +543,55 @@ function PayoutForecastTool({
         );
         return;
       }
+      // B2: the backend identity is not enough. A successful apply must prove
+      // the applied rows and readiness before any success is published.
+      if (result.items.length !== result.selected_count) {
+        setPreview(null);
+        setPreviewMeta(null);
+        setBatchPreview(null);
+        setBatchMeta(null);
+        setLastApplyResult(null);
+        setActionError(UNCONFIRMED_READBACK_MESSAGE);
+        return;
+      }
       // Authoritative readback for the same exact month/version before success.
       try {
-        const [rereadMonth, rereadCalendar, rereadRefresh, rereadExpected] = await Promise.all([
-          getMonth(monthId),
-          listPayoutCalendar(monthId, version),
-          getPayoutRefreshStatus(monthId),
-          listExpectedFlows(monthId, version),
-        ]);
+        const [rereadMonth, rereadCalendar, rereadRefresh, rereadExpected, rereadReadiness] =
+          await Promise.all([
+            getMonth(monthId),
+            listPayoutCalendar(monthId, version),
+            getPayoutRefreshStatus(monthId),
+            listExpectedFlows(monthId, version),
+            getCloseReadiness(monthId),
+          ]);
         if (!alive.current || token !== applyGeneration.current) return;
+        const providerIds = new Set(
+          rereadCalendar.flatMap((entry) =>
+            entry.items
+              .filter((item) => item.source_kind === "provider")
+              .map((item) => item.source_id),
+          ),
+        );
+        const readinessMatchesLifecycle =
+          rereadReadiness.year === rereadMonth.year &&
+          rereadReadiness.month === rereadMonth.month &&
+          rereadReadiness.snapshot_date === rereadMonth.snapshot_date &&
+          rereadReadiness.status === rereadMonth.status;
         if (
           rereadMonth.id !== monthId ||
-          rereadExpected.some((row) => row.reporting_month_id !== monthId)
+          rereadRefresh.reporting_month_id !== monthId ||
+          rereadExpected.some(
+            (row) => row.reporting_month_id !== monthId || row.forecast_version !== version,
+          ) ||
+          !readinessMatchesLifecycle ||
+          !result.items.every((item) => providerIds.has(item.payout_id))
         ) {
           setPreview(null);
           setPreviewMeta(null);
           setBatchPreview(null);
           setBatchMeta(null);
           setLastApplyResult(null);
-          setActionError("Актуальный результат не подтверждён повторной загрузкой.");
+          setActionError(UNCONFIRMED_READBACK_MESSAGE);
           return;
         }
         setMonth(rereadMonth);
@@ -590,6 +700,11 @@ function PayoutForecastTool({
                 setSelectedPositionId(event.target.value);
                 setPreview(null);
                 setPreviewMeta(null);
+                // B3: a pending single confirm must not survive a position
+                // change. Batch confirms stay independent of this selector.
+                setPendingApply((current) =>
+                  current && current.batchPreviewId === null ? null : current,
+                );
                 setActionError(null);
                 setLastApplyResult(null);
               }}

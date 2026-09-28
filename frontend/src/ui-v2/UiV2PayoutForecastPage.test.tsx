@@ -63,6 +63,14 @@ const position = {
   quantity: "10",
 } as never;
 
+const secondPosition = {
+  id: 12,
+  reporting_month_id: 7,
+  account_id: 1,
+  instrument_id: 10,
+  quantity: "5",
+} as never;
+
 function money(amount: string) {
   return { amount, currency: "RUB" };
 }
@@ -220,7 +228,22 @@ beforeEach(() => {
   vi.mocked(applyPayouts).mockResolvedValue({
     success: true,
     selected_count: 1,
-    items: [],
+    items: [
+      {
+        payout_id: 2,
+        revision_id: 1,
+        revision_kind: "APPLY",
+        provider: "t_invest",
+        instrument_uid: "UID-1",
+        event_kind: "coupon",
+        identity_key: "K-1",
+        lifecycle: "active",
+        total_amount: money("100.00"),
+        reconciliation_id: null,
+        counting_decision: null,
+        expected_cash_flow_id: null,
+      },
+    ],
     error_code: null,
     message: null,
   } as never);
@@ -373,4 +396,252 @@ it("clears preview when the backend reports preview_changed", async () => {
   expect(await screen.findByText(/Предпросмотр изменился/)).toBeInTheDocument();
   expect(screen.queryByText("Новая")).not.toBeInTheDocument();
   expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
+});
+
+it("rejects a single preview for a foreign position/account/instrument", async () => {
+  const user = userEvent.setup();
+  vi.mocked(previewPayouts).mockResolvedValue({
+    ...structuredClone(previewFixture),
+    account_id: 999,
+    position_snapshot_id: 999,
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(screen.queryByText("Новая")).not.toBeInTheDocument();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("rejects a batch response with the wrong forecast version", async () => {
+  const user = userEvent.setup();
+  vi.mocked(previewPayoutsBatch).mockResolvedValue({
+    reporting_month_id: 7,
+    forecast_version: "foreign",
+    summary: {
+      total_positions: 1,
+      eligible_positions: 1,
+      with_events: 1,
+      without_events: 0,
+      errors: 0,
+      skipped: 0,
+    },
+    items: [],
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
+  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("rejects a batch response with a foreign embedded item identity", async () => {
+  const user = userEvent.setup();
+  vi.mocked(previewPayoutsBatch).mockResolvedValue({
+    reporting_month_id: 7,
+    forecast_version: "v1",
+    summary: {
+      total_positions: 1,
+      eligible_positions: 1,
+      with_events: 1,
+      without_events: 0,
+      errors: 0,
+      skipped: 0,
+    },
+    items: [
+      {
+        account_id: 999,
+        instrument_id: 999,
+        position_snapshot_id: 999,
+        provider: "t_invest",
+        instrument_uid: "UID-1",
+        status: "previewed",
+        message: null,
+        preview: structuredClone(previewFixture),
+      },
+    ],
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
+  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("a refreshed batch item cannot replace another position", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
+  expect(await screen.findByText("Проверка завершена")).toBeInTheDocument();
+  // A foreign refresh response for the same requested position is rejected
+  // and the original batch item keeps its own preview.
+  vi.mocked(previewPayouts).mockResolvedValue({
+    ...structuredClone(previewFixture),
+    position_snapshot_id: 999,
+    account_id: 999,
+  } as never);
+  const refreshButtons = screen.getAllByRole("button", { name: "Обновить preview" });
+  await user.click(refreshButtons[0]);
+  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(screen.getByText("Проверка завершена")).toBeInTheDocument();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("an open single confirm cannot POST after the position changes", async () => {
+  const user = userEvent.setup();
+  vi.mocked(listPositions).mockResolvedValue([position, secondPosition]);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+  // Changing the selected position invalidates the pending single confirm.
+  await user.selectOptions(screen.getByLabelText("Позиция"), "12");
+  // The dialog closes on position change; confirming the old payload is impossible.
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("does not confirm an apply whose items mismatch the selected count", async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyPayouts).mockResolvedValue({
+    success: true,
+    selected_count: 2,
+    items: [
+      {
+        payout_id: 2,
+        revision_id: 1,
+        revision_kind: "APPLY",
+        provider: "t_invest",
+        instrument_uid: "UID-1",
+        event_kind: "coupon",
+        identity_key: "K-1",
+        lifecycle: "active",
+        total_amount: money("100.00"),
+        reconciliation_id: null,
+        counting_decision: null,
+        expected_cash_flow_id: null,
+      },
+    ],
+    error_code: null,
+    message: null,
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 2/)).not.toBeInTheDocument();
+});
+
+it("does not confirm when the applied payout id is absent from the reread calendar", async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyPayouts).mockResolvedValue({
+    success: true,
+    selected_count: 1,
+    items: [
+      {
+        payout_id: 9999,
+        revision_id: 1,
+        revision_kind: "APPLY",
+        provider: "t_invest",
+        instrument_uid: "UID-1",
+        event_kind: "coupon",
+        identity_key: "K-1",
+        lifecycle: "active",
+        total_amount: money("100.00"),
+        reconciliation_id: null,
+        counting_decision: null,
+        expected_cash_flow_id: null,
+      },
+    ],
+    error_code: null,
+    message: null,
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});
+
+it("does not confirm on foreign refresh status", async () => {
+  const user = userEvent.setup();
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 999,
+    positions_changed: 0,
+    items: [],
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});
+
+it("does not confirm on wrong-version expected rows", async () => {
+  const user = userEvent.setup();
+  vi.mocked(listExpectedFlows).mockResolvedValue([
+    { reporting_month_id: 7, forecast_version: "foreign" },
+  ] as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});
+
+it("does not confirm on mismatched readiness lifecycle", async () => {
+  const user = userEvent.setup();
+  vi.mocked(getCloseReadiness).mockResolvedValue({
+    year: 1999,
+    month: 1,
+    status: "draft",
+    snapshot_date: "1999-01-31",
+    source: "manual",
+    can_close: false,
+    items: [],
+  } as unknown as CloseReadiness);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});
+
+it("happy path proves payout ids, exact month/version and readiness before success", async () => {
+  const user = userEvent.setup();
+  vi.mocked(listExpectedFlows).mockResolvedValue([
+    {
+      reporting_month_id: 7,
+      forecast_version: "v1",
+    },
+  ] as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/Применено выплат: 1/)).toBeInTheDocument();
+  expect(applyPayouts).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(getCloseReadiness).toHaveBeenCalledWith(7));
+  expect(listExpectedFlows).toHaveBeenCalledWith(7, "v1");
+  expect(getPayoutRefreshStatus).toHaveBeenCalledWith(7);
 });
