@@ -88,7 +88,32 @@ def test_xirr_available_despite_missing_twrr_observations(tmp_path):
         assert len(diagnostics) == 1
         assert diagnostics[0].affected_metrics == ("twrr",)
         assert diagnostics[0].refs.external_flow_ids == (flow.id,)
-        assert diagnostics[0].action.capability == "not_implemented"
+        # The observed-valuation capture adapter exists; the affected month is
+        # closed here, so an explicit reopen is the honest capability.
+        assert diagnostics[0].action.capability == "requires_reopen"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_open_month_exposes_supported_observation_capture(tmp_path):
+    session, database, opening, closing, account = _environment(tmp_path)
+    try:
+        flow = _flow(
+            session,
+            closing,
+            account,
+            event_date=FIRST_FLOW_DATE,
+            amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+        )
+        result = service.readiness_for_interval(session, start_date=START, end_date=TWRR_END)
+        assert not result.twrr.is_available
+        diagnostic = next(d for d in result.diagnostics if d.key == "valuation_boundary")
+        assert diagnostic.refs.external_flow_ids == (flow.id,)
+        assert diagnostic.action.capability == "available"
+        assert diagnostic.category == "actionable"
     finally:
         session.close()
         database.engine.dispose()

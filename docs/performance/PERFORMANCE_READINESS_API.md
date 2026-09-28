@@ -42,9 +42,13 @@ interval. Coverage review still requires actual Owner verification and explicit
 attestation. Historical membership offers the [finite explicit writer](HISTORICAL_MEMBERSHIP_API.md);
 existing open-ended rows remain read-only/blocking, and its own full old/new union
 and observation-parent CLOSED checks remain authoritative. `not_implemented`
-identifies absent legacy/transfer UI reconciliation or observation adapters. `source_required`
-does not claim a historical source is absent. `unsupported` does not promise
-that editing or confirming coverage can fix valuation/FX/solver limitations.
+identifies absent legacy/transfer UI reconciliation or observation targets that
+identity/grouping/duplicate state cannot repair. The supported
+[PRE/POST observation capture](PUI05_VALUATION_CAPTURE.md) reports `available`
+or `requires_reopen` only for a concrete target that can accept fresh evidence
+now. `source_required` does not claim a historical source is absent.
+`unsupported` does not promise that editing or confirming coverage can fix
+valuation/FX/solver limitations.
 Every action requires rereading readiness to verify the final outcome.
 
 Free-form provenance references and non-allowlisted provenance/source labels

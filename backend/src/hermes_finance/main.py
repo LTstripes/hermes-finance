@@ -51,6 +51,9 @@ from hermes_finance.api.performance_attribution import router as performance_att
 from hermes_finance.api.performance_availability import router as performance_availability_router
 from hermes_finance.api.performance_preparation import router as performance_preparation_router
 from hermes_finance.api.performance_readiness import router as performance_readiness_router
+from hermes_finance.api.performance_valuation_capture import (
+    router as performance_valuation_capture_router,
+)
 from hermes_finance.api.planned_budget import router as planned_budget_router
 from hermes_finance.api.portfolio_review_package import router as portfolio_review_package_router
 from hermes_finance.api.portfolio_twrr import router as portfolio_twrr_router
@@ -139,6 +142,7 @@ def create_app(
     application.include_router(performance_readiness_router)
     application.include_router(performance_preparation_router)
     application.include_router(historical_membership_router)
+    application.include_router(performance_valuation_capture_router)
     application.include_router(performance_attribution_router)
     application.include_router(portfolio_xirr_router)
     application.include_router(portfolio_twrr_router)

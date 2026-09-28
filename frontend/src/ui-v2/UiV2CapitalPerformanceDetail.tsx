@@ -27,6 +27,7 @@ import {
 } from "./capitalPerformanceContext";
 import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
 import { sortReportingMonths } from "./monthSelection";
+import { ObservedValuationCapture } from "./ObservedValuationCapture";
 import { PerformancePreparation } from "./PerformancePreparation";
 import styles from "./UiV2CapitalPerformance.module.css";
 import pageStyles from "./UiV2Page.module.css";
@@ -308,6 +309,16 @@ function ReadinessBody({
                         >
                           Проверить данные
                         </Link>
+                      </p>
+                    ) : null}
+                    {diagnostic.key === "valuation_boundary" &&
+                    (diagnostic.action.capability === "available" ||
+                      diagnostic.action.capability === "requires_reopen") ? (
+                      <p>
+                        <a href="#performance-capture">Перейти к наблюдениям PRE/POST</a>
+                        {diagnostic.action.capability === "requires_reopen"
+                          ? " — понадобится явный reopen закрытого отчёта."
+                          : null}
                       </p>
                     ) : null}
                     {hasWorkingAction(diagnostic.action.capability) ? (
@@ -635,6 +646,7 @@ export default function UiV2CapitalPerformanceDetail() {
         ) : null}
       </section>
       {content}
+      {context !== null ? <ObservedValuationCapture context={context} /> : null}
       {context && context.view === "accounts" ? (
         <PerformancePreparation accounts={accounts} context={context} />
       ) : null}
