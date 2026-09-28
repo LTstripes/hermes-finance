@@ -86,17 +86,74 @@ const appliedFlow = {
   currency: "RUB",
   source: "alfa_pdf",
   notes: null,
-  statement_link: null,
+  statement_link: {
+    applied_statement_event_id: 91,
+    link_mode: "statement_created",
+    status: "active",
+  },
+};
+
+// One synthetic two-month ("spanning") document: August 2031 + September 2031.
+const spanningInspect = {
+  ...statementInspect,
+  rows: [
+    statementInspect.rows[0],
+    {
+      ...statementInspect.rows[0],
+      record_date: "2031-09-03",
+      event_date: "2031-09-10",
+    },
+  ],
+};
+
+const spanningPreparation = {
+  ...statementPreparation,
+  rows: [
+    statementPreparation.rows[0],
+    {
+      ...statementPreparation.rows[0],
+      natural_identity: "synthetic-row-2",
+      material_fingerprint: "synthetic-fp-2",
+      record_date: "2031-09-03",
+      event_date: "2031-09-10",
+    },
+  ],
 };
 
 type ApiRecorder = {
   posts: string[];
   gets: string[];
   errors: string[];
+  applySelections: string[];
 };
 
-async function installStatementApi(page: Page): Promise<ApiRecorder> {
-  const record: ApiRecorder = { posts: [], gets: [], errors: [] };
+type StatementApiOptions = { spanning?: boolean };
+
+function readSelections(body: string | null): Array<{
+  natural_identity: string;
+  material_fingerprint: string;
+}> {
+  const match = /name="selections"\r?\n\r?\n([\s\S]*?)\r?\n/.exec(body ?? "");
+  if (!match) {
+    return [];
+  }
+  try {
+    return JSON.parse(match[1]) as Array<{
+      natural_identity: string;
+      material_fingerprint: string;
+    }>;
+  } catch {
+    return [];
+  }
+}
+
+async function installStatementApi(
+  page: Page,
+  options: StatementApiOptions = {},
+): Promise<ApiRecorder> {
+  const record: ApiRecorder = { posts: [], gets: [], errors: [], applySelections: [] };
+  const inspectFixture = options.spanning ? spanningInspect : statementInspect;
+  const prepareFixture = options.spanning ? spanningPreparation : statementPreparation;
   page.on("pageerror", (error) => record.errors.push(error.message));
   // Record at the network layer so an explicitly overridden route still shows
   // what the page actually tried to send.
@@ -184,28 +241,31 @@ async function installStatementApi(page: Page): Promise<ApiRecorder> {
         return;
       }
       if (request.method() === "POST" && pathname === "/api/statement-import/inspect") {
-        await route.fulfill({ json: statementInspect });
+        await route.fulfill({ json: inspectFixture });
         return;
       }
       if (request.method() === "POST" && pathname === "/api/statement-import/prepare") {
-        await route.fulfill({ json: statementPreparation });
+        await route.fulfill({ json: prepareFixture });
         return;
       }
       if (request.method() === "POST" && pathname === "/api/statement-import/apply") {
+        // Answer only what was actually submitted: a month-scoped native
+        // workspace must never send the September row of a spanning document.
+        const body = await request.postDataBuffer();
+        const selections = readSelections(body ? body.toString("utf8") : null);
+        record.applySelections = selections.map((row) => row.natural_identity);
         await route.fulfill({
           json: {
             success: true,
-            selected_count: 1,
-            items: [
-              {
-                action: "created",
-                applied_statement_event_id: 91,
-                investment_cash_flow_id: 501,
-                natural_identity: "synthetic-row-1",
-                material_fingerprint: "synthetic-fp-1",
-                revision_id: 92,
-              },
-            ],
+            selected_count: selections.length,
+            items: selections.map((row, index) => ({
+              action: "created",
+              applied_statement_event_id: 91 + index,
+              investment_cash_flow_id: 501,
+              natural_identity: row.natural_identity,
+              material_fingerprint: row.material_fingerprint,
+              revision_id: 92 + index,
+            })),
             error_code: null,
             message: null,
           },
@@ -253,11 +313,13 @@ async function prepareStatement(page: Page) {
     buffer: SYNTHETIC_PDF,
   });
   await page.getByRole("button", { name: "Проверить отчёт" }).click();
-  await expect(page.getByRole("cell", { name: "synthetic-broker", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "synthetic-broker", exact: true }).first(),
+  ).toBeVisible();
   await page.getByLabel("Alfa-счёт synthetic-broker").selectOption("3");
   await page.getByLabel("Инструмент для RU000SYNTH01").selectOption("11");
   await page.getByRole("button", { name: "Подготовить к импорту" }).click();
-  await expect(page.getByText("Новая строка")).toBeVisible();
+  await expect(page.getByText("Новая строка").first()).toBeVisible();
   await page.getByRole("checkbox", { name: "Выбрать строку 1" }).check();
 }
 
@@ -399,6 +461,58 @@ for (const viewport of [
     expect(api.errors).toEqual([]);
   });
 }
+
+test("native spanning document: only the explicit month can be submitted", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  const api = await installStatementApi(page, { spanning: true });
+  await page.goto("/v2/data/payouts?month=12");
+  await expect(page.locator("#statement-import")).toBeVisible();
+  await prepareStatement(page);
+
+  const checkboxes = page.getByRole("checkbox");
+  await expect(checkboxes).toHaveCount(2);
+  await expect(checkboxes.nth(0)).toBeEnabled();
+  await expect(checkboxes.nth(1)).toBeDisabled();
+  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toBeVisible();
+  await expect(page.getByText("не применяется в этом месяце")).toBeVisible();
+
+  await page.getByRole("button", { name: "Выбрать все готовые" }).click();
+  await expect(checkboxes.nth(0)).toBeChecked();
+  await expect(checkboxes.nth(1)).not.toBeChecked();
+
+  await page.getByRole("button", { name: "Применить выбранные строки" }).click();
+  await page.getByRole("button", { name: "Подтвердить и применить" }).click();
+
+  await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
+  expect(api.applySelections).toEqual(["synthetic-row-1"]);
+  expect(api.errors).toEqual([]);
+});
+
+test("legacy panel stays unconstrained across a spanning document", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  const api = await installStatementApi(page, { spanning: true });
+  await page.goto("/payouts");
+  await expect(page.getByRole("heading", { level: 1, name: "Автовыплаты" })).toBeVisible();
+  await expect(page.locator("#statement-import")).toBeVisible();
+  await prepareStatement(page);
+
+  const checkboxes = page.getByRole("checkbox");
+  await expect(checkboxes).toHaveCount(2);
+  await expect(checkboxes.nth(0)).toBeEnabled();
+  await expect(checkboxes.nth(1)).toBeEnabled();
+  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Выбрать все готовые" }).click();
+  await expect(checkboxes.nth(0)).toBeChecked();
+  await expect(checkboxes.nth(1)).toBeChecked();
+
+  await page.getByRole("button", { name: "Применить выбранные строки" }).click();
+  await page.getByRole("button", { name: "Подтвердить и применить" }).click();
+
+  await expect(page.getByText(/Импортировано строк: 2/)).toBeVisible();
+  expect(api.applySelections).toEqual(["synthetic-row-1", "synthetic-row-2"]);
+  expect(api.errors).toEqual([]);
+});
 
 test("v2 Close actual_payouts routes to the native statement-import anchor and back", async ({
   page,

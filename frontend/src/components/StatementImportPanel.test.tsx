@@ -148,6 +148,40 @@ const candidatePreparation: StatementPreparation = {
   ],
 };
 
+const spanningInspect = {
+  ...inspectResult,
+  rows: [
+    inspectResult.rows[0],
+    {
+      ...inspectResult.rows[0],
+      event_date: "2026-09-03",
+      record_date: "2026-09-01",
+    },
+  ],
+};
+
+// Two-month ("spanning") preparation: one canonical row for August 2026 and
+// one for September 2026, exactly what a single Alfa PDF may contain.
+const spanningPreparation: StatementPreparation = {
+  ...preparation,
+  rows: [
+    {
+      ...preparation.rows[2],
+      natural_identity: "aug-row",
+      material_fingerprint: "fp-aug",
+      event_date: "2026-08-03",
+      record_date: "2026-08-01",
+    },
+    {
+      ...preparation.rows[2],
+      natural_identity: "sep-row",
+      material_fingerprint: "fp-sep",
+      event_date: "2026-09-03",
+      record_date: "2026-09-01",
+    },
+  ],
+};
+
 describe("StatementImportPanel explicit row decisions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -658,6 +692,23 @@ describe("StatementImportPanel write lifecycle", () => {
     expect(screen.getByRole("button", { name: "Применить выбранные строки" })).not.toBeDisabled();
   });
 
+  it("treats an HTTP 5xx apply failure as ambiguous and retires the preparation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(applyStatement).mockRejectedValueOnce(
+      new ApiClientError(500, { code: "internal_error", message: "synthetic 5xx", details: [] }),
+    );
+    mountPanel();
+    await prepareReport(user);
+    await confirmSelected(user);
+
+    // A 5xx may arrive after the service committed: never a definite no-write.
+    expect(await screen.findByText(/результат неизвестен/)).toBeInTheDocument();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Уже импортировано")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Подготовить к импорту" })).not.toBeNull();
+  });
+
   it("exposes the exact submitted set to the readback gate", async () => {
     const user = userEvent.setup();
     const verifyApplied = vi.fn((_verification: StatementApplyVerification) => Promise.resolve());
@@ -674,6 +725,7 @@ describe("StatementImportPanel write lifecycle", () => {
     expect(verification.expectations).toEqual([
       {
         natural_identity: "new-1",
+        material_fingerprint: "fp-new",
         expected_hermes_account_id: 1,
         expected_hermes_instrument_id: 10,
       },
@@ -689,5 +741,157 @@ describe("StatementImportPanel write lifecycle", () => {
     await user.click(checkboxes[2]);
     expect(screen.getByRole("button", { name: "Применить выбранные строки" })).toBeDisabled();
     expect(applyStatement).not.toHaveBeenCalled();
+  });
+});
+
+describe("StatementImportPanel native month scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(inspectStatement).mockResolvedValue(spanningInspect);
+    vi.mocked(prepareStatement).mockResolvedValue(spanningPreparation);
+    vi.mocked(applyStatement).mockResolvedValue({
+      success: true,
+      selected_count: 1,
+      items: [
+        {
+          action: "created",
+          natural_identity: "aug-row",
+          applied_statement_event_id: 31,
+          investment_cash_flow_id: 501,
+          material_fingerprint: "fp-aug",
+          revision_id: 32,
+        },
+      ],
+      error_code: null,
+      message: null,
+    });
+  });
+
+  async function prepareSpanning(user: ReturnType<typeof userEvent.setup>) {
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await screen.findAllByText("broker-1");
+    await user.selectOptions(screen.getByLabelText("Alfa-счёт broker-1"), "1");
+    await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+    await screen.findAllByText("Новая строка");
+    return screen.getAllByRole("checkbox");
+  }
+
+  function panelProps(targetPeriod?: { year: number; month: number }) {
+    return (
+      <StatementImportPanel
+        accounts={[account]}
+        instruments={[instrument]}
+        targetPeriod={targetPeriod}
+      />
+    );
+  }
+
+  it("keeps an August row selectable while the September row stays visible but unusable", async () => {
+    const user = userEvent.setup();
+    render(panelProps({ year: 2026, month: 8 }));
+    const checkboxes = await prepareSpanning(user);
+
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes[0]).toBeEnabled();
+    expect(checkboxes[1]).toBeDisabled();
+    expect(screen.getByText(/строка относится к другому отчётному месяцу/)).toBeInTheDocument();
+    expect(screen.getByText("не применяется в этом месяце")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
+    expect(checkboxes[0]).toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+    await waitFor(() => expect(applyStatement).toHaveBeenCalledTimes(1));
+    const selections = vi.mocked(applyStatement).mock.calls[0]?.[2] as Array<{
+      natural_identity: string;
+    }>;
+    expect(selections).toHaveLength(1);
+    expect(selections[0]).toMatchObject({ natural_identity: "aug-row" });
+    expect(await screen.findByText(/Импортировано строк: 1/)).toBeInTheDocument();
+  });
+
+  it("makes no apply possible when every prepared row belongs to another month", async () => {
+    const user = userEvent.setup();
+    render(panelProps({ year: 2026, month: 12 }));
+    const checkboxes = await prepareSpanning(user);
+
+    expect(checkboxes[0]).toBeDisabled();
+    expect(checkboxes[1]).toBeDisabled();
+    expect(screen.getAllByText(/строка относится к другому отчётному месяцу/)).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
+    expect(checkboxes[0]).not.toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Применить выбранные строки" })).toBeDisabled();
+    expect(applyStatement).not.toHaveBeenCalled();
+  });
+
+  it("keeps the unconstrained legacy panel cross-month capable", async () => {
+    const user = userEvent.setup();
+    vi.mocked(applyStatement).mockResolvedValue({
+      success: true,
+      selected_count: 2,
+      items: [
+        {
+          action: "created",
+          natural_identity: "aug-row",
+          applied_statement_event_id: 31,
+          investment_cash_flow_id: 501,
+          material_fingerprint: "fp-aug",
+          revision_id: 32,
+        },
+        {
+          action: "created",
+          natural_identity: "sep-row",
+          applied_statement_event_id: 32,
+          investment_cash_flow_id: 502,
+          material_fingerprint: "fp-sep",
+          revision_id: 33,
+        },
+      ],
+      error_code: null,
+      message: null,
+    });
+    render(panelProps());
+    const checkboxes = await prepareSpanning(user);
+
+    expect(checkboxes[0]).toBeEnabled();
+    expect(checkboxes[1]).toBeEnabled();
+    expect(screen.queryByText(/строка относится к другому отчётному месяцу/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
+    expect(checkboxes[0]).toBeChecked();
+    expect(checkboxes[1]).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+    await waitFor(() => expect(applyStatement).toHaveBeenCalledTimes(1));
+    const selections = vi.mocked(applyStatement).mock.calls[0]?.[2] as Array<{
+      natural_identity: string;
+    }>;
+    expect(selections.map((row) => row.natural_identity)).toEqual(["aug-row", "sep-row"]);
+    expect(await screen.findByText(/Импортировано строк: 2/)).toBeInTheDocument();
+  });
+
+  it("rechecks the target period immediately before the apply POST", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(panelProps({ year: 2026, month: 8 }));
+    const checkboxes = await prepareSpanning(user);
+    await user.click(checkboxes[0]);
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+
+    // The explicit target period moves while the confirmation is open: the
+    // open document must not reach the POST for a row that no longer belongs.
+    rerender(panelProps({ year: 2026, month: 9 }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+
+    expect(applyStatement).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(/Нельзя применить строку вне выбранного отчётного месяца/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
   });
 });

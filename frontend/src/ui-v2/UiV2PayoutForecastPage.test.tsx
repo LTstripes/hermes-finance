@@ -238,6 +238,20 @@ const statementPreparation = {
   ],
 };
 
+const spanningStatementPreparation = {
+  ...statementPreparation,
+  rows: [
+    statementPreparation.rows[0],
+    {
+      ...statementPreparation.rows[0],
+      natural_identity: "synthetic-sep",
+      material_fingerprint: "fp-sep",
+      event_date: "2026-09-03",
+      record_date: "2026-09-01",
+    },
+  ],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listMonths).mockResolvedValue([draftMonth, closedMonth]);
@@ -280,7 +294,11 @@ beforeEach(() => {
       currency: "RUB",
       source: "alfa_pdf",
       notes: null,
-      statement_link: null,
+      statement_link: {
+        applied_statement_event_id: 91,
+        link_mode: "statement_created",
+        status: "active",
+      },
     } as never,
   ]);
   vi.mocked(inspectStatement).mockResolvedValue(structuredClone(statementInspect) as never);
@@ -1017,6 +1035,31 @@ it("retires the statement document when the explicit month changes", async () =>
   const input = screen.getByLabelText("PDF отчёта Alfa") as HTMLInputElement;
   expect(input.files?.length ?? 0).toBe(0);
   expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+});
+
+it("constrains the native statement workspace to rows of the explicit month", async () => {
+  const user = userEvent.setup();
+  // One synthetic two-month preparation: the selected month is August 2026.
+  vi.mocked(prepareStatement).mockResolvedValueOnce(spanningStatementPreparation as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+  await screen.findByText("synthetic-broker");
+  await user.selectOptions(screen.getByLabelText("Alfa-счёт synthetic-broker"), "1");
+  await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+  await screen.findAllByText("Новая строка");
+
+  const checkboxes = screen.getAllByRole("checkbox");
+  expect(checkboxes).toHaveLength(2);
+  expect(checkboxes[0]).toBeEnabled();
+  expect(checkboxes[1]).toBeDisabled();
+  expect(screen.getByText(/строка относится к другому отчётному месяцу/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
+  expect(checkboxes[0]).toBeChecked();
+  expect(checkboxes[1]).not.toBeChecked();
+  expect(applyStatement).not.toHaveBeenCalled();
 });
 
 it("keeps upload, inspect and prepare free of any write until the owner confirms", async () => {

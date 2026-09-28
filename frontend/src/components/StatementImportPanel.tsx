@@ -34,6 +34,7 @@ const EMPTY_DECISION: StatementDecision = { action: "", candidateId: "" };
  */
 export type StatementApplyExpectation = {
   natural_identity: string | null;
+  material_fingerprint: string | null;
   expected_hermes_account_id: number | null;
   expected_hermes_instrument_id: number | null;
 };
@@ -165,6 +166,31 @@ function classLabel(row: StatementRow): string {
   return "Новая строка";
 }
 
+/**
+ * Optional native month scope (#567). The canonical backend still derives each
+ * row's reporting month from its own `event_date` and stays cross-month
+ * capable; a native workspace pins one exact reporting period so it can never
+ * write outside the explicit month it rereads. Without this constraint the
+ * panel keeps its existing (legacy/unconstrained) behaviour byte for byte.
+ */
+export type StatementTargetPeriod = { year: number; month: number };
+
+export const OUT_OF_PERIOD_REASON = "строка относится к другому отчётному месяцу";
+
+function rowMatchesTargetPeriod(row: StatementRow, target: StatementTargetPeriod | null): boolean {
+  if (!target) {
+    return true;
+  }
+  if (!row.event_date) {
+    return false;
+  }
+  const match = /^(\d{4})-(\d{2})/.exec(row.event_date);
+  if (!match) {
+    return false;
+  }
+  return Number(match[1]) === target.year && Number(match[2]) === target.month;
+}
+
 function classTone(row: StatementRow): "ok" | "draft" | "closed" | "info" {
   if (row.duplicate_class === "duplicate") {
     return "closed";
@@ -218,8 +244,13 @@ function isinSaveKind(
   return existing === statementIsin ? "same" : "conflict";
 }
 
-function readyForBulkSelect(row: StatementRow): boolean {
-  return row.status === "matched" && row.duplicate_class == null && row.candidates.length === 0;
+function readyForBulkSelect(row: StatementRow, target: StatementTargetPeriod | null): boolean {
+  return (
+    row.status === "matched" &&
+    row.duplicate_class == null &&
+    row.candidates.length === 0 &&
+    rowMatchesTargetPeriod(row, target)
+  );
 }
 
 type Props = {
@@ -229,6 +260,13 @@ type Props = {
   onApplied?: () => Promise<void> | void;
   onInstrumentsChange?: (instruments: Instrument[]) => void;
   onOutcome?: (outcome: AlfaStatementTransientOutcome | null) => void;
+  /**
+   * Optional native month scope (#567). When set, prepared rows outside this
+   * exact reporting period stay visible but are non-selectable, are excluded
+   * from bulk selection and are re-checked again immediately before the apply
+   * POST. Omitting it keeps the existing unconstrained cross-month behaviour.
+   */
+  targetPeriod?: StatementTargetPeriod | null;
   /**
    * Authoritative post-apply verification gate (#567). When provided, neither
    * the success banner nor the `applied` outcome is published until this
@@ -250,9 +288,11 @@ export function StatementImportPanel({
   onApplied,
   onInstrumentsChange,
   onOutcome,
+  targetPeriod = null,
   verifyApplied,
   onApplyingChange,
 }: Props) {
+  const target: StatementTargetPeriod | null = targetPeriod;
   const [file, setFile] = useState<File | null>(null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
   const [accountMappings, setAccountMappings] = useState<Record<string, string>>({});
@@ -480,6 +520,9 @@ export function StatementImportPanel({
     const key = rowKey(row, index);
     if (!selected[key] || row.status !== "matched" || row.duplicate_class === "duplicate")
       return false;
+    // Native month scope: a row outside the explicit target period can never
+    // become applicable in this workspace, whatever the current selection says.
+    if (!rowMatchesTargetPeriod(row, target)) return false;
     const decision = decisions[key] ?? EMPTY_DECISION;
     if (row.duplicate_class === "correction") return decision.action === "revise";
     if (row.candidates.length === 0) return decision.action === "";
@@ -540,7 +583,7 @@ export function StatementImportPanel({
     }
     const next: Record<string, boolean> = {};
     preparation.rows.forEach((row, index) => {
-      next[rowKey(row, index)] = readyForBulkSelect(row);
+      next[rowKey(row, index)] = readyForBulkSelect(row, target);
     });
     setSelected(next);
   }
@@ -557,7 +600,16 @@ export function StatementImportPanel({
     // Single-flight: a second confirmation in the same tick cannot start a
     // second concurrent apply for the same preparation.
     if (inFlightRef.current) return;
-    if (!file || !preparation || !selectedRowsReady) return;
+    if (!file || !preparation) return;
+    // Native month scope, re-checked immediately before the POST: even a stale
+    // selection can never send a row outside the explicit target period.
+    if (target && selectedRows.some(({ row }) => !rowMatchesTargetPeriod(row, target))) {
+      setMessage(
+        `Нельзя применить строку вне выбранного отчётного месяца. ${OUT_OF_PERIOD_REASON}.`,
+      );
+      return;
+    }
+    if (!selectedRowsReady) return;
     const revision = revisionRef.current;
     const submittedCount = selectedRows.length;
     const selections = selectedRows.map(({ row, index }) => {
@@ -575,6 +627,7 @@ export function StatementImportPanel({
     });
     const expectations: StatementApplyExpectation[] = selectedRows.map(({ row }) => ({
       natural_identity: row.natural_identity,
+      material_fingerprint: row.material_fingerprint,
       expected_hermes_account_id: row.expected_hermes_account_id,
       expected_hermes_instrument_id: row.expected_hermes_instrument_id,
     }));
@@ -617,10 +670,13 @@ export function StatementImportPanel({
       await refreshFacts();
     } catch (error) {
       if (!aliveRef.current || revision !== revisionRef.current) return;
-      // Only a completed HTTP rejection proves that nothing was written. A
-      // network/timeout failure after the apply request is ambiguous: it must
-      // not read as success and must not leave a replayable preparation.
-      const definiteRejection = error instanceof ApiClientError && error.status >= 400;
+      // Only a proven client-side pre-handler 4xx rejection is definite: the
+      // service never ran, so nothing was written and the review may continue.
+      // Status 0 (network/timeout) and every 5xx are ambiguous — the service
+      // may already have committed before the response was lost — so they take
+      // the explicit unconfirmed/reconciliation path with no blind replay.
+      const definiteRejection =
+        error instanceof ApiClientError && error.status >= 400 && error.status < 500;
       if (definiteRejection) {
         setMessage(formatApiError(error));
         return;
@@ -937,7 +993,8 @@ export function StatementImportPanel({
                 const decision = decisions[key] ?? EMPTY_DECISION;
                 const duplicate = row.duplicate_class === "duplicate";
                 const correction = row.duplicate_class === "correction";
-                const selectable = row.status === "matched" && !duplicate;
+                const inPeriod = rowMatchesTargetPeriod(row, target);
+                const selectable = row.status === "matched" && !duplicate && inPeriod;
                 const instrumentName = lookupName(
                   row.expected_hermes_instrument_id,
                   localInstruments,
@@ -981,11 +1038,20 @@ export function StatementImportPanel({
                       {moneyDisplay(row.net_amount, row.net_currency ?? row.gross_currency)}
                     </Td>
                     <Td className="statement-import__prepare-table__class">
-                      <Badge tone={classTone(row)}>{classLabel(row)}</Badge>
+                      <div className="statement-import__class">
+                        <Badge tone={classTone(row)}>{classLabel(row)}</Badge>
+                        {!inPeriod ? (
+                          <span className="muted tiny statement-import__out-of-period">
+                            {OUT_OF_PERIOD_REASON}
+                          </span>
+                        ) : null}
+                      </div>
                     </Td>
                     <Td className="statement-import__prepare-table__decision">
                       <div className="statement-import__decision">
-                        {duplicate ? (
+                        {!inPeriod ? (
+                          <span className="muted tiny">не применяется в этом месяце</span>
+                        ) : duplicate ? (
                           <span className="muted statement-import__decision-label">
                             Без изменений
                           </span>

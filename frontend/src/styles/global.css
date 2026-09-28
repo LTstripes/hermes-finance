@@ -682,6 +682,16 @@ a.btn {
   overflow-wrap: break-word;
 }
 
+.statement-import__class {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.statement-import__out-of-period {
+  overflow-wrap: break-word;
+}
+
 .statement-import__decision-label {
   white-space: nowrap;
 }

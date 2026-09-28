@@ -3,11 +3,19 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-const SYNTHETIC_PDF = path.join(os.tmpdir(), "hermes-statement-synthetic", "statement.pdf");
-const FLOWS = "/api/investment-flows?month_id=1";
+const SYNTHETIC_NATIVE_PDF = path.join(os.tmpdir(), "hermes-statement-synthetic", "statement.pdf");
+const SYNTHETIC_LEGACY_PDF = path.join(
+  os.tmpdir(),
+  "hermes-statement-synthetic",
+  "statement-legacy.pdf",
+);
 const APPLY = "/api/statement-import/apply";
 
-test("synthetic real-backend statement import: no mutation until confirm, apply, reload", async ({
+function flowsUrl(monthId: number): string {
+  return `/api/investment-flows?month_id=${monthId}`;
+}
+
+test("synthetic real-backend spanning statement: native month scope, legacy stays unconstrained", async ({
   page,
   request,
 }, info) => {
@@ -21,7 +29,19 @@ test("synthetic real-backend statement import: no mutation until confirm, apply,
   await page.setViewportSize({ width: 1440, height: 900 });
   const accounts = await (await request.get("/api/accounts")).json();
   const accountId = String(accounts[0].id);
-  expect(await (await request.get(FLOWS)).json()).toEqual([]);
+  const months = await (await request.get("/api/months")).json();
+  const january = months.find(
+    (row: { year: number; month: number }) => row.year === 2026 && row.month === 1,
+  );
+  const february = months.find(
+    (row: { year: number; month: number }) => row.year === 2026 && row.month === 2,
+  );
+  if (!january || !february) throw new Error("synthetic reporting months are missing");
+  const readFlows = async (monthId: number) =>
+    (await (await request.get(flowsUrl(monthId))).json()) as unknown[];
+
+  expect(await readFlows(january.id)).toEqual([]);
+  expect(await readFlows(february.id)).toEqual([]);
 
   // The write/import tool mounts only for one explicit valid month.
   await page.goto("/v2/data/payouts");
@@ -29,25 +49,33 @@ test("synthetic real-backend statement import: no mutation until confirm, apply,
   await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
   expect(posts).toEqual([]);
 
-  await page.goto("/v2/data/payouts?month=1");
+  // Native workspace pinned to January 2026 with a January + February PDF.
+  await page.goto(`/v2/data/payouts?month=${january.id}`);
   await expect(page.locator("#statement-import")).toBeVisible();
-  await expect(page.getByLabel("Отчётный месяц")).toHaveValue("1");
+  await expect(page.getByLabel("Отчётный месяц")).toHaveValue(String(january.id));
   expect(posts).toEqual([]);
 
-  // Selecting a document alone performs no request and no write.
-  await page.setInputFiles("#statement-file", SYNTHETIC_PDF);
+  await page.setInputFiles("#statement-file", SYNTHETIC_NATIVE_PDF);
   expect(posts).toEqual([]);
-  expect(await (await request.get(FLOWS)).json()).toEqual([]);
 
-  // Inspect and prepare are read-only against the real backend.
   await page.getByRole("button", { name: "Проверить отчёт" }).click();
-  await expect(page.getByRole("cell", { name: "SYN-DEPO-001", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "SYN-DEPO-001", exact: true }).first()).toBeVisible();
   await page.getByLabel("Alfa-счёт SYN-DEPO-001").selectOption(accountId);
   await page.getByRole("button", { name: "Подготовить к импорту" }).click();
-  await expect(page.getByText("Новая строка")).toBeVisible();
+  await expect(page.getByText("Новая строка").first()).toBeVisible();
   expect(posts).toEqual(["/api/statement-import/inspect", "/api/statement-import/prepare"]);
-  expect(await (await request.get(FLOWS)).json()).toEqual([]);
-  await page.getByRole("checkbox", { name: "Выбрать строку 1" }).check();
+  expect(await readFlows(january.id)).toEqual([]);
+  expect(await readFlows(february.id)).toEqual([]);
+
+  // B1: the February row stays visible but is non-selectable/non-applicable.
+  const checkboxes = page.getByRole("checkbox");
+  await expect(checkboxes).toHaveCount(2);
+  await expect(checkboxes.nth(0)).toBeEnabled();
+  await expect(checkboxes.nth(1)).toBeDisabled();
+  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toBeVisible();
+  await page.getByRole("button", { name: "Выбрать все готовые" }).click();
+  await expect(checkboxes.nth(0)).toBeChecked();
+  await expect(checkboxes.nth(1)).not.toBeChecked();
 
   // Cancel closes the confirmation without any write.
   await page.getByRole("button", { name: "Применить выбранные строки" }).click();
@@ -57,9 +85,9 @@ test("synthetic real-backend statement import: no mutation until confirm, apply,
   await dialog.getByRole("button", { name: "Отмена", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(posts.filter((call) => call === APPLY)).toEqual([]);
-  expect(await (await request.get(FLOWS)).json()).toEqual([]);
+  expect(await readFlows(january.id)).toEqual([]);
 
-  // Keyboard confirmation is the only write, and the readback must prove it.
+  // One keyboard confirm writes exactly one January row and nothing in February.
   const applyButton = page.getByRole("button", { name: "Применить выбранные строки" });
   await applyButton.focus();
   await expect(applyButton).toBeFocused();
@@ -72,22 +100,25 @@ test("synthetic real-backend statement import: no mutation until confirm, apply,
 
   await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
   expect(posts.filter((call) => call === APPLY)).toHaveLength(1);
-  const flows = await (await request.get(FLOWS)).json();
-  expect(flows).toHaveLength(1);
-  expect(flows[0].reporting_month_id).toBe(1);
+  const januaryFlows = await readFlows(january.id);
+  expect(januaryFlows).toHaveLength(1);
+  expect(januaryFlows[0].reporting_month_id).toBe(january.id);
+  expect(await readFlows(february.id)).toEqual([]);
   await page.screenshot({ path: info.outputPath("desktop-applied.png"), fullPage: true });
 
-  // Reload: the persisted row is proved again and never created twice.
+  // Reload: persistence is proved again and neither row can be written twice.
   await page.reload();
   await expect(page.locator("#statement-import")).toBeVisible();
-  await page.setInputFiles("#statement-file", SYNTHETIC_PDF);
+  await page.setInputFiles("#statement-file", SYNTHETIC_NATIVE_PDF);
   await page.getByRole("button", { name: "Проверить отчёт" }).click();
   await page.getByLabel("Alfa-счёт SYN-DEPO-001").selectOption(accountId);
   await page.getByRole("button", { name: "Подготовить к импорту" }).click();
   await expect(page.getByText("Уже импортировано")).toBeVisible();
+  await expect(checkboxes.nth(1)).toBeDisabled();
   await expect(page.getByRole("button", { name: "Применить выбранные строки" })).toBeDisabled();
   expect(posts.filter((call) => call === APPLY)).toHaveLength(1);
-  expect(await (await request.get(FLOWS)).json()).toHaveLength(1);
+  expect(await readFlows(january.id)).toHaveLength(1);
+  expect(await readFlows(february.id)).toEqual([]);
 
   // 390px keeps the whole prepared statement inside the viewport.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -96,16 +127,46 @@ test("synthetic real-backend statement import: no mutation until confirm, apply,
   ).toBe(true);
   await page.screenshot({ path: info.outputPath("mobile-statement.png"), fullPage: true });
 
+  // Legacy panel: no target period at all, so a second spanning document may
+  // write both reporting months even though legacy shows the newest month.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/payouts");
+  await expect(page.getByRole("heading", { level: 1, name: "Автовыплаты" })).toBeVisible();
+  await expect(page.getByLabel("Отчётный месяц")).toHaveValue(String(february.id));
+  await expect(page.locator("#statement-import")).toBeVisible();
+  await page.setInputFiles("#statement-file", SYNTHETIC_LEGACY_PDF);
+  await page.getByRole("button", { name: "Проверить отчёт" }).click();
+  await expect(page.getByRole("cell", { name: "SYN-DEPO-001", exact: true }).first()).toBeVisible();
+  await page.getByLabel("Alfa-счёт SYN-DEPO-001").selectOption(accountId);
+  await page.getByRole("button", { name: "Подготовить к импорту" }).click();
+  await expect(page.getByText("Новая строка").first()).toBeVisible();
+
+  const legacyCheckboxes = page.getByRole("checkbox");
+  await expect(legacyCheckboxes).toHaveCount(2);
+  await expect(legacyCheckboxes.nth(0)).toBeEnabled();
+  await expect(legacyCheckboxes.nth(1)).toBeEnabled();
+  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Выбрать все готовые" }).click();
+  await expect(legacyCheckboxes.nth(0)).toBeChecked();
+  await expect(legacyCheckboxes.nth(1)).toBeChecked();
+
+  await page.getByRole("button", { name: "Применить выбранные строки" }).click();
+  await page.getByRole("button", { name: "Подтвердить и применить" }).click();
+  await expect(page.getByText(/Импортировано строк: 2/)).toBeVisible();
+  expect(await readFlows(january.id)).toHaveLength(2);
+  expect(await readFlows(february.id)).toHaveLength(1);
+
   // CLOSED stays inspectable while apply is fail-closed.
-  const close = await request.post("/api/months/1/close");
+  const appliesBeforeClose = posts.filter((call) => call === APPLY).length;
+  const close = await request.post(`/api/months/${january.id}/close`);
   expect(close.ok(), await close.text()).toBe(true);
-  await page.reload();
+  await page.goto(`/v2/data/payouts?month=${january.id}`);
   await expect(
     page.getByText(/Проверка PDF доступна, но применение выплат заблокировано/),
   ).toBeVisible();
-  await page.setInputFiles("#statement-file", SYNTHETIC_PDF);
+  await page.setInputFiles("#statement-file", SYNTHETIC_NATIVE_PDF);
   await page.getByRole("button", { name: "Проверить отчёт" }).click();
-  await expect(page.getByRole("cell", { name: "SYN-DEPO-001", exact: true })).toBeVisible();
-  expect(posts.filter((call) => call === APPLY)).toHaveLength(1);
+  await expect(page.getByRole("cell", { name: "SYN-DEPO-001", exact: true }).first()).toBeVisible();
+  expect(posts.filter((call) => call === APPLY)).toHaveLength(appliesBeforeClose);
   expect(pageErrors).toEqual([]);
 });

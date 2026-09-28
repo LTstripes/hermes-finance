@@ -33,6 +33,16 @@ const readiness = {
   items: [],
 } as CloseReadiness;
 
+const ROW_FINGERPRINT: Record<string, string> = {
+  "row-1": "fp-501",
+  "row-2": "fp-502",
+  "row-x": "fp-701",
+};
+
+function fingerprintOf(naturalIdentity: string): string {
+  return ROW_FINGERPRINT[naturalIdentity] ?? `fp-${naturalIdentity}`;
+}
+
 function flow(id: number, overrides: Partial<InvestmentFlow> = {}): InvestmentFlow {
   return {
     id,
@@ -48,7 +58,11 @@ function flow(id: number, overrides: Partial<InvestmentFlow> = {}): InvestmentFl
     currency: "RUB",
     source: "alfa_pdf",
     notes: null,
-    statement_link: null,
+    statement_link: {
+      applied_statement_event_id: id,
+      link_mode: "statement_created",
+      status: "active",
+    },
     ...overrides,
   };
 }
@@ -57,9 +71,9 @@ function item(naturalIdentity: string, flowId: number) {
   return {
     action: "created",
     natural_identity: naturalIdentity,
-    applied_statement_event_id: 100 + flowId,
+    applied_statement_event_id: flowId,
     investment_cash_flow_id: flowId,
-    material_fingerprint: `fp-${flowId}`,
+    material_fingerprint: fingerprintOf(naturalIdentity),
     revision_id: 1,
   };
 }
@@ -67,6 +81,7 @@ function item(naturalIdentity: string, flowId: number) {
 function expectation(naturalIdentity: string, accountId = 1, instrumentId = 10) {
   return {
     natural_identity: naturalIdentity,
+    material_fingerprint: fingerprintOf(naturalIdentity),
     expected_hermes_account_id: accountId,
     expected_hermes_instrument_id: instrumentId,
   };
@@ -173,5 +188,90 @@ describe("confirmStatementApply authoritative readback", () => {
     await expect(
       confirmStatementApply(7, verification({ items: [], selectedCount: 0 })),
     ).rejects.toThrow(/не весь отправленный набор/);
+  });
+
+  it("rejects a result that omits a submitted row", async () => {
+    await expect(
+      confirmStatementApply(7, verification({ items: [item("row-1", 501)] })),
+    ).rejects.toThrow(/не весь отправленный набор/);
+    expect(listInvestmentFlows).not.toHaveBeenCalled();
+  });
+
+  it("rejects expectations that do not mirror the submitted set", async () => {
+    await expect(
+      confirmStatementApply(7, verification({ expectations: [expectation("row-1")] })),
+    ).rejects.toThrow(/ожидания отправленных строк не совпали с набором/);
+    expect(listInvestmentFlows).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicated natural identities in the apply result", async () => {
+    await expect(
+      confirmStatementApply(7, verification({ items: [item("row-1", 501), item("row-1", 502)] })),
+    ).rejects.toThrow(/повторную natural_identity/);
+    expect(listInvestmentFlows).not.toHaveBeenCalled();
+  });
+
+  it("rejects an apply result whose material fingerprint was not submitted", async () => {
+    const tampered = { ...item("row-1", 501), material_fingerprint: "fp-tampered" };
+    await expect(
+      confirmStatementApply(7, verification({ items: [tampered, item("row-2", 502)] })),
+    ).rejects.toThrow(/material_fingerprint результата не совпал/);
+    expect(listInvestmentFlows).not.toHaveBeenCalled();
+  });
+
+  it("rejects an applied flow without a statement link", async () => {
+    vi.mocked(listInvestmentFlows).mockResolvedValue([
+      flow(501, { statement_link: null }),
+      flow(502),
+    ]);
+    await expect(confirmStatementApply(7, verification())).rejects.toThrow(
+      /нет связи со строкой отчёта/,
+    );
+  });
+
+  it("rejects a retracted statement link", async () => {
+    vi.mocked(listInvestmentFlows).mockResolvedValue([
+      flow(501, {
+        statement_link: {
+          applied_statement_event_id: 501,
+          link_mode: "statement_created",
+          status: "retracted",
+        },
+      }),
+      flow(502),
+    ]);
+    await expect(confirmStatementApply(7, verification())).rejects.toThrow(
+      /связь записи со строкой отчёта не активна/,
+    );
+  });
+
+  it("rejects a statement link that points at another statement event", async () => {
+    vi.mocked(listInvestmentFlows).mockResolvedValue([
+      flow(501, {
+        statement_link: {
+          applied_statement_event_id: 999,
+          link_mode: "statement_created",
+          status: "active",
+        },
+      }),
+      flow(502),
+    ]);
+    await expect(confirmStatementApply(7, verification())).rejects.toThrow(
+      /указывает на другое событие отчёта/,
+    );
+  });
+
+  it("confirms a link_existing representation with an active statement link", async () => {
+    vi.mocked(listInvestmentFlows).mockResolvedValue([
+      flow(501, {
+        statement_link: {
+          applied_statement_event_id: 501,
+          link_mode: "linked_existing",
+          status: "active",
+        },
+      }),
+      flow(502),
+    ]);
+    await expect(confirmStatementApply(7, verification())).resolves.toBeUndefined();
   });
 });
