@@ -690,4 +690,84 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("safe synthetic diagnostics\n"));
     expect(screen.getByRole("button", { name: "Скопировано" })).toBeInTheDocument();
   });
+  it("invalidates preview when the selected month changes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMonths).mockResolvedValue([
+      {
+        id: 7,
+        year: 2026,
+        month: 8,
+        status: "draft",
+        snapshot_date: "2026-08-31",
+        source: "manual",
+      },
+      {
+        id: 8,
+        year: 2026,
+        month: 9,
+        status: "draft",
+        snapshot_date: "2026-09-30",
+        source: "manual",
+      },
+    ]);
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    await user.click(await screen.findByRole("checkbox", { name: /Выбрать позицию/ }));
+    await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "8");
+    expect(
+      screen.queryByRole("button", { name: "Применить выбранный базовый срез" }),
+    ).not.toBeInTheDocument();
+    expect(applyBrokerBaseline).not.toHaveBeenCalled();
+  });
+
+  it("waits for readback and never reports success when it fails", async () => {
+    const user = userEvent.setup();
+    let fail!: (reason: Error) => void;
+    const readback = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    render(
+      <BrokerSnapshotPanel
+        accounts={[account]}
+        instruments={[instrument]}
+        initialMonthId={7}
+        monthlyClose
+        onApplied={readback}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText("Отчётный месяц")).toHaveValue("7"));
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    await user.click(await screen.findByRole("checkbox", { name: /Выбрать позицию/ }));
+    await user.click(screen.getByRole("button", { name: "Применить выбранный базовый срез" }));
+    await user.dblClick(screen.getByRole("button", { name: "Подтвердить базовый срез" }));
+    await waitFor(() => expect(readback).toHaveBeenCalledTimes(1));
+    expect(applyBrokerBaseline).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Базовый срез применён\. Позиций/)).not.toBeInTheDocument();
+    fail(new Error("synthetic readback failure"));
+    expect(
+      await screen.findByText(/Сервер подтвердил запись, но перечитать результат не удалось/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Базовый срез применён\. Позиций/)).not.toBeInTheDocument();
+  });
+
+  it("rejects a response for a foreign month", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(preview({ reporting_month_id: 8 }));
+    render(
+      <BrokerSnapshotPanel
+        accounts={[account]}
+        instruments={[instrument]}
+        initialMonthId={7}
+        monthlyClose
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText("Отчётный месяц")).toHaveValue("7"));
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    expect(await screen.findByText(/Ответ preview относится к другому месяцу/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Выбрать позицию/ })).not.toBeInTheDocument();
+  });
 });

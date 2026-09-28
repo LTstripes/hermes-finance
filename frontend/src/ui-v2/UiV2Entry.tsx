@@ -3,6 +3,8 @@ import { Link } from "react-router";
 
 import type { DataAppSection } from "./monthSelection";
 
+const UiV2AlfaBaselinePage = lazy(() => import("./UiV2AlfaBaselinePage"));
+
 const UiV2Page = lazy(() => import("./UiV2Page"));
 const UiV2CapitalPage = lazy(() => import("./UiV2CapitalPage"));
 const UiV2MonthlyResultPage = lazy(() => import("./UiV2MonthlyResultPage"));
@@ -57,6 +59,14 @@ function SuspenseFrame({ children }: { children: ReactNode }) {
     <UiV2ErrorBoundary>
       <Suspense fallback={<UiV2LoadingFallback />}>{children}</Suspense>
     </UiV2ErrorBoundary>
+  );
+}
+
+export function UiV2AlfaBaselineEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2AlfaBaselinePage />
+    </SuspenseFrame>
   );
 }
 
@@ -143,7 +153,7 @@ export function UiV2DataAppEntry() {
 export function UiV2DataPlaceholderEntry({
   section,
 }: {
-  section: Exclude<DataAppSection, "sources" | "reconciliation" | "months">;
+  section: Exclude<DataAppSection, "sources" | "reconciliation" | "months" | "alfa-baseline">;
 }) {
   return (
     <SuspenseFrame>
