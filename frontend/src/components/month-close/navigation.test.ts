@@ -58,6 +58,9 @@ describe("monthly close navigation", () => {
     expect(routeForGuidedAction("choose_statement_file", 42, "actual_payouts")).toBe(
       "/payouts?from=monthly-close&step=actual_payouts&monthId=42",
     );
+    expect(routeForGuidedAction("open_cash_flow_ladder", 42, "next_month_outlook")).toBe(
+      "/payouts?from=monthly-close&step=next_month_outlook&monthId=42",
+    );
     expect(routeForGuidedAction("open_final_review", 3, "readiness")).toBe(
       "/months/3/close?from=monthly-close&step=readiness&monthId=3#final_review_close",
     );
@@ -74,6 +77,15 @@ describe("monthly close navigation", () => {
     ).toBe(
       "/v2/data/reconciliation?month=7&from=monthly-close-v2&step=broker_reconciliation&monthId=7",
     );
+  });
+
+  it("routes the v2 payout actions to the exact native month with canonical return context", () => {
+    expect(
+      routeForGuidedAction("open_payout_batch_preview", 42, "future_payouts", "monthly-close-v2"),
+    ).toBe("/v2/data/payouts?month=42&from=monthly-close-v2&step=future_payouts&monthId=42");
+    expect(
+      routeForGuidedAction("open_cash_flow_ladder", 42, "next_month_outlook", "monthly-close-v2"),
+    ).toBe("/v2/data/payouts?month=42&from=monthly-close-v2&step=next_month_outlook&monthId=42");
   });
 
   it("updates the selected month and bounded close return together", () => {

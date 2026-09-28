@@ -20,6 +20,7 @@ const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
 
 const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
   { id: "alfa-baseline", label: "Alfa baseline" },
+  { id: "payouts", label: "Выплаты" },
   { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },
   { id: "files", label: "Файлы" },

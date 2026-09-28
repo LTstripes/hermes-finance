@@ -105,7 +105,11 @@ export function routeForGuidedAction(
         ? `/v2/data?month=${monthId}`
         : origin === "monthly-close-v2" && actionId === "open_alfa_preview"
           ? `/v2/data/alfa-baseline?month=${monthId}`
-          : null;
+          : origin === "monthly-close-v2" && actionId === "open_payout_batch_preview"
+            ? `/v2/data/payouts?month=${monthId}`
+            : origin === "monthly-close-v2" && actionId === "open_cash_flow_ladder"
+              ? `/v2/data/payouts?month=${monthId}`
+              : null;
   return withMonthlyCloseReturn(
     nativePath ?? ACTION_PATHS[actionId](monthId),
     monthId,
