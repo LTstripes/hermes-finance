@@ -2,13 +2,15 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-27**.
+> Last synchronized: **2026-09-28**.
 
 ## Canonical identity
 
 - Published Stable release: **v1.0.0**.
-- Current accepted implementation checkpoint: `b6f3ff1aff93f06ae0a563ba8704b91086a80924`.
-- Exact-main push CI for that checkpoint: **run `36306845860` — SUCCESS**.
+- Canonical `main` at this checkpoint's creation: `453dd6db68e069028d130060ce18e08bc3bbff64` (a later docs-only merge may advance `main` without changing product code).
+- UI parity staging: `integration/ui-v2-parity@f27c33dff940315827d7b9231146945a43b16273`.
+- Performance staging: `integration/performance-ui-v2@a9198a46a9efedcf1e60f5628ff308ebe65952dc`.
+- Detailed active-session checkpoint: `docs/UI_V2_PARITY_CHECKPOINT_2026-09-28.md`.
 - Post-Astra data-integrity/completeness hardening (#484–#498, #536–#539): **complete**; final aggregate #509 merged after exact merge-ref CI/UI evidence passed.
 - Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 - Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
@@ -21,6 +23,16 @@
 - UI v2 is primary at `/`; previous UI remains available at `/v1`.
 - Published predecessor `v0.9.0` remains immutable historical evidence.
 - GitHub `main` is authoritative for live development; documentation-only closeout commits may advance it beyond the released code without changing the immutable `v1.0.0` tag identity.
+
+## Active post-v1.0 development checkpoint — 2026-09-28
+
+The large UI-v2 editor/import parity wave is now integrated in staging. #551–#553, #555–#567, #575 and #607 are complete at their accepted staging stages. The final #567 statement-import candidate `495f99cf6ad93b7ee7916a4b4c6eaedb53d87ceb` passed exact-head CI/UI and independent Grok 4.7 import/privacy/data-integrity review before merging to parity staging `f27c33dff940315827d7b9231146945a43b16273`.
+
+Remaining parity work is bounded to #568 IIS write forms, #569 Capital allocation detail, #570 final Analytics/Home reconciliation refresh, #571 native Monthly Close wiring, #572 aggregate verification/Owner UAT and #573 the explicit v1-retirement decision gate.
+
+Performance Phase B/final reconciliation remains separate on `integration/performance-ui-v2`: open work is #535 class-return backend, #540 class-return UI and #541 final aggregate/UAT milestone. Phase A progress is retained; unfinished Phase B does not silently become a parity PASS.
+
+No immediate Owner UAT is pending at this checkpoint. The next Owner-facing test is the aggregate #572 Preview/UAT after the remaining slices are present on one exact tree.
 
 ## Product/runtime invariants
 

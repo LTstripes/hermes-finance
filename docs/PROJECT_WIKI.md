@@ -457,6 +457,29 @@ Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 Не возрождать monolithic launcher updater.
 
+### UI v2 parity checkpoint — 2026-09-28
+
+The post-v1.0 native parity/editor-import wave is now complete in staging through #567.
+
+Exact active checkpoints:
+- canonical `main` at checkpoint creation: `453dd6db68e069028d130060ce18e08bc3bbff64`;
+- UI parity staging: `integration/ui-v2-parity@f27c33dff940315827d7b9231146945a43b16273`;
+- Performance staging: `integration/performance-ui-v2@a9198a46a9efedcf1e60f5628ff308ebe65952dc`.
+
+Completed parity slices: #551–#553, #555–#567, #575 and #607. This includes month management/editor, all editor leaves, native Alfa baseline, payout forecast/apply and native statement import. Legacy routes stay available; no v1 retirement is authorized.
+
+Remaining bounded tail:
+- #568 IIS write forms;
+- #569 Capital allocation/concentration detail;
+- #570 final Analytics/Home reconciliation refresh;
+- #571 native Monthly Close wiring;
+- #572 one exact aggregate verification + Owner UAT;
+- #573 explicit v1-retirement decision gate.
+
+Performance Phase B/final checkpoint remains separate: #535 backend class returns, #540 class-return UI and #541 final Performance aggregate/UAT.
+
+Durable handoff: `docs/UI_V2_PARITY_CHECKPOINT_2026-09-28.md`.
+
 ### Performance
 
 Account + internal-transfer decomposition backend завершён.
