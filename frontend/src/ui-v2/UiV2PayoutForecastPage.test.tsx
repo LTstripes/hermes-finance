@@ -645,3 +645,113 @@ it("happy path proves payout ids, exact month/version and readiness before succe
   expect(listExpectedFlows).toHaveBeenCalledWith(7, "v1");
   expect(getPayoutRefreshStatus).toHaveBeenCalledWith(7);
 });
+
+it("does not confirm a malformed 0/0 success for one submitted row", async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyPayouts).mockResolvedValue({
+    success: true,
+    selected_count: 0,
+    items: [],
+    error_code: null,
+    message: null,
+  } as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
+});
+
+it("freezes position and version controls for the whole apply/readback lifetime", async () => {
+  const user = userEvent.setup();
+  let resolveApply!: (value: unknown) => void;
+  vi.mocked(applyPayouts).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveApply = resolve as (value: unknown) => void;
+      }) as never,
+  );
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  // While the deferred POST + readback is in flight, context is frozen.
+  await waitFor(() => expect(applyPayouts).toHaveBeenCalledTimes(1));
+  expect(screen.getByLabelText("Позиция")).toBeDisabled();
+  expect(screen.getByLabelText("Версия прогноза")).toBeDisabled();
+  resolveApply({
+    success: true,
+    selected_count: 1,
+    items: [
+      {
+        payout_id: 2,
+        revision_id: 1,
+        revision_kind: "APPLY",
+        provider: "t_invest",
+        instrument_uid: "UID-1",
+        event_kind: "coupon",
+        identity_key: "K-1",
+        lifecycle: "active",
+        total_amount: money("100.00"),
+        reconciliation_id: null,
+        counting_decision: null,
+        expected_cash_flow_id: null,
+      },
+    ],
+    error_code: null,
+    message: null,
+  });
+  // Frozen context never changed, so the completion publishes exactly once.
+  expect(await screen.findByText(/Применено выплат: 1/)).toBeInTheDocument();
+  expect(screen.getByLabelText("Позиция")).not.toBeDisabled();
+});
+
+it("retires an in-flight completion when the version changes before publish", async () => {
+  const user = userEvent.setup();
+  let resolveApply!: (value: unknown) => void;
+  vi.mocked(applyPayouts).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveApply = resolve as (value: unknown) => void;
+      }) as never,
+  );
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  await waitFor(() => expect(applyPayouts).toHaveBeenCalledTimes(1));
+  // Programmatic context edit retires the frozen completion: no late success.
+  fireEvent.change(screen.getByLabelText("Версия прогноза"), { target: { value: "v9" } });
+  resolveApply({
+    success: true,
+    selected_count: 1,
+    items: [
+      {
+        payout_id: 2,
+        revision_id: 1,
+        revision_kind: "APPLY",
+        provider: "t_invest",
+        instrument_uid: "UID-1",
+        event_kind: "coupon",
+        identity_key: "K-1",
+        lifecycle: "active",
+        total_amount: money("100.00"),
+        reconciliation_id: null,
+        counting_decision: null,
+        expected_cash_flow_id: null,
+      },
+    ],
+    error_code: null,
+    message: null,
+  });
+  await waitFor(() => expect(listPayoutCalendar).toHaveBeenCalledWith(7, "v9"));
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Новая")).not.toBeInTheDocument();
+});

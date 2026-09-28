@@ -144,6 +144,9 @@ function PayoutForecastTool({
   const alive = useRef(true);
   const readGeneration = useRef(0);
   const applyGeneration = useRef(0);
+  // B4: explicit context revision for the whole apply + readback lifetime.
+  // Any position/version edit retires an in-flight completion.
+  const contextRevision = useRef(0);
 
   const [month, setMonth] = useState<ReportingMonth | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -289,6 +292,7 @@ function PayoutForecastTool({
     // Explicit local context only. Provider preview stays behind buttons.
     if (versionRef.current !== version) {
       versionRef.current = version;
+      contextRevision.current += 1;
       setPreview(null);
       setPreviewMeta(null);
       setBatchPreview(null);
@@ -525,9 +529,16 @@ function PayoutForecastTool({
     setApplying(true);
     setActionError(null);
     setLastApplyResult(null);
+    // B4: freeze the apply context. Any position/version edit during the
+    // POST + authoritative readback retires this completion.
+    const frozenRevision = contextRevision.current;
+    const frozenMonthId = monthId;
+    const frozenVersion = version;
+    const frozenPayload = { ...pending.payload };
     try {
       const result = await applyPayouts(monthId, { ...pending.payload, rows: pending.rows });
       if (!alive.current || token !== applyGeneration.current) return;
+      if (frozenRevision !== contextRevision.current) return;
       if (!result.success) {
         if (result.error_code === "preview_changed") {
           setPreview(null);
@@ -545,7 +556,11 @@ function PayoutForecastTool({
       }
       // B2: the backend identity is not enough. A successful apply must prove
       // the applied rows and readiness before any success is published.
-      if (result.items.length !== result.selected_count) {
+      // B5: the response must confirm the exact submitted set.
+      if (
+        result.items.length !== result.selected_count ||
+        result.selected_count !== pending.rows.length
+      ) {
         setPreview(null);
         setPreviewMeta(null);
         setBatchPreview(null);
@@ -558,13 +573,45 @@ function PayoutForecastTool({
       try {
         const [rereadMonth, rereadCalendar, rereadRefresh, rereadExpected, rereadReadiness] =
           await Promise.all([
-            getMonth(monthId),
-            listPayoutCalendar(monthId, version),
-            getPayoutRefreshStatus(monthId),
-            listExpectedFlows(monthId, version),
-            getCloseReadiness(monthId),
+            getMonth(frozenMonthId),
+            listPayoutCalendar(frozenMonthId, frozenVersion),
+            getPayoutRefreshStatus(frozenMonthId),
+            listExpectedFlows(frozenMonthId, frozenVersion),
+            getCloseReadiness(frozenMonthId),
           ]);
-        if (!alive.current || token !== applyGeneration.current) return;
+        if (
+          !alive.current ||
+          token !== applyGeneration.current ||
+          frozenRevision !== contextRevision.current
+        )
+          return;
+        // B4: the frozen context must still be current before publishing.
+        if (frozenMonthId !== monthId || frozenVersion !== version) {
+          setPreview(null);
+          setPreviewMeta(null);
+          setBatchPreview(null);
+          setBatchMeta(null);
+          setLastApplyResult(null);
+          setActionError(STALE_APPLY_MESSAGE);
+          return;
+        }
+        if (pending.batchPreviewId === null) {
+          const current = contextPayload();
+          if (
+            !current ||
+            current.account_id !== frozenPayload.account_id ||
+            current.instrument_id !== frozenPayload.instrument_id ||
+            current.position_snapshot_id !== frozenPayload.position_snapshot_id
+          ) {
+            setPreview(null);
+            setPreviewMeta(null);
+            setBatchPreview(null);
+            setBatchMeta(null);
+            setLastApplyResult(null);
+            setActionError(STALE_APPLY_MESSAGE);
+            return;
+          }
+        }
         const providerIds = new Set(
           rereadCalendar.flatMap((entry) =>
             entry.items
@@ -578,10 +625,11 @@ function PayoutForecastTool({
           rereadReadiness.snapshot_date === rereadMonth.snapshot_date &&
           rereadReadiness.status === rereadMonth.status;
         if (
-          rereadMonth.id !== monthId ||
-          rereadRefresh.reporting_month_id !== monthId ||
+          rereadMonth.id !== frozenMonthId ||
+          rereadRefresh.reporting_month_id !== frozenMonthId ||
           rereadExpected.some(
-            (row) => row.reporting_month_id !== monthId || row.forecast_version !== version,
+            (row) =>
+              row.reporting_month_id !== frozenMonthId || row.forecast_version !== frozenVersion,
           ) ||
           !readinessMatchesLifecycle ||
           !result.items.every((item) => providerIds.has(item.payout_id))
@@ -623,7 +671,12 @@ function PayoutForecastTool({
         }
         await client.invalidateQueries({ refetchType: "none" });
       } catch (cause) {
-        if (!alive.current || token !== applyGeneration.current) return;
+        if (
+          !alive.current ||
+          token !== applyGeneration.current ||
+          frozenRevision !== contextRevision.current
+        )
+          return;
         setPreview(null);
         setPreviewMeta(null);
         setBatchPreview(null);
@@ -694,10 +747,11 @@ function PayoutForecastTool({
         <div className="editor-grid">
           <Field htmlFor="payout-forecast-position" label="Позиция">
             <Select
-              disabled={loadingContext}
+              disabled={loadingContext || applying}
               id="payout-forecast-position"
               onChange={(event) => {
                 setSelectedPositionId(event.target.value);
+                contextRevision.current += 1;
                 setPreview(null);
                 setPreviewMeta(null);
                 // B3: a pending single confirm must not survive a position
@@ -771,6 +825,7 @@ function PayoutForecastTool({
         positionLabel={positionLabel}
         preview={preview}
         readOnly={readOnly}
+        versionDisabled={applying}
       />
 
       {refreshStatus && refreshStatus.positions_changed > 0 ? (
@@ -835,6 +890,7 @@ function PayoutForecastTool({
                       positionLabel={itemLabel}
                       preview={previewValue}
                       readOnly={readOnly}
+                      versionDisabled={applying}
                     />
                   ) : (
                     <div
