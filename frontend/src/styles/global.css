@@ -596,6 +596,10 @@ a.btn {
   gap: 16px 20px;
 }
 
+.statement-import__mapping-grid > * {
+  min-width: 0;
+}
+
 .statement-import__isin-row {
   display: grid;
   gap: 6px;
@@ -1044,9 +1048,12 @@ a.btn {
 
 @media (max-width: 680px) {
   .clone-grid,
-  .form-row-2,
-  .statement-import__mapping-grid {
+  .form-row-2 {
     grid-template-columns: 1fr;
+  }
+
+  .statement-import__mapping-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1713,6 +1720,16 @@ th.num {
 .month-property-table .select,
 .month-cash-table .input,
 .month-cash-table .select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Statement inputs must never widen their container: a long provider option or
+   file name would otherwise push the whole page past a 390px viewport. */
+.statement-import__mapping .input,
+.statement-import__mapping .select,
+.statement-import input[type="file"] {
   width: 100%;
   min-width: 0;
   max-width: 100%;

@@ -154,7 +154,10 @@ describe("native Monthly Close work mode", () => {
     );
     expect(
       within(panel).getByRole("link", { name: "Выбрать выписку с выплатами" }),
-    ).toHaveAttribute("href", "/payouts?from=monthly-close-v2&step=actual_payouts&monthId=12");
+    ).toHaveAttribute(
+      "href",
+      "/v2/data/payouts?month=12&from=monthly-close-v2&step=actual_payouts&monthId=12#statement-import",
+    );
     expect(screen.queryByRole("heading", { name: /Итоги Август 2031/ })).toBeNull();
     expect(screen.getByRole("link", { name: "Открыть итоговую проверку" })).toHaveAttribute(
       "href",

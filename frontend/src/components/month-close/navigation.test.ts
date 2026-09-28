@@ -88,6 +88,18 @@ describe("monthly close navigation", () => {
     ).toBe("/v2/data/payouts?month=42&from=monthly-close-v2&step=next_month_outlook&monthId=42");
   });
 
+  it("routes the v2 statement action to the native statement-import anchor", () => {
+    expect(
+      routeForGuidedAction("choose_statement_file", 42, "actual_payouts", "monthly-close-v2"),
+    ).toBe(
+      "/v2/data/payouts?month=42&from=monthly-close-v2&step=actual_payouts&monthId=42#statement-import",
+    );
+    // The legacy monthly close keeps its own supported route.
+    expect(
+      routeForGuidedAction("choose_statement_file", 42, "actual_payouts", "monthly-close"),
+    ).toBe("/payouts?from=monthly-close&step=actual_payouts&monthId=42");
+  });
+
   it("updates the selected month and bounded close return together", () => {
     expect(
       withSelectedReturnMonth(

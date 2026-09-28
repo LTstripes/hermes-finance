@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { listAccounts } from "../api/accounts";
 import { listExpectedFlows } from "../api/expectedFlows";
 import { listInstruments } from "../api/instruments";
+import { listInvestmentFlows } from "../api/investmentFlows";
 import { getCloseReadiness, getMonth, listMonths } from "../api/months";
 import {
   applyPayouts,
@@ -16,6 +17,7 @@ import {
   previewPayoutsBatch,
 } from "../api/payouts";
 import { listPositions } from "../api/positions";
+import { applyStatement, inspectStatement, prepareStatement } from "../api/statementImport";
 import type { CloseReadiness, ReportingMonth } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import UiV2PayoutForecastPage from "./UiV2PayoutForecastPage";
@@ -29,6 +31,12 @@ vi.mock("../api/months", () => ({
 }));
 vi.mock("../api/positions", () => ({ listPositions: vi.fn() }));
 vi.mock("../api/expectedFlows", () => ({ listExpectedFlows: vi.fn() }));
+vi.mock("../api/investmentFlows", () => ({ listInvestmentFlows: vi.fn() }));
+vi.mock("../api/statementImport", () => ({
+  inspectStatement: vi.fn(),
+  prepareStatement: vi.fn(),
+  applyStatement: vi.fn(),
+}));
 vi.mock("../api/payouts", () => ({
   previewPayouts: vi.fn(),
   previewPayoutsBatch: vi.fn(),
@@ -173,6 +181,63 @@ const previewFixture = {
   ],
 };
 
+const statementFile = new File(["synthetic statement pdf"], "synthetic-statement.pdf", {
+  type: "application/pdf",
+});
+
+const statementInspect = {
+  document_sha256: "sha-1",
+  status: "applicable",
+  rows: [
+    {
+      status: "matched",
+      provider_account_ref: "synthetic-broker",
+      isin: "RU000SYNTH01",
+      event_kind: "coupon",
+      record_date: "2026-08-01",
+      event_date: "2026-08-03",
+      reason: null,
+    },
+  ],
+  warnings: [],
+  reason: null,
+};
+
+const statementPreparation = {
+  provider: "alfa_pdf",
+  document_sha256: "sha-1",
+  status: "applicable",
+  warnings: [],
+  reason: null,
+  rows: [
+    {
+      status: "matched",
+      duplicate_class: null,
+      provider_account_ref: "synthetic-broker",
+      expected_hermes_account_id: 1,
+      expected_hermes_instrument_id: 10,
+      natural_identity: "synthetic-row-1",
+      material_fingerprint: "fp-synthetic-1",
+      expected_candidate_ids: [],
+      candidates: [],
+      isin: "RU000SYNTH01",
+      event_kind: "coupon",
+      record_date: "2026-08-01",
+      event_date: "2026-08-03",
+      quantity: "10",
+      per_unit: "10.00",
+      gross_amount: "12450.00",
+      gross_currency: "RUB",
+      tax_amount: "1618.50",
+      tax_available: true,
+      tax_rate: "13.00",
+      net_amount: "10831.50",
+      net_currency: "RUB",
+      reason: null,
+    },
+  ],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listMonths).mockResolvedValue([draftMonth, closedMonth]);
@@ -200,6 +265,42 @@ beforeEach(() => {
     items: [],
   } as never);
   vi.mocked(listExpectedFlows).mockResolvedValue([]);
+  vi.mocked(listInvestmentFlows).mockResolvedValue([
+    {
+      id: 501,
+      reporting_month_id: 7,
+      account_id: 1,
+      instrument_id: 10,
+      flow_type: "coupon",
+      event_date: "2026-08-03",
+      gross_amount: money("12450.00"),
+      tax_amount: money("1618.50"),
+      commission_amount: money("0.00"),
+      net_amount: money("10831.50"),
+      currency: "RUB",
+      source: "alfa_pdf",
+      notes: null,
+      statement_link: null,
+    } as never,
+  ]);
+  vi.mocked(inspectStatement).mockResolvedValue(structuredClone(statementInspect) as never);
+  vi.mocked(prepareStatement).mockResolvedValue(structuredClone(statementPreparation) as never);
+  vi.mocked(applyStatement).mockResolvedValue({
+    success: true,
+    selected_count: 1,
+    items: [
+      {
+        action: "created",
+        natural_identity: "synthetic-row-1",
+        applied_statement_event_id: 91,
+        investment_cash_flow_id: 501,
+        material_fingerprint: "fp-synthetic-1",
+        revision_id: 92,
+      },
+    ],
+    error_code: null,
+    message: null,
+  } as never);
   vi.mocked(previewPayouts).mockResolvedValue(structuredClone(previewFixture) as never);
   vi.mocked(previewPayoutsBatch).mockResolvedValue({
     reporting_month_id: 7,
@@ -356,7 +457,7 @@ it("keeps CLOSED fail-closed: preview stays readable, apply is blocked", async (
   expect(await screen.findByText("Объединённый календарь выплат")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   // Preview itself is allowed on CLOSED; the panel explains read-only.
-  expect(await screen.findByText(/Месяц закрыт/)).toBeInTheDocument();
+  expect(await screen.findByText(/Месяц закрыт\. Предпросмотр доступен/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
@@ -869,6 +970,139 @@ it("does not confirm an unrelated manual link for the applied payout", async () 
   await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
   expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
   expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});
+
+async function prepareStatementRow(user: ReturnType<typeof userEvent.setup>) {
+  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+  await screen.findByText("synthetic-broker");
+  await user.selectOptions(screen.getByLabelText("Alfa-счёт synthetic-broker"), "1");
+  await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+  await screen.findByText("Новая строка");
+  await user.click(screen.getByRole("checkbox", { name: "Выбрать строку 1" }));
+}
+
+it("mounts the statement import section only for a valid explicit month with no action on mount", async () => {
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  expect(document.getElementById("statement-import")).not.toBeNull();
+  expect(screen.getByLabelText("PDF отчёта Alfa")).toBeInTheDocument();
+  expect(inspectStatement).not.toHaveBeenCalled();
+  expect(prepareStatement).not.toHaveBeenCalled();
+  expect(applyStatement).not.toHaveBeenCalled();
+  expect(listInvestmentFlows).not.toHaveBeenCalled();
+  expect(previewPayouts).not.toHaveBeenCalled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("keeps the write/import tool unmounted without a valid explicit month", async () => {
+  show("?month=bad");
+  await screen.findByText("Месяц не выбран");
+  expect(document.getElementById("statement-import")).toBeNull();
+  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
+  expect(inspectStatement).not.toHaveBeenCalled();
+});
+
+it("retires the statement document when the explicit month changes", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+  await screen.findByText("synthetic-broker");
+
+  await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "8");
+  await screen.findByText("Объединённый календарь выплат");
+  expect(screen.queryByText("synthetic-broker")).not.toBeInTheDocument();
+  const input = screen.getByLabelText("PDF отчёта Alfa") as HTMLInputElement;
+  expect(input.files?.length ?? 0).toBe(0);
+  expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+});
+
+it("keeps upload, inspect and prepare free of any write until the owner confirms", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await prepareStatementRow(user);
+  expect(prepareStatement).toHaveBeenCalledTimes(1);
+  expect(applyStatement).not.toHaveBeenCalled();
+  expect(listInvestmentFlows).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
+  expect(applyStatement).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+  expect(screen.getByText("Новая строка")).toBeInTheDocument();
+});
+
+it("applies a synthetic statement only after the exact-month authoritative reread", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await prepareStatementRow(user);
+  await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+  await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+
+  expect(await screen.findByText(/Импортировано строк: 1/)).toBeInTheDocument();
+  expect(applyStatement).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(listInvestmentFlows).toHaveBeenCalledWith(7));
+  expect(getCloseReadiness).toHaveBeenCalledWith(7);
+  expect(getMonth).toHaveBeenCalledWith(7);
+  expect(screen.queryByText(/не подтверждён повторной загрузкой/)).not.toBeInTheDocument();
+});
+
+it("does not claim success when the applied flow id is missing from the reread", async () => {
+  const user = userEvent.setup();
+  vi.mocked(listInvestmentFlows).mockResolvedValue([]);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await prepareStatementRow(user);
+  await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+  await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+
+  expect(await screen.findByText(/не подтверждён повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+  // The prepared document is retired: no blind replay of the same selection.
+  expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+});
+
+it("keeps the statement import fail-closed on a CLOSED month", async () => {
+  show("?month=8");
+  await screen.findByText("Объединённый календарь выплат");
+  expect(
+    screen.getByText(/Проверка PDF доступна, но применение выплат заблокировано/),
+  ).toBeInTheDocument();
+  expect(applyStatement).not.toHaveBeenCalled();
+});
+
+it("routes the actual_payouts close step to the native statement-import anchor and back", async () => {
+  show("?month=7&from=monthly-close-v2&step=actual_payouts&monthId=7");
+  await screen.findByText("Объединённый календарь выплат");
+  expect(document.getElementById("statement-import")).not.toBeNull();
+  expect(screen.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=7&step=actual_payouts",
+  );
+  expect(screen.queryByRole("link", { name: "Продолжить к закрытию" })).toBeNull();
+});
+
+it("hands a zero-row statement outcome back to the same-month close step", async () => {
+  const user = userEvent.setup();
+  vi.mocked(inspectStatement).mockResolvedValueOnce({
+    ...statementInspect,
+    rows: [],
+  } as never);
+  show("?month=7&from=monthly-close-v2&step=actual_payouts&monthId=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+
+  expect(await screen.findByText("Результат проверки PDF Alfa")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Продолжить к закрытию" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=7&step=actual_payouts",
+  );
 });
 
 it("does not confirm a mismatched manual reconciliation identity", async () => {

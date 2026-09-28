@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiClientError } from "../api/client";
 import { updateInstrument } from "../api/instruments";
 import {
   applyStatement,
@@ -10,7 +11,7 @@ import {
   type StatementPreparation,
 } from "../api/statementImport";
 import type { Account, Instrument } from "../api/types";
-import { StatementImportPanel } from "./StatementImportPanel";
+import { StatementImportPanel, type StatementApplyVerification } from "./StatementImportPanel";
 
 vi.mock("../api/statementImport", () => ({
   applyStatement: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("../api/instruments", () => ({
 }));
 
 const account = { id: 1, name: "Основной счёт" } as Account;
+const secondAccount = { id: 3, name: "Второй счёт" } as Account;
 const instrument = { id: 10, name: "Синтетическая облигация", isin: "RU000SYNTH01" } as Instrument;
 const file = new File(["synthetic pdf"], "statement.pdf", { type: "application/pdf" });
 
@@ -435,5 +437,257 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(screen.queryByRole("button", { name: "Сохранить ISIN в инструмент" })).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("уже ISIN RU000OTHER01");
     expect(updateInstrument).not.toHaveBeenCalled();
+  });
+});
+
+type PanelProps = Parameters<typeof StatementImportPanel>[0];
+
+describe("StatementImportPanel write lifecycle", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(inspectStatement).mockResolvedValue(inspectResult);
+    vi.mocked(prepareStatement).mockResolvedValue(preparation);
+    vi.mocked(applyStatement).mockResolvedValue({
+      success: true,
+      selected_count: 1,
+      items: [
+        {
+          action: "created",
+          natural_identity: "new-1",
+          applied_statement_event_id: 21,
+          investment_cash_flow_id: 501,
+          material_fingerprint: "fp-new",
+          revision_id: 22,
+        },
+      ],
+      error_code: null,
+      message: null,
+    });
+  });
+
+  function mountPanel(props: Partial<PanelProps> = {}) {
+    render(<StatementImportPanel accounts={[account]} instruments={[instrument]} {...props} />);
+  }
+
+  async function uploadAndInspect(user: ReturnType<typeof userEvent.setup>) {
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await screen.findByText("broker-1");
+    await user.selectOptions(screen.getByLabelText("Alfa-счёт broker-1"), "1");
+  }
+
+  async function prepareReport(user: ReturnType<typeof userEvent.setup>) {
+    await uploadAndInspect(user);
+    await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+    await screen.findByText("Уже импортировано");
+  }
+
+  async function confirmSelected(user: ReturnType<typeof userEvent.setup>) {
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[2]);
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+  }
+
+  it("drops an inspection that completes after the document changed", async () => {
+    const user = userEvent.setup();
+    let resolveInspect!: (value: unknown) => void;
+    vi.mocked(inspectStatement).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInspect = resolve;
+        }) as never,
+    );
+    mountPanel();
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), file);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    // Only an inspection is in flight: the document control stays editable.
+    expect(screen.getByLabelText("PDF отчёта Alfa")).toBeEnabled();
+    const second = new File(["second pdf"], "statement-2.pdf", { type: "application/pdf" });
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), second);
+    resolveInspect(inspectResult);
+    await waitFor(() => expect(inspectStatement).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("broker-1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Alfa-счёт broker-1")).not.toBeInTheDocument();
+  });
+
+  it("drops a preparation that completes after the account mapping changed", async () => {
+    const user = userEvent.setup();
+    mountPanel({ accounts: [account, secondAccount] });
+    await uploadAndInspect(user);
+    let resolvePrepare!: (value: unknown) => void;
+    vi.mocked(prepareStatement).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrepare = resolve;
+        }) as never,
+    );
+    await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+    await user.selectOptions(screen.getByLabelText("Alfa-счёт broker-1"), "3");
+    resolvePrepare(preparation);
+    await waitFor(() => expect(prepareStatement).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Уже импортировано")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+  });
+
+  it("publishes success only after the authoritative readback resolves", async () => {
+    const user = userEvent.setup();
+    let resolveReadback!: () => void;
+    const verifyApplied = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReadback = resolve;
+        }),
+    );
+    const onOutcome = vi.fn();
+    mountPanel({ verifyApplied, onOutcome });
+    await prepareReport(user);
+    await confirmSelected(user);
+
+    await waitFor(() => expect(applyStatement).toHaveBeenCalledTimes(1));
+    expect(verifyApplied).toHaveBeenCalledTimes(1);
+    // The whole write + readback lifetime freezes the file control.
+    expect(screen.getByLabelText("PDF отчёта Alfa")).toBeDisabled();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    expect(onOutcome).not.toHaveBeenCalledWith({ kind: "applied", selectedCount: 1 });
+
+    resolveReadback();
+    expect(await screen.findByText(/Импортировано строк: 1/)).toBeInTheDocument();
+    expect(onOutcome).toHaveBeenCalledWith({ kind: "applied", selectedCount: 1 });
+    expect(screen.getByLabelText("PDF отчёта Alfa")).toBeEnabled();
+  });
+
+  it("keeps an explicit unconfirmed state when the readback rejects", async () => {
+    const user = userEvent.setup();
+    const verifyApplied = vi.fn().mockRejectedValue(new Error("synthetic readback mismatch"));
+    const onOutcome = vi.fn();
+    mountPanel({ verifyApplied, onOutcome });
+    await prepareReport(user);
+    await confirmSelected(user);
+
+    expect(await screen.findByText(/не подтверждён повторной загрузкой/)).toBeInTheDocument();
+    expect(screen.getByText(/synthetic readback mismatch/)).toBeInTheDocument();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    expect(onOutcome).not.toHaveBeenCalledWith({ kind: "applied", selectedCount: 1 });
+    // The prepared document is retired so it cannot be replayed blindly.
+    expect(screen.queryByText("Уже импортировано")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+    expect(verifyApplied).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts exactly one apply for a repeated confirmation", async () => {
+    const user = userEvent.setup();
+    let resolveApply!: (value: unknown) => void;
+    vi.mocked(applyStatement).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }) as never,
+    );
+    mountPanel();
+    await prepareReport(user);
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[2]);
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    const confirmButton = screen.getByRole("button", { name: "Подтвердить и применить" });
+    await act(async () => {
+      confirmButton.click();
+      confirmButton.click();
+    });
+    await waitFor(() => expect(applyStatement).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // The whole write + readback lifetime keeps the write controls frozen.
+    expect(screen.getByRole("button", { name: "Применить выбранные строки" })).toBeDisabled();
+    expect(screen.getByLabelText("PDF отчёта Alfa")).toBeDisabled();
+    expect(screen.getAllByRole("checkbox")[2]).toBeDisabled();
+
+    resolveApply({
+      success: true,
+      selected_count: 1,
+      items: [
+        {
+          action: "created",
+          natural_identity: "new-1",
+          applied_statement_event_id: 21,
+          investment_cash_flow_id: 501,
+          material_fingerprint: "fp-new",
+          revision_id: 22,
+        },
+      ],
+      error_code: null,
+      message: null,
+    });
+    expect(await screen.findByText(/Импортировано строк: 1/)).toBeInTheDocument();
+    expect(applyStatement).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("PDF отчёта Alfa")).toBeEnabled();
+  });
+
+  it("retires the prepared document after an ambiguous apply failure", async () => {
+    const user = userEvent.setup();
+    vi.mocked(applyStatement).mockRejectedValueOnce(
+      new ApiClientError(0, { code: "network_error", message: "socket hang up", details: [] }),
+    );
+    mountPanel();
+    await prepareReport(user);
+    await confirmSelected(user);
+
+    expect(await screen.findByText(/результат неизвестен/)).toBeInTheDocument();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    // No replayable preparation and no stale selection remain behind.
+    expect(screen.queryByText("Уже импортировано")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Подготовить к импорту" })).not.toBeNull();
+  });
+
+  it("keeps a definite backend rejection replayable and never claims success", async () => {
+    const user = userEvent.setup();
+    vi.mocked(applyStatement).mockRejectedValueOnce(
+      new ApiClientError(422, {
+        code: "synthetic_rejection",
+        message: "synthetic rejection",
+        details: [],
+      }),
+    );
+    mountPanel();
+    await prepareReport(user);
+    await confirmSelected(user);
+
+    expect(await screen.findByText("synthetic rejection")).toBeInTheDocument();
+    expect(screen.queryByText(/результат неизвестен/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить выбранные строки" })).not.toBeDisabled();
+  });
+
+  it("exposes the exact submitted set to the readback gate", async () => {
+    const user = userEvent.setup();
+    const verifyApplied = vi.fn((_verification: StatementApplyVerification) => Promise.resolve());
+    mountPanel({ verifyApplied });
+    await prepareReport(user);
+    await confirmSelected(user);
+
+    await screen.findByText(/Импортировано строк: 1/);
+    expect(verifyApplied).toHaveBeenCalledTimes(1);
+    const verification = verifyApplied.mock.calls[0][0];
+    expect(verification.submittedCount).toBe(1);
+    expect(verification.selectedCount).toBe(1);
+    expect(verification.items.map((item) => item.investment_cash_flow_id)).toEqual([501]);
+    expect(verification.expectations).toEqual([
+      {
+        natural_identity: "new-1",
+        expected_hermes_account_id: 1,
+        expected_hermes_instrument_id: 10,
+      },
+    ]);
+  });
+
+  it("keeps a CLOSED month inspectable while apply stays fail-closed", async () => {
+    const user = userEvent.setup();
+    mountPanel({ readOnly: true });
+    await prepareReport(user);
+    expect(await screen.findByText(/Месяц закрыт\. Проверка PDF доступна/)).toBeInTheDocument();
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[2]);
+    expect(screen.getByRole("button", { name: "Применить выбранные строки" })).toBeDisabled();
+    expect(applyStatement).not.toHaveBeenCalled();
   });
 });

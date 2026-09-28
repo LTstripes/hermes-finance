@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import { updateInstrument } from "../api/instruments";
 import {
   applyStatement,
   inspectStatement,
   prepareStatement,
+  type StatementApplyItem,
   type StatementCandidate,
   type StatementInspect,
   type StatementMapping,
@@ -25,6 +26,30 @@ type StatementDecision = {
 };
 
 const EMPTY_DECISION: StatementDecision = { action: "", candidateId: "" };
+
+/**
+ * Expected account/instrument identity of one submitted statement row (#567).
+ * It is the only identity the apply contract exposes for a returned item, so
+ * the authoritative post-apply readback proves the persisted flow against it.
+ */
+export type StatementApplyExpectation = {
+  natural_identity: string | null;
+  expected_hermes_account_id: number | null;
+  expected_hermes_instrument_id: number | null;
+};
+
+export type StatementApplyVerification = {
+  submittedCount: number;
+  selectedCount: number;
+  items: StatementApplyItem[];
+  expectations: StatementApplyExpectation[];
+};
+
+const UNCONFIRMED_READBACK_MESSAGE =
+  "Импорт не подтверждён повторной загрузкой данных — успех не показан. Старая подготовка отменена, проверь файл заново и сверь сохранённые строки.";
+
+const AMBIGUOUS_APPLY_MESSAGE =
+  "Запрос применения завершился без ответа, результат неизвестен. Это не успех: старая подготовка отменена, чтобы не применить строки дважды. Проверь файл заново и сверь сохранённые строки.";
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   applicable: "Отчёт готов к подготовке",
@@ -204,6 +229,18 @@ type Props = {
   onApplied?: () => Promise<void> | void;
   onInstrumentsChange?: (instruments: Instrument[]) => void;
   onOutcome?: (outcome: AlfaStatementTransientOutcome | null) => void;
+  /**
+   * Authoritative post-apply verification gate (#567). When provided, neither
+   * the success banner nor the `applied` outcome is published until this
+   * resolves; a rejection leaves an explicit unconfirmed state and retires the
+   * prepared document so the same preparation cannot be replayed blindly.
+   */
+  verifyApplied?: (verification: StatementApplyVerification) => Promise<void>;
+  /**
+   * Reports the whole write + authoritative readback lifetime so the host page
+   * can freeze its surrounding context controls (#567).
+   */
+  onApplyingChange?: (applying: boolean) => void;
 };
 
 export function StatementImportPanel({
@@ -213,6 +250,8 @@ export function StatementImportPanel({
   onApplied,
   onInstrumentsChange,
   onOutcome,
+  verifyApplied,
+  onApplyingChange,
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
@@ -224,11 +263,32 @@ export function StatementImportPanel({
   const [decisions, setDecisions] = useState<Record<string, StatementDecision>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState<string | null>(null);
   const [resultItems, setResultItems] = useState<{ action: string; natural_identity: string }[]>(
     [],
   );
+  // Lifecycle identity: an in-flight inspect/prepare/apply completion only
+  // publishes while the panel is alive and the file/mapping revision is intact.
+  const aliveRef = useRef(true);
+  const revisionRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const onApplyingChangeRef = useRef(onApplyingChange);
+
+  useEffect(() => {
+    onApplyingChangeRef.current = onApplyingChange;
+  });
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      revisionRef.current += 1;
+      onApplyingChangeRef.current?.(false);
+    };
+  }, []);
 
   useEffect(() => {
     setLocalInstruments(instruments);
@@ -291,32 +351,42 @@ export function StatementImportPanel({
   }
 
   function chooseFile(next: File | null) {
+    // Selecting, changing or clearing the document retires every completion
+    // that belongs to the previous file/mapping/selection/confirm lifetime.
+    revisionRef.current += 1;
     setFile(next);
     setInspected(null);
     clearReview();
     setMessage(null);
     setSuccess(null);
+    setUnconfirmed(null);
     onOutcome?.(null);
   }
 
   function resetMappings() {
+    revisionRef.current += 1;
     setAccountMappings({});
     setInstrumentMappings({});
     clearReview();
   }
 
   async function inspect() {
+    if (inFlightRef.current) return;
     if (!file) {
       setMessage("Выбери PDF отчёта Alfa.");
       return;
     }
+    clearReview();
+    const revision = revisionRef.current;
+    inFlightRef.current = true;
     setBusy(true);
     setMessage(null);
     setSuccess(null);
-    clearReview();
+    setUnconfirmed(null);
     onOutcome?.(null);
     try {
       const next = await inspectStatement(file);
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       const nextRefs = uniqueValues(next.rows.map((row) => row.provider_account_ref));
       const nextIsins = uniqueValues(next.rows.map((row) => row.isin));
       setInspected(next);
@@ -327,9 +397,11 @@ export function StatementImportPanel({
       );
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       setMessage(formatApiError(error));
     } finally {
-      setBusy(false);
+      inFlightRef.current = false;
+      if (aliveRef.current) setBusy(false);
     }
   }
 
@@ -340,6 +412,7 @@ export function StatementImportPanel({
   );
 
   async function prepare() {
+    if (inFlightRef.current) return;
     if (!file || !inspected) {
       setMessage("Сначала выбери PDF и выполни инспекцию.");
       return;
@@ -348,18 +421,24 @@ export function StatementImportPanel({
       setMessage("Сопоставь каждый найденный Alfa-счёт с существующим Hermes-счётом.");
       return;
     }
+    clearReview();
+    const revision = revisionRef.current;
+    inFlightRef.current = true;
     setBusy(true);
     setMessage(null);
     setSuccess(null);
-    clearReview();
+    setUnconfirmed(null);
     try {
       const next = await prepareStatement(file, mapping());
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       setPreparation(next);
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       setMessage(formatApiError(error));
     } finally {
-      setBusy(false);
+      inFlightRef.current = false;
+      if (aliveRef.current) setBusy(false);
     }
   }
 
@@ -466,47 +545,96 @@ export function StatementImportPanel({
     setSelected(next);
   }
 
+  async function refreshFacts() {
+    try {
+      await onApplied?.();
+    } catch (error) {
+      setMessage(formatApiError(error));
+    }
+  }
+
   async function apply() {
+    // Single-flight: a second confirmation in the same tick cannot start a
+    // second concurrent apply for the same preparation.
+    if (inFlightRef.current) return;
     if (!file || !preparation || !selectedRowsReady) return;
+    const revision = revisionRef.current;
+    const submittedCount = selectedRows.length;
+    const selections = selectedRows.map(({ row, index }) => {
+      const decision = decisions[rowKey(row, index)] ?? EMPTY_DECISION;
+      return {
+        natural_identity: row.natural_identity,
+        material_fingerprint: row.material_fingerprint,
+        expected_hermes_account_id: row.expected_hermes_account_id,
+        expected_hermes_instrument_id: row.expected_hermes_instrument_id,
+        action: decision.action || undefined,
+        existing_cash_flow_id:
+          decision.action === "link_existing" ? Number(decision.candidateId) : undefined,
+        expected_candidate_ids: row.expected_candidate_ids,
+      };
+    });
+    const expectations: StatementApplyExpectation[] = selectedRows.map(({ row }) => ({
+      natural_identity: row.natural_identity,
+      expected_hermes_account_id: row.expected_hermes_account_id,
+      expected_hermes_instrument_id: row.expected_hermes_instrument_id,
+    }));
+    inFlightRef.current = true;
     setBusy(true);
+    setApplying(true);
+    onApplyingChangeRef.current?.(true);
     setMessage(null);
     setSuccess(null);
+    setUnconfirmed(null);
     try {
-      const result = await applyStatement(
-        file,
-        mapping(),
-        selectedRows.map(({ row, index }) => {
-          const decision = decisions[rowKey(row, index)] ?? EMPTY_DECISION;
-          return {
-            natural_identity: row.natural_identity,
-            material_fingerprint: row.material_fingerprint,
-            expected_hermes_account_id: row.expected_hermes_account_id,
-            expected_hermes_instrument_id: row.expected_hermes_instrument_id,
-            action: decision.action || undefined,
-            existing_cash_flow_id:
-              decision.action === "link_existing" ? Number(decision.candidateId) : undefined,
-            expected_candidate_ids: row.expected_candidate_ids,
-          };
-        }),
-        preparation.document_sha256,
-      );
+      const result = await applyStatement(file, mapping(), selections, preparation.document_sha256);
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       if (!result.success) {
         if (result.error_code === "preview_changed") clearReview();
         setMessage(result.message ?? "Импорт не применён.");
         return;
       }
+      if (verifyApplied) {
+        try {
+          await verifyApplied({
+            submittedCount,
+            selectedCount: result.selected_count,
+            items: result.items,
+            expectations,
+          });
+        } catch (error) {
+          if (!aliveRef.current || revision !== revisionRef.current) return;
+          clearReview();
+          setUnconfirmed(`${UNCONFIRMED_READBACK_MESSAGE} Причина: ${formatApiError(error)}`);
+          await refreshFacts();
+          return;
+        }
+      }
+      if (!aliveRef.current || revision !== revisionRef.current) return;
+      clearReview();
       setResultItems(result.items);
-      setPreparation(null);
-      setSelected({});
-      setDecisions({});
-      setConfirmOpen(false);
       setSuccess(`Импортировано строк: ${result.selected_count}.`);
       onOutcome?.({ kind: "applied", selectedCount: result.selected_count });
-      await onApplied?.();
+      await refreshFacts();
     } catch (error) {
-      setMessage(formatApiError(error));
+      if (!aliveRef.current || revision !== revisionRef.current) return;
+      // Only a completed HTTP rejection proves that nothing was written. A
+      // network/timeout failure after the apply request is ambiguous: it must
+      // not read as success and must not leave a replayable preparation.
+      const definiteRejection = error instanceof ApiClientError && error.status >= 400;
+      if (definiteRejection) {
+        setMessage(formatApiError(error));
+        return;
+      }
+      clearReview();
+      setUnconfirmed(`${AMBIGUOUS_APPLY_MESSAGE} ${formatApiError(error)}`);
+      await refreshFacts();
     } finally {
-      setBusy(false);
+      inFlightRef.current = false;
+      if (aliveRef.current) {
+        setBusy(false);
+        setApplying(false);
+      }
+      onApplyingChangeRef.current?.(false);
     }
   }
 
@@ -537,6 +665,7 @@ export function StatementImportPanel({
             id="statement-file"
             type="file"
             accept="application/pdf"
+            disabled={applying}
             onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
           />
         </Field>
@@ -563,6 +692,11 @@ export function StatementImportPanel({
       {message ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {message}
+        </div>
+      ) : null}
+      {unconfirmed ? (
+        <div className="inline-alert inline-alert--warn" role="alert">
+          {unconfirmed}
         </div>
       ) : null}
       {success ? (
@@ -621,9 +755,13 @@ export function StatementImportPanel({
                     label={`Alfa-счёт ${ref}`}
                   >
                     <Select
+                      disabled={applying}
                       id={`statement-map-account-${ref}`}
                       value={accountMappings[ref] ?? ""}
                       onChange={(event) => {
+                        // A mapping change retires the previously prepared
+                        // identity; an in-flight completion must not publish.
+                        revisionRef.current += 1;
                         setAccountMappings((current) => ({
                           ...current,
                           [ref]: event.target.value,
@@ -667,9 +805,11 @@ export function StatementImportPanel({
                         label={`Инструмент для ${isin}`}
                       >
                         <Select
+                          disabled={applying}
                           id={`statement-map-instrument-${isin}`}
                           value={instrumentMappings[isin] ?? ""}
                           onChange={(event) => {
+                            revisionRef.current += 1;
                             setInstrumentMappings((current) => ({
                               ...current,
                               [isin]: event.target.value,
@@ -853,7 +993,7 @@ export function StatementImportPanel({
                           <Select
                             aria-label={`Решение correction ${index + 1}`}
                             value={decision.action}
-                            disabled={!selected[key]}
+                            disabled={busy || !selected[key]}
                             onChange={(event) =>
                               updateDecision(key, {
                                 action: event.target.value as StatementDecision["action"],
@@ -870,7 +1010,7 @@ export function StatementImportPanel({
                             <Select
                               aria-label={`Решение кандидата ${index + 1}`}
                               value={decision.action}
-                              disabled={!selected[key]}
+                              disabled={busy || !selected[key]}
                               onChange={(event) =>
                                 updateDecision(key, {
                                   action: event.target.value as StatementDecision["action"],
@@ -886,7 +1026,7 @@ export function StatementImportPanel({
                               <Select
                                 aria-label={`Кандидат для ссылки ${index + 1}`}
                                 value={decision.candidateId}
-                                disabled={!selected[key]}
+                                disabled={busy || !selected[key]}
                                 onChange={(event) =>
                                   updateDecision(key, { candidateId: event.target.value })
                                 }

@@ -30,6 +30,7 @@ import {
   withSelectedReturnMonth,
   type MonthlyCloseReturnContext,
 } from "../components/month-close/navigation";
+import type { AlfaStatementTransientOutcome } from "../components/month-close/statementOutcome";
 import {
   TInvestBatchItemStatus,
   TInvestBatchSummary,
@@ -53,6 +54,7 @@ import { queryKeys } from "../queryClient";
 import { resolveMonthSelection } from "./monthSelection";
 import { DataMonthContext, UiV2DataFrame } from "./UiV2DataShell";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { UiV2StatementImportSection } from "./UiV2StatementImportSection";
 import styles from "./UiV2PayoutForecast.module.css";
 
 const APPLY_FAILURE_LABELS: Record<string, string> = {
@@ -976,11 +978,40 @@ export default function UiV2PayoutForecastPage() {
   const month = isQueryReady(months) && selection.kind === "selected" ? selection.month : null;
   const close = parseMonthlyCloseReturnContext(params);
   const returnPath = close && close.monthId === month?.id ? monthlyCloseReturnPath(close) : null;
+  const [statementOutcomeByMonth, setStatementOutcomeByMonth] = useState<{
+    monthId: number;
+    outcome: AlfaStatementTransientOutcome;
+  } | null>(null);
+  const [statementWriteActive, setStatementWriteActive] = useState(false);
+  const closeStepActive =
+    close !== null && close.step === "actual_payouts" && close.monthId === month?.id;
   const monthOptions = useMemo(() => {
     const rows = months.data ?? [];
     const fallback = newestMonth(rows);
     return { rows, fallback };
   }, [months.data]);
+
+  useEffect(() => {
+    if (!month || location.hash !== "#statement-import") return;
+    const target = document.getElementById("statement-import");
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "start" });
+    }
+  }, [location.hash, month]);
+
+  // The transient close outcome belongs to one explicit month: an older month
+  // must never publish it into the current month context.
+  const statementOutcome =
+    statementOutcomeByMonth && statementOutcomeByMonth.monthId === month?.id
+      ? statementOutcomeByMonth.outcome
+      : null;
+  const handleStatementOutcome = useCallback(
+    (next: AlfaStatementTransientOutcome | null) => {
+      if (!closeStepActive || month === null) return;
+      setStatementOutcomeByMonth(next ? { monthId: month.id, outcome: next } : null);
+    },
+    [closeStepActive, month],
+  );
 
   return (
     <UiV2DataFrame
@@ -993,6 +1024,7 @@ export default function UiV2PayoutForecastPage() {
       <div className={styles.context}>
         <label htmlFor="payout-forecast-month">Отчётный месяц</label>
         <select
+          disabled={statementWriteActive}
           id="payout-forecast-month"
           value={month?.id ?? ""}
           onChange={(event) =>
@@ -1034,10 +1066,21 @@ export default function UiV2PayoutForecastPage() {
       ) : (
         <>
           <DataMonthContext month={month} automatic={false} />
+          <div id="statement-import">
+            <UiV2StatementImportSection
+              closeStepActive={closeStepActive}
+              key={month.id}
+              month={month}
+              onApplyingChange={setStatementWriteActive}
+              onOutcome={handleStatementOutcome}
+              outcome={statementOutcome}
+              returnPath={returnPath}
+            />
+          </div>
           <p className="muted">
-            Импорт фактической выписки (#567) и ручной CRUD (#562) здесь недоступны. Этот инструмент
-            показывает календарь и применяет только поддержанные прогнозные события после явного
-            подтверждения.
+            Импорт фактической выписки (#567) — секция выше; ручные выплаты (#562) остаются в
+            редакторе месяца. Календарь ниже показывает ожидания и применяет только поддержанные
+            прогнозные события после явного подтверждения.
           </p>
           <PayoutForecastTool
             key={`${month.id}:${location.search}`}
