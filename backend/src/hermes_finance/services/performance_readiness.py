@@ -20,6 +20,7 @@ from hermes_finance.services.performance_availability import performance_availab
 from hermes_finance.services.portfolio_twrr import PortfolioTwrrResult, twrr_for_interval
 from hermes_finance.services.portfolio_xirr import PortfolioXirrResult, xirr_for_interval
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
+from hermes_finance.services.valuation_capture import capture_capability_for_evidence
 
 Capability = Literal[
     "available", "requires_reopen", "not_implemented", "source_required", "unsupported"
@@ -176,6 +177,10 @@ def _diagnostics(
         )
     except ClosedReportingMonthError:
         coverage_capability = "requires_reopen"
+    # The observation adapter is supported only where a concrete target needs
+    # fresh evidence in an editable month with a current material identity.
+    capture_capability: Capability | None = None
+    capture_capability_computed = False
 
     for code in sorted(set(xirr.reason_codes) | set(twrr.reason_codes)):
         metrics = tuple(
@@ -219,6 +224,12 @@ def _diagnostics(
                 )
         if code == R.IN_KIND_BOUNDARY_COVERAGE_UNKNOWN:
             variants = [(key, kind, coverage_capability, refs)]
+        if code == R.VALUATION_BOUNDARY_MISSING:
+            if not capture_capability_computed:
+                capture_capability = capture_capability_for_evidence(session, evidence=evidence)
+                capture_capability_computed = True
+            if capture_capability is not None:
+                variants = [(key, kind, capture_capability, refs)]
         # No month ID means a section-level review, never an invented destination.
         for key, kind, capability, refs in variants:
             diagnostics.append(
