@@ -10,6 +10,8 @@ import type { Account, PerformanceReadiness } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import { PerformancePreparation } from "./PerformancePreparation";
 
+vi.mock("./HistoricalMembership", () => ({ HistoricalMembership: () => null }));
+
 vi.mock("../api/performancePreparation", () => ({
   getPreparation: vi.fn(),
   savePreparation: vi.fn(),

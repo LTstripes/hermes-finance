@@ -42,6 +42,13 @@ class DatabaseMaintenance:
         self._condition = Condition()
         self._active_operations = 0
         self._is_restoring = False
+        # Transient form incarnation only; never financial evidence or a DB revision.
+        self._form_epoch = 0
+
+    @property
+    def form_epoch(self) -> int:
+        with self._condition:
+            return self._form_epoch
 
     @property
     def is_restoring(self) -> bool:
@@ -73,6 +80,8 @@ class DatabaseMaintenance:
             yield
         finally:
             with self._condition:
+                # Retire forms issued by operations drained before replacement too.
+                self._form_epoch += 1
                 self._is_restoring = False
                 self._condition.notify_all()
 

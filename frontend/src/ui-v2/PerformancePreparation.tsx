@@ -16,6 +16,7 @@ import { queryKeys } from "../queryClient";
 import { isReadinessFresh } from "./CapitalPerformanceSummary";
 import { type PerformanceContext, performanceDetailHref } from "./capitalPerformanceContext";
 import { diagnosticCopy } from "./capitalPerformanceCopy";
+import { HistoricalMembership } from "./HistoricalMembership";
 import styles from "./UiV2CapitalPerformance.module.css";
 
 type Save = (path: string, method: "POST" | "PATCH", body: unknown) => Promise<void>;
@@ -464,10 +465,7 @@ function PreparationForms({
           ) : null}
         </div>
       ))}
-      <p>
-        История участия пока не редактируется. Текущий флажок счёта не восстанавливает прошлое.
-        Наблюдения стоимости до и после операции здесь не вводятся.
-      </p>
+      <p>Наблюдения стоимости до и после операции здесь не вводятся.</p>
     </>
   );
 }
@@ -697,12 +695,19 @@ export function PerformancePreparation({
       {raw && (!account || (context.scope === "account" && selected !== context.accountId)) ? (
         <p role="alert">Счёт подготовки не соответствует контексту. Выберите его явно.</p>
       ) : account ? (
-        <AccountPreparation
-          key={`${account.id}:${context.start}:${context.end}`}
-          accountId={account.id}
-          accounts={accounts ?? []}
-          context={context}
-        />
+        <>
+          <HistoricalMembership
+            key={`membership:${account.id}:${context.start}:${context.end}:${context.scope}`}
+            accountId={account.id}
+            context={context}
+          />
+          <AccountPreparation
+            key={`${account.id}:${context.start}:${context.end}`}
+            accountId={account.id}
+            accounts={accounts ?? []}
+            context={context}
+          />
+        </>
       ) : null}
       <p>
         <Link to={performanceDetailHref(context)}>

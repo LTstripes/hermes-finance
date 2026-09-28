@@ -77,6 +77,24 @@ for (const width of [390, 1366]) {
           cash_balances: [],
           months: [{ id: 4, period_start: start, period_end: end, status: "draft" }],
         };
+      if (url.pathname === "/api/performance/membership")
+        json = {
+          account_id: 1,
+          start_date: start,
+          end_date: end,
+          scope: "account",
+          rows: [],
+          identity: "synthetic-history",
+          form_token: "synthetic-form",
+          readiness: {
+            scope: "account",
+            account_id: 1,
+            start_date: start,
+            end_date: end,
+            xirr: metric("xirr"),
+            twrr: metric("twrr"),
+          },
+        };
       await route.fulfill({ json });
     });
     await page.goto(
@@ -97,6 +115,17 @@ for (const width of [390, 1366]) {
     await expect(page.getByLabel(/Я проверил.*дату, счёт, сумму/)).not.toBeChecked();
     await page.getByLabel(/Я проверил.*дату, счёт, сумму/).check();
     await expect(page.getByRole("button", { name: "Сохранить операцию" })).toBeEnabled();
+    const addInterval = page.getByRole("button", { name: "Добавить явный интервал" });
+    await addInterval.focus();
+    await page.keyboard.press("Enter");
+    await page.getByLabel("Начало", { exact: true }).fill(start);
+    await page.getByLabel("Конец включительно").fill(end);
+    await expect(
+      page.getByRole("button", { name: "Подтвердить изменение участия" }),
+    ).toBeDisabled();
+    await page.getByRole("combobox", { name: "Участие", exact: true }).selectOption("excluded");
+    await page.getByLabel(/Я проверил.*полный набор/).check();
+    await expect(page.getByRole("button", { name: "Подтвердить изменение участия" })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );

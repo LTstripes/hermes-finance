@@ -99,6 +99,7 @@ CI_CORE_SHARD_WEIGHTS = {
     "test_r06_09_api.py": 6.95,
     "test_r08_01c_performance_availability.py": 7.54,
     "test_performance_readiness.py": 5.0,  # Initial estimate for the new projection contract.
+    "test_historical_membership.py": 5.0,
     "test_performance_preparation.py": 5.0,  # Initial estimate for Owner write guards.
     "test_r08_02_portfolio_xirr.py": 11.39,
     "test_r08_03_portfolio_twrr.py": 13.86,
@@ -150,6 +151,7 @@ _CI_LANE_OVERRIDES = {
     "test_r02_27_passive_goal_current_value.py": "ci_core",
     "test_r08_01c_performance_availability.py": "ci_core",
     "test_performance_readiness.py": "ci_core",
+    "test_historical_membership.py": "ci_core",
     "test_performance_preparation.py": "ci_core",
     "test_r08_02_portfolio_xirr.py": "ci_core",
     "test_r08_03_portfolio_twrr.py": "ci_core",

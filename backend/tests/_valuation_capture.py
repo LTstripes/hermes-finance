@@ -13,6 +13,8 @@ def create_observed_valuation_point(session: Session, **kwargs: object) -> Obser
     if "expected_material_signature" not in kwargs:
         kwargs["expected_material_signature"] = material_signature_for_boundary(
             session,
+            scope=kwargs.get("scope", "portfolio"),  # type: ignore[arg-type]
+            account_id=kwargs.get("account_id"),  # type: ignore[arg-type]
             external_flow_id=kwargs.get("external_flow_id"),  # type: ignore[arg-type]
             boundary_group_id=kwargs.get("boundary_group_id"),  # type: ignore[arg-type]
         )

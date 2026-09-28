@@ -121,7 +121,7 @@ def test_catalog_cash_and_in_kind_sets_remain_distinct(history):
     assert result.evidence.in_kind_boundary_coverage.account_ids == (included,)
     diagnostic = next(d for d in result.diagnostics if d.key == "membership_history")
     assert diagnostic.refs.account_ids == (missing.id,)
-    assert diagnostic.action.capability == "not_implemented"
+    assert diagnostic.action.capability == "available"
 
 
 def test_empty_ledger_is_not_complete_and_multiple_evidence_causes(history, monkeypatch):

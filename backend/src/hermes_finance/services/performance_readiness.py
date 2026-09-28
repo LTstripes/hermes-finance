@@ -93,7 +93,7 @@ _RULES: dict[str, tuple[str, ActionKind, Capability]] = {
     R.REPORTING_MONTH_NOT_CLOSED: ("reporting_month", "review_month", "available"),
     R.SNAPSHOT_DATE_MISSING: ("snapshot_date", "review_month", "source_required"),
     R.UNSUPPORTED_POSITION_VALUATION: ("position_valuation", "review_month", "source_required"),
-    R.SCOPE_MEMBERSHIP_HISTORY_MISSING: ("membership_history", "review_scope", "not_implemented"),
+    R.SCOPE_MEMBERSHIP_HISTORY_MISSING: ("membership_history", "review_scope", "available"),
     R.SCOPE_MEMBERSHIP_CHANGED: ("membership_changed", "select_interval", "available"),
     R.SCOPE_CASH_UNCLASSIFIED: ("cash_binding", "review_cash_binding", "available"),
     R.SCOPE_COVERAGE_INCOMPLETE: ("scope_coverage", "review_scope", "available"),
