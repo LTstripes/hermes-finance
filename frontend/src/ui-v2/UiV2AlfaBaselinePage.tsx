@@ -22,7 +22,8 @@ import {
 } from "../components/month-close/navigation";
 import { formatMonth, formatQuantity } from "../lib/format";
 import { queryKeys } from "../queryClient";
-import { DataMonthContext, resolveDataMonth, UiV2DataFrame } from "./UiV2DataShell";
+import { resolveMonthSelection } from "./monthSelection";
+import { DataMonthContext, UiV2DataFrame } from "./UiV2DataShell";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import styles from "./UiV2AlfaBaseline.module.css";
 
@@ -180,12 +181,8 @@ export default function UiV2AlfaBaselinePage() {
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
   });
-  const resolution = resolveDataMonth(
-    params.getAll("month"),
-    months.data ?? [],
-    isQueryReady(months),
-  );
-  const month = resolution.kind === "ready" ? resolution.month : null;
+  const selection = resolveMonthSelection(params.getAll("month"), months.data ?? []);
+  const month = isQueryReady(months) && selection.kind === "selected" ? selection.month : null;
   const close = parseMonthlyCloseReturnContext(params);
   const returnPath = close && close.monthId === month?.id ? monthlyCloseReturnPath(close) : null;
   return (
@@ -222,7 +219,7 @@ export default function UiV2AlfaBaselinePage() {
         <UiV2Notice title="Не удалось загрузить месяцы" retry={() => void months.refetch()}>
           Попробуй перечитать список.
         </UiV2Notice>
-      ) : resolution.kind === "loading" ? (
+      ) : !isQueryReady(months) ? (
         <UiV2Loading label="Загружаем месяцы…" />
       ) : !month ? (
         <UiV2Notice title="Месяц не выбран">

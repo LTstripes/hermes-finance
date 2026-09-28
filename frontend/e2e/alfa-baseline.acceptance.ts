@@ -11,9 +11,31 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
     if (req.url().includes("broker-snapshot-preview")) providerReads += 1;
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(
-    "/v2/data/alfa-baseline?month=1&from=monthly-close-v2&monthId=1&step=alfa_baseline#synthetic",
-  );
+  for (const query of ["", "?month=", "?month=bad", "?month=999", "?month=1&month=1"]) {
+    await page.goto(`/v2/data/alfa-baseline${query}`);
+    await expect(page.getByRole("heading", { name: "Месяц не выбран" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Текущий базовый срез" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Получить данные из Альфа PRO" })).toHaveCount(0);
+    expect(providerReads).toBe(0);
+    expect(writes).toBe(0);
+  }
+  await page.getByLabel("Месяц базового среза").selectOption("1");
+  await expect(page).toHaveURL(/\/v2\/data\/alfa-baseline\?month=1$/);
+  await expect(page.getByRole("heading", { name: "Текущий базовый срез" })).toBeVisible();
+  expect(providerReads).toBe(0);
+
+  await page.goto("/v2/close?month=1&step=alfa_baseline");
+  const nativePath =
+    "/v2/data/alfa-baseline?month=1&from=monthly-close-v2&step=alfa_baseline&monthId=1";
+  const closeAction = page.locator(`a[href="${nativePath}"]`);
+  await expect(closeAction).toBeVisible();
+  await closeAction.click();
+  await expect(page).toHaveURL(`http://127.0.0.1:8000${nativePath}`);
+  await expect(page.getByLabel("Отчётный месяц", { exact: true })).toHaveValue("1");
+  await page.getByRole("link", { name: "Вернуться к закрытию", exact: true }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:8000/v2/close?month=1&step=alfa_baseline");
+  await closeAction.click();
+  await expect(page).toHaveURL(`http://127.0.0.1:8000${nativePath}`);
   await expect(page.getByRole("heading", { name: "Текущий базовый срез" })).toBeVisible();
   expect(providerReads).toBe(0);
   const before = await (await request.get("/api/positions?month_id=1")).json();

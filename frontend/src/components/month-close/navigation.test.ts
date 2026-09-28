@@ -7,6 +7,18 @@ import {
 } from "./navigation";
 
 describe("monthly close navigation", () => {
+  it("routes the v2 Alfa action to the exact native month with canonical return context", () => {
+    expect(routeForGuidedAction("open_alfa_preview", 42, "alfa_baseline", "monthly-close-v2")).toBe(
+      "/v2/data/alfa-baseline?month=42&from=monthly-close-v2&step=alfa_baseline&monthId=42",
+    );
+  });
+
+  it("preserves the legacy Alfa action route", () => {
+    expect(routeForGuidedAction("open_alfa_preview", 42, "alfa_baseline", "monthly-close")).toBe(
+      "/accounts?from=monthly-close&step=alfa_baseline&monthId=42",
+    );
+  });
+
   it("accepts only the enumerated return context", () => {
     expect(
       parseMonthlyCloseReturnContext(
