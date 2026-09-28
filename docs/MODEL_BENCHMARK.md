@@ -110,6 +110,27 @@ Do not credit this implementation A to Astra because actual Worker identity was 
 
 Interpretation: this is the first runtime-confirmed Astra Medium case in this journal on a high-risk existing import/write boundary. It supports Astra Medium for bounded lifecycle/integration work with a frozen backend contract, while independent import/data-integrity review remains required.
 
+### #566 — native payout calendar + forecast preview/apply
+
+- implementation profile: high-risk provider payout preview/apply frontend integration over existing backend contracts;
+- baseline: `aa139e8aa18ccfcb67203d3e0ae1dee1a08c4d38`;
+- first candidate: `27281860c841af51c1a4f5a180f0a38899b48271`;
+- accepted candidate: `5029d13d10d3f40c74349e6dda2948044b960863`;
+- Worker route: **OpenCode / opencode-go / muse-spark-1.3-contributor**;
+- identity source: worker-reported for model/provider; requested xhigh was Owner-reported, runtime effort not independently confirmed;
+- substantive correction rounds: **3**;
+- confirmed correction themes: exact preview identity; authoritative payout/readiness readback; stale confirm/context lifetime; submitted/result cardinality; canonical manual-calendar representation via `linked_provider_payout_id`;
+- final Integrator: ACCEPT;
+- independent Reviewer: **Grok 4.7 / xAI**, runtime-confirmed, ACCEPT after one blocker/fix/re-review cycle;
+- exact-head CI/UI: `36419509281` / `36419509314` SUCCESS on accepted candidate;
+- task-specific Chromium desktop/390px evidence: Worker-reported local, not an exact-head CI job;
+- staging merge: `f04353f1745a8c89f4994e9b0fd2c52e28c37a69`;
+- result at staging integration stage: **C**;
+- Owner UAT/main: pending aggregate gate;
+- usage/cost/time: unknown.
+
+Interpretation: Muse Spark successfully delivered the frozen-contract provider/apply feature, but required three substantive lifecycle/data-integrity correction rounds. This supports keeping it as a cost-effective bounded Worker when strong Integrator and independent Reviewer gates are available; it is not evidence to waive those gates on provider/apply work.
+
 ## Lightweight case template
 
 ```text
