@@ -72,6 +72,44 @@ This cohort supports continuing MiMo/Muse as bounded Workers under frozen contra
 
 DeepSeek V4.1 Flash, LongCat 2.5 Preview and Space Bunny are Owner-available trial candidates, **not yet scored in this cohort**. Availability is checked at launch. For an anonymous alias, retain `provider/vendor unknown` where applicable. A future small read-only detail or contained UI/test task is preferable to starting on migrations, private provider state or the shared month-editor spine.
 
+## Recent validated cases
+
+### #607 — shared month-editor wiring
+
+- implementation profile: shared frontend lifecycle integration;
+- baseline: `b12406d47f329d845198ed2d8aaa98f914555b12`;
+- candidate: `4e90f84397253d5ecf02c702710c0719ef5b7a73`;
+- requested route: Codex / Astra Medium;
+- actual implementation model/provider/effort: **unknown / unknown / unknown** (configuration was not treated as runtime proof);
+- substantive fix rounds: **0**;
+- Integrator preflight: PASS;
+- independent Reviewer: **Grok 4.7**, runtime-confirmed by session system prompt, ACCEPT;
+- staging merge: `5d1e0a9c15b9e1555d41d041a651fc22c55e6343`;
+- result at staging integration stage: **A**;
+- Owner UAT/main: pending #572;
+- usage/cost/time: unknown.
+
+Do not credit this implementation A to Astra because actual Worker identity was unavailable. Reviewer evidence may count for Grok 4.7 in the review profile.
+
+### #565 — native Alfa baseline preview/apply
+
+- implementation profile: high-risk import preview/apply frontend integration under an existing backend contract;
+- baseline: `5d1e0a9c15b9e1555d41d041a651fc22c55e6343`;
+- first candidate: `36cac90a7642427ddfd669f61c1337e5baa4ac59`;
+- accepted candidate: `6f3299601b23d0d76b74c98a40939b1a1ad88d98`;
+- actual Worker: **gpt-6-astra / medium**, runtime-confirmed by task turn metadata; provider not independently recorded;
+- substantive fix rounds: **1**;
+- first-pass blockers: explicit-month fail-closed and Monthly Close v2 native Alfa routing;
+- final Integrator: ACCEPT;
+- independent Reviewer: **Grok 4.7**, session-system-prompt identity, ACCEPT;
+- exact-head CI/UI: `36396394916` / `36396394471` SUCCESS;
+- staging merge: `aa139e8aa18ccfcb67203d3e0ae1dee1a08c4d38`;
+- result at staging integration stage: **B**;
+- Owner UAT/main: pending aggregate gate;
+- usage/cost/time: unknown.
+
+Interpretation: this is the first runtime-confirmed Astra Medium case in this journal on a high-risk existing import/write boundary. It supports Astra Medium for bounded lifecycle/integration work with a frozen backend contract, while independent import/data-integrity review remains required.
+
 ## Lightweight case template
 
 ```text
@@ -87,6 +125,6 @@ optional measured telemetry if independently available / confounders:
 provisional use / avoid / next evidence needed:
 ```
 
-Worker handoffs require only model + provider/client. The Integrator may append other telemetry when it is independently available; missing usage/cost/time/delegate data is simply omitted, not filled with repeated `unknown` fields.
+Worker handoffs use the standard `Model evidence` block from `AGENTS.md` in both Finance and Health-Check. Exact usage/cost/time/delegate fields are reported only when exposed by the runtime; otherwise they are written as `unknown`. The Integrator records benchmark outcomes after review and keeps implementation and Reviewer attribution separate.
 
 Only technical metadata, synthetic-safe summaries and source links belong here. Never include Owner finance/health values, DBs, credentials, private screenshots, raw provider payloads or unsanitized model transcripts. Controlled blind A/B requires a separate explicit assignment with identical contract/baseline and no candidate cross-reading; normal outcome logging does not activate it.
