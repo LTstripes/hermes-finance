@@ -1008,6 +1008,8 @@ def _observed_boundary_for_target(
     reasons: set[str] = set()
     current_signature = material_signature_for_boundary(
         session,
+        scope=scope.value,
+        account_id=account_id,
         external_flow_id=target.flow_ids[0] if target.boundary_group_id is None else None,
         boundary_group_id=target.boundary_group_id,
     )

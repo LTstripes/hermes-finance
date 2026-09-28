@@ -294,13 +294,14 @@ function ReadinessBody({
                       {capabilityCopy(diagnostic.action.capability)}
                     </p>
                     {hasWorkingAction(diagnostic.action.capability) &&
-                    [
-                      "review_external_flows",
-                      "review_transfer",
-                      "review_cash_history",
-                      "review_in_kind_history",
-                      "review_cash_binding",
-                    ].includes(diagnostic.action.kind) ? (
+                    (diagnostic.key === "membership_history" ||
+                      [
+                        "review_external_flows",
+                        "review_transfer",
+                        "review_cash_history",
+                        "review_in_kind_history",
+                        "review_cash_binding",
+                      ].includes(diagnostic.action.kind)) ? (
                       <p>
                         <Link
                           to={`${performanceDetailHref(context)}${diagnostic.refs.account_ids.length === 1 ? `&prepare_account=${diagnostic.refs.account_ids[0]}` : ""}&prepare_reason=${encodeURIComponent(diagnostic.key)}#performance-preparation`}

@@ -149,7 +149,7 @@ def _capture_side(
 ) -> ObservedValuationPoint:
     if expected_material_signature is None:
         expected_material_signature = material_signature_for_boundary(
-            session, external_flow_id=flow_id
+            session, scope="account", account_id=account_id, external_flow_id=flow_id
         )
     assert expected_material_signature is not None
     return create_observed_valuation_point(
@@ -176,7 +176,9 @@ def test_inflight_capture_rejects_material_correction_and_fresh_capture_works(
     try:
         flow = _flow(capture, february_id, account_id)
         flow_id = flow.id
-        original = material_signature_for_boundary(capture, external_flow_id=flow_id)
+        original = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, external_flow_id=flow_id
+        )
         assert original is not None
         # Deterministic interleaving: capture records A, correction commits B,
         # then each side tries to publish A in a separate transaction.
@@ -204,10 +206,17 @@ def test_inflight_capture_rejects_material_correction_and_fresh_capture_works(
                     expected_material_signature=original,
                 )
             capture.rollback()
-        assert list_observed_valuation_points(capture, external_flow_id=flow_id) == []
+        assert (
+            list_observed_valuation_points(
+                capture, scope="account", account_id=account_id, external_flow_id=flow_id
+            )
+            == []
+        )
         if correction == "delete":
             return
-        current = material_signature_for_boundary(capture, external_flow_id=flow_id)
+        current = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, external_flow_id=flow_id
+        )
         assert current is not None and current != original
         for relation in ("pre_external_flow", "post_external_flow"):
             point = _capture_side(
@@ -238,7 +247,9 @@ def test_metadata_edit_preserves_observed_material_signature(tmp_path: Path) -> 
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:
         flow = _flow(session, february_id, account_id)
-        signature = material_signature_for_boundary(session, external_flow_id=flow.id)
+        signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
         for relation in ("pre_external_flow", "post_external_flow"):
             _capture_side(
                 session,
@@ -250,8 +261,20 @@ def test_metadata_edit_preserves_observed_material_signature(tmp_path: Path) -> 
                 expected_material_signature=signature,
             )
         update_external_flow(session, flow.id, source="metadata_edit", notes="synthetic")
-        assert material_signature_for_boundary(session, external_flow_id=flow.id) == signature
-        assert len(list_observed_valuation_points(session, external_flow_id=flow.id)) == 2
+        assert (
+            material_signature_for_boundary(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )
+            == signature
+        )
+        assert (
+            len(
+                list_observed_valuation_points(
+                    session, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+            )
+            == 2
+        )
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
         )
@@ -265,12 +288,29 @@ def test_metadata_edit_preserves_observed_material_signature(tmp_path: Path) -> 
         database.engine.dispose()
 
 
-def test_read_rejects_stale_persisted_material_signature(tmp_path: Path) -> None:
+@pytest.mark.parametrize("legacy_v1", [False, True])
+def test_read_rejects_stale_persisted_material_signature(tmp_path: Path, legacy_v1: bool) -> None:
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:
         flow = _flow(session, february_id, account_id)
-        old_signature = material_signature_for_boundary(session, external_flow_id=flow.id)
-        update_external_flow(session, flow.id, boundary_amount="125.00")
+        old_signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        if legacy_v1:
+            import json
+            from hashlib import sha256
+
+            from hermes_finance.services.valuation_material_signature import _flow_material
+
+            old_signature = sha256(
+                json.dumps(
+                    ("observed-valuation-material-v1", ("flow", _flow_material(flow))),
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        if not legacy_v1:
+            update_external_flow(session, flow.id, boundary_amount="125.00")
+        points = []
         for relation in ("pre_external_flow", "post_external_flow"):
             point = _capture_side(
                 session,
@@ -280,6 +320,8 @@ def test_read_rejects_stale_persisted_material_signature(tmp_path: Path) -> None
                 observed_date=FLOW_DATE,
                 relation=relation,
             )
+            points.append(point)
+        for point in points:
             point.material_signature = old_signature
         session.commit()
         attest_cash_boundary_history(
@@ -291,6 +333,7 @@ def test_read_rejects_stale_persisted_material_signature(tmp_path: Path) -> None
         )
         assert not result.twrr.is_available
         assert "not_computable_valuation_boundary_missing" in result.twrr.reason_codes
+        assert result.xirr.is_available
     finally:
         session.close()
         database.engine.dispose()
@@ -309,7 +352,9 @@ def test_group_capture_rejects_changed_member_and_accepts_fresh_pair(tmp_path: P
             scope="account",
             account_id=account_id,
         )
-        old = material_signature_for_boundary(capture, boundary_group_id=group.id)
+        old = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, boundary_group_id=group.id
+        )
         update_external_flow(writer, flow.id, boundary_amount="125.00")
         for relation in ("pre_external_flow", "post_external_flow"):
             with pytest.raises(ValueError, match="changed materially"):
@@ -327,7 +372,9 @@ def test_group_capture_rejects_changed_member_and_accepts_fresh_pair(tmp_path: P
                     expected_material_signature=old,
                 )
             capture.rollback()
-        current = material_signature_for_boundary(capture, boundary_group_id=group.id)
+        current = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, boundary_group_id=group.id
+        )
         assert current is not None and current != old
         for relation in ("pre_external_flow", "post_external_flow"):
             point = create_observed_valuation_point(
@@ -377,7 +424,9 @@ def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> N
             {"id": flow.id},
         )
         session.commit()
-        current = material_signature_for_boundary(session, external_flow_id=flow.id)
+        current = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
         assert current is not None and current != old
         with pytest.raises(ValueError, match="changed materially"):
             _capture_side(
@@ -390,7 +439,12 @@ def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> N
                 expected_material_signature=old,
             )
         session.rollback()
-        assert list_observed_valuation_points(session, external_flow_id=flow.id)[0].id == pre.id
+        assert (
+            list_observed_valuation_points(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )[0].id
+            == pre.id
+        )
         post = _capture_side(
             session,
             february_id=february_id,
@@ -403,7 +457,14 @@ def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> N
         assert post.material_signature == current
         assert post.relation == "post_external_flow"
         # The old PRE was retired; a fresh POST alone cannot complete a pair.
-        assert len(list_observed_valuation_points(session, external_flow_id=flow.id)) == 1
+        assert (
+            len(
+                list_observed_valuation_points(
+                    session, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+            )
+            == 1
+        )
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
         )
@@ -442,7 +503,9 @@ def test_unbound_legacy_direct_boundary_can_be_recaptured(tmp_path: Path) -> Non
         session.add_all(legacy)
         session.commit()
         legacy_ids = {point.id for point in legacy}
-        current = material_signature_for_boundary(session, external_flow_id=flow.id)
+        current = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
         assert current is not None
         with pytest.raises(ValueError, match="changed materially"):
             _capture_side(
@@ -456,7 +519,10 @@ def test_unbound_legacy_direct_boundary_can_be_recaptured(tmp_path: Path) -> Non
             )
         session.rollback()
         assert {
-            point.id for point in list_observed_valuation_points(session, external_flow_id=flow.id)
+            point.id
+            for point in list_observed_valuation_points(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )
         } == legacy_ids
         for relation in ("pre_external_flow", "post_external_flow"):
             _capture_side(
@@ -468,7 +534,9 @@ def test_unbound_legacy_direct_boundary_can_be_recaptured(tmp_path: Path) -> Non
                 relation=relation,
                 expected_material_signature=current,
             )
-        current_points = list_observed_valuation_points(session, external_flow_id=flow.id)
+        current_points = list_observed_valuation_points(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
         assert len(current_points) == 2
         assert {point.provenance_kind for point in current_points} == {"synthetic_capture"}
         assert {point.material_signature for point in current_points} == {current}

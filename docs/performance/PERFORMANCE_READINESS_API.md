@@ -39,8 +39,10 @@ Action kinds are a closed enum with typed local params, never a URL. `available`
 means a supported inspection/selection or existing coverage API path;
 `requires_reopen` uses the existing coverage edit guard for the requested
 interval. Coverage review still requires actual Owner verification and explicit
-attestation. `not_implemented` identifies absent historical-membership,
-legacy/transfer UI reconciliation or observation adapters. `source_required`
+attestation. Historical membership offers the [finite explicit writer](HISTORICAL_MEMBERSHIP_API.md);
+existing open-ended rows remain read-only/blocking, and its own full old/new union
+and observation-parent CLOSED checks remain authoritative. `not_implemented`
+identifies absent legacy/transfer UI reconciliation or observation adapters. `source_required`
 does not claim a historical source is absent. `unsupported` does not promise
 that editing or confirming coverage can fix valuation/FX/solver limitations.
 Every action requires rereading readiness to verify the final outcome.
