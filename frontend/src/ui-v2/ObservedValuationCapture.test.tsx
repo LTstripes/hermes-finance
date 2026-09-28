@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClientError, apiRequest } from "../api/client";
+import type { PerformanceContext } from "./capitalPerformanceContext";
 import { ObservedValuationCapture } from "./ObservedValuationCapture";
 
 vi.mock("../api/client", async (original) => ({
@@ -9,12 +10,12 @@ vi.mock("../api/client", async (original) => ({
   apiRequest: vi.fn(),
 }));
 
-const context = {
+const context: PerformanceContext = {
   start: "2030-05-01",
   end: "2030-05-31",
-  scope: "account" as const,
+  scope: "account",
   accountId: 1,
-  view: "accounts" as const,
+  view: "accounts",
 };
 
 type MockSide = {
@@ -166,14 +167,24 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function setup() {
-  return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <ObservedValuationCapture context={context} />
+function setup(activeContext: PerformanceContext = context) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <ObservedValuationCapture context={activeContext} />
     </QueryClientProvider>,
   );
+  // Rerender with the same QueryClient (like the real app): only the context
+  // prop changes, so any stale-notice clearing must come from the component
+  // reset or a parent remount key, never from a fresh client.
+  const rerenderContext = (next: PerformanceContext) => {
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <ObservedValuationCapture context={next} />
+      </QueryClientProvider>,
+    );
+  };
+  return { ...view, rerenderContext };
 }
 
 async function capturePre(amount = "1100.00") {
@@ -366,5 +377,49 @@ describe("observed PRE/POST valuation capture", () => {
     fireEvent.click(button);
     await screen.findByText(/Запись подтверждена/);
     expect(posts).toBe(1);
+  });
+
+  it("clears a confirmed notice when preset/manual dates change the context", async () => {
+    const { rerenderContext } = setup();
+    await capturePre();
+    await screen.findByText(/Запись подтверждена/);
+    rerenderContext({ ...context, start: "2030-04-01" });
+    expect(screen.queryByText(/Запись подтверждена/)).not.toBeInTheDocument();
+  });
+
+  it("clears a confirmed notice when scope/account change the context", async () => {
+    const { rerenderContext } = setup();
+    await capturePre();
+    await screen.findByText(/Запись подтверждена/);
+    rerenderContext({ ...context, scope: "portfolio", accountId: null });
+    expect(screen.queryByText(/Запись подтверждена/)).not.toBeInTheDocument();
+  });
+
+  it("clears a confirmed notice on browser-back context replacement", async () => {
+    const { rerenderContext } = setup();
+    await capturePre();
+    await screen.findByText(/Запись подтверждена/);
+    rerenderContext({ ...context, end: "2030-06-30" });
+    expect(screen.queryByText(/Запись подтверждена/)).not.toBeInTheDocument();
+    // Back to the original interval: the old banner must not reappear.
+    rerenderContext({ ...context });
+    expect(screen.queryByText(/Запись подтверждена/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the same-context confirmed banner on rerender", async () => {
+    const { rerenderContext } = setup();
+    await capturePre();
+    await screen.findByText(/Запись подтверждена/);
+    rerenderContext({ ...context });
+    expect(screen.getByText(/Запись подтверждена/)).toBeInTheDocument();
+  });
+
+  it("clears an error notice when the context changes", async () => {
+    postMode = "conflict";
+    const { rerenderContext } = setup();
+    await capturePre();
+    await screen.findByText(/Форма устарела/);
+    rerenderContext({ ...context, start: "2030-04-01" });
+    expect(screen.queryByText(/Форма устарела/)).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiClientError } from "../api/client";
 import { getPerformanceReadiness } from "../api/performance";
@@ -325,6 +325,25 @@ export function ObservedValuationCapture({ context }: { context: PerformanceCont
   const busy = useRef(false);
   const [locked, setLocked] = useState(false);
   const [notice, setNotice] = useState("");
+  // Local confirmed/error/in-progress notice and lock belong to one Performance
+  // context identity. Reset them whenever the context is replaced (preset/manual
+  // date, scope/account, browser back); the parent also remounts via key.
+  const contextIdentity = [
+    context.start,
+    context.end,
+    context.scope,
+    context.accountId ?? "portfolio",
+    context.view,
+  ].join(":");
+  const identityRef = useRef(contextIdentity);
+  useEffect(() => {
+    if (identityRef.current !== contextIdentity) {
+      identityRef.current = contextIdentity;
+      busy.current = false;
+      setLocked(false);
+      setNotice("");
+    }
+  }, [contextIdentity]);
   const query = useQuery({
     queryKey: ["valuation-captures", context.start, context.end, context.scope, context.accountId],
     queryFn: ({ signal }) =>
