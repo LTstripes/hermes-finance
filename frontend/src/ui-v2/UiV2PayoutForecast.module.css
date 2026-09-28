@@ -1,0 +1,57 @@
+.context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.context select,
+.context input {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: inherit;
+  font: inherit;
+}
+
+.tool {
+  display: grid;
+  gap: 18px;
+}
+
+.scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.scroll:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.scroll table {
+  width: max-content;
+  max-width: none;
+  min-width: 44rem;
+}
+
+.scroll th,
+.scroll td {
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.readback {
+  margin-top: 6px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: white;
+  display: grid;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}

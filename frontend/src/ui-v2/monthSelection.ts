@@ -83,7 +83,8 @@ export type DataAppSection =
   | "catalogs"
   | "files"
   | "app"
-  | "alfa-baseline";
+  | "alfa-baseline"
+  | "payouts";
 
 export function dataAppPath(
   section: DataAppSection,
@@ -94,17 +95,19 @@ export function dataAppPath(
   const base =
     section === "alfa-baseline"
       ? "/v2/data/alfa-baseline"
-      : section === "sources"
-        ? "/v2/data"
-        : section === "reconciliation"
-          ? "/v2/data/reconciliation"
-          : section === "months"
-            ? "/v2/data/months"
-            : section === "catalogs"
-              ? "/v2/data/catalogs"
-              : section === "files"
-                ? "/v2/data/files"
-                : "/v2/data/app";
+      : section === "payouts"
+        ? "/v2/data/payouts"
+        : section === "sources"
+          ? "/v2/data"
+          : section === "reconciliation"
+            ? "/v2/data/reconciliation"
+            : section === "months"
+              ? "/v2/data/months"
+              : section === "catalogs"
+                ? "/v2/data/catalogs"
+                : section === "files"
+                  ? "/v2/data/files"
+                  : "/v2/data/app";
   const params = new URLSearchParams(search);
   if (monthId != null && !params.has("month")) params.set("month", String(monthId));
   const query = params.toString();

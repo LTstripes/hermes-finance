@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import type { DataAppSection } from "./monthSelection";
 
 const UiV2AlfaBaselinePage = lazy(() => import("./UiV2AlfaBaselinePage"));
+const UiV2PayoutForecastPage = lazy(() => import("./UiV2PayoutForecastPage"));
 
 const UiV2Page = lazy(() => import("./UiV2Page"));
 const UiV2CapitalPage = lazy(() => import("./UiV2CapitalPage"));
@@ -66,6 +67,14 @@ export function UiV2AlfaBaselineEntry() {
   return (
     <SuspenseFrame>
       <UiV2AlfaBaselinePage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2PayoutForecastEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2PayoutForecastPage />
     </SuspenseFrame>
   );
 }
@@ -153,7 +162,10 @@ export function UiV2DataAppEntry() {
 export function UiV2DataPlaceholderEntry({
   section,
 }: {
-  section: Exclude<DataAppSection, "sources" | "reconciliation" | "months" | "alfa-baseline">;
+  section: Exclude<
+    DataAppSection,
+    "sources" | "reconciliation" | "months" | "alfa-baseline" | "payouts"
+  >;
 }) {
   return (
     <SuspenseFrame>
