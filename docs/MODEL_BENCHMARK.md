@@ -131,6 +131,28 @@ Interpretation: this is the first runtime-confirmed Astra Medium case in this jo
 
 Interpretation: Muse Spark successfully delivered the frozen-contract provider/apply feature, but required three substantive lifecycle/data-integrity correction rounds. This supports keeping it as a cost-effective bounded Worker when strong Integrator and independent Reviewer gates are available; it is not evidence to waive those gates on provider/apply work.
 
+### #567 — native statement import
+
+- implementation profile: high-risk private-file statement import / financial write frontend integration over existing backend contracts;
+- baseline: `f04353f1745a8c89f4994e9b0fd2c52e28c37a69`;
+- first candidate: `7655717f056b3fc74f2cdc547b2cb7dfda33c168`;
+- accepted candidate: `495f99cf6ad93b7ee7916a4b4c6eaedb53d87ceb`;
+- Worker route: **OpenCode / opencode-go / mimo-v2.6-flash**;
+- identity source: **runtime_confirmed**; effort unknown;
+- delegates/fallbacks: none;
+- substantive correction rounds: **1**;
+- confirmed correction themes: native selected-month scope over a canonical cross-month backend, exact statement-event/material post-apply proof, and fail-closed 5xx/network ambiguity handling;
+- final Integrator: ACCEPT;
+- independent Reviewer: **Grok 4.7 / xAI**, ACCEPT, no blockers;
+- exact-head CI/UI: `36467058094` / `36467057893` SUCCESS;
+- task-specific Chromium/real-backend evidence: Worker-reported local, not an exact-head CI job;
+- staging merge: `f27c33dff940315827d7b9231146945a43b16273`;
+- result at staging integration stage: **B**;
+- Owner UAT/main: pending aggregate #572;
+- usage/cost/time: unknown.
+
+Interpretation: MiMo 2.6 Flash completed a private-file financial-import integration after one bounded correction round. This is stronger evidence than the earlier CRUD-only MiMo cases, but privacy/data-integrity review remains mandatory for this task profile.
+
 ## Lightweight case template
 
 ```text
