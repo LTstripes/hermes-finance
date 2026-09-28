@@ -755,3 +755,139 @@ it("retires an in-flight completion when the version changes before publish", as
   expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
   expect(screen.queryByText("Новая")).not.toBeInTheDocument();
 });
+
+function manualCalendarRow(
+  sourceId: number,
+  linkedProviderPayoutId: number | null,
+): Record<string, unknown> {
+  return {
+    source_kind: "manual",
+    source_id: sourceId,
+    expected_date: "2026-09-10",
+    flow_type: "coupon",
+    account_id: 1,
+    account_name: "Synthetic",
+    instrument_id: 10,
+    instrument_name: "Bond",
+    expected_net_amount: money("100.00"),
+    is_confirmed: false,
+    is_approximate: false,
+    manual_source: "manual",
+    provider: null,
+    provider_instrument_uid: null,
+    provider_identity_key: null,
+    provider_lifecycle: null,
+    reconciliation_id: 900,
+    counting_decision: "count_manual",
+    linked_manual_id: null,
+    linked_provider_payout_id: linkedProviderPayoutId,
+  };
+}
+
+function manualOnlyCalendar(sourceId: number, linkedProviderPayoutId: number | null) {
+  return [
+    {
+      year: 2026,
+      month: 9,
+      coupon: money("100.00"),
+      dividend: money("0.00"),
+      interest: money("0.00"),
+      redemption: money("0.00"),
+      other: money("0.00"),
+      passive_net: money("100.00"),
+      total_net: money("100.00"),
+      items: [manualCalendarRow(sourceId, linkedProviderPayoutId)],
+    },
+  ];
+}
+
+function applyItem(payoutId: number, expectedCashFlowId: number | null) {
+  return {
+    payout_id: payoutId,
+    revision_id: 1,
+    revision_kind: "APPLY",
+    provider: "t_invest",
+    instrument_uid: "UID-1",
+    event_kind: "coupon",
+    identity_key: "K-1",
+    lifecycle: "active",
+    total_amount: money("100.00"),
+    reconciliation_id: expectedCashFlowId == null ? null : 900,
+    counting_decision: expectedCashFlowId == null ? null : "count_manual",
+    expected_cash_flow_id: expectedCashFlowId,
+  };
+}
+
+it("confirms count_manual success through the linked manual calendar row", async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyPayouts).mockResolvedValue({
+    success: true,
+    selected_count: 1,
+    items: [applyItem(601, 101)],
+    error_code: null,
+    message: null,
+  } as never);
+  // No provider row for the applied payout: the canonical projection keeps
+  // it on the manual row via linked_provider_payout_id.
+  vi.mocked(listPayoutCalendar).mockResolvedValue(manualOnlyCalendar(101, 601) as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/Применено выплат: 1/)).toBeInTheDocument();
+});
+
+it("confirms provider-visible success through the provider calendar row", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  // Default fixtures: payout_id 2 is a visible provider row (source_id 2).
+  expect(await screen.findByText(/Применено выплат: 1/)).toBeInTheDocument();
+});
+
+it("does not confirm an unrelated manual link for the applied payout", async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyPayouts).mockResolvedValue({
+    success: true,
+    selected_count: 1,
+    items: [applyItem(601, null)],
+    error_code: null,
+    message: null,
+  } as never);
+  vi.mocked(listPayoutCalendar).mockResolvedValue(manualOnlyCalendar(101, 602) as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});
+
+it("does not confirm a mismatched manual reconciliation identity", async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyPayouts).mockResolvedValue({
+    success: true,
+    selected_count: 1,
+    items: [applyItem(601, 101)],
+    error_code: null,
+    message: null,
+  } as never);
+  // Same manual source_id, but the link points at another payout.
+  vi.mocked(listPayoutCalendar).mockResolvedValue(manualOnlyCalendar(101, 999) as never);
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  expect(await screen.findByText("Новая")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
+});

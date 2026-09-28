@@ -129,6 +129,30 @@ function isExactBatchPreview(
   return value.items.every((item) => isConsistentBatchItem(item, monthId, positions, requestedIds));
 }
 
+/**
+ * Authoritative calendar proof for one applied payout. The canonical merged
+ * calendar may represent a persisted payout either as a provider row or,
+ * when reconciliation says count_manual (or counting is unresolved), as a
+ * manual row carrying the applied identity in linked_provider_payout_id.
+ * When the apply result claims an expected/manual reconciliation identity,
+ * the same manual row must prove both the manual source_id and the link.
+ */
+function isAppliedPayoutRepresented(
+  item: PayoutApplyResult["items"][number],
+  calendar: PayoutCalendarMonth[],
+): boolean {
+  const rows = calendar.flatMap((entry) => entry.items);
+  if (rows.some((row) => row.source_kind === "provider" && row.source_id === item.payout_id)) {
+    return true;
+  }
+  const linked = rows.filter(
+    (row) => row.source_kind === "manual" && row.linked_provider_payout_id === item.payout_id,
+  );
+  if (linked.length === 0) return false;
+  if (item.expected_cash_flow_id == null) return true;
+  return linked.some((row) => row.source_id === item.expected_cash_flow_id);
+}
+
 function newestMonth(months: ReportingMonth[]): ReportingMonth | undefined {
   return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id)[0];
 }
@@ -612,13 +636,6 @@ function PayoutForecastTool({
             return;
           }
         }
-        const providerIds = new Set(
-          rereadCalendar.flatMap((entry) =>
-            entry.items
-              .filter((item) => item.source_kind === "provider")
-              .map((item) => item.source_id),
-          ),
-        );
         const readinessMatchesLifecycle =
           rereadReadiness.year === rereadMonth.year &&
           rereadReadiness.month === rereadMonth.month &&
@@ -632,7 +649,7 @@ function PayoutForecastTool({
               row.reporting_month_id !== frozenMonthId || row.forecast_version !== frozenVersion,
           ) ||
           !readinessMatchesLifecycle ||
-          !result.items.every((item) => providerIds.has(item.payout_id))
+          !result.items.every((item) => isAppliedPayoutRepresented(item, rereadCalendar))
         ) {
           setPreview(null);
           setPreviewMeta(null);
