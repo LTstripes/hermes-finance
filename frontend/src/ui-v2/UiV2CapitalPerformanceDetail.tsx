@@ -646,7 +646,18 @@ export default function UiV2CapitalPerformanceDetail() {
         ) : null}
       </section>
       {content}
-      {context !== null ? <ObservedValuationCapture context={context} /> : null}
+      {context !== null ? (
+        <ObservedValuationCapture
+          key={[
+            context.start,
+            context.end,
+            context.scope,
+            context.accountId ?? "portfolio",
+            context.view,
+          ].join(":")}
+          context={context}
+        />
+      ) : null}
       {context && context.view === "accounts" ? (
         <PerformancePreparation accounts={accounts} context={context} />
       ) : null}
