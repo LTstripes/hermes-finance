@@ -98,14 +98,20 @@ type ApiRecorder = {
 async function installStatementApi(page: Page): Promise<ApiRecorder> {
   const record: ApiRecorder = { posts: [], gets: [], errors: [] };
   page.on("pageerror", (error) => record.errors.push(error.message));
+  // Record at the network layer so an explicitly overridden route still shows
+  // what the page actually tried to send.
+  page.on("request", (sent) => {
+    const url = new URL(sent.url());
+    if (!url.pathname.startsWith("/api/")) return;
+    if (sent.method() === "POST") record.posts.push(`POST ${url.pathname}`);
+    if (sent.method() === "GET") record.gets.push(`GET ${url.pathname}`);
+  });
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (route) => {
       const request = route.request();
       const url = new URL(request.url());
       const pathname = url.pathname;
-      if (request.method() === "POST") record.posts.push(`POST ${pathname}`);
-      if (request.method() === "GET") record.gets.push(`GET ${pathname}`);
       if (request.method() === "GET" && pathname === "/api/months") {
         await route.fulfill({ json: uiV2Months });
         return;
@@ -362,6 +368,35 @@ for (const viewport of [
     expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(0);
     expect(api.errors).toEqual([]);
     await assertNoPageOverflow(page);
+  });
+
+  test(`native statement import ${viewport.name}: ambiguous apply failure needs a fresh prepare`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const api = await installStatementApi(page);
+    await page.goto("/v2/data/payouts?month=12");
+    await expect(page.locator("#statement-import")).toBeVisible();
+    await prepareStatement(page);
+
+    await page.route("**/api/statement-import/apply", (route) => route.abort());
+    await page.getByRole("button", { name: "Применить выбранные строки" }).click();
+    await page.getByRole("button", { name: "Подтвердить и применить" }).click();
+
+    // An ambiguous network result is never a success and never keeps a
+    // replayable preparation behind.
+    await expect(page.getByText(/результат неизвестен/)).toBeVisible();
+    await expect(page.getByText(/Импортировано строк/)).toHaveCount(0);
+    await expect(page.getByText("Новая строка")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Применить выбранные строки" })).toHaveCount(0);
+
+    // Safe retry: a fresh explicit prepare of the same document restores a
+    // reviewable, still-not-applied state.
+    await page.unroute("**/api/statement-import/apply");
+    await page.getByRole("button", { name: "Подготовить к импорту" }).click();
+    await expect(page.getByText("Новая строка")).toBeVisible();
+    expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(1);
+    expect(api.errors).toEqual([]);
   });
 }
 
