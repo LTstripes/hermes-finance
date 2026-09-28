@@ -294,6 +294,29 @@ def revoke_in_kind_boundary_coverage(
     )
 
 
+def invalidate_in_kind_boundary_coverages_for_movement(
+    session: Session, *, account_id: int, event_date: date
+) -> tuple[int, ...]:
+    """Retire COMPLETE evidence intersecting a changed known movement."""
+
+    rows = list(
+        session.scalars(
+            select(InKindBoundaryCoverageRecord).where(
+                InKindBoundaryCoverageRecord.account_id == account_id,
+                InKindBoundaryCoverageRecord.coverage_state
+                == InKindBoundaryCoverageState.COMPLETE.value,
+                InKindBoundaryCoverageRecord.covered_from <= event_date,
+                InKindBoundaryCoverageRecord.covered_to >= event_date,
+            )
+        )
+    )
+    for row in rows:
+        row.coverage_state = InKindBoundaryCoverageState.UNKNOWN.value
+    if rows:
+        session.flush()
+    return tuple(row.id for row in rows)
+
+
 def list_in_kind_movements(
     session: Session, *, account_id: int | None = None
 ) -> list[InKindMovementRecord]:
