@@ -206,9 +206,9 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run G04 synthetic real-backend journey
+      - name: Run G04 and Performance synthetic real-backend journeys
         working-directory: frontend
-        run: npm run test:e2e -- g04-smoke.spec.ts --project=chromium --retries=0
+        run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
 
   visual-audit-paths:
     name: Visual audit path filter
