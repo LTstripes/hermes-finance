@@ -5,6 +5,11 @@ import { Link, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { cloneMonth, createMonth, deleteMonth, listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
+import {
+  monthlyCloseReturnPath,
+  parseMonthlyCloseReturnContext,
+  withMonthlyCloseReturn,
+} from "../components/month-close/navigation";
 import { ConfirmDialog } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { lastDayOfMonth, nextPeriod } from "../lib/period";
@@ -60,6 +65,11 @@ export default function UiV2MonthsPage() {
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const selection = resolveMonthSelection(params.getAll("month"), months);
   const selected = selection.kind === "selected" ? selection.month : null;
+  const closeContext = parseMonthlyCloseReturnContext(params);
+  const returnToClose =
+    closeContext && months.some((month) => month.id === closeContext.monthId)
+      ? monthlyCloseReturnPath(closeContext)
+      : null;
   const latest = months[0] ?? null;
   const [action, setAction] = useState<Action | null>(null);
   const [target, setTarget] = useState<Target>(initialTarget);
@@ -179,6 +189,9 @@ export default function UiV2MonthsPage() {
       v1ReturnPath="/months"
     >
       <div className={styles.toolbar}>
+        {returnToClose ? (
+          <Link to={returnToClose}>Вернуться к закрытию исходного месяца</Link>
+        ) : null}
         <button
           className={styles.primary}
           disabled={monthsQuery.isPending || monthsQuery.isError || busy || !latest}
@@ -381,7 +394,20 @@ export default function UiV2MonthsPage() {
                       Удалить черновик
                     </button>
                   ) : null}
-                  <Link to={`/v2/data/months/${month.id}`}>Открыть редактор месяца</Link>
+                  <Link
+                    to={
+                      closeContext?.monthId === month.id
+                        ? withMonthlyCloseReturn(
+                            `/v2/data/months/${month.id}`,
+                            month.id,
+                            closeContext.step,
+                            closeContext.origin,
+                          )
+                        : `/v2/data/months/${month.id}`
+                    }
+                  >
+                    Открыть редактор месяца
+                  </Link>
                   <Link to={`/months/${month.id}`}>Редактор в предыдущем интерфейсе ↗</Link>
                 </div>
               </li>
@@ -389,8 +415,8 @@ export default function UiV2MonthsPage() {
           </ul>
         ) : null}
         <p className={styles.hint}>
-          В native редакторе доступны общие данные и заметки. Остальные разделы пока доступны в
-          предыдущем интерфейсе. Архив подтверждённых отчётов остаётся отдельным разделом.
+          В native редакторе доступны данные и заметки выбранного месяца. Архив подтверждённых
+          отчётов остаётся отдельным разделом.
         </p>
       </section>
       <ConfirmDialog

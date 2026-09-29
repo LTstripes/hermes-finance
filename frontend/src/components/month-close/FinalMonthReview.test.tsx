@@ -260,4 +260,26 @@ describe("FinalMonthReview", () => {
     );
     expect(screen.queryByRole("button", { name: /Закрыть/ })).toBeNull();
   });
+
+  it("uses native editor sections for v2 and hides edits on a closed review", () => {
+    const draft = review();
+    const { rerender } = render(
+      <MemoryRouter>
+        <FinalMonthReviewView origin="monthly-close-v2" review={draft} />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
+      "href",
+      "/v2/data/months/17?section=assets&from=monthly-close-v2&step=final_review_close&monthId=17",
+    );
+    rerender(
+      <MemoryRouter>
+        <FinalMonthReviewView
+          origin="monthly-close-v2"
+          review={{ ...draft, month_header: { ...draft.month_header, status: "closed" } }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("link", { name: "Изменить" })).toBeNull();
+  });
 });

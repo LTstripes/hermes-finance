@@ -118,18 +118,20 @@ function cardTone(card: ManualReviewCard): "ok" | "info" | "unknown" {
   return isOptionalEmpty(card) ? "info" : "ok";
 }
 
+function editPath(monthId: number, section: string, origin: MonthlyCloseOrigin): string {
+  const editor =
+    origin === "monthly-close-v2" ? `/v2/data/months/${monthId}` : `/months/${monthId}`;
+  return withMonthlyCloseReturn(
+    `${editor}?section=${section}`,
+    monthId,
+    "final_review_close",
+    origin,
+  );
+}
+
 function editLinks(card: ManualReviewCard, month: WorkflowMonth, origin: MonthlyCloseOrigin) {
   return (CARD_SECTIONS[card.id] ?? []).map((section) => (
-    <Link
-      className="btn btn--ghost btn--sm"
-      key={section}
-      to={withMonthlyCloseReturn(
-        `/months/${month.id}?section=${section}`,
-        month.id,
-        "final_review_close",
-        origin,
-      )}
-    >
+    <Link className="btn btn--ghost btn--sm" key={section} to={editPath(month.id, section, origin)}>
       {card.id === "income_budget" ? (section === "income" ? "Доходы" : "Бюджет") : "Изменить"}
     </Link>
   ));
@@ -401,10 +403,12 @@ function Attention({
   review,
   month,
   origin,
+  editable,
 }: {
   review: FinalMonthReviewModel;
   month: WorkflowMonth;
   origin: MonthlyCloseOrigin;
+  editable: boolean;
 }) {
   return (
     <Panel label="Требует внимания" title="Что проверить перед закрытием">
@@ -420,15 +424,10 @@ function Attention({
                   {item.severity === "hard_blocker" ? "Блокер" : "Предупреждение"}
                 </Badge>
                 <span>{item.message}</span>
-                {card && CARD_SECTIONS[card.id]?.[0] ? (
+                {editable && card && CARD_SECTIONS[card.id]?.[0] ? (
                   <Link
                     className="btn btn--ghost btn--sm"
-                    to={withMonthlyCloseReturn(
-                      `/months/${month.id}?section=${CARD_SECTIONS[card.id][0]}`,
-                      month.id,
-                      "final_review_close",
-                      origin,
-                    )}
+                    to={editPath(month.id, CARD_SECTIONS[card.id][0], origin)}
                   >
                     Открыть {card.title.toLocaleLowerCase()}
                   </Link>
@@ -452,10 +451,12 @@ function ManualCards({
   review,
   month,
   origin,
+  editable,
 }: {
   review: FinalMonthReviewModel;
   month: WorkflowMonth;
   origin: MonthlyCloseOrigin;
+  editable: boolean;
 }) {
   const cardsById = new Map(review.manual_review_cards.map((card) => [card.id, card]));
   const cards = MANUAL_CARD_ORDER.map((id) => cardsById.get(id)).filter(
@@ -477,7 +478,9 @@ function ManualCards({
             </div>
             <div className="final-review__card-grid">{cardSummary(card)}</div>
             {!card.available ? <p className="muted tiny">{reasonLabel(card.reason_code)}</p> : null}
-            <div className="final-review__card-actions">{editLinks(card, month, origin)}</div>
+            {editable ? (
+              <div className="final-review__card-actions">{editLinks(card, month, origin)}</div>
+            ) : null}
           </article>
         ))}
       </div>
@@ -555,8 +558,18 @@ export function FinalMonthReview({
         </div>
       </Panel>
 
-      <Attention month={review.month_header} origin={origin} review={review} />
-      <ManualCards month={review.month_header} origin={origin} review={review} />
+      <Attention
+        editable={origin !== "monthly-close-v2" || review.month_header.status === "draft"}
+        month={review.month_header}
+        origin={origin}
+        review={review}
+      />
+      <ManualCards
+        editable={origin !== "monthly-close-v2" || review.month_header.status === "draft"}
+        month={review.month_header}
+        origin={origin}
+        review={review}
+      />
       <ReadinessDetails review={review} />
       <FutureEvents review={review} />
     </section>

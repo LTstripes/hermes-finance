@@ -119,7 +119,12 @@ export default function UiV2ClosePage() {
   const focusedStepRef = useRef<string | null>(null);
   const workflow = workflowQuery.data;
   const workflowIdentityMatches =
-    workflow?.contract_version === "monthly_close_workflow_v1" && workflow.month.id === monthId;
+    workflow?.contract_version === "monthly_close_workflow_v1" &&
+    workflow.month.id === monthId &&
+    (!workflow.final_review.available ||
+      (workflow.final_review.month_header.id === monthId &&
+        workflow.final_review.month_header.status === workflow.month.status)) &&
+    (!workflow.outlook || workflow.outlook.source_month.id === monthId);
   const stepValues = params.getAll("step");
   const requestedStep =
     stepValues.length === 1 && isGuidedCloseStepId(stepValues[0]) ? stepValues[0] : null;
@@ -183,8 +188,8 @@ export default function UiV2ClosePage() {
   } else if (selection.kind === "invalid") {
     content = (
       <UiV2Notice title="Некорректный месяц">
-        Адрес должен содержать один положительный идентификатор месяца. Выбери месяц заново в{" "}
-        <Link to="/monthly-close">предыдущем интерфейсе →</Link>
+        Адрес должен содержать один положительный идентификатор месяца. Выбери месяц в{" "}
+        <Link to="/v2/data/months">списке отчётных месяцев →</Link>
       </UiV2Notice>
     );
   } else if (selection.kind === "missing") {
@@ -197,7 +202,7 @@ export default function UiV2ClosePage() {
     content = (
       <UiV2Notice title="Нет незакрытого месяца">
         Сейчас нет черновика для продолжения. <Link to="/v2">Открыть «Мои финансы» →</Link> или{" "}
-        <Link to="/months">посмотреть историю отчётов ↗</Link>
+        <Link to="/v2/reports">посмотреть историю отчётов →</Link>
       </UiV2Notice>
     );
   } else if (workflowQuery.isError) {
@@ -221,12 +226,13 @@ export default function UiV2ClosePage() {
         title="Состояние месяца не подтверждено"
         retry={() => void workflowQuery.refetch()}
       >
-        Финансовые значения скрыты: полученное состояние закрытия не совпало с выбранным месяцем или
-        шаги отсутствуют.
+        Финансовые значения скрыты: полученное состояние закрытия или его разделы не совпали с
+        выбранным месяцем, либо шаги отсутствуют.
       </UiV2Notice>
     );
   } else {
-    const primaryAction = closed ? null : viewedStep.primary_action;
+    const outlookAction = closed && viewedStep.id === "next_month_outlook";
+    const primaryAction = !closed || outlookAction ? viewedStep.primary_action : null;
     const primaryPath =
       primaryAction && primaryAction.id !== "confirm_close"
         ? actionPath(primaryAction.id, workflow.month.id, viewedStep.id)
@@ -298,7 +304,7 @@ export default function UiV2ClosePage() {
               </Link>
             </div>
           ) : null}
-          {!closed && viewedStep.secondary_actions.length > 0 ? (
+          {(!closed || outlookAction) && viewedStep.secondary_actions.length > 0 ? (
             <div className={styles.closeSecondaryRow}>
               {viewedStep.secondary_actions.map((action) => (
                 <Link
