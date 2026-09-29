@@ -254,7 +254,7 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Распределение и концентрация" }),
     ).toBeVisible();
-    expect(screen.getByLabelText("Отчётный месяц")).toHaveValue("1");
+    expect(await screen.findByLabelText("Отчётный месяц")).toHaveValue("1");
     expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
   });
 
