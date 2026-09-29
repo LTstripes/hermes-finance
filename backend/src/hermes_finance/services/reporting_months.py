@@ -171,7 +171,7 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         raise ClosedReportingMonthError("closed reporting month must be reopened before deletion")
 
     try:
-        from hermes_finance.persistence import ExternalFlow
+        from hermes_finance.persistence import ExternalFlow, InKindMovement
         from hermes_finance.services._guard import require_editable_reporting_month
         from hermes_finance.services.cash_boundary_coverage import (
             invalidate_cash_boundary_coverages_for_external_flow,
@@ -179,6 +179,9 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         from hermes_finance.services.external_flows import (
             refresh_external_transfer_link_statuses,
             require_no_transfer_reconciliation_evidence_for_month_deletion,
+        )
+        from hermes_finance.services.in_kind_boundary_coverage import (
+            invalidate_in_kind_boundary_coverages_for_movement,
         )
 
         # The evidence check and bulk leg deletion must share one writer reservation.
@@ -201,6 +204,21 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
                 session,
                 account_id=account_id,
                 event_date=event_date,
+            )
+
+        # The same bulk deletion bypasses per-row in-kind evidence handling.
+        # Both legs of an internal transfer change their account histories.
+        affected_in_kind_boundaries = {
+            (account_id, movement.event_date)
+            for movement in session.scalars(
+                select(InKindMovement).where(InKindMovement.reporting_month_id == month_id)
+            )
+            for account_id in (movement.source_account_id, movement.destination_account_id)
+            if account_id is not None
+        }
+        for account_id, event_date in sorted(affected_in_kind_boundaries):
+            invalidate_in_kind_boundary_coverages_for_movement(
+                session, account_id=account_id, event_date=event_date
             )
 
         from hermes_finance.services.payout_provenance_lifecycle import (
