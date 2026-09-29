@@ -149,18 +149,24 @@ def update_reporting_month(
     snapshot_date: date | None = None,
     source: ReportingMonthSource | str | None = None,
 ) -> ReportingMonth:
-    reporting_month = get_reporting_month(session, month_id)
-    if reporting_month.status == ReportingMonthStatus.CLOSED.value:
-        raise ClosedReportingMonthError("closed reporting month must be reopened before editing")
+    get_reporting_month(session, month_id)
+    from hermes_finance.services._guard import require_editable_reporting_month
 
-    if snapshot_date is not None:
-        if snapshot_date < reporting_month.period_start:
-            raise ValueError("snapshot_date cannot be before the reporting period")
-        reporting_month.snapshot_date = snapshot_date
-    if source is not None:
-        reporting_month.source = _coerce_source(source).value
+    try:
+        # Recheck DRAFT while holding the same SQLite writer reservation as
+        # month-scoped child edits. The earlier read may predate a Close.
+        reporting_month = require_editable_reporting_month(session, month_id)
+        if snapshot_date is not None:
+            if snapshot_date < reporting_month.period_start:
+                raise ValueError("snapshot_date cannot be before the reporting period")
+            reporting_month.snapshot_date = snapshot_date
+        if source is not None:
+            reporting_month.source = _coerce_source(source).value
 
-    session.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     session.refresh(reporting_month)
     return reporting_month
 
