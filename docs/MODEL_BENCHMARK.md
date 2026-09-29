@@ -194,6 +194,17 @@ PR #635 shared route/link wiring was Integrator-authored. Its initial test asser
 
 Local checks remain Worker-reported unless independently inspected. Usage/cost/time are unknown; no additional telemetry is requested. The completed #568/#569/#571 cases and pending #570 case are not one homogeneous benchmark sample.
 
+## Sol 6.1 version transition — 2026-09-30
+
+Source: [Owner's version-specific confirmation in #605](https://github.com/LTstripes/hermes-finance/issues/605#issuecomment-5899778624). This later entry updates the stages below without retroactively renaming the 2026-09-29 work. Exact runtime IDs and public release metadata are not inferred from an Owner model label.
+
+| Task / stage | Owner-confirmed execution | Exact identity / evidence | Disposition |
+| --- | --- | --- | --- |
+| #570 / PR #574, final UI-parity source refresh | **Sol 6.1 High / OpenAI / Codex desktop**, owner_reported | Previous Sol High refresh `9ea4a63ec205f0a20dd5f9f9d5ca40eda09fb92d` -> new head `f549bd8f7986178d488544349aed5347b64e16cf`; base `fb0c3b29cbf8e54df00cf7ee849a202b060de105`; CI `36633295520` SUCCESS | **PENDING**, independent financial/product review and common main/Performance/UI aggregate validation remain. Same task/document with an explicit model-version transition, not a pure single-model or from-scratch success. Earlier GitHub-native matrix authorship remains separate. |
+| #541 Checkpoint A refresh / PR #641, cross-stream compatibility and retained browser evidence | **Sol 6.1 High / Codex desktop**, owner_reported; provider not independently disclosed | Candidate `95097f75174116f608f761f791d0ee500e9e56ca` incorporates Performance staging `a9198a46a9efedcf1e60f5628ff308ebe65952dc` and main `ee9faea0b49f08454c284deb0db926f8db981a9d`; CI/UI `36632951022` / `36632950943` SUCCESS; [Integrator preflight](https://github.com/LTstripes/hermes-finance/pull/641#issuecomment-5899638869) | **PENDING**, independent review still required. Read-only CLOSED predicate separated from writer-reserving mutation guard; canonical real-backend Performance journey added. This is one refresh/reconciliation case, not a new success for every previously accepted Performance leaf. |
+
+Earlier #568/#569/#571 remain Sol High A/B/A at their staging stages. The #541 attempted reviewer stopped at runtime-isolation preflight before code inspection: no code verdict, no Worker correction round and no independent ACCEPT. Neither pending Sol 6.1 stage receives a final grade here; Owner UAT and release remain separate gates.
+
 ## Lightweight case template
 
 ```text
